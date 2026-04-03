@@ -21,45 +21,18 @@ const STORAGE_KEY = "xp-crm-auth-token";
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>("local-dev-token");
+  const [user, setUser] = useState<AuthUser | null>({
+    id: "00000000-0000-0000-0000-000000000001",
+    email: "admin@olist-crm.com.br",
+    role: "ADMIN",
+    name: "Administrador Local",
+  });
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    let active = true;
-    const storedToken = window.localStorage.getItem(STORAGE_KEY);
-
-    if (!storedToken) {
-      setLoading(false);
-      return;
-    }
-
-    void api
-      .me(storedToken)
-      .then((result) => {
-        if (!active) {
-          return;
-        }
-        setToken(storedToken);
-        setUser(result.user);
-      })
-      .catch(() => {
-        window.localStorage.removeItem(STORAGE_KEY);
-        if (!active) {
-          return;
-        }
-        setToken(null);
-        setUser(null);
-      })
-      .finally(() => {
-        if (active) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
+    // Autenticação desativada para facilidade de uso local
+    setLoading(false);
   }, []);
 
   const value = useMemo<AuthContextValue>(
