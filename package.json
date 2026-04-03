@@ -1,0 +1,33 @@
+{
+  "name": "olist-crm-inteligente",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "npm run dev:web",
+    "dev:legacy": "concurrently \"npm run dev -w @olist-crm/api\" \"npm run dev -w @olist-crm/web\" \"npm run worker -w @olist-crm/api\"",
+    "dev:api": "npm run dev -w @olist-crm/api",
+    "dev:web": "npm run dev -w @olist-crm/web",
+    "build": "npm run build -w @olist-crm/shared && npm run build -w @olist-crm/web",
+    "build:legacy-api": "npm run build -w @olist-crm/api",
+    "start:api": "npm run start -w @olist-crm/api",
+    "start:worker": "npm run start:worker -w @olist-crm/api",
+    "migrate": "npm run migrate -w @olist-crm/api",
+    "seed:admin": "npm run seed:admin -w @olist-crm/api",
+    "test": "npm run test -w @olist-crm/shared && npm run test -w @olist-crm/web",
+    "test:legacy-api": "npm run test -w @olist-crm/api",
+    "lint": "npm run lint -w @olist-crm/web",
+    "lint:legacy-api": "npm run lint -w @olist-crm/api",
+    "import:history": "npm run import:history -w @olist-crm/api",
+    "import:supabase:2026": "npm run import:supabase:2026 -w @olist-crm/api",
+    "worker": "npm run worker -w @olist-crm/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  }
+}

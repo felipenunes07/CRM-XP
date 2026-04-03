@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
+    "paths": {
+      "@olist-crm/shared": [
+        "../../packages/shared/src/index.ts"
+      ],
+      "@olist-crm/shared/*": [
+        "../../packages/shared/src/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

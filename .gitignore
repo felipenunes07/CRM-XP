@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+.DS_Store
+Thumbs.db
+*.log
+docker-data/
+apps/web/dist/
+apps/api/dist/
+.vite/
+.runtime/
