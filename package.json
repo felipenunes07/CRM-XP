@@ -24,6 +24,8 @@
     "lint:legacy-api": "npm run lint -w @olist-crm/api",
     "import:history": "npm run import:history -w @olist-crm/api",
     "import:supabase:2026": "npm run import:supabase:2026 -w @olist-crm/api",
+    "setup:local": "node scripts/setup_system.js",
+    "import:full": "npm run import:history",
     "worker": "npm run worker -w @olist-crm/api"
   },
   "devDependencies": {
