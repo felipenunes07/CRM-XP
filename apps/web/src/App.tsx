@@ -15,20 +15,6 @@ const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPag
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 export default function App() {
-  const { token, loading } = useAuth();
-
-  if (loading) {
-    return <div className="page-loading fullscreen">Carregando sessão...</div>;
-  }
-
-  if (!token) {
-    return (
-      <Suspense fallback={<div className="page-loading fullscreen">Carregando sessão...</div>}>
-        <LoginPage />
-      </Suspense>
-    );
-  }
-
   return (
     <Suspense fallback={<div className="page-loading fullscreen">Carregando tela...</div>}>
       <Routes>

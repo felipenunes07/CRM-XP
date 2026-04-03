@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, ClipboardList, LayoutDashboard, LogOut, MessageSquareText, Tags, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, Tags, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
 const links = [
@@ -12,7 +12,7 @@ const links = [
 ];
 
 export function AppShell() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   return (
     <div className="app-shell">
@@ -38,14 +38,10 @@ export function AppShell() {
 
         <div className="sidebar-footer">
           <div>
-            <p className="eyebrow">Sessao interna</p>
+            <p className="eyebrow">Sessão interna</p>
             <strong>{user?.name}</strong>
             <p>{user?.role}</p>
           </div>
-          <button className="ghost-button" type="button" onClick={logout}>
-            <LogOut size={16} />
-            Sair
-          </button>
         </div>
       </aside>
 
