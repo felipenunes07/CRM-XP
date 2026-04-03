@@ -76,6 +76,40 @@ Para que o CRM tenha dados úteis, siga esta ordem:
 2. **Importação Histórica:** `npm run import:history`
 3. **Sincronização 2026+:** Realizada via worker ou endpoint admin.
 
+## 🛠️ Scripts Úteis
+
+Disponíveis na raiz do projeto:
+
+- `npm run dev:web`: Inicia o frontend (Vite).
+- `npm run dev:api`: Inicia a API Express.
+- `npm run worker`: Inicia o processamento de filas (BullMQ).
+- `npm run import:history`: Dispara a importação de planilhas XLSX.
+- `npm run migrate -w @olist-crm/api`: Executa migrações do banco (se aplicável).
+- `npm test`: Executa a suíte de testes.
+- `npm run build`: Gera o build de produção para todos os pacotes.
+
+## 🔗 Endpoints Principais (API)
+
+Abaixo estão as rotas fundamentais para integração e administração:
+
+### Autenticação & Dashboard
+- `POST /api/auth/login`: Autenticação de usuário.
+- `GET /api/dashboard/metrics`: KPIs e métricas consolidadas.
+
+### Gestão de Clientes
+- `GET /api/customers`: Lista de clientes com filtros.
+- `GET /api/customers/:id`: Detalhes completos e histórico do cliente.
+- `POST /api/segments/preview`: Pré-visualização de segmentação dinâmica.
+
+### Comercial & Mensageria
+- `GET /api/agenda`: Compromissos e lembretes comerciais.
+- `GET/POST/PUT/DELETE /api/messages/templates`: Gestão de modelos de mensagens.
+
+### Administração & Sincronização
+- `POST /api/admin/import-history`: Gatilho manual para importação XLSX.
+- `POST /api/admin/import-supabase-2026`: Sincroniza dados do Supabase 2026.
+- `POST /api/admin/sync/olist`: Sincronização direta com a API Olist V2.
+
 ## 🚢 Deploy
 
 O deploy é otimizado para a **Vercel** e **Supabase**. Consulte os guias detalhados:
