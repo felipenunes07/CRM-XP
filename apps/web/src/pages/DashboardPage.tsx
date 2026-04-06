@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight } from "lucide-react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 import { Link } from "react-router-dom";
 import type { AgendaItem } from "@olist-crm/shared";
+import { ContactQueueCard } from "../components/ContactQueueCard";
+import { InfoHint } from "../components/InfoHint";
 import { StatCard } from "../components/StatCard";
 import { CustomerTable } from "../components/CustomerTable";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDaysSince, formatNumber } from "../lib/format";
+import { formatNumber } from "../lib/format";
 
 const bucketFilters = {
   "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
@@ -38,12 +39,58 @@ function bucketColor(label: string, selected: boolean) {
 }
 
 function getAgendaPreviewItems(items: AgendaItem[] | undefined) {
-  return (items ?? []).slice(0, 12);
+  return (items ?? []).slice(0, 6);
+}
+
+function bucketTooltipNote(label: string) {
+  if (label === "0-14") {
+    return "Todos nesta faixa seguem no status Ativo.";
+  }
+
+  if (label === "15-29") {
+    return "Todos nesta faixa seguem no status Ativo.";
+  }
+
+  if (label === "30-59") {
+    return "Faixa de transicao: no dia 30 ainda pode estar Ativo; de 31 a 59 entra em Atencao.";
+  }
+
+  if (label === "60-89") {
+    return "Todos nesta faixa ja estao em Atencao.";
+  }
+
+  return "Todos nesta faixa ja estao Inativos.";
+}
+
+function InactivityTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length || !label) {
+    return null;
+  }
+
+  return (
+    <div className="chart-tooltip">
+      <strong>{label} dias sem compra</strong>
+      <div className="chart-tooltip-count">
+        <strong>{formatNumber(payload[0]?.value ?? 0)}</strong>
+        <span>clientes nessa faixa</span>
+      </div>
+      <p>{bucketTooltipNote(label)}</p>
+    </div>
+  );
 }
 
 export function DashboardPage() {
   const { token } = useAuth();
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
@@ -68,6 +115,16 @@ export function DashboardPage() {
     enabled: Boolean(token && selectedBucket),
   });
 
+  const priorityCustomersQuery = useQuery({
+    queryKey: ["dashboard-priority-customers"],
+    queryFn: () =>
+      api.customers(token!, {
+        sortBy: "priority",
+        limit: 120,
+      }),
+    enabled: Boolean(token && !selectedBucket),
+  });
+
   if (dashboardQuery.isLoading) {
     return <div className="page-loading">Carregando dashboard...</div>;
   }
@@ -78,15 +135,54 @@ export function DashboardPage() {
 
   const metrics = dashboardQuery.data;
   const agendaItems = getAgendaPreviewItems(agendaQuery.data);
-  const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : metrics.topCustomers;
+  const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
+  const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
+  const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
+
+  async function handleSync() {
+    try {
+      setIsSyncing(true);
+      await api.syncData(token!, "direct");
+      window.location.reload();
+    } catch (err) {
+      alert("Falha na sincronizacao: " + String(err));
+    } finally {
+      setIsSyncing(false);
+    }
+  }
 
   return (
     <div className="page-stack">
-      <section className="hero-panel">
-        <div>
-          <p className="eyebrow">Visao geral</p>
-          <h2>XP CRM</h2>
-          <p>Base comercial centralizada no Supabase com leitura analitica pronta para o time comercial.</p>
+      <section className="hero-panel dashboard-hero">
+        <div className="hero-copy">
+          <p className="eyebrow">Operacao comercial</p>
+          <h2>Prioridades de contato e saude da carteira</h2>
+          <p>Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.</p>
+          <div className="hero-actions">
+            <Link className="primary-button" to="/agenda">
+              Abrir agenda do dia
+            </Link>
+            <button className="ghost-button" type="button" disabled={isSyncing} onClick={handleSync}>
+              {isSyncing ? "Sincronizando..." : "Sincronizar Agora"}
+            </button>
+          </div>
+        </div>
+
+        <div className="hero-meta">
+          <div className="hero-meta-item">
+            <span>Ultima sincronizacao</span>
+            <strong>
+              {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString("pt-BR") : "Sincronizacao pendente"}
+            </strong>
+          </div>
+          <div className="hero-meta-item">
+            <span>Frequencia media</span>
+            <strong>{metrics.averageFrequencyDays.toFixed(1)} dias</strong>
+          </div>
+          <div className="hero-meta-item">
+            <span>Agenda de hoje</span>
+            <strong>{metrics.dailyAgendaCount} clientes</strong>
+          </div>
         </div>
       </section>
 
@@ -95,12 +191,7 @@ export function DashboardPage() {
         <StatCard title="Clientes ativos" value={formatNumber(metrics.statusCounts.ACTIVE)} tone="success" />
         <StatCard title="Clientes em atencao" value={formatNumber(metrics.statusCounts.ATTENTION)} tone="warning" />
         <StatCard title="Clientes inativos" value={formatNumber(metrics.statusCounts.INACTIVE)} tone="danger" />
-        <StatCard title="Ticket medio" value={formatCurrency(metrics.averageTicket)} />
-        <StatCard
-          title="Frequencia media"
-          value={`${metrics.averageFrequencyDays.toFixed(1)} dias`}
-          helper={metrics.lastSyncAt ? `Ultima sincronizacao ${new Date(metrics.lastSyncAt).toLocaleString("pt-BR")}` : "Sincronizacao diaria automatica"}
-        />
+        <StatCard title="Frequencia media" value={`${metrics.averageFrequencyDays.toFixed(1)} dias`} helper="Intervalo medio entre pedidos" />
       </section>
 
       <section className="grid-two dashboard-grid">
@@ -108,10 +199,30 @@ export function DashboardPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Faixas de inatividade</p>
-              <h3>Onde esta o risco de parada</h3>
+              <h3 className="header-with-info">
+                Onde esta o risco de parada
+                <InfoHint text="As barras mostram dias sem compra. Regra de status atual: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias." />
+              </h3>
             </div>
           </div>
-          <p className="panel-subcopy">Clique em uma barra para filtrar a tabela abaixo pelos clientes daquela faixa.</p>
+          <p className="panel-subcopy">
+            Clique em uma barra para filtrar a tabela abaixo. Os status comerciais seguem os cortes: Ativo ate 30 dias,
+            Atencao de 31 a 89 dias e Inativo a partir de 90 dias.
+          </p>
+          <div className="status-guide-grid">
+            <div className="status-guide-card is-active">
+              <strong>Ativo</strong>
+              <span>Ate 30 dias sem comprar</span>
+            </div>
+            <div className="status-guide-card is-attention">
+              <strong>Atencao</strong>
+              <span>De 31 a 89 dias sem comprar</span>
+            </div>
+            <div className="status-guide-card is-inactive">
+              <strong>Inativo</strong>
+              <span>90 dias ou mais sem comprar</span>
+            </div>
+          </div>
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height={280}>
               <BarChart
@@ -123,9 +234,10 @@ export function DashboardPage() {
                   }
                   setSelectedBucket((current) => (current === label ? null : (label as BucketLabel)));
                 }}
+                margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
               >
                 <XAxis dataKey="label" stroke="#5f6f95" />
-                <Tooltip />
+                <Tooltip content={<InactivityTooltip />} cursor={{ fill: "rgba(41, 86, 215, 0.04)" }} />
                 <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor="pointer">
                   {metrics.inactivityBuckets.map((bucket) => (
                     <Cell key={bucket.label} fill={bucketColor(bucket.label, selectedBucket === bucket.label)} />
@@ -149,46 +261,45 @@ export function DashboardPage() {
             <div>
               <p className="eyebrow">Agenda de hoje</p>
               <h3>{metrics.dailyAgendaCount} clientes pedem contato agora</h3>
+              <p className="panel-subcopy">Fila pronta para a vendedora agir sem sair da tela inicial.</p>
             </div>
             <Link className="ghost-button" to="/agenda">
               Ver agenda completa
             </Link>
           </div>
-          <div className="stack-list agenda-scroll-list">
-            {agendaItems.map((customer) => (
-              <div key={customer.id} className="agenda-card compact">
-                <div className="agenda-card-copy">
-                  <strong>{customer.displayName}</strong>
-                  <p>{customer.reason}</p>
-                  <small>
-                    Ultima compra: {formatDate(customer.lastPurchaseAt)} | {formatDaysSince(customer.daysSinceLastPurchase)}
-                  </small>
-                </div>
-                <div className="agenda-metric">
-                  <span>{customer.priorityScore.toFixed(1)}</span>
-                  <ArrowUpRight size={16} />
-                </div>
+
+          {agendaQuery.isLoading ? <div className="page-loading">Montando fila de contato...</div> : null}
+          {agendaQuery.isError ? <div className="page-error">Nao foi possivel carregar a agenda de hoje.</div> : null}
+          {!agendaQuery.isLoading && !agendaQuery.isError ? (
+            agendaItems.length ? (
+              <div className="stack-list agenda-scroll-list">
+                {agendaItems.map((customer) => (
+                  <ContactQueueCard key={customer.id} item={customer} compact />
+                ))}
               </div>
-            ))}
-          </div>
+            ) : (
+              <div className="empty-state">Nenhum cliente precisa de contato imediato neste momento.</div>
+            )
+          ) : null}
         </article>
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">{selectedBucket ? "Clientes filtrados pelo grafico" : "Ranking por faturamento"}</p>
-            <h3>{selectedBucket ? `Clientes na faixa ${selectedBucket}` : "Clientes com maior peso na receita"}</h3>
+            <p className="eyebrow">{selectedBucket ? "Clientes filtrados pelo grafico" : "Fila por prioridade"}</p>
+            <h3>{selectedBucket ? `Clientes na faixa ${selectedBucket}` : "Clientes para o time abordar agora"}</h3>
+            <p className="panel-subcopy">
+              {selectedBucket
+                ? "A selecao do grafico mostra apenas clientes da faixa escolhida."
+                : "Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras."}
+            </p>
           </div>
         </div>
 
-        {selectedBucket && filteredCustomersQuery.isLoading ? (
-          <div className="page-loading">Filtrando clientes da faixa selecionada...</div>
-        ) : null}
-        {selectedBucket && filteredCustomersQuery.isError ? (
-          <div className="page-error">Nao foi possivel carregar os clientes dessa faixa.</div>
-        ) : null}
-        {!selectedBucket || filteredCustomersQuery.data ? <CustomerTable customers={tableCustomers} /> : null}
+        {tableQueryLoading ? <div className="page-loading">Carregando clientes priorizados...</div> : null}
+        {tableQueryError ? <div className="page-error">Nao foi possivel carregar essa lista de clientes.</div> : null}
+        {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
       </section>
     </div>
   );
