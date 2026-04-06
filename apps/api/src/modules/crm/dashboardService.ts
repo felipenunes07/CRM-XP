@@ -29,11 +29,34 @@ function getLabels(row: Record<string, unknown>) {
     .filter((entry): entry is AgendaItem["labels"][number] => Boolean(entry?.id && entry.name));
 }
 
+function formatAgendaDate(value: unknown) {
+  if (!value) {
+    return null;
+  }
+
+  const parsedDate = new Date(String(value));
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(parsedDate);
+}
+
 function buildAgendaReason(row: Record<string, unknown>, tags: InsightTag[]) {
   const daysSince =
     row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
       ? null
       : Number(row.days_since_last_purchase);
+  const predictedDate = formatAgendaDate(row.predicted_next_purchase_at);
+  const avgDays =
+    row.avg_days_between_orders === null || row.avg_days_between_orders === undefined
+      ? null
+      : Math.round(Number(row.avg_days_between_orders));
 
   if (tags.includes("risco_churn")) {
     return `Queda forte de frequencia e cliente fora da zona ativa${daysSince !== null ? ` ha ${daysSince} dias` : ""}.`;
@@ -44,7 +67,15 @@ function buildAgendaReason(row: Record<string, unknown>, tags: InsightTag[]) {
   }
 
   if (tags.includes("compra_prevista_vencida")) {
-    return "A data prevista de recompra passou e vale contato agora.";
+    if (predictedDate && avgDays !== null) {
+      return `Recompra media prevista para ${predictedDate}, usando media de ${avgDays} dias entre pedidos.`;
+    }
+
+    if (predictedDate) {
+      return `Recompra media prevista para ${predictedDate} e ainda sem novo pedido.`;
+    }
+
+    return "A recompra media ja passou e ainda nao houve novo pedido.";
   }
 
   if (tags.includes("alto_valor")) {
@@ -154,15 +185,17 @@ export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
         display_name,
         last_purchase_at,
         days_since_last_purchase,
-        total_orders,
-        total_spent,
-        avg_ticket,
-        status,
-        priority_score,
-        value_score,
-        primary_insight,
-        insight_tags,
-        last_attendant,
+      total_orders,
+      total_spent,
+      avg_ticket,
+      avg_days_between_orders,
+      status,
+      priority_score,
+      value_score,
+      predicted_next_purchase_at,
+      primary_insight,
+      insight_tags,
+      last_attendant,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
@@ -195,6 +228,13 @@ export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
       totalOrders: Number(row.total_orders ?? 0),
       totalSpent: Number(row.total_spent ?? 0),
       avgTicket: Number(row.avg_ticket ?? 0),
+      avgDaysBetweenOrders:
+        row.avg_days_between_orders === null || row.avg_days_between_orders === undefined
+          ? null
+          : Number(row.avg_days_between_orders),
+      predictedNextPurchaseAt: row.predicted_next_purchase_at
+        ? new Date(String(row.predicted_next_purchase_at)).toISOString()
+        : null,
       status: status as AgendaItem["status"],
       priorityScore: Number(row.priority_score ?? 0),
       valueScore: Number(row.value_score ?? 0),
