@@ -30,10 +30,13 @@ export const api = {
     dashboard(token) {
         return request("/api/dashboard/metrics", {}, token);
     },
-    agenda(token, limit) {
+    agenda(token, limit, offset) {
         const search = new URLSearchParams();
         if (limit !== undefined) {
             search.set("limit", String(limit));
+        }
+        if (offset !== undefined) {
+            search.set("offset", String(offset));
         }
         return request(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
@@ -73,6 +76,26 @@ export const api = {
         return request("/api/segments/preview", {
             method: "POST",
             body: JSON.stringify(definition),
+        }, token);
+    },
+    savedSegments(token) {
+        return request("/api/segments/saved", {}, token);
+    },
+    createSavedSegment(token, input) {
+        return request("/api/segments/saved", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateSavedSegment(token, id, input) {
+        return request(`/api/segments/saved/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteSavedSegment(token, id) {
+        return request(`/api/segments/saved/${id}`, {
+            method: "DELETE",
         }, token);
     },
     messageTemplates(token) {

@@ -1,13 +1,24 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { ContactQueueCard } from "../components/ContactQueueCard";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { formatNumber } from "../lib/format";
+
+const PAGE_SIZE = 15;
 
 export function AgendaPage() {
   const { token } = useAuth();
-  const agendaQuery = useQuery({
+  const agendaQuery = useInfiniteQuery({
     queryKey: ["agenda"],
-    queryFn: () => api.agenda(token!),
+    queryFn: ({ pageParam = 0 }) => api.agenda(token!, PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) {
+        return undefined;
+      }
+
+      return allPages.reduce((total, page) => total + page.items.length, 0);
+    },
     enabled: Boolean(token),
   });
 
@@ -19,7 +30,9 @@ export function AgendaPage() {
     return <div className="page-error">Nao foi possivel montar a agenda.</div>;
   }
 
-  const highestPriorityItem = agendaQuery.data[0];
+  const agendaItems = agendaQuery.data.pages.flatMap((page) => page.items);
+  const totalEligible = agendaQuery.data.pages[0]?.totalEligible ?? 0;
+  const highestPriorityItem = agendaItems[0];
 
   return (
     <div className="page-stack">
@@ -29,21 +42,31 @@ export function AgendaPage() {
             <p className="eyebrow">Agenda de contato</p>
             <h2>Fila automatica do dia</h2>
             <p className="panel-subcopy">
-              A ordem considera recencia, valor do cliente, queda de frequencia e recompra atrasada.
+              Entram clientes com recompra prevista vencida ou risco de churn, ordenados pela prioridade comercial.
             </p>
           </div>
           <div className="inline-actions">
-            <span className="agenda-metric">{agendaQuery.data.length} clientes hoje</span>
+            <span className="agenda-metric">{formatNumber(totalEligible)} clientes elegiveis</span>
             {highestPriorityItem ? <span className="agenda-metric">Maior score: {highestPriorityItem.priorityScore.toFixed(1)}</span> : null}
           </div>
         </div>
 
-        {agendaQuery.data.length ? (
-          <div className="queue-list">
-            {agendaQuery.data.map((item) => (
-              <ContactQueueCard key={item.id} item={item} />
-            ))}
-          </div>
+        {agendaItems.length ? (
+          <>
+            <div className="queue-list">
+              {agendaItems.map((item) => (
+                <ContactQueueCard key={item.id} item={item} />
+              ))}
+            </div>
+
+            {agendaQuery.hasNextPage ? (
+              <div className="load-more-row">
+                <button className="ghost-button" type="button" onClick={() => void agendaQuery.fetchNextPage()} disabled={agendaQuery.isFetchingNextPage}>
+                  {agendaQuery.isFetchingNextPage ? "Carregando mais..." : "Carregar mais 15"}
+                </button>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="empty-state">Nenhum cliente entrou na fila automatica hoje.</div>
         )}

@@ -3,6 +3,8 @@ import { logger } from "../../lib/logger.js";
 import { extractDisplayName, normalizeName } from "../../lib/normalize.js";
 import { computeCustomerSnapshot } from "./analyticsCore.js";
 
+const DASHBOARD_DAILY_WINDOW_DAYS = 90;
+
 interface AggregateRow {
   customerId: string;
   customerCode: string | null;
@@ -193,6 +195,109 @@ async function fetchAggregates(customerCodes?: string[]) {
   return result.rows;
 }
 
+export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW_DAYS) {
+  const result = await pool.query<{
+    day: string;
+    total_customers: number;
+    active_count: number;
+    attention_count: number;
+    inactive_count: number;
+  }>(
+    `
+      WITH day_series AS (
+        SELECT generate_series(
+          CURRENT_DATE - ($1::int - 1),
+          CURRENT_DATE,
+          INTERVAL '1 day'
+        )::date AS day
+      ),
+      customer_first_order AS (
+        SELECT customer_id, MIN(order_date)::date AS first_order_day
+        FROM orders
+        GROUP BY customer_id
+      ),
+      customer_days AS (
+        SELECT
+          d.day,
+          c.id AS customer_id,
+          (
+            SELECT MAX(o.order_date)::date
+            FROM orders o
+            WHERE o.customer_id = c.id
+              AND o.order_date <= d.day
+          ) AS last_order_day
+        FROM day_series d
+        JOIN customers c ON TRUE
+        JOIN customer_first_order cfo
+          ON cfo.customer_id = c.id
+         AND cfo.first_order_day <= d.day
+      )
+      SELECT
+        day::text AS day,
+        COUNT(*)::int AS total_customers,
+        COUNT(*) FILTER (
+          WHERE last_order_day IS NOT NULL
+            AND day - last_order_day <= 30
+        )::int AS active_count,
+        COUNT(*) FILTER (
+          WHERE last_order_day IS NOT NULL
+            AND day - last_order_day BETWEEN 31 AND 89
+        )::int AS attention_count,
+        COUNT(*) FILTER (
+          WHERE last_order_day IS NULL
+            OR day - last_order_day >= 90
+        )::int AS inactive_count
+      FROM customer_days
+      GROUP BY day
+      ORDER BY day
+    `,
+    [days],
+  );
+
+  await pool.query("BEGIN");
+
+  try {
+    await pool.query("DELETE FROM dashboard_daily_metrics WHERE day >= CURRENT_DATE - ($1::int - 1)", [days]);
+
+    for (const row of result.rows) {
+      await pool.query(
+        `
+          INSERT INTO dashboard_daily_metrics (
+            day,
+            total_customers,
+            active_count,
+            attention_count,
+            inactive_count,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, NOW())
+          ON CONFLICT (day) DO UPDATE
+          SET
+            total_customers = EXCLUDED.total_customers,
+            active_count = EXCLUDED.active_count,
+            attention_count = EXCLUDED.attention_count,
+            inactive_count = EXCLUDED.inactive_count,
+            updated_at = NOW()
+        `,
+        [
+          row.day,
+          row.total_customers,
+          row.active_count,
+          row.attention_count,
+          row.inactive_count,
+        ],
+      );
+    }
+
+    await pool.query("COMMIT");
+  } catch (error) {
+    await pool.query("ROLLBACK");
+    throw error;
+  }
+
+  logger.info("dashboard daily metrics refreshed", { days, count: result.rows.length });
+}
+
 export async function refreshCustomerSnapshots(customerCodes?: string[]) {
   const aggregates = await fetchAggregates(customerCodes);
   if (!aggregates.length) {
@@ -284,6 +389,7 @@ export async function refreshCustomerSnapshots(customerCodes?: string[]) {
     );
   }
 
+  await refreshDashboardDailyMetrics();
   logger.info("customer snapshots refreshed", { count: aggregates.length });
 }
 

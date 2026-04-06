@@ -22,15 +22,52 @@ export function formatNumber(value: number | null | undefined) {
   }).format(toSafeNumber(value));
 }
 
+function extractCalendarDate(value: string) {
+  const matched = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (matched) {
+    return {
+      year: matched[1],
+      month: matched[2],
+      day: matched[3],
+    };
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return {
+    year: String(parsed.getUTCFullYear()),
+    month: String(parsed.getUTCMonth() + 1).padStart(2, "0"),
+    day: String(parsed.getUTCDate()).padStart(2, "0"),
+  };
+}
+
 export function formatDate(value: string | null) {
   if (!value) {
     return "Sem registro";
   }
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date(value));
+
+  const date = extractCalendarDate(value);
+  if (!date) {
+    return "Sem registro";
+  }
+
+  return `${date.day}/${date.month}/${date.year}`;
+}
+
+export function formatShortDate(value: string | null) {
+  if (!value) {
+    return "--";
+  }
+
+  const date = extractCalendarDate(value);
+  if (!date) {
+    return "--";
+  }
+
+  return `${date.day}/${date.month}`;
 }
 
 export function formatDaysSince(value: number | null) {
@@ -60,6 +97,6 @@ export function formatPercent(value: number | null | undefined) {
 
 export function statusLabel(status: "ACTIVE" | "ATTENTION" | "INACTIVE") {
   if (status === "ACTIVE") return "Ativo";
-  if (status === "ATTENTION") return "Atenção";
+  if (status === "ATTENTION") return "Atencao";
   return "Inativo";
 }

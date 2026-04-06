@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, Tags, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, Tags, Trophy, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
 const links = [
@@ -7,6 +7,7 @@ const links = [
   { to: "/clientes", icon: Users, label: "Clientes" },
   { to: "/segmentos", icon: BarChart3, label: "Segmentos" },
   { to: "/agenda", icon: ClipboardList, label: "Agenda" },
+  { to: "/reativacao", icon: Trophy, label: "Reativacao" },
   { to: "/mensagens", icon: MessageSquareText, label: "Mensagens" },
   { to: "/rotulos", icon: Tags, label: "Rotulos" },
 ];
@@ -40,7 +41,7 @@ export function AppShell() {
 
         <div className="sidebar-footer">
           <div>
-            <p className="eyebrow">Sessão interna</p>
+            <p className="eyebrow">Sessao interna</p>
             <strong>{user?.name}</strong>
             <p>{user?.role}</p>
           </div>
