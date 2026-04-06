@@ -5,6 +5,7 @@ import type {
   InsightTag,
   SegmentDefinition,
   SegmentResult,
+  TopProduct,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 
@@ -43,7 +44,7 @@ function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
     id: String(row.customer_id),
     customerCode: String(row.customer_code ?? ""),
     displayName: String(row.display_name),
-    lastPurchaseAt: row.last_purchase_at ? new Date(String(row.last_purchase_at)).toISOString() : null,
+    lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
     daysSinceLastPurchase:
       row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
         ? null
@@ -179,7 +180,7 @@ export async function listCustomers(filters: CustomerFilters = {}) {
         s.customer_id,
         s.customer_code,
         s.display_name,
-        s.last_purchase_at,
+        s.last_purchase_at::date::text AS last_purchase_at,
         s.days_since_last_purchase,
         s.total_orders,
         s.total_spent,
@@ -217,7 +218,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         s.customer_id,
         s.customer_code,
         s.display_name,
-        s.last_purchase_at,
+        s.last_purchase_at::date::text AS last_purchase_at,
         s.days_since_last_purchase,
         s.total_spent,
         s.avg_ticket,
@@ -232,7 +233,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         s.avg_days_between_orders,
         s.purchase_frequency_90d,
         s.frequency_drop_ratio,
-        s.predicted_next_purchase_at,
+        s.predicted_next_purchase_at::date::text AS predicted_next_purchase_at,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
@@ -259,7 +260,7 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       SELECT
         id,
         order_number,
-        order_date,
+        order_date::text AS order_date,
         source_system,
         total_amount,
         status,
@@ -268,6 +269,27 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       WHERE customer_id = $1
       ORDER BY order_date DESC
       LIMIT 20
+    `,
+    [customerId],
+  );
+
+  const topProductsResult = await pool.query(
+    `
+      SELECT
+        MAX(NULLIF(oi.sku, '')) AS sku,
+        MAX(COALESCE(NULLIF(oi.item_description, ''), 'Produto sem descricao')) AS item_description,
+        COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS total_quantity,
+        COUNT(DISTINCT o.id)::int AS order_count,
+        MAX(o.order_date)::date::text AS last_bought_at
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.customer_id = $1
+      GROUP BY COALESCE(
+        NULLIF(oi.sku, ''),
+        CONCAT('__desc__', COALESCE(NULLIF(oi.item_description, ''), 'sem-descricao'))
+      )
+      ORDER BY total_quantity DESC, order_count DESC, item_description ASC
+      LIMIT 10
     `,
     [customerId],
   );
@@ -282,14 +304,22 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         : Number(row.avg_days_between_orders),
     purchaseFrequency90d: Number(row.purchase_frequency_90d ?? 0),
     frequencyDropRatio: Number(row.frequency_drop_ratio ?? 0),
-    predictedNextPurchaseAt: row.predicted_next_purchase_at
-      ? new Date(String(row.predicted_next_purchase_at)).toISOString()
-      : null,
+    predictedNextPurchaseAt: row.predicted_next_purchase_at ? String(row.predicted_next_purchase_at) : null,
     internalNotes: String(row.internal_notes ?? ""),
+    topProducts: topProductsResult.rows.map(
+      (product) =>
+        ({
+          sku: product.sku ? String(product.sku) : null,
+          itemDescription: String(product.item_description ?? ""),
+          totalQuantity: Number(product.total_quantity ?? 0),
+          orderCount: Number(product.order_count ?? 0),
+          lastBoughtAt: product.last_bought_at ? String(product.last_bought_at) : null,
+        }) satisfies TopProduct,
+    ),
     recentOrders: ordersResult.rows.map((order) => ({
       id: String(order.id),
       orderNumber: String(order.order_number),
-      orderDate: new Date(String(order.order_date)).toISOString(),
+      orderDate: String(order.order_date),
       sourceSystem: String(order.source_system) as CustomerDetail["recentOrders"][number]["sourceSystem"],
       totalAmount: Number(order.total_amount ?? 0),
       status: String(order.status),
@@ -419,68 +449,81 @@ export async function deleteCustomerLabel(labelId: string): Promise<boolean> {
 
 export async function updateCustomerLabels(
   customerId: string,
-  input: { labels: string[]; internalNotes: string },
+  input: { labels?: string[]; internalNotes?: string },
 ): Promise<CustomerDetail | null> {
-  const cleanedLabels = Array.from(
-    new Set(
-      input.labels
-        .map((label) => label.trim())
-        .filter(Boolean),
-    ),
-  );
+  const hasLabels = Array.isArray(input.labels);
+  const hasInternalNotes = typeof input.internalNotes === "string";
+
+  if (!hasLabels && !hasInternalNotes) {
+    return getCustomerDetail(customerId);
+  }
+
+  const cleanedLabels = hasLabels
+    ? Array.from(
+        new Set(
+          (input.labels ?? [])
+            .map((label) => label.trim())
+            .filter(Boolean),
+        ),
+      )
+    : [];
 
   await pool.query("BEGIN");
 
   try {
-    await pool.query(
-      `
-        UPDATE customers
-        SET internal_notes = $2, updated_at = NOW()
-        WHERE id = $1
-      `,
-      [customerId, input.internalNotes.trim()],
-    );
-
-    if (cleanedLabels.length) {
-      for (const labelName of cleanedLabels) {
-        await pool.query(
-          `
-            INSERT INTO customer_labels (name, normalized_name, color, created_at, updated_at)
-            VALUES ($1, $2, $3, NOW(), NOW())
-            ON CONFLICT (normalized_name) DO UPDATE
-            SET name = EXCLUDED.name, updated_at = NOW()
-          `,
-          [labelName, normalizeLabelName(labelName), labelColorForName(labelName)],
-        );
-      }
-    }
-
-    await pool.query(
-      `
-        DELETE FROM customer_label_assignments
-        WHERE customer_id = $1
-          AND label_id NOT IN (
-            SELECT id
-            FROM customer_labels
-            WHERE normalized_name = ANY($2::text[])
-          )
-      `,
-      [customerId, cleanedLabels.map((label) => normalizeLabelName(label))],
-    );
-
-    if (!cleanedLabels.length) {
-      await pool.query("DELETE FROM customer_label_assignments WHERE customer_id = $1", [customerId]);
-    } else {
+    if (hasInternalNotes) {
       await pool.query(
         `
-          INSERT INTO customer_label_assignments (customer_id, label_id, created_at)
-          SELECT $1, cl.id, NOW()
-          FROM customer_labels cl
-          WHERE cl.normalized_name = ANY($2::text[])
-          ON CONFLICT (customer_id, label_id) DO NOTHING
+          UPDATE customers
+          SET internal_notes = $2, updated_at = NOW()
+          WHERE id = $1
+        `,
+        [customerId, input.internalNotes?.trim() ?? ""],
+      );
+    }
+
+    if (hasLabels) {
+      if (cleanedLabels.length) {
+        for (const labelName of cleanedLabels) {
+          await pool.query(
+            `
+              INSERT INTO customer_labels (name, normalized_name, color, created_at, updated_at)
+              VALUES ($1, $2, $3, NOW(), NOW())
+              ON CONFLICT (normalized_name) DO UPDATE
+              SET name = EXCLUDED.name, updated_at = NOW()
+            `,
+            [labelName, normalizeLabelName(labelName), labelColorForName(labelName)],
+          );
+        }
+      }
+
+      await pool.query(
+        `
+          DELETE FROM customer_label_assignments
+          WHERE customer_id = $1
+            AND label_id NOT IN (
+              SELECT id
+              FROM customer_labels
+              WHERE normalized_name = ANY($2::text[])
+            )
         `,
         [customerId, cleanedLabels.map((label) => normalizeLabelName(label))],
       );
+
+      if (!cleanedLabels.length) {
+        await pool.query("DELETE FROM customer_label_assignments WHERE customer_id = $1", [customerId]);
+      } else {
+        await pool.query(
+          `
+            INSERT INTO customer_label_assignments (customer_id, label_id, created_at)
+            SELECT $1, cl.id, NOW()
+            FROM customer_labels cl
+            WHERE cl.normalized_name = ANY($2::text[])
+            ON CONFLICT (customer_id, label_id) DO NOTHING
+          `,
+          [customerId, cleanedLabels.map((label) => normalizeLabelName(label))],
+        );
+      }
     }
 
     await pool.query("COMMIT");

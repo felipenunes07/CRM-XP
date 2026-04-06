@@ -1,10 +1,11 @@
 import type {
-  AgendaItem,
+  AgendaResponse,
   CustomerDetail,
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
   MessageTemplate,
+  SavedSegment,
   SegmentDefinition,
   SegmentResult,
 } from "@olist-crm/shared";
@@ -47,12 +48,15 @@ export const api = {
   dashboard(token: string) {
     return request<DashboardMetrics>("/api/dashboard/metrics", {}, token);
   },
-  agenda(token: string, limit?: number) {
+  agenda(token: string, limit?: number, offset?: number) {
     const search = new URLSearchParams();
     if (limit !== undefined) {
       search.set("limit", String(limit));
     }
-    return request<AgendaItem[]>(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    if (offset !== undefined) {
+      search.set("offset", String(offset));
+    }
+    return request<AgendaResponse>(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
   customers(token: string, query: Record<string, string | number | boolean | undefined>) {
     const search = new URLSearchParams();
@@ -80,7 +84,7 @@ export const api = {
       method: "DELETE",
     }, token);
   },
-  updateCustomerLabels(token: string, id: string, input: { labels: string[]; internalNotes: string }) {
+  updateCustomerLabels(token: string, id: string, input: { labels?: string[]; internalNotes?: string }) {
     return request<CustomerDetail>(`/api/customers/${id}/labels`, {
       method: "PUT",
       body: JSON.stringify(input),
@@ -90,6 +94,26 @@ export const api = {
     return request<SegmentResult>("/api/segments/preview", {
       method: "POST",
       body: JSON.stringify(definition),
+    }, token);
+  },
+  savedSegments(token: string) {
+    return request<SavedSegment[]>("/api/segments/saved", {}, token);
+  },
+  createSavedSegment(token: string, input: { name: string; definition: SegmentDefinition }) {
+    return request<SavedSegment>("/api/segments/saved", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  updateSavedSegment(token: string, id: string, input: { name: string; definition: SegmentDefinition }) {
+    return request<SavedSegment>(`/api/segments/saved/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteSavedSegment(token: string, id: string) {
+    return request<void>(`/api/segments/saved/${id}`, {
+      method: "DELETE",
     }, token);
   },
   messageTemplates(token: string) {

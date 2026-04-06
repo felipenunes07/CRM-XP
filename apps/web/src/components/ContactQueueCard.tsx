@@ -1,7 +1,7 @@
 import type { AgendaItem } from "@olist-crm/shared";
 import { ArrowUpRight, Copy, MessageCircleMore } from "lucide-react";
 import { Link } from "react-router-dom";
-import { formatCurrency, formatDate, formatDaysSince, statusLabel } from "../lib/format";
+import { formatDate, formatDaysSince, statusLabel } from "../lib/format";
 
 function copyText(text: string) {
   navigator.clipboard.writeText(text).catch(() => undefined);
@@ -45,7 +45,6 @@ export function ContactQueueCard({ item, compact = false }: { item: AgendaItem; 
         <div className="queue-card-meta">
           <span>Ultima compra: {formatDate(item.lastPurchaseAt)}</span>
           <span>Recencia: {formatDaysSince(item.daysSinceLastPurchase)}</span>
-          <span>Total gasto: {formatCurrency(item.totalSpent)}</span>
           {hasPrediction ? <span>Proxima compra media: {formatDate(item.predictedNextPurchaseAt)}</span> : null}
         </div>
 
@@ -54,7 +53,7 @@ export function ContactQueueCard({ item, compact = false }: { item: AgendaItem; 
         </p>
         {hasPrediction && avgDaysBetweenOrders !== null ? (
           <p className="queue-card-note">
-            <strong>Como calculamos:</strong> media de {avgDaysBetweenOrders} dias entre pedidos, somada a ultima compra.
+            <strong>Como calculamos:</strong> media de {avgDaysBetweenOrders} dias corridos entre pedidos, somada a ultima compra.
           </p>
         ) : null}
       </div>

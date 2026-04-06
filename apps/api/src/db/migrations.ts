@@ -208,4 +208,24 @@ export const migrations = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS dashboard_daily_metrics (
+    day DATE PRIMARY KEY,
+    total_customers INTEGER NOT NULL DEFAULT 0,
+    active_count INTEGER NOT NULL DEFAULT 0,
+    attention_count INTEGER NOT NULL DEFAULT 0,
+    inactive_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS saved_segments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_saved_segments_updated_at ON saved_segments(updated_at DESC);
+  `,
 ];

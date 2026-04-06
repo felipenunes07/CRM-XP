@@ -28,7 +28,36 @@ export interface DashboardMetrics {
   averageFrequencyDays: number;
   lastSyncAt: string | null;
   topCustomers: CustomerListItem[];
-  dailyAgendaCount: number;
+  agendaEligibleCount: number;
+  reactivationLeaderboard: ReactivationLeaderboardEntry[];
+  portfolioTrend: PortfolioTrendPoint[];
+}
+
+export interface ReactivationLeaderboardEntry {
+  attendant: string;
+  recoveredCustomers: number;
+  recoveredRevenue: number;
+  recoveredClients: ReactivationRecoveredClient[];
+}
+
+export interface ReactivationRecoveredClient {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  status: CustomerStatus;
+  priorityScore: number;
+  previousOrderDate: string | null;
+  reactivationOrderDate: string | null;
+  daysInactiveBeforeReturn: number;
+  reactivatedOrderAmount: number;
+}
+
+export interface PortfolioTrendPoint {
+  date: string;
+  totalCustomers: number;
+  activeCount: number;
+  attentionCount: number;
+  inactiveCount: number;
 }
 
 export interface CustomerListItem {
@@ -56,6 +85,7 @@ export interface CustomerDetail extends CustomerListItem {
   frequencyDropRatio: number;
   predictedNextPurchaseAt: string | null;
   internalNotes: string;
+  topProducts: TopProduct[];
   recentOrders: Array<{
     id: string;
     orderNumber: string;
@@ -104,4 +134,26 @@ export interface AgendaItem extends CustomerListItem {
   predictedNextPurchaseAt: string | null;
   suggestedAction: string;
   reason: string;
+}
+
+export interface AgendaResponse {
+  items: AgendaItem[];
+  totalEligible: number;
+  hasMore: boolean;
+}
+
+export interface TopProduct {
+  sku: string | null;
+  itemDescription: string;
+  totalQuantity: number;
+  orderCount: number;
+  lastBoughtAt: string | null;
+}
+
+export interface SavedSegment {
+  id: string;
+  name: string;
+  definition: SegmentDefinition;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -5,7 +5,7 @@ import { useParams } from "react-router-dom";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDaysSince, formatPercent, statusLabel } from "../lib/format";
+import { formatCurrency, formatDate, formatDaysSince, formatPercent, formatNumber, statusLabel } from "../lib/format";
 
 const insightLabels: Record<InsightTag, string> = {
   alto_valor: "Alto valor",
@@ -30,7 +30,7 @@ function insightExplanation(tag: InsightTag, customer: CustomerDetail) {
     case "alto_valor":
       return "Cliente com gasto total acima da faixa alta da base. Merece prioridade de relacionamento.";
     case "compra_prevista_vencida":
-      return "A previsao simples de proxima compra ja passou e ainda nao houve novo pedido.";
+      return "A previsao simples da proxima compra usa a media de dias corridos entre pedidos. Quando essa data passa e nao entra pedido novo, o cliente sobe de prioridade.";
     case "novo_cliente":
       return "Cliente recente, com ate 2 pedidos e compra nos ultimos 30 dias.";
     default:
@@ -52,8 +52,10 @@ export function CustomerDetailPage() {
   const queryClient = useQueryClient();
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [newLabel, setNewLabel] = useState("");
+  const [labelSearch, setLabelSearch] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
-  const [saveMessage, setSaveMessage] = useState("");
+  const [labelMessage, setLabelMessage] = useState("");
+  const [notesMessage, setNotesMessage] = useState("");
 
   const detailQuery = useQuery({
     queryKey: ["customer", id],
@@ -69,8 +71,15 @@ export function CustomerDetailPage() {
   const customer = detailQuery.data ?? null;
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
-    () => knownLabels.filter((labelName) => !selectedLabels.includes(labelName)),
-    [knownLabels, selectedLabels],
+    () =>
+      knownLabels.filter((labelName) => {
+        if (selectedLabels.includes(labelName)) {
+          return false;
+        }
+
+        return labelName.toLowerCase().includes(labelSearch.trim().toLowerCase());
+      }),
+    [knownLabels, selectedLabels, labelSearch],
   );
 
   useEffect(() => {
@@ -83,11 +92,20 @@ export function CustomerDetailPage() {
   }, [customer]);
 
   const saveLabelsMutation = useMutation({
-    mutationFn: (input: { labels: string[]; internalNotes: string }) => api.updateCustomerLabels(token!, id!, input),
+    mutationFn: (input: { labels: string[] }) => api.updateCustomerLabels(token!, id!, input),
     onSuccess: (updatedCustomer) => {
       queryClient.setQueryData(["customer", updatedCustomer.id], updatedCustomer);
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
-      setSaveMessage("Classificacao salva com sucesso.");
+      setLabelMessage("Rotulos salvos com sucesso.");
+    },
+  });
+
+  const saveNotesMutation = useMutation({
+    mutationFn: (input: { internalNotes: string }) => api.updateCustomerLabels(token!, id!, input),
+    onSuccess: (updatedCustomer) => {
+      queryClient.setQueryData(["customer", updatedCustomer.id], updatedCustomer);
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      setNotesMessage("Observacao salva com sucesso.");
     },
   });
 
@@ -105,7 +123,8 @@ export function CustomerDetailPage() {
     }
 
     setSelectedLabels((current) => [...current, labelName]);
-    setSaveMessage("");
+    setLabelSearch("");
+    setLabelMessage("");
   }
 
   function addNewLabel() {
@@ -116,18 +135,24 @@ export function CustomerDetailPage() {
 
     setSelectedLabels((current) => [...current, cleaned]);
     setNewLabel("");
-    setSaveMessage("");
+    setLabelMessage("");
   }
 
   function removeLabel(labelName: string) {
     setSelectedLabels((current) => current.filter((item) => item !== labelName));
-    setSaveMessage("");
+    setLabelMessage("");
   }
 
-  function handleSave(event: FormEvent) {
+  function handleSaveLabels(event: FormEvent) {
     event.preventDefault();
     saveLabelsMutation.mutate({
       labels: selectedLabels,
+    });
+  }
+
+  function handleSaveNotes(event: FormEvent) {
+    event.preventDefault();
+    saveNotesMutation.mutate({
       internalNotes,
     });
   }
@@ -255,11 +280,12 @@ export function CustomerDetailPage() {
             </div>
           </div>
 
-          <form className="stack-list" onSubmit={handleSave}>
-            <div className="label-block">
-              <span className="label-block-title">Rotulos atuais</span>
-              <p className="panel-subcopy">Clique no x para remover. Depois clique em salvar.</p>
-              <div className="tag-row">
+          <div className="stack-list">
+            <form className="label-block" onSubmit={handleSaveLabels}>
+              <span className="label-block-title">Rotulos do cliente</span>
+              <p className="panel-subcopy">Adicione, remova e salve os rotulos sem misturar essa acao com as notas.</p>
+
+              <div className="tag-row compact">
                 {selectedLabels.length ? (
                   selectedLabels.map((labelName) => (
                     <span key={labelName} className="tag removable-tag">
@@ -270,16 +296,21 @@ export function CustomerDetailPage() {
                     </span>
                   ))
                 ) : (
-                  <span className="muted-copy">Nenhum rotulo selecionado.</span>
+                  <span className="muted-copy">Nenhum rotulo aplicado.</span>
                 )}
               </div>
-            </div>
 
-            <div className="label-block">
-              <span className="label-block-title">Adicionar rotulo existente</span>
-              <div className="tag-row">
+              <div className="label-create-row">
+                <input
+                  value={labelSearch}
+                  onChange={(event) => setLabelSearch(event.target.value)}
+                  placeholder="Buscar rotulo existente"
+                />
+              </div>
+
+              <div className="tag-row compact">
                 {availableLabels.length ? (
-                  availableLabels.map((labelName) => (
+                  availableLabels.slice(0, 12).map((labelName) => (
                     <button
                       key={labelName}
                       type="button"
@@ -290,74 +321,105 @@ export function CustomerDetailPage() {
                     </button>
                   ))
                 ) : (
-                  <span className="muted-copy">Todos os rotulos existentes ja estao aplicados.</span>
+                  <span className="muted-copy">Nenhum rotulo disponivel para esse filtro.</span>
                 )}
               </div>
-            </div>
 
-            <div className="label-block">
-              <span className="label-block-title">Criar novo rotulo</span>
               <div className="label-create-row">
                 <input
                   value={newLabel}
                   onChange={(event) => setNewLabel(event.target.value)}
-                  placeholder="Ex: Cliente estrategico"
+                  placeholder="Criar novo rotulo"
                 />
                 <button type="button" className="ghost-button" onClick={addNewLabel}>
                   Adicionar
                 </button>
               </div>
-            </div>
 
-            <label>
-              Observacao interna
+              <div className="inline-actions">
+                <button type="submit" className="primary-button" disabled={saveLabelsMutation.isPending}>
+                  {saveLabelsMutation.isPending ? "Salvando..." : "Salvar rotulos"}
+                </button>
+                {saveLabelsMutation.isError ? <span className="inline-error">Nao foi possivel salvar os rotulos.</span> : null}
+                {labelMessage ? <span className="save-ok">{labelMessage}</span> : null}
+              </div>
+            </form>
+
+            <form className="label-block" onSubmit={handleSaveNotes}>
+              <span className="label-block-title">Observacao interna</span>
               <textarea
                 rows={5}
                 value={internalNotes}
                 onChange={(event) => {
                   setInternalNotes(event.target.value);
-                  setSaveMessage("");
+                  setNotesMessage("");
                 }}
                 placeholder="Ex: cliente pede credito, esta bloqueado, e parceiro bom para reativacao, historico sensivel..."
               />
-            </label>
 
-            <div className="inline-actions">
-              <button type="submit" className="primary-button" disabled={saveLabelsMutation.isPending}>
-                {saveLabelsMutation.isPending ? "Salvando..." : "Salvar rotulos e observacao"}
-              </button>
-              <span className="muted-copy">Para criar ou apagar rótulos do sistema, use a tela Rotulos no menu.</span>
-              {saveLabelsMutation.isError ? (
-                <span className="inline-error">Nao foi possivel salvar essa classificacao.</span>
-              ) : null}
-              {saveMessage ? <span className="save-ok">{saveMessage}</span> : null}
-            </div>
-          </form>
+              <div className="inline-actions">
+                <button type="submit" className="ghost-button" disabled={saveNotesMutation.isPending}>
+                  {saveNotesMutation.isPending ? "Salvando..." : "Salvar observacao"}
+                </button>
+                {saveNotesMutation.isError ? <span className="inline-error">Nao foi possivel salvar a observacao.</span> : null}
+                {notesMessage ? <span className="save-ok">{notesMessage}</span> : null}
+              </div>
+            </form>
+          </div>
         </article>
 
         <article className="panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Historico recente</p>
-              <h3>Pedidos mais recentes</h3>
+              <p className="eyebrow">Mix de compra</p>
+              <h3>Pecas que esse cliente mais compra</h3>
             </div>
           </div>
 
-          <div className="stack-list">
-            {customer.recentOrders.map((order) => (
-              <div key={order.id} className="history-card">
-                <div>
-                  <strong>{order.orderNumber}</strong>
-                  <p>{formatDate(order.orderDate)}</p>
-                </div>
-                <div className="history-card-meta">
-                  <span>{order.itemCount} itens</span>
-                  <strong>{formatCurrency(order.totalAmount)}</strong>
-                </div>
-              </div>
-            ))}
-          </div>
+          {customer.topProducts.length ? (
+            <div className="top-products-list">
+              {customer.topProducts.map((product) => (
+                <article key={`${product.sku ?? product.itemDescription}`} className="top-product-card">
+                  <div className="top-product-copy">
+                    <strong>{product.itemDescription}</strong>
+                    <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
+                  </div>
+                  <div className="top-product-metrics">
+                    <span>{formatNumber(product.totalQuantity)} pecas</span>
+                    <span>{formatNumber(product.orderCount)} pedidos</span>
+                    <span>Ultima compra: {formatDate(product.lastBoughtAt)}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">Ainda nao ha base suficiente para montar o mix de compra.</div>
+          )}
         </article>
+      </section>
+
+      <section className="panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Historico recente</p>
+            <h3>Pedidos mais recentes</h3>
+          </div>
+        </div>
+
+        <div className="stack-list">
+          {customer.recentOrders.map((order) => (
+            <div key={order.id} className="history-card">
+              <div>
+                <strong>{order.orderNumber}</strong>
+                <p>{formatDate(order.orderDate)}</p>
+              </div>
+              <div className="history-card-meta">
+                <span>{order.itemCount} itens</span>
+                <strong>{formatCurrency(order.totalAmount)}</strong>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );
