@@ -96,35 +96,21 @@ async function shouldRunDailySync() {
 }
 
 export function startDailySyncScheduler() {
-  let timer: NodeJS.Timeout | null = null;
-
   const checkAndRun = async () => {
     try {
-      if (await shouldRunDailySync()) {
-        await runPrimarySync("daily-scheduler");
-      }
+      await runPrimarySync("startup-sync");
     } catch (error) {
-      logger.error("daily sync failed", { error: String(error) });
+      logger.error("startup sync failed", { error: String(error) });
     }
   };
 
   void checkAndRun();
-  timer = setInterval(() => {
-    void checkAndRun();
-  }, CHECK_INTERVAL_MS);
 
-  logger.info("daily sync scheduler started", {
-    timezone: DAILY_SYNC_TIMEZONE,
-    hour: DAILY_SYNC_HOUR,
-    checkIntervalMinutes: CHECK_INTERVAL_MS / 60000,
-  });
+  logger.info("startup sync triggered");
 
   return {
     async close() {
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
+      // No interval to close
     },
   };
 }

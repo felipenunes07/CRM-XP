@@ -100,6 +100,8 @@ export interface SegmentResult {
 }
 
 export interface AgendaItem extends CustomerListItem {
+  avgDaysBetweenOrders: number | null;
+  predictedNextPurchaseAt: string | null;
   suggestedAction: string;
   reason: string;
 }

@@ -251,9 +251,6 @@ export async function importSupabase2026() {
 
   const remotePool = new Pool({
     connectionString: env.SUPABASE_DATABASE_URL,
-    ssl: {
-      rejectUnauthorized: false,
-    },
   });
 
   let importRunId = "";
@@ -282,7 +279,20 @@ export async function importSupabase2026() {
     const sourceFileId = await registerSupabaseSource(env.SUPABASE_TABLE_2026, metadata);
     importRunId = await createImportRun(sourceFileId);
 
-    const result = await remotePool.query(`SELECT * FROM public.${env.SUPABASE_TABLE_2026}`);
+    const lastSyncResult = await pool.query(
+      "SELECT MAX(sale_date) as last_date FROM sales_raw WHERE source_system = 'supabase_2026'",
+    );
+    const lastDate = lastSyncResult.rows[0]?.last_date;
+    const saleDateColumn = resolved.data!;
+
+    let query = `SELECT * FROM public.${env.SUPABASE_TABLE_2026}`;
+    const params: unknown[] = [];
+    if (lastDate) {
+      query += ` WHERE ${saleDateColumn} >= $1`;
+      params.push(lastDate);
+    }
+
+    const result = await remotePool.query(query, params);
     const normalized = normalizeSupabaseRows(result.rows, resolved, sourceFileId, importRunId);
     const rowsInserted = await insertRawRows(normalized);
     const impactedCustomerCodes = Array.from(new Set(normalized.map((row) => row.customerCode)));

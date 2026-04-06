@@ -5,7 +5,7 @@ const path = require("path");
 
 async function setup() {
   const adminClient = new Client({
-    connectionString: "postgresql://postgres:postgres@localhost:5432/postgres"
+    connectionString: "postgresql://postgres:9630Jinren@localhost:5432/postgres"
   });
 
   try {
@@ -26,7 +26,7 @@ async function setup() {
 
     // 2. Conectar no novo banco para aplicar roles e migrations
     const client = new Client({
-      connectionString: "postgresql://postgres:postgres@localhost:5432/olist_crm"
+      connectionString: "postgresql://postgres:9630Jinren@localhost:5432/olist_crm"
     });
     await client.connect();
 
@@ -34,10 +34,12 @@ async function setup() {
     console.log("🛠️ Configurando schemas e funções de compatibilidade...");
     await client.query(`
       CREATE SCHEMA IF NOT EXISTS auth;
+      DROP TABLE IF EXISTS auth.users CASCADE;
       CREATE TABLE IF NOT EXISTS auth.users (
         id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         email text UNIQUE,
         encrypted_password text,
+        raw_user_meta_data jsonb DEFAULT '{}'::jsonb,
         email_confirmed_at timestamptz DEFAULT now(),
         created_at timestamptz DEFAULT now(),
         updated_at timestamptz DEFAULT now()
