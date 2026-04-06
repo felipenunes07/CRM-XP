@@ -1,6 +1,20 @@
-import type { AgendaItem, DashboardMetrics, InsightTag } from "@olist-crm/shared";
+import type {
+  AgendaItem,
+  AgendaResponse,
+  DashboardMetrics,
+  InsightTag,
+  ReactivationLeaderboardEntry,
+  ReactivationRecoveredClient,
+} from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { listCustomers } from "./customerService.js";
+
+const DASHBOARD_TREND_WINDOW_DAYS = 90;
+const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
+const AGENDA_ELIGIBILITY_SQL = `
+  s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
+`;
 
 function getInsightTags(row: Record<string, unknown>) {
   return Array.isArray(row.insight_tags)
@@ -29,22 +43,33 @@ function getLabels(row: Record<string, unknown>) {
     .filter((entry): entry is AgendaItem["labels"][number] => Boolean(entry?.id && entry.name));
 }
 
-function formatAgendaDate(value: unknown) {
+function toDateOnly(value: unknown) {
   if (!value) {
     return null;
   }
 
-  const parsedDate = new Date(String(value));
+  const stringValue = String(value);
+  const matched = stringValue.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (matched?.[1]) {
+    return matched[1];
+  }
 
-  if (Number.isNaN(parsedDate.getTime())) {
+  const parsed = new Date(stringValue);
+  if (Number.isNaN(parsed.getTime())) {
     return null;
   }
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(parsedDate);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function formatAgendaDate(value: unknown) {
+  const dateOnly = toDateOnly(value);
+  if (!dateOnly) {
+    return null;
+  }
+
+  const [year, month, day] = dateOnly.split("-");
+  return year && month && day ? `${day}/${month}/${year}` : null;
 }
 
 function buildAgendaReason(row: Record<string, unknown>, tags: InsightTag[]) {
@@ -68,7 +93,7 @@ function buildAgendaReason(row: Record<string, unknown>, tags: InsightTag[]) {
 
   if (tags.includes("compra_prevista_vencida")) {
     if (predictedDate && avgDays !== null) {
-      return `Recompra media prevista para ${predictedDate}, usando media de ${avgDays} dias entre pedidos.`;
+      return `Recompra media prevista para ${predictedDate}, usando media de ${avgDays} dias corridos entre pedidos.`;
     }
 
     if (predictedDate) {
@@ -109,52 +134,214 @@ function buildAgendaSuggestedAction(tags: InsightTag[], status: string) {
   return "Manter relacionamento e estimular nova compra.";
 }
 
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const totals = await pool.query(
+async function getAgendaEligibleCount() {
+  const result = await pool.query(
+    `
+      SELECT COUNT(*)::int AS total
+      FROM customer_snapshot s
+      WHERE ${AGENDA_ELIGIBILITY_SQL}
+    `,
+  );
+
+  return Number(result.rows[0]?.total ?? 0);
+}
+
+async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntry[]> {
+  const result = await pool.query(
+    `
+      WITH ordered AS (
+        SELECT
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          o.order_date::date AS order_date,
+          o.total_amount,
+          LAG(o.order_date::date) OVER (PARTITION BY o.customer_id ORDER BY o.order_date) AS previous_order_date
+        FROM orders o
+      ),
+      monthly_reactivations AS (
+        SELECT
+          customer_id,
+          attendant,
+          order_date,
+          previous_order_date,
+          total_amount,
+          (order_date - previous_order_date)::int AS days_inactive_before_return,
+          ROW_NUMBER() OVER (
+            PARTITION BY customer_id, date_trunc('month', order_date)
+            ORDER BY order_date
+          ) AS month_rank
+        FROM ordered
+        WHERE previous_order_date IS NOT NULL
+          AND (order_date - previous_order_date) >= 90
+          AND date_trunc('month', order_date) = date_trunc('month', CURRENT_DATE)
+      ),
+      first_monthly_reactivations AS (
+        SELECT
+          customer_id,
+          attendant,
+          order_date,
+          previous_order_date,
+          total_amount,
+          days_inactive_before_return
+        FROM monthly_reactivations
+        WHERE month_rank = 1
+      ),
+      reactivation_details AS (
+        SELECT
+          fmr.attendant,
+          fmr.customer_id,
+          COALESCE(NULLIF(cs.customer_code, ''), '') AS customer_code,
+          COALESCE(NULLIF(cs.display_name, ''), 'Cliente sem nome') AS display_name,
+          COALESCE(cs.status, 'INACTIVE') AS status,
+          COALESCE(cs.priority_score, 0)::numeric(10,2) AS priority_score,
+          fmr.previous_order_date::text AS previous_order_date,
+          fmr.order_date::text AS reactivation_order_date,
+          fmr.days_inactive_before_return,
+          fmr.total_amount::numeric(14,2) AS reactivated_order_amount
+        FROM first_monthly_reactivations fmr
+        LEFT JOIN customer_snapshot cs ON cs.customer_id = fmr.customer_id
+      )
+      SELECT
+        attendant,
+        COUNT(*)::int AS recovered_customers,
+        COALESCE(SUM(reactivated_order_amount), 0)::numeric(14,2) AS recovered_revenue,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'customerId', customer_id,
+              'customerCode', customer_code,
+              'displayName', display_name,
+              'status', status,
+              'priorityScore', priority_score,
+              'previousOrderDate', previous_order_date,
+              'reactivationOrderDate', reactivation_order_date,
+              'daysInactiveBeforeReturn', days_inactive_before_return,
+              'reactivatedOrderAmount', reactivated_order_amount
+            )
+            ORDER BY days_inactive_before_return DESC, reactivated_order_amount DESC, display_name ASC
+          ),
+          '[]'::jsonb
+        ) AS recovered_clients
+      FROM reactivation_details
+      GROUP BY attendant
+      ORDER BY recovered_customers DESC, recovered_revenue DESC, attendant ASC
+      LIMIT 10
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant ?? "Sem atendente"),
+    recoveredCustomers: Number(row.recovered_customers ?? 0),
+    recoveredRevenue: Number(row.recovered_revenue ?? 0),
+    recoveredClients: (Array.isArray(row.recovered_clients) ? row.recovered_clients : []).map(
+      (entry: Record<string, unknown>) =>
+        ({
+          customerId: String(entry.customerId ?? ""),
+          customerCode: String(entry.customerCode ?? ""),
+          displayName: String(entry.displayName ?? "Cliente sem nome"),
+          status: String(entry.status ?? "INACTIVE") as ReactivationRecoveredClient["status"],
+          priorityScore: Number(entry.priorityScore ?? 0),
+          previousOrderDate: entry.previousOrderDate ? String(entry.previousOrderDate) : null,
+          reactivationOrderDate: entry.reactivationOrderDate ? String(entry.reactivationOrderDate) : null,
+          daysInactiveBeforeReturn: Number(entry.daysInactiveBeforeReturn ?? 0),
+          reactivatedOrderAmount: Number(entry.reactivatedOrderAmount ?? 0),
+        }) satisfies ReactivationRecoveredClient,
+    ),
+  }));
+}
+
+async function getPortfolioTrend() {
+  let result = await pool.query(
     `
       SELECT
-        COUNT(*)::int AS total_customers,
-        COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_count,
-        COUNT(*) FILTER (WHERE status = 'ATTENTION')::int AS attention_count,
-        COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count,
-        AVG(avg_ticket)::numeric(14,2) AS average_ticket,
-        AVG(avg_days_between_orders)::numeric(14,2) AS average_frequency_days
-      FROM customer_snapshot
+        day::text AS date,
+        total_customers,
+        active_count,
+        attention_count,
+        inactive_count
+      FROM dashboard_daily_metrics
+      WHERE day >= CURRENT_DATE - ($1::int - 1)
+      ORDER BY day
     `,
+    [DASHBOARD_TREND_WINDOW_DAYS],
   );
 
-  const buckets = await pool.query(
-    `
-      SELECT label, count
-      FROM (
-        SELECT '0-14' AS label, COUNT(*)::int AS count FROM customer_snapshot WHERE COALESCE(days_since_last_purchase, 0) BETWEEN 0 AND 14
-        UNION ALL
-        SELECT '15-29', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 15 AND 29
-        UNION ALL
-        SELECT '30-59', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 30 AND 59
-        UNION ALL
-        SELECT '60-89', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 60 AND 89
-        UNION ALL
-        SELECT '90-179', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 90 AND 179
-        UNION ALL
-        SELECT '180+', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase >= 180
-      ) bucket_data
-    `,
-  );
+  if ((result.rowCount ?? 0) < DASHBOARD_TREND_WINDOW_DAYS) {
+    await refreshDashboardDailyMetrics(DASHBOARD_TREND_WINDOW_DAYS);
+    result = await pool.query(
+      `
+        SELECT
+          day::text AS date,
+          total_customers,
+          active_count,
+          attention_count,
+          inactive_count
+        FROM dashboard_daily_metrics
+        WHERE day >= CURRENT_DATE - ($1::int - 1)
+        ORDER BY day
+      `,
+      [DASHBOARD_TREND_WINDOW_DAYS],
+    );
+  }
 
-  const lastSync = await pool.query(
-    `
-      SELECT MAX(finished_at) AS last_sync_at
-      FROM (
-        SELECT finished_at FROM import_runs WHERE status = 'COMPLETED'
-        UNION ALL
-        SELECT finished_at FROM sync_runs WHERE status = 'COMPLETED'
-      ) AS sync_data
-    `,
-  );
+  return result.rows.map((row) => ({
+    date: String(row.date),
+    totalCustomers: Number(row.total_customers ?? 0),
+    activeCount: Number(row.active_count ?? 0),
+    attentionCount: Number(row.attention_count ?? 0),
+    inactiveCount: Number(row.inactive_count ?? 0),
+  }));
+}
 
-  const topCustomers = await listCustomers({ sortBy: "faturamento", limit: 8 });
-  const agenda = await getAgendaItems(12);
+export async function getDashboardMetrics(): Promise<DashboardMetrics> {
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, portfolioTrend] =
+    await Promise.all([
+      pool.query(
+        `
+          SELECT
+            COUNT(*)::int AS total_customers,
+            COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_count,
+            COUNT(*) FILTER (WHERE status = 'ATTENTION')::int AS attention_count,
+            COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count,
+            AVG(avg_ticket)::numeric(14,2) AS average_ticket,
+            AVG(avg_days_between_orders)::numeric(14,2) AS average_frequency_days
+          FROM customer_snapshot
+        `,
+      ),
+      pool.query(
+        `
+          SELECT label, count
+          FROM (
+            SELECT '0-14' AS label, COUNT(*)::int AS count FROM customer_snapshot WHERE COALESCE(days_since_last_purchase, 0) BETWEEN 0 AND 14
+            UNION ALL
+            SELECT '15-29', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 15 AND 29
+            UNION ALL
+            SELECT '30-59', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 30 AND 59
+            UNION ALL
+            SELECT '60-89', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 60 AND 89
+            UNION ALL
+            SELECT '90-179', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 90 AND 179
+            UNION ALL
+            SELECT '180+', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase >= 180
+          ) bucket_data
+        `,
+      ),
+      pool.query(
+        `
+          SELECT MAX(finished_at) AS last_sync_at
+          FROM (
+            SELECT finished_at FROM import_runs WHERE status = 'COMPLETED'
+            UNION ALL
+            SELECT finished_at FROM sync_runs WHERE status = 'COMPLETED'
+          ) AS sync_data
+        `,
+      ),
+      listCustomers({ sortBy: "priority", limit: 8 }),
+      getAgendaEligibleCount(),
+      getReactivationLeaderboard(),
+      getPortfolioTrend(),
+    ]);
+
   const row = totals.rows[0];
 
   return {
@@ -172,47 +359,63 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     averageFrequencyDays: Number(row?.average_frequency_days ?? 0),
     lastSyncAt: lastSync.rows[0]?.last_sync_at ? new Date(String(lastSync.rows[0].last_sync_at)).toISOString() : null,
     topCustomers,
-    dailyAgendaCount: agenda.length,
+    agendaEligibleCount,
+    reactivationLeaderboard,
+    portfolioTrend,
   };
 }
 
-export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
-  const result = await pool.query(
-    `
-      SELECT
-        customer_id,
-        customer_code,
-        display_name,
-        last_purchase_at,
-        days_since_last_purchase,
-      total_orders,
-      total_spent,
-      avg_ticket,
-      avg_days_between_orders,
-      status,
-      priority_score,
-      value_score,
-      predicted_next_purchase_at,
-      primary_insight,
-      insight_tags,
-      last_attendant,
-        COALESCE((
-          SELECT jsonb_agg(
-            jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
-            ORDER BY cl.name
-          )
-          FROM customer_label_assignments cla
-          JOIN customer_labels cl ON cl.id = cla.label_id
-          WHERE cla.customer_id = customer_snapshot.customer_id
-        ), '[]'::jsonb) AS labels
-      FROM customer_snapshot
-      ORDER BY priority_score DESC, total_spent DESC
-      LIMIT $1
-    `,
-    [limit],
-  );
+export async function getAgendaItems(limit = 25, offset = 0): Promise<AgendaResponse> {
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+  const safeOffset = Math.max(0, Math.floor(offset));
 
-  return result.rows.map((row) => {
+  const [countResult, itemsResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT COUNT(*)::int AS total
+        FROM customer_snapshot s
+        WHERE ${AGENDA_ELIGIBILITY_SQL}
+      `,
+    ),
+    pool.query(
+      `
+        SELECT
+          s.customer_id,
+          s.customer_code,
+          s.display_name,
+          s.last_purchase_at::date::text AS last_purchase_at,
+          s.days_since_last_purchase,
+          s.total_orders,
+          s.total_spent,
+          s.avg_ticket,
+          s.avg_days_between_orders,
+          s.status,
+          s.priority_score,
+          s.value_score,
+          s.predicted_next_purchase_at::date::text AS predicted_next_purchase_at,
+          s.primary_insight,
+          s.insight_tags,
+          s.last_attendant,
+          COALESCE((
+            SELECT jsonb_agg(
+              jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
+              ORDER BY cl.name
+            )
+            FROM customer_label_assignments cla
+            JOIN customer_labels cl ON cl.id = cla.label_id
+            WHERE cla.customer_id = s.customer_id
+          ), '[]'::jsonb) AS labels
+        FROM customer_snapshot s
+        WHERE ${AGENDA_ELIGIBILITY_SQL}
+        ORDER BY s.priority_score DESC, s.total_spent DESC, s.display_name ASC
+        LIMIT $1
+        OFFSET $2
+      `,
+      [safeLimit, safeOffset],
+    ),
+  ]);
+
+  const items = itemsResult.rows.map((row) => {
     const tags = getInsightTags(row);
     const status = String(row.status);
 
@@ -220,7 +423,7 @@ export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
       id: String(row.customer_id),
       customerCode: String(row.customer_code ?? ""),
       displayName: String(row.display_name),
-      lastPurchaseAt: row.last_purchase_at ? new Date(String(row.last_purchase_at)).toISOString() : null,
+      lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
       daysSinceLastPurchase:
         row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
           ? null
@@ -232,9 +435,7 @@ export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
         row.avg_days_between_orders === null || row.avg_days_between_orders === undefined
           ? null
           : Number(row.avg_days_between_orders),
-      predictedNextPurchaseAt: row.predicted_next_purchase_at
-        ? new Date(String(row.predicted_next_purchase_at)).toISOString()
-        : null,
+      predictedNextPurchaseAt: row.predicted_next_purchase_at ? String(row.predicted_next_purchase_at) : null,
       status: status as AgendaItem["status"],
       priorityScore: Number(row.priority_score ?? 0),
       valueScore: Number(row.value_score ?? 0),
@@ -244,6 +445,14 @@ export async function getAgendaItems(limit = 25): Promise<AgendaItem[]> {
       labels: getLabels(row),
       reason: buildAgendaReason(row, tags),
       suggestedAction: buildAgendaSuggestedAction(tags, status),
-    };
+    } satisfies AgendaItem;
   });
+
+  const totalEligible = Number(countResult.rows[0]?.total ?? 0);
+
+  return {
+    items,
+    totalEligible,
+    hasMore: safeOffset + items.length < totalEligible,
+  };
 }

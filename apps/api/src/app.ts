@@ -16,6 +16,12 @@ import {
 } from "./modules/crm/customerService.js";
 import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
 import {
+  createSavedSegment,
+  deleteSavedSegment,
+  listSavedSegments,
+  updateSavedSegment,
+} from "./modules/crm/segmentService.js";
+import {
   createMessageTemplate,
   deleteMessageTemplate,
   listMessageTemplates,
@@ -49,6 +55,11 @@ const customerQuerySchema = z.object({
   excludeLabels: z.string().optional(),
 });
 
+const agendaQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
 const segmentSchema = z.object({
   status: z.array(z.enum(["ACTIVE", "ATTENTION", "INACTIVE"])).optional(),
   minDaysInactive: z.number().optional(),
@@ -78,12 +89,17 @@ const manualSyncSchema = z.object({
 });
 
 const customerLabelUpdateSchema = z.object({
-  labels: z.array(z.string().min(1)).default([]),
-  internalNotes: z.string().default(""),
+  labels: z.array(z.string().min(1)).optional(),
+  internalNotes: z.string().optional(),
 });
 
 const createCustomerLabelSchema = z.object({
   name: z.string().min(1),
+});
+
+const savedSegmentSchema = z.object({
+  name: z.string().min(1),
+  definition: segmentSchema,
 });
 
 export function createApp() {
@@ -140,8 +156,8 @@ export function createApp() {
 
   app.get("/api/agenda", async (request, response, next) => {
     try {
-      const limit = request.query.limit ? Number(request.query.limit) : 25;
-      response.json(await getAgendaItems(limit));
+      const query = agendaQuerySchema.parse(request.query);
+      response.json(await getAgendaItems(query.limit, query.offset));
     } catch (error) {
       next(error);
     }
@@ -223,6 +239,46 @@ export function createApp() {
   app.post("/api/segments/preview", async (request, response, next) => {
     try {
       response.json(await previewSegment(segmentSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/segments/saved", async (_request, response, next) => {
+    try {
+      response.json(await listSavedSegments());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/segments/saved", async (request, response, next) => {
+    try {
+      response.status(201).json(await createSavedSegment(savedSegmentSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/segments/saved/:id", async (request, response, next) => {
+    try {
+      const savedSegment = await updateSavedSegment(request.params.id, savedSegmentSchema.parse(request.body));
+      if (!savedSegment) {
+        throw new HttpError(404, "Publico salvo nao encontrado");
+      }
+      response.json(savedSegment);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/segments/saved/:id", async (request, response, next) => {
+    try {
+      const deleted = await deleteSavedSegment(request.params.id);
+      if (!deleted) {
+        throw new HttpError(404, "Publico salvo nao encontrado");
+      }
+      response.status(204).send();
     } catch (error) {
       next(error);
     }
