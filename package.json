@@ -8,8 +8,7 @@
     "packages/shared"
   ],
   "scripts": {
-    "dev": "npm run dev:web",
-    "dev:legacy": "concurrently \"npm run dev -w @olist-crm/api\" \"npm run dev -w @olist-crm/web\" \"npm run worker -w @olist-crm/api\"",
+    "dev": "concurrently \"npm run dev -w @olist-crm/api\" \"npm run dev -w @olist-crm/web\" \"npm run worker -w @olist-crm/api\"",
     "dev:api": "npm run dev -w @olist-crm/api",
     "dev:web": "npm run dev -w @olist-crm/web",
     "build": "npm run build -w @olist-crm/shared && npm run build -w @olist-crm/web",
