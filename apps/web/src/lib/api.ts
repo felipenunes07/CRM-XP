@@ -46,8 +46,17 @@ export const api = {
   me(token: string) {
     return request<{ user: AuthUser }>("/api/auth/me", {}, token);
   },
-  dashboard(token: string) {
-    return request<DashboardMetrics>("/api/dashboard/metrics", {}, token);
+  /**
+   * Get dashboard metrics
+   * @param token Authentication token
+   * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
+   */
+  dashboard(token: string, trendDays?: number) {
+    const search = new URLSearchParams();
+    if (trendDays !== undefined) {
+      search.set("trendDays", String(trendDays));
+    }
+    return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
   ambassadors(token: string) {
     return request<AmbassadorResponse>("/api/ambassadors", {}, token);
@@ -81,6 +90,12 @@ export const api = {
     return request<CustomerLabel>("/api/customer-labels", {
       method: "POST",
       body: JSON.stringify({ name }),
+    }, token);
+  },
+  updateCustomerLabel(token: string, id: string, color: string) {
+    return request<CustomerLabel>(`/api/customer-labels/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ color }),
     }, token);
   },
   deleteCustomerLabel(token: string, id: string) {

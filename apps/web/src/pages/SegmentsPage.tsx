@@ -302,18 +302,31 @@ export function SegmentsPage() {
                   <strong>{Number(previewMutation.data.summary.averagePriorityScore ?? 0).toFixed(1)}</strong>
                 </div>
                 <div>
-                  <span>Potencial de faturamento</span>
-                  <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
+                  <span>Media de pecas/pedido</span>
+                  <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
                 </div>
                 <div>
-                  <span>Pecas potenciais</span>
-                  <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
+                  <span>Ticket medio total</span>
+                  <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
+                </div>
+              </div>
+              <div className="detail-grid segment-summary-grid" style={{ marginTop: '1rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#059669' }}>Potencial mensal se recuperarmos</span>
+                </div>
+                <div>
+                  <span>Faturamento/mes</span>
+                  <strong style={{ color: '#059669' }}>{formatCurrency(previewMutation.data.summary.monthlyPotentialRevenue ?? 0)}</strong>
+                </div>
+                <div>
+                  <span>Pecas/mes</span>
+                  <strong style={{ color: '#059669' }}>{formatNumber(previewMutation.data.summary.monthlyPotentialPieces ?? 0)}</strong>
                 </div>
               </div>
               <p className="panel-subcopy segment-summary-note">
-                O potencial de faturamento mostra quanto a empresa pode voltar a movimentar se conseguir reativar esse
-                publico, usando como base o ticket medio historico de cada cliente do segmento. As pecas potenciais usam a
-                media de pecas por pedido desse mesmo publico.
+                A primeira linha mostra dados historicos: media de pecas por pedido e soma dos tickets medios de cada cliente.
+                A segunda linha projeta o potencial mensal caso consigamos recuperar esses clientes, baseado no historico de 
+                compras (frequencia e valor) de cada um.
               </p>
             </>
           ) : (

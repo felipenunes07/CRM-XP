@@ -146,6 +146,33 @@ async function getAgendaEligibleCount() {
   return Number(result.rows[0]?.total ?? 0);
 }
 
+async function getSalesPerformance() {
+  const result = await pool.query(
+    `
+      SELECT
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+        COUNT(DISTINCT o.id)::int AS total_orders,
+        COUNT(DISTINCT o.customer_id)::int AS unique_customers,
+        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(oi.quantity), 0)::int AS total_items
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE date_trunc('month', o.order_date) = date_trunc('month', CURRENT_DATE)
+      GROUP BY COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente')
+      ORDER BY total_orders DESC, total_revenue DESC
+      LIMIT 10
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant ?? "Sem atendente"),
+    totalOrders: Number(row.total_orders ?? 0),
+    uniqueCustomers: Number(row.unique_customers ?? 0),
+    totalRevenue: Number(row.total_revenue ?? 0),
+    totalItems: Number(row.total_items ?? 0),
+  }));
+}
+
 async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntry[]> {
   const result = await pool.query(
     `
@@ -250,7 +277,15 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
   }));
 }
 
-async function getPortfolioTrend() {
+/**
+ * Get portfolio trend data for the specified number of days
+ * @param days Number of days of historical data to retrieve (1-730)
+ * @returns Array of portfolio trend points
+ */
+async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
+  // Validate days parameter
+  const validatedDays = Math.max(1, Math.min(730, Math.floor(days)));
+
   let result = await pool.query(
     `
       SELECT
@@ -263,11 +298,11 @@ async function getPortfolioTrend() {
       WHERE day >= CURRENT_DATE - ($1::int - 1)
       ORDER BY day
     `,
-    [DASHBOARD_TREND_WINDOW_DAYS],
+    [validatedDays],
   );
 
-  if ((result.rowCount ?? 0) < DASHBOARD_TREND_WINDOW_DAYS) {
-    await refreshDashboardDailyMetrics(DASHBOARD_TREND_WINDOW_DAYS);
+  if ((result.rowCount ?? 0) < validatedDays) {
+    await refreshDashboardDailyMetrics(validatedDays);
     result = await pool.query(
       `
         SELECT
@@ -280,7 +315,7 @@ async function getPortfolioTrend() {
         WHERE day >= CURRENT_DATE - ($1::int - 1)
         ORDER BY day
       `,
-      [DASHBOARD_TREND_WINDOW_DAYS],
+      [validatedDays],
     );
   }
 
@@ -293,8 +328,13 @@ async function getPortfolioTrend() {
   }));
 }
 
-export async function getDashboardMetrics(): Promise<DashboardMetrics> {
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, portfolioTrend] =
+/**
+ * Get dashboard metrics including portfolio trends
+ * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
+ * @returns Complete dashboard metrics
+ */
+export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, portfolioTrend, salesPerformance] =
     await Promise.all([
       pool.query(
         `
@@ -339,7 +379,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
       listCustomers({ sortBy: "priority", limit: 8 }),
       getAgendaEligibleCount(),
       getReactivationLeaderboard(),
-      getPortfolioTrend(),
+      getPortfolioTrend(trendDays),
+      getSalesPerformance(),
     ]);
 
   const row = totals.rows[0];
@@ -362,6 +403,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
     agendaEligibleCount,
     reactivationLeaderboard,
     portfolioTrend,
+    salesPerformance,
   };
 }
 

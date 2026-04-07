@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -19,9 +19,25 @@ import { ContactQueueCard } from "../components/ContactQueueCard";
 import { InfoHint } from "../components/InfoHint";
 import { StatCard } from "../components/StatCard";
 import { CustomerTable } from "../components/CustomerTable";
+import { PeriodSelector } from "../components/PeriodSelector";
+import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatShortDate } from "../lib/format";
+
+type TrendPeriod = '90d' | '6m' | '1y';
+
+interface PeriodOption {
+  value: TrendPeriod;
+  label: string;
+  days: number;
+}
+
+const periodOptions: PeriodOption[] = [
+  { value: '90d', label: '90 dias', days: 90 },
+  { value: '6m', label: '6 meses', days: 180 },
+  { value: '1y', label: '1 ano', days: 365 },
+];
 
 const bucketFilters = {
   "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
@@ -277,10 +293,20 @@ export function DashboardPage() {
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>(() => {
+    const stored = sessionStorage.getItem('dashboard-trend-period');
+    return (stored === '90d' || stored === '6m' || stored === '1y') ? stored : '90d';
+  });
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboard-trend-period', selectedPeriod);
+  }, [selectedPeriod]);
+
+  const trendDays = periodOptions.find(opt => opt.value === selectedPeriod)?.days ?? 90;
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => api.dashboard(token!),
+    queryKey: ["dashboard", trendDays],
+    queryFn: () => api.dashboard(token!, trendDays),
     enabled: Boolean(token),
   });
 
@@ -492,21 +518,7 @@ export function DashboardPage() {
             </>
           ) : (
             <>
-              <div className="trend-toolbar">
-                <div className="trend-toolbar-copy">
-                  <strong>Leitura diaria em percentual</strong>
-                  <span>
-                    Cada faixa representa a participacao de um status. Todo dia fecha em 100% da carteira para deixar a saude da
-                    base evidente.
-                  </span>
-                  {latestTrendPoint ? (
-                    <small className="trend-toolbar-meta">
-                      Ultimo dia: {formatShortDate(latestTrendPoint.date)} com {formatNumber(latestTrendPoint.totalCustomers)} clientes na
-                      base.
-                    </small>
-                  ) : null}
-                </div>
-              </div>
+              <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
               <div className="trend-chart-wrap">
                 {trendData.length ? (
                   <ResponsiveContainer width="100%" height={320}>
@@ -580,32 +592,10 @@ export function DashboardPage() {
           )}
         </article>
 
-        <article className="panel insight-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Agenda de hoje</p>
-              <h3>{formatNumber(metrics.agendaEligibleCount)} clientes pedem contato agora</h3>
-              <p className="panel-subcopy">Fila pronta para a vendedora agir sem sair da tela inicial.</p>
-            </div>
-            <Link className="ghost-button" to="/agenda">
-              Ver agenda completa
-            </Link>
-          </div>
-
-          {agendaQuery.isLoading ? <div className="page-loading">Montando fila de contato...</div> : null}
-          {agendaQuery.isError ? <div className="page-error">Nao foi possivel carregar a agenda de hoje.</div> : null}
-          {!agendaQuery.isLoading && !agendaQuery.isError ? (
-            agendaItems.length ? (
-              <div className="stack-list agenda-scroll-list">
-                {agendaItems.map((customer) => (
-                  <ContactQueueCard key={customer.id} item={customer} compact />
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">Nenhum cliente precisa de contato imediato neste momento.</div>
-            )
-          ) : null}
-        </article>
+        <SalesPerformancePanel 
+          salesPerformance={metrics.salesPerformance} 
+          isLoading={dashboardQuery.isLoading}
+        />
       </section>
 
       <section className="panel">

@@ -8,6 +8,7 @@ import { logger } from "./lib/logger.js";
 import {
   createCustomerLabel,
   deleteCustomerLabel,
+  updateCustomerLabel,
   getCustomerDetail,
   listCustomerLabels,
   listCustomers,
@@ -58,6 +59,10 @@ const customerQuerySchema = z.object({
   isAmbassador: z.coerce.boolean().optional(),
 });
 
+const dashboardQuerySchema = z.object({
+  trendDays: z.coerce.number().int().min(1).max(730).optional(),
+});
+
 const agendaQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
@@ -98,6 +103,10 @@ const customerLabelUpdateSchema = z.object({
 
 const createCustomerLabelSchema = z.object({
   name: z.string().min(1),
+});
+
+const updateCustomerLabelSchema = z.object({
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Cor deve estar no formato hexadecimal #RRGGBB"),
 });
 
 const customerAmbassadorSchema = z.object({
@@ -153,9 +162,10 @@ export function createApp() {
     response.json({ user: request.user });
   });
 
-  app.get("/api/dashboard/metrics", async (_request, response, next) => {
+  app.get("/api/dashboard/metrics", async (request, response, next) => {
     try {
-      response.json(await getDashboardMetrics());
+      const query = dashboardQuerySchema.parse(request.query);
+      response.json(await getDashboardMetrics(query.trendDays));
     } catch (error) {
       next(error);
     }
@@ -235,6 +245,18 @@ export function createApp() {
   app.post("/api/customer-labels", async (request, response, next) => {
     try {
       response.status(201).json(await createCustomerLabel(createCustomerLabelSchema.parse(request.body).name));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/customer-labels/:id", async (request, response, next) => {
+    try {
+      const updated = await updateCustomerLabel(request.params.id, updateCustomerLabelSchema.parse(request.body).color);
+      if (!updated) {
+        throw new HttpError(404, "Rótulo não encontrado");
+      }
+      response.json(updated);
     } catch (error) {
       next(error);
     }
