@@ -302,25 +302,25 @@ export function SegmentsPage() {
                   <strong>{Number(previewMutation.data.summary.averagePriorityScore ?? 0).toFixed(1)}</strong>
                 </div>
                 <div>
-                  <span>Media de pecas/pedido</span>
-                  <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
+                  <span>Faturamento</span>
+                  <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
                 </div>
                 <div>
-                  <span>Ticket medio total</span>
-                  <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
+                  <span>Media de pecas/pedido</span>
+                  <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
                 </div>
               </div>
               <div className="detail-grid segment-summary-grid" style={{ marginTop: '1rem', borderTop: '1px solid #e5e7eb', paddingTop: '1rem' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#059669' }}>Potencial mensal se recuperarmos</span>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#2563eb' }}>Potencial mensal se recuperarmos</span>
                 </div>
                 <div>
                   <span>Faturamento/mes</span>
-                  <strong style={{ color: '#059669' }}>{formatCurrency(previewMutation.data.summary.monthlyPotentialRevenue ?? 0)}</strong>
+                  <strong style={{ color: '#2563eb' }}>{formatCurrency(previewMutation.data.summary.monthlyPotentialRevenue ?? 0)}</strong>
                 </div>
                 <div>
                   <span>Pecas/mes</span>
-                  <strong style={{ color: '#059669' }}>{formatNumber(previewMutation.data.summary.monthlyPotentialPieces ?? 0)}</strong>
+                  <strong style={{ color: '#2563eb' }}>{formatNumber(previewMutation.data.summary.monthlyPotentialPieces ?? 0)}</strong>
                 </div>
               </div>
               <p className="panel-subcopy segment-summary-note">
