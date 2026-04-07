@@ -1,10 +1,11 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, Tags, Trophy, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, Star, Tags, Trophy, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 const links = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/clientes", icon: Users, label: "Clientes" },
+    { to: "/embaixadores", icon: Star, label: "Embaixadores" },
     { to: "/segmentos", icon: BarChart3, label: "Segmentos" },
     { to: "/agenda", icon: ClipboardList, label: "Agenda" },
     { to: "/reativacao", icon: Trophy, label: "Reativacao" },

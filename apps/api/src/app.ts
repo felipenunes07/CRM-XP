@@ -12,8 +12,10 @@ import {
   listCustomerLabels,
   listCustomers,
   previewSegment,
+  updateCustomerAmbassador,
   updateCustomerLabels,
 } from "./modules/crm/customerService.js";
+import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
@@ -53,6 +55,7 @@ const customerQuerySchema = z.object({
   limit: z.coerce.number().optional(),
   labels: z.string().optional(),
   excludeLabels: z.string().optional(),
+  isAmbassador: z.coerce.boolean().optional(),
 });
 
 const agendaQuerySchema = z.object({
@@ -95,6 +98,10 @@ const customerLabelUpdateSchema = z.object({
 
 const createCustomerLabelSchema = z.object({
   name: z.string().min(1),
+});
+
+const customerAmbassadorSchema = z.object({
+  isAmbassador: z.boolean(),
 });
 
 const savedSegmentSchema = z.object({
@@ -154,6 +161,14 @@ export function createApp() {
     }
   });
 
+  app.get("/api/ambassadors", async (_request, response, next) => {
+    try {
+      response.json(await getAmbassadorOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/agenda", async (request, response, next) => {
     try {
       const query = agendaQuerySchema.parse(request.query);
@@ -177,6 +192,7 @@ export function createApp() {
           status: statuses,
           labels: query.labels?.split(",").filter(Boolean),
           excludeLabels: query.excludeLabels?.split(",").filter(Boolean),
+          isAmbassador: query.isAmbassador,
         }),
       );
     } catch (error) {
@@ -239,6 +255,18 @@ export function createApp() {
   app.post("/api/segments/preview", async (request, response, next) => {
     try {
       response.json(await previewSegment(segmentSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/customers/:id/ambassador", async (request, response, next) => {
+    try {
+      const customer = await updateCustomerAmbassador(request.params.id, customerAmbassadorSchema.parse(request.body).isAmbassador);
+      if (!customer) {
+        throw new HttpError(404, "Cliente nÃ£o encontrado");
+      }
+      response.json(customer);
     } catch (error) {
       next(error);
     }
