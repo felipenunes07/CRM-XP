@@ -1,4 +1,5 @@
 import type {
+  AmbassadorResponse,
   AgendaResponse,
   CustomerDetail,
   CustomerLabel,
@@ -48,6 +49,9 @@ export const api = {
   dashboard(token: string) {
     return request<DashboardMetrics>("/api/dashboard/metrics", {}, token);
   },
+  ambassadors(token: string) {
+    return request<AmbassadorResponse>("/api/ambassadors", {}, token);
+  },
   agenda(token: string, limit?: number, offset?: number) {
     const search = new URLSearchParams();
     if (limit !== undefined) {
@@ -88,6 +92,12 @@ export const api = {
     return request<CustomerDetail>(`/api/customers/${id}/labels`, {
       method: "PUT",
       body: JSON.stringify(input),
+    }, token);
+  },
+  updateCustomerAmbassador(token: string, id: string, isAmbassador: boolean) {
+    return request<CustomerDetail>(`/api/customers/${id}/ambassador`, {
+      method: "PUT",
+      body: JSON.stringify({ isAmbassador }),
     }, token);
   },
   previewSegment(token: string, definition: SegmentDefinition) {

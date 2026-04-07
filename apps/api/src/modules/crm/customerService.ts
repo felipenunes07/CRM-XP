@@ -1,3 +1,7 @@
+import {
+  AMBASSADOR_LABEL_COLOR,
+  AMBASSADOR_LABEL_NAME,
+} from "@olist-crm/shared";
 import type {
   CustomerLabel,
   CustomerDetail,
@@ -7,9 +11,16 @@ import type {
   SegmentResult,
   TopProduct,
 } from "@olist-crm/shared";
+import { HttpError } from "../../lib/httpError.js";
 import { pool } from "../../db/client.js";
 
 type FilterLike = CustomerFilters & Partial<SegmentDefinition>;
+
+function normalizeLabelName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+export const AMBASSADOR_LABEL_NORMALIZED_NAME = normalizeLabelName(AMBASSADOR_LABEL_NAME);
 
 function mapInsightTags(value: unknown): InsightTag[] {
   if (!Array.isArray(value)) {
@@ -59,6 +70,8 @@ function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
     insightTags: mapInsightTags(row.insight_tags),
     lastAttendant: row.last_attendant ? String(row.last_attendant) : null,
     labels: mapLabels(row.labels),
+    isAmbassador: Boolean(row.is_ambassador),
+    ambassadorAssignedAt: row.ambassador_assigned_at ? String(row.ambassador_assigned_at) : null,
   };
 }
 
@@ -74,6 +87,7 @@ export interface CustomerFilters {
   limit?: number;
   labels?: string[];
   excludeLabels?: string[];
+  isAmbassador?: boolean;
 }
 
 function buildWhere(filters: FilterLike) {
@@ -153,6 +167,18 @@ function buildWhere(filters: FilterLike) {
     );
   }
 
+  if (filters.isAmbassador === true) {
+    clauses.push(`
+      EXISTS (
+        SELECT 1
+        FROM customer_label_assignments cla
+        JOIN customer_labels cl ON cl.id = cla.label_id
+        WHERE cla.customer_id = s.customer_id
+          AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+      )
+    `);
+  }
+
   return { whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
 }
 
@@ -191,6 +217,22 @@ export async function listCustomers(filters: CustomerFilters = {}) {
         s.primary_insight,
         s.insight_tags,
         s.last_attendant,
+        EXISTS (
+          SELECT 1
+          FROM customer_label_assignments cla
+          JOIN customer_labels cl ON cl.id = cla.label_id
+          WHERE cla.customer_id = s.customer_id
+            AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+        ) AS is_ambassador,
+        (
+          SELECT cla.created_at::text
+          FROM customer_label_assignments cla
+          JOIN customer_labels cl ON cl.id = cla.label_id
+          WHERE cla.customer_id = s.customer_id
+            AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+          ORDER BY cla.created_at ASC
+          LIMIT 1
+        ) AS ambassador_assigned_at,
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
@@ -229,6 +271,22 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         s.insight_tags,
         s.last_attendant,
         c.internal_notes,
+        EXISTS (
+          SELECT 1
+          FROM customer_label_assignments cla
+          JOIN customer_labels cl ON cl.id = cla.label_id
+          WHERE cla.customer_id = s.customer_id
+            AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+        ) AS is_ambassador,
+        (
+          SELECT cla.created_at::text
+          FROM customer_label_assignments cla
+          JOIN customer_labels cl ON cl.id = cla.label_id
+          WHERE cla.customer_id = s.customer_id
+            AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+          ORDER BY cla.created_at ASC
+          LIMIT 1
+        ) AS ambassador_assigned_at,
         s.total_orders,
         s.avg_days_between_orders,
         s.purchase_frequency_90d,
@@ -382,6 +440,8 @@ export async function previewSegment(definition: SegmentDefinition): Promise<Seg
 }
 
 export async function listCustomerLabels(): Promise<CustomerLabel[]> {
+  await ensureAmbassadorLabel();
+
   const result = await pool.query(
     `
       SELECT id, name, color
@@ -397,12 +457,12 @@ export async function listCustomerLabels(): Promise<CustomerLabel[]> {
   }));
 }
 
-function normalizeLabelName(value: string) {
-  return value.trim().toLowerCase();
-}
-
 function labelColorForName(labelName: string) {
   const normalized = normalizeLabelName(labelName);
+
+  if (normalized === AMBASSADOR_LABEL_NORMALIZED_NAME || normalized.includes("embaix")) {
+    return AMBASSADOR_LABEL_COLOR;
+  }
 
   if (normalized.includes("negra") || normalized.includes("bloque")) {
     return "#b42318";
@@ -417,6 +477,26 @@ function labelColorForName(labelName: string) {
   }
 
   return "#5f8cff";
+}
+
+export async function ensureAmbassadorLabel(): Promise<CustomerLabel> {
+  const result = await pool.query(
+    `
+      INSERT INTO customer_labels (name, normalized_name, color, created_at, updated_at)
+      VALUES ($1, $2, $3, NOW(), NOW())
+      ON CONFLICT (normalized_name) DO UPDATE
+      SET name = EXCLUDED.name, color = EXCLUDED.color, updated_at = NOW()
+      RETURNING id, name, color
+    `,
+    [AMBASSADOR_LABEL_NAME, AMBASSADOR_LABEL_NORMALIZED_NAME, AMBASSADOR_LABEL_COLOR],
+  );
+
+  const row = result.rows[0];
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    color: String(row.color ?? AMBASSADOR_LABEL_COLOR),
+  };
 }
 
 export async function createCustomerLabel(name: string): Promise<CustomerLabel> {
@@ -443,8 +523,52 @@ export async function createCustomerLabel(name: string): Promise<CustomerLabel> 
 }
 
 export async function deleteCustomerLabel(labelId: string): Promise<boolean> {
+  const protectedLabelResult = await pool.query(
+    `
+      SELECT normalized_name
+      FROM customer_labels
+      WHERE id = $1
+    `,
+    [labelId],
+  );
+
+  if (protectedLabelResult.rows[0]?.normalized_name === AMBASSADOR_LABEL_NORMALIZED_NAME) {
+    throw new HttpError(400, "O rotulo Embaixador e reservado e nao pode ser apagado.");
+  }
+
   const result = await pool.query("DELETE FROM customer_labels WHERE id = $1", [labelId]);
   return (result.rowCount ?? 0) > 0;
+}
+
+export async function updateCustomerAmbassador(customerId: string, isAmbassador: boolean): Promise<CustomerDetail | null> {
+  const existingCustomer = await getCustomerDetail(customerId);
+  if (!existingCustomer) {
+    return null;
+  }
+
+  const label = await ensureAmbassadorLabel();
+
+  if (isAmbassador) {
+    await pool.query(
+      `
+        INSERT INTO customer_label_assignments (customer_id, label_id, created_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (customer_id, label_id) DO NOTHING
+      `,
+      [customerId, label.id],
+    );
+  } else {
+    await pool.query(
+      `
+        DELETE FROM customer_label_assignments
+        WHERE customer_id = $1
+          AND label_id = $2
+      `,
+      [customerId, label.id],
+    );
+  }
+
+  return getCustomerDetail(customerId);
 }
 
 export async function updateCustomerLabels(

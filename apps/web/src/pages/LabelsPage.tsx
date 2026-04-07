@@ -1,3 +1,4 @@
+import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
@@ -27,6 +28,7 @@ export function LabelsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["customer-labels"] });
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["ambassadors"] });
     },
   });
 
@@ -89,9 +91,9 @@ export function LabelsPage() {
                     type="button"
                     className="ghost-button danger"
                     onClick={() => deleteMutation.mutate(label.id)}
-                    disabled={deleteMutation.isPending}
+                    disabled={deleteMutation.isPending || label.name === AMBASSADOR_LABEL_NAME}
                   >
-                    Apagar
+                    {label.name === AMBASSADOR_LABEL_NAME ? "Reservado" : "Apagar"}
                   </button>
                 </div>
               ))
@@ -102,7 +104,8 @@ export function LabelsPage() {
         ) : null}
 
         <p className="panel-subcopy">
-          Quando voce apaga um rotulo aqui, ele sai do sistema inteiro e deixa de ficar aplicado nos clientes.
+          Quando voce apaga um rotulo aqui, ele sai do sistema inteiro e deixa de ficar aplicado nos clientes. O
+          rotulo {AMBASSADOR_LABEL_NAME} fica protegido porque alimenta a aba de acompanhamento dos embaixadores.
         </p>
       </section>
     </div>

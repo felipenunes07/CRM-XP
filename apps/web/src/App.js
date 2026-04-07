@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
+const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
 const CustomerDetailPage = lazy(async () => ({
     default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
@@ -14,5 +15,5 @@ const MessagesPage = lazy(async () => ({ default: (await import("./pages/Message
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 export default function App() {
-    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: "Carregando tela..." }), children: _jsxs(Routes, { children: [_jsxs(Route, { element: _jsx(AppShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/", replace: true }) })] }) }));
+    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: "Carregando tela..." }), children: _jsxs(Routes, { children: [_jsxs(Route, { element: _jsx(AppShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/embaixadores", element: _jsx(AmbassadorsPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/", replace: true }) })] }) }));
 }

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -34,7 +34,39 @@ const bucketFilters = {
 
 type BucketLabel = keyof typeof bucketFilters;
 type ChartView = "inactivity" | "trend";
-type TrendGranularity = "daily" | "monthly";
+
+const trendSeries = [
+  {
+    shareKey: "activeShare",
+    countKey: "activeCount",
+    label: "Ativos",
+    color: "#2f9d67",
+    gradientId: "trend-active-fill",
+    fillOpacityStart: 0.14,
+    fillOpacityEnd: 0.03,
+  },
+  {
+    shareKey: "attentionShare",
+    countKey: "attentionCount",
+    label: "Atencao",
+    color: "#d09a29",
+    gradientId: "trend-attention-fill",
+    fillOpacityStart: 0.12,
+    fillOpacityEnd: 0.025,
+  },
+  {
+    shareKey: "inactiveShare",
+    countKey: "inactiveCount",
+    label: "Inativos",
+    color: "#d9534f",
+    gradientId: "trend-inactive-fill",
+    fillOpacityStart: 0.045,
+    fillOpacityEnd: 0.008,
+  },
+] as const;
+
+type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
+type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number>;
 
 const chartViewCopy = {
   inactivity: {
@@ -46,41 +78,16 @@ const chartViewCopy = {
     toggleHelper: "Veja as faixas de dias sem compra e filtre a lista.",
   },
   trend: {
-    eyebrow: "Tendencia da carteira",
-    title: "Evolucao diaria da base",
+    eyebrow: "Composicao da carteira",
+    title: "Composicao diaria da base",
     description:
-      "Acompanhe dia a dia quantos clientes estao ativos, em atencao, inativos e como o total da base evoluiu nos ultimos 90 dias.",
+      "Cada dia soma 100% da carteira para mostrar, em percentual, se a base esta ganhando ativos ou acumulando inativos.",
     toggleLabel: "Evolucao da base",
-    toggleHelper: "Compare as linhas de status com o crescimento da carteira.",
+    toggleHelper: "Compare a participacao diaria de ativos, atencao e inativos.",
   },
 } as const;
 
-const shortMonthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-const longMonthNames = [
-  "janeiro",
-  "fevereiro",
-  "marco",
-  "abril",
-  "maio",
-  "junho",
-  "julho",
-  "agosto",
-  "setembro",
-  "outubro",
-  "novembro",
-  "dezembro",
-];
-
 function extractTrendParts(value: string) {
-  const monthlyMatch = value.match(/^(\d{4})-(\d{2})$/);
-  if (monthlyMatch) {
-    return {
-      year: monthlyMatch[1],
-      month: Number(monthlyMatch[2]),
-      day: null,
-    };
-  }
-
   const dailyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!dailyMatch) {
     return null;
@@ -93,49 +100,58 @@ function extractTrendParts(value: string) {
   };
 }
 
-function formatTrendAxisLabel(value: string, granularity: TrendGranularity) {
+function formatTrendAxisLabel(value: string) {
   const parts = extractTrendParts(value);
   if (!parts) {
     return "--";
   }
 
-  const safeYear = parts.year ?? "0000";
   const safeMonth = Math.max(1, Math.min(12, parts.month ?? 1));
-
-  if (granularity === "monthly") {
-    return `${shortMonthNames[safeMonth - 1]}/${safeYear.slice(2)}`;
-  }
 
   return `${String(parts.day ?? 0).padStart(2, "0")}/${String(safeMonth).padStart(2, "0")}`;
 }
 
-function formatTrendTooltipLabel(value: string, granularity: TrendGranularity) {
+function formatTrendTooltipLabel(value: string) {
   const parts = extractTrendParts(value);
   if (!parts) {
     return "--";
-  }
-
-  const safeYear = parts.year ?? "0000";
-  const safeMonth = Math.max(1, Math.min(12, parts.month ?? 1));
-
-  if (granularity === "monthly") {
-    return `Fechamento de ${longMonthNames[safeMonth - 1]} de ${safeYear}`;
   }
 
   return formatDate(value);
 }
 
-function groupTrendByMonth(points: PortfolioTrendPoint[]) {
-  const grouped = new Map<string, PortfolioTrendPoint>();
+function formatDecimal(value: number, fractionDigits = 1) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value);
+}
 
-  for (const point of points) {
-    grouped.set(point.date.slice(0, 7), point);
+function formatTrendPercent(value: number, fractionDigits = 1) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+
+  return `${formatDecimal(safeValue, fractionDigits)}%`;
+}
+
+function normalizeTrendPoint(point: PortfolioTrendPoint): TrendCompositionPoint {
+  const totalFromStatuses = point.activeCount + point.attentionCount + point.inactiveCount;
+  const total = totalFromStatuses || point.totalCustomers;
+
+  if (!total) {
+    return {
+      ...point,
+      activeShare: 0,
+      attentionShare: 0,
+      inactiveShare: 0,
+    };
   }
 
-  return Array.from(grouped.entries()).map(([monthKey, point]) => ({
+  return {
     ...point,
-    date: monthKey,
-  }));
+    activeShare: (point.activeCount / total) * 100,
+    attentionShare: (point.attentionCount / total) * 100,
+    inactiveShare: (point.inactiveCount / total) * 100,
+  };
 }
 
 function bucketColor(label: string, selected: boolean) {
@@ -207,34 +223,39 @@ function TrendTooltip({
   active,
   payload,
   label,
-  granularity,
 }: {
   active?: boolean;
-  payload?: Array<{ dataKey?: string; value?: number }>;
+  payload?: Array<{ color?: string; dataKey?: string; value?: number; payload?: TrendCompositionPoint }>;
   label?: string;
-  granularity: TrendGranularity;
 }) {
   if (!active || !payload?.length || !label) {
     return null;
   }
 
-  const lines = [
-    { key: "activeCount", label: "Ativos" },
-    { key: "attentionCount", label: "Atencao" },
-    { key: "inactiveCount", label: "Inativos" },
-    { key: "totalCustomers", label: "Total da base" },
-  ];
+  const point = payload[0]?.payload;
 
   return (
     <div className="chart-tooltip trend-tooltip">
-      <strong>{formatTrendTooltipLabel(label, granularity)}</strong>
+      <strong>{formatTrendTooltipLabel(label)}</strong>
+      {point ? (
+        <div className="chart-tooltip-count">
+          <strong>{formatNumber(point.totalCustomers)}</strong>
+          <span>clientes na base nesse dia</span>
+        </div>
+      ) : null}
       <div className="trend-tooltip-list">
-        {lines.map((line) => {
-          const point = payload.find((entry) => entry.dataKey === line.key);
+        {trendSeries.map((line) => {
+          const entry = payload.find((payloadItem) => payloadItem.dataKey === line.shareKey);
           return (
-            <div key={line.key} className="trend-tooltip-item">
-              <span>{line.label}</span>
-              <strong>{formatNumber(point?.value ?? 0)}</strong>
+            <div key={line.shareKey} className="trend-tooltip-item">
+              <span className="trend-tooltip-label">
+                <span className="trend-tooltip-dot" style={{ backgroundColor: entry?.color ?? line.color }} />
+                {line.label}
+              </span>
+              <div className="trend-tooltip-metric">
+                <strong>{formatTrendPercent(entry?.value ?? 0)}</strong>
+                <span>{formatNumber(point?.[line.countKey] ?? 0)} clientes</span>
+              </div>
             </div>
           );
         })}
@@ -255,7 +276,6 @@ export function DashboardPage() {
   const { token } = useAuth();
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
-  const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("daily");
   const [isSyncing, setIsSyncing] = useState(false);
 
   const dashboardQuery = useQuery({
@@ -301,11 +321,9 @@ export function DashboardPage() {
 
   const metrics = dashboardQuery.data;
   const activeChartCopy = chartViewCopy[chartView];
-  const trendData = trendGranularity === "monthly" ? groupTrendByMonth(metrics.portfolioTrend) : metrics.portfolioTrend;
-  const chartDescription =
-    chartView === "trend" && trendGranularity === "monthly"
-      ? "Veja o fechamento consolidado de cada mes para comparar a direcao da carteira sem o ruido do dia a dia."
-      : activeChartCopy.description;
+  const trendData = metrics.portfolioTrend.map(normalizeTrendPoint);
+  const latestTrendPoint = trendData[trendData.length - 1];
+  const chartDescription = activeChartCopy.description;
   const agendaItems = getAgendaPreviewItems(agendaQuery.data?.items);
   const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
   const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
@@ -476,61 +494,87 @@ export function DashboardPage() {
             <>
               <div className="trend-toolbar">
                 <div className="trend-toolbar-copy">
-                  <strong>{trendGranularity === "daily" ? "Leitura diaria" : "Fechamento mensal"}</strong>
+                  <strong>Leitura diaria em percentual</strong>
                   <span>
-                    {trendGranularity === "daily"
-                      ? "Ideal para acompanhar viradas recentes de status e pequenas oscilacoes da base."
-                      : "Ideal para ver a direcao geral do mes e comparar a carteira com menos ruido."}
+                    Cada faixa representa a participacao de um status. Todo dia fecha em 100% da carteira para deixar a saude da
+                    base evidente.
                   </span>
-                </div>
-                <div className="trend-granularity-toggle" role="tablist" aria-label="Alternar periodo do grafico de evolucao">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={trendGranularity === "daily"}
-                    className={`trend-granularity-button ${trendGranularity === "daily" ? "active" : ""}`}
-                    onClick={() => setTrendGranularity("daily")}
-                  >
-                    Dia
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={trendGranularity === "monthly"}
-                    className={`trend-granularity-button ${trendGranularity === "monthly" ? "active" : ""}`}
-                    onClick={() => setTrendGranularity("monthly")}
-                  >
-                    Mes
-                  </button>
+                  {latestTrendPoint ? (
+                    <small className="trend-toolbar-meta">
+                      Ultimo dia: {formatShortDate(latestTrendPoint.date)} com {formatNumber(latestTrendPoint.totalCustomers)} clientes na
+                      base.
+                    </small>
+                  ) : null}
                 </div>
               </div>
               <div className="trend-chart-wrap">
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={trendData} margin={{ top: 12, right: 8, left: -12, bottom: 4 }}>
-                    <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(value) => formatTrendAxisLabel(String(value), trendGranularity)}
-                      stroke="#5f6f95"
-                      minTickGap={trendGranularity === "monthly" ? 0 : 24}
-                    />
-                    <YAxis stroke="#5f6f95" />
-                    <Tooltip content={<TrendTooltip granularity={trendGranularity} />} />
-                    <Legend />
-                    <Line type="monotone" dataKey="activeCount" name="Ativos" stroke="#2f9d67" strokeWidth={2.4} dot={false} />
-                    <Line type="monotone" dataKey="attentionCount" name="Atencao" stroke="#d09a29" strokeWidth={2.4} dot={false} />
-                    <Line type="monotone" dataKey="inactiveCount" name="Inativos" stroke="#d9534f" strokeWidth={2.4} dot={false} />
-                    <Line
-                      type="monotone"
-                      dataKey="totalCustomers"
-                      name="Total da base"
-                      stroke="#2956d7"
-                      strokeWidth={2.2}
-                      strokeDasharray="5 5"
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {trendData.length ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <ComposedChart data={trendData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
+                      <defs>
+                        {trendSeries.map((series) => (
+                          <linearGradient key={series.gradientId} id={series.gradientId} x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={series.color} stopOpacity={series.fillOpacityStart} />
+                            <stop offset="100%" stopColor={series.color} stopOpacity={series.fillOpacityEnd} />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                      <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        tickFormatter={(value) => formatTrendAxisLabel(String(value))}
+                        stroke="#5f6f95"
+                        minTickGap={24}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        domain={[0, 100]}
+                        ticks={[0, 25, 50, 75, 100]}
+                        tickFormatter={(value) => formatTrendPercent(Number(value), 0)}
+                        stroke="#5f6f95"
+                        tickLine={false}
+                        axisLine={false}
+                        width={56}
+                      />
+                      <Tooltip content={<TrendTooltip />} cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }} />
+                      {trendSeries.map((series) => (
+                        <Area
+                          key={series.shareKey}
+                          type="monotone"
+                          dataKey={series.shareKey}
+                          stackId="portfolio-share"
+                          stroke="none"
+                          fill={`url(#${series.gradientId})`}
+                          dot={false}
+                          legendType="none"
+                        />
+                      ))}
+                      {trendSeries.map((series) => (
+                        <Line
+                          key={`${series.shareKey}-line`}
+                          type="monotone"
+                          dataKey={series.shareKey}
+                          name={series.label}
+                          stroke={series.color}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, fill: series.color, strokeWidth: 0 }}
+                        />
+                      ))}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="empty-state">Sem historico suficiente para montar a evolucao diaria da base.</div>
+                )}
+              </div>
+              <div className="trend-legend" aria-label="Legenda do grafico de evolucao da base">
+                {trendSeries.map((series) => (
+                  <span key={series.shareKey} className="trend-legend-item">
+                    <span className="trend-legend-dot" style={{ backgroundColor: series.color }} />
+                    {series.label}
+                  </span>
+                ))}
               </div>
             </>
           )}

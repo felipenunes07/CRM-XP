@@ -5,6 +5,7 @@ import { useAuth } from "./hooks/useAuth";
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
+const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
 const CustomerDetailPage = lazy(async () => ({
   default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
@@ -22,6 +23,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
+          <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
           <Route path="/segmentos" element={<SegmentsPage />} />
           <Route path="/agenda" element={<AgendaPage />} />

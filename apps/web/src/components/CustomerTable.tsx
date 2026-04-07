@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerListItem } from "@olist-crm/shared";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -317,6 +318,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                   <Link className="table-link" to={`/clientes/${customer.id}`}>
                     <strong>{customer.displayName}</strong>
                     <span>{customer.customerCode}</span>
+                    {customer.isAmbassador ? <small className="table-inline-badge">{AMBASSADOR_LABEL_NAME}</small> : null}
                   </Link>
                 </td>
                 <td>

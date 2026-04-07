@@ -1,6 +1,8 @@
 export type SourceSystem = "history_xls" | "olist_v2" | "supabase_2026";
 
 export type CustomerStatus = "ACTIVE" | "ATTENTION" | "INACTIVE";
+export const AMBASSADOR_LABEL_NAME = "Embaixador";
+export const AMBASSADOR_LABEL_COLOR = "#d09a29";
 
 export interface CustomerLabel {
   id: string;
@@ -76,6 +78,8 @@ export interface CustomerListItem {
   insightTags: InsightTag[];
   lastAttendant: string | null;
   labels: CustomerLabel[];
+  isAmbassador: boolean;
+  ambassadorAssignedAt: string | null;
 }
 
 export interface CustomerDetail extends CustomerListItem {
@@ -156,4 +160,44 @@ export interface SavedSegment {
   definition: SegmentDefinition;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AmbassadorSummary {
+  totalAmbassadors: number;
+  currentPeriodRevenue: number;
+  currentPeriodOrders: number;
+  currentPeriodPieces: number;
+  currentPeriodAvgTicket: number;
+  previousPeriodRevenue: number;
+  revenueGrowthRatio: number | null;
+  withoutOrdersThisMonth: number;
+  statusCounts: Record<CustomerStatus, number>;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  previousPeriodStart: string;
+  previousPeriodEnd: string;
+}
+
+export interface AmbassadorTrendPoint {
+  month: string;
+  revenue: number;
+  orders: number;
+  pieces: number;
+}
+
+export interface AmbassadorListItem extends CustomerListItem {
+  currentPeriodRevenue: number;
+  currentPeriodOrders: number;
+  currentPeriodPieces: number;
+  previousPeriodRevenue: number;
+  revenueGrowthRatio: number | null;
+  topProducts: TopProduct[];
+  alerts: string[];
+  monthlyTrend: AmbassadorTrendPoint[];
+}
+
+export interface AmbassadorResponse {
+  summary: AmbassadorSummary;
+  monthlyTrend: AmbassadorTrendPoint[];
+  ambassadors: AmbassadorListItem[];
 }

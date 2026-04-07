@@ -11,6 +11,7 @@ export function CustomersPage() {
   const [sortBy, setSortBy] = useState<"priority" | "faturamento" | "recencia">("priority");
   const [label, setLabel] = useState("");
   const [excludeLabel, setExcludeLabel] = useState("");
+  const [ambassadorOnly, setAmbassadorOnly] = useState("");
 
   const labelsQuery = useQuery({
     queryKey: ["customer-labels"],
@@ -19,7 +20,7 @@ export function CustomersPage() {
   });
 
   const customersQuery = useQuery({
-    queryKey: ["customers", search, status, sortBy, label, excludeLabel],
+    queryKey: ["customers", search, status, sortBy, label, excludeLabel, ambassadorOnly],
     queryFn: () =>
       api.customers(token!, {
         search,
@@ -27,6 +28,7 @@ export function CustomersPage() {
         sortBy,
         labels: label,
         excludeLabels: excludeLabel,
+        isAmbassador: ambassadorOnly === "true" ? true : undefined,
         limit: 120,
       }),
     enabled: Boolean(token),
@@ -42,10 +44,10 @@ export function CustomersPage() {
           </div>
         </div>
 
-        <div className="filters-grid filters-grid-wide">
+        <div className="filters-grid filters-grid-six">
           <label>
             Buscar
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome ou código" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome ou codigo" />
           </label>
 
           <label>
@@ -53,7 +55,7 @@ export function CustomersPage() {
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">Todos</option>
               <option value="ACTIVE">Ativos</option>
-              <option value="ATTENTION">Atenção</option>
+              <option value="ATTENTION">Atencao</option>
               <option value="INACTIVE">Inativos</option>
             </select>
           </label>
@@ -63,12 +65,12 @@ export function CustomersPage() {
             <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)}>
               <option value="priority">Prioridade</option>
               <option value="faturamento">Faturamento</option>
-              <option value="recencia">Recência</option>
+              <option value="recencia">Recencia</option>
             </select>
           </label>
 
           <label>
-            Com rótulo
+            Com rotulo
             <select value={label} onChange={(event) => setLabel(event.target.value)}>
               <option value="">Todos</option>
               {labelsQuery.data?.map((item) => (
@@ -80,7 +82,7 @@ export function CustomersPage() {
           </label>
 
           <label>
-            Excluir rótulo
+            Excluir rotulo
             <select value={excludeLabel} onChange={(event) => setExcludeLabel(event.target.value)}>
               <option value="">Nenhum</option>
               {labelsQuery.data?.map((item) => (
@@ -88,6 +90,14 @@ export function CustomersPage() {
                   {item.name}
                 </option>
               ))}
+            </select>
+          </label>
+
+          <label>
+            Embaixadores
+            <select value={ambassadorOnly} onChange={(event) => setAmbassadorOnly(event.target.value)}>
+              <option value="">Todos</option>
+              <option value="true">So embaixadores</option>
             </select>
           </label>
         </div>
