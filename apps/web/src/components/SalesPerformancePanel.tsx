@@ -6,13 +6,6 @@ interface SalesPerformancePanelProps {
   isLoading?: boolean;
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format(value);
-}
-
 export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerformancePanelProps) {
   if (isLoading) {
     return (
@@ -20,7 +13,7 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
         <div className="panel-header">
           <div>
             <p className="eyebrow">Performance do mês</p>
-            <h3>Vendas por atendente</h3>
+            <h3>Ranking Mensal</h3>
           </div>
         </div>
         <div className="page-loading">Carregando performance...</div>
@@ -34,7 +27,7 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
         <div className="panel-header">
           <div>
             <p className="eyebrow">Performance do mês</p>
-            <h3>Vendas por atendente</h3>
+            <h3>Ranking Mensal</h3>
           </div>
         </div>
         <div className="empty-state">Nenhuma venda registrada neste mês.</div>
@@ -42,41 +35,58 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
     );
   }
 
+  const maxOrders = Math.max(...salesPerformance.map((e) => e.totalOrders));
+
   return (
     <article className="panel insight-panel">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Performance do mês</p>
           <h3>Ranking Mensal</h3>
-          <p className="panel-subcopy">Vendas, peças e clientes atendidos do mês atual.</p>
+          <p className="panel-subcopy">Desempenho corporativo com base nas vendas do período.</p>
         </div>
       </div>
 
-      <div className="sales-performance-list">
-        {salesPerformance.map((entry, index) => (
-          <div key={entry.attendant} className="sales-performance-entry">
-            <div className="sales-performance-rank">#{index + 1}</div>
-            <div className="sales-performance-info">
-              <strong>{entry.attendant}</strong>
-              <div className="sales-performance-metrics">
-                <div className="sales-metric">
-                  <span className="sales-metric-value">{formatNumber(entry.totalOrders)}</span>
-                  <span className="sales-metric-label">vendas</span>
+      <div className="ranking-balanced-list">
+        {salesPerformance.map((entry, index) => {
+          const isTop3 = index < 3;
+          const posClass = isTop3 ? `pos-${index + 1}` : "";
+          const pct = maxOrders > 0 ? (entry.totalOrders / maxOrders) * 100 : 0;
+
+          return (
+            <div key={entry.attendant} className={`ranking-card ${posClass}`}>
+              <div className="ranking-badge">
+                {index + 1}
+              </div>
+
+              <div className="ranking-content">
+                <div className="ranking-header">
+                  <span className="ranking-name">{entry.attendant}</span>
+                  {index === 0 && <span className="ranking-tag">Top Performer</span>}
                 </div>
-                <span className="separator">•</span>
-                <div className="sales-metric">
-                  <span className="sales-metric-value">{formatNumber(entry.totalItems)}</span>
-                  <span className="sales-metric-label">peças</span>
+
+                <div className="ranking-metrics">
+                  <div className="ranking-metric">
+                    <strong>{formatNumber(entry.totalOrders)}</strong>
+                    <span>vendas</span>
+                  </div>
+                  <div className="ranking-metric">
+                    <strong>{formatNumber(entry.totalItems)}</strong>
+                    <span>peças</span>
+                  </div>
+                  <div className="ranking-metric">
+                    <strong>{formatNumber(entry.uniqueCustomers)}</strong>
+                    <span>clientes</span>
+                  </div>
                 </div>
-                <span className="separator">•</span>
-                <div className="sales-metric">
-                  <span className="sales-metric-value">{formatNumber(entry.uniqueCustomers)}</span>
-                  <span className="sales-metric-label">clientes</span>
+
+                <div className="ranking-bar-bg">
+                  <div className="ranking-bar-fill" style={{ width: `${pct}%` }} />
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </article>
   );
