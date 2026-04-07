@@ -33,6 +33,15 @@ export interface DashboardMetrics {
   agendaEligibleCount: number;
   reactivationLeaderboard: ReactivationLeaderboardEntry[];
   portfolioTrend: PortfolioTrendPoint[];
+  salesPerformance: SalesPerformanceEntry[];
+}
+
+export interface SalesPerformanceEntry {
+  attendant: string;
+  totalOrders: number;
+  uniqueCustomers: number;
+  totalRevenue: number;
+  totalItems: number;
 }
 
 export interface ReactivationLeaderboardEntry {
@@ -129,6 +138,8 @@ export interface SegmentResult {
     averagePriorityScore: number;
     potentialRecoveredRevenue: number;
     potentialRecoveredPieces: number;
+    monthlyPotentialRevenue: number;
+    monthlyPotentialPieces: number;
   };
   customers: CustomerListItem[];
 }

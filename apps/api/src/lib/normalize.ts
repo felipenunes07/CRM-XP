@@ -33,27 +33,33 @@ export function safeNumber(value: unknown) {
     return 0;
   }
 
-  const hasComma = text.includes(",");
-  const hasDot = text.includes(".");
-  let normalized = text;
+  // Remove currency symbols and other non-numeric characters except comma, dot, and minus
+  const cleaned = text.replace(/[^\d,.\-]/g, "");
+  if (!cleaned) {
+    return 0;
+  }
+
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+  let normalized = cleaned;
 
   if (hasComma && hasDot) {
-    const lastComma = text.lastIndexOf(",");
-    const lastDot = text.lastIndexOf(".");
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
     if (lastComma > lastDot) {
-      normalized = text.replace(/\./g, "").replace(",", ".");
+      normalized = cleaned.replace(/\./g, "").replace(",", ".");
     } else {
-      normalized = text.replace(/,/g, "");
+      normalized = cleaned.replace(/,/g, "");
     }
   } else if (hasComma) {
-    normalized = text.replace(",", ".");
+    normalized = cleaned.replace(",", ".");
   } else if (hasDot) {
-    const parts = text.split(".");
+    const parts = cleaned.split(".");
     if (parts.length > 2) {
       normalized = parts.join("");
     } else {
       const [, decimalPart = ""] = parts;
-      normalized = decimalPart.length === 3 ? parts.join("") : text;
+      normalized = decimalPart.length === 3 ? parts.join("") : cleaned;
     }
   }
 
