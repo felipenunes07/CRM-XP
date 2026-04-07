@@ -1,3 +1,4 @@
+import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -56,6 +57,7 @@ export function CustomerDetailPage() {
   const [internalNotes, setInternalNotes] = useState("");
   const [labelMessage, setLabelMessage] = useState("");
   const [notesMessage, setNotesMessage] = useState("");
+  const [ambassadorMessage, setAmbassadorMessage] = useState("");
 
   const detailQuery = useQuery({
     queryKey: ["customer", id],
@@ -73,7 +75,7 @@ export function CustomerDetailPage() {
   const availableLabels = useMemo(
     () =>
       knownLabels.filter((labelName) => {
-        if (selectedLabels.includes(labelName)) {
+        if (labelName === AMBASSADOR_LABEL_NAME || selectedLabels.includes(labelName)) {
           return false;
         }
 
@@ -96,6 +98,7 @@ export function CustomerDetailPage() {
     onSuccess: (updatedCustomer) => {
       queryClient.setQueryData(["customer", updatedCustomer.id], updatedCustomer);
       void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["ambassadors"] });
       setLabelMessage("Rotulos salvos com sucesso.");
     },
   });
@@ -109,6 +112,18 @@ export function CustomerDetailPage() {
     },
   });
 
+  const ambassadorMutation = useMutation({
+    mutationFn: (isAmbassador: boolean) => api.updateCustomerAmbassador(token!, id!, isAmbassador),
+    onSuccess: (updatedCustomer) => {
+      queryClient.setQueryData(["customer", updatedCustomer.id], updatedCustomer);
+      void queryClient.invalidateQueries({ queryKey: ["customers"] });
+      void queryClient.invalidateQueries({ queryKey: ["ambassadors"] });
+      setAmbassadorMessage(
+        updatedCustomer.isAmbassador ? "Cliente marcado como embaixador." : "Cliente removido da aba de embaixadores.",
+      );
+    },
+  });
+
   if (detailQuery.isLoading) {
     return <div className="page-loading">Carregando ficha do cliente...</div>;
   }
@@ -118,7 +133,7 @@ export function CustomerDetailPage() {
   }
 
   function addExistingLabel(labelName: string) {
-    if (selectedLabels.includes(labelName)) {
+    if (selectedLabels.includes(labelName) || labelName === AMBASSADOR_LABEL_NAME) {
       return;
     }
 
@@ -133,12 +148,21 @@ export function CustomerDetailPage() {
       return;
     }
 
+    if (cleaned.toLowerCase() === AMBASSADOR_LABEL_NAME.toLowerCase()) {
+      setLabelMessage(`Use o botao dedicado para marcar ${AMBASSADOR_LABEL_NAME}.`);
+      return;
+    }
+
     setSelectedLabels((current) => [...current, cleaned]);
     setNewLabel("");
     setLabelMessage("");
   }
 
   function removeLabel(labelName: string) {
+    if (labelName === AMBASSADOR_LABEL_NAME) {
+      return;
+    }
+
     setSelectedLabels((current) => current.filter((item) => item !== labelName));
     setLabelMessage("");
   }
@@ -166,6 +190,30 @@ export function CustomerDetailPage() {
           <p>
             {customer.customerCode} | {statusLabel(customer.status)} | Insight principal: {primaryInsightLabel(customer)}
           </p>
+        </div>
+        <div className="hero-actions">
+          {customer.isAmbassador ? (
+            <span className="tag ambassador-tag">
+              {AMBASSADOR_LABEL_NAME}
+              {customer.ambassadorAssignedAt ? ` desde ${formatDate(customer.ambassadorAssignedAt)}` : ""}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className={customer.isAmbassador ? "ghost-button" : "primary-button"}
+            disabled={ambassadorMutation.isPending}
+            onClick={() => {
+              setAmbassadorMessage("");
+              ambassadorMutation.mutate(!customer.isAmbassador);
+            }}
+          >
+            {ambassadorMutation.isPending
+              ? "Salvando..."
+              : customer.isAmbassador
+                ? "Remover de embaixadores"
+                : "Marcar como embaixador"}
+          </button>
+          {ambassadorMessage ? <span className="save-ok">{ambassadorMessage}</span> : null}
         </div>
       </section>
 
@@ -288,11 +336,16 @@ export function CustomerDetailPage() {
               <div className="tag-row compact">
                 {selectedLabels.length ? (
                   selectedLabels.map((labelName) => (
-                    <span key={labelName} className="tag removable-tag">
+                    <span
+                      key={labelName}
+                      className={`tag ${labelName === AMBASSADOR_LABEL_NAME ? "ambassador-tag" : "removable-tag"}`}
+                    >
                       <span>{labelName}</span>
-                      <button type="button" className="tag-remove-button" onClick={() => removeLabel(labelName)}>
-                        x
-                      </button>
+                      {labelName !== AMBASSADOR_LABEL_NAME ? (
+                        <button type="button" className="tag-remove-button" onClick={() => removeLabel(labelName)}>
+                          x
+                        </button>
+                      ) : null}
                     </span>
                   ))
                 ) : (

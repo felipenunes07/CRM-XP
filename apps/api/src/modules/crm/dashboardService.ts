@@ -8,7 +8,7 @@ import type {
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
-import { listCustomers } from "./customerService.js";
+import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers } from "./customerService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
@@ -396,6 +396,22 @@ export async function getAgendaItems(limit = 25, offset = 0): Promise<AgendaResp
           s.primary_insight,
           s.insight_tags,
           s.last_attendant,
+          EXISTS (
+            SELECT 1
+            FROM customer_label_assignments cla
+            JOIN customer_labels cl ON cl.id = cla.label_id
+            WHERE cla.customer_id = s.customer_id
+              AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+          ) AS is_ambassador,
+          (
+            SELECT cla.created_at::text
+            FROM customer_label_assignments cla
+            JOIN customer_labels cl ON cl.id = cla.label_id
+            WHERE cla.customer_id = s.customer_id
+              AND cl.normalized_name = '${AMBASSADOR_LABEL_NORMALIZED_NAME}'
+            ORDER BY cla.created_at ASC
+            LIMIT 1
+          ) AS ambassador_assigned_at,
           COALESCE((
             SELECT jsonb_agg(
               jsonb_build_object('id', cl.id, 'name', cl.name, 'color', cl.color)
@@ -443,6 +459,8 @@ export async function getAgendaItems(limit = 25, offset = 0): Promise<AgendaResp
       insightTags: tags,
       lastAttendant: row.last_attendant ? String(row.last_attendant) : null,
       labels: getLabels(row),
+      isAmbassador: Boolean(row.is_ambassador),
+      ambassadorAssignedAt: row.ambassador_assigned_at ? String(row.ambassador_assigned_at) : null,
       reason: buildAgendaReason(row, tags),
       suggestedAction: buildAgendaSuggestedAction(tags, status),
     } satisfies AgendaItem;

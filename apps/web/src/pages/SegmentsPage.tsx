@@ -12,6 +12,11 @@ const initialDefinition: SegmentDefinition = {
   minTotalSpent: 0,
 };
 
+function sanitizeSegmentDefinition(definition: SegmentDefinition): SegmentDefinition {
+  const { frequencyDropRatio: _frequencyDropRatio, ...cleanDefinition } = definition;
+  return cleanDefinition;
+}
+
 function summarizeSegment(segment: SavedSegment) {
   const parts: string[] = [];
 
@@ -34,7 +39,7 @@ function summarizeSegment(segment: SavedSegment) {
 export function SegmentsPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
-  const [definition, setDefinition] = useState<SegmentDefinition>(initialDefinition);
+  const [definition, setDefinition] = useState<SegmentDefinition>(() => sanitizeSegmentDefinition(initialDefinition));
   const [segmentName, setSegmentName] = useState("");
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [segmentMessage, setSegmentMessage] = useState("");
@@ -88,16 +93,19 @@ export function SegmentsPage() {
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    previewMutation.mutate(definition);
+    const cleanDefinition = sanitizeSegmentDefinition(definition);
+    setDefinition(cleanDefinition);
+    previewMutation.mutate(cleanDefinition);
     setSegmentMessage("");
   }
 
   function openSavedSegment(segment: SavedSegment) {
-    setDefinition(segment.definition);
+    const cleanDefinition = sanitizeSegmentDefinition(segment.definition);
+    setDefinition(cleanDefinition);
     setSegmentName(segment.name);
     setActiveSegmentId(segment.id);
     setSegmentMessage("");
-    previewMutation.mutate(segment.definition);
+    previewMutation.mutate(cleanDefinition);
   }
 
   function handleSaveSegment() {
@@ -109,7 +117,7 @@ export function SegmentsPage() {
 
     saveSegmentMutation.mutate({
       name: cleanedName,
-      definition,
+      definition: sanitizeSegmentDefinition(definition),
     });
   }
 
@@ -117,7 +125,7 @@ export function SegmentsPage() {
     const baseName = segmentName.trim() || "Publico acionavel";
     duplicateSegmentMutation.mutate({
       name: `${baseName} copia`,
-      definition,
+      definition: sanitizeSegmentDefinition(definition),
     });
   }
 
@@ -140,7 +148,7 @@ export function SegmentsPage() {
             </div>
           </div>
 
-          <div className="filters-grid filters-grid-four">
+          <div className="filters-grid filters-grid-four segment-filters-grid">
             <label className="full-span">
               Nome do publico
               <input
@@ -153,7 +161,7 @@ export function SegmentsPage() {
               />
             </label>
 
-            <label>
+            <label className="segment-filter-half">
               Status
               <select
                 value={definition.status?.[0] ?? ""}
@@ -171,7 +179,7 @@ export function SegmentsPage() {
               </select>
             </label>
 
-            <label>
+            <label className="segment-filter-half">
               Minimo de dias inativo
               <input
                 type="number"
@@ -185,7 +193,7 @@ export function SegmentsPage() {
               />
             </label>
 
-            <label>
+            <label className="segment-filter-half">
               Ticket minimo
               <input
                 type="number"
@@ -199,7 +207,7 @@ export function SegmentsPage() {
               />
             </label>
 
-            <label>
+            <label className="segment-filter-half">
               Total gasto minimo
               <input
                 type="number"
@@ -213,22 +221,7 @@ export function SegmentsPage() {
               />
             </label>
 
-            <label>
-              Queda minima de frequencia
-              <input
-                type="number"
-                step="0.1"
-                value={definition.frequencyDropRatio ?? ""}
-                onChange={(event) =>
-                  setDefinition((current) => ({
-                    ...current,
-                    frequencyDropRatio: event.target.value ? Number(event.target.value) : undefined,
-                  }))
-                }
-              />
-            </label>
-
-            <label>
+            <label className="segment-filter-half">
               Com rotulo
               <select
                 value={definition.labels?.[0] ?? ""}
@@ -248,7 +241,7 @@ export function SegmentsPage() {
               </select>
             </label>
 
-            <label>
+            <label className="segment-filter-half">
               Excluir rotulo
               <select
                 value={definition.excludeLabels?.[0] ?? ""}
@@ -269,7 +262,7 @@ export function SegmentsPage() {
             </label>
           </div>
 
-          <div className="inline-actions">
+          <div className="inline-actions segment-actions-bar">
             <button className="primary-button" type="submit">
               Pre-visualizar segmento
             </button>
@@ -288,75 +281,79 @@ export function SegmentsPage() {
           </div>
         </form>
 
-        <article className="panel">
+        <article className="panel segment-summary-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Biblioteca compartilhada</p>
-              <h3>Publicos salvos</h3>
+              <p className="eyebrow">Resumo</p>
+              <h3>Resultado esperado</h3>
+              <p className="panel-subcopy">A previa aparece aqui para você decidir se esse publico vale salvar e acionar.</p>
             </div>
           </div>
 
-          {savedSegmentsQuery.isLoading ? <div className="page-loading">Carregando publicos...</div> : null}
-          {savedSegmentsQuery.isError ? <div className="page-error">Nao foi possivel carregar os publicos salvos.</div> : null}
-          {!savedSegmentsQuery.isLoading && !savedSegmentsQuery.isError ? (
-            savedSegmentsQuery.data?.length ? (
-              <div className="saved-segment-list">
-                {savedSegmentsQuery.data.map((segment) => (
-                  <button
-                    key={segment.id}
-                    type="button"
-                    className={`saved-segment-card ${segment.id === activeSegmentId ? "is-active" : ""}`}
-                    onClick={() => openSavedSegment(segment)}
-                  >
-                    <strong>{segment.name}</strong>
-                    <span>{summarizeSegment(segment)}</span>
-                  </button>
-                ))}
+          {previewMutation.data ? (
+            <>
+              <div className="detail-grid segment-summary-grid">
+                <div>
+                  <span>Clientes</span>
+                  <strong>{formatNumber(previewMutation.data.summary.totalCustomers)}</strong>
+                </div>
+                <div>
+                  <span>Prioridade media</span>
+                  <strong>{Number(previewMutation.data.summary.averagePriorityScore ?? 0).toFixed(1)}</strong>
+                </div>
+                <div>
+                  <span>Potencial de faturamento</span>
+                  <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
+                </div>
+                <div>
+                  <span>Pecas potenciais</span>
+                  <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
+                </div>
               </div>
-            ) : (
-              <div className="empty-state">Nenhum publico salvo ainda. Monte um filtro e salve para a equipe reaproveitar.</div>
-            )
-          ) : null}
+              <p className="panel-subcopy segment-summary-note">
+                O potencial de faturamento mostra quanto a empresa pode voltar a movimentar se conseguir reativar esse
+                publico, usando como base o ticket medio historico de cada cliente do segmento. As pecas potenciais usam a
+                media de pecas por pedido desse mesmo publico.
+              </p>
+            </>
+          ) : (
+            <div className="empty-state">
+              Gere a previa para ver quantos clientes entram no publico, qual a prioridade media e o potencial estimado.
+            </div>
+          )}
         </article>
       </section>
 
       <section className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Resumo</p>
-            <h3>Resultado esperado</h3>
+            <p className="eyebrow">Biblioteca compartilhada</p>
+            <h3>Publicos salvos</h3>
+            <p className="panel-subcopy">Guarde filtros que funcionam bem para a equipe reaproveitar depois.</p>
           </div>
         </div>
 
-        {previewMutation.data ? (
-          <div className="detail-grid">
-            <div>
-              <span>Clientes</span>
-              <strong>{formatNumber(previewMutation.data.summary.totalCustomers)}</strong>
+        {savedSegmentsQuery.isLoading ? <div className="page-loading">Carregando publicos...</div> : null}
+        {savedSegmentsQuery.isError ? <div className="page-error">Nao foi possivel carregar os publicos salvos.</div> : null}
+        {!savedSegmentsQuery.isLoading && !savedSegmentsQuery.isError ? (
+          savedSegmentsQuery.data?.length ? (
+            <div className="saved-segment-list">
+              {savedSegmentsQuery.data.map((segment) => (
+                <button
+                  key={segment.id}
+                  type="button"
+                  className={`saved-segment-card ${segment.id === activeSegmentId ? "is-active" : ""}`}
+                  onClick={() => openSavedSegment(segment)}
+                >
+                  <strong>{segment.name}</strong>
+                  <span>{summarizeSegment(segment)}</span>
+                </button>
+              ))}
             </div>
-            <div>
-              <span>Prioridade media</span>
-              <strong>{Number(previewMutation.data.summary.averagePriorityScore ?? 0).toFixed(1)}</strong>
-            </div>
-            <div>
-              <span>Potencial de faturamento</span>
-              <strong>{formatCurrency(previewMutation.data.summary.potentialRecoveredRevenue ?? 0)}</strong>
-            </div>
-            <div>
-              <span>Pecas potenciais</span>
-              <strong>{formatNumber(previewMutation.data.summary.potentialRecoveredPieces ?? 0)}</strong>
-            </div>
-          </div>
-        ) : (
-          <p className="muted-copy">Monte o filtro e gere a previa para ver a populacao do segmento.</p>
-        )}
-
-        {previewMutation.data ? (
-          <p className="panel-subcopy">
-            O potencial de faturamento mostra quanto a empresa pode voltar a movimentar se conseguir reativar esse
-            publico, usando como base o ticket medio historico de cada cliente do segmento. As pecas potenciais usam a
-            media de pecas por pedido desse mesmo publico.
-          </p>
+          ) : null
+        ) : null}
+        {!savedSegmentsQuery.isLoading && !savedSegmentsQuery.isError && !savedSegmentsQuery.data?.length ? (
+          <div className="empty-state">Nenhum publico salvo ainda. Monte um filtro e salve para a equipe reaproveitar.</div>
         ) : null}
       </section>
 
