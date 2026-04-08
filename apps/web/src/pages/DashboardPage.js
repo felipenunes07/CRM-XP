@@ -18,8 +18,8 @@ const periodOptions = [
 ];
 const bucketFilters = {
     "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
-    "15-29": { minDaysInactive: 15, maxDaysInactive: 29 },
-    "30-59": { minDaysInactive: 30, maxDaysInactive: 59 },
+    "15-30": { minDaysInactive: 15, maxDaysInactive: 30 },
+    "31-59": { minDaysInactive: 31, maxDaysInactive: 59 },
     "60-89": { minDaysInactive: 60, maxDaysInactive: 89 },
     "90-179": { minDaysInactive: 90, maxDaysInactive: 179 },
     "180+": { minDaysInactive: 180 },
@@ -127,10 +127,10 @@ function bucketColor(label, selected) {
     if (selected) {
         return "#5f8cff";
     }
-    if (label === "0-14" || label === "15-29") {
+    if (label === "0-14" || label === "15-30") {
         return "#a8c1ff";
     }
-    if (label === "30-59" || label === "60-89") {
+    if (label === "31-59" || label === "60-89") {
         return "#5f8cff";
     }
     return "#2956d7";
@@ -142,11 +142,11 @@ function bucketTooltipNote(label) {
     if (label === "0-14") {
         return "Todos nesta faixa seguem no status Ativo.";
     }
-    if (label === "15-29") {
+    if (label === "15-30") {
         return "Todos nesta faixa seguem no status Ativo.";
     }
-    if (label === "30-59") {
-        return "Faixa de transicao: no dia 30 ainda pode estar Ativo; de 31 a 59 entra em Atencao.";
+    if (label === "31-59") {
+        return "Todos nesta faixa ja estao em Atencao.";
     }
     if (label === "60-89") {
         return "Todos nesta faixa ja estao em Atencao.";
