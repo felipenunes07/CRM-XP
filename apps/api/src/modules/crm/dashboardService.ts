@@ -8,7 +8,8 @@ import type {
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
-import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers } from "./customerService.js";
+import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
+import type { CustomerFilters } from "./customerService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
@@ -134,13 +135,18 @@ function buildAgendaSuggestedAction(tags: InsightTag[], status: string) {
   return "Manter relacionamento e estimular nova compra.";
 }
 
-async function getAgendaEligibleCount() {
+async function getAgendaEligibleCount(filters: CustomerFilters = {}) {
+  const { whereSql, params } = buildWhere(filters);
+  const baseCondition = AGENDA_ELIGIBILITY_SQL;
+  const finalWhere = whereSql ? `${whereSql} AND ${baseCondition}` : `WHERE ${baseCondition}`;
+
   const result = await pool.query(
     `
       SELECT COUNT(*)::int AS total
       FROM customer_snapshot s
-      WHERE ${AGENDA_ELIGIBILITY_SQL}
+      ${finalWhere}
     `,
+    params,
   );
 
   return Number(result.rows[0]?.total ?? 0);
@@ -407,17 +413,27 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
   };
 }
 
-export async function getAgendaItems(limit = 25, offset = 0): Promise<AgendaResponse> {
+export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFilters = {}): Promise<AgendaResponse> {
   const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
   const safeOffset = Math.max(0, Math.floor(offset));
+
+  const { whereSql, params } = buildWhere(filters);
+  const baseCondition = AGENDA_ELIGIBILITY_SQL;
+  const finalWhere = whereSql ? `${whereSql} AND ${baseCondition}` : `WHERE ${baseCondition}`;
+
+  const countParams = [...params];
+  const itemsParams = [...params, safeLimit, safeOffset];
+  const limitIndex = params.length + 1;
+  const offsetIndex = params.length + 2;
 
   const [countResult, itemsResult] = await Promise.all([
     pool.query(
       `
         SELECT COUNT(*)::int AS total
         FROM customer_snapshot s
-        WHERE ${AGENDA_ELIGIBILITY_SQL}
+        ${finalWhere}
       `,
+      countParams
     ),
     pool.query(
       `
@@ -464,12 +480,12 @@ export async function getAgendaItems(limit = 25, offset = 0): Promise<AgendaResp
             WHERE cla.customer_id = s.customer_id
           ), '[]'::jsonb) AS labels
         FROM customer_snapshot s
-        WHERE ${AGENDA_ELIGIBILITY_SQL}
+        ${finalWhere}
         ORDER BY s.priority_score DESC, s.total_spent DESC, s.display_name ASC
-        LIMIT $1
-        OFFSET $2
+        LIMIT $${limitIndex}
+        OFFSET $${offsetIndex}
       `,
-      [safeLimit, safeOffset],
+      itemsParams,
     ),
   ]);
 
