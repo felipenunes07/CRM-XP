@@ -352,17 +352,17 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
         `
           SELECT label, count
           FROM (
-            SELECT '0-14' AS label, COUNT(*)::int AS count FROM customer_snapshot WHERE COALESCE(days_since_last_purchase, 0) BETWEEN 0 AND 14
+            SELECT '0-14' AS label, COUNT(*)::int AS count FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 0 AND 14
             UNION ALL
-            SELECT '15-29', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 15 AND 29
+            SELECT '15-30', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 15 AND 30
             UNION ALL
-            SELECT '30-59', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 30 AND 59
+            SELECT '31-59', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 31 AND 59
             UNION ALL
             SELECT '60-89', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 60 AND 89
             UNION ALL
             SELECT '90-179', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase BETWEEN 90 AND 179
             UNION ALL
-            SELECT '180+', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase >= 180
+            SELECT '180+', COUNT(*)::int FROM customer_snapshot WHERE days_since_last_purchase >= 180 OR days_since_last_purchase IS NULL
           ) bucket_data
         `,
       ),
