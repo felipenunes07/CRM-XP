@@ -66,6 +66,11 @@ const dashboardQuerySchema = z.object({
 const agendaQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  search: z.string().optional(),
+  status: z.string().optional(),
+  labels: z.string().optional(),
+  excludeLabels: z.string().optional(),
+  isAmbassador: z.coerce.boolean().optional(),
 });
 
 const segmentSchema = z.object({
@@ -182,7 +187,21 @@ export function createApp() {
   app.get("/api/agenda", async (request, response, next) => {
     try {
       const query = agendaQuerySchema.parse(request.query);
-      response.json(await getAgendaItems(query.limit, query.offset));
+      const statuses = query.status
+        ? query.status
+            .split(",")
+            .filter((value): value is CustomerStatus => ["ACTIVE", "ATTENTION", "INACTIVE"].includes(value))
+        : undefined;
+
+      response.json(
+        await getAgendaItems(query.limit, query.offset, {
+          search: query.search,
+          status: statuses,
+          labels: query.labels?.split(",").filter(Boolean),
+          excludeLabels: query.excludeLabels?.split(",").filter(Boolean),
+          isAmbassador: query.isAmbassador,
+        })
+      );
     } catch (error) {
       next(error);
     }
