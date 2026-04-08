@@ -376,35 +376,63 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero-panel dashboard-hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Operacao comercial</p>
-          <h2>Prioridades de contato e saude da carteira</h2>
-          <p>Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.</p>
-          <div className="hero-actions">
-            <Link className="primary-button" to="/agenda">
-              Abrir agenda do dia
-            </Link>
-            <button className="ghost-button" type="button" disabled={isSyncing} onClick={handleSync}>
-              {isSyncing ? "Sincronizando..." : "Sincronizar Agora"}
-            </button>
-          </div>
+      <section className="dashboard-hero-premium">
+        <div className="hero-premium-bg">
+          <div className="hero-premium-gradient"></div>
         </div>
+        <div className="hero-premium-content">
+          <div className="hero-premium-copy">
+            <div className="premium-badge">Operacao comercial</div>
+            <h2 className="premium-title">Prioridades de contato e saude da carteira</h2>
+            <p className="premium-subtitle">Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.</p>
+            <div className="premium-actions">
+              <Link className="premium-button primary" to="/agenda">
+                Abrir agenda do dia
+              </Link>
+              <button className="premium-button ghost" type="button" disabled={isSyncing} onClick={handleSync}>
+                {isSyncing ? "Sincronizando..." : "Sincronizar Agora"}
+              </button>
+            </div>
+          </div>
 
-        <div className="hero-meta">
-          <div className="hero-meta-item">
-            <span>Ultima sincronizacao</span>
-            <strong>
-              {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString("pt-BR") : "Sincronizacao pendente"}
-            </strong>
-          </div>
-          <div className="hero-meta-item">
-            <span>Frequencia media</span>
-            <strong>{metrics.averageFrequencyDays.toFixed(1)} dias</strong>
-          </div>
-          <div className="hero-meta-item">
-            <span>Agenda acionavel</span>
-            <strong>{formatNumber(metrics.agendaEligibleCount)} clientes</strong>
+          <div className="hero-premium-stats">
+            <div className="premium-stat-card">
+              <div className="premium-stat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="premium-stat-info">
+                <span>Ultima sincronizacao</span>
+                <strong>
+                  {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString("pt-BR") : "Pendente..."}
+                </strong>
+              </div>
+            </div>
+            
+            <div className="premium-stat-card">
+              <div className="premium-stat-icon accent-blue">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M13 10V3L4 14H11V21L20 10H13Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="premium-stat-info">
+                <span>Frequencia media</span>
+                <strong>{metrics.averageFrequencyDays.toFixed(1)} dias</strong>
+              </div>
+            </div>
+            
+            <div className="premium-stat-card">
+              <div className="premium-stat-icon accent-purple">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21M23 21V19C22.9993 18.1137 22.7044 17.2528 22.1614 16.5523C21.6184 15.8519 20.8581 15.3516 20 15.13M16 3.13C16.8581 3.35163 17.6184 3.85186 18.1614 4.55231C18.7044 5.25277 18.9993 6.11373 19 7C18.9993 7.88627 18.7044 8.74723 18.1614 9.44769C17.6184 10.1481 16.8581 10.6484 16 10.87M9 11C11.2091 11 13 9.20914 13 7C13 4.79086 11.2091 3 9 3C6.79086 3 5 4.79086 5 7C5 9.20914 6.79086 11 9 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div className="premium-stat-info">
+                <span>Agenda acionavel</span>
+                <strong>{formatNumber(metrics.agendaEligibleCount)} <small>clientes</small></strong>
+              </div>
+            </div>
           </div>
         </div>
       </section>

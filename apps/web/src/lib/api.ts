@@ -61,7 +61,7 @@ export const api = {
   ambassadors(token: string) {
     return request<AmbassadorResponse>("/api/ambassadors", {}, token);
   },
-  agenda(token: string, limit?: number, offset?: number) {
+  agenda(token: string, limit?: number, offset?: number, query: Record<string, string | number | boolean | undefined> = {}) {
     const search = new URLSearchParams();
     if (limit !== undefined) {
       search.set("limit", String(limit));
@@ -69,6 +69,11 @@ export const api = {
     if (offset !== undefined) {
       search.set("offset", String(offset));
     }
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        search.set(key, String(value));
+      }
+    });
     return request<AgendaResponse>(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
   customers(token: string, query: Record<string, string | number | boolean | undefined>) {

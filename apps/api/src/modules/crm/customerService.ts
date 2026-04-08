@@ -14,7 +14,7 @@ import type {
 import { HttpError } from "../../lib/httpError.js";
 import { pool } from "../../db/client.js";
 
-type FilterLike = CustomerFilters & Partial<SegmentDefinition>;
+export type FilterLike = CustomerFilters & Partial<SegmentDefinition>;
 
 function normalizeLabelName(value: string) {
   return value.trim().toLowerCase();
@@ -90,7 +90,7 @@ export interface CustomerFilters {
   isAmbassador?: boolean;
 }
 
-function buildWhere(filters: FilterLike) {
+export function buildWhere(filters: FilterLike) {
   const clauses: string[] = [];
   const params: unknown[] = [];
 

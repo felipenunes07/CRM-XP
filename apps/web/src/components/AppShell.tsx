@@ -20,11 +20,8 @@ export function AppShell() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-top">
-          <div className="brand">
-            <div className="brand-mark">
-              <img className="brand-logo" src="/xp-factory-logo.png" alt="XP Factory" />
-            </div>
-            <div className="brand-copy">
+          <div className="brand premium-brand">
+            <div className="brand-copy premium-brand-copy">
               <p className="eyebrow">XP Factory</p>
               <h1>XP CRM</h1>
             </div>
