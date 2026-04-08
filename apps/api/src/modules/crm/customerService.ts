@@ -405,58 +405,63 @@ export async function previewSegment(definition: SegmentDefinition): Promise<Seg
   let monthlyPotentialPieces = 0;
 
   if (customerIds.length) {
-    const statsResult = await pool.query(
-      `
-        WITH order_item_totals AS (
-          SELECT
-            order_id,
-            COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces
-          FROM order_items
-          GROUP BY order_id
-        ),
-        customer_piece_stats AS (
-          SELECT
-            o.customer_id,
-            COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS total_quantity,
-            COUNT(DISTINCT o.id)::numeric(14,2) AS total_orders,
-            COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
-            GREATEST(
-              EXTRACT(EPOCH FROM (MAX(o.order_date)::timestamp - MIN(o.order_date)::timestamp)) / 86400.0,
-              0
-            ) AS days_active
-          FROM orders o
-          LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
-          WHERE o.customer_id = ANY($1::uuid[])
-          GROUP BY o.customer_id
-        ),
-        customer_monthly_stats AS (
-          SELECT
-            customer_id,
-            total_quantity / NULLIF(total_orders, 0) AS avg_pieces_per_order,
-            CASE 
-              WHEN days_active > 30 THEN (total_orders / (days_active / 30.0))
-              ELSE total_orders
-            END AS avg_orders_per_month,
-            CASE 
-              WHEN days_active > 30 THEN (total_revenue / (days_active / 30.0))
-              ELSE total_revenue
-            END AS avg_revenue_per_month
-          FROM customer_piece_stats
-          WHERE total_orders > 0
-        )
-        SELECT 
-          COALESCE(SUM(avg_pieces_per_order), 0)::numeric(14,2) AS total_avg_pieces_per_order,
-          COALESCE(SUM(avg_orders_per_month * avg_pieces_per_order), 0)::numeric(14,2) AS monthly_potential_pieces,
-          COALESCE(SUM(avg_revenue_per_month), 0)::numeric(14,2) AS monthly_potential_revenue
-        FROM customer_monthly_stats
-      `,
-      [customerIds],
-    );
+    try {
+      const statsResult = await pool.query(
+        `
+          WITH order_item_totals AS (
+            SELECT
+              order_id,
+              COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces
+            FROM order_items
+            GROUP BY order_id
+          ),
+          customer_piece_stats AS (
+            SELECT
+              o.customer_id,
+              COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS total_quantity,
+              COUNT(DISTINCT o.id)::numeric(14,2) AS total_orders,
+              COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
+              GREATEST(
+                EXTRACT(EPOCH FROM (MAX(o.order_date)::timestamp - MIN(o.order_date)::timestamp)) / 86400.0,
+                0
+              ) AS days_active
+            FROM orders o
+            LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
+            WHERE o.customer_id = ANY($1::uuid[])
+            GROUP BY o.customer_id
+          ),
+          customer_monthly_stats AS (
+            SELECT
+              customer_id,
+              total_quantity / NULLIF(total_orders, 0) AS avg_pieces_per_order,
+              CASE 
+                WHEN days_active > 30 THEN (total_orders / (days_active / 30.0))
+                ELSE total_orders
+              END AS avg_orders_per_month,
+              CASE 
+                WHEN days_active > 30 THEN (total_revenue / (days_active / 30.0))
+                ELSE total_revenue
+              END AS avg_revenue_per_month
+            FROM customer_piece_stats
+            WHERE total_orders > 0
+          )
+          SELECT 
+            COALESCE(SUM(avg_pieces_per_order), 0)::numeric(14,2) AS total_avg_pieces_per_order,
+            COALESCE(SUM(avg_orders_per_month * avg_pieces_per_order), 0)::numeric(14,2) AS monthly_potential_pieces,
+            COALESCE(SUM(avg_revenue_per_month), 0)::numeric(14,2) AS monthly_potential_revenue
+          FROM customer_monthly_stats
+        `,
+        [customerIds],
+      );
 
-    const stats = statsResult.rows[0];
-    avgPiecesPerOrder = Number(stats?.total_avg_pieces_per_order ?? 0);
-    monthlyPotentialPieces = Number(stats?.monthly_potential_pieces ?? 0);
-    monthlyPotentialRevenue = Number(stats?.monthly_potential_revenue ?? 0);
+      const stats = statsResult.rows[0];
+      avgPiecesPerOrder = Number(stats?.total_avg_pieces_per_order ?? 0);
+      monthlyPotentialPieces = Number(stats?.monthly_potential_pieces ?? 0);
+      monthlyPotentialRevenue = Number(stats?.monthly_potential_revenue ?? 0);
+    } catch (err: any) {
+      console.error("ERRO AO GERAR PREVIEW:", err.message, err);
+      throw err;
+    }
   }
 
   const potentialRecoveredRevenue = customers.reduce((sum, customer) => sum + customer.avgTicket, 0);
