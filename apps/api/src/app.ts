@@ -124,7 +124,7 @@ export function createApp() {
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || webOrigins.includes(origin)) {
+        if (!origin || webOrigins.includes(origin) || origin.endsWith(".trycloudflare.com")) {
           callback(null, true);
           return;
         }
@@ -470,7 +470,7 @@ export function createApp() {
       return;
     }
 
-    response.status(500).json({ message: "Erro interno do servidor" });
+    response.status(500).json({ message: "Erro interno do servidor", details: error instanceof Error ? error.stack : String(error) });
   });
 
   return app;

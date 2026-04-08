@@ -25,7 +25,9 @@
     "import:supabase:2026": "npm run import:supabase:2026 -w @olist-crm/api",
     "setup:local": "node scripts/setup_system.js",
     "import:full": "npm run import:history",
-    "worker": "npm run worker -w @olist-crm/api"
+    "worker": "npm run worker -w @olist-crm/api",
+    "share": "npx cloudflared tunnel --url http://localhost:5173",
+    "dev:share": "concurrently \"npm run dev\" \"npm run share\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
