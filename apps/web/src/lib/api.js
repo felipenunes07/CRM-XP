@@ -39,10 +39,16 @@ export const api = {
         }
         return request(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
+    attendants(token, windowMonths = 12) {
+        const search = new URLSearchParams({
+            windowMonths: String(windowMonths),
+        });
+        return request(`/api/attendants?${search.toString()}`, {}, token);
+    },
     ambassadors(token) {
         return request("/api/ambassadors", {}, token);
     },
-    agenda(token, limit, offset) {
+    agenda(token, limit, offset, query = {}) {
         const search = new URLSearchParams();
         if (limit !== undefined) {
             search.set("limit", String(limit));
@@ -50,6 +56,11 @@ export const api = {
         if (offset !== undefined) {
             search.set("offset", String(offset));
         }
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
         return request(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     customers(token, query) {
@@ -140,6 +151,49 @@ export const api = {
     deleteMessageTemplate(token, id) {
         return request(`/api/messages/templates/${id}`, {
             method: "DELETE",
+        }, token);
+    },
+    prospectingConfig(token) {
+        return request("/api/prospecting/config", {}, token);
+    },
+    createProspectPreset(token, keyword) {
+        return request("/api/prospecting/presets", {
+            method: "POST",
+            body: JSON.stringify({ keyword }),
+        }, token);
+    },
+    prospectingSearch(token, query) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/prospecting/search?${search.toString()}`, {}, token);
+    },
+    prospectingSummary(token) {
+        return request("/api/prospecting/summary", {}, token);
+    },
+    claimProspectLead(token, id) {
+        return request(`/api/prospecting/leads/${id}/claim`, {
+            method: "POST",
+        }, token);
+    },
+    releaseProspectLead(token, id) {
+        return request(`/api/prospecting/leads/${id}/release`, {
+            method: "POST",
+        }, token);
+    },
+    createProspectContactAttempt(token, id, input) {
+        return request(`/api/prospecting/leads/${id}/contact-attempts`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    discardProspectLead(token, id, reason) {
+        return request(`/api/prospecting/leads/${id}/discard`, {
+            method: "POST",
+            body: JSON.stringify({ reason }),
         }, token);
     },
     users(token) {

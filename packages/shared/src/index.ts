@@ -44,6 +44,84 @@ export interface SalesPerformanceEntry {
   totalItems: number;
 }
 
+export interface AttendantMetricSnapshot {
+  revenue: number;
+  orders: number;
+  pieces: number;
+  uniqueCustomers: number;
+  avgTicket: number;
+  piecesPerOrder: number;
+  revenuePerCustomer: number;
+  lastOrderAt: string | null;
+}
+
+export interface AttendantGrowthRatios {
+  revenue: number | null;
+  orders: number | null;
+  pieces: number | null;
+  uniqueCustomers: number | null;
+  avgTicket: number | null;
+  piecesPerOrder: number | null;
+  revenuePerCustomer: number | null;
+}
+
+export interface AttendantPortfolioSnapshot {
+  totalCustomers: number;
+  statusCounts: Record<CustomerStatus, number>;
+}
+
+export interface AttendantTrendPoint {
+  month: string;
+  revenue: number;
+  orders: number;
+  pieces: number;
+  uniqueCustomers: number;
+}
+
+export interface AttendantTopCustomer {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  revenue: number;
+  orders: number;
+  pieces: number;
+  lastOrderAt: string | null;
+  status: CustomerStatus;
+  priorityScore: number;
+}
+
+export interface AttendantSummary {
+  totalAttendants: number;
+  activeAttendants: number;
+  currentPeriodRevenue: number;
+  currentPeriodOrders: number;
+  currentPeriodPieces: number;
+  currentPeriodCustomers: number;
+  previousPeriodRevenue: number;
+  revenueGrowthRatio: number | null;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  previousPeriodStart: string;
+  previousPeriodEnd: string;
+}
+
+export interface AttendantListItem {
+  attendant: string;
+  currentPeriod: AttendantMetricSnapshot;
+  previousPeriod: AttendantMetricSnapshot;
+  growth: AttendantGrowthRatios;
+  portfolio: AttendantPortfolioSnapshot;
+  monthlyTrend: AttendantTrendPoint[];
+  topCustomers: AttendantTopCustomer[];
+  topProducts: TopProduct[];
+}
+
+export interface AttendantsResponse {
+  windowMonths: 3 | 6 | 12 | 24;
+  summary: AttendantSummary;
+  attendants: AttendantListItem[];
+}
+
 export interface ReactivationLeaderboardEntry {
   attendant: string;
   recoveredCustomers: number;
@@ -211,4 +289,139 @@ export interface AmbassadorResponse {
   summary: AmbassadorSummary;
   monthlyTrend: AmbassadorTrendPoint[];
   ambassadors: AmbassadorListItem[];
+}
+
+export type ProspectLeadStatus = "NEW" | "CLAIMED" | "CONTACTED" | "DISCARDED";
+export type ProspectContactChannel = "WHATSAPP" | "PHONE" | "SITE" | "OTHER";
+export type ProspectContactType = "FIRST_CONTACT" | "FOLLOW_UP" | "NO_RESPONSE" | "INTERESTED" | "DISQUALIFIED";
+
+export interface ProspectLeadAssignee {
+  id: string;
+  name: string;
+  role: "ADMIN" | "MANAGER" | "SELLER";
+}
+
+export interface ProspectKeywordPreset {
+  id: string;
+  label: string;
+  keyword: string;
+  description: string;
+  sortOrder: number;
+}
+
+export interface ProspectQuotaBucket {
+  dailyLimit: number;
+  dailyUsed: number;
+  dailyRemaining: number;
+  monthlyLimit: number;
+  monthlyUsed: number;
+  monthlyRemaining: number;
+}
+
+export interface ProspectQuotaSnapshot {
+  googleEnabled: boolean;
+  searchPageSize: number;
+  snapshotCacheHours: number;
+  detailCacheHours: number;
+  textSearch: ProspectQuotaBucket;
+  placeDetails: ProspectQuotaBucket;
+}
+
+export interface ProspectLead {
+  id: string;
+  googlePlaceId: string;
+  source: "GOOGLE_PLACES";
+  displayName: string;
+  primaryCategory: string | null;
+  rating: number | null;
+  reviewCount: number;
+  phone: string | null;
+  normalizedPhone: string | null;
+  whatsappUrl: string | null;
+  websiteUrl: string | null;
+  address: string | null;
+  state: string;
+  city: string | null;
+  mapsUrl: string | null;
+  score: number;
+  status: ProspectLeadStatus;
+  assignedTo: ProspectLeadAssignee | null;
+  claimedAt: string | null;
+  firstContactAt: string | null;
+  lastContactAt: string | null;
+  lastContactByName: string | null;
+  discardReason: string | null;
+  lastGoogleBasicSyncAt: string | null;
+  lastGoogleDetailSyncAt: string | null;
+  isAvailable: boolean;
+  hasCachedContact: boolean;
+  isWorked: boolean;
+}
+
+export interface ProspectContactAttempt {
+  id: string;
+  leadId: string;
+  seller: ProspectLeadAssignee;
+  channel: ProspectContactChannel;
+  contactType: ProspectContactType;
+  notes: string;
+  createdAt: string;
+}
+
+export interface ProspectContactAttemptResult {
+  attempt: ProspectContactAttempt;
+  lead: ProspectLead;
+  summary: ProspectingDailySummary;
+}
+
+export interface ProspectSearchQuery {
+  keyword: string;
+  state: string;
+  city?: string;
+  onlyNew?: boolean;
+  onlyUnassigned?: boolean;
+  hasPhone?: boolean;
+  myLeads?: boolean;
+  includeWorked?: boolean;
+  limit?: number;
+  refresh?: boolean;
+}
+
+export interface ProspectSearchResponse {
+  query: {
+    keyword: string;
+    state: string;
+    city: string | null;
+  };
+  source: "google" | "snapshot" | "local";
+  cacheHit: boolean;
+  notice: string | null;
+  quota: ProspectQuotaSnapshot;
+  items: ProspectLead[];
+}
+
+export interface ProspectingDailySummary {
+  date: string;
+  seller: ProspectLeadAssignee;
+  dailyTarget: number;
+  uniqueContactsToday: number;
+  claimedLeadCount: number;
+  remainingToGoal: number;
+  quota: ProspectQuotaSnapshot;
+}
+
+export interface ProspectingConfig {
+  apiEnabled: boolean;
+  defaultDailyTarget: number;
+  defaultSearchFilters: {
+    onlyNew: boolean;
+    onlyUnassigned: boolean;
+    includeWorked: boolean;
+    hasPhone: boolean;
+    myLeads: boolean;
+    limit: number;
+  };
+  quota: ProspectQuotaSnapshot;
+  presets: ProspectKeywordPreset[];
+  guardrails: string[];
 }

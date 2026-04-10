@@ -17,6 +17,7 @@ import {
   updateCustomerLabels,
 } from "./modules/crm/customerService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
+import { getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
@@ -30,6 +31,16 @@ import {
   listMessageTemplates,
   updateMessageTemplate,
 } from "./modules/crm/messageService.js";
+import {
+  claimProspectLead,
+  createProspectKeywordPreset,
+  createProspectContactAttempt,
+  discardProspectLead,
+  getProspectingConfig,
+  getProspectingSummary,
+  releaseProspectLead,
+  searchProspectLeads,
+} from "./modules/prospecting/prospectingService.js";
 import { importHistoryFile } from "./modules/ingestion/historyImporter.js";
 import { syncOlistIncremental } from "./modules/ingestion/olistSyncService.js";
 import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
@@ -61,6 +72,13 @@ const customerQuerySchema = z.object({
 
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(730).optional(),
+});
+
+const attendantsQuerySchema = z.object({
+  windowMonths: z
+    .enum(["3", "6", "12", "24"])
+    .transform((value) => Number(value) as 3 | 6 | 12 | 24)
+    .optional(),
 });
 
 const agendaQuerySchema = z.object({
@@ -123,6 +141,53 @@ const savedSegmentSchema = z.object({
   definition: segmentSchema,
 });
 
+const optionalQueryBoolean = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+
+  return value;
+}, z.boolean().optional());
+
+const prospectingSearchSchema = z.object({
+  keyword: z.string().min(1),
+  state: z.string().min(2),
+  city: z.string().optional(),
+  onlyNew: optionalQueryBoolean,
+  onlyUnassigned: optionalQueryBoolean,
+  hasPhone: optionalQueryBoolean,
+  myLeads: optionalQueryBoolean,
+  includeWorked: optionalQueryBoolean,
+  limit: z.coerce.number().int().min(1).max(20).optional(),
+  refresh: optionalQueryBoolean,
+});
+
+const prospectContactAttemptSchema = z.object({
+  channel: z.enum(["WHATSAPP", "PHONE", "SITE", "OTHER"]),
+  contactType: z.enum(["FIRST_CONTACT", "FOLLOW_UP", "NO_RESPONSE", "INTERESTED", "DISQUALIFIED"]),
+  notes: z.string().optional(),
+});
+
+const prospectDiscardSchema = z.object({
+  reason: z.string().optional(),
+});
+
+const prospectPresetSchema = z.object({
+  keyword: z.string().min(1),
+});
+
 export function createApp() {
   const app = express();
 
@@ -167,6 +232,76 @@ export function createApp() {
     response.json({ user: request.user });
   });
 
+  app.get("/api/prospecting/config", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (_request, response, next) => {
+    try {
+      response.json(await getProspectingConfig());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/prospecting/presets", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.status(201).json(await createProspectKeywordPreset(prospectPresetSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/prospecting/search", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.json(await searchProspectLeads(prospectingSearchSchema.parse(request.query), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/prospecting/leads/:id/claim", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.json(await claimProspectLead(String(request.params.id), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/prospecting/leads/:id/release", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.json(await releaseProspectLead(String(request.params.id), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/prospecting/leads/:id/contact-attempts", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.status(201).json(
+        await createProspectContactAttempt(
+          String(request.params.id),
+          request.user!,
+          prospectContactAttemptSchema.parse(request.body),
+        ),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/prospecting/leads/:id/discard", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.json(await discardProspectLead(String(request.params.id), request.user!, prospectDiscardSchema.parse(request.body).reason));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/prospecting/summary", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (request, response, next) => {
+    try {
+      response.json(await getProspectingSummary(request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/dashboard/metrics", async (request, response, next) => {
     try {
       const query = dashboardQuerySchema.parse(request.query);
@@ -179,6 +314,15 @@ export function createApp() {
   app.get("/api/ambassadors", async (_request, response, next) => {
     try {
       response.json(await getAmbassadorOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/attendants", async (request, response, next) => {
+    try {
+      const query = attendantsQuerySchema.parse(request.query);
+      response.json(await getAttendantsOverview(query.windowMonths ?? 12));
     } catch (error) {
       next(error);
     }
