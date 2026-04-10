@@ -26,6 +26,16 @@ const envSchema = z.object({
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("fvendas2026"),
   HISTORICAL_FILES: z.string().default(""),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  PROSPECTING_DAILY_TARGET: z.coerce.number().int().positive().default(5),
+  PROSPECTING_SEARCH_PAGE_SIZE: z.coerce.number().int().min(1).max(10).default(10),
+  PROSPECTING_SNAPSHOT_CACHE_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(24 * 7),
+  PROSPECTING_DETAIL_CACHE_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(24 * 30),
+  PROSPECTING_TEXT_SEARCH_DAILY_LIMIT: z.coerce.number().int().positive().default(125),
+  PROSPECTING_TEXT_SEARCH_MONTHLY_LIMIT: z.coerce.number().int().positive().default(4000),
+  PROSPECTING_PLACE_DETAILS_DAILY_LIMIT: z.coerce.number().int().positive().default(25),
+  PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT: z.coerce.number().int().positive().default(800),
+  PROSPECTING_TIMEZONE: z.string().default("America/Sao_Paulo"),
 });
 
 export const env = envSchema.parse(process.env);

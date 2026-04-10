@@ -4,6 +4,7 @@ import { useAuth } from "./hooks/useAuth";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
+const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
 const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
 const CustomerDetailPage = lazy(async () => ({
@@ -14,6 +15,7 @@ const AgendaPage = lazy(async () => ({ default: (await import("./pages/AgendaPag
 const ReactivationPage = lazy(async () => ({ default: (await import("./pages/ReactivationPage")).ReactivationPage }));
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
+const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 export default function App() {
@@ -22,6 +24,7 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
           <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
@@ -30,6 +33,7 @@ export default function App() {
           <Route path="/reativacao" element={<ReactivationPage />} />
           <Route path="/mensagens" element={<MessagesPage />} />
           <Route path="/rotulos" element={<LabelsPage />} />
+          <Route path="/prospeccao" element={<ProspectingPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

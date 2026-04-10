@@ -1,11 +1,19 @@
 import type {
   AmbassadorResponse,
   AgendaResponse,
+  AttendantsResponse,
   CustomerDetail,
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
   MessageTemplate,
+  ProspectContactAttemptResult,
+  ProspectKeywordPreset,
+  ProspectLead,
+  ProspectSearchQuery,
+  ProspectSearchResponse,
+  ProspectingConfig,
+  ProspectingDailySummary,
   SavedSegment,
   SegmentDefinition,
   SegmentResult,
@@ -57,6 +65,12 @@ export const api = {
       search.set("trendDays", String(trendDays));
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  attendants(token: string, windowMonths: 3 | 6 | 12 | 24 = 12) {
+    const search = new URLSearchParams({
+      windowMonths: String(windowMonths),
+    });
+    return request<AttendantsResponse>(`/api/attendants?${search.toString()}`, {}, token);
   },
   ambassadors(token: string) {
     return request<AmbassadorResponse>("/api/ambassadors", {}, token);
@@ -164,6 +178,53 @@ export const api = {
   deleteMessageTemplate(token: string, id: string) {
     return request<void>(`/api/messages/templates/${id}`, {
       method: "DELETE",
+    }, token);
+  },
+  prospectingConfig(token: string) {
+    return request<ProspectingConfig>("/api/prospecting/config", {}, token);
+  },
+  createProspectPreset(token: string, keyword: string) {
+    return request<ProspectKeywordPreset>("/api/prospecting/presets", {
+      method: "POST",
+      body: JSON.stringify({ keyword }),
+    }, token);
+  },
+  prospectingSearch(token: string, query: ProspectSearchQuery) {
+    const search = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        search.set(key, String(value));
+      }
+    });
+    return request<ProspectSearchResponse>(`/api/prospecting/search?${search.toString()}`, {}, token);
+  },
+  prospectingSummary(token: string) {
+    return request<ProspectingDailySummary>("/api/prospecting/summary", {}, token);
+  },
+  claimProspectLead(token: string, id: string) {
+    return request<ProspectLead>(`/api/prospecting/leads/${id}/claim`, {
+      method: "POST",
+    }, token);
+  },
+  releaseProspectLead(token: string, id: string) {
+    return request<ProspectLead>(`/api/prospecting/leads/${id}/release`, {
+      method: "POST",
+    }, token);
+  },
+  createProspectContactAttempt(
+    token: string,
+    id: string,
+    input: { channel: "WHATSAPP" | "PHONE" | "SITE" | "OTHER"; contactType: "FIRST_CONTACT" | "FOLLOW_UP" | "NO_RESPONSE" | "INTERESTED" | "DISQUALIFIED"; notes?: string },
+  ) {
+    return request<ProspectContactAttemptResult>(`/api/prospecting/leads/${id}/contact-attempts`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  discardProspectLead(token: string, id: string, reason?: string) {
+    return request<ProspectLead>(`/api/prospecting/leads/${id}/discard`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
     }, token);
   },
   users(token: string) {
