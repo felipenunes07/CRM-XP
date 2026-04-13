@@ -3,6 +3,8 @@ import {
   AMBASSADOR_LABEL_NAME,
 } from "@olist-crm/shared";
 import type {
+  CustomerDocInsightListItem,
+  CustomerDocInsightsResponse,
   CustomerLabel,
   CustomerDetail,
   CustomerListItem,
@@ -21,6 +23,7 @@ function normalizeLabelName(value: string) {
 }
 
 export const AMBASSADOR_LABEL_NORMALIZED_NAME = normalizeLabelName(AMBASSADOR_LABEL_NAME);
+const DOC_ITEM_DESCRIPTION_FILTER = "%DOC DE CARGA%";
 
 function mapInsightTags(value: unknown): InsightTag[] {
   if (!Array.isArray(value)) {
@@ -73,6 +76,39 @@ function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
     isAmbassador: Boolean(row.is_ambassador),
     ambassadorAssignedAt: row.ambassador_assigned_at ? String(row.ambassador_assigned_at) : null,
   };
+}
+
+function mapCustomerDocInsightRow(row: Record<string, unknown>): CustomerDocInsightListItem {
+  return {
+    id: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name ?? ""),
+    status: String(row.status ?? "INACTIVE") as CustomerDocInsightListItem["status"],
+    docQuantity: Number(row.doc_quantity ?? 0),
+    docOrderCount: Number(row.doc_order_count ?? 0),
+    docRevenue: Number(row.doc_revenue ?? 0),
+    lastDocPurchaseAt: row.last_doc_purchase_at ? String(row.last_doc_purchase_at) : null,
+  };
+}
+
+export function compareCustomerDocInsights(left: CustomerDocInsightListItem, right: CustomerDocInsightListItem) {
+  if (right.docQuantity !== left.docQuantity) {
+    return right.docQuantity - left.docQuantity;
+  }
+
+  if (right.docOrderCount !== left.docOrderCount) {
+    return right.docOrderCount - left.docOrderCount;
+  }
+
+  if (right.docRevenue !== left.docRevenue) {
+    return right.docRevenue - left.docRevenue;
+  }
+
+  return left.displayName.localeCompare(right.displayName, "pt-BR");
+}
+
+export function sortCustomerDocInsights(items: CustomerDocInsightListItem[]) {
+  return [...items].sort(compareCustomerDocInsights);
 }
 
 export interface CustomerFilters {
@@ -251,6 +287,78 @@ export async function listCustomers(filters: CustomerFilters = {}) {
   );
 
   return result.rows.map((row) => mapCustomerRow(row));
+}
+
+export async function getCustomerDocInsights(limit = 120): Promise<CustomerDocInsightsResponse> {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 120) : 120;
+  const cteSql = `
+    WITH doc_customer_totals AS (
+      SELECT
+        o.customer_id,
+        c.customer_code,
+        COALESCE(NULLIF(s.display_name, ''), c.display_name) AS display_name,
+        COALESCE(s.status, 'INACTIVE') AS status,
+        COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS doc_quantity,
+        COUNT(DISTINCT o.id)::int AS doc_order_count,
+        COALESCE(SUM(oi.line_total), 0)::numeric(14,2) AS doc_revenue,
+        MAX(o.order_date)::date::text AS last_doc_purchase_at
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN customer_snapshot s ON s.customer_id = o.customer_id
+      WHERE oi.item_description ILIKE $1
+      GROUP BY
+        o.customer_id,
+        c.customer_code,
+        COALESCE(NULLIF(s.display_name, ''), c.display_name),
+        COALESCE(s.status, 'INACTIVE')
+    )
+  `;
+
+  const [summaryResult, rankingResult] = await Promise.all([
+    pool.query(
+      `
+        ${cteSql}
+        SELECT
+          COUNT(*)::int AS customers_with_doc,
+          COALESCE(SUM(doc_order_count), 0)::int AS doc_orders,
+          COALESCE(SUM(doc_quantity), 0)::numeric(14,2) AS doc_quantity,
+          COALESCE(SUM(doc_revenue), 0)::numeric(14,2) AS doc_revenue
+        FROM doc_customer_totals
+      `,
+      [DOC_ITEM_DESCRIPTION_FILTER],
+    ),
+    pool.query(
+      `
+        ${cteSql}
+        SELECT
+          customer_id,
+          customer_code,
+          display_name,
+          status,
+          doc_quantity,
+          doc_order_count,
+          doc_revenue,
+          last_doc_purchase_at
+        FROM doc_customer_totals
+        ORDER BY doc_quantity DESC, doc_order_count DESC, doc_revenue DESC, display_name ASC
+        LIMIT $2
+      `,
+      [DOC_ITEM_DESCRIPTION_FILTER, safeLimit],
+    ),
+  ]);
+
+  const summary = summaryResult.rows[0] ?? {};
+
+  return {
+    summary: {
+      customersWithDoc: Number(summary.customers_with_doc ?? 0),
+      docOrders: Number(summary.doc_orders ?? 0),
+      docQuantity: Number(summary.doc_quantity ?? 0),
+      docRevenue: Number(summary.doc_revenue ?? 0),
+    },
+    ranking: sortCustomerDocInsights(rankingResult.rows.map((row) => mapCustomerDocInsightRow(row))),
+  };
 }
 
 export async function getCustomerDetail(customerId: string): Promise<CustomerDetail | null> {

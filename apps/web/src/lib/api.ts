@@ -3,6 +3,7 @@ import type {
   AgendaResponse,
   AttendantsResponse,
   CustomerDetail,
+  CustomerDocInsightsResponse,
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
@@ -98,6 +99,9 @@ export const api = {
       }
     });
     return request<CustomerListItem[]>(`/api/customers?${search.toString()}`, {}, token);
+  },
+  customerDocInsights(token: string) {
+    return request<CustomerDocInsightsResponse>("/api/customer-insights/doc", {}, token);
   },
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);

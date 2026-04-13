@@ -10,6 +10,7 @@ import {
   deleteCustomerLabel,
   updateCustomerLabel,
   getCustomerDetail,
+  getCustomerDocInsights,
   listCustomerLabels,
   listCustomers,
   previewSegment,
@@ -368,6 +369,14 @@ export function createApp() {
           isAmbassador: query.isAmbassador,
         }),
       );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-insights/doc", async (_request, response, next) => {
+    try {
+      response.json(await getCustomerDocInsights());
     } catch (error) {
       next(error);
     }

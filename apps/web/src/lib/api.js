@@ -72,6 +72,9 @@ export const api = {
         });
         return request(`/api/customers?${search.toString()}`, {}, token);
     },
+    customerDocInsights(token) {
+        return request("/api/customer-insights/doc", {}, token);
+    },
     customer(token, id) {
         return request(`/api/customers/${id}`, {}, token);
     },
