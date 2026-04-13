@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  LabelList,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -523,11 +524,18 @@ export function DashboardPage() {
                       }
                       setSelectedBucket((current) => (current === label ? null : (label as BucketLabel)));
                     }}
-                    margin={{ top: 12, right: 8, left: 0, bottom: 0 }}
+                    margin={{ top: 32, right: 8, left: 0, bottom: 0 }}
                   >
                     <XAxis dataKey="label" stroke="#5f6f95" />
                     <Tooltip content={<InactivityTooltip />} cursor={{ fill: "rgba(41, 86, 215, 0.04)" }} />
                     <Bar dataKey="count" radius={[8, 8, 0, 0]} cursor="pointer">
+                      <LabelList
+                        dataKey="count"
+                        position="top"
+                        offset={10}
+                        formatter={(value: number) => formatNumber(value)}
+                        className="chart-bar-label"
+                      />
                       {metrics.inactivityBuckets.map((bucket) => (
                         <Cell key={bucket.label} fill={bucketColor(bucket.label, selectedBucket === bucket.label)} />
                       ))}
