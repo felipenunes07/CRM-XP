@@ -718,6 +718,13 @@ a {
   font-size: 0.95rem;
 }
 
+.chart-bar-label {
+  fill: #264486;
+  font-size: 0.78rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 .chart-tooltip-count {
   display: grid;
   gap: 0.05rem;
