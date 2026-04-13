@@ -60,23 +60,23 @@ export function CustomersPage() {
             <p className="eyebrow">Clientes</p>
             <h2>{activeTab.title}</h2>
           </div>
-        </div>
 
-        <div className="chart-switcher customers-view-switcher" role="tablist" aria-label="Alternar visao da pagina de clientes">
-          {viewTabs.map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={state.activeView === tab.value}
-              aria-pressed={state.activeView === tab.value}
-              className={`chart-switch-button ${state.activeView === tab.value ? "active" : ""}`}
-              onClick={() => dispatch({ type: "setView", view: tab.value })}
-            >
-              <strong>{tab.label}</strong>
-              <span>{tab.helper}</span>
-            </button>
-          ))}
+          <div className="chart-switcher customers-view-switcher" role="tablist" aria-label="Alternar visao da pagina de clientes">
+            {viewTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                role="tab"
+                title={tab.helper}
+                aria-selected={state.activeView === tab.value}
+                aria-pressed={state.activeView === tab.value}
+                className={`chart-switch-button ${state.activeView === tab.value ? "active" : ""}`}
+                onClick={() => dispatch({ type: "setView", view: tab.value })}
+              >
+                <strong>{tab.label}</strong>
+              </button>
+            ))}
+          </div>
         </div>
 
         {state.activeView === "portfolio" ? (

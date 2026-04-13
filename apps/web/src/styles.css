@@ -580,6 +580,16 @@ a {
 
 .customers-view-switcher {
   margin-bottom: 0;
+  margin-left: auto;
+  width: fit-content;
+  display: inline-flex;
+  grid-template-columns: none;
+  gap: 0.3rem;
+  padding: 0.25rem;
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  border-radius: 999px;
+  background: #f8fbff;
+  justify-content: flex-end;
 }
 
 .customers-doc-subcopy {
@@ -598,6 +608,44 @@ a {
 
 .customers-doc-intro .panel-header {
   margin-bottom: 0.35rem;
+}
+
+.customers-view-switcher .chart-switch-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-height: 38px;
+  padding: 0.5rem 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.customers-view-switcher .chart-switch-button strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.customers-view-switcher .chart-switch-button span {
+  display: none;
+}
+
+.customers-view-switcher .chart-switch-button:hover {
+  background: rgba(41, 86, 215, 0.05);
+  border-color: transparent;
+}
+
+.customers-view-switcher .chart-switch-button.active {
+  background: #ffffff;
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  box-shadow: 0 8px 18px rgba(41, 86, 215, 0.08);
+}
+
+.customers-view-switcher .chart-switch-button.active strong {
+  color: var(--accent);
 }
 
 .chart-switch-button {
