@@ -1,3 +1,5 @@
+import { Users, UserCheck, UserMinus, UserX, Activity } from "lucide-react";
+
 export function StatCard({
   title,
   value,
@@ -11,12 +13,32 @@ export function StatCard({
   helper?: string;
   tone?: "neutral" | "success" | "warning" | "danger";
 }) {
+  const Icon =
+    tone === "success"
+      ? UserCheck
+      : tone === "warning"
+      ? UserMinus
+      : tone === "danger"
+      ? UserX
+      : title.toLowerCase().includes("frequencia")
+      ? Activity
+      : Users;
+
   return (
     <article className={`stat-card tone-${tone}`}>
-      <p className="eyebrow">{title}</p>
-      <strong>{value}</strong>
-      {badge ? <small className="stat-card-badge">{badge}</small> : null}
-      {helper ? <span>{helper}</span> : null}
+      <div className="stat-card-header">
+        <p className="stat-card-title">{title}</p>
+        <div className={`stat-card-icon tone-${tone}`}>
+          <Icon size={20} strokeWidth={2.5} />
+        </div>
+      </div>
+      <div className="stat-card-body">
+        <strong>{value}</strong>
+        <div className="stat-card-footer">
+          {badge ? <span className={`stat-card-badge tone-${tone}`}>{badge}</span> : null}
+          {helper ? <span className="stat-card-helper">{helper}</span> : null}
+        </div>
+      </div>
     </article>
   );
 }

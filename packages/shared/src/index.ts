@@ -188,6 +188,29 @@ export interface CustomerDetail extends CustomerListItem {
   }>;
 }
 
+export interface CustomerDocInsightSummary {
+  customersWithDoc: number;
+  docOrders: number;
+  docQuantity: number;
+  docRevenue: number;
+}
+
+export interface CustomerDocInsightListItem {
+  id: string;
+  customerCode: string;
+  displayName: string;
+  status: CustomerStatus;
+  docQuantity: number;
+  docOrderCount: number;
+  docRevenue: number;
+  lastDocPurchaseAt: string | null;
+}
+
+export interface CustomerDocInsightsResponse {
+  summary: CustomerDocInsightSummary;
+  ranking: CustomerDocInsightListItem[];
+}
+
 export interface MessageTemplate {
   id: string;
   category: "reativacao" | "follow_up" | "promocao";
