@@ -395,331 +395,199 @@ export function AmbassadorsPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <p className="eyebrow">Clientes chave</p>
-          <h2>Embaixadores da empresa</h2>
-          <p>
-            Acompanhe de perto quem a chefia definiu como {AMBASSADOR_LABEL_NAME.toLowerCase()} e veja se essa carteira
-            esta comprando mais, crescendo e puxando volume com a XP.
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <div>
+          <p className="eyebrow" style={{ margin: 0, marginBottom: '0.2rem' }}>Clientes chave</p>
+          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Embaixadores da empresa</h2>
         </div>
-        <div className="hero-meta">
-          <div className="hero-meta-item">
-            <span>Janela atual</span>
-            <strong>
-              {formatDate(summary.currentPeriodStart)} a {formatDate(summary.currentPeriodEnd)}
-            </strong>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ background: 'var(--panel)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Janela atual</span>
+            <strong style={{ fontSize: '0.85rem' }}>{formatDate(summary.currentPeriodStart)} - {formatDate(summary.currentPeriodEnd)}</strong>
           </div>
-          <div className="hero-meta-item">
-            <span>Comparacao</span>
-            <strong>
-              {formatDate(summary.previousPeriodStart)} a {formatDate(summary.previousPeriodEnd)}
-            </strong>
+          <div style={{ background: 'var(--panel)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Comparacao</span>
+            <strong style={{ fontSize: '0.85rem' }}>{formatDate(summary.previousPeriodStart)} - {formatDate(summary.previousPeriodEnd)}</strong>
           </div>
-          <div className="hero-meta-item">
-            <span>Cohort atual</span>
-            <strong>{formatNumber(summary.totalAmbassadors)} embaixadores</strong>
+          <div style={{ background: 'var(--panel)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.05em' }}>Cohort atual</span>
+            <strong style={{ fontSize: '0.85rem' }}>{formatNumber(summary.totalAmbassadors)} embaixadores</strong>
           </div>
         </div>
-      </section>
+      </div>
 
-      <section className="panel ambassador-overview-panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Resumo da carteira</p>
-            <h3>O que importa neste corte</h3>
-            <p className="panel-subcopy">Visao do grupo inteiro para saber tamanho, faturamento e risco da carteira de embaixadores.</p>
-          </div>
-        </div>
-
-        <div className="ambassador-overview-grid">
-          {overviewItems.map((item) => (
-            <article key={item.label} className={`ambassador-overview-item tone-${item.tone}`}>
-              <span>{item.label}</span>
+      <div className="stats-grid">
+        {overviewItems.map((item) => (
+          <div key={item.label} className={`stat-card tone-${item.tone}`}>
+            <div className="stat-card-header">
+              <h3 className="stat-card-title">{item.label}</h3>
+            </div>
+            <div className="stat-card-body">
               <strong>{item.value}</strong>
-              <p>{item.detail}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="panel ambassador-focus-panel">
-        <div className="ambassador-focus-toolbar">
-          <div>
-            <p className="eyebrow">Embaixador selecionado</p>
-            <h3>{selectedAmbassador ? selectedAmbassador.displayName : "Selecione um embaixador"}</h3>
-            <p className="panel-subcopy">Ao trocar o nome, esse resumo e o grafico mensal abaixo atualizam juntos.</p>
-          </div>
-          <div className="ambassador-focus-controls">
-            <label className="ambassador-focus-select">
-              Embaixador
-              <select
-                value={selectedAmbassador?.id ?? ""}
-                onChange={(event) => setSelectedAmbassadorId(event.target.value)}
-                disabled={!selectableAmbassadors.length}
-              >
-                {selectableAmbassadors.map((ambassador) => (
-                  <option key={ambassador.id} value={ambassador.id}>
-                    {ambassador.displayName} {ambassador.customerCode ? `| ${ambassador.customerCode}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedAmbassador ? (
-              <Link className="ghost-button" to={`/clientes/${selectedAmbassador.id}`}>
-                Abrir cliente
-              </Link>
-            ) : null}
-          </div>
-        </div>
-
-        {selectedAmbassador ? (
-          <div className="ambassador-focus-shell">
-            <div className="ambassador-focus-summary">
-              <div className="ambassador-focus-identity">
-                <div className="ambassador-focus-copy">
-                  <div className="ambassador-title-row">
-                    <strong>{selectedAmbassador.displayName}</strong>
-                    <span className={`status-badge ${statusClass(selectedAmbassador.status)}`}>{statusLabel(selectedAmbassador.status)}</span>
-                  </div>
-                  <span>
-                    {selectedAmbassador.customerCode || "Sem codigo"} | Embaixador desde {formatDate(selectedAmbassador.ambassadorAssignedAt)}
-                  </span>
-                  <span>Ultima atendente: {selectedAmbassador.lastAttendant ?? "Nao informado"}</span>
-                </div>
-              </div>
-              <div className={`ambassador-focus-note tone-${ambassadorFocusTone(selectedAmbassador)}`}>
-                <span>Leitura rapida</span>
-                <strong>{ambassadorFocusHeadline(selectedAmbassador)}</strong>
-                <p>{ambassadorFocusSummary(selectedAmbassador)}</p>
-              </div>
-            </div>
-
-            <div className="tag-row compact ambassador-focus-tags">
-              <span className="tag ambassador-insight-tag">{primaryInsightLabel(selectedAmbassador)}</span>
-              <span className="tag ambassador-tag">
-                Prioridade {formatNumber(selectedAmbassador.priorityScore)}
-              </span>
-              <span className="tag ambassador-tag">
-                Valor {formatCurrency(selectedAmbassador.totalSpent)}
-              </span>
-              {selectedAmbassador.alerts.length ? (
-                selectedAmbassador.alerts.map((alert) => (
-                  <span key={alert} className="tag ambassador-alert-tag">
-                    {alertLabels[alert] ?? alert}
-                  </span>
-                ))
-              ) : (
-                <span className="muted-copy">Sem alertas no momento.</span>
-              )}
-            </div>
-
-            <div className="ambassador-focus-metrics">
-              {selectedAmbassadorMetrics.map((metric) => (
-                <article key={metric.label} className={`ambassador-focus-metric tone-${metric.tone}`}>
-                  <span>{metric.label}</span>
-                  <strong>{metric.value}</strong>
-                  <p>{metric.detail}</p>
-                </article>
-              ))}
+              <p className="stat-card-helper">{item.detail}</p>
             </div>
           </div>
-        ) : (
-          <div className="empty-state">Nenhum embaixador disponivel para esse recorte.</div>
-        )}
-      </section>
+        ))}
+      </div>
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Historico mensal</p>
-            <h3>{selectedAmbassador ? `Tendencia de ${selectedAmbassador.displayName}` : "Tendencia mensal da carteira"}</h3>
-            <p className="panel-subcopy">
-              {selectedAmbassador
-                ? "Esse grafico acompanha o embaixador selecionado acima e troca assim que voce muda o nome."
-                : "Historico mensal da carteira inteira de embaixadores."}{" "}
-              Janela atual: ultimos {trendWindow} meses fechados.
-            </p>
-          </div>
-          <div className="ambassador-chart-controls">
-            <div className="ambassador-chart-toggle" role="tablist" aria-label="Selecionar metrica do grafico">
-              {(["revenue", "orders", "pieces"] as ChartMetric[]).map((metric) => (
-                <button
-                  key={metric}
-                  type="button"
-                  className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`}
-                  onClick={() => setChartMetric(metric)}
-                >
-                  {chartMetricLabel(metric)}
-                </button>
-              ))}
-            </div>
-            <div className="ambassador-range-toggle" role="tablist" aria-label="Selecionar janela de tempo">
-              {([6, 12, 24] as TrendWindow[]).map((windowSize) => (
-                <button
-                  key={windowSize}
-                  type="button"
-                  className={`ambassador-range-button ${trendWindow === windowSize ? "active" : ""}`}
-                  onClick={() => setTrendWindow(windowSize)}
-                >
-                  {windowSize}m
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="trend-chart-wrap">
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={activeTrendData} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
-              <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
-              <XAxis
-                dataKey="month"
-                tickFormatter={(value) => formatMonthLabel(String(value))}
-                stroke="#5f6f95"
-                minTickGap={trendWindow === 24 ? 18 : 8}
-              />
-              <YAxis stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
-              <Tooltip
-                content={<AmbassadorTrendTooltip metric={chartMetric} subjectLabel={activeTrendLabel} />}
-                cursor={{ fill: "rgba(41, 86, 215, 0.04)" }}
-              />
-              <Bar dataKey={chartMetric} fill={chartMetricColor(chartMetric)} radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Carteira monitorada</p>
-            <h3>Quem esta crescendo, parado ou pedindo atencao</h3>
-            <p className="panel-subcopy">Use os filtros para encontrar um nome e clique em "Ver no painel" para atualizar o resumo acima.</p>
-          </div>
-        </div>
-
-        <div className="filters-grid filters-grid-four ambassador-filters">
-          <label>
-            Buscar
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome ou codigo" />
-          </label>
-
-          <label>
-            Status
-            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-              <option value="">Todos</option>
-              <option value="ACTIVE">Ativos</option>
-              <option value="ATTENTION">Atencao</option>
-              <option value="INACTIVE">Inativos</option>
-            </select>
-          </label>
-
-          <label>
-            Alerta
-            <select value={alertFilter} onChange={(event) => setAlertFilter(event.target.value)}>
-              <option value="">Todos</option>
-              <option value="sem_pedido_no_mes">Sem pedido no mes</option>
-              <option value="queda_vs_mes_anterior">Queda vs mes anterior</option>
-              <option value="atencao">Atencao</option>
-              <option value="inativo">Inativo</option>
-              <option value="compra_prevista_vencida">Compra prevista vencida</option>
-            </select>
-          </label>
-
-          <label>
-            Ordenar por
-            <select value={sortKey} onChange={(event) => setSortKey(event.target.value as SortKey)}>
-              <option value="revenue">Faturamento do mes</option>
-              <option value="growth">Crescimento</option>
-              <option value="recency">Recencia</option>
-              <option value="priority">Prioridade</option>
-              <option value="name">Nome</option>
-            </select>
-          </label>
-        </div>
-
-        {ambassadors.length ? (
-          <div className="ambassador-card-list">
-            {ambassadors.map((ambassador) => (
-              <article key={ambassador.id} className={`ambassador-card ${selectedAmbassador?.id === ambassador.id ? "is-selected" : ""}`}>
-                <div className="ambassador-card-top">
-                  <div className="ambassador-card-copy">
-                    <div className="ambassador-title-row">
-                      <strong>{ambassador.displayName}</strong>
-                      <span className={`status-badge ${statusClass(ambassador.status)}`}>{statusLabel(ambassador.status)}</span>
+      <div className="grid-two dashboard-grid" style={{ alignItems: "flex-start", marginTop: "1rem" }}>
+        
+        {/* LEFT COLUMN: Charts & Selected Focus */}
+        <div className="page-stack">
+          {selectedAmbassador && (
+             <section className="panel" style={{ padding: '1.25rem' }}>
+                <div className="panel-header" style={{ marginBottom: '1rem' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{selectedAmbassador.displayName}</h3>
+                    <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.4rem', alignItems: 'center' }}>
+                      <span className={`status-badge ${statusClass(selectedAmbassador.status)}`}>{statusLabel(selectedAmbassador.status)}</span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>{selectedAmbassador.customerCode || "Sem codigo"}</span>
                     </div>
-                    <span>
-                      {ambassador.customerCode || "Sem codigo"} | Embaixador desde {formatDate(ambassador.ambassadorAssignedAt)}
-                    </span>
                   </div>
-                  <div className="ambassador-card-actions">
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <Link className="ghost-button" to={`/clientes/${selectedAmbassador.id}`} style={{ padding: '0.4rem 1rem' }}>Abrir perfil</Link>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '1rem', background: 'var(--line)', padding: '1rem', borderRadius: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                       <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Faturamento atual</span>
+                       <strong style={{ fontSize: '1.1rem' }}>{formatCurrency(selectedAmbassador.currentPeriodRevenue)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                       <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Crescimento</span>
+                       <strong style={{ fontSize: '1.1rem', color: ambassadorFocusTone(selectedAmbassador) === 'success' ? 'var(--success)' : 'inherit' }}>{formatGrowth(selectedAmbassador.revenueGrowthRatio)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                       <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Pedidos no corte</span>
+                       <strong style={{ fontSize: '1.1rem' }}>{formatNumber(selectedAmbassador.currentPeriodOrders)}</strong>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                       <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Recencia</span>
+                       <strong style={{ fontSize: '1.1rem' }}>{formatDaysSince(selectedAmbassador.daysSinceLastPurchase)}</strong>
+                    </div>
+                </div>
+             </section>
+          )}
+
+          <section className="panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Historico mensal</p>
+                <h3>{selectedAmbassador ? `Tendencia de ${selectedAmbassador.displayName}` : "Tendencia mensal"}</h3>
+              </div>
+              <div className="ambassador-chart-controls" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="ambassador-chart-toggle" role="tablist">
+                  {(["revenue", "orders", "pieces"] as ChartMetric[]).map((metric) => (
                     <button
+                      key={metric}
                       type="button"
-                      className={`ghost-button ambassador-select-button ${selectedAmbassador?.id === ambassador.id ? "active" : ""}`}
-                      onClick={() => setSelectedAmbassadorId(ambassador.id)}
+                      className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`}
+                      onClick={() => setChartMetric(metric)}
                     >
-                      {selectedAmbassador?.id === ambassador.id ? "No painel" : "Ver no painel"}
+                      {chartMetricLabel(metric)}
                     </button>
-                    <Link className="ghost-button" to={`/clientes/${ambassador.id}`}>
-                      Abrir cliente
-                    </Link>
-                  </div>
+                  ))}
                 </div>
+                
+                <div style={{ width: '1px', height: '24px', background: 'var(--line)' }} />
 
-                <div className="ambassador-metric-strip">
-                  <span>Faturamento no mes: {formatCurrency(ambassador.currentPeriodRevenue)}</span>
-                  <span>Crescimento: {formatGrowth(ambassador.revenueGrowthRatio)}</span>
-                  <span>Pedidos no mes: {formatNumber(ambassador.currentPeriodOrders)}</span>
-                  <span>Pecas no mes: {formatNumber(ambassador.currentPeriodPieces)}</span>
-                  <span>Total historico: {formatCurrency(ambassador.totalSpent)}</span>
-                  <span>Ticket medio: {formatCurrency(ambassador.avgTicket)}</span>
-                  <span>Ultima compra: {formatDate(ambassador.lastPurchaseAt)}</span>
-                  <span>Recencia: {formatDaysSince(ambassador.daysSinceLastPurchase)}</span>
-                  <span>Ultima atendente: {ambassador.lastAttendant ?? "Nao informado"}</span>
+                <div className="ambassador-range-toggle" role="tablist">
+                  {([6, 12, 24] as TrendWindow[]).map((windowSize) => (
+                    <button
+                      key={windowSize}
+                      type="button"
+                      className={`ambassador-range-button ${trendWindow === windowSize ? "active" : ""}`}
+                      onClick={() => setTrendWindow(windowSize)}
+                    >
+                      {windowSize}m
+                    </button>
+                  ))}
                 </div>
+              </div>
+            </div>
 
-                <div className="ambassador-card-section">
-                  <strong>Alertas</strong>
-                  <div className="tag-row compact">
-                    {ambassador.alerts.length ? (
-                      ambassador.alerts.map((alert) => (
-                        <span key={alert} className="tag ambassador-alert-tag">
-                          {alertLabels[alert] ?? alert}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="muted-copy">Sem alertas no momento.</span>
-                    )}
-                  </div>
+            <div className="trend-chart-wrap">
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={activeTrendData} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
+                  <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                  <XAxis dataKey="month" tickFormatter={(value) => formatMonthLabel(String(value))} stroke="#5f6f95" minTickGap={trendWindow === 24 ? 18 : 8} />
+                  <YAxis stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
+                  <Tooltip content={<AmbassadorTrendTooltip metric={chartMetric} subjectLabel={activeTrendLabel} />} cursor={{ fill: "rgba(41, 86, 215, 0.04)" }} />
+                  <Bar dataKey={chartMetric} fill={chartMetricColor(chartMetric)} radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        </div>
+
+        {/* RIGHT COLUMN: Filter & List */}
+        <section className="panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '800px', padding: '1.25rem' }}>
+          <div className="panel-header" style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--line)' }}>
+            <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Encontrar Embaixador</h3>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', paddingBottom: '1rem' }}>
+            <input 
+               value={search} 
+               onChange={(event) => setSearch(event.target.value)} 
+               placeholder="Nome ou codigo..." 
+               style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--line)', background: 'var(--panel)', width: '100%' }} 
+            />
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <select 
+                   value={statusFilter} 
+                   onChange={(event) => setStatusFilter(event.target.value)} 
+                   style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--line)' }}
+                >
+                  <option value="">Status</option>
+                  <option value="ACTIVE">Ativos</option>
+                  <option value="ATTENTION">Atencao</option>
+                  <option value="INACTIVE">Inativos</option>
+                </select>
+                <select 
+                   value={sortKey} 
+                   onChange={(event) => setSortKey(event.target.value)} 
+                   style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--line)' }}
+                >
+                  <option value="revenue">Vendas</option>
+                  <option value="growth">Crescimento</option>
+                  <option value="recency">Recencia</option>
+                </select>
+            </div>
+          </div>
+
+          <div style={{ overflowY: 'auto', flex: 1, paddingRight: '0.3rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+            {ambassadors.length ? ambassadors.map((ambassador) => (
+              <article 
+                key={ambassador.id} 
+                onClick={() => setSelectedAmbassadorId(ambassador.id)}
+                style={{ 
+                    cursor: 'pointer', 
+                    padding: '0.8rem', 
+                    borderRadius: '8px', 
+                    border: '1px solid', 
+                    borderColor: selectedAmbassador?.id === ambassador.id ? 'var(--accent)' : 'var(--line)', 
+                    background: selectedAmbassador?.id === ambassador.id ? 'rgba(41, 86, 215, 0.05)' : 'var(--line)',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <strong style={{ fontSize: '0.9rem', color: 'var(--text)', lineHeight: 1.2 }}>{ambassador.displayName}</strong>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency(ambassador.currentPeriodRevenue)}</span>
                 </div>
-
-                <div className="ambassador-card-section">
-                  <strong>Top 3 produtos mais comprados</strong>
-                  {ambassador.topProducts.length ? (
-                    <div className="ambassador-top-products">
-                      {ambassador.topProducts.map((product) => (
-                        <div key={`${ambassador.id}-${product.sku ?? product.itemDescription}`} className="ambassador-top-product">
-                          <strong>{product.itemDescription}</strong>
-                          <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
-                          <span>
-                            {formatNumber(product.totalQuantity)} pecas | {formatNumber(product.orderCount)} pedidos
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="muted-copy">Ainda nao ha historico suficiente para montar o mix.</span>
-                  )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span className={`status-badge ${statusClass(ambassador.status)}`} style={{ padding: '0.1rem 0.45rem', fontSize: '0.65rem' }}>{statusLabel(ambassador.status)}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Crescem: {formatGrowth(ambassador.revenueGrowthRatio)}</span>
                 </div>
               </article>
-            ))}
+            )) : <span style={{ color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center', marginTop: '2rem' }}>Nenhum encontrado no filtro.</span>}
           </div>
-        ) : (
-          <div className="empty-state">Nenhum embaixador encontrado para esse recorte.</div>
-        )}
-      </section>
+        </section>
+
+      </div>
     </div>
   );
 }
