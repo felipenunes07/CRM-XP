@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, SearchCheck, Star, Tags, TrendingUp, Trophy, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
 const links = [
@@ -11,6 +11,7 @@ const links = [
   { to: "/agenda", icon: ClipboardList, label: "Agenda" },
   { to: "/reativacao", icon: Trophy, label: "Reativacao" },
   { to: "/mensagens", icon: MessageSquareText, label: "Mensagens" },
+  { to: "/disparador", icon: RadioTower, label: "Disparador" },
   { to: "/prospeccao", icon: SearchCheck, label: "Prospeccao" },
   { to: "/rotulos", icon: Tags, label: "Rotulos" },
 ];

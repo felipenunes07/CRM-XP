@@ -372,4 +372,109 @@ export const migrations = [
     'revenda de celulares'
   );
   `,
+  `
+  CREATE TABLE IF NOT EXISTS whatsapp_groups (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    jid TEXT NOT NULL UNIQUE,
+    source_name TEXT NOT NULL,
+    normalized_source_name TEXT NOT NULL,
+    source_code TEXT,
+    classification TEXT NOT NULL DEFAULT 'OTHER',
+    mapping_status TEXT NOT NULL DEFAULT 'PENDING_REVIEW',
+    match_method TEXT,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    mapping_note TEXT NOT NULL DEFAULT '',
+    last_contact_at TIMESTAMPTZ,
+    last_campaign_id UUID,
+    last_message_preview TEXT,
+    last_imported_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (classification IN ('WITH_ORDER', 'NO_ORDER_EXCEL', 'OTHER')),
+    CHECK (mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED', 'PENDING_REVIEW', 'CONFIRMED_UNMATCHED', 'IGNORED')),
+    CHECK (match_method IS NULL OR match_method IN ('CODE', 'NAME', 'MANUAL', 'CONFIRMED_NONE', 'IGNORED'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_classification ON whatsapp_groups(classification);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_mapping_status ON whatsapp_groups(mapping_status);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_customer_id ON whatsapp_groups(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_source_code ON whatsapp_groups(source_code);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_normalized_source_name ON whatsapp_groups(normalized_source_name);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_groups_last_contact_at ON whatsapp_groups(last_contact_at DESC);
+
+  CREATE TABLE IF NOT EXISTS whatsapp_campaigns (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'QUEUED',
+    template_id UUID REFERENCES message_templates(id) ON DELETE SET NULL,
+    template_title TEXT,
+    saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
+    saved_segment_name TEXT,
+    message_text TEXT NOT NULL,
+    filters_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+    min_delay_seconds INTEGER NOT NULL DEFAULT 183,
+    max_delay_seconds INTEGER NOT NULL DEFAULT 304,
+    override_recent_block BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by_user_id TEXT NOT NULL,
+    created_by_name TEXT NOT NULL,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (status IN ('QUEUED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_status ON whatsapp_campaigns(status);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at ON whatsapp_campaigns(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS whatsapp_campaign_recipients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id UUID NOT NULL REFERENCES whatsapp_campaigns(id) ON DELETE CASCADE,
+    group_id UUID NOT NULL REFERENCES whatsapp_groups(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    jid TEXT NOT NULL,
+    source_name TEXT NOT NULL,
+    source_code TEXT,
+    classification TEXT NOT NULL,
+    mapping_status TEXT NOT NULL,
+    customer_code TEXT,
+    customer_display_name TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    scheduled_for TIMESTAMPTZ,
+    last_attempt_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ,
+    failed_at TIMESTAMPTZ,
+    skipped_at TIMESTAMPTZ,
+    last_error TEXT,
+    provider_message_id TEXT,
+    provider_status TEXT,
+    response_payload JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (campaign_id, group_id),
+    CHECK (classification IN ('WITH_ORDER', 'NO_ORDER_EXCEL', 'OTHER')),
+    CHECK (mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED', 'PENDING_REVIEW', 'CONFIRMED_UNMATCHED', 'IGNORED')),
+    CHECK (status IN ('PENDING', 'BLOCKED_RECENT', 'SENDING', 'SENT', 'FAILED', 'SKIPPED'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaign_recipients_campaign_status
+    ON whatsapp_campaign_recipients(campaign_id, status);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaign_recipients_group_id
+    ON whatsapp_campaign_recipients(group_id);
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaign_recipients_scheduled_for
+    ON whatsapp_campaign_recipients(scheduled_for);
+
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS whatsapp_group_id UUID REFERENCES whatsapp_groups(id) ON DELETE SET NULL;
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL;
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS provider_payload JSONB;
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS sent_by_user_id TEXT;
+  ALTER TABLE message_logs ADD COLUMN IF NOT EXISTS sent_by_name TEXT;
+
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ;
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_message_preview TEXT;
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_contact_campaign_id UUID;
+  CREATE INDEX IF NOT EXISTS idx_customers_last_contact_at ON customers(last_contact_at DESC);
+  `,
 ];

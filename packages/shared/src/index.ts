@@ -448,3 +448,145 @@ export interface ProspectingConfig {
   presets: ProspectKeywordPreset[];
   guardrails: string[];
 }
+
+export type WhatsappGroupClassification = "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER";
+export type WhatsappGroupMappingStatus =
+  | "AUTO_MAPPED"
+  | "MANUAL_MAPPED"
+  | "PENDING_REVIEW"
+  | "CONFIRMED_UNMATCHED"
+  | "IGNORED";
+export type WhatsappGroupMatchMethod = "CODE" | "NAME" | "MANUAL" | "CONFIRMED_NONE" | "IGNORED";
+export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type WhatsappCampaignRecipientStatus =
+  | "PENDING"
+  | "BLOCKED_RECENT"
+  | "SENDING"
+  | "SENT"
+  | "FAILED"
+  | "SKIPPED";
+
+export interface WhatsappGroup {
+  id: string;
+  jid: string;
+  sourceName: string;
+  sourceCode: string | null;
+  classification: WhatsappGroupClassification;
+  mappingStatus: WhatsappGroupMappingStatus;
+  matchMethod: WhatsappGroupMatchMethod | null;
+  customerId: string | null;
+  customerCode: string | null;
+  customerDisplayName: string | null;
+  customerStatus: CustomerStatus | null;
+  lastAttendant: string | null;
+  lastContactAt: string | null;
+  lastCampaignId: string | null;
+  lastMessagePreview: string | null;
+  lastImportedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  isRecentlyBlocked: boolean;
+  recentBlockUntil: string | null;
+}
+
+export interface WhatsappGroupsResponse {
+  items: WhatsappGroup[];
+  total: number;
+}
+
+export interface WhatsappImportSummary {
+  totalGroups: number;
+  importedCount: number;
+  insertedCount: number;
+  updatedCount: number;
+  autoMappedCount: number;
+  pendingReviewCount: number;
+  classificationCounts: Record<WhatsappGroupClassification, number>;
+  mappingCounts: Record<WhatsappGroupMappingStatus, number>;
+  lastImportedAt: string | null;
+}
+
+export interface WhatsappMappingSummary {
+  totalGroups: number;
+  mappedGroups: number;
+  pendingReviewGroups: number;
+  confirmedUnmatchedGroups: number;
+  ignoredGroups: number;
+  recentlyBlockedGroups: number;
+  lastImportedAt: string | null;
+  classificationCounts: Record<WhatsappGroupClassification, number>;
+  mappingCounts: Record<WhatsappGroupMappingStatus, number>;
+}
+
+export interface WhatsappCampaignProgress {
+  totalRecipients: number;
+  pendingCount: number;
+  blockedRecentCount: number;
+  sendingCount: number;
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  completedCount: number;
+  remainingCount: number;
+  completionRatio: number;
+  nextScheduledAt: string | null;
+  estimatedFinishAt: string | null;
+}
+
+export interface WhatsappCampaignRecipient {
+  id: string;
+  campaignId: string;
+  groupId: string;
+  jid: string;
+  sourceName: string;
+  sourceCode: string | null;
+  classification: WhatsappGroupClassification;
+  mappingStatus: WhatsappGroupMappingStatus;
+  customerId: string | null;
+  customerCode: string | null;
+  customerDisplayName: string | null;
+  status: WhatsappCampaignRecipientStatus;
+  scheduledFor: string | null;
+  lastAttemptAt: string | null;
+  sentAt: string | null;
+  failedAt: string | null;
+  skippedAt: string | null;
+  lastError: string | null;
+  providerMessageId: string | null;
+  providerStatus: string | null;
+  responsePayload: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhatsappCampaignListItem {
+  id: string;
+  name: string;
+  status: WhatsappCampaignStatus;
+  templateId: string | null;
+  templateTitle: string | null;
+  savedSegmentId: string | null;
+  savedSegmentName: string | null;
+  messageText: string;
+  minDelaySeconds: number;
+  maxDelaySeconds: number;
+  overrideRecentBlock: boolean;
+  createdByUserId: string;
+  createdByName: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  cancelledAt: string | null;
+  filtersSnapshot: Record<string, unknown>;
+  progress: WhatsappCampaignProgress;
+}
+
+export interface WhatsappCampaignDetail extends WhatsappCampaignListItem {
+  recipients: WhatsappCampaignRecipient[];
+  recipientsPage: {
+    total: number;
+    offset: number;
+    limit: number;
+    hasMore: boolean;
+  };
+}
