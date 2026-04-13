@@ -16,6 +16,7 @@ const ReactivationPage = lazy(async () => ({ default: (await import("./pages/Rea
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
+const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/reativacao" element={<ReactivationPage />} />
           <Route path="/mensagens" element={<MessagesPage />} />
+          <Route path="/disparador" element={<DisparadorPage />} />
           <Route path="/rotulos" element={<LabelsPage />} />
           <Route path="/prospeccao" element={<ProspectingPage />} />
         </Route>

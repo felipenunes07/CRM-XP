@@ -18,6 +18,12 @@ import type {
   SavedSegment,
   SegmentDefinition,
   SegmentResult,
+  WhatsappCampaignDetail,
+  WhatsappCampaignListItem,
+  WhatsappGroup,
+  WhatsappGroupsResponse,
+  WhatsappImportSummary,
+  WhatsappMappingSummary,
 } from "@olist-crm/shared";
 import type { AuthUser } from "../hooks/useAuth";
 
@@ -242,6 +248,87 @@ export const api = {
     return request<{ mode: string; result?: unknown }>("/api/admin/sync", {
       method: "POST",
       body: JSON.stringify({ mode }),
+    }, token);
+  },
+  whatsappGroups(
+    token: string,
+    query: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        search.set(key, String(value));
+      }
+    });
+    return request<WhatsappGroupsResponse>(`/api/whatsapp-groups${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  whatsappGroupMappingSummary(token: string) {
+    return request<WhatsappMappingSummary>("/api/whatsapp-groups/mapping-summary", {}, token);
+  },
+  importWhatsappGroups(token: string, input: { fileName: string; fileBase64: string }) {
+    return request<WhatsappImportSummary>("/api/whatsapp-groups/import", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  importWhatsappGroupsDefault(token: string) {
+    return request<WhatsappImportSummary>("/api/whatsapp-groups/import-default", {
+      method: "POST",
+    }, token);
+  },
+  updateWhatsappGroupMatch(
+    token: string,
+    id: string,
+    input: {
+      customerId?: string | null;
+      mappingStatus: "MANUAL_MAPPED" | "CONFIRMED_UNMATCHED" | "IGNORED";
+      note?: string;
+    },
+  ) {
+    return request<WhatsappGroup>(`/api/whatsapp-groups/${id}/match`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  whatsappCampaigns(token: string, limit = 20) {
+    return request<WhatsappCampaignListItem[]>(`/api/whatsapp-campaigns?limit=${limit}`, {}, token);
+  },
+  whatsappCampaign(token: string, id: string, query: { limit?: number; offset?: number } = {}) {
+    const search = new URLSearchParams();
+    if (query.limit !== undefined) {
+      search.set("limit", String(query.limit));
+    }
+    if (query.offset !== undefined) {
+      search.set("offset", String(query.offset));
+    }
+    return request<WhatsappCampaignDetail>(
+      `/api/whatsapp-campaigns/${id}${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
+  },
+  createWhatsappCampaign(
+    token: string,
+    input: {
+      name: string;
+      templateId?: string | null;
+      savedSegmentId?: string | null;
+      messageText: string;
+      filtersSnapshot?: Record<string, unknown>;
+      groupIds: string[];
+      overrideRecentBlock?: boolean;
+      minDelaySeconds?: number;
+      maxDelaySeconds?: number;
+    },
+  ) {
+    return request<WhatsappCampaignDetail>("/api/whatsapp-campaigns", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  cancelWhatsappCampaign(token: string, id: string) {
+    return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/cancel`, {
+      method: "POST",
     }, token);
   },
 };

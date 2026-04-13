@@ -70,6 +70,25 @@ export function formatShortDate(value: string | null) {
   return `${date.day}/${date.month}`;
 }
 
+export function formatDateTime(value: string | null) {
+  if (!value) {
+    return "Sem registro";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Sem registro";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
 export function formatDaysSince(value: number | null) {
   if (value === null || value === undefined) {
     return "Sem base";

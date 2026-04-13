@@ -208,4 +208,57 @@ export const api = {
             body: JSON.stringify({ mode }),
         }, token);
     },
+    whatsappGroups(token, query = {}) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/whatsapp-groups${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    whatsappGroupMappingSummary(token) {
+        return request("/api/whatsapp-groups/mapping-summary", {}, token);
+    },
+    importWhatsappGroups(token, input) {
+        return request("/api/whatsapp-groups/import", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    importWhatsappGroupsDefault(token) {
+        return request("/api/whatsapp-groups/import-default", {
+            method: "POST",
+        }, token);
+    },
+    updateWhatsappGroupMatch(token, id, input) {
+        return request(`/api/whatsapp-groups/${id}/match`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    whatsappCampaigns(token, limit = 20) {
+        return request(`/api/whatsapp-campaigns?limit=${limit}`, {}, token);
+    },
+    whatsappCampaign(token, id, query = {}) {
+        const search = new URLSearchParams();
+        if (query.limit !== undefined) {
+            search.set("limit", String(query.limit));
+        }
+        if (query.offset !== undefined) {
+            search.set("offset", String(query.offset));
+        }
+        return request(`/api/whatsapp-campaigns/${id}${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    createWhatsappCampaign(token, input) {
+        return request("/api/whatsapp-campaigns", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    cancelWhatsappCampaign(token, id) {
+        return request(`/api/whatsapp-campaigns/${id}/cancel`, {
+            method: "POST",
+        }, token);
+    },
 };

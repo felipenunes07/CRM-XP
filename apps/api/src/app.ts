@@ -49,6 +49,24 @@ import { listUsers, login } from "./modules/platform/authService.js";
 import { requireAuth, requireRole } from "./modules/platform/authMiddleware.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
+import {
+  cancelWhatsappCampaign,
+  createWhatsappCampaign,
+  getWhatsappCampaignDetail,
+  listWhatsappCampaigns,
+} from "./modules/whatsapp/whatsappCampaignService.js";
+import {
+  getWhatsappMappingSummary,
+  importWhatsappGroupsFromDefaultWorkbook,
+  importWhatsappGroupsFromWorkbook,
+  listWhatsappGroups,
+  updateWhatsappGroupMatch,
+} from "./modules/whatsapp/whatsappGroupService.js";
+import {
+  WHATSAPP_GROUP_CLASSIFICATIONS,
+  WHATSAPP_GROUP_MAPPING_STATUSES,
+} from "./modules/whatsapp/whatsappCore.js";
+import { enqueueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -189,6 +207,71 @@ const prospectPresetSchema = z.object({
   keyword: z.string().min(1),
 });
 
+const whatsappGroupFiltersQuerySchema = z.object({
+  search: z.string().optional(),
+  classification: z.string().optional(),
+  mappingStatus: z.string().optional(),
+  savedSegmentId: z.string().uuid().optional(),
+  onlyRecentlyBlocked: optionalQueryBoolean,
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+const whatsappImportSchema = z.object({
+  fileName: z.string().min(1),
+  fileBase64: z.string().min(1),
+});
+
+const whatsappGroupMatchSchema = z.object({
+  customerId: z.string().uuid().nullable().optional(),
+  mappingStatus: z.enum(["MANUAL_MAPPED", "CONFIRMED_UNMATCHED", "IGNORED"]),
+  note: z.string().optional(),
+});
+
+const whatsappCampaignCreateSchema = z.object({
+  name: z.string().min(1),
+  templateId: z.string().uuid().nullable().optional(),
+  savedSegmentId: z.string().uuid().nullable().optional(),
+  messageText: z.string().min(1),
+  filtersSnapshot: z.record(z.unknown()).optional(),
+  groupIds: z.array(z.string().uuid()).min(1),
+  overrideRecentBlock: z.boolean().optional(),
+  minDelaySeconds: z.number().int().min(1).optional(),
+  maxDelaySeconds: z.number().int().min(1).optional(),
+});
+
+const whatsappCampaignListQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(100).optional(),
+});
+
+const whatsappCampaignDetailQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+
+function parseClassificationList(value?: string) {
+  return value
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .filter((entry): entry is (typeof WHATSAPP_GROUP_CLASSIFICATIONS)[number] =>
+      (WHATSAPP_GROUP_CLASSIFICATIONS as readonly string[]).includes(entry),
+    );
+}
+
+function parseMappingStatusList(value?: string) {
+  return value
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .filter((entry): entry is (typeof WHATSAPP_GROUP_MAPPING_STATUSES)[number] =>
+      (WHATSAPP_GROUP_MAPPING_STATUSES as readonly string[]).includes(entry),
+    );
+}
+
+function decodeBase64File(value: string) {
+  const raw = value.includes(",") ? value.split(",").at(-1) ?? "" : value;
+  return Buffer.from(raw, "base64");
+}
+
 export function createApp() {
   const app = express();
 
@@ -205,7 +288,7 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "2mb" }));
+  app.use(express.json({ limit: "20mb" }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -538,6 +621,108 @@ export function createApp() {
     try {
       await deleteMessageTemplate(request.params.id);
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-groups", async (request, response, next) => {
+    try {
+      const query = whatsappGroupFiltersQuerySchema.parse(request.query);
+      response.json(
+        await listWhatsappGroups({
+          ...query,
+          classification: parseClassificationList(query.classification),
+          mappingStatus: parseMappingStatusList(query.mappingStatus),
+        }),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-groups/mapping-summary", async (_request, response, next) => {
+    try {
+      response.json(await getWhatsappMappingSummary());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-groups/import", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = whatsappImportSchema.parse(request.body);
+      response.status(201).json(
+        await importWhatsappGroupsFromWorkbook(decodeBase64File(payload.fileBase64)),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-groups/import-default", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.status(201).json(await importWhatsappGroupsFromDefaultWorkbook());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/whatsapp-groups/:id/match", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.json(await updateWhatsappGroupMatch(String(request.params.id), whatsappGroupMatchSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-campaigns", async (request, response, next) => {
+    try {
+      const query = whatsappCampaignListQuerySchema.parse(request.query);
+      response.json(await listWhatsappCampaigns(query.limit ?? 20));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-campaigns/:id", async (request, response, next) => {
+    try {
+      const query = whatsappCampaignDetailQuerySchema.parse(request.query);
+      const detail = await getWhatsappCampaignDetail(String(request.params.id), query.limit ?? 100, query.offset ?? 0);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+      response.json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns", async (request, response, next) => {
+    try {
+      const payload = whatsappCampaignCreateSchema.parse(request.body);
+      const created = await createWhatsappCampaign(payload, request.user!);
+      await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);
+      const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0);
+      response.status(201).json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/cancel", async (request, response, next) => {
+    try {
+      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para cancelar esta campanha.");
+      }
+
+      response.json(await cancelWhatsappCampaign(String(request.params.id)));
     } catch (error) {
       next(error);
     }

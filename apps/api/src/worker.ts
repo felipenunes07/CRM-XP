@@ -2,10 +2,12 @@ import { pool, redis } from "./db/client.js";
 import { logger } from "./lib/logger.js";
 import { enqueueOlistSyncJob, startWorkerProcessing } from "./modules/platform/jobs.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
+import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 
 async function main() {
   await bootstrapPlatform();
   const worker = startWorkerProcessing();
+  const whatsappWorker = startWhatsappDispatchWorker();
 
   const interval = setInterval(() => {
     enqueueOlistSyncJob().catch((error) => {
@@ -18,6 +20,7 @@ async function main() {
   const shutdown = async () => {
     clearInterval(interval);
     await worker.close();
+    await whatsappWorker.close();
     await redis.quit();
     await pool.end();
     process.exit(0);

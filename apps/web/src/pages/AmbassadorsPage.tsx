@@ -546,7 +546,7 @@ export function AmbassadorsPage() {
                 </select>
                 <select 
                    value={sortKey} 
-                   onChange={(event) => setSortKey(event.target.value)} 
+                   onChange={(event) => setSortKey(event.target.value as SortKey)} 
                    style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--line)' }}
                 >
                   <option value="revenue">Vendas</option>
