@@ -286,6 +286,8 @@ export function DisparadorPage() {
   const importSummary = importDefaultMutation.data ?? importFileMutation.data;
   const importError = (importDefaultMutation.error ?? importFileMutation.error) as Error | null;
   const isImporting = importDefaultMutation.isPending || importFileMutation.isPending;
+  const liveCampaign = selectedCampaignQuery.data;
+  const liveCampaignFirstFailure = liveCampaign?.recipients.find((recipient) => recipient.status === "FAILED") ?? null;
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setSelectedFile(event.target.files?.[0] ?? null);
@@ -554,6 +556,38 @@ export function DisparadorPage() {
               {createCampaignMutation.isPending ? "Criando campanha..." : "Disparar para selecionados"}
             </button>
           </div>
+
+          {liveCampaign ? (
+            <div className="whatsapp-live-card">
+              <div className="whatsapp-live-card-header">
+                <strong>Status do disparo agora</strong>
+                <span className={`status-badge status-${campaignStatusTone(liveCampaign.status)}`}>{liveCampaign.status}</span>
+              </div>
+              <div className="whatsapp-live-card-grid">
+                <div>
+                  <span>Campanha</span>
+                  <strong>{liveCampaign.name}</strong>
+                </div>
+                <div>
+                  <span>Enviados</span>
+                  <strong>{formatNumber(liveCampaign.progress.sentCount)}</strong>
+                </div>
+                <div>
+                  <span>Falhas</span>
+                  <strong>{formatNumber(liveCampaign.progress.failedCount)}</strong>
+                </div>
+                <div>
+                  <span>Pendentes</span>
+                  <strong>{formatNumber(liveCampaign.progress.pendingCount)}</strong>
+                </div>
+              </div>
+              {liveCampaignFirstFailure ? (
+                <div className="empty-state">
+                  Ultima falha: {liveCampaignFirstFailure.sourceName} - {liveCampaignFirstFailure.lastError || "falha no envio"}.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {createCampaignMutation.isError ? (
             <div className="page-error">{(createCampaignMutation.error as Error).message}</div>

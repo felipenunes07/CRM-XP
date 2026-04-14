@@ -55,6 +55,7 @@ import {
   getWhatsappCampaignDetail,
   listWhatsappCampaigns,
 } from "./modules/whatsapp/whatsappCampaignService.js";
+import { ensureEvolutionConfigured } from "./modules/whatsapp/evolutionService.js";
 import {
   getWhatsappMappingSummary,
   importWhatsappGroupsFromDefaultWorkbook,
@@ -700,6 +701,7 @@ export function createApp() {
 
   app.post("/api/whatsapp-campaigns", async (request, response, next) => {
     try {
+      ensureEvolutionConfigured();
       const payload = whatsappCampaignCreateSchema.parse(request.body);
       const created = await createWhatsappCampaign(payload, request.user!);
       await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);

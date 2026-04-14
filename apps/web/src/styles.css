@@ -3359,6 +3359,39 @@ textarea {
   color: var(--muted);
 }
 
+.whatsapp-live-card {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: #f9fbff;
+}
+
+.whatsapp-live-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.whatsapp-live-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.whatsapp-live-card-grid > div {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.whatsapp-live-card-grid span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 @media (max-width: 1100px) {
   .whatsapp-compose-summary {
     grid-template-columns: 1fr;
@@ -3370,6 +3403,10 @@ textarea {
 
   .whatsapp-selection-summary {
     flex-direction: column;
+  }
+
+  .whatsapp-live-card-grid {
+    grid-template-columns: 1fr;
   }
 }
 
