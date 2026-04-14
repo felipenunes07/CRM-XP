@@ -5,13 +5,13 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
 import { isOverdueCreditRow } from "../lib/customerCredit";
-import { CustomerCreditCardList } from "../components/CustomerCreditCardList";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
 import { CustomerTable } from "../components/CustomerTable";
 import { StatCard } from "../components/StatCard";
 import {
   buildCustomersQueryParams,
+  type CreditKpiFilter,
   type CustomerCreditFilters,
   type CustomerPortfolioSortBy,
   createInitialCustomersPageState,
@@ -84,41 +84,23 @@ function applyCreditFilters(rows: CustomerCreditRow[], filters: CustomerCreditFi
   });
 }
 
-function buildCreditSections(rows: CustomerCreditRow[]) {
-  return [
-    {
-      key: "charge-now",
-      title: "Cobranca imediata",
-      helper: "Acima do limite, sem credito ou com atraso relevante.",
-      rows: rows.filter((row) => row.hasOverCredit || row.hasDebtWithoutCredit || isOverdueCreditRow(row)),
-    },
-    {
-      key: "within-limit",
-      title: "Devendo dentro do limite",
-      helper: "Clientes que estao usando credito, mas ainda cabem no limite liberado.",
-      rows: rows.filter(
-        (row) => row.debtAmount > 0 && row.withinCreditLimit && !row.hasOverCredit && !row.hasDebtWithoutCredit,
-      ),
-    },
-    {
-      key: "upsell",
-      title: "Credito livre para vender",
-      helper: "Carteira com limite liberado e sem saldo em aberto agora.",
-      rows: rows.filter((row) => row.operationalState === "UNUSED_CREDIT"),
-    },
-    {
-      key: "positive-balance",
-      title: "Saldo a favor",
-      helper: "Clientes com saldo positivo registrado no resumo financeiro.",
-      rows: rows.filter((row) => row.operationalState === "HAS_CREDIT_BALANCE"),
-    },
-    {
-      key: "settled",
-      title: "Sem pendencia",
-      helper: "Clientes zerados no snapshot atual.",
-      rows: rows.filter((row) => row.operationalState === "SETTLED"),
-    },
-  ];
+function applyCreditKpiFilter(rows: CustomerCreditRow[], kpiFilter: CreditKpiFilter) {
+  if (!kpiFilter) return rows;
+
+  return rows.filter((row) => {
+    switch (kpiFilter) {
+      case "owing":
+        return row.debtAmount > 0;
+      case "credit_balance":
+        return row.creditBalanceAmount > 0;
+      case "unused_credit":
+        return row.operationalState === "UNUSED_CREDIT";
+      case "over_credit":
+        return row.hasOverCredit || row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment;
+      default:
+        return true;
+    }
+  });
 }
 
 export function CustomersPage() {
@@ -169,7 +151,12 @@ export function CustomersPage() {
     () => applyCreditFilters(creditOverviewQuery.data?.unmatchedRows ?? [], state.creditFilters),
     [creditOverviewQuery.data?.unmatchedRows, state.creditFilters],
   );
-  const creditSections = useMemo(() => buildCreditSections(filteredLinkedCreditRows), [filteredLinkedCreditRows]);
+
+  const kpiFilteredRows = useMemo(
+    () => applyCreditKpiFilter(filteredLinkedCreditRows, state.creditKpiFilter),
+    [filteredLinkedCreditRows, state.creditKpiFilter],
+  );
+
   const filteredCreditBalanceCustomers = useMemo(
     () => filteredLinkedCreditRows.filter((row) => row.creditBalanceAmount > 0).length,
     [filteredLinkedCreditRows],
@@ -451,135 +438,118 @@ export function CustomersPage() {
           {creditOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot financeiro.</div> : null}
           {creditOverviewQuery.data ? (
             <>
-              <section className="panel customer-credit-workspace">
-                <div className="customer-credit-topbar">
-                  <div>
-                    <p className="eyebrow">Operacao financeira</p>
-                    <h3>Credito, cobranca e oportunidade de venda</h3>
-                    <p className="panel-subcopy">
-                      Agora o saldo em aberto respeita o limite liberado. Se a divida estiver dentro do credito, o cliente
-                      aparece como dentro do limite, nao como ultrapassado.
-                    </p>
-                  </div>
+              {/* KPI Strip - Interactive */}
+              <div className="credit-kpi-strip">
+                <button
+                  type="button"
+                  className={`credit-kpi-card tone-warning ${state.creditKpiFilter === "owing" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "owing" })}
+                >
+                  <span className="credit-kpi-label">Em aberto</span>
+                  <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalDebtAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOwing)} clientes com divida</span>
+                </button>
 
-                  <div className="customer-credit-topbar-actions">
-                    <div className="customer-credit-meta-chip">
-                      <strong>{creditOverviewQuery.data.snapshot?.sourceFileName ?? "Sem snapshot"}</strong>
-                      <span>
-                        {creditOverviewQuery.data.snapshot
-                          ? `${formatNumber(creditOverviewQuery.data.snapshot.matchedRows)} vinculados | ${formatNumber(creditOverviewQuery.data.snapshot.unmatchedRows)} nao vinculados`
-                          : "Sem dados carregados"}
-                      </span>
-                      {creditOverviewQuery.data.snapshot ? (
-                        <small>
-                          Arquivo {formatDateTime(creditOverviewQuery.data.snapshot.sourceFileUpdatedAt)} | Importado{" "}
-                          {formatDateTime(creditOverviewQuery.data.snapshot.importedAt)}
-                        </small>
-                      ) : null}
-                    </div>
+                <button
+                  type="button"
+                  className={`credit-kpi-card tone-success ${state.creditKpiFilter === "credit_balance" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "credit_balance" })}
+                >
+                  <span className="credit-kpi-label">Saldo a favor</span>
+                  <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalCreditBalanceAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(filteredCreditBalanceCustomers)} clientes com saldo positivo</span>
+                </button>
 
-                    <div className="chart-switcher customers-credit-layout-switcher" role="tablist" aria-label="Alternar leitura da aba de credito">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={state.creditPresentation === "cards"}
-                        className={`chart-switch-button ${state.creditPresentation === "cards" ? "active" : ""}`}
-                        onClick={() => dispatch({ type: "setCreditPresentation", value: "cards" })}
-                      >
-                        <strong>Cards</strong>
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={state.creditPresentation === "table"}
-                        className={`chart-switch-button ${state.creditPresentation === "table" ? "active" : ""}`}
-                        onClick={() => dispatch({ type: "setCreditPresentation", value: "table" })}
-                      >
-                        <strong>Tabela</strong>
-                      </button>
-                    </div>
+                <button
+                  type="button"
+                  className={`credit-kpi-card tone-info ${state.creditKpiFilter === "unused_credit" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "unused_credit" })}
+                >
+                  <span className="credit-kpi-label">Credito livre</span>
+                  <strong className="credit-kpi-value">{formatCurrency(filteredAvailableCreditAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes para empurrar venda</span>
+                </button>
 
-                    {canRefreshCredit ? (
-                      <button
-                        type="button"
-                        className="ghost-button small"
-                        onClick={() => refreshCreditMutation.mutate()}
-                        disabled={refreshCreditMutation.isPending}
-                      >
-                        {refreshCreditMutation.isPending ? "Atualizando..." : "Atualizar agora"}
-                      </button>
-                    ) : null}
-                  </div>
+                <button
+                  type="button"
+                  className={`credit-kpi-card tone-danger ${state.creditKpiFilter === "over_credit" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "over_credit" })}
+                >
+                  <span className="credit-kpi-label">Acima do limite</span>
+                  <strong className="credit-kpi-value">{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com atraso ou sem pagamento</span>
+                </button>
+              </div>
+
+              {/* Snapshot bar + Meta */}
+              <div className="credit-snapshot-bar">
+                <div className="credit-snapshot-info">
+                  <strong>{creditOverviewQuery.data.snapshot?.sourceFileName ?? "Sem snapshot"}</strong>
+                  <span>
+                    {creditOverviewQuery.data.snapshot
+                      ? `${formatNumber(creditOverviewQuery.data.snapshot.matchedRows)} vinculados · ${formatNumber(creditOverviewQuery.data.snapshot.unmatchedRows)} nao vinculados`
+                      : "Sem dados carregados"}
+                  </span>
+                  {creditOverviewQuery.data.snapshot ? (
+                    <small>
+                      Arquivo {formatDateTime(creditOverviewQuery.data.snapshot.sourceFileUpdatedAt)} · Importado{" "}
+                      {formatDateTime(creditOverviewQuery.data.snapshot.importedAt)}
+                    </small>
+                  ) : null}
                 </div>
 
-                {refreshCreditMutation.isError ? (
-                  <span className="inline-error">Nao foi possivel atualizar o arquivo agora.</span>
-                ) : null}
+                <div className="credit-snapshot-actions">
+                  {state.creditKpiFilter ? (
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => dispatch({ type: "setCreditKpiFilter", value: "" })}
+                    >
+                      Limpar filtro
+                    </button>
+                  ) : null}
 
-                <div className="customer-credit-kpi-strip">
-                  <article className="customer-credit-kpi tone-warning">
-                    <span>Em aberto</span>
-                    <strong>{formatCurrency(creditOverviewQuery.data.summary.totalDebtAmount)}</strong>
-                    <small>{formatNumber(creditOverviewQuery.data.summary.customersOwing)} clientes com divida</small>
-                  </article>
-                  <article className="customer-credit-kpi tone-success">
-                    <span>Saldo a favor</span>
-                    <strong>{formatCurrency(creditOverviewQuery.data.summary.totalCreditBalanceAmount)}</strong>
-                    <small>{formatNumber(filteredCreditBalanceCustomers)} clientes com saldo positivo</small>
-                  </article>
-                  <article className="customer-credit-kpi tone-info">
-                    <span>Credito livre</span>
-                    <strong>{formatCurrency(filteredAvailableCreditAmount)}</strong>
-                    <small>{formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes para empurrar venda</small>
-                  </article>
-                  <article className="customer-credit-kpi tone-danger">
-                    <span>Acima do limite</span>
-                    <strong>{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)}</strong>
-                    <small>{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com atraso ou sem pagamento</small>
-                  </article>
+                  {canRefreshCredit ? (
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => refreshCreditMutation.mutate()}
+                      disabled={refreshCreditMutation.isPending}
+                    >
+                      {refreshCreditMutation.isPending ? "Atualizando..." : "Atualizar agora"}
+                    </button>
+                  ) : null}
                 </div>
+              </div>
 
-                <div className="customer-credit-result-meta">
-                  <p>
-                    Exibindo {formatNumber(filteredLinkedCreditRows.length)} de{" "}
-                    {formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} clientes vinculados.
-                  </p>
-                  <p>Os codigos nao vinculados continuam abaixo para revisao, sem poluir a operacao principal.</p>
-                </div>
-              </section>
+              {refreshCreditMutation.isError ? (
+                <span className="inline-error">Nao foi possivel atualizar o arquivo agora.</span>
+              ) : null}
 
-              {state.creditPresentation === "cards" ? (
-                filteredLinkedCreditRows.length ? (
-                  <div className="customer-credit-sections">
-                    {creditSections
-                      .filter((section) => section.rows.length > 0)
-                      .map((section) => (
-                        <section key={section.key} className="panel customer-credit-section">
-                          <div className="panel-header">
-                            <div>
-                              <h3>
-                                {section.title}{" "}
-                                <span className="customer-credit-section-count">{formatNumber(section.rows.length)}</span>
-                              </h3>
-                              <p className="panel-subcopy">{section.helper}</p>
-                            </div>
-                          </div>
-                          <CustomerCreditCardList rows={section.rows} emptyMessage="Nenhum cliente nessa faixa." />
-                        </section>
-                      ))}
-                  </div>
-                ) : (
-                  <div className="panel empty-panel">
-                    <div className="empty-state">Nenhum cliente vinculado ao CRM bate com esse filtro.</div>
-                  </div>
-                )
-              ) : (
-                <CustomerCreditTable
-                  rows={filteredLinkedCreditRows}
-                  emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
-                />
-              )}
+              {/* Results meta */}
+              <div className="credit-results-meta">
+                <p>
+                  Exibindo {formatNumber(kpiFilteredRows.length)} de{" "}
+                  {formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} clientes vinculados.
+                  {state.creditKpiFilter ? (
+                    <button
+                      type="button"
+                      className="credit-clear-filter-inline"
+                      onClick={() => dispatch({ type: "setCreditKpiFilter", value: "" })}
+                    >
+                      Mostrar todos
+                    </button>
+                  ) : null}
+                </p>
+              </div>
 
+              {/* Table */}
+              <CustomerCreditTable
+                rows={kpiFilteredRows}
+                emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
+              />
+
+              {/* Unmatched */}
               <details className="panel customer-credit-unmatched-panel">
                 <summary>
                   Nao vinculados ao CRM ({formatNumber(filteredUnmatchedCreditRows.length)}/
