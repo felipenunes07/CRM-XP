@@ -1,6 +1,6 @@
 import { env } from "../../lib/env.js";
 
-function ensureEvolutionConfigured() {
+export function ensureEvolutionConfigured() {
   if (!env.EVOLUTION_API_BASE_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_INSTANCE_NAME) {
     throw new Error("Evolution API nao configurada. Defina EVOLUTION_API_BASE_URL, EVOLUTION_API_KEY e EVOLUTION_INSTANCE_NAME.");
   }
