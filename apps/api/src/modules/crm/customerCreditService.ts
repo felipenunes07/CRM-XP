@@ -21,7 +21,7 @@ const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
 const CUSTOMER_CREDIT_LOCK_NS = 8201;
 const CUSTOMER_CREDIT_LOCK_KEY = 1;
-const CUSTOMER_CREDIT_PARSER_VERSION = 3;
+const CUSTOMER_CREDIT_PARSER_VERSION = 4;
 const RISK_PRIORITY: Record<CustomerCreditRiskLevel, number> = {
   CRITICO: 0,
   ATENCAO: 1,
@@ -423,8 +423,22 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     hasOverCredit,
   });
 
-  // When the client owes nothing, risk should not be elevated by stale payment flags.
-  const resolvedRiskLevel = isSettled ? "OK" as CustomerCreditRiskLevel : riskLevel;
+  // Derive a consistent risk level from the actual financial state, overriding the
+  // Excel when the raw value contradicts the numbers.
+  let resolvedRiskLevel: CustomerCreditRiskLevel = riskLevel;
+  if (isSettled) {
+    // Client owes nothing — stale flags shouldn't inflate risk.
+    resolvedRiskLevel = "OK";
+  } else if (hasOverCredit) {
+    // Client exceeded their credit limit — always critical.
+    resolvedRiskLevel = "CRITICO";
+  } else if (hasDebtWithoutCredit && riskLevel === "OK") {
+    // Client has debt but no credit limit — at least attention.
+    resolvedRiskLevel = "ATENCAO";
+  } else if ((hasOverduePayment || hasSeverelyOverduePayment) && riskLevel === "OK") {
+    // Client has overdue payments but Excel says OK — at least attention.
+    resolvedRiskLevel = "ATENCAO";
+  }
 
   return {
     customerCode,
