@@ -157,8 +157,8 @@ export async function getAmbassadorOverview(): Promise<AmbassadorResponse> {
       `
         WITH months AS (
           SELECT generate_series(
-            date_trunc('month', CURRENT_DATE) - ($2::int * interval '1 month'),
-            date_trunc('month', CURRENT_DATE) - interval '1 month',
+            date_trunc('month', CURRENT_DATE) - (($2::int - 1) * interval '1 month'),
+            date_trunc('month', CURRENT_DATE),
             interval '1 month'
           )::date AS month_start
         ),
@@ -186,7 +186,7 @@ export async function getAmbassadorOverview(): Promise<AmbassadorResponse> {
           JOIN cohort ON cohort.customer_id = o.customer_id
           LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
           WHERE o.order_date >= (SELECT MIN(month_start) FROM months)
-            AND o.order_date < date_trunc('month', CURRENT_DATE)::date
+            AND o.order_date <= CURRENT_DATE
           GROUP BY date_trunc('month', o.order_date)::date
         )
         SELECT
@@ -204,8 +204,8 @@ export async function getAmbassadorOverview(): Promise<AmbassadorResponse> {
       `
         WITH months AS (
           SELECT generate_series(
-            date_trunc('month', CURRENT_DATE) - ($2::int * interval '1 month'),
-            date_trunc('month', CURRENT_DATE) - interval '1 month',
+            date_trunc('month', CURRENT_DATE) - (($2::int - 1) * interval '1 month'),
+            date_trunc('month', CURRENT_DATE),
             interval '1 month'
           )::date AS month_start
         ),
@@ -234,7 +234,7 @@ export async function getAmbassadorOverview(): Promise<AmbassadorResponse> {
           JOIN cohort ON cohort.customer_id = o.customer_id
           LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
           WHERE o.order_date >= (SELECT MIN(month_start) FROM months)
-            AND o.order_date < date_trunc('month', CURRENT_DATE)::date
+            AND o.order_date <= CURRENT_DATE
           GROUP BY o.customer_id, date_trunc('month', o.order_date)::date
         )
         SELECT
