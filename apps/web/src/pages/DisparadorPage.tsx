@@ -90,6 +90,53 @@ function recipientTone(status: WhatsappCampaignRecipient["status"]) {
   return "neutral";
 }
 
+function recipientLiveLabel(recipient: WhatsappCampaignRecipient) {
+  if (recipient.status === "SENT") {
+    return `Enviado ${formatDateTime(recipient.sentAt)}`;
+  }
+
+  if (recipient.status === "FAILED") {
+    return recipient.lastError || "Falha no envio";
+  }
+
+  if (recipient.status === "SENDING") {
+    return "Enviando agora";
+  }
+
+  if (recipient.status === "PENDING") {
+    return `Agendado para ${formatDateTime(recipient.scheduledFor)}`;
+  }
+
+  if (recipient.status === "BLOCKED_RECENT") {
+    return "Bloqueado por contato recente";
+  }
+
+  return "Pulado";
+}
+
+function formatCountdown(targetAt: string | null, nowMs: number) {
+  if (!targetAt) {
+    return null;
+  }
+
+  const targetMs = new Date(targetAt).getTime();
+  if (!Number.isFinite(targetMs)) {
+    return null;
+  }
+
+  const diffMs = Math.max(0, targetMs - nowMs);
+  const totalSeconds = Math.ceil(diffMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function quickFilterCount(
   filter: QuickFilter,
   summary:
@@ -129,6 +176,7 @@ export function DisparadorPage() {
   const [maxDelaySeconds, setMaxDelaySeconds] = useState(304);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [attemptedAutoImport, setAttemptedAutoImport] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const groupQueryParams = useMemo(
     () =>
@@ -240,6 +288,23 @@ export function DisparadorPage() {
     },
   });
 
+  const activeCampaignId = useMemo(() => {
+    if (createCampaignMutation.data?.id) {
+      return createCampaignMutation.data.id;
+    }
+
+    const activeCampaign = campaignsQuery.data?.find((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status));
+    return activeCampaign?.id ?? selectedCampaignId ?? null;
+  }, [campaignsQuery.data, createCampaignMutation.data?.id, selectedCampaignId]);
+
+  const activeCampaignQuery = useQuery({
+    queryKey: ["whatsapp-campaign-live", activeCampaignId],
+    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0 }),
+    enabled: Boolean(token && activeCampaignId),
+    refetchInterval: (query) =>
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 1500 : false,
+  });
+
   const cancelCampaignMutation = useMutation({
     mutationFn: (campaignId: string) => api.cancelWhatsappCampaign(token!, campaignId),
     onSuccess: async () => {
@@ -276,6 +341,14 @@ export function DisparadorPage() {
     }
   }, [attemptedAutoImport, canImport, importDefaultMutation, mappingSummaryQuery.data]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const filteredGroups = groupsQuery.data?.items ?? [];
   const selectedGroupCount = selectedGroupIds.length;
   const allVisibleSelected =
@@ -286,8 +359,36 @@ export function DisparadorPage() {
   const importSummary = importDefaultMutation.data ?? importFileMutation.data;
   const importError = (importDefaultMutation.error ?? importFileMutation.error) as Error | null;
   const isImporting = importDefaultMutation.isPending || importFileMutation.isPending;
-  const liveCampaign = selectedCampaignQuery.data;
+  const liveCampaign = activeCampaignQuery.data ?? selectedCampaignQuery.data ?? createCampaignMutation.data ?? null;
   const liveCampaignFirstFailure = liveCampaign?.recipients.find((recipient) => recipient.status === "FAILED") ?? null;
+  const nextDispatchCountdown = liveCampaign ? formatCountdown(liveCampaign.progress.nextScheduledAt, nowMs) : null;
+  const liveRecipients = useMemo(() => {
+    if (!liveCampaign?.recipients.length) {
+      return [];
+    }
+
+    const statusOrder: Record<WhatsappCampaignRecipient["status"], number> = {
+      SENDING: 0,
+      PENDING: 1,
+      FAILED: 2,
+      BLOCKED_RECENT: 3,
+      SENT: 4,
+      SKIPPED: 5,
+    };
+
+    return [...liveCampaign.recipients]
+      .sort((left, right) => {
+        const orderDiff = statusOrder[left.status] - statusOrder[right.status];
+        if (orderDiff !== 0) {
+          return orderDiff;
+        }
+
+        const leftTime = left.scheduledFor ? new Date(left.scheduledFor).getTime() : 0;
+        const rightTime = right.scheduledFor ? new Date(right.scheduledFor).getTime() : 0;
+        return leftTime - rightTime;
+      })
+      .slice(0, 8);
+  }, [liveCampaign]);
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setSelectedFile(event.target.files?.[0] ?? null);
@@ -445,6 +546,84 @@ export function DisparadorPage() {
               estao ligados a um cliente do CRM.
             </div>
           ) : null}
+
+          {liveCampaign ? (
+            <div className="whatsapp-live-card whatsapp-live-queue-card">
+              <div className="whatsapp-live-card-header">
+                <strong>Fila do disparo agora</strong>
+                <span className={`status-badge status-${campaignStatusTone(liveCampaign.status)}`}>
+                  {liveCampaign.status}
+                </span>
+              </div>
+
+              <div className="whatsapp-live-card-grid">
+                <div>
+                  <span>Campanha</span>
+                  <strong>{liveCampaign.name}</strong>
+                </div>
+                <div>
+                  <span>Proximo envio</span>
+                  <strong>{formatDateTime(liveCampaign.progress.nextScheduledAt)}</strong>
+                </div>
+                <div>
+                  <span>Enviados</span>
+                  <strong>{formatNumber(liveCampaign.progress.sentCount)}</strong>
+                </div>
+                <div>
+                  <span>Pendentes</span>
+                  <strong>{formatNumber(liveCampaign.progress.pendingCount)}</strong>
+                </div>
+              </div>
+
+              <div className="whatsapp-countdown-card">
+                <span>Proximo disparo em</span>
+                <strong>
+                  {liveCampaign.progress.nextScheduledAt
+                    ? nextDispatchCountdown ?? formatDateTime(liveCampaign.progress.nextScheduledAt)
+                    : liveCampaign.status === "IN_PROGRESS"
+                      ? "Enviando agora"
+                      : "Fila concluida"}
+                </strong>
+                <small>
+                  {liveCampaign.progress.nextScheduledAt
+                    ? `Horario previsto: ${formatDateTime(liveCampaign.progress.nextScheduledAt)}`
+                    : "Nao ha mais contatos aguardando na fila."}
+                </small>
+              </div>
+
+              <div className="whatsapp-live-recipient-list">
+                {liveRecipients.map((recipient) => (
+                  <article key={recipient.id} className={`whatsapp-live-recipient tone-${recipientTone(recipient.status)}`}>
+                    <div>
+                      <strong>{recipient.sourceName}</strong>
+                      <p>
+                        {recipient.status === "PENDING" && recipient.scheduledFor
+                          ? `${recipientLiveLabel(recipient)}${formatCountdown(recipient.scheduledFor, nowMs) ? ` - faltam ${formatCountdown(recipient.scheduledFor, nowMs)}` : ""}`
+                          : recipientLiveLabel(recipient)}
+                      </p>
+                    </div>
+                    <span className={`status-badge status-${recipientTone(recipient.status)}`}>{recipient.status}</span>
+                  </article>
+                ))}
+              </div>
+
+              <p className="panel-subcopy">
+                O primeiro envio sai na hora. Os proximos entram na fila com espera entre {liveCampaign.minDelaySeconds}
+                s e {liveCampaign.maxDelaySeconds}s para proteger o WhatsApp.
+              </p>
+
+              {liveCampaignFirstFailure ? (
+                <div className="empty-state">
+                  Ultima falha: {liveCampaignFirstFailure.sourceName} - {liveCampaignFirstFailure.lastError || "falha no envio"}.
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="empty-state">
+              Quando voce clicar em disparar, a fila vai aparecer aqui mostrando quem foi enviado, quem esta aguardando
+              e o horario do proximo disparo.
+            </div>
+          )}
         </article>
 
         <article className="panel">
@@ -556,38 +735,6 @@ export function DisparadorPage() {
               {createCampaignMutation.isPending ? "Criando campanha..." : "Disparar para selecionados"}
             </button>
           </div>
-
-          {liveCampaign ? (
-            <div className="whatsapp-live-card">
-              <div className="whatsapp-live-card-header">
-                <strong>Status do disparo agora</strong>
-                <span className={`status-badge status-${campaignStatusTone(liveCampaign.status)}`}>{liveCampaign.status}</span>
-              </div>
-              <div className="whatsapp-live-card-grid">
-                <div>
-                  <span>Campanha</span>
-                  <strong>{liveCampaign.name}</strong>
-                </div>
-                <div>
-                  <span>Enviados</span>
-                  <strong>{formatNumber(liveCampaign.progress.sentCount)}</strong>
-                </div>
-                <div>
-                  <span>Falhas</span>
-                  <strong>{formatNumber(liveCampaign.progress.failedCount)}</strong>
-                </div>
-                <div>
-                  <span>Pendentes</span>
-                  <strong>{formatNumber(liveCampaign.progress.pendingCount)}</strong>
-                </div>
-              </div>
-              {liveCampaignFirstFailure ? (
-                <div className="empty-state">
-                  Ultima falha: {liveCampaignFirstFailure.sourceName} - {liveCampaignFirstFailure.lastError || "falha no envio"}.
-                </div>
-              ) : null}
-            </div>
-          ) : null}
 
           {createCampaignMutation.isError ? (
             <div className="page-error">{(createCampaignMutation.error as Error).message}</div>
