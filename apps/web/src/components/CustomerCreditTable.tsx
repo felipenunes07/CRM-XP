@@ -1,6 +1,6 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { Link } from "react-router-dom";
-import { formatCurrency, formatDate } from "../lib/format";
+import { formatCurrency, formatDate, calculateDaysSince } from "../lib/format";
 import {
   customerCreditRiskClassName,
   customerCreditRiskLabel,
@@ -117,6 +117,7 @@ export function CustomerCreditTable({
               const barColor = usageBarColor(row);
               const hasBalance = row.creditBalanceAmount > 0;
               const action = suggestAction(row);
+              const actualDays = calculateDaysSince(row.lastPaymentDate);
 
               return (
                 <tr key={row.id} className={rowClassName(row)}>
@@ -188,8 +189,8 @@ export function CustomerCreditTable({
                   {/* Prazo (dias sem pagar) */}
                   <td>
                     <div className="credit-cell-prazo">
-                      <strong className={prazoTone(row.daysSinceLastPayment)}>
-                        {prazoLabel(row.daysSinceLastPayment)}
+                      <strong className={prazoTone(actualDays)}>
+                        {prazoLabel(actualDays)}
                       </strong>
                       {row.lastPaymentDate ? (
                         <span>{formatDate(row.lastPaymentDate)}</span>

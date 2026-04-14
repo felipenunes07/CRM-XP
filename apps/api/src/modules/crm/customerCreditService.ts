@@ -143,14 +143,14 @@ function emptySummary(): CustomerCreditOverviewSummary {
 function mapSnapshotMeta(row: Record<string, unknown>): CustomerCreditSnapshotMeta {
   return {
     id: String(row.id),
-    sourceFileName: String(row.source_file_name),
-    sourceFilePath: String(row.source_file_path),
-    sourceFileUpdatedAt: toIsoTimestamp(row.source_file_updated_at),
-    sourceFileSizeBytes: Number(row.source_file_size_bytes ?? 0),
-    importedAt: toIsoTimestamp(row.imported_at),
-    totalRows: Number(row.total_rows ?? 0),
-    matchedRows: Number(row.matched_rows ?? 0),
-    unmatchedRows: Number(row.unmatched_rows ?? 0),
+    sourceFileName: String(row.sourceFileName ?? ""),
+    sourceFilePath: String(row.sourceFilePath ?? ""),
+    sourceFileUpdatedAt: toIsoTimestamp(row.sourceFileUpdatedAt),
+    sourceFileSizeBytes: Number(row.sourceFileSizeBytes ?? 0),
+    importedAt: toIsoTimestamp(row.importedAt),
+    totalRows: Number(row.totalRows ?? 0),
+    matchedRows: Number(row.matchedRows ?? 0),
+    unmatchedRows: Number(row.unmatchedRows ?? 0),
   };
 }
 
