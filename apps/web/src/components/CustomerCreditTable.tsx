@@ -17,7 +17,6 @@ function creditUsagePercent(row: CustomerCreditRow) {
   if (row.creditLimit <= 0) {
     return row.debtAmount > 0 ? 100 : 0;
   }
-
   return Math.min((row.debtAmount / row.creditLimit) * 100, 120);
 }
 
@@ -40,6 +39,44 @@ function prazoTone(days: number | null) {
   if (days === null || days === undefined) return "";
   if (days > 90) return "credit-prazo-danger";
   if (days > 30) return "credit-prazo-warning";
+  return "";
+}
+
+type SuggestedAction = {
+  label: string;
+  tone: "danger" | "success" | "warning" | "info" | "muted";
+  hint: string;
+};
+
+function suggestAction(row: CustomerCreditRow): SuggestedAction {
+  if (row.hasOverCredit) {
+    return { label: "Cobrar", tone: "danger", hint: "Ultrapassou o limite — prioridade de cobranca" };
+  }
+  if (row.debtAmount > 0 && (row.hasOverduePayment || row.hasSeverelyOverduePayment)) {
+    return { label: "Cobrar", tone: "danger", hint: "Pagamento vencido — acionar cobranca" };
+  }
+  if (row.debtAmount > 0 && row.hasNoPayment) {
+    return { label: "Cobrar", tone: "danger", hint: "Nunca pagou — verificar situacao" };
+  }
+  if (row.operationalState === "UNUSED_CREDIT") {
+    return { label: "Vender", tone: "success", hint: "Credito disponivel — oportunidade de venda" };
+  }
+  if (row.debtAmount > 0 && row.withinCreditLimit) {
+    return { label: "Acompanhar", tone: "info", hint: "Dentro do limite — monitorar prazo" };
+  }
+  if (row.debtAmount > 0 && row.creditLimit <= 0) {
+    return { label: "Verificar", tone: "warning", hint: "Devendo sem limite — avaliar credito" };
+  }
+  if (row.creditBalanceAmount > 0) {
+    return { label: "Vender", tone: "success", hint: "Saldo a favor — oportunidade de recompra" };
+  }
+  return { label: "—", tone: "muted", hint: "Sem acao necessaria" };
+}
+
+function rowClassName(row: CustomerCreditRow) {
+  if (row.hasOverCredit) return "credit-row-danger";
+  if (row.debtAmount > 0 && (row.hasOverduePayment || row.hasSeverelyOverduePayment)) return "credit-row-warn";
+  if (row.operationalState === "UNUSED_CREDIT") return "credit-row-opportunity";
   return "";
 }
 
@@ -69,6 +106,7 @@ export function CustomerCreditTable({
               <th>Prazo</th>
               <th>Risco</th>
               <th>Uso do credito</th>
+              <th>Acao sugerida</th>
               {linkedOnly ? <th /> : null}
             </tr>
           </thead>
@@ -78,9 +116,10 @@ export function CustomerCreditTable({
               const pct = creditUsagePercent(row);
               const barColor = usageBarColor(row);
               const hasBalance = row.creditBalanceAmount > 0;
+              const action = suggestAction(row);
 
               return (
-                <tr key={row.id} className={row.hasOverCredit ? "credit-row-danger" : ""}>
+                <tr key={row.id} className={rowClassName(row)}>
                   {/* Cliente */}
                   <td>
                     <div className="credit-cell-client">
@@ -178,7 +217,7 @@ export function CustomerCreditTable({
                           />
                         </div>
                         <span className="credit-usage-label">
-                          {pct > 100 ? `${Math.round(pct)}%` : `${Math.round(pct)}%`}
+                          {Math.round(pct)}%
                         </span>
                       </div>
                     ) : (
@@ -188,7 +227,14 @@ export function CustomerCreditTable({
                     )}
                   </td>
 
-                  {/* Ação */}
+                  {/* Ação sugerida */}
+                  <td>
+                    <span className={`credit-action-pill tone-${action.tone}`} title={action.hint}>
+                      {action.label}
+                    </span>
+                  </td>
+
+                  {/* Link */}
                   {linkedOnly ? (
                     <td className="credit-cell-action">
                       {row.customerId ? (

@@ -1662,6 +1662,42 @@ textarea {
   letter-spacing: 0.01em;
 }
 
+.credit-kpi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credit-kpi-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.credit-kpi-icon.tone-warning {
+  background: rgba(208, 154, 41, 0.12);
+  color: var(--warning);
+}
+
+.credit-kpi-icon.tone-success {
+  background: rgba(47, 157, 103, 0.12);
+  color: var(--success);
+}
+
+.credit-kpi-icon.tone-info {
+  background: rgba(41, 86, 215, 0.12);
+  color: var(--accent);
+}
+
+.credit-kpi-icon.tone-danger {
+  background: rgba(217, 83, 79, 0.12);
+  color: var(--danger);
+}
+
 .credit-kpi-value {
   font-size: 1.5rem;
   font-weight: 700;
@@ -1673,6 +1709,126 @@ textarea {
   font-size: 0.78rem;
   color: var(--muted);
   margin-top: 0.15rem;
+}
+
+/* Smart Action Insights Strip */
+.credit-insights-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.credit-insight-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+.credit-insight-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(23, 50, 96, 0.06);
+}
+
+.credit-insight-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.credit-insight-card.danger .credit-insight-icon {
+  background: rgba(217, 83, 79, 0.12);
+  color: var(--danger);
+}
+
+.credit-insight-card.success .credit-insight-icon {
+  background: rgba(47, 157, 103, 0.12);
+  color: var(--success);
+}
+
+.credit-insight-card.warning .credit-insight-icon {
+  background: rgba(208, 154, 41, 0.12);
+  color: var(--warning);
+}
+
+.credit-insight-body {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.credit-insight-body strong {
+  font-size: 0.88rem;
+}
+
+.credit-insight-body span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Action pill in table */
+.credit-action-pill {
+  display: inline-flex;
+  padding: 0.25rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.credit-action-pill.tone-danger {
+  background: rgba(217, 83, 79, 0.12);
+  color: var(--danger);
+}
+
+.credit-action-pill.tone-success {
+  background: rgba(47, 157, 103, 0.12);
+  color: var(--success);
+}
+
+.credit-action-pill.tone-warning {
+  background: rgba(208, 154, 41, 0.12);
+  color: var(--warning);
+}
+
+.credit-action-pill.tone-info {
+  background: rgba(41, 86, 215, 0.12);
+  color: var(--accent);
+}
+
+.credit-action-pill.tone-muted {
+  background: rgba(95, 111, 149, 0.08);
+  color: var(--muted);
+}
+
+/* Row state coloring */
+.credit-row-warn {
+  background: rgba(208, 154, 41, 0.03);
+}
+
+.credit-row-warn:hover {
+  background: rgba(208, 154, 41, 0.06) !important;
+}
+
+.credit-row-opportunity {
+  background: rgba(47, 157, 103, 0.03);
+}
+
+.credit-row-opportunity:hover {
+  background: rgba(47, 157, 103, 0.06) !important;
 }
 
 /* Snapshot Bar */
@@ -1983,6 +2139,10 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .credit-insights-strip {
+    grid-template-columns: 1fr;
+  }
+
   .credit-snapshot-bar {
     flex-direction: column;
     align-items: flex-start;
@@ -1991,12 +2151,13 @@ textarea {
 
 @media (max-width: 760px) {
   .credit-kpi-strip,
+  .credit-insights-strip,
   .customer-credit-detail-grid {
     grid-template-columns: 1fr;
   }
 
   .credit-table-v2 {
-    min-width: 940px;
+    min-width: 1100px;
   }
 }
 
