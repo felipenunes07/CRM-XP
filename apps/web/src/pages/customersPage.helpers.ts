@@ -1,6 +1,6 @@
 export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment";
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
-export type CustomerCreditPresentation = "cards" | "table";
+export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
 
 export interface CustomerPortfolioFilters {
   search: string;
@@ -24,12 +24,12 @@ export interface CustomersPageState {
   activeView: CustomersPageView;
   portfolioFilters: CustomerPortfolioFilters;
   creditFilters: CustomerCreditFilters;
-  creditPresentation: CustomerCreditPresentation;
+  creditKpiFilter: CreditKpiFilter;
 }
 
 export type CustomersPageAction =
   | { type: "setView"; view: CustomersPageView }
-  | { type: "setCreditPresentation"; value: CustomerCreditPresentation }
+  | { type: "setCreditKpiFilter"; value: CreditKpiFilter }
   | {
       type: "updatePortfolioFilter";
       key: "search" | "status" | "label" | "excludeLabel" | "ambassadorOnly";
@@ -61,7 +61,7 @@ export function createInitialCustomersPageState(): CustomersPageState {
       onlyUnusedCredit: "",
       onlyOverdue: "",
     },
-    creditPresentation: "cards",
+    creditKpiFilter: "",
   };
 }
 
@@ -91,14 +91,10 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
     };
   }
 
-  if (action.type === "setCreditPresentation") {
-    if (state.creditPresentation === action.value) {
-      return state;
-    }
-
+  if (action.type === "setCreditKpiFilter") {
     return {
       ...state,
-      creditPresentation: action.value,
+      creditKpiFilter: state.creditKpiFilter === action.value ? "" : action.value,
     };
   }
 
