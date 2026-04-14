@@ -211,6 +211,84 @@ export interface CustomerDocInsightsResponse {
   ranking: CustomerDocInsightListItem[];
 }
 
+export type CustomerCreditRiskLevel = "OK" | "MONITORAR" | "ATENCAO" | "CRITICO";
+export type CustomerCreditOperationalState =
+  | "OWES"
+  | "HAS_CREDIT_BALANCE"
+  | "SETTLED"
+  | "UNUSED_CREDIT"
+  | "OVER_CREDIT";
+
+export interface CustomerCreditSnapshotMeta {
+  id: string;
+  sourceFileName: string;
+  sourceFilePath: string;
+  sourceFileUpdatedAt: string;
+  sourceFileSizeBytes: number;
+  importedAt: string;
+  totalRows: number;
+  matchedRows: number;
+  unmatchedRows: number;
+}
+
+export interface CustomerCreditRow {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  matched: boolean;
+  balanceAmount: number;
+  debtAmount: number;
+  creditBalanceAmount: number;
+  creditLimit: number;
+  availableCreditAmount: number;
+  withinCreditLimit: boolean;
+  operationalState: CustomerCreditOperationalState;
+  riskLevel: CustomerCreditRiskLevel;
+  observation: string;
+  lastOrderDate: string | null;
+  lastPaymentDate: string | null;
+  daysSinceLastOrder: number | null;
+  daysSinceLastPayment: number | null;
+  riskScore: number | null;
+  flags: string[];
+  hasOverCredit: boolean;
+  hasOverduePayment: boolean;
+  hasSeverelyOverduePayment: boolean;
+  hasNoPayment: boolean;
+  hasNoOrder: boolean;
+  hasNegativeCredit: boolean;
+  hasDebtWithoutCredit: boolean;
+}
+
+export interface CustomerCreditOverviewSummary {
+  totalLinkedCustomers: number;
+  totalUnmatchedRows: number;
+  totalDebtAmount: number;
+  totalCreditBalanceAmount: number;
+  customersOwing: number;
+  customersWithCreditLimit: number;
+  customersWithUnusedCredit: number;
+  customersCritical: number;
+  customersAttention: number;
+  customersMonitoring: number;
+  customersOverCredit: number;
+  customersOverdue: number;
+}
+
+export interface CustomerCreditOverviewResponse {
+  snapshot: CustomerCreditSnapshotMeta | null;
+  summary: CustomerCreditOverviewSummary;
+  linkedRows: CustomerCreditRow[];
+  unmatchedRows: CustomerCreditRow[];
+}
+
+export interface CustomerCreditDetailResponse {
+  snapshot: CustomerCreditSnapshotMeta | null;
+  row: CustomerCreditRow | null;
+}
+
 export interface MessageTemplate {
   id: string;
   category: "reativacao" | "follow_up" | "promocao";

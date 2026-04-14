@@ -1,0 +1,21 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { Link } from "react-router-dom";
+import { formatCurrency, formatDate, formatDaysSince } from "../lib/format";
+import { customerCreditHeadlineClassName, customerCreditHeadlineLabel, customerCreditPrimaryLabel, customerCreditRiskClassName, customerCreditRiskLabel, customerCreditVisibleFlags, } from "../lib/customerCredit";
+function creditUsagePercent(row) {
+    if (row.creditLimit <= 0) {
+        return row.debtAmount > 0 ? 100 : 0;
+    }
+    return Math.min((row.debtAmount / row.creditLimit) * 100, 100);
+}
+export function CustomerCreditCardList({ rows, emptyMessage, linkedOnly = true, }) {
+    if (!rows.length) {
+        return (_jsx("div", { className: "panel empty-panel", children: _jsx("div", { className: "empty-state", children: emptyMessage }) }));
+    }
+    return (_jsx("div", { className: "customer-credit-card-grid", children: rows.map((row) => {
+            const flags = customerCreditVisibleFlags(row);
+            const progress = creditUsagePercent(row);
+            const primaryAmount = row.debtAmount > 0 ? row.debtAmount : row.creditBalanceAmount;
+            return (_jsxs("article", { className: `panel customer-credit-card ${row.hasOverCredit ? "is-over-credit" : ""}`, children: [_jsxs("div", { className: "customer-credit-card-header", children: [_jsxs("div", { children: [_jsx("strong", { children: row.customerDisplayName }), _jsx("span", { children: row.customerCode })] }), linkedOnly && row.customerId ? (_jsx(Link, { className: "ghost-button small", to: `/clientes/${row.customerId}`, children: "Abrir" })) : null] }), _jsxs("div", { className: "customer-credit-card-badges", children: [_jsx("span", { className: `tag credit-badge ${customerCreditHeadlineClassName(row)}`, children: customerCreditHeadlineLabel(row) }), _jsx("span", { className: `tag credit-badge ${customerCreditRiskClassName(row.riskLevel)}`, children: customerCreditRiskLabel(row.riskLevel) })] }), _jsxs("div", { className: "customer-credit-card-metrics", children: [_jsxs("div", { children: [_jsx("span", { children: customerCreditPrimaryLabel(row) }), _jsx("strong", { children: primaryAmount > 0 ? formatCurrency(primaryAmount) : "R$ 0,00" })] }), _jsxs("div", { children: [_jsx("span", { children: "Credito liberado" }), _jsx("strong", { children: formatCurrency(row.creditLimit) })] }), _jsxs("div", { children: [_jsx("span", { children: "Disponivel" }), _jsx("strong", { children: formatCurrency(row.availableCreditAmount) })] })] }), row.creditLimit > 0 ? (_jsxs("div", { className: "customer-credit-card-progress-block", children: [_jsxs("div", { className: "customer-credit-card-progress-copy", children: [_jsx("span", { children: "Uso do limite" }), _jsxs("strong", { children: [progress.toFixed(0), "%"] })] }), _jsx("div", { className: "customer-credit-card-progress-track", children: _jsx("span", { className: `customer-credit-card-progress-fill ${row.hasOverCredit ? "danger" : row.debtAmount > 0 ? "warning" : "success"}`, style: { width: `${progress}%` } }) })] })) : (_jsx("div", { className: "customer-credit-card-note", children: row.debtAmount > 0 ? "Cliente com saldo em aberto e sem limite liberado." : "Sem limite liberado nesse snapshot." })), _jsxs("div", { className: "customer-credit-card-timeline", children: [_jsxs("span", { children: ["Ult. pedido: ", formatDate(row.lastOrderDate)] }), _jsxs("span", { children: ["Ult. pagto: ", formatDate(row.lastPaymentDate)] }), _jsxs("span", { children: ["Dias sem pagar: ", formatDaysSince(row.daysSinceLastPayment)] })] }), _jsxs("div", { className: "customer-credit-card-observation", children: [_jsx("span", { children: "Observacao" }), _jsx("p", { children: row.observation || "Sem observacao relevante." })] }), _jsxs("div", { className: "tag-row compact", children: [flags.length ? (flags.slice(0, 4).map((flag) => (_jsx("span", { className: "tag customer-credit-flag", children: flag }, `${row.id}-${flag}`)))) : (_jsx("span", { className: "muted-copy", children: "Sem flags adicionais." })), flags.length > 4 ? _jsxs("span", { className: "muted-copy", children: ["+", flags.length - 4, " alertas"] }) : null] })] }, row.id));
+        }) }));
+}

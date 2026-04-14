@@ -6,7 +6,23 @@ import { useParams } from "react-router-dom";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDaysSince, formatPercent, formatNumber, statusLabel } from "../lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatDaysSince,
+  formatPercent,
+  formatNumber,
+  statusLabel,
+} from "../lib/format";
+import {
+  customerCreditHeadlineClassName,
+  customerCreditHeadlineLabel,
+  customerCreditPrimaryLabel,
+  customerCreditRiskClassName,
+  customerCreditRiskLabel,
+  customerCreditVisibleFlags,
+} from "../lib/customerCredit";
 
 const insightLabels: Record<InsightTag, string> = {
   alto_valor: "Alto valor",
@@ -69,8 +85,15 @@ export function CustomerDetailPage() {
     queryFn: () => api.customerLabels(token!),
     enabled: Boolean(token),
   });
+  const creditDetailQuery = useQuery({
+    queryKey: ["customer-credit-detail", id],
+    queryFn: () => api.customerCreditDetail(token!, id!),
+    enabled: Boolean(token && id),
+  });
 
   const customer = detailQuery.data ?? null;
+  const creditRow = creditDetailQuery.data?.row ?? null;
+  const creditSnapshot = creditDetailQuery.data?.snapshot ?? null;
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -249,6 +272,108 @@ export function CustomerDetailPage() {
           </span>
           <strong>{customer.priorityScore.toFixed(1)}</strong>
         </div>
+      </section>
+
+      <section className="panel customer-credit-detail-panel">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Credito & Pagamento</p>
+            <h3>Leitura financeira diaria desse cliente</h3>
+            <p className="panel-subcopy">
+              Dados puxados do arquivo diario <strong>{creditSnapshot?.sourceFileName ?? "SALDO VENDAS"}</strong>.
+            </p>
+          </div>
+          {creditSnapshot ? (
+            <div className="customer-credit-snapshot-badge">
+              <span>Arquivo: {formatDateTime(creditSnapshot.sourceFileUpdatedAt)}</span>
+              <span>Importado: {formatDateTime(creditSnapshot.importedAt)}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {creditDetailQuery.isLoading ? (
+          <div className="empty-state">Carregando snapshot financeiro...</div>
+        ) : creditRow ? (
+          <div className="customer-credit-detail-shell">
+            <div className="detail-grid customer-credit-detail-grid">
+              <div>
+                <span>Situação</span>
+                <strong>
+                  <span className={`tag credit-badge ${customerCreditHeadlineClassName(creditRow)}`}>
+                    {customerCreditHeadlineLabel(creditRow)}
+                  </span>
+                </strong>
+              </div>
+              <div>
+                <span>Risco</span>
+                <strong>
+                  <span className={`tag credit-badge ${customerCreditRiskClassName(creditRow.riskLevel)}`}>
+                    {customerCreditRiskLabel(creditRow.riskLevel)}
+                  </span>
+                </strong>
+              </div>
+              <div>
+                <span>{customerCreditPrimaryLabel(creditRow)}</span>
+                <strong>{formatCurrency(creditRow.debtAmount > 0 ? creditRow.debtAmount : creditRow.creditBalanceAmount)}</strong>
+              </div>
+              <div>
+                <span>Credito liberado</span>
+                <strong>{formatCurrency(creditRow.creditLimit)}</strong>
+              </div>
+              <div>
+                <span>Disponivel</span>
+                <strong>{formatCurrency(creditRow.availableCreditAmount)}</strong>
+              </div>
+              <div>
+                <span>Uso do limite</span>
+                <strong>
+                  {creditRow.creditLimit > 0 ? `${Math.min((creditRow.debtAmount / creditRow.creditLimit) * 100, 100).toFixed(0)}%` : "Sem limite"}
+                </strong>
+              </div>
+              <div>
+                <span>Ultimo pedido</span>
+                <strong>{formatDate(creditRow.lastOrderDate)}</strong>
+              </div>
+              <div>
+                <span>Ultimo pagamento</span>
+                <strong>{formatDate(creditRow.lastPaymentDate)}</strong>
+              </div>
+              <div>
+                <span>Dias sem pedir</span>
+                <strong>{formatDaysSince(creditRow.daysSinceLastOrder)}</strong>
+              </div>
+              <div>
+                <span>Dias sem pagar</span>
+                <strong>{formatDaysSince(creditRow.daysSinceLastPayment)}</strong>
+              </div>
+            </div>
+
+            <div className="customer-credit-observation-block">
+              <span className="label-block-title">Observacao operacional</span>
+              <p>{creditRow.observation || "Sem observacao relevante nesse snapshot."}</p>
+            </div>
+
+            <div>
+              <span className="label-block-title">Flags de atencao</span>
+              <div className="tag-row">
+                {customerCreditVisibleFlags(creditRow).length ? (
+                  customerCreditVisibleFlags(creditRow).map((flag) => (
+                    <span key={flag} className="tag customer-credit-flag">
+                      {flag}
+                    </span>
+                  ))
+                ) : (
+                  <span className="muted-copy">Sem flags adicionais.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="empty-state">
+            Esse cliente nao apareceu no snapshot financeiro mais recente. Vale revisar se o codigo dele existe no Excel
+            do dia.
+          </div>
+        )}
       </section>
 
       <section className="grid-two">

@@ -17,6 +17,11 @@ import {
   updateCustomerAmbassador,
   updateCustomerLabels,
 } from "./modules/crm/customerService.js";
+import {
+  getCustomerCreditDetail,
+  getCustomerCreditOverview,
+  refreshCustomerCreditOverview,
+} from "./modules/crm/customerCreditService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
@@ -466,6 +471,22 @@ export function createApp() {
     }
   });
 
+  app.get("/api/customer-credit/overview", async (_request, response, next) => {
+    try {
+      response.json(await getCustomerCreditOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/customer-credit/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.json(await refreshCustomerCreditOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/customers/:id", async (request, response, next) => {
     try {
       const customer = await getCustomerDetail(request.params.id);
@@ -473,6 +494,14 @@ export function createApp() {
         throw new HttpError(404, "Cliente não encontrado");
       }
       response.json(customer);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customers/:id/credit", async (request, response, next) => {
+    try {
+      response.json(await getCustomerCreditDetail(request.params.id));
     } catch (error) {
       next(error);
     }

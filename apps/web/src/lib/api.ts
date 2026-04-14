@@ -3,6 +3,8 @@ import type {
   AgendaResponse,
   AttendantsResponse,
   CustomerDetail,
+  CustomerCreditDetailResponse,
+  CustomerCreditOverviewResponse,
   CustomerDocInsightsResponse,
   CustomerLabel,
   CustomerListItem,
@@ -109,8 +111,19 @@ export const api = {
   customerDocInsights(token: string) {
     return request<CustomerDocInsightsResponse>("/api/customer-insights/doc", {}, token);
   },
+  customerCreditOverview(token: string) {
+    return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token);
+  },
+  refreshCustomerCreditOverview(token: string) {
+    return request<CustomerCreditOverviewResponse>("/api/customer-credit/refresh", {
+      method: "POST",
+    }, token);
+  },
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);
+  },
+  customerCreditDetail(token: string, id: string) {
+    return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit`, {}, token);
   },
   customerLabels(token: string) {
     return request<CustomerLabel[]>("/api/customer-labels", {}, token);
