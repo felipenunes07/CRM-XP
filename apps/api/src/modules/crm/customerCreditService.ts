@@ -21,7 +21,7 @@ const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
 const CUSTOMER_CREDIT_LOCK_NS = 8201;
 const CUSTOMER_CREDIT_LOCK_KEY = 1;
-const CUSTOMER_CREDIT_PARSER_VERSION = 4;
+const CUSTOMER_CREDIT_PARSER_VERSION = 6;
 const RISK_PRIORITY: Record<CustomerCreditRiskLevel, number> = {
   CRITICO: 0,
   ATENCAO: 1,
@@ -361,6 +361,11 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     return null;
   }
 
+  // Skip internal/system accounts (e.g. PP13, PP汇款6, PP汇款8).
+  if (customerCode.toUpperCase().startsWith("PP")) {
+    return null;
+  }
+
   const sourceDisplayName = normalizeText(String(row["客户"] ?? "")) || null;
   const balanceAmount = safeNumber(row[" Devedor/未付 "]);
   const creditLimit = safeNumber(row[" CREDITO "]);
@@ -391,8 +396,9 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
 
   // When the client has no debt, suppress debt-related flags — they are historical
   // artifacts from the Excel that no longer reflect the client's current situation.
-  const isSettled = debtAmount === 0 && creditBalanceAmount === 0;
-  const flags = isSettled
+  // This covers both zero-balance clients AND clients with saldo a favor.
+  const hasNoDebt = debtAmount === 0;
+  const flags = hasNoDebt
     ? rawFlags.filter((flag) => {
         const comparable = normalizeComparableText(flag);
         return (
@@ -426,7 +432,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
   // Derive a consistent risk level from the actual financial state, overriding the
   // Excel when the raw value contradicts the numbers.
   let resolvedRiskLevel: CustomerCreditRiskLevel = riskLevel;
-  if (isSettled) {
+  if (hasNoDebt) {
     // Client owes nothing — stale flags shouldn't inflate risk.
     resolvedRiskLevel = "OK";
   } else if (hasOverCredit) {

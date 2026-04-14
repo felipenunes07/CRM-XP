@@ -1,6 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, BadgeDollarSign, ShieldAlert, TrendingUp } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
@@ -445,7 +446,10 @@ export function CustomersPage() {
                   className={`credit-kpi-card tone-warning ${state.creditKpiFilter === "owing" ? "active" : ""}`}
                   onClick={() => dispatch({ type: "setCreditKpiFilter", value: "owing" })}
                 >
-                  <span className="credit-kpi-label">Em aberto</span>
+                  <div className="credit-kpi-header">
+                    <span className="credit-kpi-label">Em aberto</span>
+                    <div className="credit-kpi-icon tone-warning"><BadgeDollarSign size={18} /></div>
+                  </div>
                   <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalDebtAmount)}</strong>
                   <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOwing)} clientes com divida</span>
                 </button>
@@ -455,7 +459,10 @@ export function CustomersPage() {
                   className={`credit-kpi-card tone-success ${state.creditKpiFilter === "credit_balance" ? "active" : ""}`}
                   onClick={() => dispatch({ type: "setCreditKpiFilter", value: "credit_balance" })}
                 >
-                  <span className="credit-kpi-label">Saldo a favor</span>
+                  <div className="credit-kpi-header">
+                    <span className="credit-kpi-label">Saldo a favor</span>
+                    <div className="credit-kpi-icon tone-success"><TrendingUp size={18} /></div>
+                  </div>
                   <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalCreditBalanceAmount)}</strong>
                   <span className="credit-kpi-helper">{formatNumber(filteredCreditBalanceCustomers)} clientes com saldo positivo</span>
                 </button>
@@ -465,7 +472,10 @@ export function CustomersPage() {
                   className={`credit-kpi-card tone-info ${state.creditKpiFilter === "unused_credit" ? "active" : ""}`}
                   onClick={() => dispatch({ type: "setCreditKpiFilter", value: "unused_credit" })}
                 >
-                  <span className="credit-kpi-label">Credito livre</span>
+                  <div className="credit-kpi-header">
+                    <span className="credit-kpi-label">Credito livre</span>
+                    <div className="credit-kpi-icon tone-info"><TrendingUp size={18} /></div>
+                  </div>
                   <strong className="credit-kpi-value">{formatCurrency(filteredAvailableCreditAmount)}</strong>
                   <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes para empurrar venda</span>
                 </button>
@@ -475,9 +485,51 @@ export function CustomersPage() {
                   className={`credit-kpi-card tone-danger ${state.creditKpiFilter === "over_credit" ? "active" : ""}`}
                   onClick={() => dispatch({ type: "setCreditKpiFilter", value: "over_credit" })}
                 >
-                  <span className="credit-kpi-label">Acima do limite</span>
+                  <div className="credit-kpi-header">
+                    <span className="credit-kpi-label">Acima do limite</span>
+                    <div className="credit-kpi-icon tone-danger"><ShieldAlert size={18} /></div>
+                  </div>
                   <strong className="credit-kpi-value">{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)}</strong>
                   <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com atraso ou sem pagamento</span>
+                </button>
+              </div>
+
+              {/* Smart Action Insights */}
+              <div className="credit-insights-strip">
+                <button
+                  type="button"
+                  className="credit-insight-card danger"
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "over_credit" })}
+                >
+                  <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
+                  <div className="credit-insight-body">
+                    <strong>Cobranca urgente</strong>
+                    <span>{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)} clientes ultrapassaram o limite de credito — priorize contato</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="credit-insight-card success"
+                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "unused_credit" })}
+                >
+                  <div className="credit-insight-icon"><TrendingUp size={20} /></div>
+                  <div className="credit-insight-body">
+                    <strong>Oportunidade de venda</strong>
+                    <span>{formatCurrency(filteredAvailableCreditAmount)} disponiveis em {formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes com credito livre</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="credit-insight-card warning"
+                  onClick={() => dispatch({ type: "updateCreditFilter", key: "onlyOverdue", value: state.creditFilters.onlyOverdue === "true" ? "" : "true" })}
+                >
+                  <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
+                  <div className="credit-insight-body">
+                    <strong>Clientes com atraso</strong>
+                    <span>{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com pagamento vencido ou sem pagamento registrado</span>
+                  </div>
                 </button>
               </div>
 
