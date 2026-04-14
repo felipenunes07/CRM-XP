@@ -216,7 +216,7 @@ function AmbassadorTrendTooltip({
           {chartMetricLabel(metric)} de {subjectLabel}
         </span>
       </div>
-      <p>Historico mensal fechado. Troque o embaixador acima para atualizar essa leitura.</p>
+      <p>Historico mensal de desempenho. Troque o embaixador acima para atualizar essa leitura.</p>
     </div>
   );
 }
@@ -327,8 +327,8 @@ export function AmbassadorsPage() {
       tone: "neutral",
     },
     {
-      label: "Ticket medio",
-      value: formatCurrency(summary.currentPeriodAvgTicket),
+      label: "Peças compradas",
+      value: formatNumber(summary.currentPeriodPieces),
       detail: `${formatDate(summary.currentPeriodStart)} a ${formatDate(summary.currentPeriodEnd)}.`,
       tone: "neutral",
     },
@@ -521,23 +521,26 @@ export function AmbassadorsPage() {
         </div>
 
         {/* RIGHT COLUMN: Filter & List */}
-        <section className="panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '800px', padding: '1.25rem' }}>
+        <section className="panel search-sidebar">
           <div className="panel-header" style={{ marginBottom: '1rem', paddingBottom: '1rem', borderBottom: '1px solid var(--line)' }}>
             <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Encontrar Embaixador</h3>
           </div>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem', paddingBottom: '1rem' }}>
-            <input 
-               value={search} 
-               onChange={(event) => setSearch(event.target.value)} 
-               placeholder="Nome ou codigo..." 
-               style={{ padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--line)', background: 'var(--panel)', width: '100%' }} 
-            />
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input 
+                 value={search} 
+                 onChange={(event) => setSearch(event.target.value)} 
+                 placeholder="Nome ou codigo..." 
+              />
+            </div>
+            
+            <div className="filter-row">
                 <select 
+                   className="filter-select"
                    value={statusFilter} 
                    onChange={(event) => setStatusFilter(event.target.value)} 
-                   style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--line)' }}
                 >
                   <option value="">Status</option>
                   <option value="ACTIVE">Ativos</option>
@@ -545,9 +548,9 @@ export function AmbassadorsPage() {
                   <option value="INACTIVE">Inativos</option>
                 </select>
                 <select 
+                   className="filter-select"
                    value={sortKey} 
                    onChange={(event) => setSortKey(event.target.value as SortKey)} 
-                   style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--line)' }}
                 >
                   <option value="revenue">Vendas</option>
                   <option value="growth">Crescimento</option>
@@ -556,34 +559,28 @@ export function AmbassadorsPage() {
             </div>
           </div>
 
-          <div style={{ overflowY: 'auto', flex: 1, paddingRight: '0.3rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div className="ambassador-list">
             {ambassadors.length ? ambassadors.map((ambassador) => (
               <article 
                 key={ambassador.id} 
                 onClick={() => setSelectedAmbassadorId(ambassador.id)}
-                style={{ 
-                    cursor: 'pointer', 
-                    padding: '0.8rem', 
-                    borderRadius: '8px', 
-                    border: '1px solid', 
-                    borderColor: selectedAmbassador?.id === ambassador.id ? 'var(--accent)' : 'var(--line)', 
-                    background: selectedAmbassador?.id === ambassador.id ? 'rgba(41, 86, 215, 0.05)' : 'var(--line)',
-                    transition: 'all 0.2s ease',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem'
-                }}
+                className={`ambassador-item-card ${selectedAmbassador?.id === ambassador.id ? 'selected' : ''}`}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <strong style={{ fontSize: '0.9rem', color: 'var(--text)', lineHeight: 1.2 }}>{ambassador.displayName}</strong>
-                  <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency(ambassador.currentPeriodRevenue)}</span>
+                <div className="ambassador-item-card-header">
+                  <div className="ambassador-item-name">{ambassador.displayName}</div>
+                  <div className="ambassador-item-revenue">{formatCurrency(ambassador.currentPeriodRevenue)}</div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className={`status-badge ${statusClass(ambassador.status)}`} style={{ padding: '0.1rem 0.45rem', fontSize: '0.65rem' }}>{statusLabel(ambassador.status)}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>Crescem: {formatGrowth(ambassador.revenueGrowthRatio)}</span>
+                <div className="ambassador-item-footer">
+                    <span className={`status-badge ${statusClass(ambassador.status)}`} style={{ padding: '0.15rem 0.5rem', fontSize: '0.65rem' }}>{statusLabel(ambassador.status)}</span>
+                    <span className="ambassador-item-growth">Crescem: <strong>{formatGrowth(ambassador.revenueGrowthRatio)}</strong></span>
                 </div>
               </article>
-            )) : <span style={{ color: 'var(--muted)', fontSize: '0.85rem', textAlign: 'center', marginTop: '2rem' }}>Nenhum encontrado no filtro.</span>}
+            )) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--muted)', gap: '1rem', opacity: 0.6 }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <span style={{ fontSize: '0.9rem' }}>Nenhum embaixador encontrado</span>
+              </div>
+            )}
           </div>
         </section>
 
