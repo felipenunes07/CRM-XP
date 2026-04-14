@@ -9,6 +9,15 @@ export function createInitialCustomersPageState() {
             excludeLabel: "",
             ambassadorOnly: "",
         },
+        creditFilters: {
+            search: "",
+            riskLevel: "",
+            operationalState: "",
+            onlyWithCredit: "",
+            onlyUnusedCredit: "",
+            onlyOverdue: "",
+        },
+        creditPresentation: "cards",
     };
 }
 export function customersPageReducer(state, action) {
@@ -21,16 +30,37 @@ export function customersPageReducer(state, action) {
             activeView: action.view,
         };
     }
-    if (state.portfolioFilters[action.key] === action.value) {
-        return state;
+    if (action.type === "updateCreditFilter") {
+        if (state.creditFilters[action.key] === action.value) {
+            return state;
+        }
+        return {
+            ...state,
+            creditFilters: {
+                ...state.creditFilters,
+                [action.key]: action.value,
+            },
+        };
     }
-    return {
-        ...state,
-        portfolioFilters: {
-            ...state.portfolioFilters,
-            [action.key]: action.value,
-        },
-    };
+    if (action.type === "setCreditPresentation") {
+        if (state.creditPresentation === action.value) {
+            return state;
+        }
+        return {
+            ...state,
+            creditPresentation: action.value,
+        };
+    }
+    if (state.portfolioFilters[action.key] !== action.value) {
+        return {
+            ...state,
+            portfolioFilters: {
+                ...state.portfolioFilters,
+                [action.key]: action.value,
+            },
+        };
+    }
+    return state;
 }
 export function buildCustomersQueryParams(filters) {
     return {

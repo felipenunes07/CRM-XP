@@ -75,8 +75,19 @@ export const api = {
     customerDocInsights(token) {
         return request("/api/customer-insights/doc", {}, token);
     },
+    customerCreditOverview(token) {
+        return request("/api/customer-credit/overview", {}, token);
+    },
+    refreshCustomerCreditOverview(token) {
+        return request("/api/customer-credit/refresh", {
+            method: "POST",
+        }, token);
+    },
     customer(token, id) {
         return request(`/api/customers/${id}`, {}, token);
+    },
+    customerCreditDetail(token, id) {
+        return request(`/api/customers/${id}/credit`, {}, token);
     },
     customerLabels(token) {
         return request("/api/customer-labels", {}, token);

@@ -477,4 +477,70 @@ export const migrations = [
   ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_contact_campaign_id UUID;
   CREATE INDEX IF NOT EXISTS idx_customers_last_contact_at ON customers(last_contact_at DESC);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS customer_credit_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_file_id UUID REFERENCES source_files(id) ON DELETE SET NULL,
+    source_file_path TEXT NOT NULL,
+    source_file_name TEXT NOT NULL,
+    source_file_size_bytes BIGINT NOT NULL,
+    source_file_updated_at TIMESTAMPTZ NOT NULL,
+    parser_version INTEGER NOT NULL DEFAULT 1,
+    total_rows INTEGER NOT NULL DEFAULT 0,
+    matched_rows INTEGER NOT NULL DEFAULT 0,
+    unmatched_rows INTEGER NOT NULL DEFAULT 0,
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_active BOOLEAN NOT NULL DEFAULT FALSE
+  );
+
+  ALTER TABLE customer_credit_snapshots
+    ADD COLUMN IF NOT EXISTS parser_version INTEGER NOT NULL DEFAULT 1;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_credit_snapshots_active
+    ON customer_credit_snapshots(is_active)
+    WHERE is_active = TRUE;
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshots_imported_at
+    ON customer_credit_snapshots(imported_at DESC);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_snapshot_rows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_credit_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT,
+    source_display_name TEXT,
+    balance_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    credit_limit NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    operational_state TEXT NOT NULL,
+    risk_level TEXT NOT NULL DEFAULT 'OK',
+    observation TEXT NOT NULL DEFAULT '',
+    last_order_date DATE,
+    last_payment_date DATE,
+    days_since_last_order INTEGER,
+    days_since_last_payment INTEGER,
+    risk_score INTEGER,
+    flags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    has_over_credit BOOLEAN NOT NULL DEFAULT FALSE,
+    has_overdue_payment BOOLEAN NOT NULL DEFAULT FALSE,
+    has_severely_overdue_payment BOOLEAN NOT NULL DEFAULT FALSE,
+    has_no_payment BOOLEAN NOT NULL DEFAULT FALSE,
+    has_no_order BOOLEAN NOT NULL DEFAULT FALSE,
+    has_negative_credit BOOLEAN NOT NULL DEFAULT FALSE,
+    has_debt_without_credit BOOLEAN NOT NULL DEFAULT FALSE,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_snapshot_id
+    ON customer_credit_snapshot_rows(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_customer_id
+    ON customer_credit_snapshot_rows(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_customer_code
+    ON customer_credit_snapshot_rows(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_risk_level
+    ON customer_credit_snapshot_rows(risk_level);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_operational_state
+    ON customer_credit_snapshot_rows(operational_state);
+  `,
 ];
