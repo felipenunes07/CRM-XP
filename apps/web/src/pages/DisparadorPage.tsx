@@ -10,17 +10,17 @@ import type {
   WhatsappGroupMappingStatus,
 } from "@olist-crm/shared";
 import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, Send, ShieldAlert, UploadCloud, XCircle } from "lucide-react";
-import { StatCard } from "../components/StatCard";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 
 type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "PENDING_REVIEW";
+type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 
 const quickFilters: Array<{ value: QuickFilter; label: string; description: string }> = [
   { value: "ALL", label: "Todos", description: "Toda a base importada." },
-  { value: "WITH_ORDER", label: "Clientes com pedido", description: "Grupos CL e KH." },
-  { value: "NO_ORDER_EXCEL", label: "Nunca compraram", description: "Grupos do Excel marcados como Cliente." },
+  { value: "WITH_ORDER", label: "Com pedido", description: "Grupos CL e KH." },
+  { value: "NO_ORDER_EXCEL", label: "Nunca comprou", description: "Grupos do Excel marcados como Cliente." },
   { value: "OTHER", label: "Outros", description: "LJ, internos e demais grupos." },
   { value: "PENDING_REVIEW", label: "Pendentes", description: "Sem mapeamento fechado." },
 ];
@@ -137,6 +137,19 @@ function formatCountdown(targetAt: string | null, nowMs: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function truncateText(value: string | null | undefined, maxLength = 96) {
+  if (!value) {
+    return "";
+  }
+
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
 function quickFilterCount(
   filter: QuickFilter,
   summary:
@@ -166,7 +179,7 @@ export function DisparadorPage() {
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
   const [search, setSearch] = useState("");
   const [savedSegmentId, setSavedSegmentId] = useState("");
-  const [onlyRecentlyBlocked, setOnlyRecentlyBlocked] = useState(false);
+  const [recentBlockFilter, setRecentBlockFilter] = useState<RecentBlockFilter>("AVAILABLE_ONLY");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [campaignName, setCampaignName] = useState("");
@@ -184,9 +197,9 @@ export function DisparadorPage() {
         quickFilter,
         search,
         savedSegmentId,
-        onlyRecentlyBlocked,
+        onlyRecentlyBlocked: recentBlockFilter === "BLOCKED_ONLY",
       }),
-    [onlyRecentlyBlocked, quickFilter, savedSegmentId, search],
+    [quickFilter, recentBlockFilter, savedSegmentId, search],
   );
 
   async function invalidateWhatsappQueries() {
@@ -273,7 +286,7 @@ export function DisparadorPage() {
           quickFilter,
           search,
           savedSegmentId: savedSegmentId || null,
-          onlyRecentlyBlocked,
+          recentBlockFilter,
           selectedCount: selectedGroupIds.length,
         },
         groupIds: selectedGroupIds,
@@ -349,7 +362,14 @@ export function DisparadorPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const filteredGroups = groupsQuery.data?.items ?? [];
+  const loadedGroups = groupsQuery.data?.items ?? [];
+  const filteredGroups = useMemo(() => {
+    if (recentBlockFilter !== "AVAILABLE_ONLY") {
+      return loadedGroups;
+    }
+
+    return loadedGroups.filter((group) => !group.isRecentlyBlocked);
+  }, [loadedGroups, recentBlockFilter]);
   const selectedGroupCount = selectedGroupIds.length;
   const allVisibleSelected =
     filteredGroups.length > 0 && filteredGroups.every((group) => selectedGroupIds.includes(group.id));
@@ -361,7 +381,15 @@ export function DisparadorPage() {
   const isImporting = importDefaultMutation.isPending || importFileMutation.isPending;
   const liveCampaign = activeCampaignQuery.data ?? selectedCampaignQuery.data ?? createCampaignMutation.data ?? null;
   const liveCampaignFirstFailure = liveCampaign?.recipients.find((recipient) => recipient.status === "FAILED") ?? null;
+  const liveCampaignIsRunning = liveCampaign ? ["QUEUED", "IN_PROGRESS"].includes(liveCampaign.status) : false;
   const nextDispatchCountdown = liveCampaign ? formatCountdown(liveCampaign.progress.nextScheduledAt, nowMs) : null;
+  const hiddenBlockedCount = useMemo(() => {
+    if (recentBlockFilter !== "AVAILABLE_ONLY") {
+      return 0;
+    }
+
+    return loadedGroups.filter((group) => group.isRecentlyBlocked).length;
+  }, [loadedGroups, recentBlockFilter]);
   const liveRecipients = useMemo(() => {
     if (!liveCampaign?.recipients.length) {
       return [];
@@ -413,22 +441,23 @@ export function DisparadorPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero-panel">
-        <div className="hero-copy">
+      <section className="panel whatsapp-workspace-header">
+        <div className="whatsapp-workspace-copy">
           <p className="eyebrow">Disparador WhatsApp</p>
-          <h2>Abra a aba, escolha quem vai receber e dispare</h2>
-          <p>
-            A planilha de grupos pode ser lida direto da base padrao, os grupos aparecem em tabela e o andamento do
-            disparo fica salvo com ultimo contato e bloqueio anti-spam.
-          </p>
+          <h2>Disparador</h2>
+          <p className="panel-subcopy">Escolha os grupos, revise a mensagem e acompanhe a fila sem sair desta tela.</p>
         </div>
 
-        <div className="hero-meta">
-          <div className="hero-meta-item">
-            <span>Grupos na base</span>
+        <div className="whatsapp-inline-stats">
+          <div className="whatsapp-inline-stat is-highlight">
+            <span>Selecionados</span>
+            <strong>{formatNumber(selectedGroupCount)}</strong>
+          </div>
+          <div className="whatsapp-inline-stat">
+            <span>Base</span>
             <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.totalGroups) : "--"}</strong>
           </div>
-          <div className="hero-meta-item">
+          <div className="whatsapp-inline-stat">
             <span>Nunca compraram</span>
             <strong>
               {mappingSummaryQuery.data
@@ -436,50 +465,24 @@ export function DisparadorPage() {
                 : "--"}
             </strong>
           </div>
-          <div className="hero-meta-item">
+          <div className="whatsapp-inline-stat">
+            <span>Pendentes</span>
+            <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.pendingReviewGroups) : "--"}</strong>
+          </div>
+          <div className="whatsapp-inline-stat">
             <span>Ultima atualizacao</span>
             <strong>{formatDateTime(mappingSummaryQuery.data?.lastImportedAt ?? null)}</strong>
           </div>
         </div>
       </section>
 
-      {mappingSummaryQuery.data ? (
-        <section className="stats-grid">
-          <StatCard
-            title="Mapeados"
-            value={formatNumber(mappingSummaryQuery.data.mappedGroups)}
-            helper="Ligados a cliente do CRM"
-            tone="success"
-          />
-          <StatCard
-            title="Pendentes"
-            value={formatNumber(mappingSummaryQuery.data.pendingReviewGroups)}
-            helper="Ainda sem mapeamento fechado"
-            tone="warning"
-          />
-          <StatCard
-            title="Nunca compraram"
-            value={formatNumber(mappingSummaryQuery.data.classificationCounts.NO_ORDER_EXCEL)}
-            helper="Continuam disponiveis para reativacao"
-          />
-          <StatCard
-            title="Bloqueados recentes"
-            value={formatNumber(mappingSummaryQuery.data.recentlyBlockedGroups)}
-            helper="Contato nos ultimos 7 dias"
-            tone="danger"
-          />
-        </section>
-      ) : null}
-
       <section className="grid-two whatsapp-simple-grid">
         <article className="panel whatsapp-source-panel">
           <div className="panel-header">
             <div>
               <p className="eyebrow">Base</p>
-              <h3>Atualizar grupos do Excel</h3>
-              <p className="panel-subcopy">
-                A tela usa a planilha padrao do desktop. Se quiser, voce ainda pode trocar por outro arquivo.
-              </p>
+              <h3>Base de grupos</h3>
+              <p className="panel-subcopy">A planilha padrao do desktop ja alimenta a tela. Atualize so quando quiser recarregar.</p>
             </div>
           </div>
 
@@ -540,14 +543,13 @@ export function DisparadorPage() {
           {importError ? <div className="page-error">{importError.message}</div> : null}
 
           {mappingSummaryQuery.data?.pendingReviewGroups ? (
-            <div className="empty-state">
-              Ainda existem {formatNumber(mappingSummaryQuery.data.pendingReviewGroups)} grupos pendentes de mapeamento.
-              Eles continuam aparecendo na tabela para disparo, mas os publicos salvos so enxergam os grupos que ja
-              estao ligados a um cliente do CRM.
+            <div className="whatsapp-inline-note">
+              <strong>{formatNumber(mappingSummaryQuery.data.pendingReviewGroups)} pendentes.</strong>
+              <span>Continuam na tabela, mas nao entram em publico salvo ate fechar o mapeamento.</span>
             </div>
           ) : null}
 
-          {liveCampaign ? (
+          {liveCampaign && liveCampaignIsRunning ? (
             <div className="whatsapp-live-card whatsapp-live-queue-card">
               <div className="whatsapp-live-card-header">
                 <strong>Fila do disparo agora</strong>
@@ -608,8 +610,7 @@ export function DisparadorPage() {
               </div>
 
               <p className="panel-subcopy">
-                O primeiro envio sai na hora. Os proximos entram na fila com espera entre {liveCampaign.minDelaySeconds}
-                s e {liveCampaign.maxDelaySeconds}s para proteger o WhatsApp.
+                Delay ativo: {liveCampaign.minDelaySeconds}s a {liveCampaign.maxDelaySeconds}s entre envios.
               </p>
 
               {liveCampaignFirstFailure ? (
@@ -618,10 +619,36 @@ export function DisparadorPage() {
                 </div>
               ) : null}
             </div>
+          ) : liveCampaign ? (
+            <div className="whatsapp-live-card whatsapp-live-card-compact">
+              <div className="whatsapp-live-card-header">
+                <strong>Ultimo disparo</strong>
+                <span className={`status-badge status-${campaignStatusTone(liveCampaign.status)}`}>
+                  {liveCampaign.status}
+                </span>
+              </div>
+              <div className="whatsapp-live-card-grid whatsapp-live-card-grid-compact">
+                <div>
+                  <span>Campanha</span>
+                  <strong>{liveCampaign.name}</strong>
+                </div>
+                <div>
+                  <span>Enviados</span>
+                  <strong>{formatNumber(liveCampaign.progress.sentCount)}</strong>
+                </div>
+                <div>
+                  <span>Falhas</span>
+                  <strong>{formatNumber(liveCampaign.progress.failedCount)}</strong>
+                </div>
+                <div>
+                  <span>Finalizado</span>
+                  <strong>{formatDateTime(liveCampaign.finishedAt || liveCampaign.createdAt)}</strong>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="empty-state">
-              Quando voce clicar em disparar, a fila vai aparecer aqui mostrando quem foi enviado, quem esta aguardando
-              e o horario do proximo disparo.
+              A fila aparece aqui assim que um disparo entrar em andamento.
             </div>
           )}
         </article>
@@ -630,8 +657,8 @@ export function DisparadorPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Mensagem</p>
-              <h3>Escolha o template e edite a mensagem</h3>
-              <p className="panel-subcopy">Template e opcional. Se nao houver template, basta escrever direto abaixo.</p>
+              <h3>Mensagem e disparo</h3>
+              <p className="panel-subcopy">Escolha um template ou escreva a mensagem final para os grupos marcados.</p>
             </div>
           </div>
 
@@ -746,17 +773,15 @@ export function DisparadorPage() {
         <div className="panel-header whatsapp-selection-summary">
           <div>
             <p className="eyebrow">Selecao</p>
-            <h3>Escolha os grupos na tabela</h3>
-            <p className="panel-subcopy">
-              Publico salvo, filtro rapido e busca funcionam juntos. Marque os grupos que devem receber a mensagem.
-            </p>
+            <h3>Grupos para disparo</h3>
+            <p className="panel-subcopy">Filtre e marque os grupos que vao receber.</p>
           </div>
-          <div className="hero-meta">
-            <div className="hero-meta-item">
-              <span>Encontrados</span>
-              <strong>{groupsQuery.data ? formatNumber(groupsQuery.data.total) : "--"}</strong>
+          <div className="whatsapp-inline-stats whatsapp-inline-stats-compact">
+            <div className="whatsapp-inline-stat">
+              <span>Mostrados</span>
+              <strong>{formatNumber(filteredGroups.length)}</strong>
             </div>
-            <div className="hero-meta-item">
+            <div className="whatsapp-inline-stat is-highlight">
               <span>Selecionados</span>
               <strong>{formatNumber(selectedGroupCount)}</strong>
             </div>
@@ -777,7 +802,7 @@ export function DisparadorPage() {
           </label>
 
           <label>
-            Filtrar na lista
+            Buscar
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -785,15 +810,39 @@ export function DisparadorPage() {
             />
           </label>
 
-          <label className="whatsapp-checkbox-row compact">
-            <input
-              type="checkbox"
-              checked={onlyRecentlyBlocked}
-              onChange={(event) => setOnlyRecentlyBlocked(event.target.checked)}
-            />
-            <span>Mostrar apenas bloqueados recentes</span>
-          </label>
+          <div className="whatsapp-filter-segment">
+            <span>Bloqueio</span>
+            <div className="whatsapp-segmented-control">
+              <button
+                type="button"
+                className={recentBlockFilter === "AVAILABLE_ONLY" ? "active" : ""}
+                onClick={() => setRecentBlockFilter("AVAILABLE_ONLY")}
+              >
+                Disponiveis
+              </button>
+              <button
+                type="button"
+                className={recentBlockFilter === "ALL" ? "active" : ""}
+                onClick={() => setRecentBlockFilter("ALL")}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={recentBlockFilter === "BLOCKED_ONLY" ? "active" : ""}
+                onClick={() => setRecentBlockFilter("BLOCKED_ONLY")}
+              >
+                Bloqueados
+              </button>
+            </div>
+          </div>
         </div>
+
+        {hiddenBlockedCount ? (
+          <div className="whatsapp-selection-hint">
+            {formatNumber(hiddenBlockedCount)} grupos bloqueados estao ocultos no filtro `Disponiveis`.
+          </div>
+        ) : null}
 
         <div className="whatsapp-quick-filter-row">
           {quickFilters.map((filter) => (
@@ -804,9 +853,9 @@ export function DisparadorPage() {
               onClick={() => setQuickFilter(filter.value)}
             >
               <strong>
-                {filter.label} <small>{quickFilterCount(filter.value, mappingSummaryQuery.data)}</small>
+                {filter.label}
               </strong>
-              <span>{filter.description}</span>
+              <small>{quickFilterCount(filter.value, mappingSummaryQuery.data)}</small>
             </button>
           ))}
         </div>
@@ -867,15 +916,20 @@ export function DisparadorPage() {
                     <td>
                       <div className="table-link">
                         <strong>{formatDateTime(group.lastContactAt)}</strong>
-                        <span>{group.lastMessagePreview || "Sem historico de envio"}</span>
+                        <span className="table-truncate">
+                          {truncateText(
+                            group.lastMessagePreview || (group.isRecentlyBlocked ? "Contato recente." : "Sem historico de envio."),
+                          )}
+                        </span>
                       </div>
                     </td>
                     <td>
                       <div className="whatsapp-table-status">
                         {group.isRecentlyBlocked ? (
-                          <span className="status-badge status-warning">
-                            Bloqueado ate {formatDateTime(group.recentBlockUntil)}
-                          </span>
+                          <div className="table-link whatsapp-status-stack">
+                            <span className="status-badge status-warning">Bloqueado</span>
+                            <span>ate {formatDateTime(group.recentBlockUntil)}</span>
+                          </div>
                         ) : (
                           <span className="status-badge status-success">Disponivel</span>
                         )}
@@ -902,7 +956,7 @@ export function DisparadorPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Historico</p>
-              <h3>Campanhas em andamento e concluidas</h3>
+              <h3>Fila e historico</h3>
             </div>
           </div>
 
