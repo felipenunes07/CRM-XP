@@ -21,7 +21,7 @@ const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
 const CUSTOMER_CREDIT_LOCK_NS = 8201;
 const CUSTOMER_CREDIT_LOCK_KEY = 1;
-const CUSTOMER_CREDIT_PARSER_VERSION = 2;
+const CUSTOMER_CREDIT_PARSER_VERSION = 3;
 const RISK_PRIORITY: Record<CustomerCreditRiskLevel, number> = {
   CRITICO: 0,
   ATENCAO: 1,
@@ -387,7 +387,26 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
   const withinCreditLimit = debtAmount > 0 && creditLimit > 0 && debtAmount <= creditLimit;
   const hasOverCredit = isActuallyOverCredit(resolvedBalanceAmount, creditLimit);
   const observation = sanitizeCreditObservation(rawObservation, hasOverCredit);
-  const flags = sanitizeCreditFlags(collectFlags(row, rawObservation), hasOverCredit);
+  const rawFlags = sanitizeCreditFlags(collectFlags(row, rawObservation), hasOverCredit);
+
+  // When the client has no debt, suppress debt-related flags — they are historical
+  // artifacts from the Excel that no longer reflect the client's current situation.
+  const isSettled = debtAmount === 0 && creditBalanceAmount === 0;
+  const flags = isSettled
+    ? rawFlags.filter((flag) => {
+        const comparable = normalizeComparableText(flag);
+        return (
+          !comparable.includes("pagamento vencido") &&
+          !comparable.includes("pagamento muito vencido") &&
+          !comparable.includes("sem pagamento") &&
+          !comparable.includes("ultrapassou credito") &&
+          !comparable.includes("deve alem do credito") &&
+          !comparable.includes("cliente deve e nao tem credito") &&
+          !comparable.includes("credito negativo")
+        );
+      })
+    : rawFlags;
+
   const _overCreditSignal =
     includesNormalizedFlag(flags, "ultrapassou crédito") || includesNormalizedFlag(flags, "deve além do crédito");
   const hasOverduePayment = Boolean(_overCreditSignal)
@@ -404,6 +423,9 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     hasOverCredit,
   });
 
+  // When the client owes nothing, risk should not be elevated by stale payment flags.
+  const resolvedRiskLevel = isSettled ? "OK" as CustomerCreditRiskLevel : riskLevel;
+
   return {
     customerCode,
     sourceDisplayName,
@@ -414,7 +436,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     availableCreditAmount: getAvailableCreditAmount(resolvedBalanceAmount, creditLimit),
     withinCreditLimit,
     operationalState,
-    riskLevel,
+    riskLevel: resolvedRiskLevel,
     observation,
     /*
     lastOrderDate: parseCustomerCreditDate(row["Última data de pedido"]),
