@@ -96,7 +96,7 @@ function applyCreditKpiFilter(rows: CustomerCreditRow[], kpiFilter: CreditKpiFil
       case "unused_credit":
         return row.operationalState === "UNUSED_CREDIT";
       case "over_credit":
-        return row.hasOverCredit || row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment;
+        return row.hasOverCredit;
       default:
         return true;
     }
