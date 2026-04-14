@@ -36,6 +36,42 @@ describe("customersPageReducer", () => {
     });
   });
 
+  it("keeps the credit filters when switching between tabs", () => {
+    let state = createInitialCustomersPageState();
+
+    state = customersPageReducer(state, {
+      type: "updateCreditFilter",
+      key: "search",
+      value: "credito",
+    });
+    state = customersPageReducer(state, {
+      type: "updateCreditFilter",
+      key: "riskLevel",
+      value: "CRITICO",
+    });
+    state = customersPageReducer(state, {
+      type: "updateCreditFilter",
+      key: "onlyUnusedCredit",
+      value: "true",
+    });
+    state = customersPageReducer(state, {
+      type: "setCreditPresentation",
+      value: "table",
+    });
+
+    state = customersPageReducer(state, { type: "setView", view: "creditPayment" });
+    state = customersPageReducer(state, { type: "setView", view: "docInsights" });
+    state = customersPageReducer(state, { type: "setView", view: "creditPayment" });
+
+    expect(state.activeView).toBe("creditPayment");
+    expect(state.creditFilters).toMatchObject({
+      search: "credito",
+      riskLevel: "CRITICO",
+      onlyUnusedCredit: "true",
+    });
+    expect(state.creditPresentation).toBe("table");
+  });
+
   it("builds the customers query params from the preserved filters", () => {
     const params = buildCustomersQueryParams({
       search: "Cassio",

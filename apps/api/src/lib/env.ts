@@ -33,6 +33,10 @@ const envSchema = z.object({
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("fvendas2026"),
   HISTORICAL_FILES: z.string().default(""),
+  CUSTOMER_CREDIT_WORKBOOK_DIR: z
+    .string()
+    .default("C:\\Users\\Felipe\\Dropbox\\XP SALDO TEMPORARIO"),
+  CUSTOMER_CREDIT_WORKBOOK_PREFIX: z.string().default("SALDO VENDAS"),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   PROSPECTING_DAILY_TARGET: z.coerce.number().int().positive().default(5),
   PROSPECTING_SEARCH_PAGE_SIZE: z.coerce.number().int().min(1).max(10).default(10),

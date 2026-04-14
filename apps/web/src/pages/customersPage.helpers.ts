@@ -1,5 +1,6 @@
-export type CustomersPageView = "portfolio" | "docInsights";
+export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment";
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
+export type CustomerCreditPresentation = "cards" | "table";
 
 export interface CustomerPortfolioFilters {
   search: string;
@@ -10,19 +11,36 @@ export interface CustomerPortfolioFilters {
   ambassadorOnly: string;
 }
 
+export interface CustomerCreditFilters {
+  search: string;
+  riskLevel: string;
+  operationalState: string;
+  onlyWithCredit: string;
+  onlyUnusedCredit: string;
+  onlyOverdue: string;
+}
+
 export interface CustomersPageState {
   activeView: CustomersPageView;
   portfolioFilters: CustomerPortfolioFilters;
+  creditFilters: CustomerCreditFilters;
+  creditPresentation: CustomerCreditPresentation;
 }
 
 export type CustomersPageAction =
   | { type: "setView"; view: CustomersPageView }
+  | { type: "setCreditPresentation"; value: CustomerCreditPresentation }
   | {
       type: "updatePortfolioFilter";
       key: "search" | "status" | "label" | "excludeLabel" | "ambassadorOnly";
       value: string;
     }
-  | { type: "updatePortfolioFilter"; key: "sortBy"; value: CustomerPortfolioSortBy };
+  | { type: "updatePortfolioFilter"; key: "sortBy"; value: CustomerPortfolioSortBy }
+  | {
+      type: "updateCreditFilter";
+      key: keyof CustomerCreditFilters;
+      value: string;
+    };
 
 export function createInitialCustomersPageState(): CustomersPageState {
   return {
@@ -35,6 +53,15 @@ export function createInitialCustomersPageState(): CustomersPageState {
       excludeLabel: "",
       ambassadorOnly: "",
     },
+    creditFilters: {
+      search: "",
+      riskLevel: "",
+      operationalState: "",
+      onlyWithCredit: "",
+      onlyUnusedCredit: "",
+      onlyOverdue: "",
+    },
+    creditPresentation: "cards",
   };
 }
 
@@ -50,17 +77,42 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
     };
   }
 
-  if (state.portfolioFilters[action.key] === action.value) {
-    return state;
+  if (action.type === "updateCreditFilter") {
+    if (state.creditFilters[action.key] === action.value) {
+      return state;
+    }
+
+    return {
+      ...state,
+      creditFilters: {
+        ...state.creditFilters,
+        [action.key]: action.value,
+      },
+    };
   }
 
-  return {
-    ...state,
-    portfolioFilters: {
-      ...state.portfolioFilters,
-      [action.key]: action.value,
-    },
-  };
+  if (action.type === "setCreditPresentation") {
+    if (state.creditPresentation === action.value) {
+      return state;
+    }
+
+    return {
+      ...state,
+      creditPresentation: action.value,
+    };
+  }
+
+  if (state.portfolioFilters[action.key] !== action.value) {
+    return {
+      ...state,
+      portfolioFilters: {
+        ...state.portfolioFilters,
+        [action.key]: action.value,
+      },
+    };
+  }
+
+  return state;
 }
 
 export function buildCustomersQueryParams(filters: CustomerPortfolioFilters) {
