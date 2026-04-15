@@ -183,9 +183,13 @@ export function CustomerCreditTable({
 
                   {/* Disponível */}
                   <td>
-                    <strong className={row.availableCreditAmount > 0 ? "credit-amount-positive" : ""}>
-                      {row.creditLimit > 0 ? formatCurrency(row.availableCreditAmount) : "—"}
-                    </strong>
+                    <div className="credit-cell-amount">
+                      <strong className={row.availableCreditAmount > 0 ? "credit-amount-positive" : row.availableCreditAmount < 0 ? "credit-amount-debt" : ""}>
+                         {row.creditLimit > 0 ? formatCurrency(row.availableCreditAmount) : "—"}
+                      </strong>
+                      {row.availableCreditAmount < 0 && <span className="credit-over-label">Excesso</span>}
+                      {row.availableCreditAmount > 0 && row.creditLimit > 0 && <span>Disponível</span>}
+                    </div>
                   </td>
 
                   {/* Prazo (dias sem pagar) */}

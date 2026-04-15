@@ -81,8 +81,10 @@ export function CustomerCreditCardList({
                 <strong>{formatCurrency(row.creditLimit)}</strong>
               </div>
               <div>
-                <span>Disponivel</span>
-                <strong>{formatCurrency(row.availableCreditAmount)}</strong>
+                <span>{row.availableCreditAmount < 0 ? "Em excesso" : "Disponivel"}</span>
+                <strong className={row.availableCreditAmount > 0 ? "credit-amount-positive" : row.availableCreditAmount < 0 ? "credit-amount-debt" : ""}>
+                  {formatCurrency(row.availableCreditAmount)}
+                </strong>
               </div>
             </div>
 

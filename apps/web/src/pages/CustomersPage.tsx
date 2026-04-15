@@ -158,12 +158,46 @@ export function CustomersPage() {
     [filteredLinkedCreditRows, state.creditKpiFilter],
   );
 
-  const filteredCreditBalanceCustomers = useMemo(
+  const filteredDebtAmount = useMemo(
+    () => filteredLinkedCreditRows.reduce((sum, row) => sum + row.debtAmount, 0),
+    [filteredLinkedCreditRows],
+  );
+  const filteredDebtCount = useMemo(
+    () => filteredLinkedCreditRows.filter((row) => row.debtAmount > 0).length,
+    [filteredLinkedCreditRows],
+  );
+
+  const filteredCreditBalanceAmount = useMemo(
+    () => filteredLinkedCreditRows.reduce((sum, row) => sum + row.creditBalanceAmount, 0),
+    [filteredLinkedCreditRows],
+  );
+  const filteredCreditBalanceCount = useMemo(
     () => filteredLinkedCreditRows.filter((row) => row.creditBalanceAmount > 0).length,
     [filteredLinkedCreditRows],
   );
+
   const filteredAvailableCreditAmount = useMemo(
-    () => filteredLinkedCreditRows.reduce((sum, row) => sum + row.availableCreditAmount, 0),
+    () =>
+      filteredLinkedCreditRows
+        .filter((row) => row.operationalState === "UNUSED_CREDIT")
+        .reduce((sum, row) => sum + Math.max(0, row.availableCreditAmount ?? 0), 0),
+    [filteredLinkedCreditRows],
+  );
+  const filteredUnusedCreditCount = useMemo(
+    () => filteredLinkedCreditRows.filter((row) => row.operationalState === "UNUSED_CREDIT").length,
+    [filteredLinkedCreditRows],
+  );
+
+  const filteredTotalExcessAmount = useMemo(
+    () => filteredLinkedCreditRows.reduce((sum, row) => sum + Math.max(0, -(row.availableCreditAmount ?? 0)), 0),
+    [filteredLinkedCreditRows],
+  );
+  const filteredOverCreditCount = useMemo(
+    () => filteredLinkedCreditRows.filter((row) => row.operationalState === "OVER_CREDIT" || row.hasOverCredit).length,
+    [filteredLinkedCreditRows],
+  );
+  const filteredOverdueCount = useMemo(
+    () => filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
     [filteredLinkedCreditRows],
   );
 
@@ -450,8 +484,8 @@ export function CustomersPage() {
                     <span className="credit-kpi-label">Em aberto</span>
                     <div className="credit-kpi-icon tone-warning"><BadgeDollarSign size={18} /></div>
                   </div>
-                  <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalDebtAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOwing)} clientes com divida</span>
+                  <strong className="credit-kpi-value">{formatCurrency(filteredDebtAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(filteredDebtCount)} clientes com divida</span>
                 </button>
 
                 <button
@@ -463,8 +497,8 @@ export function CustomersPage() {
                     <span className="credit-kpi-label">Saldo a favor</span>
                     <div className="credit-kpi-icon tone-success"><TrendingUp size={18} /></div>
                   </div>
-                  <strong className="credit-kpi-value">{formatCurrency(creditOverviewQuery.data.summary.totalCreditBalanceAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(filteredCreditBalanceCustomers)} clientes com saldo positivo</span>
+                  <strong className="credit-kpi-value">{formatCurrency(filteredCreditBalanceAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(filteredCreditBalanceCount)} clientes com saldo positivo</span>
                 </button>
 
                 <button
@@ -477,7 +511,7 @@ export function CustomersPage() {
                     <div className="credit-kpi-icon tone-info"><TrendingUp size={18} /></div>
                   </div>
                   <strong className="credit-kpi-value">{formatCurrency(filteredAvailableCreditAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes para empurrar venda</span>
+                  <span className="credit-kpi-helper">{formatNumber(filteredUnusedCreditCount)} clientes para empurrar venda</span>
                 </button>
 
                 <button
@@ -489,8 +523,8 @@ export function CustomersPage() {
                     <span className="credit-kpi-label">Acima do limite</span>
                     <div className="credit-kpi-icon tone-danger"><ShieldAlert size={18} /></div>
                   </div>
-                  <strong className="credit-kpi-value">{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com atraso ou sem pagamento</span>
+                  <strong className="credit-kpi-value">{formatCurrency(filteredTotalExcessAmount)}</strong>
+                  <span className="credit-kpi-helper">{formatNumber(filteredOverCreditCount)} acima e {formatNumber(filteredOverdueCount)} com atraso</span>
                 </button>
               </div>
 
@@ -504,7 +538,7 @@ export function CustomersPage() {
                   <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
                   <div className="credit-insight-body">
                     <strong>Cobranca urgente</strong>
-                    <span>{formatNumber(creditOverviewQuery.data.summary.customersOverCredit)} clientes ultrapassaram o limite de credito — priorize contato</span>
+                    <span>{formatNumber(filteredOverCreditCount)} clientes ultrapassaram o limite de credito — priorize contato</span>
                   </div>
                 </button>
 
@@ -516,7 +550,7 @@ export function CustomersPage() {
                   <div className="credit-insight-icon"><TrendingUp size={20} /></div>
                   <div className="credit-insight-body">
                     <strong>Oportunidade de venda</strong>
-                    <span>{formatCurrency(filteredAvailableCreditAmount)} disponiveis em {formatNumber(creditOverviewQuery.data.summary.customersWithUnusedCredit)} clientes com credito livre</span>
+                    <span>{formatCurrency(filteredAvailableCreditAmount)} disponiveis em {formatNumber(filteredUnusedCreditCount)} clientes com credito livre</span>
                   </div>
                 </button>
 
@@ -528,7 +562,7 @@ export function CustomersPage() {
                   <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
                   <div className="credit-insight-body">
                     <strong>Clientes com atraso</strong>
-                    <span>{formatNumber(creditOverviewQuery.data.summary.customersOverdue)} com pagamento vencido ou sem pagamento registrado</span>
+                    <span>{formatNumber(filteredOverdueCount)} com pagamento vencido ou sem pagamento registrado</span>
                   </div>
                 </button>
               </div>

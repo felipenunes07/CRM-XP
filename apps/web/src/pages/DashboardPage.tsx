@@ -26,7 +26,7 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatShortDate } from "../lib/format";
 
-type TrendPeriod = '30d' | '90d' | '6m' | '1y' | '2y';
+type TrendPeriod = '90d' | '6m' | '1y' | 'max';
 
 interface PeriodOption {
   value: TrendPeriod;
@@ -35,11 +35,10 @@ interface PeriodOption {
 }
 
 const periodOptions: PeriodOption[] = [
-  { value: '30d', label: '30 dias', days: 30 },
   { value: '90d', label: '90 dias', days: 90 },
   { value: '6m', label: '6 meses', days: 180 },
   { value: '1y', label: '1 ano', days: 365 },
-  { value: '2y', label: '2 anos', days: 730 },
+  { value: 'max', label: 'Período Máximo', days: 730 },
 ];
 
 const bucketFilters = {
