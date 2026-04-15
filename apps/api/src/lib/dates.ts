@@ -1,7 +1,9 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function daysBetween(a: Date, b: Date) {
-  return Math.max(0, Math.floor((a.getTime() - b.getTime()) / DAY_MS));
+  const utcDateA = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
+  const utcDateB = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
+  return Math.max(0, Math.floor((utcDateA - utcDateB) / DAY_MS));
 }
 
 export function addDays(date: Date, days: number) {

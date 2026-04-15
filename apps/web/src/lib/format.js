@@ -98,3 +98,16 @@ export function statusLabel(status) {
         return "Atencao";
     return "Inativo";
 }
+export function calculateDaysSince(dateString) {
+    if (!dateString)
+        return null;
+    const targetDate = new Date(dateString);
+    if (Number.isNaN(targetDate.getTime()))
+        return null;
+    const today = new Date();
+    // Normalize both to UTC midnight for comparison
+    const d1 = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+    const d2 = Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), targetDate.getUTCDate());
+    const diffMs = d1 - d2;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}

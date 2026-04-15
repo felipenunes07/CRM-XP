@@ -251,6 +251,7 @@ export interface CustomerCreditRow {
   lastPaymentDate: string | null;
   daysSinceLastOrder: number | null;
   daysSinceLastPayment: number | null;
+  paymentTerm: number | null;
   riskScore: number | null;
   flags: string[];
   hasOverCredit: boolean;

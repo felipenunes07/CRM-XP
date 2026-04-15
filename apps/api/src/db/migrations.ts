@@ -519,6 +519,7 @@ export const migrations = [
     last_payment_date DATE,
     days_since_last_order INTEGER,
     days_since_last_payment INTEGER,
+    payment_term INTEGER,
     risk_score INTEGER,
     flags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
     has_over_credit BOOLEAN NOT NULL DEFAULT FALSE,
