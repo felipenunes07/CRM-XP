@@ -17,7 +17,7 @@ export function createInitialCustomersPageState() {
             onlyUnusedCredit: "",
             onlyOverdue: "",
         },
-        creditPresentation: "cards",
+        creditKpiFilter: "",
     };
 }
 export function customersPageReducer(state, action) {
@@ -42,13 +42,10 @@ export function customersPageReducer(state, action) {
             },
         };
     }
-    if (action.type === "setCreditPresentation") {
-        if (state.creditPresentation === action.value) {
-            return state;
-        }
+    if (action.type === "setCreditKpiFilter") {
         return {
             ...state,
-            creditPresentation: action.value,
+            creditKpiFilter: state.creditKpiFilter === action.value ? "" : action.value,
         };
     }
     if (state.portfolioFilters[action.key] !== action.value) {

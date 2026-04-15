@@ -57,6 +57,7 @@ const trendSeries = [
     shareKey: "activeShare",
     countKey: "activeCount",
     label: "Ativos",
+    emoji: "🟢",
     color: "#2f9d67",
     gradientId: "trend-active-fill",
     fillOpacityStart: 0.14,
@@ -66,6 +67,7 @@ const trendSeries = [
     shareKey: "attentionShare",
     countKey: "attentionCount",
     label: "Atencao",
+    emoji: "🟡",
     color: "#d09a29",
     gradientId: "trend-attention-fill",
     fillOpacityStart: 0.12,
@@ -75,6 +77,7 @@ const trendSeries = [
     shareKey: "inactiveShare",
     countKey: "inactiveCount",
     label: "Inativos",
+    emoji: "🔴",
     color: "#d9534f",
     gradientId: "trend-inactive-fill",
     fillOpacityStart: 0.045,
@@ -266,7 +269,7 @@ function TrendTooltip({
           return (
             <div key={line.shareKey} className="trend-tooltip-item">
               <span className="trend-tooltip-label">
-                <span className="trend-tooltip-dot" style={{ backgroundColor: entry?.color ?? line.color }} />
+                <span className="trend-tooltip-emoji" style={{ fontSize: "1.1rem", marginRight: "0.25rem" }}>{line.emoji}</span>
                 {line.label}
               </span>
               <div className="trend-tooltip-metric">
@@ -619,7 +622,7 @@ export function DashboardPage() {
               <div className="trend-legend" aria-label="Legenda do grafico de evolucao da base">
                 {trendSeries.map((series) => (
                   <span key={series.shareKey} className="trend-legend-item">
-                    <span className="trend-legend-dot" style={{ backgroundColor: series.color }} />
+                    <span className="trend-legend-emoji" style={{ fontSize: "1.1rem", marginRight: "0.2rem" }}>{series.emoji}</span>
                     {series.label}
                   </span>
                 ))}

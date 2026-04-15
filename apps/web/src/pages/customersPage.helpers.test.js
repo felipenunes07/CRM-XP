@@ -45,8 +45,8 @@ describe("customersPageReducer", () => {
             value: "true",
         });
         state = customersPageReducer(state, {
-            type: "setCreditPresentation",
-            value: "table",
+            type: "setCreditKpiFilter",
+            value: "owing",
         });
         state = customersPageReducer(state, { type: "setView", view: "creditPayment" });
         state = customersPageReducer(state, { type: "setView", view: "docInsights" });
@@ -57,7 +57,7 @@ describe("customersPageReducer", () => {
             riskLevel: "CRITICO",
             onlyUnusedCredit: "true",
         });
-        expect(state.creditPresentation).toBe("table");
+        expect(state.creditKpiFilter).toBe("owing");
     });
     it("builds the customers query params from the preserved filters", () => {
         const params = buildCustomersQueryParams({

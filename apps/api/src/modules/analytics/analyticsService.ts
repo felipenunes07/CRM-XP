@@ -224,13 +224,13 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
             SELECT MAX(o.order_date)::date
             FROM orders o
             WHERE o.customer_id = c.id
-              AND o.order_date <= d.day
+              AND (o.order_date <= d.day OR d.day = CURRENT_DATE)
           ) AS last_order_day
         FROM day_series d
         JOIN customers c ON TRUE
         JOIN customer_first_order cfo
           ON cfo.customer_id = c.id
-         AND cfo.first_order_day <= d.day
+         AND (cfo.first_order_day <= d.day OR d.day = CURRENT_DATE)
       )
       SELECT
         day::text AS day,

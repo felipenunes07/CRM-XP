@@ -108,7 +108,22 @@ export function CustomerCreditCardList({
             <div className="customer-credit-card-timeline">
               <span>Ult. pedido: {formatDate(row.lastOrderDate)}</span>
               <span>Ult. pagto: {formatDate(row.lastPaymentDate)}</span>
-              <span>Dias sem pagar: {formatDaysSince(row.daysSinceLastPayment)}</span>
+              <span>Dias sem pagar: {formatDaysSince(row.daysSinceLastPayment)}{row.paymentTerm ? ` (Limite: ${row.paymentTerm}d)` : ""}</span>
+              
+              {row.paymentTerm && row.daysSinceLastPayment !== null && (
+                <div className="customer-credit-card-progress-track" style={{ height: "4px", margin: "8px 0 0 0" }}>
+                  <span
+                    className={`customer-credit-card-progress-fill ${
+                      row.daysSinceLastPayment > row.paymentTerm
+                        ? "danger"
+                        : row.daysSinceLastPayment > row.paymentTerm * 0.8
+                          ? "warning"
+                          : "success"
+                    }`}
+                    style={{ width: `${Math.min((row.daysSinceLastPayment / row.paymentTerm) * 100, 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="customer-credit-card-observation">

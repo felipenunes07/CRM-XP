@@ -71,6 +71,7 @@ export interface ParsedCustomerCreditRow {
   lastPaymentDate: string | null;
   daysSinceLastOrder: number | null;
   daysSinceLastPayment: number | null;
+  paymentTerm: number | null;
   riskScore: number | null;
   flags: string[];
   hasOverCredit: boolean;
@@ -384,6 +385,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
   const resolvedDaysSinceLastPayment = parseNullableInteger(
     readWorkbookValue(row, "Dias desde Ãºltimo pagamento", ["dias desde", "pagamento"]),
   );
+  const resolvedPaymentTerm = parseNullableInteger(readWorkbookValue(row, " PRAZO ", ["prazo"]));
   const resolvedRiskScore = parseNullableInteger(
     readWorkbookValue(row, "PontuaÃ§Ã£o de Risco", ["pontuacao", "risco"]),
   );
@@ -469,6 +471,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     lastPaymentDate: resolvedLastPaymentDate,
     daysSinceLastOrder: resolvedDaysSinceLastOrder,
     daysSinceLastPayment: resolvedDaysSinceLastPayment,
+    paymentTerm: resolvedPaymentTerm,
     riskScore: resolvedRiskScore,
     flags,
     hasOverCredit,
@@ -683,6 +686,7 @@ async function insertSnapshotRows(
     last_payment_date: row.lastPaymentDate,
     days_since_last_order: row.daysSinceLastOrder,
     days_since_last_payment: row.daysSinceLastPayment,
+    payment_term: row.paymentTerm,
     risk_score: row.riskScore,
     flags: row.flags,
     has_over_credit: row.hasOverCredit,
@@ -712,6 +716,7 @@ async function insertSnapshotRows(
         last_payment_date,
         days_since_last_order,
         days_since_last_payment,
+        payment_term,
         risk_score,
         flags,
         has_over_credit,
@@ -738,6 +743,7 @@ async function insertSnapshotRows(
         NULLIF(entry.last_payment_date, '')::date,
         entry.days_since_last_order,
         entry.days_since_last_payment,
+        entry.payment_term,
         entry.risk_score,
         COALESCE(entry.flags, ARRAY[]::text[]),
         COALESCE(entry.has_over_credit, FALSE),
@@ -762,6 +768,7 @@ async function insertSnapshotRows(
         last_payment_date text,
         days_since_last_order integer,
         days_since_last_payment integer,
+        payment_term integer,
         risk_score integer,
         flags text[],
         has_over_credit boolean,
@@ -940,6 +947,10 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
       row.days_since_last_payment === null || row.days_since_last_payment === undefined
         ? null
         : Number(row.days_since_last_payment),
+    paymentTerm:
+      row.payment_term === null || row.payment_term === undefined
+        ? null
+        : Number(row.payment_term),
     riskScore: row.risk_score === null || row.risk_score === undefined ? null : Number(row.risk_score),
     flags: Array.isArray(row.flags) ? row.flags.map((entry) => String(entry)) : [],
     hasOverCredit: Boolean(row.has_over_credit),
@@ -1008,6 +1019,7 @@ async function loadOverviewRows(snapshotId: string) {
         last_payment_date::text AS last_payment_date,
         days_since_last_order,
         days_since_last_payment,
+        payment_term,
         risk_score,
         flags,
         has_over_credit,
@@ -1098,6 +1110,7 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
         last_payment_date::text AS last_payment_date,
         days_since_last_order,
         days_since_last_payment,
+        payment_term,
         risk_score,
         flags,
         has_over_credit,

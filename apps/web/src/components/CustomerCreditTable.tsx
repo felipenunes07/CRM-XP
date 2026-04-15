@@ -29,14 +29,16 @@ function usageBarColor(row: CustomerCreditRow) {
   return "success";
 }
 
-function prazoLabel(days: number | null) {
+function prazoLabel(days: number | null, term: number | null) {
   if (days === null || days === undefined) return "—";
-  if (days === 0) return "Hoje";
-  return `${days}d`;
+  const daysStr = days === 0 ? "Hoje" : `${days}d`;
+  if (term) return `${daysStr} / ${term}d`;
+  return daysStr;
 }
 
-function prazoTone(days: number | null) {
+function prazoTone(days: number | null, term: number | null) {
   if (days === null || days === undefined) return "";
+  if (term && days > term) return "credit-prazo-danger";
   if (days > 90) return "credit-prazo-danger";
   if (days > 30) return "credit-prazo-warning";
   return "";
@@ -101,7 +103,7 @@ export function CustomerCreditTable({
             <tr>
               <th>Cliente</th>
               <th>Divida / Saldo</th>
-              <th>Limite</th>
+              <th>Crédito</th>
               <th>Disponivel</th>
               <th>Prazo</th>
               <th>Risco</th>
@@ -189,9 +191,23 @@ export function CustomerCreditTable({
                   {/* Prazo (dias sem pagar) */}
                   <td>
                     <div className="credit-cell-prazo">
-                      <strong className={prazoTone(actualDays)}>
-                        {prazoLabel(actualDays)}
+                      <strong className={prazoTone(actualDays, row.paymentTerm)}>
+                        {prazoLabel(actualDays, row.paymentTerm)}
                       </strong>
+                      {row.paymentTerm && actualDays !== null && (
+                        <div className="credit-usage-track" style={{ height: "4px", margin: "4px 0" }}>
+                          <div
+                            className={`credit-usage-fill ${
+                              actualDays > row.paymentTerm
+                                ? "danger"
+                                : actualDays > row.paymentTerm * 0.8
+                                  ? "warning"
+                                  : "success"
+                            }`}
+                            style={{ width: `${Math.min((actualDays / row.paymentTerm) * 100, 100)}%` }}
+                          />
+                        </div>
+                      )}
                       {row.lastPaymentDate ? (
                         <span>{formatDate(row.lastPaymentDate)}</span>
                       ) : (
