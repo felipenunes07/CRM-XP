@@ -294,7 +294,7 @@ function getAvailableCreditAmount(balanceAmount: number, creditLimit: number) {
     return 0;
   }
 
-  return Math.max(creditLimit - getDebtAmount(balanceAmount), 0);
+  return creditLimit - getDebtAmount(balanceAmount);
 }
 
 function isOverCreditSignal(flag: string) {
