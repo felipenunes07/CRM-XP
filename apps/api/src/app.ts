@@ -96,7 +96,7 @@ const customerQuerySchema = z.object({
 });
 
 const dashboardQuerySchema = z.object({
-  trendDays: z.coerce.number().int().min(1).max(730).optional(),
+  trendDays: z.coerce.number().int().min(1).max(1825).optional(),
 });
 
 const attendantsQuerySchema = z.object({
@@ -571,7 +571,7 @@ export function createApp() {
     try {
       const customer = await updateCustomerAmbassador(request.params.id, customerAmbassadorSchema.parse(request.body).isAmbassador);
       if (!customer) {
-        throw new HttpError(404, "Cliente nÃ£o encontrado");
+        throw new HttpError(404, "Cliente não encontrado");
       }
       response.json(customer);
     } catch (error) {

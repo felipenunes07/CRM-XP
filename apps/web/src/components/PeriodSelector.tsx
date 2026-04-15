@@ -1,15 +1,14 @@
 interface PeriodSelectorProps {
-  value: '30d' | '90d' | '6m' | '1y' | '2y';
-  onChange: (period: '30d' | '90d' | '6m' | '1y' | '2y') => void;
+  value: '90d' | '6m' | '1y' | 'max';
+  onChange: (period: '90d' | '6m' | '1y' | 'max') => void;
   disabled?: boolean;
 }
 
 const periodOptions = [
-  { value: '30d' as const, label: '30 dias', days: 30 },
-  { value: '90d' as const, label: '90 dias', days: 90 },
-  { value: '6m' as const, label: '6 meses', days: 180 },
-  { value: '1y' as const, label: '1 ano', days: 365 },
-  { value: '2y' as const, label: '2 anos', days: 730 },
+  { value: '90d' as const, label: '90 dias' },
+  { value: '6m' as const, label: '6 meses' },
+  { value: '1y' as const, label: '1 ano' },
+  { value: 'max' as const, label: 'Período Máximo' },
 ];
 
 export function PeriodSelector({ value, onChange, disabled }: PeriodSelectorProps) {

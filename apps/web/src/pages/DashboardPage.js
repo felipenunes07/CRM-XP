@@ -15,6 +15,7 @@ const periodOptions = [
     { value: '90d', label: '90 dias', days: 90 },
     { value: '6m', label: '6 meses', days: 180 },
     { value: '1y', label: '1 ano', days: 365 },
+    { value: 'max', label: 'Período Máximo', days: 730 },
 ];
 const bucketFilters = {
     "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
