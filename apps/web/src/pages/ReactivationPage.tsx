@@ -64,8 +64,9 @@ export function ReactivationPage() {
       };
     });
 
-  const uniqueAttendants = Array.from(new Set(Object.values(historyByMonth).flat().map(e => e.attendant)));
-  
+  const specificAttendants = ["Amanda", "Suelen", "Thais", "Tamires"].map(name => name.toLowerCase());
+  const uniqueAttendants = Array.from(new Set(Object.values(historyByMonth).flat().map(e => e.attendant)))
+    .filter(att => specificAttendants.some(target => att.toLowerCase().includes(target)));
   const attendantLineChartData = Object.entries(historyByMonth)
     .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
     .map(([month, entries]) => {
