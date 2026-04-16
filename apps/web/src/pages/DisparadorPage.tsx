@@ -417,6 +417,18 @@ export function DisparadorPage() {
       })
       .slice(0, 8);
   }, [liveCampaign]);
+  const hasMessage = Boolean(messageText.trim());
+  const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
+  const dispatchButtonLabel = createCampaignMutation.isPending
+    ? "Criando campanha..."
+    : selectedGroupCount > 0
+      ? `Disparar para ${formatNumber(selectedGroupCount)} grupos`
+      : "Selecione grupos para disparar";
+  const composeHelperText = !hasMessage
+    ? "Escreva ou escolha a mensagem final para liberar o disparo."
+    : selectedGroupCount === 0
+      ? "Selecione os grupos abaixo para habilitar o disparo."
+      : `Delay configurado entre ${minDelaySeconds}s e ${maxDelaySeconds}s por envio.`;
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setSelectedFile(event.target.files?.[0] ?? null);
@@ -445,7 +457,31 @@ export function DisparadorPage() {
         <div className="whatsapp-workspace-copy">
           <p className="eyebrow">Disparador WhatsApp</p>
           <h2>Disparador</h2>
-          <p className="panel-subcopy">Escolha os grupos, revise a mensagem e acompanhe a fila sem sair desta tela.</p>
+          <p className="panel-subcopy">Monte a mensagem, confira a base e acompanhe a fila sem sair desta tela.</p>
+
+          <div className="whatsapp-flow-strip">
+            <div className={`whatsapp-flow-step ${hasMessage ? "is-done" : "is-active"}`}>
+              <span>1</span>
+              <div>
+                <strong>Monte a mensagem</strong>
+                <small>Defina campanha, template e texto final.</small>
+              </div>
+            </div>
+            <div className={`whatsapp-flow-step ${mappingSummaryQuery.data?.totalGroups ? "is-done" : ""}`}>
+              <span>2</span>
+              <div>
+                <strong>Confira a base</strong>
+                <small>Atualize a planilha e veja pendencias antes do envio.</small>
+              </div>
+            </div>
+            <div className={`whatsapp-flow-step ${isReadyToDispatch ? "is-done" : ""}`}>
+              <span>3</span>
+              <div>
+                <strong>Dispare com seguranca</strong>
+                <small>Selecione os grupos e acompanhe a fila em tempo real.</small>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="whatsapp-inline-stats">
@@ -458,14 +494,6 @@ export function DisparadorPage() {
             <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.totalGroups) : "--"}</strong>
           </div>
           <div className="whatsapp-inline-stat">
-            <span>Nunca compraram</span>
-            <strong>
-              {mappingSummaryQuery.data
-                ? formatNumber(mappingSummaryQuery.data.classificationCounts.NO_ORDER_EXCEL)
-                : "--"}
-            </strong>
-          </div>
-          <div className="whatsapp-inline-stat">
             <span>Pendentes</span>
             <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.pendingReviewGroups) : "--"}</strong>
           </div>
@@ -476,13 +504,166 @@ export function DisparadorPage() {
         </div>
       </section>
 
-      <section className="grid-two whatsapp-simple-grid">
+      <section className="grid-two whatsapp-simple-grid whatsapp-setup-grid">
+        <article className="panel whatsapp-compose-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Passo 1</p>
+              <h3>Mensagem e disparo</h3>
+              <p className="panel-subcopy">Preencha da esquerda para a direita: campanha, ritmo e mensagem final.</p>
+            </div>
+            <div className={`whatsapp-panel-pill ${isReadyToDispatch ? "is-ready" : ""}`}>
+              <strong>{isReadyToDispatch ? "Pronto para disparar" : "Em preparacao"}</strong>
+              <span>{composeHelperText}</span>
+            </div>
+          </div>
+
+          <div className="whatsapp-compose-summary">
+            <div>
+              <span>Template</span>
+              <strong>{selectedTemplate?.title ?? "Mensagem livre"}</strong>
+            </div>
+            <div>
+              <span>Publico salvo</span>
+              <strong>{selectedSavedSegment?.name ?? "Todos os grupos"}</strong>
+            </div>
+            <div>
+              <span>Selecionados</span>
+              <strong>{formatNumber(selectedGroupCount)} grupos</strong>
+            </div>
+            <div>
+              <span>Anti-spam</span>
+              <strong>{overrideRecentBlock ? "Bloqueio ignorado" : "Bloqueio de 7 dias ativo"}</strong>
+            </div>
+          </div>
+
+          <div className="filters-grid whatsapp-compose-top-grid">
+            <label>
+              Nome da campanha
+              <input
+                value={campaignName}
+                onChange={(event) => setCampaignName(event.target.value)}
+                placeholder="Ex: Reativacao clientes inativos"
+              />
+            </label>
+
+            <label>
+              Template de mensagem
+              <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                <option value="">Mensagem livre</option>
+                {(templatesQuery.data ?? []).map((template: MessageTemplate) => (
+                  <option key={template.id} value={template.id}>
+                    {template.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="whatsapp-delay-grid">
+            <label className="whatsapp-delay-field">
+              <span>Delay minimo</span>
+              <input
+                type="number"
+                min={1}
+                value={minDelaySeconds}
+                onChange={(event) => setMinDelaySeconds(Number(event.target.value) || 1)}
+              />
+              <small>Menor intervalo entre um envio e outro.</small>
+            </label>
+
+            <label className="whatsapp-delay-field">
+              <span>Delay maximo</span>
+              <input
+                type="number"
+                min={1}
+                value={maxDelaySeconds}
+                onChange={(event) => setMaxDelaySeconds(Number(event.target.value) || 1)}
+              />
+              <small>Ajuda a distribuir a fila com variacao natural.</small>
+            </label>
+          </div>
+
+          <div className="whatsapp-compose-editor-grid">
+            <label className="whatsapp-message-field">
+              <span>Mensagem final</span>
+              <textarea
+                rows={12}
+                value={messageText}
+                onChange={(event) => setMessageText(event.target.value)}
+                placeholder="Digite a mensagem que sera enviada..."
+              />
+            </label>
+
+            <div className="whatsapp-preview-panel">
+              <div className="whatsapp-preview-header">
+                <strong>Previa do envio</strong>
+                <span>Assim o texto aparece antes do disparo.</span>
+              </div>
+              <div className="message-preview whatsapp-message-preview whatsapp-message-preview-panel">
+                {messageText || "A mensagem final vai aparecer aqui assim que voce escrever ou escolher um template."}
+              </div>
+            </div>
+          </div>
+
+          {!templatesQuery.data?.length ? (
+            <div className="empty-state">Nenhum template salvo ainda. A mensagem livre abaixo sera usada normalmente.</div>
+          ) : null}
+
+          <div className="whatsapp-compose-footer">
+            <label className="whatsapp-checkbox-row">
+              <input
+                type="checkbox"
+                checked={overrideRecentBlock}
+                onChange={(event) => setOverrideRecentBlock(event.target.checked)}
+              />
+              <span>Ignorar o bloqueio de 7 dias para contatos recentes</span>
+            </label>
+
+            <div className="whatsapp-compose-actions">
+              <p className="panel-subcopy">{composeHelperText}</p>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => createCampaignMutation.mutate()}
+                disabled={createCampaignMutation.isPending || !isReadyToDispatch}
+              >
+                {createCampaignMutation.isPending ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
+                {dispatchButtonLabel}
+              </button>
+            </div>
+          </div>
+
+          {createCampaignMutation.isError ? (
+            <div className="page-error">{(createCampaignMutation.error as Error).message}</div>
+          ) : null}
+        </article>
+
         <article className="panel whatsapp-source-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Base</p>
+              <p className="eyebrow">Passo 2</p>
               <h3>Base de grupos</h3>
-              <p className="panel-subcopy">A planilha padrao do desktop ja alimenta a tela. Atualize so quando quiser recarregar.</p>
+              <p className="panel-subcopy">A planilha padrao do desktop alimenta a tela. Atualize so quando quiser recarregar.</p>
+            </div>
+          </div>
+
+          <div className="whatsapp-base-overview">
+            <div>
+              <span>Base total</span>
+              <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.totalGroups) : "--"}</strong>
+            </div>
+            <div>
+              <span>Nunca compraram</span>
+              <strong>
+                {mappingSummaryQuery.data
+                  ? formatNumber(mappingSummaryQuery.data.classificationCounts.NO_ORDER_EXCEL)
+                  : "--"}
+              </strong>
+            </div>
+            <div>
+              <span>Ultima atualizacao</span>
+              <strong>{formatDateTime(mappingSummaryQuery.data?.lastImportedAt ?? null)}</strong>
             </div>
           </div>
 
@@ -651,121 +832,6 @@ export function DisparadorPage() {
               A fila aparece aqui assim que um disparo entrar em andamento.
             </div>
           )}
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Mensagem</p>
-              <h3>Mensagem e disparo</h3>
-              <p className="panel-subcopy">Escolha um template ou escreva a mensagem final para os grupos marcados.</p>
-            </div>
-          </div>
-
-          <div className="filters-grid">
-            <label>
-              Nome da campanha
-              <input
-                value={campaignName}
-                onChange={(event) => setCampaignName(event.target.value)}
-                placeholder="Ex: Reativacao clientes inativos"
-              />
-            </label>
-
-            <label>
-              Template de mensagem
-              <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
-                <option value="">Mensagem livre</option>
-                {(templatesQuery.data ?? []).map((template: MessageTemplate) => (
-                  <option key={template.id} value={template.id}>
-                    {template.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Delay minimo
-              <input
-                type="number"
-                min={1}
-                value={minDelaySeconds}
-                onChange={(event) => setMinDelaySeconds(Number(event.target.value) || 1)}
-              />
-            </label>
-
-            <label>
-              Delay maximo
-              <input
-                type="number"
-                min={1}
-                value={maxDelaySeconds}
-                onChange={(event) => setMaxDelaySeconds(Number(event.target.value) || 1)}
-              />
-            </label>
-
-            <label className="full-span">
-              Mensagem final
-              <textarea
-                rows={10}
-                value={messageText}
-                onChange={(event) => setMessageText(event.target.value)}
-                placeholder="Digite a mensagem que sera enviada..."
-              />
-            </label>
-          </div>
-
-          {!templatesQuery.data?.length ? (
-            <div className="empty-state">Nenhum template salvo ainda. A mensagem livre abaixo sera usada normalmente.</div>
-          ) : null}
-
-          <div className="message-preview whatsapp-message-preview">
-            {messageText || "A mensagem final vai aparecer aqui assim que voce escrever ou escolher um template."}
-          </div>
-
-          <div className="whatsapp-compose-summary">
-            <div>
-              <span>Template</span>
-              <strong>{selectedTemplate?.title ?? "Mensagem livre"}</strong>
-            </div>
-            <div>
-              <span>Publico salvo</span>
-              <strong>{selectedSavedSegment?.name ?? "Nao selecionado"}</strong>
-            </div>
-            <div>
-              <span>Selecionados</span>
-              <strong>{formatNumber(selectedGroupCount)} grupos</strong>
-            </div>
-            <div>
-              <span>Anti-spam</span>
-              <strong>{overrideRecentBlock ? "Bloqueio ignorado" : "Bloqueio de 7 dias ativo"}</strong>
-            </div>
-          </div>
-
-          <label className="whatsapp-checkbox-row">
-            <input
-              type="checkbox"
-              checked={overrideRecentBlock}
-              onChange={(event) => setOverrideRecentBlock(event.target.checked)}
-            />
-            <span>Ignorar o bloqueio de 7 dias para contatos recentes</span>
-          </label>
-
-          <div className="inline-actions">
-            <button
-              className="primary-button"
-              type="button"
-              onClick={() => createCampaignMutation.mutate()}
-              disabled={createCampaignMutation.isPending || !messageText.trim() || selectedGroupCount === 0}
-            >
-              {createCampaignMutation.isPending ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
-              {createCampaignMutation.isPending ? "Criando campanha..." : "Disparar para selecionados"}
-            </button>
-          </div>
-
-          {createCampaignMutation.isError ? (
-            <div className="page-error">{(createCampaignMutation.error as Error).message}</div>
-          ) : null}
         </article>
       </section>
 
