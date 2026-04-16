@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
 
 export interface MetaAdsMonthlySpendPoint {
   month: string;
@@ -205,7 +206,26 @@ export async function getMetaAdsApiMonthlySpend(since: string, until: string): P
 }
 
 export async function getMetaAdsMonthlySpend(since: string, until: string): Promise<MetaAdsMonthlySpendPoint[]> {
-  const apiRows = await getMetaAdsApiMonthlySpend(since, until);
-  const invoiceRows = await readMetaAdsInvoiceSummary(env.META_ADS_INVOICE_SUMMARY_PATH, since, until).catch(() => []);
+  let apiRows: MetaAdsMonthlySpendPoint[] = [];
+  try {
+    apiRows = await getMetaAdsApiMonthlySpend(since, until);
+  } catch (error) {
+    logger.warn("meta ads api unavailable, using invoice summary fallback", {
+      error: error instanceof Error ? error.message : String(error),
+      since,
+      until,
+    });
+  }
+
+  const invoiceRows = await readMetaAdsInvoiceSummary(env.META_ADS_INVOICE_SUMMARY_PATH, since, until).catch((error) => {
+    logger.warn("meta ads invoice summary unavailable", {
+      error: error instanceof Error ? error.message : String(error),
+      since,
+      until,
+      path: env.META_ADS_INVOICE_SUMMARY_PATH,
+    });
+    return [];
+  });
+
   return mergeMetaAdsMonthlySpend(invoiceRows, apiRows);
 }

@@ -3,9 +3,12 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatNumber } from "../lib/format";
+import { Calendar, UserCheck, TrendingUp, Users, ExternalLink, Award, Medal, Camera, ShoppingBag } from "lucide-react";
+import { useState } from "react";
 
 export function ReactivationPage() {
   const { token } = useAuth();
+  const [isCompactMode, setIsCompactMode] = useState(false);
   const dashboardQuery = useQuery({
     queryKey: ["reactivation-dashboard"],
     queryFn: () => api.dashboard(token!),
@@ -20,60 +23,131 @@ export function ReactivationPage() {
     return <div className="page-error">Nao foi possivel carregar o ranking de reativacao.</div>;
   }
 
-  const leaderboard = dashboardQuery.data.reactivationLeaderboard;
+  const leaderboard = [...dashboardQuery.data.reactivationLeaderboard].sort((a, b) => b.recoveredRevenue - a.recoveredRevenue);
   const totalRecoveredCustomers = leaderboard.reduce((sum, entry) => sum + entry.recoveredCustomers, 0);
   const totalRecoveredRevenue = leaderboard.reduce((sum, entry) => sum + entry.recoveredRevenue, 0);
+  const totalRecoveredItems = leaderboard.reduce((sum, entry) => sum + Math.max(0, entry.recoveredItems || 0), 0);
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
   }).format(new Date());
 
+  const getRankColor = (index: number) => {
+    if (index === 0) return "var(--warning)"; // Ouro
+    if (index === 1) return "var(--muted)"; // Prata
+    if (index === 2) return "#cd7f32"; // Bronze
+    return "transparent";
+  };
+
+  const getRankBg = (index: number) => {
+    if (index === 0) return "var(--warning)";
+    if (index === 1) return "var(--muted)";
+    if (index === 2) return "#cd7f32";
+    return "var(--bg-soft)";
+  };
+
+  const getRankText = (index: number) => {
+    if (index <= 2) return "#ffffff";
+    return "var(--text)";
+  };
+
   return (
     <div className="page-stack">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "0.5rem" }}>
         <div>
           <p className="eyebrow" style={{ margin: 0, marginBottom: "0.2rem" }}>
-            Ranking de reativacao
+            Ranking de Reativação
           </p>
           <h2 style={{ margin: 0, fontSize: "1.5rem" }}>Recuperadoras de Ouro</h2>
         </div>
+        <button
+          onClick={() => setIsCompactMode(!isCompactMode)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            background: isCompactMode ? "var(--accent)" : "rgba(41,86,215,0.06)",
+            color: isCompactMode ? "#fff" : "var(--accent)",
+            border: "1px solid " + (isCompactMode ? "var(--accent)" : "rgba(41,86,215,0.15)"),
+            padding: "0.5rem 1rem",
+            borderRadius: "8px",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            transition: "all 0.2s"
+          }}
+        >
+          <Camera size={16} />
+          {isCompactMode ? "Expandir Detalhes" : "Versão Print (Compactar)"}
+        </button>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Mes analisado</h3>
+      <div className="stats-grid" style={{ display: isCompactMode ? "none" : "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "1rem", paddingBottom: "1rem" }}>
+        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Mês analisado</p>
+            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
+              <Calendar size={16} color="var(--muted)" />
+            </div>
           </div>
-          <div className="stat-card-body">
-            <strong>{monthLabel}</strong>
-            <p className="stat-card-helper">Primeira reativacao no mes</p>
-          </div>
-        </div>
-        <div className="stat-card tone-success">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Clientes recuperados</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(totalRecoveredCustomers)}</strong>
-            <p className="stat-card-helper">Soma total do ranking</p>
+          <div style={{ marginTop: "0.25rem" }}>
+            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{monthLabel}</strong>
+            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Período do placar consolidado</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Faturamento reativado</h3>
+
+        <div className="stat-card" style={{ background: "rgba(47, 157, 103, 0.04)", border: "1px solid rgba(47, 157, 103, 0.2)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "3px", background: "var(--success)" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 700, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Recuperados</p>
+            <div style={{ background: "rgba(47, 157, 103, 0.15)", padding: "0.35rem", borderRadius: "8px" }}>
+              <UserCheck size={16} color="var(--success)" />
+            </div>
           </div>
-          <div className="stat-card-body">
-            <strong style={{ color: "var(--success)" }}>{formatCurrency(totalRecoveredRevenue)}</strong>
-            <p className="stat-card-helper">Soma de pedidos de retorno</p>
+          <div style={{ marginTop: "0.25rem" }}>
+            <strong style={{ display: "block", fontSize: "1.5rem", color: "var(--success)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(totalRecoveredCustomers)}</strong>
+            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--success)", fontWeight: 500, opacity: 0.85, lineHeight: "1.2" }}>
+              Inativos +90 dias
+            </p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Equipe ativa</h3>
+
+        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Faturamento</p>
+            <div style={{ background: "rgba(41, 86, 215, 0.08)", padding: "0.35rem", borderRadius: "8px" }}>
+              <TrendingUp size={16} color="var(--accent)" />
+            </div>
           </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(leaderboard.length)}</strong>
-            <p className="stat-card-helper">Atendentes com reativacao</p>
+          <div style={{ marginTop: "0.25rem" }}>
+            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatCurrency(totalRecoveredRevenue)}</strong>
+            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Retornado ao caixa</p>
+          </div>
+        </div>
+
+        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Peças Vendidas</p>
+            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
+              <ShoppingBag size={16} color="var(--muted)" />
+            </div>
+          </div>
+          <div style={{ marginTop: "0.25rem" }}>
+            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(totalRecoveredItems)}</strong>
+            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Total em produtos</p>
+          </div>
+        </div>
+
+        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Equipe Ativa</p>
+            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
+              <Users size={16} color="var(--muted)" />
+            </div>
+          </div>
+          <div style={{ marginTop: "0.25rem" }}>
+            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(leaderboard.length)}</strong>
+            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Com reativação no mês</p>
           </div>
         </div>
       </div>
@@ -81,96 +155,118 @@ export function ReactivationPage() {
       <section className="panel" style={{ padding: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div
           className="panel-header"
-          style={{ padding: "1.25rem 1.25rem 1rem 1.25rem", borderBottom: "1px solid var(--line)", background: "transparent" }}
+          style={{ padding: "1.5rem 1.5rem 1.25rem", borderBottom: "1px solid var(--line)", background: "transparent" }}
         >
           <div>
             <h3 style={{ fontSize: "1.2rem", margin: 0 }}>Placar Consolidado</h3>
             <p className="panel-subcopy" style={{ marginTop: "0.3rem" }}>
-              Detalhamento da conversao por consultor e seus respectivos clientes reativados.
+              Detalhamento da conversão por consultor e seus respectivos clientes reativados.
             </p>
           </div>
         </div>
 
         {leaderboard.length ? (
-          <div className="leaderboard-list" style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div className="leaderboard-list" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.5rem", background: "var(--bg-soft)" }}>
             {leaderboard.map((entry, index) => (
-              <article key={`${entry.attendant}-${index}`} className="leaderboard-card">
-                <div className="leaderboard-card-header">
-                  <div className="leaderboard-rank">#{index + 1}</div>
-                  <div className="leaderboard-copy">
-                    <strong style={index === 0 ? { color: "var(--accent)" } : {}}>{entry.attendant}</strong>
-                    <span>{formatNumber(entry.recoveredCustomers)} clientes recuperados</span>
+              <article key={`${entry.attendant}-${index}`} className="leaderboard-card" style={{ background: "#fff", borderRadius: "12px", overflow: "hidden", boxShadow: index === 0 ? "0 4px 20px rgba(208, 154, 41, 0.15)" : "0 4px 15px rgba(0,0,0,0.03)", border: index === 0 ? "2px solid rgba(208, 154, 41, 0.4)" : "1px solid var(--line)" }}>
+                <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between", 
+                    padding: isCompactMode ? "0.75rem 1.5rem" : "1.25rem 1.5rem", 
+                    background: index === 0 ? "linear-gradient(to right, rgba(208, 154, 41, 0.08), transparent)" : index === 1 ? "linear-gradient(to right, rgba(110, 127, 159, 0.06), transparent)" : index === 2 ? "linear-gradient(to right, rgba(205, 127, 50, 0.06), transparent)" : "transparent",
+                    borderBottom: isCompactMode ? "none" : "1px solid var(--line)"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
+                    <div style={{ 
+                        background: getRankBg(index), 
+                        color: getRankText(index),
+                        width: "40px", height: "40px", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "50%", fontWeight: "bold", fontSize: "1rem",
+                        boxShadow: index <= 2 ? "0 4px 10px rgba(0,0,0,0.1)" : "none"
+                    }}>
+                        {index === 0 ? <Award size={20}/> : index === 1 ? <Medal size={20}/> : index === 2 ? <Medal size={20}/> : `${index + 1}º`}
+                    </div>
+                    <div>
+                      <strong style={{ color: index === 0 ? "var(--warning)" : "var(--text)", fontSize: "1.1rem" }}>{entry.attendant}</strong>
+                      <span style={{ display: "block", fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.2rem" }}>
+                        <strong style={{ color: "var(--text)" }}>{formatNumber(entry.recoveredCustomers)}</strong> clientes recuperados
+                      </span>
+                    </div>
                   </div>
-                  <div className="leaderboard-metric">
-                    <span>Faturamento gerado</span>
-                    <strong style={{ color: "var(--success)" }}>{formatCurrency(entry.recoveredRevenue)}</strong>
+                  <div style={{ textAlign: "right" }}>
+                    <span style={{ fontSize: "0.75rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>Faturamento Gerado</span>
+                    <strong style={{ display: "block", color: "var(--success)", fontSize: "1.25rem", marginTop: "0.2rem" }}>{formatCurrency(entry.recoveredRevenue)}</strong>
                   </div>
                 </div>
 
-                <div style={{ marginTop: "0.5rem", borderTop: "1px solid var(--line)", paddingTop: "0.5rem" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
-                    <thead>
-                      <tr style={{ color: "var(--muted)" }}>
-                        <th style={{ width: "45%", textAlign: "left", padding: "0.4rem 0.5rem", fontWeight: 600 }}>Cliente</th>
-                        <th style={{ width: "20%", textAlign: "center", padding: "0.4rem 0.5rem", fontWeight: 600 }}>Inativo por</th>
-                        <th style={{ width: "25%", textAlign: "right", padding: "0.4rem 0.5rem", fontWeight: 600 }}>Pedido Retorno</th>
-                        <th style={{ width: "10%", minWidth: "60px" }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {entry.recoveredClients.map((client) => (
-                        <tr key={`${entry.attendant}-${client.customerId}`} style={{ borderBottom: "1px solid rgba(41,86,215,0.05)" }}>
-                          <td style={{ padding: "0.6rem 0.5rem", overflow: "hidden", textOverflow: "ellipsis" }}>
-                            <div style={{ display: "flex", flexDirection: "column" }}>
-                              <strong
-                                style={{ color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                              >
-                                {client.displayName}
-                              </strong>
-                              <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>{client.customerCode || "Sem codigo"}</span>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: "center", padding: "0.6rem 0.5rem", color: "var(--text)", whiteSpace: "nowrap" }}>
-                            {formatNumber(client.daysInactiveBeforeReturn)} dias
-                          </td>
-                          <td
-                            style={{
-                              textAlign: "right",
-                              padding: "0.6rem 0.5rem",
-                              fontWeight: 600,
-                              color: "var(--success)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {formatCurrency(client.reactivatedOrderAmount)}
-                          </td>
-                          <td style={{ textAlign: "right", padding: "0.6rem 0.5rem" }}>
-                            <Link
-                              to={`/clientes/${client.customerId}`}
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "var(--accent)",
-                                textDecoration: "none",
-                                fontWeight: 600,
-                                padding: "0.2rem 0.4rem",
-                                border: "1px solid rgba(41,86,215,0.15)",
-                                borderRadius: "4px",
-                              }}
-                            >
-                              Abrir
-                            </Link>
-                          </td>
+                {!isCompactMode && (
+                  <div style={{ padding: "0" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
+                      <thead>
+                        <tr style={{ background: "rgba(0,0,0,0.015)", borderBottom: "1px solid var(--line)" }}>
+                          <th style={{ width: "45%", textAlign: "left", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Cliente Reativado</th>
+                          <th style={{ width: "20%", textAlign: "center", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Período Inativo</th>
+                          <th style={{ width: "25%", textAlign: "right", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Pedido de Retorno</th>
+                          <th style={{ width: "10%", minWidth: "90px", padding: "0.85rem 1.5rem", textAlign: "right" }}></th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {entry.recoveredClients.map((client, cIdx) => (
+                          <tr key={`${entry.attendant}-${client.customerId}`} style={{ borderBottom: cIdx === entry.recoveredClients.length - 1 ? "none" : "1px solid var(--line)" }}>
+                            <td style={{ padding: "1rem 1.5rem", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <div style={{ display: "flex", flexDirection: "column" }}>
+                                <strong style={{ color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {client.displayName}
+                                </strong>
+                                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "monospace", marginTop: "0.2rem" }}>{client.customerCode || "Sem código"}</span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: "center", padding: "1rem 1.5rem" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", padding: "0.25rem 0.75rem", background: client.daysInactiveBeforeReturn > 90 ? "rgba(217, 83, 79, 0.08)" : "rgba(41, 86, 215, 0.06)", color: client.daysInactiveBeforeReturn > 90 ? "var(--danger)" : "var(--accent)", borderRadius: "14px", fontSize: "0.75rem", fontWeight: 600 }}>
+                                {formatNumber(client.daysInactiveBeforeReturn)} dias
+                              </span>
+                            </td>
+                            <td style={{ textAlign: "right", padding: "1rem 1.5rem", fontWeight: 600, color: "var(--success)", whiteSpace: "nowrap", fontSize: "0.9rem" }}>
+                              {formatCurrency(client.reactivatedOrderAmount)}
+                            </td>
+                            <td style={{ textAlign: "right", padding: "1rem 1.5rem" }}>
+                              <Link
+                                to={`/clientes/${client.customerId}`}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "0.35rem",
+                                  fontSize: "0.75rem",
+                                  color: "var(--accent)",
+                                  textDecoration: "none",
+                                  fontWeight: 500,
+                                  padding: "0.4rem 0.75rem",
+                                  background: "rgba(41,86,215,0.06)",
+                                  borderRadius: "6px",
+                                  transition: "all 0.2s ease"
+                                }}
+                                onMouseOver={(e) => {
+                                  e.currentTarget.style.background = "var(--accent)";
+                                  e.currentTarget.style.color = "#fff";
+                                }}
+                                onMouseOut={(e) => {
+                                  e.currentTarget.style.background = "rgba(41,86,215,0.06)";
+                                  e.currentTarget.style.color = "var(--accent)";
+                                }}
+                              >
+                                Abrir <ExternalLink size={14} />
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </article>
             ))}
           </div>
         ) : (
           <div className="empty-state" style={{ padding: "3rem" }}>
-            Ainda nao houve reativacao registrada neste mes.
+            Ainda não houve reativação registrada neste mês.
           </div>
         )}
       </section>
