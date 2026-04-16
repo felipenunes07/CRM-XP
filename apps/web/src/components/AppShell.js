@@ -1,6 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, Users } from "lucide-react";
+import { BarChart3, ClipboardList, LayoutDashboard, MessageSquareText, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserPlus, Users, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 const links = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -9,6 +9,7 @@ const links = [
     { to: "/embaixadores", icon: Star, label: "Embaixadores" },
     { to: "/segmentos", icon: BarChart3, label: "Segmentos" },
     { to: "/agenda", icon: ClipboardList, label: "Agenda" },
+    { to: "/clientes-novos", icon: UserPlus, label: "Clientes novos" },
     { to: "/reativacao", icon: Trophy, label: "Reativacao" },
     { to: "/mensagens", icon: MessageSquareText, label: "Mensagens" },
     { to: "/disparador", icon: RadioTower, label: "Disparador" },
