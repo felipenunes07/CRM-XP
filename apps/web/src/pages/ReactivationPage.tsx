@@ -18,6 +18,22 @@ function formatMonthLabel(value: string) {
   return `${month}/${year.slice(2)}`;
 }
 
+function buildMonthlyTicks(months: Array<{ month: string }>) {
+  if (months.length <= 8) {
+    return months.map((entry) => entry.month);
+  }
+
+  const step = Math.ceil(months.length / 8);
+  const ticks = months.filter((_, index) => index % step === 0).map((entry) => entry.month);
+  const lastMonth = months.at(-1)?.month;
+
+  if (lastMonth && ticks.at(-1) !== lastMonth) {
+    ticks.push(lastMonth);
+  }
+
+  return ticks;
+}
+
 function formatCac(value: number | null) {
   return value === null ? "Sem base" : formatCurrency(value);
 }
@@ -72,6 +88,30 @@ function MonthlyTooltip({
       <div className="chart-tooltip-count" style={{ marginTop: "0.35rem" }}>
         <strong>{formatCurrency(spend)}</strong>
         <span>gasto em anuncios</span>
+      </div>
+    </div>
+  );
+}
+
+function CacTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number | null }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length || !label) {
+    return null;
+  }
+
+  return (
+    <div className="chart-tooltip">
+      <strong>{formatMonthLabel(label)}</strong>
+      <div className="chart-tooltip-count">
+        <strong>{formatCac((payload[0]?.value as number | null | undefined) ?? null)}</strong>
+        <span>custo por cliente adquirido</span>
       </div>
     </div>
   );
@@ -268,6 +308,7 @@ function NewCustomersPage() {
   }
 
   const data = acquisitionQuery.data;
+  const monthlyTicks = buildMonthlyTicks(data.monthlySeries);
 
   return (
     <div className="page-stack">
@@ -439,15 +480,21 @@ function NewCustomersPage() {
 
         <div style={{ width: "100%", height: "250px", marginBottom: "1rem" }}>
           <ResponsiveContainer>
-            <ComposedChart data={data.monthlySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <ComposedChart
+              syncId="acquisition-history"
+              syncMethod="value"
+              data={data.monthlySeries}
+              margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            >
               <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
               <XAxis
                 dataKey="month"
+                ticks={monthlyTicks}
                 tickFormatter={formatMonthLabel}
                 tick={{ fill: "var(--muted)", fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
-                interval="preserveStartEnd"
+                interval={0}
               />
               <YAxis
                 yAxisId="customers"
@@ -455,6 +502,7 @@ function NewCustomersPage() {
                 tick={{ fill: "var(--muted)", fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
+                width={48}
               />
               <YAxis
                 yAxisId="spend"
@@ -465,7 +513,10 @@ function NewCustomersPage() {
                 axisLine={false}
                 width={90}
               />
-              <Tooltip content={<MonthlyTooltip />} />
+              <Tooltip
+                content={<MonthlyTooltip />}
+                cursor={{ stroke: "rgba(41, 86, 215, 0.35)", strokeWidth: 2, strokeDasharray: "4 4" }}
+              />
               <Bar yAxisId="customers" dataKey="newCustomers" fill="#2f9d67" radius={[8, 8, 0, 0]} />
               <Line
                 yAxisId="spend"
@@ -474,9 +525,68 @@ function NewCustomersPage() {
                 stroke="#2956d7"
                 strokeWidth={3}
                 dot={{ r: 2, strokeWidth: 0, fill: "#2956d7" }}
-                activeDot={{ r: 4 }}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: "#ffffff", fill: "#2956d7" }}
               />
             </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={{ marginBottom: "0.9rem" }}>
+          <h4 style={{ margin: 0, fontSize: "1rem" }}>Grafico de CAC</h4>
+          <p className="panel-subcopy" style={{ marginTop: "0.25rem" }}>
+            Evolucao mensal do custo por cliente novo com base no gasto do Meta Ads.
+          </p>
+        </div>
+
+        <div style={{ width: "100%", height: "220px", marginBottom: "1rem" }}>
+          <ResponsiveContainer>
+            <LineChart
+              syncId="acquisition-history"
+              syncMethod="value"
+              data={data.monthlySeries}
+              margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+              <XAxis
+                dataKey="month"
+                ticks={monthlyTicks}
+                tickFormatter={formatMonthLabel}
+                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+              />
+              <YAxis
+                yAxisId="spacer"
+                tick={false}
+                tickLine={false}
+                axisLine={false}
+                width={48}
+              />
+              <YAxis
+                yAxisId="cac"
+                orientation="right"
+                tickFormatter={(value: number) => formatCurrency(value)}
+                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                width={90}
+              />
+              <Tooltip
+                content={<CacTooltip />}
+                cursor={{ stroke: "rgba(217, 119, 6, 0.35)", strokeWidth: 2, strokeDasharray: "4 4" }}
+              />
+              <Line
+                yAxisId="cac"
+                type="monotone"
+                dataKey="cac"
+                stroke="#d97706"
+                strokeWidth={3}
+                dot={{ r: 2, strokeWidth: 0, fill: "#d97706" }}
+                activeDot={{ r: 6, strokeWidth: 2, stroke: "#ffffff", fill: "#d97706" }}
+                connectNulls={false}
+              />
+            </LineChart>
           </ResponsiveContainer>
         </div>
 
