@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, LineChart, Line } from "recharts";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -9,7 +10,7 @@ import { useState, Fragment } from "react";
 export function ReactivationPage() {
   const { token } = useAuth();
   const [isCompactMode, setIsCompactMode] = useState(false);
-  const [activeTab, setActiveTab] = useState<"current" | "history">("current");
+  const [activeTab, setActiveTab] = useState<"current" | "history" | "charts">("current");
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
   const dashboardQuery = useQuery({
     queryKey: ["reactivation-dashboard"],
@@ -48,6 +49,42 @@ export function ReactivationPage() {
       return dateStr;
     }
   };
+
+  const chartData = Object.entries(historyByMonth)
+    .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
+    .map(([month, entries]) => {
+      const totalRevenue = entries.reduce((sum, e) => sum + e.recoveredRevenue, 0);
+      const totalCustomers = entries.reduce((sum, e) => sum + e.recoveredCustomers, 0);
+      const totalItems = entries.reduce((sum, e) => sum + e.recoveredItems, 0);
+      return {
+        monthKey: formatMonthKey(month),
+        Faturamento: totalRevenue,
+        Clientes: totalCustomers,
+        Peças: totalItems,
+      };
+    });
+
+  const uniqueAttendants = Array.from(new Set(Object.values(historyByMonth).flat().map(e => e.attendant)));
+  
+  const attendantLineChartData = Object.entries(historyByMonth)
+    .sort(([monthA], [monthB]) => monthA.localeCompare(monthB))
+    .map(([month, entries]) => {
+      const dataPoint: Record<string, any> = {
+        monthKey: formatMonthKey(month)
+      };
+      
+      uniqueAttendants.forEach(att => {
+        dataPoint[att] = 0;
+      });
+
+      entries.forEach(e => {
+        dataPoint[e.attendant] += e.recoveredCustomers;
+      });
+
+      return dataPoint;
+    });
+
+  const chartColors = ["#8b5cf6", "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6", "#6366f1", "#f43f5e", "#d946ef", "#0ea5e9", "#84cc16"];
 
   const getRankColor = (index: number) => {
     if (index === 0) return "var(--warning)"; // Ouro
@@ -135,6 +172,24 @@ export function ReactivationPage() {
         >
           <History size={18} />
           Histórico (Mês a Mês)
+        </button>
+        <button
+          onClick={() => setActiveTab("charts")}
+          style={{
+            padding: "0.75rem 1.5rem",
+            background: "transparent",
+            color: activeTab === "charts" ? "var(--accent)" : "var(--muted)",
+            border: "none",
+            borderBottom: activeTab === "charts" ? "2px solid var(--accent)" : "2px solid transparent",
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem"
+          }}
+        >
+          <TrendingUp size={18} />
+          Gráficos
         </button>
       </div>
 
@@ -459,6 +514,119 @@ export function ReactivationPage() {
               </section>
             ))
           )}
+        </div>
+      )}
+
+      {activeTab === "charts" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+          <section className="panel" style={{ padding: "0", background: "#fff", border: "1px solid var(--line)", overflow: "hidden" }}>
+            <div className="panel-header" style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--line)", background: "rgba(41,86,215,0.02)" }}>
+              <h3 style={{ fontSize: "1.2rem", margin: 0, color: "var(--text)" }}>
+                Evolução do Faturamento de Reativação
+              </h3>
+            </div>
+            <div style={{ height: 350, width: "100%", padding: "1.5rem" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--success)" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="var(--success)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
+                  <XAxis dataKey="monthKey" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)" }} />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fill: "var(--muted)" }}
+                    tickFormatter={(value) => `R$ ${(value / 1000)}k`}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value)}
+                    labelStyle={{ color: "var(--text)", fontWeight: 600, marginBottom: "0.5rem" }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid var(--line)', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', padding: '1rem' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+                  <Area type="monotone" name="Faturamento (R$)" dataKey="Faturamento" stroke="var(--success)" strokeWidth={3} fillOpacity={1} fill="url(#colorFaturamento)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <section className="panel" style={{ padding: "0", background: "#fff", border: "1px solid var(--line)", overflow: "hidden" }}>
+            <div className="panel-header" style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--line)", background: "rgba(41,86,215,0.02)" }}>
+              <h3 style={{ fontSize: "1.2rem", margin: 0, color: "var(--text)" }}>
+                Volume de Conversão: Clientes vs Peças
+              </h3>
+            </div>
+            <div style={{ height: 350, width: "100%", padding: "1.5rem" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
+                  <XAxis dataKey="monthKey" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)" }} />
+                  <YAxis 
+                    yAxisId="left"
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fill: "var(--muted)" }}
+                  />
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fill: "var(--muted)" }}
+                  />
+                  <Tooltip 
+                    labelStyle={{ color: "var(--text)", fontWeight: 600, marginBottom: "0.5rem" }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid var(--line)', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', padding: '1rem' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+                  <Bar yAxisId="left" dataKey="Clientes" name="Clientes Recuperados" fill="var(--accent)" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  <Bar yAxisId="right" dataKey="Peças" name="Peças Vendidas" fill="#d09a29" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          <section className="panel" style={{ padding: "0", background: "#fff", border: "1px solid var(--line)", overflow: "hidden" }}>
+            <div className="panel-header" style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--line)", background: "rgba(41,86,215,0.02)" }}>
+              <h3 style={{ fontSize: "1.2rem", margin: 0, color: "var(--text)" }}>
+                Evolução de Clientes Recuperados por Consultora
+              </h3>
+            </div>
+            <div style={{ height: 350, width: "100%", padding: "1.5rem" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={attendantLineChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--line)" />
+                  <XAxis dataKey="monthKey" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "var(--muted)" }} />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fontSize: 12, fill: "var(--muted)" }}
+                  />
+                  <Tooltip 
+                    labelStyle={{ color: "var(--text)", fontWeight: 600, marginBottom: "0.5rem" }}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid var(--line)', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', padding: '1rem' }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ paddingTop: "20px" }} />
+                  {uniqueAttendants.map((attendant, index) => (
+                    <Line 
+                      key={attendant}
+                      type="monotone"
+                      dataKey={attendant}
+                      name={attendant}
+                      stroke={chartColors[index % chartColors.length]}
+                      strokeWidth={3}
+                      activeDot={{ r: 6 }}
+                      dot={{ r: 3, strokeWidth: 2 }}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
         </div>
       )}
     </div>
