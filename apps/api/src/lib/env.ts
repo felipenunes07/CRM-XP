@@ -43,6 +43,7 @@ const envSchema = z.object({
   META_ADS_API_VERSION: z.string().default("v23.0"),
   META_ADS_CURRENCY: z.string().default("BRL"),
   META_ADS_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  META_ADS_INVOICE_SUMMARY_PATH: z.string().default(""),
   PROSPECTING_DAILY_TARGET: z.coerce.number().int().positive().default(5),
   PROSPECTING_SEARCH_PAGE_SIZE: z.coerce.number().int().min(1).max(10).default(10),
   PROSPECTING_SNAPSHOT_CACHE_HOURS: z.coerce.number().int().min(1).max(24 * 30).default(24 * 7),
