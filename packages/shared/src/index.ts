@@ -141,6 +141,40 @@ export interface ReactivationRecoveredClient {
   reactivatedOrderAmount: number;
 }
 
+export interface AcquisitionSummary {
+  today: number;
+  yesterday: number;
+  currentMonth: number;
+  previousMonth: number;
+  historicalTotal: number;
+}
+
+export interface AcquisitionDailyPoint {
+  date: string;
+  newCustomers: number;
+}
+
+export interface AcquisitionMonthlyPoint {
+  month: string;
+  newCustomers: number;
+}
+
+export interface NewCustomerListItem {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  firstOrderDate: string;
+  firstOrderAmount: number;
+  firstAttendant: string | null;
+}
+
+export interface AcquisitionMetrics {
+  summary: AcquisitionSummary;
+  dailySeries: AcquisitionDailyPoint[];
+  monthlySeries: AcquisitionMonthlyPoint[];
+  recentCustomers: NewCustomerListItem[];
+}
+
 export interface PortfolioTrendPoint {
   date: string;
   totalCustomers: number;

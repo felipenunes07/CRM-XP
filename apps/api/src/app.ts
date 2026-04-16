@@ -22,6 +22,7 @@ import {
   getCustomerCreditOverview,
   refreshCustomerCreditOverview,
 } from "./modules/crm/customerCreditService.js";
+import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
@@ -396,6 +397,14 @@ export function createApp() {
     try {
       const query = dashboardQuerySchema.parse(request.query);
       response.json(await getDashboardMetrics(query.trendDays));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/acquisition", async (_request, response, next) => {
+    try {
+      response.json(await getAcquisitionMetrics());
     } catch (error) {
       next(error);
     }
