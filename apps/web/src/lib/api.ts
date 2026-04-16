@@ -1,4 +1,5 @@
 import type {
+  AcquisitionMetrics,
   AmbassadorResponse,
   AgendaResponse,
   AttendantsResponse,
@@ -74,6 +75,9 @@ export const api = {
       search.set("trendDays", String(trendDays));
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  acquisition(token: string) {
+    return request<AcquisitionMetrics>("/api/dashboard/acquisition", {}, token);
   },
   attendants(token: string, windowMonths: 3 | 6 | 12 | 24 = 12) {
     const search = new URLSearchParams({
