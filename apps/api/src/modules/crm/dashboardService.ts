@@ -184,6 +184,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
     `
       WITH ordered AS (
         SELECT
+          o.id AS order_id,
           o.customer_id,
           COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
           o.order_date::date AS order_date,
@@ -193,6 +194,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
       ),
       monthly_reactivations AS (
         SELECT
+          order_id,
           customer_id,
           attendant,
           order_date,
@@ -210,6 +212,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
       ),
       first_monthly_reactivations AS (
         SELECT
+          order_id,
           customer_id,
           attendant,
           order_date,
@@ -230,7 +233,8 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
           fmr.previous_order_date::text AS previous_order_date,
           fmr.order_date::text AS reactivation_order_date,
           fmr.days_inactive_before_return,
-          fmr.total_amount::numeric(14,2) AS reactivated_order_amount
+          fmr.total_amount::numeric(14,2) AS reactivated_order_amount,
+          COALESCE((SELECT SUM(oi.quantity) FROM order_items oi WHERE oi.order_id = fmr.order_id), 0)::int AS reactivated_items
         FROM first_monthly_reactivations fmr
         LEFT JOIN customer_snapshot cs ON cs.customer_id = fmr.customer_id
       )
@@ -238,6 +242,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
         attendant,
         COUNT(*)::int AS recovered_customers,
         COALESCE(SUM(reactivated_order_amount), 0)::numeric(14,2) AS recovered_revenue,
+        COALESCE(SUM(reactivated_items), 0)::int AS recovered_items,
         COALESCE(
           jsonb_agg(
             jsonb_build_object(
@@ -249,7 +254,8 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
               'previousOrderDate', previous_order_date,
               'reactivationOrderDate', reactivation_order_date,
               'daysInactiveBeforeReturn', days_inactive_before_return,
-              'reactivatedOrderAmount', reactivated_order_amount
+              'reactivatedOrderAmount', reactivated_order_amount,
+              'reactivatedItems', reactivated_items
             )
             ORDER BY days_inactive_before_return DESC, reactivated_order_amount DESC, display_name ASC
           ),
@@ -266,6 +272,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
     attendant: String(row.attendant ?? "Sem atendente"),
     recoveredCustomers: Number(row.recovered_customers ?? 0),
     recoveredRevenue: Number(row.recovered_revenue ?? 0),
+    recoveredItems: Number(row.recovered_items ?? 0),
     recoveredClients: (Array.isArray(row.recovered_clients) ? row.recovered_clients : []).map(
       (entry: Record<string, unknown>) =>
         ({
@@ -278,6 +285,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
           reactivationOrderDate: entry.reactivationOrderDate ? String(entry.reactivationOrderDate) : null,
           daysInactiveBeforeReturn: Number(entry.daysInactiveBeforeReturn ?? 0),
           reactivatedOrderAmount: Number(entry.reactivatedOrderAmount ?? 0),
+          reactivatedItems: Number(entry.reactivatedItems ?? 0),
         }) satisfies ReactivationRecoveredClient,
     ),
   }));

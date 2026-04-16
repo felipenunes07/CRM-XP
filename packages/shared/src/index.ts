@@ -126,6 +126,7 @@ export interface ReactivationLeaderboardEntry {
   attendant: string;
   recoveredCustomers: number;
   recoveredRevenue: number;
+  recoveredItems: number;
   recoveredClients: ReactivationRecoveredClient[];
 }
 
@@ -139,6 +140,7 @@ export interface ReactivationRecoveredClient {
   reactivationOrderDate: string | null;
   daysInactiveBeforeReturn: number;
   reactivatedOrderAmount: number;
+  reactivatedItems: number;
 }
 
 export interface AcquisitionSummary {
