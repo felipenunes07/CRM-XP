@@ -147,6 +147,10 @@ export interface AcquisitionSummary {
   currentMonth: number;
   previousMonth: number;
   historicalTotal: number;
+  currentMonthSpend: number;
+  previousMonthSpend: number;
+  currentMonthCac: number | null;
+  previousMonthCac: number | null;
 }
 
 export interface AcquisitionDailyPoint {
@@ -157,6 +161,8 @@ export interface AcquisitionDailyPoint {
 export interface AcquisitionMonthlyPoint {
   month: string;
   newCustomers: number;
+  spend: number;
+  cac: number | null;
 }
 
 export interface NewCustomerListItem {

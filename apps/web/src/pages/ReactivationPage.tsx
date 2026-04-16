@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -16,6 +16,10 @@ function formatMonthLabel(value: string) {
   }
 
   return `${month}/${year.slice(2)}`;
+}
+
+function formatCac(value: number | null) {
+  return value === null ? "Sem base" : formatCurrency(value);
 }
 
 function DailyTooltip({
@@ -48,19 +52,26 @@ function MonthlyTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ value?: number }>;
+  payload?: Array<{ dataKey?: string; value?: number }>;
   label?: string;
 }) {
   if (!active || !payload?.length || !label) {
     return null;
   }
 
+  const newCustomers = payload.find((entry) => entry.dataKey === "newCustomers")?.value ?? 0;
+  const spend = payload.find((entry) => entry.dataKey === "spend")?.value ?? 0;
+
   return (
     <div className="chart-tooltip">
       <strong>{formatMonthLabel(label)}</strong>
       <div className="chart-tooltip-count">
-        <strong>{formatNumber(payload[0]?.value ?? 0)}</strong>
+        <strong>{formatNumber(newCustomers)}</strong>
         <span>clientes novos no mes</span>
+      </div>
+      <div className="chart-tooltip-count" style={{ marginTop: "0.35rem" }}>
+        <strong>{formatCurrency(spend)}</strong>
+        <span>gasto em anuncios</span>
       </div>
     </div>
   );
@@ -281,20 +292,29 @@ function NewCustomersPage() {
         </div>
         <div className="stat-card">
           <div className="stat-card-header">
-            <h3 className="stat-card-title">Novos ontem</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(data.summary.yesterday)}</strong>
-            <p className="stat-card-helper">Comparativo imediato</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
             <h3 className="stat-card-title">Novos no mes</h3>
           </div>
           <div className="stat-card-body">
             <strong>{formatNumber(data.summary.currentMonth)}</strong>
             <p className="stat-card-helper">Contra {formatNumber(data.summary.previousMonth)} no mes anterior</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <h3 className="stat-card-title">Gasto no mes</h3>
+          </div>
+          <div className="stat-card-body">
+            <strong>{formatCurrency(data.summary.currentMonthSpend)}</strong>
+            <p className="stat-card-helper">Contra {formatCurrency(data.summary.previousMonthSpend)} no mes anterior</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <h3 className="stat-card-title">CAC no mes</h3>
+          </div>
+          <div className="stat-card-body">
+            <strong>{formatCac(data.summary.currentMonthCac)}</strong>
+            <p className="stat-card-helper">Mes anterior: {formatCac(data.summary.previousMonthCac)}</p>
           </div>
         </div>
         <div className="stat-card">
@@ -419,7 +439,7 @@ function NewCustomersPage() {
 
         <div style={{ width: "100%", height: "250px", marginBottom: "1rem" }}>
           <ResponsiveContainer>
-            <BarChart data={data.monthlySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+            <ComposedChart data={data.monthlySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
               <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
               <XAxis
                 dataKey="month"
@@ -429,10 +449,34 @@ function NewCustomersPage() {
                 axisLine={false}
                 interval="preserveStartEnd"
               />
-              <YAxis allowDecimals={false} tick={{ fill: "var(--muted)", fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis
+                yAxisId="customers"
+                allowDecimals={false}
+                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="spend"
+                orientation="right"
+                tickFormatter={(value: number) => formatCurrency(value)}
+                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tickLine={false}
+                axisLine={false}
+                width={90}
+              />
               <Tooltip content={<MonthlyTooltip />} />
-              <Bar dataKey="newCustomers" fill="#2f9d67" radius={[8, 8, 0, 0]} />
-            </BarChart>
+              <Bar yAxisId="customers" dataKey="newCustomers" fill="#2f9d67" radius={[8, 8, 0, 0]} />
+              <Line
+                yAxisId="spend"
+                type="monotone"
+                dataKey="spend"
+                stroke="#2956d7"
+                strokeWidth={3}
+                dot={{ r: 2, strokeWidth: 0, fill: "#2956d7" }}
+                activeDot={{ r: 4 }}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
 
@@ -442,6 +486,8 @@ function NewCustomersPage() {
               <tr style={{ textAlign: "left", color: "var(--muted)" }}>
                 <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Mes</th>
                 <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Clientes novos</th>
+                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Gasto</th>
+                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>CAC</th>
               </tr>
             </thead>
             <tbody>
@@ -452,6 +498,8 @@ function NewCustomersPage() {
                   <tr key={entry.month} style={{ borderTop: "1px solid var(--line)" }}>
                     <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>{formatMonthLabel(entry.month)}</td>
                     <td style={{ padding: "0.75rem 0.5rem" }}>{formatNumber(entry.newCustomers)}</td>
+                    <td style={{ padding: "0.75rem 0.5rem" }}>{formatCurrency(entry.spend)}</td>
+                    <td style={{ padding: "0.75rem 0.5rem" }}>{formatCac(entry.cac)}</td>
                   </tr>
                 ))}
             </tbody>
