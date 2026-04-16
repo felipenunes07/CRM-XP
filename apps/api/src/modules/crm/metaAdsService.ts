@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { env } from "../../lib/env.js";
 
 export interface MetaAdsMonthlySpendPoint {
@@ -39,6 +40,31 @@ function addMonths(value: Date, months: number) {
   return result;
 }
 
+function isValidDateString(value: string) {
+  return /^\d{2}\/\d{2}\/\d{4}$/.test(value);
+}
+
+function parseBrazilianAmount(value: string) {
+  const normalized = value.replace(/\./g, "").replace(",", ".").replace(/[^0-9.-]/g, "");
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function toMonthFromBrazilianDate(value: string) {
+  const [, month, year] = value.split("/");
+  return `${year}-${month}`;
+}
+
+function clampDateOnly(value: string, min: string, max: string) {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
+}
+
 function buildInsightsUrl(since: string, until: string) {
   const search = new URLSearchParams({
     access_token: env.META_ADS_ACCESS_TOKEN ?? "",
@@ -59,7 +85,80 @@ function toMonthKey(value: string) {
   return value.slice(0, 7);
 }
 
-export async function getMetaAdsMonthlySpend(since: string, until: string): Promise<MetaAdsMonthlySpendPoint[]> {
+export function mergeMetaAdsMonthlySpend(
+  invoiceRows: MetaAdsMonthlySpendPoint[],
+  apiRows: MetaAdsMonthlySpendPoint[],
+) {
+  const combined = new Map<string, MetaAdsMonthlySpendPoint>();
+
+  for (const row of invoiceRows) {
+    combined.set(row.month, row);
+  }
+
+  for (const row of apiRows) {
+    combined.set(row.month, row);
+  }
+
+  return Array.from(combined.values()).sort((left, right) => left.month.localeCompare(right.month));
+}
+
+export async function readMetaAdsInvoiceSummary(
+  filePath: string,
+  since: string,
+  until: string,
+): Promise<MetaAdsMonthlySpendPoint[]> {
+  if (!filePath) {
+    return [];
+  }
+
+  const minDate = clampDateOnly(since, "0001-01-01", until);
+  const raw = await readFile(filePath, "utf8");
+  const lines = raw.split(/\r?\n/).filter(Boolean);
+  const spendByMonth = new Map<string, number>();
+
+  for (const line of lines.slice(1)) {
+    const parts = line.split(";");
+    if (parts.length < 6) {
+      continue;
+    }
+
+    const date = parts[0]?.trim() ?? "";
+    const description = parts[2]?.trim() ?? "";
+    const amountText = parts[4]?.trim() ?? "";
+
+    if (!isValidDateString(date) || !amountText) {
+      continue;
+    }
+
+    const [day, month, year] = date.split("/");
+    const isoDate = `${year}-${month}-${day}`;
+    if (isoDate < minDate || isoDate > until) {
+      continue;
+    }
+
+    if (description && !description.toLowerCase().includes("meta")) {
+      continue;
+    }
+
+    const amount = parseBrazilianAmount(amountText);
+    if (amount === null) {
+      continue;
+    }
+
+    const monthKey = toMonthFromBrazilianDate(date);
+    spendByMonth.set(monthKey, (spendByMonth.get(monthKey) ?? 0) + amount);
+  }
+
+  return Array.from(spendByMonth.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([month, spend]) => ({
+      month,
+      spend: Number(spend.toFixed(2)),
+      currency: env.META_ADS_CURRENCY,
+    }));
+}
+
+export async function getMetaAdsApiMonthlySpend(since: string, until: string): Promise<MetaAdsMonthlySpendPoint[]> {
   if (!env.META_ADS_ACCESS_TOKEN || !env.META_ADS_ACCOUNT_ID) {
     return [];
   }
@@ -103,4 +202,10 @@ export async function getMetaAdsMonthlySpend(since: string, until: string): Prom
   }
 
   return rows;
+}
+
+export async function getMetaAdsMonthlySpend(since: string, until: string): Promise<MetaAdsMonthlySpendPoint[]> {
+  const apiRows = await getMetaAdsApiMonthlySpend(since, until);
+  const invoiceRows = await readMetaAdsInvoiceSummary(env.META_ADS_INVOICE_SUMMARY_PATH, since, until).catch(() => []);
+  return mergeMetaAdsMonthlySpend(invoiceRows, apiRows);
 }
