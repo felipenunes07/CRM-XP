@@ -32,8 +32,18 @@ export interface DashboardMetrics {
   topCustomers: CustomerListItem[];
   agendaEligibleCount: number;
   reactivationLeaderboard: ReactivationLeaderboardEntry[];
+  reactivationHistory: HistoricalReactivationEntry[];
   portfolioTrend: PortfolioTrendPoint[];
   salesPerformance: SalesPerformanceEntry[];
+}
+
+export interface HistoricalReactivationEntry {
+  month: string;
+  attendant: string;
+  recoveredCustomers: number;
+  recoveredRevenue: number;
+  recoveredItems: number;
+  recoveredClients: ReactivationRecoveredClient[];
 }
 
 export interface SalesPerformanceEntry {
