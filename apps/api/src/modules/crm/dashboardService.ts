@@ -7,7 +7,7 @@ import type {
   ReactivationRecoveredClient,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
-import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
+import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
 
@@ -283,6 +283,60 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
   }));
 }
 
+async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
+  const validatedDays = Math.max(1, Math.min(730, Math.floor(days)));
+  const freshnessResult = await pool.query<{
+    today: string;
+    latest_trend_day: string | null;
+    trend_row_count: number;
+    snapshot_row_count: number;
+    stale_snapshot_count: number;
+  }>(
+    `
+      SELECT
+        CURRENT_DATE::text AS today,
+        (SELECT MAX(day)::text FROM dashboard_daily_metrics) AS latest_trend_day,
+        (
+          SELECT COUNT(*)::int
+          FROM dashboard_daily_metrics
+          WHERE day >= CURRENT_DATE - ($1::int - 1)
+        ) AS trend_row_count,
+        (SELECT COUNT(*)::int FROM customer_snapshot) AS snapshot_row_count,
+        (
+          SELECT COUNT(*)::int
+          FROM customer_snapshot
+          WHERE updated_at::date < CURRENT_DATE
+        ) AS stale_snapshot_count
+    `,
+    [validatedDays],
+  );
+
+  const freshness = freshnessResult.rows[0];
+  const today = freshness?.today ?? new Date().toISOString().slice(0, 10);
+  const latestTrendDay = freshness?.latest_trend_day ?? null;
+  const trendRowCount = Number(freshness?.trend_row_count ?? 0);
+  const snapshotRowCount = Number(freshness?.snapshot_row_count ?? 0);
+  const staleSnapshotCount = Number(freshness?.stale_snapshot_count ?? 0);
+  const snapshotIsStale = snapshotRowCount === 0 || staleSnapshotCount > 0;
+  const trendNeedsRefresh = trendRowCount < validatedDays || !latestTrendDay || latestTrendDay < today;
+
+  if (!snapshotIsStale && !trendNeedsRefresh) {
+    return validatedDays;
+  }
+
+  if (snapshotIsStale) {
+    await refreshAllSnapshots();
+  }
+
+  if (!snapshotIsStale && trendNeedsRefresh) {
+    await refreshDashboardDailyMetrics(validatedDays);
+  } else if (snapshotIsStale && validatedDays > DASHBOARD_TREND_WINDOW_DAYS) {
+    await refreshDashboardDailyMetrics(validatedDays);
+  }
+
+  return validatedDays;
+}
+
 /**
  * Get portfolio trend data for the specified number of days
  * @param days Number of days of historical data to retrieve (1-730)
@@ -340,6 +394,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
  * @returns Complete dashboard metrics
  */
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
+  const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
   const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, portfolioTrend, salesPerformance] =
     await Promise.all([
       pool.query(
@@ -385,7 +440,7 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
       listCustomers({ sortBy: "priority", limit: 8 }),
       getAgendaEligibleCount(),
       getReactivationLeaderboard(),
-      getPortfolioTrend(trendDays),
+      getPortfolioTrend(validatedTrendDays),
       getSalesPerformance(),
     ]);
 
