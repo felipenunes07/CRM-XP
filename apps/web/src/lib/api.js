@@ -39,6 +39,9 @@ export const api = {
         }
         return request(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
+    acquisition(token) {
+        return request("/api/dashboard/acquisition", {}, token);
+    },
     attendants(token, windowMonths = 12) {
         const search = new URLSearchParams({
             windowMonths: String(windowMonths),
