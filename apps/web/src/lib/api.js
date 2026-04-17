@@ -170,6 +170,37 @@ export const api = {
             method: "DELETE",
         }, token);
     },
+    listIdeas(token) {
+        return request("/api/ideas", {}, token);
+    },
+    createIdea(token, input) {
+        return request("/api/ideas", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getIdea(token, id) {
+        return request(`/api/ideas/${id}`, {}, token);
+    },
+    deleteIdea(token, id) {
+        return request(`/api/ideas/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    notifyIdeaWhatsapp(token, id) {
+        return request(`/api/ideas/${id}/notify-whatsapp`, {
+            method: "POST",
+        }, token);
+    },
+    submitIdeaVote(token, id, input) {
+        return request(`/api/ideas/${id}/vote`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    ideaFeedbacks(token, id) {
+        return request(`/api/ideas/${id}/feedback`, {}, token);
+    },
     prospectingConfig(token) {
         return request("/api/prospecting/config", {}, token);
     },

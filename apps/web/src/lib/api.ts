@@ -10,6 +10,9 @@ import type {
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
+  IdeaBoardDetail,
+  IdeaBoardItem,
+  IdeaVoteFeedback,
   MessageTemplate,
   ProspectContactAttemptResult,
   ProspectKeywordPreset,
@@ -206,6 +209,44 @@ export const api = {
     return request<void>(`/api/messages/templates/${id}`, {
       method: "DELETE",
     }, token);
+  },
+  listIdeas(token: string) {
+    return request<IdeaBoardItem[]>("/api/ideas", {}, token);
+  },
+  createIdea(
+    token: string,
+    input: { title: string; description: string; isAnonymous: boolean; authorDisplayName?: string },
+  ) {
+    return request<IdeaBoardDetail>("/api/ideas", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  getIdea(token: string, id: string) {
+    return request<IdeaBoardDetail>(`/api/ideas/${id}`, {}, token);
+  },
+  deleteIdea(token: string, id: string) {
+    return request<void>(`/api/ideas/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
+  notifyIdeaWhatsapp(token: string, id: string) {
+    return request<void>(`/api/ideas/${id}/notify-whatsapp`, {
+      method: "POST",
+    }, token);
+  },
+  submitIdeaVote(
+    token: string,
+    id: string,
+    input: { option: "LIKE" | "MAYBE" | "NO"; comment?: string },
+  ) {
+    return request<IdeaBoardDetail>(`/api/ideas/${id}/vote`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  ideaFeedbacks(token: string, id: string) {
+    return request<IdeaVoteFeedback[]>(`/api/ideas/${id}/feedback`, {}, token);
   },
   prospectingConfig(token: string) {
     return request<ProspectingConfig>("/api/prospecting/config", {}, token);

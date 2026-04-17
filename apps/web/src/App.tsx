@@ -14,6 +14,7 @@ const SegmentsPage = lazy(async () => ({ default: (await import("./pages/Segment
 const AgendaPage = lazy(async () => ({ default: (await import("./pages/AgendaPage")).AgendaPage }));
 const NewCustomersPage = lazy(async () => ({ default: (await import("./pages/NewCustomersPage")).NewCustomersPage }));
 const ReactivationPage = lazy(async () => ({ default: (await import("./pages/ReactivationPage")).ReactivationPage }));
+const IdeaBoardPage = lazy(async () => ({ default: (await import("./pages/IdeaBoardPage")).IdeaBoardPage }));
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/clientes-novos" element={<NewCustomersPage />} />
           <Route path="/reativacao" element={<ReactivationPage />} />
+          <Route path="/ideias-votacao" element={<IdeaBoardPage />} />
           <Route path="/mensagens" element={<MessagesPage />} />
           <Route path="/disparador" element={<DisparadorPage />} />
           <Route path="/rotulos" element={<LabelsPage />} />

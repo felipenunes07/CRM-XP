@@ -726,3 +726,48 @@ export interface WhatsappCampaignDetail extends WhatsappCampaignListItem {
     hasMore: boolean;
   };
 }
+
+export type IdeaBoardStatus = "OPEN" | "CLOSED";
+export type IdeaVoteOption = "LIKE" | "MAYBE" | "NO";
+
+export interface IdeaVoteSummary {
+  likeCount: number;
+  maybeCount: number;
+  noCount: number;
+  totalVotes: number;
+}
+
+export interface IdeaUserVote {
+  option: IdeaVoteOption;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdeaVoteFeedback {
+  id: string;
+  ideaId: string;
+  option: IdeaVoteOption;
+  comment: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IdeaBoardItem {
+  id: string;
+  title: string;
+  description: string;
+  status: IdeaBoardStatus;
+  isAnonymous: boolean;
+  authorDisplayName: string;
+  canDelete: boolean;
+  createdAt: string;
+  updatedAt: string;
+  voteSummary: IdeaVoteSummary;
+  feedbackCount: number;
+  currentUserVote: IdeaUserVote | null;
+}
+
+export interface IdeaBoardDetail extends IdeaBoardItem {
+  feedbacks: IdeaVoteFeedback[];
+}
