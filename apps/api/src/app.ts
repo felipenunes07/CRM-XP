@@ -22,6 +22,8 @@ import {
   getCustomerCreditOverview,
   refreshCustomerCreditOverview,
 } from "./modules/crm/customerCreditService.js";
+import { getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
+import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
@@ -139,7 +141,7 @@ const segmentSchema = z.object({
 });
 
 const messageSchema = z.object({
-  category: z.enum(["reativacao", "follow_up", "promocao"]),
+  category: z.enum(["reativacao", "follow_up", "promocao", "credito"]),
   title: z.string().min(1),
   content: z.string().min(1),
 });
@@ -562,6 +564,30 @@ export function createApp() {
     }
   });
 
+  app.get("/api/customer-credit/opportunities", async (_request, response, next) => {
+    try {
+      response.json(await getCustomerCreditOpportunities());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/snapshot", async (_request, response, next) => {
+    try {
+      response.json(await getInventorySnapshot());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/inventory/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.json(await refreshInventorySnapshot());
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/customers/:id", async (request, response, next) => {
     try {
       const customer = await getCustomerDetail(request.params.id);
@@ -577,6 +603,18 @@ export function createApp() {
   app.get("/api/customers/:id/credit", async (request, response, next) => {
     try {
       response.json(await getCustomerCreditDetail(request.params.id));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customers/:id/opportunity", async (request, response, next) => {
+    try {
+      const opportunity = await getCustomerOpportunity(request.params.id);
+      if (!opportunity) {
+        throw new HttpError(404, "Cliente nao encontrado");
+      }
+      response.json(opportunity);
     } catch (error) {
       next(error);
     }

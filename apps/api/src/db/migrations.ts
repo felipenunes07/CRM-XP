@@ -585,4 +585,47 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_idea_board_votes_updated_at
     ON idea_board_votes(updated_at DESC, created_at DESC);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS inventory_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_file_id UUID REFERENCES source_files(id) ON DELETE SET NULL,
+    source_name TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    total_rows INTEGER NOT NULL DEFAULT 0,
+    in_stock_rows INTEGER NOT NULL DEFAULT 0,
+    matched_sku_rows INTEGER NOT NULL DEFAULT 0,
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_active BOOLEAN NOT NULL DEFAULT FALSE
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_snapshots_active
+    ON inventory_snapshots(is_active)
+    WHERE is_active = TRUE;
+
+  CREATE INDEX IF NOT EXISTS idx_inventory_snapshots_imported_at
+    ON inventory_snapshots(imported_at DESC);
+
+  CREATE TABLE IF NOT EXISTS inventory_snapshot_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES inventory_snapshots(id) ON DELETE CASCADE,
+    sku TEXT NOT NULL,
+    model TEXT NOT NULL,
+    color TEXT,
+    quality TEXT,
+    price NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    stock_quantity INTEGER NOT NULL DEFAULT 0,
+    promotion_label TEXT,
+    normalized_model TEXT NOT NULL DEFAULT '',
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_inventory_snapshot_items_snapshot_id
+    ON inventory_snapshot_items(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_inventory_snapshot_items_sku
+    ON inventory_snapshot_items(sku);
+  CREATE INDEX IF NOT EXISTS idx_inventory_snapshot_items_normalized_model
+    ON inventory_snapshot_items(normalized_model);
+  `,
 ];

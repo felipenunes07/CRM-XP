@@ -4,6 +4,8 @@ import type {
   AgendaResponse,
   AttendantsResponse,
   CustomerDetail,
+  CustomerOpportunityDetail,
+  CustomerOpportunityQueueResponse,
   CustomerCreditDetailResponse,
   CustomerCreditOverviewResponse,
   CustomerDocInsightsResponse,
@@ -13,6 +15,7 @@ import type {
   IdeaBoardDetail,
   IdeaBoardItem,
   IdeaVoteFeedback,
+  InventorySnapshotMeta,
   MessageTemplate,
   ProspectContactAttemptResult,
   ProspectKeywordPreset,
@@ -126,11 +129,25 @@ export const api = {
       method: "POST",
     }, token);
   },
+  customerCreditOpportunities(token: string) {
+    return request<CustomerOpportunityQueueResponse>("/api/customer-credit/opportunities", {}, token);
+  },
+  inventorySnapshot(token: string) {
+    return request<InventorySnapshotMeta | null>("/api/inventory/snapshot", {}, token);
+  },
+  refreshInventorySnapshot(token: string) {
+    return request<InventorySnapshotMeta | null>("/api/inventory/refresh", {
+      method: "POST",
+    }, token);
+  },
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);
   },
   customerCreditDetail(token: string, id: string) {
     return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit`, {}, token);
+  },
+  customerOpportunity(token: string, id: string) {
+    return request<CustomerOpportunityDetail>(`/api/customers/${id}/opportunity`, {}, token);
   },
   customerLabels(token: string) {
     return request<CustomerLabel[]>("/api/customer-labels", {}, token);

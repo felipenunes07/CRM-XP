@@ -347,9 +347,113 @@ export interface CustomerCreditDetailResponse {
   row: CustomerCreditRow | null;
 }
 
+export interface InventorySnapshotMeta {
+  id: string;
+  sourceName: string;
+  sourceUrl: string;
+  importedAt: string;
+  totalRows: number;
+  inStockRows: number;
+  matchedSkuRows: number;
+}
+
+export interface InventoryItem {
+  id: string;
+  snapshotId: string;
+  sku: string;
+  model: string;
+  color: string | null;
+  quality: string | null;
+  price: number;
+  stockQuantity: number;
+  promotionLabel: string | null;
+  isInStock: boolean;
+}
+
+export type OpportunityPrimarySource = "CREDIT_BALANCE" | "AVAILABLE_CREDIT";
+export type OpportunityMatchType = "SKU" | "MODEL";
+
+export interface OpportunitySuggestedLine {
+  inventoryItemId: string;
+  matchType: OpportunityMatchType;
+  sku: string;
+  model: string;
+  color: string | null;
+  quality: string | null;
+  promotionLabel: string | null;
+  unitPrice: number;
+  availableStock: number;
+  historicalTotalQuantity: number;
+  historicalOrderCount: number;
+  historicalLastBoughtAt: string | null;
+  suggestedQuantity: number;
+  lineSubtotal: number;
+}
+
+export interface OpportunityMessagePreview {
+  templateId: string | null;
+  templateTitle: string | null;
+  messageText: string;
+  itemsSummary: string;
+  usedFallback: boolean;
+}
+
+export interface CustomerOpportunityQueueItem {
+  customerId: string;
+  customerCode: string;
+  customerDisplayName: string;
+  primarySource: OpportunityPrimarySource;
+  targetAmount: number;
+  creditBalanceAmount: number;
+  availableCreditAmount: number;
+  suggestedAmount: number;
+  remainingGapAmount: number;
+  coverageRatio: number;
+  matchedProductCount: number;
+  suggestedLineCount: number;
+  topModelsInStock: string[];
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number | null;
+  lastAttendant: string | null;
+}
+
+export interface CustomerOpportunityDetail {
+  customerId: string;
+  customerCode: string;
+  customerDisplayName: string;
+  creditSnapshot: CustomerCreditSnapshotMeta | null;
+  inventorySnapshot: InventorySnapshotMeta | null;
+  isEligible: boolean;
+  reason: string | null;
+  primarySource: OpportunityPrimarySource;
+  targetAmount: number;
+  creditBalanceAmount: number;
+  availableCreditAmount: number;
+  suggestedAmount: number;
+  remainingGapAmount: number;
+  coverageRatio: number;
+  availableProducts: OpportunitySuggestedLine[];
+  suggestedLines: OpportunitySuggestedLine[];
+  messagePreview: OpportunityMessagePreview;
+}
+
+export interface CustomerOpportunityQueueResponse {
+  creditSnapshot: CustomerCreditSnapshotMeta | null;
+  inventorySnapshot: InventorySnapshotMeta | null;
+  summary: {
+    totalCustomers: number;
+    prioritizedCustomers: number;
+    totalTargetAmount: number;
+    totalSuggestedAmount: number;
+    customersWithBalance: number;
+    customersWithAvailableCredit: number;
+  };
+  items: CustomerOpportunityQueueItem[];
+}
+
 export interface MessageTemplate {
   id: string;
-  category: "reativacao" | "follow_up" | "promocao";
+  category: "reativacao" | "follow_up" | "promocao" | "credito";
   title: string;
   content: string;
   createdAt: string;
