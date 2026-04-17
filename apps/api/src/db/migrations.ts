@@ -544,4 +544,45 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_operational_state
     ON customer_credit_snapshot_rows(operational_state);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS idea_board_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'OPEN',
+    is_anonymous BOOLEAN NOT NULL DEFAULT TRUE,
+    author_display_name TEXT,
+    created_by_user_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (status IN ('OPEN', 'CLOSED')),
+    CHECK (is_anonymous OR NULLIF(BTRIM(author_display_name), '') IS NOT NULL)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_idea_board_items_status
+    ON idea_board_items(status);
+  CREATE INDEX IF NOT EXISTS idx_idea_board_items_updated_at
+    ON idea_board_items(updated_at DESC, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_idea_board_items_created_by
+    ON idea_board_items(created_by_user_id);
+
+  CREATE TABLE IF NOT EXISTS idea_board_votes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    idea_id UUID NOT NULL REFERENCES idea_board_items(id) ON DELETE CASCADE,
+    voted_by_user_id UUID NOT NULL,
+    vote_option TEXT NOT NULL,
+    comment TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (idea_id, voted_by_user_id),
+    CHECK (vote_option IN ('LIKE', 'MAYBE', 'NO'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_idea_board_votes_idea_id
+    ON idea_board_votes(idea_id);
+  CREATE INDEX IF NOT EXISTS idx_idea_board_votes_user_id
+    ON idea_board_votes(voted_by_user_id);
+  CREATE INDEX IF NOT EXISTS idx_idea_board_votes_updated_at
+    ON idea_board_votes(updated_at DESC, created_at DESC);
+  `,
 ];

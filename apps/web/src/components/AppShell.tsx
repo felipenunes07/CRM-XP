@@ -3,6 +3,7 @@ import {
   BarChart3,
   ClipboardList,
   LayoutDashboard,
+  Lightbulb,
   MessageSquareText,
   RadioTower,
   SearchCheck,
@@ -15,7 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 
-const links = [
+export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/atendentes", icon: TrendingUp, label: "Atendentes" },
   { to: "/clientes", icon: Users, label: "Clientes" },
@@ -24,6 +25,7 @@ const links = [
   { to: "/agenda", icon: ClipboardList, label: "Agenda" },
   { to: "/clientes-novos", icon: UserPlus, label: "Clientes novos" },
   { to: "/reativacao", icon: Trophy, label: "Reativacao" },
+  { to: "/ideias-votacao", icon: Lightbulb, label: "Ideias/Votacao" },
   { to: "/mensagens", icon: MessageSquareText, label: "Mensagens" },
   { to: "/disparador", icon: RadioTower, label: "Disparador" },
   { to: "/prospeccao", icon: SearchCheck, label: "Prospeccao" },
@@ -32,6 +34,12 @@ const links = [
 
 export function AppShell() {
   const { user } = useAuth();
+  const userInitials = user?.name
+    ?.split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 
   return (
     <div className="app-shell">
@@ -45,7 +53,7 @@ export function AppShell() {
           </div>
 
           <nav className="nav">
-            {links.map(({ to, icon: Icon, label }) => (
+            {appShellLinks.map(({ to, icon: Icon, label }) => (
               <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
                 <Icon size={18} />
                 <span>{label}</span>
@@ -55,10 +63,13 @@ export function AppShell() {
         </div>
 
         <div className="sidebar-footer">
-          <div>
+          <div className="sidebar-user-card">
+            <div className="sidebar-user-avatar">{userInitials || "XP"}</div>
+            <div className="sidebar-user-copy">
             <p className="eyebrow">Sessao interna</p>
-            <strong>{user?.name}</strong>
-            <p>{user?.role}</p>
+              <strong>{user?.name || "Usuario interno"}</strong>
+              <span className="sidebar-user-role">{user?.role || "Sem perfil"}</span>
+            </div>
           </div>
         </div>
       </aside>

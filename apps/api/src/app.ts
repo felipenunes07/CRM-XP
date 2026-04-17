@@ -39,6 +39,14 @@ import {
   updateMessageTemplate,
 } from "./modules/crm/messageService.js";
 import {
+  createIdea,
+  deleteIdea,
+  getIdeaDetail,
+  listIdeaFeedbacks,
+  listIdeas,
+  submitIdeaVote,
+} from "./modules/ideas/ideaBoardService.js";
+import {
   claimProspectLead,
   createProspectKeywordPreset,
   createProspectContactAttempt,
@@ -61,7 +69,7 @@ import {
   getWhatsappCampaignDetail,
   listWhatsappCampaigns,
 } from "./modules/whatsapp/whatsappCampaignService.js";
-import { ensureEvolutionConfigured } from "./modules/whatsapp/evolutionService.js";
+import { ensureEvolutionConfigured, sendWhatsappTextMessage } from "./modules/whatsapp/evolutionService.js";
 import {
   getWhatsappMappingSummary,
   importWhatsappGroupsFromDefaultWorkbook,
@@ -134,6 +142,28 @@ const messageSchema = z.object({
   category: z.enum(["reativacao", "follow_up", "promocao"]),
   title: z.string().min(1),
   content: z.string().min(1),
+});
+
+const createIdeaSchema = z
+  .object({
+    title: z.string().min(1),
+    description: z.string().min(1),
+    isAnonymous: z.boolean(),
+    authorDisplayName: z.string().optional(),
+  })
+  .superRefine((value, context) => {
+    if (!value.isAnonymous && !String(value.authorDisplayName ?? "").trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorDisplayName"],
+        message: "Informe o nome que sera exibido na ideia.",
+      });
+    }
+  });
+
+const submitIdeaVoteSchema = z.object({
+  option: z.enum(["LIKE", "MAYBE", "NO"]),
+  comment: z.string().optional(),
 });
 
 const manualImportSchema = z.object({
@@ -277,6 +307,42 @@ function parseMappingStatusList(value?: string) {
 function decodeBase64File(value: string) {
   const raw = value.includes(",") ? value.split(",").at(-1) ?? "" : value;
   return Buffer.from(raw, "base64");
+}
+
+const IDEA_BOARD_NOTIFICATION_GROUP_JID = "120363025402961504@g.us";
+
+function buildIdeaBoardNotificationMessage(input: { title: string; description: string }) {
+  const description = String(input.description ?? "").replace(/\s+/g, " ").trim();
+  const preview = description.length > 140 ? `${description.slice(0, 137).trimEnd()}...` : description;
+
+  return [
+    "Nova ideia no mural XP CRM",
+    "",
+    `Titulo: ${input.title}`,
+    preview ? `Resumo: ${preview}` : null,
+    "",
+    "Entre na aba Ideias/Votacao do CRM para votar e comentar de forma anonima.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function notifyIdeaBoardNewIdea(input: { title: string; description: string }) {
+  try {
+    ensureEvolutionConfigured();
+  } catch (error) {
+    logger.warn("idea board whatsapp notification skipped", { error: String(error) });
+    return;
+  }
+
+  try {
+    await sendWhatsappTextMessage(
+      IDEA_BOARD_NOTIFICATION_GROUP_JID,
+      buildIdeaBoardNotificationMessage(input),
+    );
+  } catch (error) {
+    logger.warn("idea board whatsapp notification failed", { error: String(error), title: input.title });
+  }
 }
 
 export function createApp() {
@@ -659,6 +725,80 @@ export function createApp() {
   app.delete("/api/messages/templates/:id", async (request, response, next) => {
     try {
       await deleteMessageTemplate(request.params.id);
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/ideas", async (request, response, next) => {
+    try {
+      response.json(await listIdeas(request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/ideas", async (request, response, next) => {
+    try {
+      const created = await createIdea(createIdeaSchema.parse(request.body), request.user!);
+      response.status(201).json(created);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/ideas/:id", async (request, response, next) => {
+    try {
+      const idea = await getIdeaDetail(String(request.params.id), request.user!);
+      if (!idea) {
+        throw new HttpError(404, "Ideia nao encontrada");
+      }
+      response.json(idea);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/ideas/:id/notify-whatsapp", async (request, response, next) => {
+    try {
+      const idea = await getIdeaDetail(String(request.params.id), request.user!);
+      if (!idea) {
+        throw new HttpError(404, "Ideia nao encontrada");
+      }
+
+      await notifyIdeaBoardNewIdea(idea);
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/ideas/:id/feedback", async (request, response, next) => {
+    try {
+      const idea = await getIdeaDetail(String(request.params.id), request.user!);
+      if (!idea) {
+        throw new HttpError(404, "Ideia nao encontrada");
+      }
+      response.json(await listIdeaFeedbacks(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/ideas/:id/vote", async (request, response, next) => {
+    try {
+      response.json(
+        await submitIdeaVote(String(request.params.id), request.user!, submitIdeaVoteSchema.parse(request.body)),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/ideas/:id", async (request, response, next) => {
+    try {
+      await deleteIdea(String(request.params.id), request.user!);
       response.status(204).send();
     } catch (error) {
       next(error);
