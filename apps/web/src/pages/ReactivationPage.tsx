@@ -37,9 +37,9 @@ export function ReactivationPage() {
 
   const historyByMonth = dashboardQuery.data.reactivationHistory?.reduce((acc, entry) => {
     if (!acc[entry.month]) acc[entry.month] = [];
-    acc[entry.month].push(entry);
+    acc[entry.month]!.push(entry);
     return acc;
-  }, {} as Record<string, typeof dashboardQuery.data.reactivationHistory>) || {};
+  }, {} as Record<string, NonNullable<typeof dashboardQuery.data.reactivationHistory>>) || {};
 
   const formatMonthKey = (dateStr: string) => {
     try {
