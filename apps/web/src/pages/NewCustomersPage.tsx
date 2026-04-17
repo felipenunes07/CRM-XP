@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
-import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useState, useMemo, Fragment } from "react";
+import { Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
@@ -230,6 +230,57 @@ function MonthlyTooltip({
   );
 }
 
+function HistoryTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length || !label) {
+    return null;
+  }
+
+  // Sort payload by value DESC
+  const sortedPayload = [...payload].sort((a, b) => (b.value || 0) - (a.value || 0));
+  const total = sortedPayload.reduce((acc, p) => acc + (p.value || 0), 0);
+
+  return (
+    <div className="chart-tooltip" style={{ 
+      minWidth: "180px",
+      backdropFilter: "blur(12px)", 
+      background: "rgba(255,255,255,0.92)", 
+      border: "1px solid rgba(148, 163, 184, 0.2)", 
+      borderRadius: "16px", 
+      boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+      padding: "1rem"
+    }}>
+      <div style={{ paddingBottom: "0.75rem", marginBottom: "0.75rem", borderBottom: "1px solid #f1f5f9" }}>
+        <strong style={{ color: "#0f172a", fontSize: "0.95rem" }}>{formatMonthLabel(label)}</strong>
+      </div>
+      
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        {sortedPayload.map((entry) => (
+          <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1.5rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: entry.color }} />
+              <span style={{ color: "#475569", fontSize: "0.85rem", fontWeight: 600 }}>{entry.name}</span>
+            </div>
+            <strong style={{ color: "#1e293b", fontSize: "0.85rem" }}>{entry.value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "2px solid #f8fafc", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color: "#64748b", fontSize: "0.85rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.025em" }}>Total</span>
+        <strong style={{ color: "#0f172a", fontSize: "1rem" }}>{total}</strong>
+      </div>
+    </div>
+  );
+}
+
 function CacTooltip({
   active,
   payload,
@@ -284,6 +335,21 @@ function renderCurrencyTrend(current: number, previous: number) {
   );
 }
 
+const ATTENDANT_COLORS = [
+  "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", 
+  "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1"
+];
+
+const ATTENDANT_COLOR_MAP: Record<string, string> = {
+  "Suelen": "#ec4899", // Rosa
+  "Amanda": "#ef4444", // Vermelho
+  "Thais": "#8b5cf6",  // Roxo
+  "Tamires": "#10b981", // Verde
+  "Valessa": "#3b82f6", // Azul
+};
+
+const TARGET_ATTENDANTS = ["Amanda", "Suelen", "Thais", "Tamires", "Valessa"];
+
 export function NewCustomersPage() {
   const { token } = useAuth();
   const acquisitionQuery = useQuery({
@@ -294,6 +360,7 @@ export function NewCustomersPage() {
 
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
 
   const activeMonth = selectedMonth ?? currentMonthKey;
 
@@ -370,8 +437,50 @@ export function NewCustomersPage() {
 
   const filteredCustomers = useMemo(() => {
     if (!acquisitionQuery.data) return [];
-    return acquisitionQuery.data.recentCustomers.filter((c) => c.firstOrderDate.startsWith(activeMonth));
+    return acquisitionQuery.data.recentCustomers.filter((c) => {
+      if (!c.firstOrderDate.startsWith(activeMonth)) return false;
+      const attendant = (c.firstAttendant || "").toLowerCase();
+      return TARGET_ATTENDANTS.some(target => attendant.includes(target.toLowerCase()));
+    });
   }, [acquisitionQuery.data, activeMonth]);
+
+  const attendantBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of filteredCustomers) {
+      const name = c.firstAttendant || "Sem Atendente";
+      counts[name] = (counts[name] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [filteredCustomers]);
+
+  const attendantsHistory = useMemo(() => {
+    if (!acquisitionQuery.data) return { series: [], names: [] };
+    const data = acquisitionQuery.data;
+    const seriesMap = new Map<string, Record<string, any>>();
+    const allAttendants = new Set<string>();
+
+    for (const customer of data.recentCustomers) {
+      const month = customer.firstOrderDate.slice(0, 7);
+      const originalName = customer.firstAttendant || "Sem Atendente";
+      const attendantLower = originalName.toLowerCase();
+      
+      const targetMatch = TARGET_ATTENDANTS.find(target => attendantLower.includes(target.toLowerCase()));
+      if (!targetMatch) continue;
+
+      if (!seriesMap.has(month)) {
+        seriesMap.set(month, { month });
+      }
+      
+      const point = seriesMap.get(month)!;
+      point[targetMatch] = (point[targetMatch] || 0) + 1;
+      allAttendants.add(targetMatch);
+    }
+
+    const series = Array.from(seriesMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+    return { series, names: Array.from(allAttendants).sort() };
+  }, [acquisitionQuery.data]);
 
   if (acquisitionQuery.isLoading) {
     return <div className="page-loading">Carregando clientes novos...</div>;
@@ -529,6 +638,51 @@ export function NewCustomersPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {attendantBreakdown.length > 0 && (
+            <div style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                <h4 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>
+                  Aquisições por Vendedora
+                </h4>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" }}>
+                  {filteredCustomers.length} total
+                </span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
+                {attendantBreakdown.map((item, idx) => (
+                  <div 
+                    key={item.name}
+                    style={{ 
+                      background: idx === 0 ? "rgba(59, 130, 246, 0.06)" : "#ffffff",
+                      border: idx === 0 ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid #e2e8f0",
+                      borderRadius: "14px",
+                      padding: "0.5rem 0.85rem",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.65rem",
+                      boxShadow: idx === 0 ? "0 2px 4px rgba(59, 130, 246, 0.05)" : "none"
+                    }}
+                  >
+                    {idx === 0 && (
+                      <span style={{ fontSize: "1rem" }}>🏆</span>
+                    )}
+                    <span style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.85rem" }}>{item.name}</span>
+                    <span style={{ 
+                      background: idx === 0 ? "#3b82f6" : "#f1f5f9", 
+                      padding: "0.1rem 0.5rem", 
+                      borderRadius: "6px", 
+                      fontSize: "0.8rem", 
+                      fontWeight: 700, 
+                      color: idx === 0 ? "#ffffff" : "#475569"
+                    }}>
+                      {item.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="premium-panel">
@@ -739,6 +893,72 @@ export function NewCustomersPage() {
           </ResponsiveContainer>
         </div>
 
+        <div style={{ marginBottom: "1.5rem", marginTop: "3.5rem", paddingTop: "2.5rem", borderTop: "1px solid #f1f5f9" }}>
+          <h4 style={{ margin: 0, fontSize: "1.15rem", color: "#0f172a", fontWeight: 700 }}>Desempenho Histórico por Vendedora</h4>
+          <p className="metric-helper" style={{ marginTop: "0.3rem" }}>
+            Novos clientes captados por cada vendedora ao longo do tempo.
+          </p>
+        </div>
+
+        <div style={{ width: "100%", height: "300px", marginBottom: "3rem" }}>
+          <ResponsiveContainer>
+            <BarChart
+              syncId="acquisition-history"
+              syncMethod="value"
+              data={attendantsHistory.series}
+              margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
+              <XAxis
+                dataKey="month"
+                ticks={monthlyTicks}
+                tickFormatter={formatMonthLabel}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                dy={10}
+              />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+                tickLine={false}
+                axisLine={false}
+                width={48}
+                dx={-10}
+              />
+              <YAxis yAxisId="spacer" orientation="right" width={90} tick={false} axisLine={false} tickLine={false} />
+              <Tooltip
+                content={<HistoryTooltip />}
+                cursor={{ fill: "rgba(148, 163, 184, 0.05)" }}
+              />
+              {attendantsHistory.names.map((name, index) => (
+                <Bar
+                  key={name}
+                  dataKey={name}
+                  stackId="a"
+                  fill={ATTENDANT_COLOR_MAP[name] || ATTENDANT_COLORS[index % ATTENDANT_COLORS.length]}
+                  radius={[0, 0, 0, 0]}
+                  maxBarSize={50}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginTop: "1rem", justifyContent: "center" }}>
+            {attendantsHistory.names.map((name, index) => (
+              <div key={name} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                <div style={{ 
+                  width: "10px", 
+                  height: "10px", 
+                  borderRadius: "2px", 
+                  background: ATTENDANT_COLOR_MAP[name] || ATTENDANT_COLORS[index % ATTENDANT_COLORS.length] 
+                }} />
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#64748b" }}>{name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div style={{ overflowX: "auto", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "640px", background: "#ffffff" }}>
             <thead style={{ background: "#f8fafc" }}>
@@ -753,14 +973,68 @@ export function NewCustomersPage() {
               {data.monthlySeries
                 .slice()
                 .reverse()
-                .map((entry, index) => (
-                  <tr key={entry.month} style={{ borderBottom: index === data.monthlySeries.length - 1 ? "none" : "1px solid #f1f5f9", background: index % 2 === 0 ? "#ffffff" : "rgba(248, 250, 252, 0.5)" }}>
-                    <td style={{ padding: "1rem", fontWeight: 600, color: "#1e293b" }}>{formatMonthLabel(entry.month)}</td>
-                    <td style={{ padding: "1rem", color: "#334155" }}>{formatNumber(entry.newCustomers)}</td>
-                    <td style={{ padding: "1rem", color: "#334155" }}>{formatCurrency(entry.spend)}</td>
-                    <td style={{ padding: "1rem", color: "#334155", fontWeight: 500 }}>{formatCac(entry.cac)}</td>
-                  </tr>
-                ))}
+                .map((entry, index) => {
+                  const isActive = entry.month === activeMonth;
+                  const isExpanded = entry.month === expandedMonth;
+                  
+                  const monthCustomers = acquisitionQuery.data.recentCustomers
+                    .filter(c => c.firstOrderDate.startsWith(entry.month))
+                    .sort((a, b) => b.firstOrderDate.localeCompare(a.firstOrderDate));
+
+                  return (
+                    <Fragment key={entry.month}>
+                      <tr 
+                        onClick={() => {
+                          setExpandedMonth(isExpanded ? null : entry.month);
+                          setSelectedMonth(entry.month);
+                        }}
+                        style={{ 
+                          borderBottom: (index === data.monthlySeries.length - 1 && !isExpanded) ? "none" : "1px solid #f1f5f9", 
+                          background: isActive ? "rgba(41, 86, 215, 0.08)" : (index % 2 === 0 ? "#ffffff" : "rgba(248, 250, 252, 0.5)"),
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        className="historical-row"
+                      >
+                        <td style={{ padding: "1rem", fontWeight: 700, color: isActive ? "var(--accent)" : "#1e293b" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "0.8rem", transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s", color: "#64748b" }}>▶</span>
+                            {formatMonthLabel(entry.month)}
+                            {isActive && <span style={{ marginLeft: "0.5rem", fontSize: "0.7rem", color: "var(--accent)", background: "rgba(41,86,215,0.1)", padding: "0.2rem 0.5rem", borderRadius: "999px" }}>Ativo</span>}
+                          </span>
+                        </td>
+                        <td style={{ padding: "1rem", color: "#334155" }}>{formatNumber(entry.newCustomers)}</td>
+                        <td style={{ padding: "1rem", color: "#334155" }}>{formatCurrency(entry.spend)}</td>
+                        <td style={{ padding: "1rem", color: "#334155", fontWeight: 500 }}>{formatCac(entry.cac)}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr style={{ background: "#f8fafc" }}>
+                          <td colSpan={4} style={{ padding: "0 0 1.5rem 0" }}>
+                            <div style={{ padding: "1.25rem", borderLeft: "4px solid var(--accent)", marginLeft: "1rem", marginRight: "1rem", background: "#ffffff", borderRadius: "0 0 16px 16px", boxShadow: "inset 0 4px 6px -1px rgba(0,0,0,0.05)" }}>
+                              <h5 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "1rem" }}>
+                                Clientes de {formatMonthLabel(entry.month)}
+                              </h5>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                {monthCustomers.map(customer => (
+                                  <div key={customer.customerId} style={{ display: "grid", gridTemplateColumns: "100px 1fr 120px 100px auto", gap: "1rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "10px", alignItems: "center", border: "1px solid #f1f5f9" }}>
+                                    <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#64748b" }}>{customer.customerCode}</span>
+                                    <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "#1e293b" }}>{customer.displayName}</span>
+                                    <span style={{ fontSize: "0.8rem", color: "#475569" }}>{formatDate(customer.firstOrderDate)}</span>
+                                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "var(--accent)" }}>{formatCurrency(customer.firstOrderAmount)}</span>
+                                    <div style={{ textAlign: "right" }}>
+                                      <Link to={`/clientes/${customer.customerId}`} className="premium-btn" style={{ fontSize: "0.75rem" }}>Abrir</Link>
+                                    </div>
+                                  </div>
+                                ))}
+                                {monthCustomers.length === 0 && <p style={{ textAlign: "center", padding: "1rem", color: "#94a3b8" }}>Nenhum cliente registrado.</p>}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
             </tbody>
           </table>
         </div>
