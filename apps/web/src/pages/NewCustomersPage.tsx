@@ -1,9 +1,131 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo } from "react";
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber, formatShortDate } from "../lib/format";
+
+const styles = `
+  .premium-header-title {
+    margin: 0;
+    font-size: 2.25rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #0f172a 0%, #3b82f6 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .premium-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: 2rem;
+  }
+  .premium-card {
+    background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+    border-radius: 20px;
+    padding: 1.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .premium-card::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; bottom: 0; left: 0;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(0,0,0,0) 50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: 20px;
+    pointer-events: none;
+  }
+  .premium-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 25px -5px rgba(41, 86, 215, 0.12), 0 8px 10px -6px rgba(41, 86, 215, 0.04);
+    border-color: rgba(41, 86, 215, 0.3);
+  }
+  .premium-card:hover::after {
+    opacity: 1;
+  }
+  .metric-value {
+    font-size: 2.15rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    margin: 0.5rem 0;
+  }
+  .metric-label {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .metric-helper {
+    font-size: 0.825rem;
+    color: #94a3b8;
+    margin: 0;
+    margin-top: 0.35rem;
+  }
+  .trend-up {
+    color: #059669;
+    background: #d1fae5;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .trend-down {
+    color: #dc2626;
+    background: #fee2e2;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .premium-panel {
+    background: #ffffff;
+    border-radius: 24px;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02), 0 10px 15px -3px rgba(0, 0, 0, 0.01);
+    padding: 1.75rem;
+    transition: box-shadow 0.3s ease;
+  }
+  .premium-panel:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03), 0 20px 25px -5px rgba(0, 0, 0, 0.04);
+  }
+  .customer-row {
+    transition: all 0.2s ease;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: rgba(249, 251, 255, 0.5);
+  }
+  .customer-row:hover {
+    background: #ffffff;
+    transform: translateX(4px);
+    border-color: rgba(41, 86, 215, 0.3);
+    box-shadow: 0 4px 12px -2px rgba(41, 86, 215, 0.08);
+  }
+  .premium-btn {
+    font-size: 0.8rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border: 1px solid rgba(41,86,215,0.2);
+    border-radius: 999px;
+    white-space: nowrap;
+    transition: all 0.2s;
+    background: rgba(41,86,215,0.02);
+  }
+  .premium-btn:hover {
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: 0 2px 8px rgba(41,86,215,0.3);
+  }
+`;
 
 function formatMonthLabel(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})$/);
@@ -51,11 +173,11 @@ function DailyTooltip({
   }
 
   return (
-    <div className="chart-tooltip">
-      <strong>{formatDate(label)}</strong>
-      <div className="chart-tooltip-count">
-        <strong>{formatNumber(payload[0]?.value ?? 0)}</strong>
-        <span>clientes na primeira compra</span>
+    <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+      <strong style={{ color: "#0f172a" }}>{formatDate(label)}</strong>
+      <div className="chart-tooltip-count" style={{ marginTop: "0.5rem" }}>
+        <strong style={{ color: "#2956d7", fontSize: "1.2rem" }}>{formatNumber(payload[0]?.value ?? 0)}</strong>
+        <span style={{ color: "#64748b" }}>clientes na primeira compra</span>
       </div>
     </div>
   );
@@ -78,15 +200,15 @@ function MonthlyTooltip({
   const spend = payload.find((entry) => entry.dataKey === "spend")?.value ?? 0;
 
   return (
-    <div className="chart-tooltip">
-      <strong>{formatMonthLabel(label)}</strong>
-      <div className="chart-tooltip-count">
-        <strong>{formatNumber(newCustomers)}</strong>
-        <span>clientes novos no mes</span>
+    <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+      <strong style={{ color: "#0f172a" }}>{formatMonthLabel(label)}</strong>
+      <div className="chart-tooltip-count" style={{ marginTop: "0.5rem" }}>
+        <strong style={{ color: "#2f9d67", fontSize: "1.1rem" }}>{formatNumber(newCustomers)}</strong>
+        <span style={{ color: "#64748b" }}>clientes novos no mes</span>
       </div>
       <div className="chart-tooltip-count" style={{ marginTop: "0.35rem" }}>
-        <strong>{formatCurrency(spend)}</strong>
-        <span>gasto em anuncios</span>
+        <strong style={{ color: "#2956d7", fontSize: "1.1rem" }}>{formatCurrency(spend)}</strong>
+        <span style={{ color: "#64748b" }}>gasto em anuncios</span>
       </div>
     </div>
   );
@@ -106,13 +228,37 @@ function CacTooltip({
   }
 
   return (
-    <div className="chart-tooltip">
-      <strong>{formatMonthLabel(label)}</strong>
-      <div className="chart-tooltip-count">
-        <strong>{formatCac((payload[0]?.value as number | null | undefined) ?? null)}</strong>
-        <span>custo por cliente adquirido</span>
+    <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(217, 119, 6, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+      <strong style={{ color: "#0f172a" }}>{formatMonthLabel(label)}</strong>
+      <div className="chart-tooltip-count" style={{ marginTop: "0.5rem" }}>
+        <strong style={{ color: "#d97706", fontSize: "1.2rem" }}>{formatCac((payload[0]?.value as number | null | undefined) ?? null)}</strong>
+        <span style={{ color: "#64748b" }}>custo por cliente adquirido</span>
       </div>
     </div>
+  );
+}
+
+function renderTrend(current: number, previous: number) {
+  if (previous === 0) return null;
+  const diff = current - previous;
+  if (diff === 0) return null;
+  const isUp = diff > 0;
+  return (
+    <span className={isUp ? "trend-up" : "trend-down"}>
+      {isUp ? "↑" : "↓"} {formatNumber(Math.abs(diff))}
+    </span>
+  );
+}
+
+function renderCurrencyTrend(current: number, previous: number) {
+  if (previous === 0) return null;
+  const diff = current - previous;
+  if (diff === 0) return null;
+  const isUp = diff > 0;
+  return (
+    <span className={isUp ? "trend-up" : "trend-down"}>
+      {isUp ? "↑" : "↓"} {formatCurrency(Math.abs(diff))}
+    </span>
   );
 }
 
@@ -124,6 +270,87 @@ export function NewCustomersPage() {
     enabled: Boolean(token),
   });
 
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+
+  const activeMonth = selectedMonth ?? currentMonthKey;
+
+  const derivedSummary = useMemo(() => {
+    if (!acquisitionQuery.data) return null;
+    const data = acquisitionQuery.data;
+
+    const findMonth = (m: string) => data.monthlySeries.find(s => s.month === m);
+
+    const getDetailedMetrics = (m: string) => {
+      const customers = data.recentCustomers.filter(c => c.firstOrderDate.startsWith(m));
+      const totalAmount = customers.reduce((acc, c) => acc + Number(c.firstOrderAmount || 0), 0);
+      const totalPieces = customers.reduce((acc, c) => acc + Number(c.firstItemCount || 0), 0);
+      return {
+        count: customers.length,
+        amount: totalAmount,
+        pieces: totalPieces,
+        avgTicket: customers.length > 0 ? totalAmount / customers.length : 0,
+        avgPieces: customers.length > 0 ? totalPieces / customers.length : 0
+      };
+    };
+
+    const prevMonthKey = (() => {
+      const parts = activeMonth.split('-').map(Number);
+      const year = parts[0] || new Date().getFullYear();
+      const month = parts[1] || (new Date().getMonth() + 1);
+      const d = new Date(year, month - 2, 1);
+      return d.toISOString().slice(0, 7);
+    })();
+
+    const currentMonthData = findMonth(activeMonth);
+    const previousMonthData = findMonth(prevMonthKey);
+    const currentDetailed = getDetailedMetrics(activeMonth);
+    const previousDetailed = getDetailedMetrics(prevMonthKey);
+
+    return {
+      count: currentDetailed.count,
+      prevCount: previousDetailed.count,
+      amount: currentDetailed.amount,
+      prevAmount: previousDetailed.amount,
+      pieces: currentDetailed.pieces,
+      prevPieces: previousDetailed.pieces,
+      avgPieces: currentDetailed.avgPieces,
+      prevAvgPieces: previousDetailed.avgPieces,
+      avgTicket: currentDetailed.avgTicket,
+      prevAvgTicket: previousDetailed.avgTicket,
+      spend: currentMonthData?.spend ?? 0,
+      prevSpend: previousMonthData?.spend ?? 0,
+      cac: currentMonthData?.cac ?? null,
+      prevCac: previousMonthData?.cac ?? null,
+      isRealTime: activeMonth === currentMonthKey
+    };
+  }, [acquisitionQuery.data, activeMonth, currentMonthKey]);
+
+  const derivedDailySeries = useMemo(() => {
+    if (!acquisitionQuery.data) return [];
+    const data = acquisitionQuery.data;
+
+    const parts = activeMonth.split('-').map(Number);
+    const year = parts[0] || new Date().getFullYear();
+    const month = parts[1] || (new Date().getMonth() + 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    return Array.from({ length: daysInMonth }).map((_, i) => {
+      const day = String(i + 1).padStart(2, '0');
+      const dateStr = `${activeMonth}-${day}`;
+      const count = data.recentCustomers.filter(c => c.firstOrderDate === dateStr).length;
+      return {
+        date: dateStr,
+        newCustomers: count
+      };
+    });
+  }, [acquisitionQuery.data, activeMonth]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!acquisitionQuery.data) return [];
+    return acquisitionQuery.data.recentCustomers.filter((c) => c.firstOrderDate.startsWith(activeMonth));
+  }, [acquisitionQuery.data, activeMonth]);
+
   if (acquisitionQuery.isLoading) {
     return <div className="page-loading">Carregando clientes novos...</div>;
   }
@@ -133,151 +360,218 @@ export function NewCustomersPage() {
   }
 
   const data = acquisitionQuery.data;
+  const metrics = derivedSummary!;
   const monthlyTicks = buildMonthlyTicks(data.monthlySeries);
+
+  function handleBarClick(barData: { month?: string } | undefined) {
+    if (barData?.month) {
+      setSelectedMonth(barData.month);
+    }
+  }
 
   return (
     <div className="page-stack">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+      <style>{styles}</style>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
-          <p className="eyebrow" style={{ margin: 0, marginBottom: "0.2rem" }}>
-            Aquisicao por primeira compra
+          <p className="eyebrow" style={{ margin: 0, marginBottom: "0.3rem", color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em" }}>
+            MÉTRICAS DE AQUISIÇÃO
           </p>
-          <h2 style={{ margin: 0, fontSize: "1.5rem" }}>Clientes novos</h2>
+          <h2 className="premium-header-title">Clientes Novos</h2>
+        </div>
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }}>Mês de Visualização:</label>
+          <select
+            value={activeMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            style={{
+              padding: "0.6rem 1rem",
+              borderRadius: "12px",
+              border: "1px solid #e2e8f0",
+              background: "#ffffff",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              color: "#1e293b",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+              cursor: "pointer",
+              outline: "none"
+            }}
+          >
+            {data.monthlySeries.slice().reverse().map(m => (
+              <option key={m.month} value={m.month}>
+                {formatMonthLabel(m.month)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      <div className="stats-grid">
-        <div className="stat-card tone-success">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Novos hoje</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(data.summary.today)}</strong>
-            <p className="stat-card-helper">Primeira compra registrada hoje</p>
-          </div>
+      <div className="premium-grid">
+        <div className="premium-card" style={{ borderTop: "4px solid var(--accent)" }}>
+          <div className="metric-label">Novos no Mês</div>
+          <div className="metric-value">{formatNumber(metrics.count)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderTrend(metrics.count, metrics.prevCount)}
+            vs {formatNumber(metrics.prevCount)} mês anterior
+          </p>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Novos no mes</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(data.summary.currentMonth)}</strong>
-            <p className="stat-card-helper">Contra {formatNumber(data.summary.previousMonth)} no mes anterior</p>
-          </div>
+
+        <div className="premium-card">
+          <div className="metric-label">Faturamento Novos</div>
+          <div className="metric-value" style={{ color: "var(--accent)" }}>{formatCurrency(metrics.amount)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderCurrencyTrend(metrics.amount, metrics.prevAmount)}
+            vs {formatCurrency(metrics.prevAmount)}
+          </p>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Gasto no mes</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatCurrency(data.summary.currentMonthSpend)}</strong>
-            <p className="stat-card-helper">Contra {formatCurrency(data.summary.previousMonthSpend)} no mes anterior</p>
-          </div>
+
+        <div className="premium-card">
+          <div className="metric-label">Ticket Médio</div>
+          <div className="metric-value">{formatCurrency(metrics.avgTicket)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderCurrencyTrend(metrics.avgTicket, metrics.prevAvgTicket)}
+            vs {formatCurrency(metrics.prevAvgTicket)}
+          </p>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">CAC no mes</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatCac(data.summary.currentMonthCac)}</strong>
-            <p className="stat-card-helper">Mes anterior: {formatCac(data.summary.previousMonthCac)}</p>
-          </div>
+
+        <div className="premium-card">
+          <div className="metric-label">Total de Peças</div>
+          <div className="metric-value">{formatNumber(metrics.pieces)} <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }}>itens</span></div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderTrend(metrics.pieces, metrics.prevPieces)}
+            vs {formatNumber(metrics.prevPieces)} mês anterior
+          </p>
         </div>
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <h3 className="stat-card-title">Total historico</h3>
-          </div>
-          <div className="stat-card-body">
-            <strong>{formatNumber(data.summary.historicalTotal)}</strong>
-            <p className="stat-card-helper">Clientes contados uma unica vez</p>
-          </div>
+
+        <div className="premium-card">
+          <div className="metric-label">Média de Peças</div>
+          <div className="metric-value">{formatNumber(metrics.avgPieces)} <span style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }}>/ cliente</span></div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderTrend(metrics.avgPieces, metrics.prevAvgPieces)}
+            vs {formatNumber(metrics.prevAvgPieces)}
+          </p>
+        </div>
+
+        <div className="premium-card">
+          <div className="metric-label">Gasto no Mês</div>
+          <div className="metric-value" style={{ color: "#3b82f6" }}>{formatCurrency(metrics.spend)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderCurrencyTrend(metrics.spend, metrics.prevSpend)}
+            vs {formatCurrency(metrics.prevSpend)}
+          </p>
+        </div>
+
+        <div className="premium-card">
+          <div className="metric-label">CAC no Mês</div>
+          <div className="metric-value" style={{ color: "#d97706" }}>{formatCac(metrics.cac)}</div>
+          <p className="metric-helper">Mes anterior: {formatCac(metrics.prevCac)}</p>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "1rem" }}>
-        <section className="panel">
-          <div className="panel-header" style={{ marginBottom: "1rem" }}>
-            <div>
-              <h3 style={{ fontSize: "1.15rem", margin: 0 }}>Clientes novos por dia</h3>
-              <p className="panel-subcopy" style={{ marginTop: "0.3rem" }}>
-                Leitura diaria dos ultimos 30 dias para acompanhar a aquisicao recente.
-              </p>
-            </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "1.5rem" }}>
+        <section className="premium-panel">
+          <div style={{ marginBottom: "1.5rem" }}>
+            <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>Clientes novos por dia</h3>
+            <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
+              Distribuição diária de aquisições em {formatMonthLabel(activeMonth)}.
+            </p>
           </div>
           <div style={{ width: "100%", height: "260px" }}>
             <ResponsiveContainer>
-              <LineChart data={data.dailySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+              <LineChart data={derivedDailySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
                 <XAxis
                   dataKey="date"
                   tickFormatter={formatShortDate}
-                  tick={{ fill: "var(--muted)", fontSize: 12 }}
+                  tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                   tickLine={false}
                   axisLine={false}
+                  dy={10}
                 />
-                <YAxis allowDecimals={false} tick={{ fill: "var(--muted)", fontSize: 12 }} tickLine={false} axisLine={false} />
-                <Tooltip content={<DailyTooltip />} />
+                <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} tickLine={false} axisLine={false} dx={-10} />
+                <Tooltip content={<DailyTooltip />} cursor={{ stroke: "rgba(59, 130, 246, 0.1)", strokeWidth: 32 }} />
                 <Line
                   type="monotone"
                   dataKey="newCustomers"
-                  stroke="#2956d7"
-                  strokeWidth={3}
-                  dot={{ r: 3, strokeWidth: 0, fill: "#2956d7" }}
-                  activeDot={{ r: 5 }}
+                  stroke="#3b82f6"
+                  strokeWidth={4}
+                  dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#3b82f6" }}
+                  activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#2563eb" }}
                 />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </section>
 
-        <section className="panel">
-          <div className="panel-header" style={{ marginBottom: "1rem" }}>
-            <div>
-              <h3 style={{ fontSize: "1.15rem", margin: 0 }}>Clientes novos do mes</h3>
-              <p className="panel-subcopy" style={{ marginTop: "0.3rem" }}>
-                Lista atual de aquisicao para abrir o cadastro e revisar origem.
-              </p>
+        <section className="premium-panel">
+          <div style={{ marginBottom: "1.5rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>
+                Clientes novos — {formatMonthLabel(activeMonth)}
+              </h3>
+              {selectedMonth && (
+                <button
+                  onClick={() => setSelectedMonth(null)}
+                  style={{
+                    background: "rgba(41,86,215,0.08)",
+                    border: "1px solid rgba(41,86,215,0.2)",
+                    borderRadius: "8px",
+                    padding: "0.35rem 0.75rem",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    color: "var(--accent)",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  ✕ Voltar ao mês atual
+                </button>
+              )}
             </div>
+            <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
+              {selectedMonth
+                ? `Mostrando ${filteredCustomers.length} clientes adquiridos em ${formatMonthLabel(selectedMonth)}. Clique em outra barra do gráfico para trocar.`
+                : `${filteredCustomers.length} clientes neste mês. Clique em uma barra do histórico para ver outro mês.`
+              }
+            </p>
           </div>
 
-          {data.recentCustomers.length ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {data.recentCustomers.map((customer) => (
+          {filteredCustomers.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", maxHeight: "600px", overflowY: "auto" }}>
+              {filteredCustomers.map((customer) => (
                 <article
                   key={customer.customerId}
+                  className="customer-row"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "minmax(0, 1fr) auto",
                     gap: "0.75rem",
-                    padding: "0.9rem 1rem",
-                    border: "1px solid var(--line)",
-                    borderRadius: "16px",
-                    background: "rgba(249, 251, 255, 0.9)",
+                    padding: "1rem 1.25rem",
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <strong style={{ display: "block", marginBottom: "0.2rem" }}>{customer.displayName}</strong>
-                    <span style={{ display: "block", color: "var(--muted)", fontSize: "0.82rem" }}>
-                      {customer.customerCode || "Sem codigo"} | 1a compra em {formatDate(customer.firstOrderDate)}
+                    <strong style={{ display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }}>{customer.displayName}</strong>
+                    <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem" }}>
+                      {customer.customerCode || "Sem codigo"} &bull; 1ª compra em {formatDate(customer.firstOrderDate)}
                     </span>
-                    <span style={{ display: "block", color: "var(--muted)", fontSize: "0.82rem", marginTop: "0.25rem" }}>
-                      {customer.firstAttendant ? `Atendente: ${customer.firstAttendant}` : "Atendente nao informado"} |{" "}
+                    <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", fontWeight: 500 }}>
+                      <span style={{ color: "#3b82f6" }}>{customer.firstAttendant ? `Atend: ${customer.firstAttendant}` : "Sem atendente"}</span> &bull;{" "}
                       {formatCurrency(customer.firstOrderAmount)}
+                      <span style={{ marginLeft: "0.5rem", padding: "0.1rem 0.4rem", background: "#f1f5f9", borderRadius: "4px", fontSize: "0.75rem" }}>
+                        {customer.firstItemCount} peças
+                      </span>
                     </span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center" }}>
                     <Link
                       to={`/clientes/${customer.customerId}`}
-                      style={{
-                        fontSize: "0.8rem",
-                        color: "var(--accent)",
-                        textDecoration: "none",
-                        fontWeight: 700,
-                        padding: "0.5rem 0.8rem",
-                        border: "1px solid rgba(41,86,215,0.15)",
-                        borderRadius: "999px",
-                        whiteSpace: "nowrap",
-                      }}
+                      className="premium-btn"
                     >
                       Abrir cliente
                     </Link>
@@ -286,24 +580,22 @@ export function NewCustomersPage() {
               ))}
             </div>
           ) : (
-            <div className="empty-state" style={{ padding: "2rem 1rem" }}>
-              Ainda nao houve cliente novo neste mes.
+            <div className="empty-state" style={{ padding: "3rem 1rem", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>
+              Nenhum cliente novo em {formatMonthLabel(activeMonth)}.
             </div>
           )}
         </section>
       </div>
 
-      <section className="panel">
-        <div className="panel-header" style={{ marginBottom: "1rem" }}>
-          <div>
-            <h3 style={{ fontSize: "1.15rem", margin: 0 }}>Historico mensal</h3>
-            <p className="panel-subcopy" style={{ marginTop: "0.3rem" }}>
-              Evolucao da aquisicao desde o primeiro mes com pedidos no CRM.
-            </p>
-          </div>
+      <section className="premium-panel" style={{ marginTop: "1.5rem" }}>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>Histórico mensal</h3>
+          <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
+            Evolucao da aquisicao desde o primeiro mes com pedidos no CRM.
+          </p>
         </div>
 
-        <div style={{ width: "100%", height: "250px", marginBottom: "1rem" }}>
+        <div style={{ width: "100%", height: "280px", marginBottom: "2rem" }}>
           <ResponsiveContainer>
             <ComposedChart
               syncId="acquisition-history"
@@ -311,59 +603,73 @@ export function NewCustomersPage() {
               data={data.monthlySeries}
               margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
             >
-              <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+              <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
               <XAxis
                 dataKey="month"
                 ticks={monthlyTicks}
                 tickFormatter={formatMonthLabel}
-                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                 tickLine={false}
                 axisLine={false}
                 interval={0}
+                dy={10}
               />
               <YAxis
                 yAxisId="customers"
                 allowDecimals={false}
-                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                 tickLine={false}
                 axisLine={false}
                 width={48}
+                dx={-10}
               />
               <YAxis
                 yAxisId="spend"
                 orientation="right"
                 tickFormatter={(value: number) => formatCurrency(value)}
-                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                 tickLine={false}
                 axisLine={false}
                 width={90}
+                dx={10}
               />
               <Tooltip
                 content={<MonthlyTooltip />}
-                cursor={{ stroke: "rgba(41, 86, 215, 0.35)", strokeWidth: 2, strokeDasharray: "4 4" }}
+                cursor={{ fill: "rgba(59, 130, 246, 0.05)" }}
               />
-              <Bar yAxisId="customers" dataKey="newCustomers" fill="#2f9d67" radius={[8, 8, 0, 0]} />
+              <Bar
+                yAxisId="customers"
+                dataKey="newCustomers"
+                fill="#10b981"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={50}
+                cursor="pointer"
+                onClick={(_: unknown, index: number) => {
+                  const entry = data.monthlySeries[index];
+                  if (entry) handleBarClick(entry);
+                }}
+              />
               <Line
                 yAxisId="spend"
                 type="monotone"
                 dataKey="spend"
-                stroke="#2956d7"
-                strokeWidth={3}
-                dot={{ r: 2, strokeWidth: 0, fill: "#2956d7" }}
-                activeDot={{ r: 6, strokeWidth: 2, stroke: "#ffffff", fill: "#2956d7" }}
+                stroke="#3b82f6"
+                strokeWidth={4}
+                dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#3b82f6" }}
+                activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#2563eb" }}
               />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={{ marginBottom: "0.9rem" }}>
-          <h4 style={{ margin: 0, fontSize: "1rem" }}>Grafico de CAC</h4>
-          <p className="panel-subcopy" style={{ marginTop: "0.25rem" }}>
-            Evolucao mensal do custo por cliente novo com base no gasto do Meta Ads.
+        <div style={{ marginBottom: "1.5rem", marginTop: "2.5rem", paddingTop: "2rem", borderTop: "1px solid #f1f5f9" }}>
+          <h4 style={{ margin: 0, fontSize: "1.15rem", color: "#0f172a", fontWeight: 700 }}>Gráfico de CAC</h4>
+          <p className="metric-helper" style={{ marginTop: "0.3rem" }}>
+            Evolucao mensal do custo por cliente novo.
           </p>
         </div>
 
-        <div style={{ width: "100%", height: "220px", marginBottom: "1rem" }}>
+        <div style={{ width: "100%", height: "240px", marginBottom: "2rem" }}>
           <ResponsiveContainer>
             <LineChart
               syncId="acquisition-history"
@@ -371,64 +677,66 @@ export function NewCustomersPage() {
               data={data.monthlySeries}
               margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
             >
-              <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+              <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
               <XAxis
                 dataKey="month"
                 ticks={monthlyTicks}
                 tickFormatter={formatMonthLabel}
-                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                 tickLine={false}
                 axisLine={false}
                 interval={0}
+                dy={10}
               />
               <YAxis yAxisId="spacer" tick={false} tickLine={false} axisLine={false} width={48} />
               <YAxis
                 yAxisId="cac"
                 orientation="right"
                 tickFormatter={(value: number) => formatCurrency(value)}
-                tick={{ fill: "var(--muted)", fontSize: 12 }}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
                 tickLine={false}
                 axisLine={false}
                 width={90}
+                dx={10}
               />
               <Tooltip
                 content={<CacTooltip />}
-                cursor={{ stroke: "rgba(217, 119, 6, 0.35)", strokeWidth: 2, strokeDasharray: "4 4" }}
+                cursor={{ stroke: "rgba(217, 119, 6, 0.1)", strokeWidth: 32 }}
               />
               <Line
                 yAxisId="cac"
                 type="monotone"
                 dataKey="cac"
                 stroke="#d97706"
-                strokeWidth={3}
-                dot={{ r: 2, strokeWidth: 0, fill: "#d97706" }}
-                activeDot={{ r: 6, strokeWidth: 2, stroke: "#ffffff", fill: "#d97706" }}
+                strokeWidth={4}
+                dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#d97706" }}
+                activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#b45309" }}
                 connectNulls={false}
               />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "640px" }}>
-            <thead>
-              <tr style={{ textAlign: "left", color: "var(--muted)" }}>
-                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Mes</th>
-                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Clientes novos</th>
-                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>Gasto</th>
-                <th style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>CAC</th>
+        <div style={{ overflowX: "auto", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "640px", background: "#ffffff" }}>
+            <thead style={{ background: "#f8fafc" }}>
+              <tr style={{ textAlign: "left", color: "#475569" }}>
+                <th style={{ padding: "1rem", fontWeight: 600, borderBottom: "1px solid #e2e8f0" }}>Mes</th>
+                <th style={{ padding: "1rem", fontWeight: 600, borderBottom: "1px solid #e2e8f0" }}>Clientes novos</th>
+                <th style={{ padding: "1rem", fontWeight: 600, borderBottom: "1px solid #e2e8f0" }}>Gasto</th>
+                <th style={{ padding: "1rem", fontWeight: 600, borderBottom: "1px solid #e2e8f0" }}>CAC</th>
               </tr>
             </thead>
             <tbody>
               {data.monthlySeries
                 .slice()
                 .reverse()
-                .map((entry) => (
-                  <tr key={entry.month} style={{ borderTop: "1px solid var(--line)" }}>
-                    <td style={{ padding: "0.75rem 0.5rem", fontWeight: 600 }}>{formatMonthLabel(entry.month)}</td>
-                    <td style={{ padding: "0.75rem 0.5rem" }}>{formatNumber(entry.newCustomers)}</td>
-                    <td style={{ padding: "0.75rem 0.5rem" }}>{formatCurrency(entry.spend)}</td>
-                    <td style={{ padding: "0.75rem 0.5rem" }}>{formatCac(entry.cac)}</td>
+                .map((entry, index) => (
+                  <tr key={entry.month} style={{ borderBottom: index === data.monthlySeries.length - 1 ? "none" : "1px solid #f1f5f9", background: index % 2 === 0 ? "#ffffff" : "rgba(248, 250, 252, 0.5)" }}>
+                    <td style={{ padding: "1rem", fontWeight: 600, color: "#1e293b" }}>{formatMonthLabel(entry.month)}</td>
+                    <td style={{ padding: "1rem", color: "#334155" }}>{formatNumber(entry.newCustomers)}</td>
+                    <td style={{ padding: "1rem", color: "#334155" }}>{formatCurrency(entry.spend)}</td>
+                    <td style={{ padding: "1rem", color: "#334155", fontWeight: 500 }}>{formatCac(entry.cac)}</td>
                   </tr>
                 ))}
             </tbody>
