@@ -37,6 +37,12 @@ const envSchema = z.object({
     .string()
     .default("C:\\Users\\Felipe\\Dropbox\\XP SALDO TEMPORARIO"),
   CUSTOMER_CREDIT_WORKBOOK_PREFIX: z.string().default("SALDO VENDAS"),
+  INVENTORY_SHEET_SOURCE_NAME: z.string().default("APP Orçamento Facil Expor telas"),
+  INVENTORY_SHEET_CSV_URL: z
+    .string()
+    .default(
+      "https://docs.google.com/spreadsheets/d/1qAuw2ebWPJmcy_gl4Qf48GfmnSGLZumDfs62fpG2BGA/export?format=csv&gid=1219258954",
+    ),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   META_ADS_ACCESS_TOKEN: z.string().optional(),
   META_ADS_ACCOUNT_ID: z.string().default(""),

@@ -295,6 +295,29 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     throw error;
   }
 
+  // Override today's row with actual customer_snapshot counts so the last
+  // trend point always matches the dashboard cards (same data source).
+  await pool.query(`
+    INSERT INTO dashboard_daily_metrics (
+      day, total_customers, active_count, attention_count, inactive_count, updated_at
+    )
+    SELECT
+      CURRENT_DATE,
+      COUNT(*)::int,
+      COUNT(*) FILTER (WHERE status = 'ACTIVE')::int,
+      COUNT(*) FILTER (WHERE status = 'ATTENTION')::int,
+      COUNT(*) FILTER (WHERE status = 'INACTIVE')::int,
+      NOW()
+    FROM customer_snapshot
+    ON CONFLICT (day) DO UPDATE
+    SET
+      total_customers = EXCLUDED.total_customers,
+      active_count    = EXCLUDED.active_count,
+      attention_count = EXCLUDED.attention_count,
+      inactive_count  = EXCLUDED.inactive_count,
+      updated_at      = NOW()
+  `);
+
   logger.info("dashboard daily metrics refreshed", { days, count: result.rows.length });
 }
 

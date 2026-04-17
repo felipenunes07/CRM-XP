@@ -571,12 +571,34 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
 
   const row = totals.rows[0];
 
+  const snapshotTotal = Number(row?.total_customers ?? 0);
+  const snapshotActive = Number(row?.active_count ?? 0);
+  const snapshotAttention = Number(row?.attention_count ?? 0);
+  const snapshotInactive = Number(row?.inactive_count ?? 0);
+
+  // Ensure the last trend point always matches the card values (both come
+  // from customer_snapshot). Without this, historical recalculation from
+  // orders can produce slightly different counts due to timing/logic diffs.
+  const alignedTrend = portfolioTrend.length
+    ? portfolioTrend.map((point, index) =>
+        index === portfolioTrend.length - 1
+          ? {
+              ...point,
+              totalCustomers: snapshotTotal,
+              activeCount: snapshotActive,
+              attentionCount: snapshotAttention,
+              inactiveCount: snapshotInactive,
+            }
+          : point,
+      )
+    : portfolioTrend;
+
   return {
-    totalCustomers: Number(row?.total_customers ?? 0),
+    totalCustomers: snapshotTotal,
     statusCounts: {
-      ACTIVE: Number(row?.active_count ?? 0),
-      ATTENTION: Number(row?.attention_count ?? 0),
-      INACTIVE: Number(row?.inactive_count ?? 0),
+      ACTIVE: snapshotActive,
+      ATTENTION: snapshotAttention,
+      INACTIVE: snapshotInactive,
     },
     inactivityBuckets: buckets.rows.map((bucket) => ({
       label: String(bucket.label),
@@ -589,7 +611,7 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
     agendaEligibleCount,
     reactivationLeaderboard,
     reactivationHistory,
-    portfolioTrend,
+    portfolioTrend: alignedTrend,
     salesPerformance,
   };
 }
