@@ -140,6 +140,11 @@ async function setCursor(key: string, value: string) {
 }
 
 export async function syncOlistIncremental() {
+  if (!env.OLIST_API_TOKEN) {
+    logger.warn("olist sync skipped: OLIST_API_TOKEN not configured");
+    return { skipped: true, reason: "MISSING_TOKEN" };
+  }
+
   const run = await pool.query(
     "INSERT INTO sync_runs (source_system, status) VALUES ('olist_v2', 'RUNNING') RETURNING id",
   );
