@@ -11,6 +11,7 @@ interface FirstPurchaseRow {
   displayName: string;
   firstOrderDate: string;
   firstOrderAmount: number;
+  firstItemCount: number;
   firstAttendant: string | null;
 }
 
@@ -75,11 +76,15 @@ export function buildAcquisitionMetrics(
   const byDay = new Map<string, number>();
   const byMonth = new Map<string, number>();
   const spendByMonth = new Map<string, number>();
+  const piecesByMonth = new Map<string, number>();
+  const amountByMonth = new Map<string, number>();
 
   for (const row of rows) {
     byDay.set(row.firstOrderDate, (byDay.get(row.firstOrderDate) ?? 0) + 1);
     const monthKey = row.firstOrderDate.slice(0, 7);
     byMonth.set(monthKey, (byMonth.get(monthKey) ?? 0) + 1);
+    piecesByMonth.set(monthKey, (piecesByMonth.get(monthKey) ?? 0) + row.firstItemCount);
+    amountByMonth.set(monthKey, (amountByMonth.get(monthKey) ?? 0) + row.firstOrderAmount);
   }
 
   for (const point of spendPoints) {
@@ -110,7 +115,6 @@ export function buildAcquisitionMetrics(
   }
 
   const recentCustomers = rows
-    .filter((row) => row.firstOrderDate >= formatDateOnly(currentMonth) && row.firstOrderDate <= referenceDate)
     .sort((left, right) => {
       if (right.firstOrderDate !== left.firstOrderDate) {
         return right.firstOrderDate.localeCompare(left.firstOrderDate);
@@ -126,6 +130,7 @@ export function buildAcquisitionMetrics(
           displayName: row.displayName,
           firstOrderDate: row.firstOrderDate,
           firstOrderAmount: row.firstOrderAmount,
+          firstItemCount: row.firstItemCount,
           firstAttendant: row.firstAttendant,
         }) satisfies NewCustomerListItem,
     );
@@ -135,17 +140,27 @@ export function buildAcquisitionMetrics(
   const currentMonthEntry = monthlySeries.find((entry) => entry.month === currentMonthKey);
   const previousMonthEntry = monthlySeries.find((entry) => entry.month === previousMonthKey);
 
+  const currentMonthNewCustomers = currentMonthEntry?.newCustomers ?? 0;
+  const previousMonthNewCustomers = previousMonthEntry?.newCustomers ?? 0;
+
+  const currentMonthAmount = amountByMonth.get(currentMonthKey) ?? 0;
+  const previousMonthAmount = amountByMonth.get(previousMonthKey) ?? 0;
+
   return {
     summary: {
       today: byDay.get(referenceDate) ?? 0,
       yesterday: byDay.get(formatDateOnly(yesterday)) ?? 0,
-      currentMonth: currentMonthEntry?.newCustomers ?? 0,
-      previousMonth: previousMonthEntry?.newCustomers ?? 0,
+      currentMonth: currentMonthNewCustomers,
+      previousMonth: previousMonthNewCustomers,
       historicalTotal: rows.length,
       currentMonthSpend: currentMonthEntry?.spend ?? 0,
       previousMonthSpend: previousMonthEntry?.spend ?? 0,
       currentMonthCac: currentMonthEntry?.cac ?? null,
       previousMonthCac: previousMonthEntry?.cac ?? null,
+      currentMonthPieces: piecesByMonth.get(currentMonthKey) ?? 0,
+      previousMonthPieces: piecesByMonth.get(previousMonthKey) ?? 0,
+      currentMonthAvgTicket: currentMonthNewCustomers > 0 ? currentMonthAmount / currentMonthNewCustomers : null,
+      previousMonthAvgTicket: previousMonthNewCustomers > 0 ? previousMonthAmount / previousMonthNewCustomers : null,
     },
     dailySeries,
     monthlySeries,
@@ -162,16 +177,24 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
       displayName: string | null;
       firstOrderDate: string;
       firstOrderAmount: string | number | null;
+      firstItemCount: string | number | null;
       firstAttendant: string | null;
     }>(
       `
-        WITH ranked_orders AS (
+        WITH old_codes AS (
+          SELECT customer_code
+          FROM customers
+          WHERE source_system_first = 'history_xls'
+            AND customer_code ~ '^(CL|KH|OEM)[0-9]+$'
+        ),
+        ranked_orders AS (
           SELECT
             o.customer_id AS "customerId",
             c.customer_code AS "customerCode",
             c.display_name AS "displayName",
             o.order_date::date::text AS "firstOrderDate",
             o.total_amount AS "firstOrderAmount",
+            o.item_count AS "firstItemCount",
             NULLIF(o.last_attendant, '') AS "firstAttendant",
             ROW_NUMBER() OVER (
               PARTITION BY o.customer_id
@@ -179,6 +202,17 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
             ) AS order_rank
           FROM orders o
           JOIN customers c ON c.id = o.customer_id
+          WHERE NOT (
+            c.source_system_first = 'supabase_2026'
+            AND EXISTS (
+              SELECT 1 FROM old_codes oc
+              WHERE c.display_name LIKE oc.customer_code || ' %'
+                 OR c.display_name LIKE oc.customer_code || '-%'
+                 OR c.display_name LIKE oc.customer_code || ' -%'
+            )
+          )
+          AND c.customer_code != 'OEM417'
+          AND c.display_name NOT ILIKE '%MARX%'
         )
         SELECT
           "customerId",
@@ -186,6 +220,7 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
           "displayName",
           "firstOrderDate",
           "firstOrderAmount",
+          "firstItemCount",
           "firstAttendant"
         FROM ranked_orders
         WHERE order_rank = 1
@@ -201,6 +236,7 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
     displayName: String(row.displayName ?? "Cliente sem nome"),
     firstOrderDate: String(row.firstOrderDate),
     firstOrderAmount: Number(row.firstOrderAmount ?? 0),
+    firstItemCount: Number(row.firstItemCount ?? 0),
     firstAttendant: row.firstAttendant ? String(row.firstAttendant) : null,
   }));
   const firstHistoryMonth = formatDateOnly(startOfMonth(getFirstHistoryMonth(rows, parseDateOnly(today))));

@@ -163,6 +163,10 @@ export interface AcquisitionSummary {
   previousMonthSpend: number;
   currentMonthCac: number | null;
   previousMonthCac: number | null;
+  currentMonthPieces: number;
+  previousMonthPieces: number;
+  currentMonthAvgTicket: number | null;
+  previousMonthAvgTicket: number | null;
 }
 
 export interface AcquisitionDailyPoint {
@@ -183,6 +187,7 @@ export interface NewCustomerListItem {
   displayName: string;
   firstOrderDate: string;
   firstOrderAmount: number;
+  firstItemCount: number;
   firstAttendant: string | null;
 }
 
