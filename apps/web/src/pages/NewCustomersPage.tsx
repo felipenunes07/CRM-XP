@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { Bar, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber, formatShortDate } from "../lib/format";
@@ -27,10 +28,14 @@ const styles = `
     border: 1px solid rgba(226, 232, 240, 0.8);
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
     border-radius: 20px;
-    padding: 1.5rem;
+    padding: 1.25rem;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
   }
   .premium-card::after {
     content: '';
@@ -51,12 +56,13 @@ const styles = `
     opacity: 1;
   }
   .metric-value {
-    font-size: 2.15rem;
+    font-size: 1.75rem;
     font-weight: 800;
     line-height: 1.1;
     letter-spacing: -0.02em;
     color: #0f172a;
-    margin: 0.5rem 0;
+    margin: 0.4rem 0;
+    white-space: nowrap;
   }
   .metric-label {
     font-size: 0.875rem;
@@ -72,18 +78,28 @@ const styles = `
     margin-top: 0.35rem;
   }
   .trend-up {
-    color: #059669;
-    background: #d1fae5;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    font-weight: 600;
+    color: #10b981;
+    background: #ecfdf5;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid rgba(16, 185, 129, 0.2);
   }
   .trend-down {
-    color: #dc2626;
-    background: #fee2e2;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    font-weight: 600;
+    color: #ef4444;
+    background: #fef2f2;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 1px solid rgba(239, 68, 68, 0.2);
   }
   .premium-panel {
     background: #ffffff;
@@ -239,25 +255,31 @@ function CacTooltip({
 }
 
 function renderTrend(current: number, previous: number) {
-  if (previous === 0) return null;
+  if (previous <= 0) return null;
   const diff = current - previous;
   if (diff === 0) return null;
   const isUp = diff > 0;
+  const percent = Math.abs((diff / previous) * 100).toFixed(1);
+  
   return (
     <span className={isUp ? "trend-up" : "trend-down"}>
-      {isUp ? "↑" : "↓"} {formatNumber(Math.abs(diff))}
+      {isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+      {percent}%
     </span>
   );
 }
 
 function renderCurrencyTrend(current: number, previous: number) {
-  if (previous === 0) return null;
+  if (previous <= 0) return null;
   const diff = current - previous;
   if (diff === 0) return null;
   const isUp = diff > 0;
+  const percent = Math.abs((diff / previous) * 100).toFixed(1);
+  
   return (
     <span className={isUp ? "trend-up" : "trend-down"}>
-      {isUp ? "↑" : "↓"} {formatCurrency(Math.abs(diff))}
+      {isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+      {percent}%
     </span>
   );
 }
