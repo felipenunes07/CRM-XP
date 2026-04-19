@@ -628,4 +628,19 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_inventory_snapshot_items_normalized_model
     ON inventory_snapshot_items(normalized_model);
   `,
+  `
+  CREATE TABLE IF NOT EXISTS monthly_targets (
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    target_amount INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (year, month)
+  );
+  `,
+  `
+  ALTER TABLE monthly_targets ADD COLUMN IF NOT EXISTS attendant TEXT NOT NULL DEFAULT 'TOTAL';
+  ALTER TABLE monthly_targets ADD COLUMN IF NOT EXISTS target_revenue NUMERIC(14,2) DEFAULT 0;
+  ALTER TABLE monthly_targets DROP CONSTRAINT IF EXISTS monthly_targets_pkey;
+  ALTER TABLE monthly_targets ADD PRIMARY KEY (year, month, attendant);
+  `,
 ];

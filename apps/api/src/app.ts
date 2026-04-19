@@ -27,7 +27,7 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, saveMonthlyTarget, getMonthlyTargets } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -108,6 +108,14 @@ const customerQuerySchema = z.object({
 
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(1825).optional(),
+});
+
+const monthlyTargetSchema = z.object({
+  year: z.number().int().min(2000),
+  month: z.number().int().min(1).max(12),
+  targetAmount: z.number().int().min(0),
+  attendant: z.string().default('TOTAL'),
+  targetRevenue: z.number().min(0).optional().default(0),
 });
 
 const attendantsQuerySchema = z.object({
@@ -465,6 +473,25 @@ export function createApp() {
     try {
       const query = dashboardQuerySchema.parse(request.query);
       response.json(await getDashboardMetrics(query.trendDays));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/targets", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const year = request.query.year ? parseInt(String(request.query.year), 10) : undefined;
+      response.json(await getMonthlyTargets(year));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/dashboard/targets", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = monthlyTargetSchema.parse(request.body);
+      await saveMonthlyTarget(payload.year, payload.month, payload.targetAmount, payload.attendant, payload.targetRevenue);
+      response.status(204).send();
     } catch (error) {
       next(error);
     }

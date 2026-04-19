@@ -379,6 +379,9 @@ export function DashboardPage() {
       const dataForYearAndMonth = metrics.itemsSoldTrend?.find(m => m.year === year && m.month === monthNum);
       if (dataForYearAndMonth) {
         point[`year${year}`] = dataForYearAndMonth.totalItems;
+        if (year === currentYear && dataForYearAndMonth.targetAmount) {
+          point.meta = dataForYearAndMonth.targetAmount;
+        }
       }
     });
     return point;
@@ -402,6 +405,30 @@ export function DashboardPage() {
       setSelectedBucket(null);
     }
   }
+
+  async function handleSetTarget() {
+    const userInput = window.prompt("Meta de telas (mensal):", String(metrics.currentMonthTarget || ""));
+    if (userInput === null) return;
+    
+    const val = parseInt(userInput.replace(/\D/g, ''), 10);
+    if (isNaN(val)) {
+      alert("Valor invalido");
+      return;
+    }
+
+    try {
+      const d = new Date();
+      await api.saveMonthlyTarget(token!, d.getFullYear(), d.getMonth() + 1, val);
+      dashboardQuery.refetch();
+    } catch (err) {
+      alert("Erro ao salvar: " + String(err));
+    }
+  }
+
+  const targetAmount = metrics.currentMonthTarget ?? 0;
+  const itemsSold = metrics.currentMonthItemsSold;
+  const targetPercent = targetAmount > 0 ? Math.round((itemsSold / targetAmount) * 100) : 0;
+  const isTargetHit = targetAmount > 0 && itemsSold >= targetAmount;
 
   return (
     <div className="page-stack">
@@ -439,15 +466,24 @@ export function DashboardPage() {
               </div>
             </div>
             
-            <div className="premium-stat-card">
-              <div className="premium-stat-icon accent-blue">
+            <div className="premium-stat-card interactive" onClick={handleSetTarget} title="Clique para editar a meta">
+              <div className={`premium-stat-icon ${isTargetHit ? 'accent-success' : 'accent-blue'}`}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M13 10V3L4 14H11V21L20 10H13Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div className="premium-stat-info">
-                <span>Frequencia media</span>
-                <strong>{metrics.averageFrequencyDays.toFixed(1)} dias</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Meta do mes</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <strong>{formatNumber(itemsSold)} / {targetAmount > 0 ? formatNumber(targetAmount) : 'Definir'}</strong>
+                  {targetAmount > 0 && (
+                    <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
+                      <div style={{ width: `${Math.min(100, targetPercent)}%`, height: '100%', background: isTargetHit ? '#10b981' : '#3b82f6', transition: 'width 0.3s ease' }}></div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -489,7 +525,53 @@ export function DashboardPage() {
           helper="Clientes fora da zona ativa"
           tone="danger"
         />
-        <StatCard title="Frequencia media" value={`${metrics.averageFrequencyDays.toFixed(1)} dias`} helper="Intervalo medio entre pedidos" />
+        <div className="stat-card" style={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontWeight: 600 }}>Meta mensal</h4>
+                <div style={{ marginTop: '0.5rem', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-color)' }}>
+                  {targetAmount > 0 ? `${formatNumber(itemsSold)} telas` : 'Sem meta'}
+                </div>
+              </div>
+              {targetAmount > 0 && (
+                <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
+                  <svg width="54" height="54" viewBox="0 0 54 54">
+                    <circle cx="27" cy="27" r="23" stroke="rgba(0,0,0,0.06)" strokeWidth="5" fill="none" />
+                    <circle 
+                      cx="27" 
+                      cy="27" 
+                      r="23" 
+                      stroke={isTargetHit ? '#10b981' : '#3b82f6'} 
+                      strokeWidth="5" 
+                      fill="none" 
+                      strokeDasharray={2 * Math.PI * 23} 
+                      strokeDashoffset={targetAmount > 0 ? (2 * Math.PI * 23) - (Math.min(100, targetPercent) / 100) * (2 * Math.PI * 23) : (2 * Math.PI * 23)} 
+                      strokeLinecap="round" 
+                      style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dashoffset 1s ease-out' }} 
+                    />
+                  </svg>
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', color: isTargetHit ? '#10b981' : 'var(--text-color)' }}>
+                     {targetPercent}%
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              {targetAmount > 0 && (
+                <span style={{ fontSize: '0.8rem', padding: '0.15rem 0.5rem', background: 'rgba(0,0,0,0.04)', borderRadius: '4px', width: 'fit-content', color: 'var(--text-secondary)' }}>
+                  🎯 Alvo: {formatNumber(targetAmount)}
+                </span>
+              )}
+              <span style={{ fontSize: '0.85rem', color: isTargetHit ? 'var(--success)' : 'var(--text-muted)' }}>
+                 {targetAmount === 0 ? "Vá em 'Metas' no menu lateral para definir." : 
+                  isTargetHit ? "🎉 Objetivo atingido!" : 
+                  `Faltam ${formatNumber(Math.max(0, targetAmount - itemsSold))} para a meta`}
+              </span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="grid-two dashboard-grid">
@@ -683,6 +765,7 @@ export function DashboardPage() {
                     <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="meta" name="Meta (Atual)" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -698,6 +781,10 @@ export function DashboardPage() {
                 <span className="trend-legend-item">
                   <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
                   {chartYears[2]}
+                </span>
+                <span className="trend-legend-item">
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
+                  Meta (Atual)
                 </span>
               </div>
             </>
