@@ -86,11 +86,25 @@ export const api = {
             method: "POST",
         }, token);
     },
+    customerCreditOpportunities(token) {
+        return request("/api/customer-credit/opportunities", {}, token);
+    },
+    inventorySnapshot(token) {
+        return request("/api/inventory/snapshot", {}, token);
+    },
+    refreshInventorySnapshot(token) {
+        return request("/api/inventory/refresh", {
+            method: "POST",
+        }, token);
+    },
     customer(token, id) {
         return request(`/api/customers/${id}`, {}, token);
     },
     customerCreditDetail(token, id) {
         return request(`/api/customers/${id}/credit`, {}, token);
+    },
+    customerOpportunity(token, id) {
+        return request(`/api/customers/${id}/opportunity`, {}, token);
     },
     customerLabels(token) {
         return request("/api/customer-labels", {}, token);

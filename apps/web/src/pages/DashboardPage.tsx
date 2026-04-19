@@ -51,7 +51,7 @@ const bucketFilters = {
 } as const;
 
 type BucketLabel = keyof typeof bucketFilters;
-type ChartView = "inactivity" | "trend";
+type ChartView = "inactivity" | "trend" | "screensSold";
 
 const trendSeries = [
   {
@@ -105,6 +105,14 @@ const chartViewCopy = {
       "Cada dia soma 100% da carteira para mostrar, em percentual, se a base esta ganhando ativos ou acumulando inativos.",
     toggleLabel: "Evolucao da base",
     toggleHelper: "Compare a participacao diaria de ativos, atencao e inativos.",
+  },
+  screensSold: {
+    eyebrow: "Desempenho de vendas",
+    title: "Quantidade de itens (telas) vendidas",
+    description:
+      "Acompanhe o volume mensal de itens vendidos. As linhas comparam o desempenho do ano atual com os anos anteriores.",
+    toggleLabel: "Telas vendidas",
+    toggleHelper: "Compare o volume mensal (2024 a 2026).",
   },
 } as const;
 
@@ -360,6 +368,22 @@ export function DashboardPage() {
   const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
   const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
 
+  const currentYear = new Date().getFullYear();
+  const chartYears = [currentYear - 2, currentYear - 1, currentYear];
+
+  const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const itemsSoldData = monthNames.map((monthName, idx) => {
+    const monthNum = idx + 1;
+    const point: any = { month: monthName };
+    chartYears.forEach(year => {
+      const dataForYearAndMonth = metrics.itemsSoldTrend?.find(m => m.year === year && m.month === monthNum);
+      if (dataForYearAndMonth) {
+        point[`year${year}`] = dataForYearAndMonth.totalItems;
+      }
+    });
+    return point;
+  });
+
   async function handleSync() {
     try {
       setIsSyncing(true);
@@ -556,7 +580,7 @@ export function DashboardPage() {
                 </div>
               ) : null}
             </>
-          ) : (
+          ) : chartView === "trend" ? (
             <>
               <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
               <div className="trend-chart-wrap">
@@ -629,7 +653,55 @@ export function DashboardPage() {
                 ))}
               </div>
             </>
-          )}
+          ) : chartView === "screensSold" ? (
+            <>
+              <div className="trend-chart-wrap" style={{ marginTop: "1rem" }}>
+                <ResponsiveContainer width="100%" height={320}>
+                  <ComposedChart data={itemsSoldData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
+                    <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                    <XAxis dataKey="month" stroke="#5f6f95" tickLine={false} axisLine={false} />
+                    <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat("pt-BR").format(val)} />
+                    <Tooltip
+                      cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        return (
+                          <div className="chart-tooltip">
+                            <strong>{label}</strong>
+                            <div style={{ marginTop: "0.5rem" }}>
+                              {payload.map((entry: any) => (
+                                <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }}>
+                                  <span style={{ color: entry.color, fontWeight: 500 }}>{entry.name}</span>
+                                  <strong>{formatNumber(entry.value)} telas</strong>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="trend-legend" aria-label="Legenda do grafico de telas vendidas">
+                <span className="trend-legend-item">
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
+                  {chartYears[0]}
+                </span>
+                <span className="trend-legend-item">
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
+                  {chartYears[1]}
+                </span>
+                <span className="trend-legend-item">
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                  {chartYears[2]}
+                </span>
+              </div>
+            </>
+          ) : null}
         </article>
 
         <SalesPerformancePanel 

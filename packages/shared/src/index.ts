@@ -19,6 +19,14 @@ export type InsightTag =
   | "compra_prevista_vencida"
   | "novo_cliente";
 
+export interface ItemsSoldTrendPoint {
+  year: number;
+  month: number;
+  totalItems: number;
+  totalOrders: number;
+  totalRevenue: number;
+}
+
 export interface DashboardMetrics {
   totalCustomers: number;
   statusCounts: Record<CustomerStatus, number>;
@@ -35,6 +43,7 @@ export interface DashboardMetrics {
   reactivationHistory: HistoricalReactivationEntry[];
   portfolioTrend: PortfolioTrendPoint[];
   salesPerformance: SalesPerformanceEntry[];
+  itemsSoldTrend: ItemsSoldTrendPoint[];
 }
 
 export interface HistoricalReactivationEntry {
