@@ -3,6 +3,7 @@ import type {
   AgendaResponse,
   DashboardMetrics,
   InsightTag,
+  ItemsSoldTrendPoint,
   ReactivationLeaderboardEntry,
   ReactivationRecoveredClient,
 } from "@olist-crm/shared";
@@ -517,9 +518,35 @@ async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactiv
   }));
 }
 
+async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
+  const result = await pool.query(
+    `
+      SELECT
+        EXTRACT(YEAR FROM o.order_date)::int AS year,
+        EXTRACT(MONTH FROM o.order_date)::int AS month,
+        COALESCE(SUM(oi.quantity), 0)::int AS total_items,
+        COUNT(DISTINCT o.id)::int AS total_orders,
+        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.order_date >= date_trunc('year', CURRENT_DATE - interval '2 years')
+      GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
+      ORDER BY EXTRACT(YEAR FROM o.order_date) ASC, EXTRACT(MONTH FROM o.order_date) ASC
+    `
+  );
+
+  return result.rows.map(row => ({
+    year: Number(row.year ?? 0),
+    month: Number(row.month ?? 0),
+    totalItems: Number(row.total_items ?? 0),
+    totalOrders: Number(row.total_orders ?? 0),
+    totalRevenue: Number(row.total_revenue ?? 0),
+  }));
+}
+
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend] =
     await Promise.all([
       pool.query(
         `
@@ -567,6 +594,7 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
       getHistoricalReactivationLeaderboard(),
       getPortfolioTrend(validatedTrendDays),
       getSalesPerformance(),
+      getItemsSoldTrend(),
     ]);
 
   const row = totals.rows[0];
@@ -613,6 +641,7 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
     reactivationHistory,
     portfolioTrend: alignedTrend,
     salesPerformance,
+    itemsSoldTrend,
   };
 }
 
