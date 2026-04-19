@@ -19,6 +19,7 @@ const MessagesPage = lazy(async () => ({ default: (await import("./pages/Message
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
+const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="/disparador" element={<DisparadorPage />} />
           <Route path="/rotulos" element={<LabelsPage />} />
           <Route path="/prospeccao" element={<ProspectingPage />} />
+          <Route path="/metas" element={<MetasPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -25,6 +25,15 @@ export interface ItemsSoldTrendPoint {
   totalItems: number;
   totalOrders: number;
   totalRevenue: number;
+  targetAmount?: number | null;
+}
+
+export interface MonthlyTarget {
+  year: number;
+  month: number;
+  attendant: string; // 'TOTAL' for global, otherwise attendant name
+  targetAmount: number;
+  targetRevenue: number;
 }
 
 export interface DashboardMetrics {
@@ -44,6 +53,8 @@ export interface DashboardMetrics {
   portfolioTrend: PortfolioTrendPoint[];
   salesPerformance: SalesPerformanceEntry[];
   itemsSoldTrend: ItemsSoldTrendPoint[];
+  currentMonthTarget: number | null;
+  currentMonthItemsSold: number;
 }
 
 export interface HistoricalReactivationEntry {

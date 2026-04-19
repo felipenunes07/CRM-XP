@@ -521,17 +521,29 @@ async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactiv
 async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
   const result = await pool.query(
     `
-      SELECT
-        EXTRACT(YEAR FROM o.order_date)::int AS year,
-        EXTRACT(MONTH FROM o.order_date)::int AS month,
-        COALESCE(SUM(oi.quantity), 0)::int AS total_items,
-        COUNT(DISTINCT o.id)::int AS total_orders,
-        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
-      FROM orders o
-      LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE o.order_date >= date_trunc('year', CURRENT_DATE - interval '2 years')
-      GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
-      ORDER BY EXTRACT(YEAR FROM o.order_date) ASC, EXTRACT(MONTH FROM o.order_date) ASC
+      WITH order_item_totals AS (
+        SELECT order_id, COALESCE(SUM(quantity), 0)::int AS quantity
+        FROM order_items
+        GROUP BY order_id
+      ),
+      sales AS (
+        SELECT
+          EXTRACT(YEAR FROM o.order_date)::int AS year,
+          EXTRACT(MONTH FROM o.order_date)::int AS month,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items,
+          COUNT(DISTINCT o.id)::int AS total_orders,
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
+        FROM orders o
+        LEFT JOIN order_item_totals oi ON oi.order_id = o.id
+        WHERE o.order_date >= date_trunc('year', CURRENT_DATE - interval '2 years')
+        GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
+      )
+      SELECT 
+        s.*,
+        mt.target_amount
+      FROM sales s
+      LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month
+      ORDER BY s.year ASC, s.month ASC
     `
   );
 
@@ -541,12 +553,42 @@ async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
     totalItems: Number(row.total_items ?? 0),
     totalOrders: Number(row.total_orders ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
+    targetAmount: row.target_amount ? Number(row.target_amount) : null,
+  }));
+}
+
+export async function saveMonthlyTarget(year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0): Promise<void> {
+  await pool.query(
+    `
+      INSERT INTO monthly_targets (year, month, attendant, target_amount, target_revenue, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (year, month, attendant) DO UPDATE
+      SET target_amount = EXCLUDED.target_amount, 
+          target_revenue = EXCLUDED.target_revenue, 
+          updated_at = NOW()
+    `,
+    [year, month, attendant, targetAmount, targetRevenue]
+  );
+}
+
+export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]> {
+  const query = year 
+    ? { sql: `SELECT * FROM monthly_targets WHERE year = $1 ORDER BY year DESC, month DESC, attendant ASC`, params: [year] }
+    : { sql: `SELECT * FROM monthly_targets ORDER BY year DESC, month DESC, attendant ASC`, params: [] };
+    
+  const result = await pool.query(query.sql, query.params);
+  return result.rows.map(row => ({
+    year: row.year,
+    month: row.month,
+    attendant: row.attendant,
+    targetAmount: Number(row.target_amount ?? 0),
+    targetRevenue: Number(row.target_revenue ?? 0),
   }));
 }
 
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend, currentMonthTargetData] =
     await Promise.all([
       pool.query(
         `
@@ -595,6 +637,13 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
       getPortfolioTrend(validatedTrendDays),
       getSalesPerformance(),
       getItemsSoldTrend(),
+      pool.query(`
+        SELECT target_amount 
+        FROM monthly_targets 
+        WHERE year = EXTRACT(YEAR FROM CURRENT_DATE) 
+          AND month = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND attendant = 'TOTAL'
+      `),
     ]);
 
   const row = totals.rows[0];
@@ -603,6 +652,11 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
   const snapshotActive = Number(row?.active_count ?? 0);
   const snapshotAttention = Number(row?.attention_count ?? 0);
   const snapshotInactive = Number(row?.inactive_count ?? 0);
+
+  const currentYearDate = new Date();
+  const currentMonthData = itemsSoldTrend.find(i => i.year === currentYearDate.getFullYear() && i.month === currentYearDate.getMonth() + 1);
+  const currentMonthItemsSold = currentMonthData?.totalItems ?? 0;
+  const currentMonthTarget = currentMonthTargetData.rows[0]?.target_amount ? Number(currentMonthTargetData.rows[0].target_amount) : null;
 
   // Ensure the last trend point always matches the card values (both come
   // from customer_snapshot). Without this, historical recalculation from
@@ -642,6 +696,8 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
     portfolioTrend: alignedTrend,
     salesPerformance,
     itemsSoldTrend,
+    currentMonthTarget,
+    currentMonthItemsSold,
   };
 }
 

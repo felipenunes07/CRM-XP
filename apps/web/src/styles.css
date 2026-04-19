@@ -5649,3 +5649,25 @@ textarea {
     bottom: 0.75rem;
   }
 }
+
+/* New Dashboard Target Styles */
+.premium-stat-card.interactive {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.premium-stat-card.interactive:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 32px rgba(30, 52, 86, 0.08);
+}
+
+.premium-stat-icon.accent-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+}
+
+.premium-stat-icon.accent-blue {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
