@@ -55,7 +55,7 @@ a {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -280,6 +280,7 @@ a {
 
 .main-content {
   padding: 1.6rem;
+  min-width: 0;
 }
 
 .page-stack {
@@ -904,7 +905,7 @@ a {
 
 .grid-two {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
   gap: 0.9rem;
 }
 
@@ -914,6 +915,7 @@ a {
 
 .panel {
   padding: 1.1rem;
+  min-width: 0;
 }
 
 .chart-panel,
@@ -1580,6 +1582,7 @@ a {
 .data-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 .customer-doc-table {
@@ -1589,6 +1592,8 @@ a {
 .customer-doc-table th:nth-child(n + 3),
 .customer-doc-table td:nth-child(n + 3) {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 
@@ -3591,7 +3596,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 1.15rem;
-  padding: 1.1rem 1.15rem;
+  padding: 1.35rem 1.25rem;
   border-radius: 16px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -3641,6 +3646,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-top: 0.35rem;     /* Extra breathing room from top */
 }
 
 .ranking-name {
@@ -3650,6 +3656,7 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.35;        /* Better vertical centering relative to its container */
 }
 
 /* Metrics */
