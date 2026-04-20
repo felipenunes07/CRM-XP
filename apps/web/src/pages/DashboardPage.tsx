@@ -14,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Target, Users, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AgendaItem, PortfolioTrendPoint } from "@olist-crm/shared";
 import { ContactQueueCard } from "../components/ContactQueueCard";
@@ -24,7 +25,7 @@ import { PeriodSelector } from "../components/PeriodSelector";
 import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatDate, formatNumber, formatShortDate } from "../lib/format";
+import { formatDate, formatNumber, formatShortDate, formatCurrency, formatPercent } from "../lib/format";
 
 type TrendPeriod = '90d' | '6m' | '1y' | 'max';
 
@@ -554,6 +555,12 @@ export function DashboardPage() {
           badge={formatShare(metrics.statusCounts.INACTIVE, metrics.totalCustomers)}
           helper="Clientes fora da zona ativa"
           tone="danger"
+        />
+        <StatCard
+          title="LTV (Valor Vitalício)"
+          value={formatCurrency(metrics.estimatedLtv ?? 0)}
+          helper={`Expectativa de receita (Estimativa vida: ${formatNumber(metrics.estimatedLifespanMonths ?? 0)} meses)`}
+          tone="primary"
         />
         <article className={monthlyGoalCardClassName}>
           <div className="monthly-goal-card__header">
