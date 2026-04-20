@@ -21,7 +21,12 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
     );
   }
 
-  if (!salesPerformance.length) {
+  const filteredSalesPerformance = salesPerformance.filter((entry) => {
+    const name = entry.attendant.toLowerCase();
+    return name !== "iza" && name !== "sem atendente";
+  });
+
+  if (!filteredSalesPerformance.length) {
     return (
       <article className="panel insight-panel">
         <div className="panel-header">
@@ -35,7 +40,7 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
     );
   }
 
-  const maxOrders = Math.max(...salesPerformance.map((e) => e.totalOrders));
+  const maxOrders = Math.max(...filteredSalesPerformance.map((e) => e.totalOrders));
 
   return (
     <article className="panel insight-panel">
@@ -48,7 +53,7 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
       </div>
 
       <div className="ranking-balanced-list">
-        {salesPerformance.map((entry, index) => {
+        {filteredSalesPerformance.map((entry, index) => {
           const isTop3 = index < 3;
           const posClass = isTop3 ? `pos-${index + 1}` : "";
           const pct = maxOrders > 0 ? (entry.totalOrders / maxOrders) * 100 : 0;
