@@ -100,7 +100,7 @@ export function ReactivationPage() {
             return "#ffffff";
         return "var(--text)";
     };
-    return (_jsxs("div", { className: "page-stack", children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "0.5rem" }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", style: { margin: 0, marginBottom: "0.2rem" }, children: "Ranking de Reativa\u00E7\u00E3o" }), _jsx("h2", { style: { margin: 0, fontSize: "1.5rem" }, children: "Recuperadoras de Ouro" })] }), _jsxs("button", { onClick: () => setIsCompactMode(!isCompactMode), style: {
+    return (_jsxs("div", { className: "page-stack", children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: "0.5rem" }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", style: { margin: 0, marginBottom: "0.2rem" }, children: "Ranking de Reativa\u00E7\u00E3o" }), _jsx("h2", { className: "premium-header-title", children: "Recuperadoras de Ouro" })] }), _jsxs("button", { onClick: () => setIsCompactMode(!isCompactMode), style: {
                             display: "flex",
                             alignItems: "center",
                             gap: "0.5rem",

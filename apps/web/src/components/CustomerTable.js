@@ -49,6 +49,16 @@ const columns = [
         getValue: (customer) => customer.totalOrders,
     },
     {
+        id: "avgDaysBetweenOrders",
+        label: "Media pedidos",
+        width: 120,
+        minWidth: 110,
+        sortable: true,
+        defaultDirection: "desc",
+        hint: "Intervalo medio entre pedidos do cliente.",
+        getValue: (customer) => customer.avgDaysBetweenOrders,
+    },
+    {
         id: "avgTicket",
         label: "Ticket medio",
         width: 140,
@@ -200,5 +210,5 @@ export function CustomerTable({ customers }) {
                                 const isSorted = sortState?.columnId === column.id;
                                 const activeDirection = isSorted ? sortState.direction : undefined;
                                 return (_jsx("th", { children: _jsxs("div", { className: "table-head-cell", children: [_jsxs("div", { className: "table-header-group", children: [column.sortable ? (_jsxs("button", { className: `table-sort-button ${isSorted ? "active" : ""}`, type: "button", onClick: () => toggleSort(column), children: [_jsx("span", { children: column.label }), _jsx(SortIndicator, { direction: activeDirection })] })) : (_jsx("span", { className: "table-head-static", children: column.label })), column.hint ? _jsx(InfoHint, { text: column.hint }) : null] }), _jsx("button", { className: "resize-handle", type: "button", "aria-label": `Redimensionar coluna ${column.label}`, onMouseDown: (event) => startResize(event, column.id) })] }) }, column.id));
-                            }) }) }), _jsx("tbody", { children: sortedCustomers.map((customer) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs(Link, { className: "table-link", to: `/clientes/${customer.id}`, children: [_jsx("strong", { children: customer.displayName }), _jsx("span", { children: customer.customerCode }), customer.isAmbassador ? _jsx("small", { className: "table-inline-badge", children: AMBASSADOR_LABEL_NAME }) : null] }) }), _jsx("td", { children: _jsx("span", { className: `status-badge status-${customer.status.toLowerCase()}`, children: statusLabel(customer.status) }) }), _jsx("td", { children: formatDate(customer.lastPurchaseAt) }), _jsx("td", { children: formatDaysSince(customer.daysSinceLastPurchase) }), _jsx("td", { children: customer.totalOrders }), _jsx("td", { children: formatCurrency(customer.avgTicket) }), _jsx("td", { children: formatCurrency(customer.totalSpent) }), _jsx("td", { children: _jsx("div", { className: "tag-row compact", children: customer.labels.length ? (customer.labels.map((label) => (_jsx("span", { className: "tag", style: { background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }, children: label.name }, label.id)))) : (_jsx("span", { className: "muted-copy", children: "Sem rotulo" })) }) }), _jsx("td", { children: customer.priorityScore.toFixed(1) }), _jsx("td", { children: customer.primaryInsight ?? "Sem alerta" })] }, customer.id))) })] }) }) }));
+                            }) }) }), _jsx("tbody", { children: sortedCustomers.map((customer) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs(Link, { className: "table-link", to: `/clientes/${customer.id}`, children: [_jsx("strong", { children: customer.displayName }), _jsx("span", { children: customer.customerCode }), customer.isAmbassador ? _jsx("small", { className: "table-inline-badge", children: AMBASSADOR_LABEL_NAME }) : null] }) }), _jsx("td", { children: _jsx("span", { className: `status-badge status-${customer.status.toLowerCase()}`, children: statusLabel(customer.status) }) }), _jsx("td", { children: formatDate(customer.lastPurchaseAt) }), _jsx("td", { children: formatDaysSince(customer.daysSinceLastPurchase) }), _jsx("td", { children: customer.totalOrders }), _jsx("td", { children: customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (`${Math.round(customer.avgDaysBetweenOrders)} dias`) : (_jsx("span", { className: "muted-copy", children: "\u2014" })) }), _jsx("td", { children: formatCurrency(customer.avgTicket) }), _jsx("td", { children: formatCurrency(customer.totalSpent) }), _jsx("td", { children: _jsx("div", { className: "tag-row compact", children: customer.labels.length ? (customer.labels.map((label) => (_jsx("span", { className: "tag", style: { background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }, children: label.name }, label.id)))) : (_jsx("span", { className: "muted-copy", children: "Sem rotulo" })) }) }), _jsx("td", { children: customer.priorityScore.toFixed(1) }), _jsx("td", { children: customer.primaryInsight ?? "Sem alerta" })] }, customer.id))) })] }) }) }));
 }
