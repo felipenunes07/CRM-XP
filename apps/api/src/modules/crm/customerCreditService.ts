@@ -1035,7 +1035,15 @@ async function loadOverviewRows(snapshotId: string) {
     [snapshotId],
   );
 
-  return result.rows.map((row) => mapCustomerCreditRow(row)).sort(compareCreditRows);
+  const mappedRows = result.rows.map((row) => mapCustomerCreditRow(row));
+
+  const filteredRows = mappedRows.filter((row) => {
+    const name = (row.customerDisplayName || "").toLowerCase();
+    const source = (row.sourceDisplayName || "").toLowerCase();
+    return !name.includes("shop online") && !source.includes("shop online");
+  });
+
+  return filteredRows.sort(compareCreditRows);
 }
 
 export async function getCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
