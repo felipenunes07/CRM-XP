@@ -456,61 +456,17 @@ export function DisparadorPage() {
       <section className="panel whatsapp-workspace-header">
         <div className="whatsapp-workspace-copy">
           <p className="eyebrow">Disparador WhatsApp</p>
-          <h2>Disparador</h2>
-          <p className="panel-subcopy">Monte a mensagem, confira a base e acompanhe a fila sem sair desta tela.</p>
-
-          <div className="whatsapp-flow-strip">
-            <div className={`whatsapp-flow-step ${hasMessage ? "is-done" : "is-active"}`}>
-              <span>1</span>
-              <div>
-                <strong>Monte a mensagem</strong>
-                <small>Defina campanha, template e texto final.</small>
-              </div>
-            </div>
-            <div className={`whatsapp-flow-step ${mappingSummaryQuery.data?.totalGroups ? "is-done" : ""}`}>
-              <span>2</span>
-              <div>
-                <strong>Confira a base</strong>
-                <small>Atualize a planilha e veja pendencias antes do envio.</small>
-              </div>
-            </div>
-            <div className={`whatsapp-flow-step ${isReadyToDispatch ? "is-done" : ""}`}>
-              <span>3</span>
-              <div>
-                <strong>Dispare com seguranca</strong>
-                <small>Selecione os grupos e acompanhe a fila em tempo real.</small>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="whatsapp-inline-stats">
-          <div className="whatsapp-inline-stat is-highlight">
-            <span>Selecionados</span>
-            <strong>{formatNumber(selectedGroupCount)}</strong>
-          </div>
-          <div className="whatsapp-inline-stat">
-            <span>Base</span>
-            <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.totalGroups) : "--"}</strong>
-          </div>
-          <div className="whatsapp-inline-stat">
-            <span>Pendentes</span>
-            <strong>{mappingSummaryQuery.data ? formatNumber(mappingSummaryQuery.data.pendingReviewGroups) : "--"}</strong>
-          </div>
-          <div className="whatsapp-inline-stat">
-            <span>Ultima atualizacao</span>
-            <strong>{formatDateTime(mappingSummaryQuery.data?.lastImportedAt ?? null)}</strong>
-          </div>
+          <h2>Disparador de Mensagens</h2>
+          <p className="panel-subcopy">Escolha o público, configure a mensagem e acompanhe os envios em tempo real.</p>
         </div>
       </section>
 
-      <section className="grid-two whatsapp-simple-grid whatsapp-setup-grid">
+      <section className={canImport ? "grid-two whatsapp-simple-grid whatsapp-setup-grid" : "whatsapp-simple-grid whatsapp-setup-grid"}>
         <article className="panel whatsapp-compose-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Passo 1</p>
-              <h3>Mensagem e disparo</h3>
-              <p className="panel-subcopy">Preencha da esquerda para a direita: campanha, ritmo e mensagem final.</p>
+              <h3>Sua Mensagem</h3>
+              <p className="panel-subcopy">Escolha a campanha, defina o texto e prepare o disparo.</p>
             </div>
             <div className={`whatsapp-panel-pill ${isReadyToDispatch ? "is-ready" : ""}`}>
               <strong>{isReadyToDispatch ? "Pronto para disparar" : "Em preparacao"}</strong>
@@ -560,29 +516,31 @@ export function DisparadorPage() {
             </label>
           </div>
 
-          <div className="whatsapp-delay-grid">
-            <label className="whatsapp-delay-field">
-              <span>Delay minimo</span>
-              <input
-                type="number"
-                min={1}
-                value={minDelaySeconds}
-                onChange={(event) => setMinDelaySeconds(Number(event.target.value) || 1)}
-              />
-              <small>Menor intervalo entre um envio e outro.</small>
-            </label>
+          {canImport ? (
+            <div className="whatsapp-delay-grid">
+              <label className="whatsapp-delay-field">
+                <span>Delay minimo</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={minDelaySeconds}
+                  onChange={(event) => setMinDelaySeconds(Number(event.target.value) || 1)}
+                />
+                <small>Menor intervalo entre um envio e outro.</small>
+              </label>
 
-            <label className="whatsapp-delay-field">
-              <span>Delay maximo</span>
-              <input
-                type="number"
-                min={1}
-                value={maxDelaySeconds}
-                onChange={(event) => setMaxDelaySeconds(Number(event.target.value) || 1)}
-              />
-              <small>Ajuda a distribuir a fila com variacao natural.</small>
-            </label>
-          </div>
+              <label className="whatsapp-delay-field">
+                <span>Delay maximo</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={maxDelaySeconds}
+                  onChange={(event) => setMaxDelaySeconds(Number(event.target.value) || 1)}
+                />
+                <small>Ajuda a distribuir a fila com variacao natural.</small>
+              </label>
+            </div>
+          ) : null}
 
           <div className="whatsapp-compose-editor-grid">
             <label className="whatsapp-message-field">
@@ -639,8 +597,9 @@ export function DisparadorPage() {
           ) : null}
         </article>
 
-        <article className="panel whatsapp-source-panel">
-          <div className="panel-header">
+        {canImport ? (
+          <article className="panel whatsapp-source-panel">
+            <div className="panel-header">
             <div>
               <p className="eyebrow">Passo 2</p>
               <h3>Base de grupos</h3>
@@ -831,8 +790,9 @@ export function DisparadorPage() {
             <div className="empty-state">
               A fila aparece aqui assim que um disparo entrar em andamento.
             </div>
-          )}
-        </article>
+            )}
+          </article>
+        ) : null}
       </section>
 
       <section className="panel table-panel">
