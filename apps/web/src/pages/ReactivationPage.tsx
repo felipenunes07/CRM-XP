@@ -113,7 +113,7 @@ export function ReactivationPage() {
           <p className="eyebrow" style={{ margin: 0, marginBottom: "0.2rem" }}>
             Ranking de Reativação
           </p>
-          <h2 style={{ margin: 0, fontSize: "1.5rem" }}>Recuperadoras de Ouro</h2>
+          <h2 className="premium-header-title">Recuperadoras de Ouro</h2>
         </div>
         <button
           onClick={() => setIsCompactMode(!isCompactMode)}

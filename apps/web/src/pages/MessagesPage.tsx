@@ -62,7 +62,7 @@ export function MessagesPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Biblioteca de mensagens</p>
-              <h2>{editingId ? "Editar template" : "Criar template"}</h2>
+              <h2 className="premium-header-title">{editingId ? "Editar template" : "Criar template"}</h2>
             </div>
           </div>
 
