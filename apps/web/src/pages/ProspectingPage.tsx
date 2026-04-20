@@ -222,7 +222,7 @@ export function ProspectingPage() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Prospeccao</p>
-            <h2>Leads do Google Places</h2>
+            <h2 className="premium-header-title">Leads do Google Places</h2>
             <p className="panel-subcopy">
               Busca direta por palavra-chave, estado e cidade opcional. A tela principal ficou mais limpa, e o painel operacional foi para a aba ao lado.
             </p>
