@@ -144,7 +144,7 @@ export function SegmentsPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Segmentacao inteligente</p>
-              <h2>Monte um publico acionavel</h2>
+              <h2 className="premium-header-title">Monte um publico acionavel</h2>
             </div>
           </div>
 

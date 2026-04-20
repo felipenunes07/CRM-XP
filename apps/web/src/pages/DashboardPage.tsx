@@ -409,7 +409,7 @@ export function DashboardPage() {
   async function handleSetTarget() {
     const userInput = window.prompt("Meta de telas (mensal):", String(metrics.currentMonthTarget || ""));
     if (userInput === null) return;
-    
+
     const val = parseInt(userInput.replace(/\D/g, ''), 10);
     if (isNaN(val)) {
       alert("Valor invalido");
@@ -446,18 +446,18 @@ export function DashboardPage() {
     targetAmount === 0
       ? "Sem meta"
       : isTargetHit
-      ? targetExceededBy > 0
-        ? `+${formatNumber(targetExceededBy)} acima`
-        : "Meta batida"
-      : `${targetPercent}% do alvo`;
+        ? targetExceededBy > 0
+          ? `+${formatNumber(targetExceededBy)} acima`
+          : "Meta batida"
+        : `${targetPercent}% do alvo`;
   const monthlyGoalStatus =
     targetAmount === 0
       ? "Defina sua meta no menu Metas para acompanhar o ritmo do mes."
       : isTargetHit
-      ? targetExceededBy > 0
-        ? `Voce ja passou ${formatNumber(targetExceededBy)} telas do alvo.`
-        : "Objetivo concluido neste mes."
-      : `Faltam ${formatNumber(targetRemaining)} para a meta`;
+        ? targetExceededBy > 0
+          ? `Voce ja passou ${formatNumber(targetExceededBy)} telas do alvo.`
+          : "Objetivo concluido neste mes."
+        : `Faltam ${formatNumber(targetRemaining)} para a meta`;
   const monthlyGoalMetaLabel = targetAmount > 0 ? `Alvo ${formatNumber(targetAmount)}` : "Meta pendente";
 
   return (
@@ -469,7 +469,7 @@ export function DashboardPage() {
         <div className="hero-premium-content">
           <div className="hero-premium-copy">
             <div className="premium-badge">Operacao comercial</div>
-            <h2 className="premium-title">Prioridades de contato e saude da carteira</h2>
+            <h2 className="premium-title">Saude da carteira de clientes XP</h2>
             <p className="premium-subtitle">Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.</p>
             <div className="premium-actions">
               <Link className="premium-button primary" to="/agenda">
@@ -485,7 +485,7 @@ export function DashboardPage() {
             <div className="premium-stat-card">
               <div className="premium-stat-icon">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <div className="premium-stat-info">
@@ -495,11 +495,11 @@ export function DashboardPage() {
                 </strong>
               </div>
             </div>
-            
+
             <div className="premium-stat-card interactive" onClick={handleSetTarget} title="Clique para editar a meta">
               <div className={`premium-stat-icon ${isTargetHit ? 'accent-success' : 'accent-blue'}`}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <div className="premium-stat-info">
@@ -516,11 +516,11 @@ export function DashboardPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="premium-stat-card">
               <div className="premium-stat-icon accent-purple">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <div className="premium-stat-info">
@@ -832,8 +832,8 @@ export function DashboardPage() {
           ) : null}
         </article>
 
-        <SalesPerformancePanel 
-          salesPerformance={metrics.salesPerformance} 
+        <SalesPerformancePanel
+          salesPerformance={metrics.salesPerformance}
           isLoading={dashboardQuery.isLoading}
         />
       </section>

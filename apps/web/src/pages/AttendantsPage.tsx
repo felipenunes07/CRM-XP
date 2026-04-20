@@ -335,7 +335,7 @@ export function AttendantsPage() {
       <section className="hero-panel attendants-hero">
         <div className="hero-copy">
           <p className="eyebrow">Performance comercial</p>
-          <h2>Atendentes</h2>
+          <h2 className="premium-header-title">Atendentes</h2>
           <p>
             Compare faturamento, vendas, pecas e clientes por vendedora, enxergando o corte atual, o historico mensal
             fechado e a carteira de cada nome.

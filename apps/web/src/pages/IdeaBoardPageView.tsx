@@ -248,7 +248,7 @@ export function IdeaBoardPageView({
         <div className="idea-canvas-dashboard-top">
           <div className="idea-canvas-heading">
             <p className="eyebrow">Ideias / Votacao</p>
-            <h2>Mural em canvas para acompanhar o consenso do time</h2>
+            <h2 className="premium-header-title">Mural em canvas para acompanhar o consenso do time</h2>
             <p className="panel-subcopy">
               O mural mostra so a leitura agregada. O voto acontece no pop-up e fecha depois de salvar.
             </p>

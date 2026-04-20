@@ -154,6 +154,17 @@ a {
   font-family: "Poppins", sans-serif;
 }
 
+.premium-header-title,
+.premium-title {
+  margin: 0;
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, #0f172a 0%, #3b82f6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 .brand-logo,
 .login-logo {
   width: 150px;

@@ -76,7 +76,7 @@ export function LabelsPage() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Rotulos</p>
-            <h2>Crie e apague rotulos do sistema</h2>
+            <h2 className="premium-header-title">Crie e apague rotulos do sistema</h2>
           </div>
         </div>
 

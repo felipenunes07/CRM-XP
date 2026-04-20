@@ -207,7 +207,7 @@ export function CustomersPage() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Clientes</p>
-            <h2>{activeTab.title}</h2>
+            <h2 className="premium-header-title">{activeTab.title}</h2>
           </div>
 
           <div className="chart-switcher customers-view-switcher" role="tablist" aria-label="Alternar visao da pagina de clientes">

@@ -456,7 +456,7 @@ export function DisparadorPage() {
       <section className="panel whatsapp-workspace-header">
         <div className="whatsapp-workspace-copy">
           <p className="eyebrow">Disparador WhatsApp</p>
-          <h2>Disparador de Mensagens</h2>
+          <h2 className="premium-header-title">Disparador de Mensagens</h2>
           <p className="panel-subcopy">Escolha o público, configure a mensagem e acompanhe os envios em tempo real.</p>
         </div>
       </section>

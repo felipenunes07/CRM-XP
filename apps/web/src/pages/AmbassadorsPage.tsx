@@ -398,7 +398,7 @@ export function AmbassadorsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <div>
           <p className="eyebrow" style={{ margin: 0, marginBottom: '0.2rem' }}>Clientes chave</p>
-          <h2 style={{ margin: 0, fontSize: '1.5rem' }}>Embaixadores da empresa</h2>
+          <h2 className="premium-header-title">Embaixadores da empresa</h2>
         </div>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <div style={{ background: 'var(--panel)', padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
