@@ -4,6 +4,7 @@ import { BarChart3, ClipboardList, LayoutDashboard, Lightbulb, MessageSquareText
 import { useAuth } from "../hooks/useAuth";
 export const appShellLinks = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/metas", icon: Trophy, label: "Metas" },
     { to: "/atendentes", icon: TrendingUp, label: "Atendentes" },
     { to: "/clientes", icon: Users, label: "Clientes" },
     { to: "/embaixadores", icon: Star, label: "Embaixadores" },

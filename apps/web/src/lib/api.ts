@@ -17,6 +17,7 @@ import type {
   IdeaVoteFeedback,
   InventorySnapshotMeta,
   MessageTemplate,
+  MonthlyTarget,
   ProspectContactAttemptResult,
   ProspectKeywordPreset,
   ProspectLead,

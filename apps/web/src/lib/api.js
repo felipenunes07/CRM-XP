@@ -39,6 +39,18 @@ export const api = {
         }
         return request(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
+    getMonthlyTargets(token, year) {
+        const search = new URLSearchParams();
+        if (year)
+            search.set("year", String(year));
+        return request(`/api/dashboard/targets${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    saveMonthlyTarget(token, year, month, targetAmount, attendant = 'TOTAL', targetRevenue = 0) {
+        return request("/api/dashboard/targets", {
+            method: "POST",
+            body: JSON.stringify({ year, month, targetAmount, attendant, targetRevenue }),
+        }, token);
+    },
     acquisition(token) {
         return request("/api/dashboard/acquisition", {}, token);
     },
