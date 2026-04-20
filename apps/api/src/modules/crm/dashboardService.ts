@@ -11,6 +11,7 @@ import { pool } from "../../db/client.js";
 import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
+import { getAcquisitionMetrics } from "./acquisitionService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
@@ -588,7 +589,7 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
 
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend, currentMonthTargetData] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend, currentMonthTargetData, ltvData] =
     await Promise.all([
       pool.query(
         `
@@ -644,9 +645,33 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
           AND month = EXTRACT(MONTH FROM CURRENT_DATE)
           AND attendant = 'TOTAL'
       `),
+      pool.query(`
+        WITH customer_lifespan AS (
+          SELECT 
+            s.customer_id,
+            (s.last_purchase_at::date - fp.first_purchase_date) as tenure_days
+          FROM customer_snapshot s
+          JOIN (
+            SELECT customer_id, MIN(order_date) as first_purchase_date
+            FROM orders
+            GROUP BY customer_id
+          ) fp ON fp.customer_id = s.customer_id
+          WHERE s.total_orders > 1
+        )
+        SELECT 
+          AVG(tenure_days / 30.44)::numeric(14,2) as avg_lifespan_months
+        FROM customer_lifespan
+      `),
     ]);
 
+  const ltvRow = ltvData.rows[0];
   const row = totals.rows[0];
+
+  const avgTicketValue = Number(row?.average_ticket ?? 0);
+  const avgFreqDaysValue = Number(row?.average_frequency_days ?? 0);
+  const lifespanMonths = Math.max(12, Number(ltvRow?.avg_lifespan_months ?? 24));
+  const annualFreq = avgFreqDaysValue > 0 ? 365 / avgFreqDaysValue : (365 / 60);
+  const estimatedLtv = avgTicketValue * annualFreq * (lifespanMonths / 12);
 
   const snapshotTotal = Number(row?.total_customers ?? 0);
   const snapshotActive = Number(row?.active_count ?? 0);
@@ -698,6 +723,8 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
     itemsSoldTrend,
     currentMonthTarget,
     currentMonthItemsSold,
+    estimatedLtv,
+    estimatedLifespanMonths: lifespanMonths,
   };
 }
 
