@@ -532,8 +532,8 @@ export function CustomersPage() {
               <div className="credit-insights-strip">
                 <button
                   type="button"
-                  className="credit-insight-card danger"
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "over_credit" })}
+                  className={`credit-insight-card danger ${state.creditKpiFilter === "over_credit" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditInsight", insight: "over_credit" })}
                 >
                   <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
                   <div className="credit-insight-body">
@@ -544,8 +544,8 @@ export function CustomersPage() {
 
                 <button
                   type="button"
-                  className="credit-insight-card success"
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "unused_credit" })}
+                  className={`credit-insight-card success ${state.creditKpiFilter === "unused_credit" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditInsight", insight: "unused_credit" })}
                 >
                   <div className="credit-insight-icon"><TrendingUp size={20} /></div>
                   <div className="credit-insight-body">
@@ -556,8 +556,8 @@ export function CustomersPage() {
 
                 <button
                   type="button"
-                  className="credit-insight-card warning"
-                  onClick={() => dispatch({ type: "updateCreditFilter", key: "onlyOverdue", value: state.creditFilters.onlyOverdue === "true" ? "" : "true" })}
+                  className={`credit-insight-card warning ${state.creditFilters.onlyOverdue === "true" ? "active" : ""}`}
+                  onClick={() => dispatch({ type: "setCreditInsight", insight: "overdue" })}
                 >
                   <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
                   <div className="credit-insight-body">
@@ -585,11 +585,11 @@ export function CustomersPage() {
                 </div>
 
                 <div className="credit-snapshot-actions">
-                  {state.creditKpiFilter ? (
+                  {state.creditKpiFilter || Object.values(state.creditFilters).some(v => v !== "") ? (
                     <button
                       type="button"
                       className="ghost-button small"
-                      onClick={() => dispatch({ type: "setCreditKpiFilter", value: "" })}
+                      onClick={() => dispatch({ type: "clearCreditFilters" })}
                     >
                       Limpar filtro
                     </button>
