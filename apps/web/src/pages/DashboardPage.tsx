@@ -429,6 +429,36 @@ export function DashboardPage() {
   const itemsSold = metrics.currentMonthItemsSold;
   const targetPercent = targetAmount > 0 ? Math.round((itemsSold / targetAmount) * 100) : 0;
   const isTargetHit = targetAmount > 0 && itemsSold >= targetAmount;
+  const targetRemaining = Math.max(0, targetAmount - itemsSold);
+  const targetExceededBy = Math.max(0, itemsSold - targetAmount);
+  const targetProgress = Math.min(100, targetPercent);
+  const progressRadius = 28;
+  const progressCircumference = 2 * Math.PI * progressRadius;
+  const monthlyGoalCardClassName = [
+    "stat-card",
+    "monthly-goal-card",
+    isTargetHit ? "is-complete" : "",
+    targetAmount === 0 ? "is-empty" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const monthlyGoalHighlight =
+    targetAmount === 0
+      ? "Sem meta"
+      : isTargetHit
+      ? targetExceededBy > 0
+        ? `+${formatNumber(targetExceededBy)} acima`
+        : "Meta batida"
+      : `${targetPercent}% do alvo`;
+  const monthlyGoalStatus =
+    targetAmount === 0
+      ? "Defina sua meta no menu Metas para acompanhar o ritmo do mes."
+      : isTargetHit
+      ? targetExceededBy > 0
+        ? `Voce ja passou ${formatNumber(targetExceededBy)} telas do alvo.`
+        : "Objetivo concluido neste mes."
+      : `Faltam ${formatNumber(targetRemaining)} para a meta`;
+  const monthlyGoalMetaLabel = targetAmount > 0 ? `Alvo ${formatNumber(targetAmount)}` : "Meta pendente";
 
   return (
     <div className="page-stack">
@@ -490,12 +520,12 @@ export function DashboardPage() {
             <div className="premium-stat-card">
               <div className="premium-stat-icon accent-purple">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21M23 21V19C22.9993 18.1137 22.7044 17.2528 22.1614 16.5523C21.6184 15.8519 20.8581 15.3516 20 15.13M16 3.13C16.8581 3.35163 17.6184 3.85186 18.1614 4.55231C18.7044 5.25277 18.9993 6.11373 19 7C18.9993 7.88627 18.7044 8.74723 18.1614 9.44769C17.6184 10.1481 16.8581 10.6484 16 10.87M9 11C11.2091 11 13 9.20914 13 7C13 4.79086 11.2091 3 9 3C6.79086 3 5 4.79086 5 7C5 9.20914 6.79086 11 9 11Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
               <div className="premium-stat-info">
-                <span>Agenda acionavel</span>
-                <strong>{formatNumber(metrics.agendaEligibleCount)} <small>clientes</small></strong>
+                <span>Tempo medio de compra</span>
+                <strong>{metrics.averageFrequencyDays.toFixed(1)} <small>dias</small></strong>
               </div>
             </div>
           </div>
@@ -525,53 +555,64 @@ export function DashboardPage() {
           helper="Clientes fora da zona ativa"
           tone="danger"
         />
-        <div className="stat-card" style={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h4 style={{ margin: 0, fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)', fontWeight: 600 }}>Meta mensal</h4>
-                <div style={{ marginTop: '0.5rem', fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-color)' }}>
-                  {targetAmount > 0 ? `${formatNumber(itemsSold)} telas` : 'Sem meta'}
-                </div>
-              </div>
-              {targetAmount > 0 && (
-                <div style={{ position: 'relative', width: '54px', height: '54px', flexShrink: 0 }}>
-                  <svg width="54" height="54" viewBox="0 0 54 54">
-                    <circle cx="27" cy="27" r="23" stroke="rgba(0,0,0,0.06)" strokeWidth="5" fill="none" />
-                    <circle 
-                      cx="27" 
-                      cy="27" 
-                      r="23" 
-                      stroke={isTargetHit ? '#10b981' : '#3b82f6'} 
-                      strokeWidth="5" 
-                      fill="none" 
-                      strokeDasharray={2 * Math.PI * 23} 
-                      strokeDashoffset={targetAmount > 0 ? (2 * Math.PI * 23) - (Math.min(100, targetPercent) / 100) * (2 * Math.PI * 23) : (2 * Math.PI * 23)} 
-                      strokeLinecap="round" 
-                      style={{ transform: 'rotate(-90deg)', transformOrigin: 'center', transition: 'stroke-dashoffset 1s ease-out' }} 
-                    />
-                  </svg>
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', color: isTargetHit ? '#10b981' : 'var(--text-color)' }}>
-                     {targetPercent}%
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              {targetAmount > 0 && (
-                <span style={{ fontSize: '0.8rem', padding: '0.15rem 0.5rem', background: 'rgba(0,0,0,0.04)', borderRadius: '4px', width: 'fit-content', color: 'var(--text-secondary)' }}>
-                  🎯 Alvo: {formatNumber(targetAmount)}
+        <article className={monthlyGoalCardClassName}>
+          <div className="monthly-goal-card__header">
+            <div className="monthly-goal-card__copy">
+              <p className="monthly-goal-card__eyebrow">Meta mensal</p>
+              <strong className="monthly-goal-card__value">
+                {targetAmount > 0 ? `${formatNumber(itemsSold)} telas` : "Sem meta"}
+              </strong>
+              <div className="monthly-goal-card__meta-row">
+                <span className="monthly-goal-card__pill">
+                  <span className="monthly-goal-card__pill-dot" />
+                  {monthlyGoalMetaLabel}
                 </span>
-              )}
-              <span style={{ fontSize: '0.85rem', color: isTargetHit ? 'var(--success)' : 'var(--text-muted)' }}>
-                 {targetAmount === 0 ? "Vá em 'Metas' no menu lateral para definir." : 
-                  isTargetHit ? "🎉 Objetivo atingido!" : 
-                  `Faltam ${formatNumber(Math.max(0, targetAmount - itemsSold))} para a meta`}
-              </span>
+                <span className="monthly-goal-card__highlight">{monthlyGoalHighlight}</span>
+              </div>
+            </div>
+
+            <div className="monthly-goal-card__progress" aria-hidden="true">
+              <svg
+                className="monthly-goal-card__progress-ring"
+                width="72"
+                height="72"
+                viewBox="0 0 72 72"
+              >
+                <circle
+                  cx="36"
+                  cy="36"
+                  r={progressRadius}
+                  className="monthly-goal-card__progress-track"
+                />
+                <circle
+                  cx="36"
+                  cy="36"
+                  r={progressRadius}
+                  className="monthly-goal-card__progress-fill"
+                  strokeDasharray={progressCircumference}
+                  strokeDashoffset={progressCircumference - (targetProgress / 100) * progressCircumference}
+                />
+              </svg>
+              <div className="monthly-goal-card__progress-core" />
+              <div className="monthly-goal-card__progress-label">
+                <strong>{targetAmount > 0 ? `${targetPercent}%` : "--"}</strong>
+                <span>meta</span>
+              </div>
             </div>
           </div>
-        </div>
+
+          <span
+            className={[
+              "monthly-goal-card__status",
+              isTargetHit ? "is-complete" : "",
+              targetAmount === 0 ? "is-empty" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {monthlyGoalStatus}
+          </span>
+        </article>
       </section>
 
       <section className="grid-two dashboard-grid">
