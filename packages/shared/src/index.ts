@@ -244,6 +244,7 @@ export interface CustomerListItem {
   labels: CustomerLabel[];
   isAmbassador: boolean;
   ambassadorAssignedAt: string | null;
+  avgDaysBetweenOrders: number | null;
 }
 
 export interface CustomerDetail extends CustomerListItem {

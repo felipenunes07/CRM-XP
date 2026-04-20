@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { Info } from "lucide-react";
 
 export function InfoHint({ text }: { text: string }) {
   const tooltipId = useId();
@@ -6,7 +7,7 @@ export function InfoHint({ text }: { text: string }) {
   return (
     <span className="info-tooltip">
       <button className="info-hint" type="button" aria-label={text} aria-describedby={tooltipId}>
-        i
+        <Info size={14} />
       </button>
       <span id={tooltipId} role="tooltip" className="info-tooltip-bubble">
         {text}

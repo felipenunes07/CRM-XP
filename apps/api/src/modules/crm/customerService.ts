@@ -75,6 +75,12 @@ function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
     labels: mapLabels(row.labels),
     isAmbassador: Boolean(row.is_ambassador),
     ambassadorAssignedAt: row.ambassador_assigned_at ? String(row.ambassador_assigned_at) : null,
+    avgDaysBetweenOrders:
+      row.avg_days_between_orders === null ||
+      row.avg_days_between_orders === undefined ||
+      row.avg_days_between_orders === ""
+        ? null
+        : Number(row.avg_days_between_orders),
   };
 }
 
@@ -224,6 +230,8 @@ function sortSql(sortBy?: CustomerFilters["sortBy"]) {
       return "s.total_spent DESC, s.priority_score DESC";
     case "recencia":
       return "s.days_since_last_purchase DESC NULLS LAST, s.priority_score DESC";
+    case "avgDaysBetweenOrders":
+      return "s.avg_days_between_orders DESC NULLS LAST, s.priority_score DESC";
     case "priority":
     default:
       return "s.priority_score DESC, s.total_spent DESC";
@@ -253,6 +261,7 @@ export async function listCustomers(filters: CustomerFilters = {}) {
         s.primary_insight,
         s.insight_tags,
         s.last_attendant,
+        s.avg_days_between_orders,
         EXISTS (
           SELECT 1
           FROM customer_label_assignments cla

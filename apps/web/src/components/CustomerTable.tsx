@@ -13,6 +13,7 @@ type SortableColumnId =
   | "totalOrders"
   | "avgTicket"
   | "totalSpent"
+  | "avgDaysBetweenOrders"
   | "priorityScore";
 
 type ColumnId = SortableColumnId | "status" | "labels" | "insight";
@@ -71,6 +72,16 @@ const columns: TableColumn[] = [
     sortable: true,
     defaultDirection: "desc",
     getValue: (customer) => customer.totalOrders,
+  },
+  {
+    id: "avgDaysBetweenOrders",
+    label: "Media pedidos",
+    width: 120,
+    minWidth: 110,
+    sortable: true,
+    defaultDirection: "desc",
+    hint: "Intervalo medio entre pedidos do cliente.",
+    getValue: (customer) => customer.avgDaysBetweenOrders,
   },
   {
     id: "avgTicket",
@@ -327,6 +338,13 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                 <td>{formatDate(customer.lastPurchaseAt)}</td>
                 <td>{formatDaysSince(customer.daysSinceLastPurchase)}</td>
                 <td>{customer.totalOrders}</td>
+                 <td>
+                  {customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (
+                    `${Math.round(customer.avgDaysBetweenOrders)} dias`
+                  ) : (
+                    <span className="muted-copy">—</span>
+                  )}
+                </td>
                 <td>{formatCurrency(customer.avgTicket)}</td>
                 <td>{formatCurrency(customer.totalSpent)}</td>
                 <td>
