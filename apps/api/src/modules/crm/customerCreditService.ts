@@ -294,7 +294,7 @@ function getAvailableCreditAmount(balanceAmount: number, creditLimit: number) {
     return 0;
   }
 
-  return Math.max(0, creditLimit - getDebtAmount(balanceAmount));
+  return creditLimit - getDebtAmount(balanceAmount);
 }
 
 function isOverCreditSignal(flag: string) {
@@ -417,9 +417,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
 
   const _overCreditSignal =
     includesNormalizedFlag(flags, "ultrapassou crédito") || includesNormalizedFlag(flags, "deve além do crédito");
-  const hasOverduePayment = Boolean(_overCreditSignal)
-    ? includesNormalizedFlag(flags, "pagamento vencido")
-    : includesNormalizedFlag(flags, "pagamento vencido");
+  const hasOverduePayment = includesNormalizedFlag(flags, "pagamento vencido");
   const hasSeverelyOverduePayment = includesNormalizedFlag(flags, "pagamento muito vencido");
   const hasNoPayment = includesNormalizedFlag(flags, "sem pagamento");
   const hasNoOrder = includesNormalizedFlag(flags, "sem pedido");
@@ -995,9 +993,26 @@ function buildOverviewSummary(linkedRows: CustomerCreditRow[], unmatchedRows: Cu
     customersAttention: linkedRows.filter((row) => row.riskLevel === "ATENCAO").length,
     customersMonitoring: linkedRows.filter((row) => row.riskLevel === "MONITORAR").length,
     customersOverCredit: linkedRows.filter((row) => row.hasOverCredit || row.operationalState === "OVER_CREDIT").length,
-    customersOverdue: linkedRows.filter(
-      (row) => row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment,
-    ).length,
+    customersOverdue: linkedRows.filter((row) => {
+      // Must have active debt to be counted as "delayed" in high-level metrics
+      if (row.debtAmount <= 0) return false;
+
+      // Flag-based checks
+      const isFlagged = row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment;
+      if (isFlagged) return true;
+
+      // Date-based delay (Days since last payment > term)
+      if (
+        row.daysSinceLastPayment !== null &&
+        row.paymentTerm !== null &&
+        row.daysSinceLastPayment > row.paymentTerm &&
+        row.daysSinceLastPayment > 1
+      ) {
+        return true;
+      }
+
+      return false;
+    }).length,
   };
 }
 

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, Fragment } from "react";
 import { Bar, BarChart, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
-import { ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, TrendingUp } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber, formatShortDate } from "../lib/format";
@@ -212,8 +212,10 @@ function MonthlyTooltip({
     return null;
   }
 
-  const newCustomers = payload.find((entry) => entry.dataKey === "newCustomers")?.value ?? 0;
-  const spend = payload.find((entry) => entry.dataKey === "spend")?.value ?? 0;
+  const dataPoint = payload[0]?.payload;
+  const newCustomers = dataPoint?.newCustomers ?? 0;
+  const spend = dataPoint?.spend ?? 0;
+  const source = dataPoint?.spendSource;
 
   return (
     <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
@@ -226,6 +228,11 @@ function MonthlyTooltip({
         <strong style={{ color: "#2956d7", fontSize: "1.1rem" }}>{formatCurrency(spend)}</strong>
         <span style={{ color: "#64748b" }}>gasto em anuncios</span>
       </div>
+      {source && (
+        <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9", fontSize: "0.7rem", fontWeight: 800, color: source === 'api' ? '#10b981' : '#64748b', textAlign: "center", letterSpacing: "0.05em" }}>
+          FONTE: {source === 'api' ? 'META ADS (API)' : 'PLANILHA (FALLBACK)'}
+        </div>
+      )}
     </div>
   );
 }
@@ -287,12 +294,14 @@ function CacTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ value?: number | null }>;
+  payload?: Array<{ value?: number | null; payload?: any }>;
   label?: string;
 }) {
   if (!active || !payload?.length || !label) {
     return null;
   }
+
+  const source = payload[0]?.payload?.spendSource;
 
   return (
     <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(217, 119, 6, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
@@ -301,6 +310,11 @@ function CacTooltip({
         <strong style={{ color: "#d97706", fontSize: "1.2rem" }}>{formatCac((payload[0]?.value as number | null | undefined) ?? null)}</strong>
         <span style={{ color: "#64748b" }}>custo por cliente adquirido</span>
       </div>
+      {source && (
+        <div style={{ marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9", fontSize: "0.7rem", fontWeight: 800, color: source === 'api' ? '#b45309' : '#64748b', textAlign: "center", letterSpacing: "0.05em" }}>
+          FONTE: {source === 'api' ? 'META ADS (API)' : 'PLANILHA (FALLBACK)'}
+        </div>
+      )}
     </div>
   );
 }
@@ -408,10 +422,16 @@ export function NewCustomersPage() {
       avgTicket: currentDetailed.avgTicket,
       prevAvgTicket: previousDetailed.avgTicket,
       spend: currentMonthData?.spend ?? 0,
+      spendSource: currentMonthData?.spendSource,
       prevSpend: previousMonthData?.spend ?? 0,
+      prevSpendSource: previousMonthData?.spendSource,
       cac: currentMonthData?.cac ?? null,
       prevCac: previousMonthData?.cac ?? null,
-      isRealTime: activeMonth === currentMonthKey
+      isRealTime: activeMonth === currentMonthKey,
+      ltvCacRatio: data.summary.ltvCacRatio,
+      estimatedLtv: data.summary.estimatedLtv,
+      estimatedLifespanMonths: data.summary.estimatedLifespanMonths,
+      monthlyChurnRate: data.summary.monthlyChurnRate
     };
   }, [acquisitionQuery.data, activeMonth, currentMonthKey]);
 
@@ -584,7 +604,22 @@ export function NewCustomersPage() {
         </div>
 
         <div className="premium-card">
-          <div className="metric-label">Gasto no Mês</div>
+          <div className="metric-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>Gasto no Mês</span>
+            {metrics.spendSource && (
+              <span style={{ 
+                fontSize: "0.6rem", 
+                padding: "0.15rem 0.4rem", 
+                borderRadius: "6px", 
+                background: metrics.spendSource === 'api' ? "rgba(59, 130, 246, 0.1)" : "rgba(100, 116, 139, 0.1)", 
+                color: metrics.spendSource === 'api' ? "#3b82f6" : "#64748b",
+                fontWeight: 800,
+                letterSpacing: "0.025em"
+              }}>
+                {metrics.spendSource === 'api' ? "API" : "PLANILHA"}
+              </span>
+            )}
+          </div>
           <div className="metric-value" style={{ color: "#3b82f6" }}>{formatCurrency(metrics.spend)}</div>
           <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
             {renderCurrencyTrend(metrics.spend, metrics.prevSpend)}
@@ -593,9 +628,30 @@ export function NewCustomersPage() {
         </div>
 
         <div className="premium-card">
-          <div className="metric-label">CAC no Mês</div>
+          <div className="metric-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>CAC no Mês</span>
+            {metrics.spendSource && (
+              <span style={{ 
+                fontSize: "0.6rem", 
+                padding: "0.15rem 0.4rem", 
+                borderRadius: "6px", 
+                background: metrics.spendSource === 'api' ? "rgba(217, 119, 6, 0.1)" : "rgba(100, 116, 139, 0.1)", 
+                color: metrics.spendSource === 'api' ? "#d97706" : "#64748b",
+                fontWeight: 800,
+                letterSpacing: "0.025em"
+              }}>
+                {metrics.spendSource === 'api' ? "API" : "PLANILHA"}
+              </span>
+            )}
+          </div>
           <div className="metric-value" style={{ color: "#d97706" }}>{formatCac(metrics.cac)}</div>
           <p className="metric-helper">Mes anterior: {formatCac(metrics.prevCac)}</p>
+        </div>
+
+        <div className="premium-card" style={{ borderTop: "4px solid #10b981" }}>
+          <div className="metric-label">LTV (Valor Vitalício)</div>
+          <div className="metric-value" style={{ color: "#10b981" }}>{formatCurrency(metrics.estimatedLtv ?? 0)}</div>
+          <p className="metric-helper">Expectativa de receita por cliente</p>
         </div>
       </div>
 
@@ -762,6 +818,64 @@ export function NewCustomersPage() {
           )}
         </section>
       </div>
+
+      <article className="premium-panel" style={{ marginTop: "2rem" }}>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <p className="metric-helper" style={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 800, color: "var(--accent)", letterSpacing: "0.05em", marginBottom: "0.4rem" }}>
+            Inteligência de Venda
+          </p>
+          <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>Saúde do Negócio (LTV vs CAC)</h3>
+          <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
+            Relação entre o valor vitalício do cliente e o custo de aquisição. O ideal é LTV {'>'} 3x CAC.
+          </p>
+        </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
+          <div style={{ padding: '1.5rem', borderRadius: '16px', background: 'rgba(41, 86, 215, 0.03)', border: '1px solid rgba(41, 86, 215, 0.1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#64748b', fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+              <TrendingUp size={16} />
+              LTV / CAC Ratio
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+              <span style={{ fontSize: '2.5rem', fontWeight: 800, color: (metrics.ltvCacRatio ?? 0) >= 3 ? '#10b981' : (metrics.ltvCacRatio ?? 0) >= 1.5 ? '#f59e0b' : '#ef4444' }}>
+                {metrics.ltvCacRatio ? metrics.ltvCacRatio.toFixed(1) : '--'}x
+              </span>
+              <span style={{ 
+                fontSize: '0.85rem', 
+                fontWeight: 700, 
+                padding: '0.3rem 0.6rem', 
+                borderRadius: '6px', 
+                background: (metrics.ltvCacRatio ?? 0) >= 3 ? 'rgba(16, 185, 129, 0.1)' : (metrics.ltvCacRatio ?? 0) >= 1.5 ? 'rgba(245, 158, 11, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                color: (metrics.ltvCacRatio ?? 0) >= 3 ? '#10b981' : (metrics.ltvCacRatio ?? 0) >= 1.5 ? '#f59e0b' : '#ef4444'
+              }}>
+                {(metrics.ltvCacRatio ?? 0) >= 3 ? 'Saudável' : (metrics.ltvCacRatio ?? 0) >= 1.5 ? 'Atenção' : 'Crítico'}
+              </span>
+            </div>
+            <p style={{ fontSize: '0.9rem', color: '#64748b', marginTop: '0.75rem', lineHeight: 1.5 }}>
+              {(metrics.ltvCacRatio ?? 0) >= 3 
+                ? 'Sua operação em novos clientes está gerando valor muito acima do custo de aquisição.' 
+                : (metrics.ltvCacRatio ?? 0) >= 1.5 
+                  ? 'A relação de aquisição está dentro do aceitável, mas pode haver espaço para otimização do CAC.'
+                  : 'Atenção: o custo de aquisição está muito próximo do retorno vitalício estimado.'}
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderRadius: '12px', background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>Ticket Médio Histórico</span>
+              <strong style={{ fontSize: '1rem', color: '#1e293b' }}>{formatCurrency(metrics.avgTicket)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderRadius: '12px', background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>Vida do Cliente Estimada</span>
+              <strong style={{ fontSize: '1rem', color: '#1e293b' }}>{metrics.estimatedLifespanMonths?.toFixed(1)} meses</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderRadius: '12px', background: '#f8fafc', border: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>Churn Rate Histórico</span>
+              <strong style={{ fontSize: '1rem', color: '#1e293b' }}>{((metrics.monthlyChurnRate ?? 0) * 100).toFixed(1)}%</strong>
+            </div>
+          </div>
+        </div>
+      </article>
 
       <section className="premium-panel" style={{ marginTop: "1.5rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
