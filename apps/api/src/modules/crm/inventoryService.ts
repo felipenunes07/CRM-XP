@@ -45,7 +45,7 @@ export function normalizeInventoryModel(value: string) {
   const normalized = removeDiacritics(withoutBrackets).toLowerCase();
 
   return normalized
-    .replace(/[.,;:*"'`´~^()[\]{}|\\/_-]+/g, " ")
+    .replace(/[.,;:*"'`´~^()[\]{}|\\\/_-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -113,6 +113,7 @@ async function fetchInventoryCsv(sourceUrl = env.INVENTORY_SHEET_CSV_URL) {
   return response.text();
 }
 
+
 function parseInventoryRow(row: unknown[]): ParsedInventoryRow | null {
   const sku = normalizeCode(String(row[0] ?? ""));
   const model = normalizeText(String(row[1] ?? ""));
@@ -151,7 +152,7 @@ function parseInventoryRow(row: unknown[]): ParsedInventoryRow | null {
 export function parseInventoryCsv(csvText: string) {
   const workbook = XLSX.read(csvText, {
     type: "string",
-    raw: false,
+    raw: true,
   });
   const sheetName = workbook.SheetNames[0];
   const sheet = sheetName ? workbook.Sheets[sheetName] : null;
@@ -161,7 +162,7 @@ export function parseInventoryCsv(csvText: string) {
 
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
-    raw: false,
+    raw: true,
     defval: "",
   });
 

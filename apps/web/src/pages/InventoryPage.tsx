@@ -1281,7 +1281,8 @@ export function InventoryPage() {
                   <table className="data-table inventory-stale-table">
                     <thead>
                       <tr>
-                        <th>Produto (SKU)</th>
+                        <th>SKU</th>
+                        <th>Modelo</th>
                         <th>Tipo</th>
                         <th>Dias sem vender</th>
                         <th>Pecas</th>
@@ -1296,11 +1297,12 @@ export function InventoryPage() {
                     <tbody>
                       {visibleStaleItems.map((item) => (
                         <tr key={item.sku}>
+                          <td><code>{item.sku}</code></td>
                           <td>
                             <div className="inventory-stale-model-cell">
                               <strong>{item.modelLabel}</strong>
                               <span>
-                                SKU {item.sku} · {item.brand} · {item.family}
+                                {item.brand} · {item.family}
                                 {item.color ? ` · ${item.color}` : ""}
                                 {item.quality ? ` · ${item.quality}` : ""}
                               </span>
