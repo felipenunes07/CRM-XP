@@ -113,7 +113,7 @@ async function fetchInventoryCsv(sourceUrl = env.INVENTORY_SHEET_CSV_URL) {
   return response.text();
 }
 
-function parseInventoryRow(row: unknown[]) {
+function parseInventoryRow(row: unknown[]): ParsedInventoryRow | null {
   const sku = normalizeCode(String(row[0] ?? ""));
   const model = normalizeText(String(row[1] ?? ""));
 
@@ -144,7 +144,7 @@ function parseInventoryRow(row: unknown[]) {
       price,
       stockQuantity,
       promotionLabel,
-    },
+    } as Record<string, unknown>,
   } satisfies ParsedInventoryRow;
 }
 
@@ -220,6 +220,18 @@ async function insertSnapshotItems(client: PoolClient, snapshotId: string, rows:
     return;
   }
 
+  const payload = rows.map((row) => ({
+    sku: row.sku,
+    model: row.model,
+    color: row.color,
+    quality: row.quality,
+    price: row.price,
+    stock_quantity: row.stockQuantity,
+    promotion_label: row.promotionLabel,
+    normalized_model: row.normalizedModel,
+    raw_payload: row.rawPayload,
+  }));
+
   await client.query(
     `
       INSERT INTO inventory_snapshot_items (
@@ -257,7 +269,7 @@ async function insertSnapshotItems(client: PoolClient, snapshotId: string, rows:
         raw_payload jsonb
       )
     `,
-    [snapshotId, JSON.stringify(rows)],
+    [snapshotId, JSON.stringify(payload)],
   );
 }
 

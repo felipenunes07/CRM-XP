@@ -7,6 +7,7 @@ const DashboardPage = lazy(async () => ({ default: (await import("./pages/Dashbo
 const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
 const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
+const InventoryPage = lazy(async () => ({ default: (await import("./pages/InventoryPage")).InventoryPage }));
 const CustomerDetailPage = lazy(async () => ({
   default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
+          <Route path="/estoque" element={<InventoryPage />} />
           <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
           <Route path="/segmentos" element={<SegmentsPage />} />

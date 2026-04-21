@@ -22,6 +22,16 @@ import {
   getCustomerCreditOverview,
   refreshCustomerCreditOverview,
 } from "./modules/crm/customerCreditService.js";
+import {
+  getInventoryBuying,
+  getInventoryIntelligence,
+  getInventoryIntelligenceDetail,
+  getInventoryModelDetail,
+  getInventoryModels,
+  getInventoryOverview,
+  getInventoryRestock,
+  getInventoryStale,
+} from "./modules/crm/inventoryIntelligenceService.js";
 import { getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
@@ -226,6 +236,17 @@ const optionalQueryBoolean = z.preprocess((value) => {
 
   return value;
 }, z.boolean().optional());
+
+const inventoryIntelligenceQuerySchema = z.object({
+  brand: z.string().optional(),
+  family: z.string().optional(),
+  quality: z.string().optional(),
+  stockStatus: z.enum(["NEGATIVE", "OUT", "LOW", "HEALTHY", "HIGH"]).optional(),
+  demandStatus: z.enum(["NO_SALES", "COLD", "WARM", "HOT"]).optional(),
+  newArrivalOnly: optionalQueryBoolean,
+  depositName: z.string().optional(),
+  seller: z.string().optional(),
+});
 
 const prospectingSearchSchema = z.object({
   keyword: z.string().min(1),
@@ -610,6 +631,70 @@ export function createApp() {
   app.post("/api/inventory/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
       response.json(await refreshInventorySnapshot());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/intelligence", async (request, response, next) => {
+    try {
+      response.json(await getInventoryIntelligence(inventoryIntelligenceQuerySchema.parse(request.query)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/overview", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/buying", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryBuying());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/restock", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryRestock());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/stale", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryStale());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/models", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryModels());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/models/:modelKey", async (request, response, next) => {
+    try {
+      response.json(await getInventoryModelDetail(String(request.params.modelKey ?? "")));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/items/:sku", async (request, response, next) => {
+    try {
+      response.json(await getInventoryIntelligenceDetail(String(request.params.sku ?? "")));
     } catch (error) {
       next(error);
     }
