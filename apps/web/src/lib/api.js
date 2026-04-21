@@ -109,6 +109,36 @@ export const api = {
             method: "POST",
         }, token);
     },
+    inventoryIntelligence(token, query = {}) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/inventory/intelligence${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    inventoryItemDetail(token, sku) {
+        return request(`/api/inventory/items/${encodeURIComponent(sku)}`, {}, token);
+    },
+    inventoryOverview(token) {
+        return request("/api/inventory/overview", {}, token);
+    },
+    inventoryBuying(token) {
+        return request("/api/inventory/buying", {}, token);
+    },
+    inventoryRestock(token) {
+        return request("/api/inventory/restock", {}, token);
+    },
+    inventoryStale(token) {
+        return request("/api/inventory/stale", {}, token);
+    },
+    inventoryModels(token) {
+        return request("/api/inventory/models", {}, token);
+    },
+    inventoryModelDetail(token, modelKey) {
+        return request(`/api/inventory/models/${encodeURIComponent(modelKey)}`, {}, token);
+    },
     customer(token, id) {
         return request(`/api/customers/${id}`, {}, token);
     },
