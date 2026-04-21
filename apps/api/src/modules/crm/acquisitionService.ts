@@ -58,11 +58,14 @@ function getFirstSpendMonth(points: MetaAdsMonthlySpendPoint[], fallbackMonth: D
   }, fallbackMonth);
 }
 
+
 export function buildAcquisitionMetrics(
   rows: FirstPurchaseRow[],
   referenceDate: string,
-  dailyWindowDays = DEFAULT_DAILY_WINDOW_DAYS,
-  spendPoints: MetaAdsMonthlySpendPoint[] = [],
+  dailyWindowDays: number,
+  spendPoints: MetaAdsMonthlySpendPoint[],
+  ltvRow: { avg_lifespan_months: number | null; churn_rate: number | null } | null,
+  globalStats: { avg_ticket: number; avg_freq_days: number } | null,
 ): AcquisitionMetrics {
   const safeWindow = Math.max(1, Math.floor(dailyWindowDays));
   const today = parseDateOnly(referenceDate);
@@ -78,6 +81,7 @@ export function buildAcquisitionMetrics(
   const spendByMonth = new Map<string, number>();
   const piecesByMonth = new Map<string, number>();
   const amountByMonth = new Map<string, number>();
+  const spendByMonthSource = new Map<string, "api" | "fallback">();
 
   for (const row of rows) {
     byDay.set(row.firstOrderDate, (byDay.get(row.firstOrderDate) ?? 0) + 1);
@@ -89,6 +93,9 @@ export function buildAcquisitionMetrics(
 
   for (const point of spendPoints) {
     spendByMonth.set(point.month, (spendByMonth.get(point.month) ?? 0) + point.spend);
+    if (point.source) {
+      spendByMonthSource.set(point.month, point.source);
+    }
   }
 
   const dailySeries = Array.from({ length: safeWindow }, (_, index) => {
@@ -110,6 +117,7 @@ export function buildAcquisitionMetrics(
       newCustomers,
       spend,
       cac: newCustomers > 0 ? spend / newCustomers : null,
+      spendSource: spendByMonthSource.get(month),
     });
     cursor = addMonths(cursor, 1);
   }
@@ -161,6 +169,9 @@ export function buildAcquisitionMetrics(
       previousMonthPieces: piecesByMonth.get(previousMonthKey) ?? 0,
       currentMonthAvgTicket: currentMonthNewCustomers > 0 ? currentMonthAmount / currentMonthNewCustomers : null,
       previousMonthAvgTicket: previousMonthNewCustomers > 0 ? previousMonthAmount / previousMonthNewCustomers : null,
+      currentMonthSpendSource: currentMonthEntry?.spendSource,
+      previousMonthSpendSource: previousMonthEntry?.spendSource,
+      ...calculateLtvFields(currentMonthEntry?.cac, previousMonthEntry?.cac, ltvRow, globalStats),
     },
     dailySeries,
     monthlySeries,
@@ -252,5 +263,66 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
     });
   }
 
-  return buildAcquisitionMetrics(rows, today, dailyWindowDays, spendPoints);
+  const [ltvResult, globalStatsResult] = await Promise.all([
+    pool.query<{ avg_lifespan_months: number | null; churn_rate: number | null }>(`
+      WITH customer_lifespan AS (
+        SELECT 
+          s.customer_id,
+          (s.last_purchase_at::date - fp.first_purchase_date) as tenure_days
+        FROM customer_snapshot s
+        JOIN (
+          SELECT customer_id, MIN(order_date) as first_purchase_date
+          FROM orders
+          GROUP BY customer_id
+        ) fp ON fp.customer_id = s.customer_id
+        WHERE s.total_orders > 1
+      )
+      SELECT 
+        AVG(tenure_days / 30.44)::numeric(14,2) as avg_lifespan_months,
+        (
+          SELECT (COUNT(*) FILTER (WHERE status = 'INACTIVE'))::float / NULLIF(COUNT(*), 0)
+          FROM customer_snapshot
+        ) as churn_rate
+      FROM customer_lifespan
+    `),
+    pool.query<{ avg_ticket: number; avg_freq_days: number }>(`
+      SELECT 
+        AVG(avg_ticket)::numeric(14,2) as avg_ticket,
+        AVG(avg_days_between_orders)::numeric(14,2) as avg_freq_days
+      FROM customer_snapshot
+    `)
+  ]);
+
+  return buildAcquisitionMetrics(
+    rows, 
+    today, 
+    dailyWindowDays, 
+    spendPoints, 
+    ltvResult.rows[0] || null,
+    globalStatsResult.rows[0] || null
+  );
+}
+
+function calculateLtvFields(
+  currentCac: number | null | undefined,
+  previousCac: number | null | undefined,
+  ltvRow: { avg_lifespan_months: number | null; churn_rate: number | null } | null,
+  globalStats: { avg_ticket: number; avg_freq_days: number } | null
+) {
+  const avgTicket = Number(globalStats?.avg_ticket ?? 0);
+  const avgFreqDays = Number(globalStats?.avg_freq_days ?? 0);
+  const lifespanMonths = Math.max(12, Number(ltvRow?.avg_lifespan_months ?? 24)); // Default to 24 months for stable LTV
+  const avgCac = currentCac || previousCac || null;
+
+  // LTV = Ticket * AnnualFrequency * LifespanYears
+  // Or simply: Ticket * (MonthlyFrequency * LifespanMonths)
+  const annualFreq = avgFreqDays > 0 ? 365 / avgFreqDays : (365 / 60); // Fallback to 6 purchases per year if data missing
+  const estimatedLtv = avgTicket * annualFreq * (lifespanMonths / 12);
+  
+  return {
+    estimatedLtv: estimatedLtv || 0,
+    ltvCacRatio: (avgCac && avgCac > 0) ? estimatedLtv / avgCac : null,
+    estimatedLifespanMonths: lifespanMonths,
+    monthlyChurnRate: ltvRow?.churn_rate ?? null,
+  };
 }

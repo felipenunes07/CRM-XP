@@ -188,7 +188,7 @@ describe("parseCustomerCreditWorkbook", () => {
       balanceAmount: -2500,
       debtAmount: 2500,
       creditLimit: 2000,
-      availableCreditAmount: 0,
+      availableCreditAmount: -500,
       withinCreditLimit: false,
       operationalState: "OVER_CREDIT",
       hasOverCredit: true,
