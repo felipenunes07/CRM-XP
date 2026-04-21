@@ -55,6 +55,8 @@ export interface DashboardMetrics {
   itemsSoldTrend: ItemsSoldTrendPoint[];
   currentMonthTarget: number | null;
   currentMonthItemsSold: number;
+  estimatedLtv?: number;
+  estimatedLifespanMonths?: number;
 }
 
 export interface HistoricalReactivationEntry {
@@ -187,6 +189,12 @@ export interface AcquisitionSummary {
   previousMonthPieces: number;
   currentMonthAvgTicket: number | null;
   previousMonthAvgTicket: number | null;
+  currentMonthSpendSource?: "api" | "fallback";
+  previousMonthSpendSource?: "api" | "fallback";
+  estimatedLtv?: number;
+  ltvCacRatio?: number | null;
+  estimatedLifespanMonths?: number;
+  monthlyChurnRate?: number | null;
 }
 
 export interface AcquisitionDailyPoint {
@@ -199,6 +207,7 @@ export interface AcquisitionMonthlyPoint {
   newCustomers: number;
   spend: number;
   cac: number | null;
+  spendSource?: "api" | "fallback";
 }
 
 export interface NewCustomerListItem {

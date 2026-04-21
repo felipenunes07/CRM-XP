@@ -6,6 +6,7 @@ export interface MetaAdsMonthlySpendPoint {
   month: string;
   spend: number;
   currency: string;
+  source?: "api" | "fallback";
 }
 
 interface MetaInsightsResponse {
@@ -93,11 +94,11 @@ export function mergeMetaAdsMonthlySpend(
   const combined = new Map<string, MetaAdsMonthlySpendPoint>();
 
   for (const row of invoiceRows) {
-    combined.set(row.month, row);
+    combined.set(row.month, { ...row, source: "fallback" });
   }
 
   for (const row of apiRows) {
-    combined.set(row.month, row);
+    combined.set(row.month, { ...row, source: "api" });
   }
 
   return Array.from(combined.values()).sort((left, right) => left.month.localeCompare(right.month));
@@ -156,7 +157,8 @@ export async function readMetaAdsInvoiceSummary(
       month,
       spend: Number(spend.toFixed(2)),
       currency: env.META_ADS_CURRENCY,
-    }));
+      source: "fallback",
+    }) satisfies MetaAdsMonthlySpendPoint);
 }
 
 export async function getMetaAdsApiMonthlySpend(since: string, until: string): Promise<MetaAdsMonthlySpendPoint[]> {
@@ -196,6 +198,7 @@ export async function getMetaAdsApiMonthlySpend(since: string, until: string): P
         month: toMonthKey(dateStart),
         spend: Number(row.spend ?? 0),
         currency: String(row.account_currency ?? env.META_ADS_CURRENCY),
+        source: "api",
       });
     }
 
