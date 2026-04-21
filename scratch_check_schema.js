@@ -1,58 +1,50 @@
-const { Pool } = require('pg');
-const pool = new Pool({ connectionString: 'postgresql://postgres:postgres@localhost:5432/olist_crm' });
+require("dotenv").config({ path: "apps/api/.env" });
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 async function run() {
-  const result = await pool.query("SELECT * FROM orders WHERE order_date >= '2025-01-01' LIMIT 5;");
-  console.log("Orders:", JSON.stringify(result.rows, null, 2));
-
-  const result2 = await pool.query(`
-        WITH old_codes AS (
-          SELECT customer_code
-          FROM customers
-          WHERE source_system_first = 'history_xls'
-            AND customer_code ~ '^(CL|KH|OEM)[0-9]+$'
-        ),
-        ranked_orders AS (
+  try {
+    const res = await pool.query(`
+      WITH latest_daily_snapshots AS (
+        SELECT DISTINCT ON (snapshot_day)
+          id,
+          imported_at,
+          snapshot_day
+        FROM (
           SELECT
-            o.customer_id AS "customerId",
-            c.customer_code AS "customerCode",
-            c.display_name AS "displayName",
-            o.order_date::date::text AS "firstOrderDate",
-            o.total_amount AS "firstOrderAmount",
-            o.item_count AS "firstItemCount",
-            NULLIF(o.last_attendant, '') AS "firstAttendant",
-            ROW_NUMBER() OVER (
-              PARTITION BY o.customer_id
-              ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
-            ) AS order_rank
-          FROM orders o
-          JOIN customers c ON c.id = o.customer_id
-          WHERE NOT (
-            c.source_system_first = 'supabase_2026'
-            AND EXISTS (
-              SELECT 1 FROM old_codes oc
-              WHERE c.display_name LIKE oc.customer_code || ' %'
-                 OR c.display_name LIKE oc.customer_code || '-%'
-                 OR c.display_name LIKE oc.customer_code || ' -%'
-            )
-          )
-          AND c.customer_code != 'OEM417'
-          AND c.display_name NOT ILIKE '%MARX%'
-        )
-        SELECT
-          "customerId",
-          "customerCode",
-          "displayName",
-          "firstOrderDate",
-          "firstOrderAmount",
-          "firstItemCount",
-          "firstAttendant"
-        FROM ranked_orders
-        WHERE order_rank = 1 AND "firstOrderDate" >= '2025-01-01'
-        ORDER BY "firstOrderDate" ASC, "displayName" ASC
-        LIMIT 5;
-  `);
-  console.log("Ranked:", JSON.stringify(result2.rows, null, 2));
-  process.exit(0);
+            id,
+            imported_at,
+            imported_at::date AS snapshot_day
+          FROM inventory_snapshots
+        ) snapshots
+        ORDER BY snapshot_day DESC, imported_at DESC
+      ),
+      recent_snapshots AS (
+        SELECT id, imported_at
+        FROM latest_daily_snapshots
+        ORDER BY imported_at DESC
+        LIMIT 5
+      )
+      SELECT 
+        s.id AS "snapshotId",
+        s.imported_at::date::text AS date,
+        COUNT(DISTINCT isi.model) as total_models,
+        COUNT(DISTINCT CASE WHEN isi.stock_quantity > 0 THEN isi.model END) as active_models,
+        SUM(isi.stock_quantity) as total_stock
+      FROM recent_snapshots rs
+      JOIN inventory_snapshots s ON s.id = rs.id
+      JOIN inventory_snapshot_items isi ON isi.snapshot_id = s.id
+      GROUP BY s.id, s.imported_at
+      ORDER BY s.imported_at ASC
+    `);
+    console.log(JSON.stringify(res.rows, null, 2));
+  } catch (err) {
+    console.error(err);
+  } finally {
+    pool.end();
+  }
 }
 run();
