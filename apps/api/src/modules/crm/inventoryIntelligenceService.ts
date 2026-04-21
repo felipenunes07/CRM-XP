@@ -2644,37 +2644,53 @@ export async function getInventoryRestock(): Promise<InventoryRestockResponse> {
 
 export async function getInventoryStale(): Promise<InventoryStaleResponse> {
   const dataset = await buildInventoryAnalyticsDataset();
+
+  // Load per-SKU last sale dates for accurate individual staleness
+  const allSkus = dataset.models.flatMap((m) => m.currentItems.filter((s) => s.stockCurrent > 0).map((s) => s.sku));
+  const lastSaleRows = await loadLastSaleRows(allSkus);
+  const lastSaleBySku = new Map(lastSaleRows.map((row) => [row.sku, row.lastSaleAt]));
+
+  const now = new Date();
+
   const items = dataset.models
-    .filter((model) => model.stockUnits > 0 && (model.daysSinceLastSale === null || model.daysSinceLastSale >= 30))
+    .filter((model) => model.stockUnits > 0)
     .flatMap((model) =>
       model.currentItems
         .filter((skuItem) => skuItem.stockCurrent > 0)
-        .map(
-          (skuItem) =>
-            ({
-              sku: skuItem.sku,
-              modelKey: model.modelKey,
-              modelLabel: cleanInventoryModelLabel(String(skuItem.model ?? model.modelLabel)),
-              color: skuItem.color,
-              quality: skuItem.quality,
-              brand: model.brand,
-              family: model.family,
-              productKind: model.productKind,
-              stockUnits: skuItem.stockCurrent,
-              activeSkuCount: 1,
-              totalSkuCount: 1,
-              lastSaleAt: model.lastSaleAt,
-              daysSinceLastSale: model.daysSinceLastSale,
-              trappedValue: skuItem.stockCurrent * skuItem.price,
-              trappedValueEstimated: !skuItem.enrichment?.costPrice,
-              sales90: skuItem.sales90,
-              unitPrice: skuItem.price,
-              lastRestockAt: model.lastRestockAt,
-              suggestedAction: resolveInventoryStaleAction(model.daysSinceLastSale),
-              staleBucket: mapStaleBucket(model.daysSinceLastSale),
-            }) satisfies InventoryStaleListItem,
-        ),
+        .map((skuItem) => {
+          const skuLastSaleAt = lastSaleBySku.get(skuItem.sku) ?? null;
+          let skuDaysSinceLastSale: number | null = null;
+          if (skuLastSaleAt) {
+            const diff = now.getTime() - new Date(skuLastSaleAt).getTime();
+            skuDaysSinceLastSale = Math.floor(diff / (1000 * 60 * 60 * 24));
+          }
+
+          return {
+            sku: skuItem.sku,
+            modelKey: model.modelKey,
+            modelLabel: cleanInventoryModelLabel(String(skuItem.model ?? model.modelLabel)),
+            color: skuItem.color,
+            quality: skuItem.quality,
+            brand: model.brand,
+            family: model.family,
+            productKind: model.productKind,
+            stockUnits: skuItem.stockCurrent,
+            activeSkuCount: 1,
+            totalSkuCount: 1,
+            lastSaleAt: skuLastSaleAt,
+            daysSinceLastSale: skuDaysSinceLastSale,
+            trappedValue: skuItem.stockCurrent * skuItem.price,
+            trappedValueEstimated: !skuItem.enrichment?.costPrice,
+            sales90: skuItem.sales90,
+            unitPrice: skuItem.price,
+            lastRestockAt: model.lastRestockAt,
+            suggestedAction: resolveInventoryStaleAction(skuDaysSinceLastSale),
+            staleBucket: mapStaleBucket(skuDaysSinceLastSale),
+          } satisfies InventoryStaleListItem;
+        }),
     )
+    // Filter: only keep SKUs that are individually stale (15+ days or never sold)
+    .filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 15)
     .sort(
       (left, right) =>
         (right.daysSinceLastSale ?? Number.POSITIVE_INFINITY) - (left.daysSinceLastSale ?? Number.POSITIVE_INFINITY) ||
@@ -2686,6 +2702,7 @@ export async function getInventoryStale(): Promise<InventoryStaleResponse> {
   return {
     snapshot: dataset.snapshot,
     counts: {
+      stale15_30: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 15 && item.daysSinceLastSale < 30).length,
       stale30_60: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 30 && item.daysSinceLastSale < 60).length,
       stale60_90: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 60 && item.daysSinceLastSale < 90).length,
       stale90_120: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 90 && item.daysSinceLastSale < 120).length,

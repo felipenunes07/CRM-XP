@@ -718,6 +718,7 @@ export interface InventoryStaleListItem {
 export interface InventoryStaleResponse {
   snapshot: InventorySnapshotMeta | null;
   counts: {
+    stale15_30: number;
     stale30_60: number;
     stale60_90: number;
     stale90_120: number;
