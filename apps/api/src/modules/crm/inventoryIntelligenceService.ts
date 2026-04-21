@@ -192,7 +192,13 @@ function removeDiacritics(value: string) {
 }
 
 function cleanInventoryModelLabel(model: string) {
-  return normalizeText(model)
+  let cleaned = normalizeText(model);
+  
+  // Remove SKU code prefixes from the spreadsheet like "12/31/00 - " or "1338-1 - "
+  // It matches a single word starting with a digit and containing alphanumeric/slashes/dashes
+  cleaned = cleaned.replace(/^\d[\w/-]*\s+-\s+/, "");
+
+  return cleaned
     .replace(/\[[^\]]*\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -2235,7 +2241,12 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
     {
       date: string;
       totalStockUnits: number;
+      totalStockUnitsTela: number;
+      totalStockUnitsDoc: number;
       activeModelCount: number;
+      activeSkuCount: number;
+      activeSkuCountTela: number;
+      activeSkuCountDoc: number;
       salesUnits: number;
       restockUnits: number;
     }
@@ -2289,10 +2300,11 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
     const sortedPoints = [...pointMap.values()].sort((left, right) => left.date.localeCompare(right.date));
 
     const normalizedPoints = sortedPoints.map((point) => {
+      const expectedStock = previousStockUnits !== null ? Math.max(0, previousStockUnits - point.salesUnits) : 0;
       const restockUnits = point.hasSnapshot
         ? previousStockUnits === null
           ? 0
-          : Math.max(0, Number((point.stockUnits - previousStockUnits).toFixed(0)))
+          : Math.max(0, Number((point.stockUnits - expectedStock).toFixed(0)))
         : 0;
 
       if (point.hasSnapshot) {
@@ -2302,7 +2314,12 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       const globalPoint = globalSeriesMap.get(point.date) ?? {
         date: point.date,
         totalStockUnits: 0,
+        totalStockUnitsTela: 0,
+        totalStockUnitsDoc: 0,
         activeModelCount: 0,
+        activeSkuCount: 0,
+        activeSkuCountTela: 0,
+        activeSkuCountDoc: 0,
         salesUnits: 0,
         restockUnits: 0,
       };
@@ -2312,6 +2329,14 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       if (point.hasSnapshot) {
         globalPoint.totalStockUnits += point.stockUnits;
         globalPoint.activeModelCount += point.stockUnits > 0 ? 1 : 0;
+        globalPoint.activeSkuCount += point.activeSkuCount;
+        if (modelKey.startsWith("DOC_DE_CARGA")) {
+          globalPoint.activeSkuCountDoc += point.activeSkuCount;
+          globalPoint.totalStockUnitsDoc += point.stockUnits;
+        } else {
+          globalPoint.activeSkuCountTela += point.activeSkuCount;
+          globalPoint.totalStockUnitsTela += point.stockUnits;
+        }
         globalPoint.restockUnits += restockUnits;
       }
 
@@ -2339,11 +2364,15 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
         ({
           date: point.date,
           totalStockUnits: point.totalStockUnits,
+          totalStockUnitsTela: point.totalStockUnitsTela,
+          totalStockUnitsDoc: point.totalStockUnitsDoc,
           activeModelCount: point.activeModelCount,
+          activeSkuCount: point.activeSkuCount,
+          activeSkuCountTela: point.activeSkuCountTela,
+          activeSkuCountDoc: point.activeSkuCountDoc,
           salesUnits: point.salesUnits,
           restockUnits: point.restockUnits,
           stockUnits: null,
-          activeSkuCount: null,
         }) satisfies InventoryDailySeriesPoint,
     );
 
@@ -2395,7 +2424,9 @@ function buildOverviewCards(models: InventoryModelAggregate[]): InventoryOvervie
     (model) => model.stockUnits > 0 && model.coverageDays !== null && model.coverageDays <= INVENTORY_COVERAGE_LOW_DAYS,
   ).length;
   const restockedToday = models.filter((model) => model.deltaIn > 0).length;
-  const stale90 = models.filter((model) => model.stockUnits > 0 && (model.daysSinceLastSale === null || model.daysSinceLastSale >= 90)).length;
+  const stale90 = models
+    .filter((model) => model.stockUnits > 0 && (model.daysSinceLastSale === null || model.daysSinceLastSale >= 90))
+    .reduce((sum, model) => sum + model.currentItems.filter((sku) => sku.stockCurrent > 0).length, 0);
   const holdSales = models.filter((model) => model.holdSales).length;
 
   return [
@@ -2429,7 +2460,7 @@ function buildOverviewCards(models: InventoryModelAggregate[]): InventoryOvervie
     {
       key: "STALE_90",
       title: "Parado 90+ dias",
-      helper: "Modelo ocupando espaco e pedindo promocao ou giro.",
+      helper: "SKUs ocupando espaco e pedindo promocao ou giro.",
       count: stale90,
       tone: "warning",
       targetTab: "stale",
@@ -2554,8 +2585,12 @@ export async function getInventoryOverview(): Promise<InventoryOverviewResponse>
     highlights: buildOverviewHighlights(dataset.overviewSeries),
     totals: {
       totalStockUnits: dataset.models.reduce((sum, model) => sum + model.stockUnits, 0),
+      totalStockUnitsTela: dataset.models.filter(m => m.productKind === "TELA").reduce((sum, model) => sum + model.stockUnits, 0),
+      totalStockUnitsDoc: dataset.models.filter(m => m.productKind === "DOC_DE_CARGA").reduce((sum, model) => sum + model.stockUnits, 0),
       activeModelCount: dataset.models.filter((model) => model.stockUnits > 0).length,
       activeSkuCount: dataset.models.reduce((sum, model) => sum + model.activeSkuCount, 0),
+      activeSkuCountTela: dataset.models.filter(m => m.productKind === "TELA").reduce((sum, model) => sum + model.activeSkuCount, 0),
+      activeSkuCountDoc: dataset.models.filter(m => m.productKind === "DOC_DE_CARGA").reduce((sum, model) => sum + model.activeSkuCount, 0),
       sales30: dataset.models.reduce((sum, model) => sum + model.sales30, 0),
       sales90: dataset.models.reduce((sum, model) => sum + model.sales90, 0),
       trappedValue: Number(dataset.models.reduce((sum, model) => sum + model.trappedValue, 0).toFixed(2)),
@@ -2611,41 +2646,50 @@ export async function getInventoryStale(): Promise<InventoryStaleResponse> {
   const dataset = await buildInventoryAnalyticsDataset();
   const items = dataset.models
     .filter((model) => model.stockUnits > 0 && (model.daysSinceLastSale === null || model.daysSinceLastSale >= 30))
-    .map(
-      (model) =>
-        ({
-          modelKey: model.modelKey,
-          modelLabel: model.modelLabel,
-          brand: model.brand,
-          family: model.family,
-          productKind: model.productKind,
-          stockUnits: model.stockUnits,
-          activeSkuCount: model.activeSkuCount,
-          totalSkuCount: model.totalSkuCount,
-          lastSaleAt: model.lastSaleAt,
-          daysSinceLastSale: model.daysSinceLastSale,
-          trappedValue: model.trappedValue,
-          trappedValueEstimated: model.trappedValueEstimated,
-          sales90: model.sales90,
-          lastRestockAt: model.lastRestockAt,
-          suggestedAction: resolveInventoryStaleAction(model.daysSinceLastSale),
-          staleBucket: mapStaleBucket(model.daysSinceLastSale),
-        }) satisfies InventoryStaleListItem,
+    .flatMap((model) =>
+      model.currentItems
+        .filter((skuItem) => skuItem.stockCurrent > 0)
+        .map(
+          (skuItem) =>
+            ({
+              sku: skuItem.sku,
+              modelKey: model.modelKey,
+              modelLabel: cleanInventoryModelLabel(String(skuItem.model ?? model.modelLabel)),
+              color: skuItem.color,
+              quality: skuItem.quality,
+              brand: model.brand,
+              family: model.family,
+              productKind: model.productKind,
+              stockUnits: skuItem.stockCurrent,
+              activeSkuCount: 1,
+              totalSkuCount: 1,
+              lastSaleAt: model.lastSaleAt,
+              daysSinceLastSale: model.daysSinceLastSale,
+              trappedValue: skuItem.stockCurrent * skuItem.price,
+              trappedValueEstimated: !skuItem.enrichment?.costPrice,
+              sales90: skuItem.sales90,
+              unitPrice: skuItem.price,
+              lastRestockAt: model.lastRestockAt,
+              suggestedAction: resolveInventoryStaleAction(model.daysSinceLastSale),
+              staleBucket: mapStaleBucket(model.daysSinceLastSale),
+            }) satisfies InventoryStaleListItem,
+        ),
     )
     .sort(
       (left, right) =>
         (right.daysSinceLastSale ?? Number.POSITIVE_INFINITY) - (left.daysSinceLastSale ?? Number.POSITIVE_INFINITY) ||
         right.trappedValue - left.trappedValue ||
-        sortLocale(left.modelLabel, right.modelLabel),
+        sortLocale(left.modelLabel, right.modelLabel) ||
+        sortLocale(left.sku, right.sku),
     );
 
   return {
     snapshot: dataset.snapshot,
     counts: {
-      stale30: items.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 30).length,
-      stale60: items.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 60).length,
-      stale90: items.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 90).length,
-      stale120: items.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 120).length,
+      stale30_60: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 30 && item.daysSinceLastSale < 60).length,
+      stale60_90: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 60 && item.daysSinceLastSale < 90).length,
+      stale90_120: items.filter((item) => item.daysSinceLastSale !== null && item.daysSinceLastSale >= 90 && item.daysSinceLastSale < 120).length,
+      stale120plus: items.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 120).length,
     },
     items,
   };
