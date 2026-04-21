@@ -391,6 +391,383 @@ export interface InventoryItem {
   isInStock: boolean;
 }
 
+export type InventoryStockStatus = "NEGATIVE" | "OUT" | "LOW" | "HEALTHY" | "HIGH";
+export type InventoryDemandStatus = "NO_SALES" | "COLD" | "WARM" | "HOT";
+export type InventoryQuadrant = "DRIVE_NOW" | "REPLENISH_URGENT" | "MONITOR" | "STALLED";
+export type InventorySellerActionType = "PUSH_STAGNANT" | "ANNOUNCE_ARRIVAL" | "HOLD_BACK";
+export type InventoryCustomerMatchType = "SKU" | "FAMILY";
+export type InventoryProductKind = "DOC_DE_CARGA" | "TELA";
+
+export interface InventoryDepositInfo {
+  id: string | null;
+  name: string;
+  companyName: string | null;
+  balance: number;
+  reservedBalance: number | null;
+  includesInTotal: boolean | null;
+}
+
+export interface InventoryProductEnrichment {
+  productId: string | null;
+  productCode: string | null;
+  productName: string | null;
+  matchMethod: "SKU" | "MODEL" | "NONE";
+  categoryTree: string | null;
+  supplierName: string | null;
+  price: number | null;
+  promotionalPrice: number | null;
+  costPrice: number | null;
+  averageCostPrice: number | null;
+  location: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  contactId: string | null;
+  sellerId: string | null;
+  sellerName: string | null;
+  city: string | null;
+  state: string | null;
+  reservedStock: number | null;
+  deposits: InventoryDepositInfo[];
+  cachedAt: string | null;
+  stale: boolean;
+}
+
+export interface InventoryCustomerSuggestion {
+  customerId: string;
+  customerCode: string;
+  customerDisplayName: string;
+  matchType: InventoryCustomerMatchType;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number | null;
+  lastAttendant: string | null;
+  availableCreditAmount: number;
+  creditBalanceAmount: number;
+  sellerName: string | null;
+  reason: string;
+}
+
+export interface InventoryIntelligenceItem {
+  sku: string;
+  model: string;
+  brand: string;
+  family: string;
+  productKind: InventoryProductKind;
+  color: string | null;
+  quality: string | null;
+  price: number;
+  promotionLabel: string | null;
+  stockCurrent: number;
+  previousStock: number;
+  deltaNet: number;
+  deltaEntry: number;
+  deltaExit: number;
+  sales30: number;
+  sales90: number;
+  orders30: number;
+  orders90: number;
+  coverageDays: number | null;
+  stockStatus: InventoryStockStatus;
+  demandStatus: InventoryDemandStatus;
+  quadrant: InventoryQuadrant;
+  isHotRupture: boolean;
+  isLowCoverage: boolean;
+  isOverstockCold: boolean;
+  isNewArrival: boolean;
+  isStrongOutgoing: boolean;
+  depositNames: string[];
+  sellerNames: string[];
+  enrichment: InventoryProductEnrichment | null;
+}
+
+export interface InventoryStockHistoryPoint {
+  snapshotId: string;
+  importedAt: string;
+  stockQuantity: number;
+  deltaNet: number;
+}
+
+export interface InventoryQuadrantCell {
+  quadrant: InventoryQuadrant;
+  label: string;
+  itemCount: number;
+  totalUnits: number;
+  topItems: Array<{
+    sku: string;
+    model: string;
+  }>;
+}
+
+export interface InventoryIntelligenceSummary {
+  activeSkus: number;
+  totalUnits: number;
+  hotRuptureCount: number;
+  lowCoverageCount: number;
+  newArrivalCount: number;
+  stagnantCount: number;
+  negativeStockCount: number;
+}
+
+export interface InventoryIntelligenceTables {
+  hotRuptures: InventoryIntelligenceItem[];
+  lowCoverage: InventoryIntelligenceItem[];
+  arrivals: InventoryIntelligenceItem[];
+  departures: InventoryIntelligenceItem[];
+  overstockCold: InventoryIntelligenceItem[];
+}
+
+export interface InventorySellerActionItem {
+  actionType: InventorySellerActionType;
+  item: InventoryIntelligenceItem;
+  headline: string;
+  reason: string;
+  suggestedCustomers: InventoryCustomerSuggestion[];
+}
+
+export interface InventorySellerQueues {
+  pushStagnant: InventorySellerActionItem[];
+  announceArrival: InventorySellerActionItem[];
+  holdBack: InventorySellerActionItem[];
+}
+
+export interface InventoryIntelligenceFilters {
+  brands: string[];
+  families: string[];
+  qualities: string[];
+  stockStatuses: InventoryStockStatus[];
+  demandStatuses: InventoryDemandStatus[];
+  depositNames: string[];
+  sellers: string[];
+}
+
+export interface InventoryIntelligenceAppliedFilters {
+  brand: string | null;
+  family: string | null;
+  quality: string | null;
+  stockStatus: InventoryStockStatus | null;
+  demandStatus: InventoryDemandStatus | null;
+  newArrivalOnly: boolean;
+  depositName: string | null;
+  seller: string | null;
+}
+
+export interface InventoryIntelligenceResponse {
+  snapshot: InventorySnapshotMeta | null;
+  previousSnapshot: InventorySnapshotMeta | null;
+  summary: InventoryIntelligenceSummary;
+  filters: InventoryIntelligenceFilters;
+  appliedFilters: InventoryIntelligenceAppliedFilters;
+  matrix: InventoryQuadrantCell[];
+  tables: InventoryIntelligenceTables;
+  sellerQueues: InventorySellerQueues;
+}
+
+export interface InventoryIntelligenceDetailResponse {
+  snapshot: InventorySnapshotMeta | null;
+  item: InventoryIntelligenceItem | null;
+  stockHistory: InventoryStockHistoryPoint[];
+  familyItems: InventoryIntelligenceItem[];
+  suggestedCustomers: InventoryCustomerSuggestion[];
+}
+
+export type InventoryBuyRecommendation = "BUY_NOW" | "WATCH" | "DO_NOT_BUY";
+export type InventoryRestockStatus = "ARRIVED_TODAY" | "BACK_TO_SELLING" | "NO_REACTION_YET" | "RESTOCK_AGAIN";
+export type InventoryStaleAction = "MONITOR" | "COMMERCIAL_PUSH" | "PROMOTION" | "LIQUIDATE_REVIEW";
+export type InventoryOverviewCardKey = "BUY_URGENT" | "ENDING_SOON" | "RESTOCKED_TODAY" | "STALE_90" | "HOLD_SALES";
+
+export interface InventoryDailySeriesPoint {
+  date: string;
+  totalStockUnits: number;
+  activeModelCount: number;
+  salesUnits: number;
+  restockUnits: number;
+  stockUnits: number | null;
+  activeSkuCount: number | null;
+}
+
+export interface InventoryOverviewCard {
+  key: InventoryOverviewCardKey;
+  title: string;
+  helper: string;
+  count: number;
+  tone: "neutral" | "success" | "warning" | "danger";
+  targetTab: "buying" | "restock" | "stale";
+  targetFilter: string | null;
+}
+
+export interface InventoryOverviewResponse {
+  snapshot: InventorySnapshotMeta | null;
+  previousSnapshot: InventorySnapshotMeta | null;
+  cards: InventoryOverviewCard[];
+  dailySeries: InventoryDailySeriesPoint[];
+  highlights: string[];
+  totals: {
+    totalStockUnits: number;
+    activeModelCount: number;
+    activeSkuCount: number;
+    sales30: number;
+    sales90: number;
+    trappedValue: number;
+  };
+}
+
+export interface InventoryBuyingListItem {
+  modelKey: string;
+  modelLabel: string;
+  brand: string;
+  family: string;
+  productKind: InventoryProductKind;
+  stockUnits: number;
+  activeSkuCount: number;
+  totalSkuCount: number;
+  sales7: number;
+  sales30: number;
+  sales90: number;
+  orders30: number;
+  orders90: number;
+  lastSaleAt: string | null;
+  daysSinceLastSale: number | null;
+  lastRestockAt: string | null;
+  coverageDays: number | null;
+  deltaIn: number;
+  deltaOut: number;
+  trappedValue: number;
+  trappedValueEstimated: boolean;
+  buyPriority: number;
+  buyRecommendation: InventoryBuyRecommendation;
+  holdSales: boolean;
+  qualityLabels: string[];
+  sampleSkus: string[];
+}
+
+export interface InventoryBuyingResponse {
+  snapshot: InventorySnapshotMeta | null;
+  items: InventoryBuyingListItem[];
+}
+
+export interface InventoryRestockListItem {
+  modelKey: string;
+  modelLabel: string;
+  brand: string;
+  family: string;
+  productKind: InventoryProductKind;
+  lastRestockAt: string | null;
+  restockUnits: number;
+  stockBefore: number;
+  stockAfter: number;
+  stockUnits: number;
+  activeSkuCount: number;
+  sales7Before: number;
+  sales7After: number;
+  sales30: number;
+  coverageDays: number | null;
+  buyRecommendation: InventoryBuyRecommendation;
+  status: InventoryRestockStatus;
+}
+
+export interface InventoryRestockResponse {
+  snapshot: InventorySnapshotMeta | null;
+  counts: {
+    arrivedToday: number;
+    backToSelling: number;
+    noReactionYet: number;
+    restockAgain: number;
+  };
+  items: InventoryRestockListItem[];
+}
+
+export interface InventoryStaleListItem {
+  modelKey: string;
+  modelLabel: string;
+  brand: string;
+  family: string;
+  productKind: InventoryProductKind;
+  stockUnits: number;
+  activeSkuCount: number;
+  totalSkuCount: number;
+  lastSaleAt: string | null;
+  daysSinceLastSale: number | null;
+  trappedValue: number;
+  trappedValueEstimated: boolean;
+  sales90: number;
+  lastRestockAt: string | null;
+  suggestedAction: InventoryStaleAction;
+  staleBucket: "30_PLUS" | "60_PLUS" | "90_PLUS" | "120_PLUS";
+}
+
+export interface InventoryStaleResponse {
+  snapshot: InventorySnapshotMeta | null;
+  counts: {
+    stale30: number;
+    stale60: number;
+    stale90: number;
+    stale120: number;
+  };
+  items: InventoryStaleListItem[];
+}
+
+export interface InventoryModelListItem {
+  modelKey: string;
+  modelLabel: string;
+  brand: string;
+  family: string;
+  productKind: InventoryProductKind;
+  stockUnits: number;
+  activeSkuCount: number;
+  totalSkuCount: number;
+  sales30: number;
+  sales90: number;
+  lastSaleAt: string | null;
+  daysSinceLastSale: number | null;
+  qualityLabels: string[];
+  sampleSkus: string[];
+  buyRecommendation: InventoryBuyRecommendation;
+}
+
+export interface InventoryModelsResponse {
+  snapshot: InventorySnapshotMeta | null;
+  filters: {
+    brands: string[];
+    families: string[];
+    qualities: string[];
+  };
+  items: InventoryModelListItem[];
+}
+
+export interface InventoryModelTopCustomer {
+  customerId: string;
+  customerCode: string;
+  customerDisplayName: string;
+  totalQuantity: number;
+  totalOrders: number;
+  lastPurchaseAt: string | null;
+  lastAttendant: string | null;
+}
+
+export interface InventoryModelDepositBalance {
+  name: string;
+  companyName: string | null;
+  balance: number;
+  reservedBalance: number;
+}
+
+export interface InventoryModelBenchmarks {
+  lowStockAvgSales: number | null;
+  highStockAvgSales: number | null;
+  shortMixAvgSales: number | null;
+  wideMixAvgSales: number | null;
+}
+
+export interface InventoryModelDetailResponse {
+  snapshot: InventorySnapshotMeta | null;
+  model: InventoryBuyingListItem | null;
+  dailySeries: InventoryDailySeriesPoint[];
+  benchmarks: InventoryModelBenchmarks;
+  highlights: string[];
+  skus: InventoryIntelligenceItem[];
+  topCustomers: InventoryModelTopCustomer[];
+  deposits: InventoryModelDepositBalance[];
+}
+
 export type OpportunityPrimarySource = "CREDIT_BALANCE" | "AVAILABLE_CREDIT";
 export type OpportunityMatchType = "SKU" | "MODEL";
 

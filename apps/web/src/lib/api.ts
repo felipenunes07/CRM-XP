@@ -15,7 +15,15 @@ import type {
   IdeaBoardDetail,
   IdeaBoardItem,
   IdeaVoteFeedback,
+  InventoryBuyingResponse,
+  InventoryIntelligenceDetailResponse,
+  InventoryIntelligenceResponse,
+  InventoryModelDetailResponse,
+  InventoryModelsResponse,
+  InventoryOverviewResponse,
+  InventoryRestockResponse,
   InventorySnapshotMeta,
+  InventoryStaleResponse,
   MessageTemplate,
   MonthlyTarget,
   ProspectContactAttemptResult,
@@ -151,6 +159,43 @@ export const api = {
     return request<InventorySnapshotMeta | null>("/api/inventory/refresh", {
       method: "POST",
     }, token);
+  },
+  inventoryIntelligence(
+    token: string,
+    query: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        search.set(key, String(value));
+      }
+    });
+    return request<InventoryIntelligenceResponse>(
+      `/api/inventory/intelligence${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
+  },
+  inventoryItemDetail(token: string, sku: string) {
+    return request<InventoryIntelligenceDetailResponse>(`/api/inventory/items/${encodeURIComponent(sku)}`, {}, token);
+  },
+  inventoryOverview(token: string) {
+    return request<InventoryOverviewResponse>("/api/inventory/overview", {}, token);
+  },
+  inventoryBuying(token: string) {
+    return request<InventoryBuyingResponse>("/api/inventory/buying", {}, token);
+  },
+  inventoryRestock(token: string) {
+    return request<InventoryRestockResponse>("/api/inventory/restock", {}, token);
+  },
+  inventoryStale(token: string) {
+    return request<InventoryStaleResponse>("/api/inventory/stale", {}, token);
+  },
+  inventoryModels(token: string) {
+    return request<InventoryModelsResponse>("/api/inventory/models", {}, token);
+  },
+  inventoryModelDetail(token: string, modelKey: string) {
+    return request<InventoryModelDetailResponse>(`/api/inventory/models/${encodeURIComponent(modelKey)}`, {}, token);
   },
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);

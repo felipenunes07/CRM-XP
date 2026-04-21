@@ -629,6 +629,66 @@ export const migrations = [
     ON inventory_snapshot_items(normalized_model);
   `,
   `
+  CREATE TABLE IF NOT EXISTS tiny_product_cache (
+    sku TEXT PRIMARY KEY,
+    match_method TEXT NOT NULL DEFAULT 'NONE',
+    product_id TEXT,
+    product_code TEXT,
+    product_name TEXT,
+    category_tree TEXT,
+    supplier_name TEXT,
+    price NUMERIC(14, 2),
+    promotional_price NUMERIC(14, 2),
+    cost_price NUMERIC(14, 2),
+    average_cost_price NUMERIC(14, 2),
+    location TEXT,
+    external_created_at TIMESTAMPTZ,
+    external_updated_at TIMESTAMPTZ,
+    contact_id TEXT,
+    seller_id TEXT,
+    seller_name TEXT,
+    city TEXT,
+    state TEXT,
+    reserved_stock NUMERIC(14, 2),
+    deposit_names TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    deposits JSONB NOT NULL DEFAULT '[]'::jsonb,
+    product_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    contact_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    stock_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (match_method IN ('SKU', 'MODEL', 'NONE'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tiny_product_cache_product_code
+    ON tiny_product_cache(product_code);
+  CREATE INDEX IF NOT EXISTS idx_tiny_product_cache_seller_name
+    ON tiny_product_cache(seller_name);
+  CREATE INDEX IF NOT EXISTS idx_tiny_product_cache_fetched_at
+    ON tiny_product_cache(fetched_at DESC);
+
+  CREATE TABLE IF NOT EXISTS tiny_contact_cache (
+    customer_code TEXT PRIMARY KEY,
+    contact_id TEXT,
+    contact_name TEXT,
+    fantasy_name TEXT,
+    city TEXT,
+    state TEXT,
+    seller_id TEXT,
+    seller_name TEXT,
+    contact_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_tiny_contact_cache_contact_id
+    ON tiny_contact_cache(contact_id);
+  CREATE INDEX IF NOT EXISTS idx_tiny_contact_cache_seller_name
+    ON tiny_contact_cache(seller_name);
+  CREATE INDEX IF NOT EXISTS idx_tiny_contact_cache_fetched_at
+    ON tiny_contact_cache(fetched_at DESC);
+  `,
+  `
   CREATE TABLE IF NOT EXISTS monthly_targets (
     year INTEGER NOT NULL,
     month INTEGER NOT NULL,

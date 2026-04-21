@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
   BarChart3,
+  Boxes,
   ClipboardList,
   LayoutDashboard,
   Lightbulb,
@@ -21,6 +22,7 @@ export const appShellLinks = [
   { to: "/metas", icon: Trophy, label: "Metas" },
   { to: "/atendentes", icon: TrendingUp, label: "Atendentes" },
   { to: "/clientes", icon: Users, label: "Clientes" },
+  { to: "/estoque", icon: Boxes, label: "Estoque" },
   { to: "/embaixadores", icon: Star, label: "Embaixadores" },
   { to: "/segmentos", icon: BarChart3, label: "Segmentos" },
   { to: "/agenda", icon: ClipboardList, label: "Agenda" },
