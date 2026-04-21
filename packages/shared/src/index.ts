@@ -586,11 +586,15 @@ export type InventoryOverviewCardKey = "BUY_URGENT" | "ENDING_SOON" | "RESTOCKED
 export interface InventoryDailySeriesPoint {
   date: string;
   totalStockUnits: number;
+  totalStockUnitsTela?: number;
+  totalStockUnitsDoc?: number;
   activeModelCount: number;
   salesUnits: number;
   restockUnits: number;
   stockUnits: number | null;
   activeSkuCount: number | null;
+  activeSkuCountTela?: number | null;
+  activeSkuCountDoc?: number | null;
 }
 
 export interface InventoryOverviewCard {
@@ -611,8 +615,12 @@ export interface InventoryOverviewResponse {
   highlights: string[];
   totals: {
     totalStockUnits: number;
+    totalStockUnitsTela?: number;
+    totalStockUnitsDoc?: number;
     activeModelCount: number;
     activeSkuCount: number;
+    activeSkuCountTela?: number;
+    activeSkuCountDoc?: number;
     sales30: number;
     sales90: number;
     trappedValue: number;
@@ -685,8 +693,11 @@ export interface InventoryRestockResponse {
 }
 
 export interface InventoryStaleListItem {
+  sku: string;
   modelKey: string;
   modelLabel: string;
+  color: string | null;
+  quality: string | null;
   brand: string;
   family: string;
   productKind: InventoryProductKind;
@@ -698,6 +709,7 @@ export interface InventoryStaleListItem {
   trappedValue: number;
   trappedValueEstimated: boolean;
   sales90: number;
+  unitPrice: number;
   lastRestockAt: string | null;
   suggestedAction: InventoryStaleAction;
   staleBucket: "30_PLUS" | "60_PLUS" | "90_PLUS" | "120_PLUS";
@@ -706,10 +718,10 @@ export interface InventoryStaleListItem {
 export interface InventoryStaleResponse {
   snapshot: InventorySnapshotMeta | null;
   counts: {
-    stale30: number;
-    stale60: number;
-    stale90: number;
-    stale120: number;
+    stale30_60: number;
+    stale60_90: number;
+    stale90_120: number;
+    stale120plus: number;
   };
   items: InventoryStaleListItem[];
 }

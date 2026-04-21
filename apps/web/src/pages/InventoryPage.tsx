@@ -32,7 +32,7 @@ import { formatCurrency, formatDate, formatDateTime, formatDaysSince, formatNumb
 type InventoryView = "overview" | "buying" | "restock" | "stale" | "models";
 type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" | "hold_sales";
 type RestockWindow = "all" | "today" | "7d" | "30d";
-type StaleFilter = 30 | 60 | 90 | 120;
+type StaleFilter = "30_60" | "60_90" | "90_120" | "120plus";
 
 const viewTabs = [
   {
@@ -246,16 +246,31 @@ function matchesRestockWindow(item: InventoryRestockListItem, latestSeriesDate: 
 }
 
 function matchesStaleFilter(item: InventoryStaleListItem, filter: StaleFilter) {
-  if (item.daysSinceLastSale === null) {
-    return filter === 120;
+  const days = item.daysSinceLastSale;
+
+  if (filter === "30_60") {
+    return days !== null && days >= 30 && days < 60;
   }
 
-  return item.daysSinceLastSale >= filter;
+  if (filter === "60_90") {
+    return days !== null && days >= 60 && days < 90;
+  }
+
+  if (filter === "90_120") {
+    return days !== null && days >= 90 && days < 120;
+  }
+
+  // 120plus: includes null (never sold)
+  return days === null || days >= 120;
 }
 
 function formatSeriesValue(dataKey: string, value: number) {
   if (dataKey.includes("Units") || dataKey.includes("Stock")) {
     return `${formatNumber(value)} pecas`;
+  }
+
+  if (dataKey.includes("SkuCount")) {
+    return `${formatNumber(value)} SKUs`;
   }
 
   if (dataKey.includes("Count")) {
@@ -330,9 +345,9 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
           <p>Mostra so a quantidade total da planilha em cada leitura do dia.</p>
         </div>
 
-        {stockSeries.length >= 2 ? (
+        {stockSeries.length > 0 ? (
           <div className="trend-chart-wrap inventory-trend-chart">
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={230}>
               <ComposedChart data={stockSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.12)" />
                 <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 12 }} />
@@ -343,14 +358,34 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
                 />
                 <Area
                   type="monotone"
-                  dataKey="totalStockUnits"
-                  name="Pecas em estoque"
+                  dataKey="totalStockUnitsTela"
+                  name="Pecas Telas"
                   stroke="#2956d7"
                   fill="rgba(95, 140, 255, 0.18)"
                   strokeWidth={2.4}
+                  dot={stockSeries.length === 1 ? { r: 4, fill: "#2956d7" } : false}
+                  activeDot={{ r: 6 }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="totalStockUnitsDoc"
+                  name="Pecas DOCs"
+                  stroke="#d09a29"
+                  fill="rgba(208, 154, 41, 0.18)"
+                  strokeWidth={2.4}
+                  dot={stockSeries.length === 1 ? { r: 4, fill: "#d09a29" } : false}
+                  activeDot={{ r: 6 }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
+            <div className="inventory-chart-legend">
+              <span>
+                <i className="tone-neutral" style={{ backgroundColor: "#2956d7" }} /> Telas
+              </span>
+              <span>
+                <i className="tone-warning" style={{ backgroundColor: "#d09a29" }} /> DOCs de Carga
+              </span>
+            </div>
           </div>
         ) : (
           <InventoryChartEmptyState
@@ -368,14 +403,14 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
         <div className="inventory-overview-chart-header">
           <div>
             <span>Grafico 2</span>
-            <h4>Modelos ativos</h4>
+            <h4>SKUs ativos</h4>
           </div>
-          <p>Mostra quantos modelos diferentes estavam com saldo na leitura de cada dia.</p>
+          <p>Mostra quantos SKUs de Telas e de DOCs estavam com saldo maior que zero.</p>
         </div>
 
-        {stockSeries.length >= 2 ? (
+        {stockSeries.length > 0 ? (
           <div className="trend-chart-wrap inventory-trend-chart">
-            <ResponsiveContainer width="100%" height={250}>
+            <ResponsiveContainer width="100%" height={230}>
               <ComposedChart data={stockSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.12)" />
                 <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 12 }} />
@@ -386,14 +421,30 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
                 />
                 <Line
                   type="monotone"
-                  dataKey="activeModelCount"
-                  name="Modelos ativos"
+                  dataKey="activeSkuCountTela"
+                  name="SKUs Tela"
                   stroke="#173260"
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="activeSkuCountDoc"
+                  name="SKUs DOC"
+                  stroke="#d09a29"
                   strokeWidth={2.5}
                   dot={{ r: 3 }}
                 />
               </ComposedChart>
             </ResponsiveContainer>
+            <div className="inventory-chart-legend">
+              <span>
+                <i className="tone-neutral" style={{ backgroundColor: "#173260" }} /> Telas
+              </span>
+              <span>
+                <i className="tone-warning" style={{ backgroundColor: "#d09a29" }} /> DOCs de Carga
+              </span>
+            </div>
           </div>
         ) : (
           <InventoryChartEmptyState
@@ -701,7 +752,7 @@ export function InventoryPage() {
   const [activeView, setActiveView] = useState<InventoryView>("overview");
   const [buyingFilter, setBuyingFilter] = useState<BuyingFilter>("all");
   const [restockWindow, setRestockWindow] = useState<RestockWindow>("all");
-  const [staleFilter, setStaleFilter] = useState<StaleFilter>(90);
+  const [staleFilter, setStaleFilter] = useState<StaleFilter>("30_60");
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [brandFilter, setBrandFilter] = useState("");
@@ -833,7 +884,7 @@ export function InventoryPage() {
     }
 
     setActiveView("stale");
-    setStaleFilter(card.targetFilter === "90_plus" ? 90 : 30);
+    setStaleFilter(card.targetFilter === "90_plus" ? "90_120" : "30_60");
   }
 
   return (
@@ -912,9 +963,19 @@ export function InventoryPage() {
                 <h3>Cada grafico mostra uma coisa</h3>
                 <p className="panel-subcopy">Separei estoque, variedade e vendas para a leitura ficar mais clara.</p>
               </div>
-              <div className="inventory-row-numbers">
-                <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnits ?? 0)}</strong>
-                <span>Pecas em estoque agora</span>
+              <div style={{ display: "flex", gap: "32px", textAlign: "right" }}>
+                <div className="inventory-row-numbers">
+                  <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnitsTela ?? 0)}</strong>
+                  <span>Telas em estoque</span>
+                </div>
+                <div className="inventory-row-numbers">
+                  <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnitsDoc ?? 0)}</strong>
+                  <span>DOCs em estoque</span>
+                </div>
+                <div className="inventory-row-numbers">
+                  <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnits ?? 0)}</strong>
+                  <span>Pecas totais agora</span>
+                </div>
               </div>
             </div>
 
@@ -937,12 +998,16 @@ export function InventoryPage() {
               </div>
               <div className="inventory-summary-list">
                 <div>
-                  <span>Modelos ativos</span>
-                  <strong>{formatNumber(overviewQuery.data?.totals.activeModelCount ?? 0)}</strong>
+                  <span>SKUs ativos totais</span>
+                  <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCount ?? 0)}</strong>
                 </div>
                 <div>
-                  <span>SKUs ativos</span>
-                  <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCount ?? 0)}</strong>
+                  <span>SKUs Telas</span>
+                  <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCountTela ?? 0)}</strong>
+                </div>
+                <div>
+                  <span>SKUs DOCs</span>
+                  <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCountDoc ?? 0)}</strong>
                 </div>
                 <div>
                   <span>Venda 30 dias</span>
@@ -1173,10 +1238,10 @@ export function InventoryPage() {
         <>
           <section className="inventory-summary-grid">
             {[
-              { value: 30 as const, label: "30+ dias sem vender", count: staleQuery.data?.counts.stale30 ?? 0 },
-              { value: 60 as const, label: "60+ dias sem vender", count: staleQuery.data?.counts.stale60 ?? 0 },
-              { value: 90 as const, label: "90+ dias sem vender", count: staleQuery.data?.counts.stale90 ?? 0 },
-              { value: 120 as const, label: "120+ dias sem vender", count: staleQuery.data?.counts.stale120 ?? 0 },
+              { value: "30_60" as const, label: "30 a 60 dias sem vender", count: staleQuery.data?.counts.stale30_60 ?? 0 },
+              { value: "60_90" as const, label: "60 a 90 dias sem vender", count: staleQuery.data?.counts.stale60_90 ?? 0 },
+              { value: "90_120" as const, label: "90 a 120 dias sem vender", count: staleQuery.data?.counts.stale90_120 ?? 0 },
+              { value: "120plus" as const, label: "120+ dias sem vender", count: staleQuery.data?.counts.stale120plus ?? 0 },
             ].map((card) => (
               <button
                 key={card.value}
@@ -1209,20 +1274,19 @@ export function InventoryPage() {
                     <p className="eyebrow">Produtos parados</p>
                     <h3>Tabela de produtos sem giro</h3>
                   </div>
-                  <span>{formatNumber(visibleStaleItems.length)} modelos</span>
+                  <span>{formatNumber(visibleStaleItems.length)} SKUs</span>
                 </div>
 
                 <div className="inventory-stale-table-wrap">
                   <table className="data-table inventory-stale-table">
                     <thead>
                       <tr>
-                        <th>Modelo</th>
+                        <th>Produto (SKU)</th>
                         <th>Tipo</th>
                         <th>Dias sem vender</th>
                         <th>Pecas</th>
-                        <th>SKUs</th>
                         <th>Ultima venda</th>
-                        <th>Venda 90 dias</th>
+                        <th>Preco unitario</th>
                         <th>Valor parado</th>
                         <th>Ultima reposicao</th>
                         <th>Acao sugerida</th>
@@ -1231,11 +1295,15 @@ export function InventoryPage() {
                     </thead>
                     <tbody>
                       {visibleStaleItems.map((item) => (
-                        <tr key={item.modelKey}>
+                        <tr key={item.sku}>
                           <td>
                             <div className="inventory-stale-model-cell">
                               <strong>{item.modelLabel}</strong>
-                              <span>{item.brand} · {item.family}</span>
+                              <span>
+                                SKU {item.sku} · {item.brand} · {item.family}
+                                {item.color ? ` · ${item.color}` : ""}
+                                {item.quality ? ` · ${item.quality}` : ""}
+                              </span>
                             </div>
                           </td>
                           <td>
@@ -1247,9 +1315,8 @@ export function InventoryPage() {
                             <strong>{item.daysSinceLastSale === null ? "Sem venda" : `${formatNumber(item.daysSinceLastSale)} dias`}</strong>
                           </td>
                           <td>{formatNumber(item.stockUnits)}</td>
-                          <td>{formatNumber(item.activeSkuCount)}</td>
                           <td>{formatDate(item.lastSaleAt)}</td>
-                          <td>{formatNumber(item.sales90)}</td>
+                          <td>{formatCurrency(item.unitPrice)}</td>
                           <td>
                             <div className="inventory-stale-value-cell">
                               <strong>{formatCurrency(item.trappedValue)}</strong>
