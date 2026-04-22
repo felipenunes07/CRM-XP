@@ -255,19 +255,19 @@ function HistoryTooltip({
   const total = sortedPayload.reduce((acc, p) => acc + (p.value || 0), 0);
 
   return (
-    <div className="chart-tooltip" style={{ 
+    <div className="chart-tooltip" style={{
       minWidth: "180px",
-      backdropFilter: "blur(12px)", 
-      background: "rgba(255,255,255,0.92)", 
-      border: "1px solid rgba(148, 163, 184, 0.2)", 
-      borderRadius: "16px", 
+      backdropFilter: "blur(12px)",
+      background: "rgba(255,255,255,0.92)",
+      border: "1px solid rgba(148, 163, 184, 0.2)",
+      borderRadius: "16px",
       boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
       padding: "1rem"
     }}>
       <div style={{ paddingBottom: "0.75rem", marginBottom: "0.75rem", borderBottom: "1px solid #f1f5f9" }}>
         <strong style={{ color: "#0f172a", fontSize: "0.95rem" }}>{formatMonthLabel(label)}</strong>
       </div>
-      
+
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
         {sortedPayload.map((entry) => (
           <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1.5rem" }}>
@@ -325,7 +325,7 @@ function renderTrend(current: number, previous: number) {
   if (diff === 0) return null;
   const isUp = diff > 0;
   const percent = Math.abs((diff / previous) * 100).toFixed(1);
-  
+
   return (
     <span className={isUp ? "trend-up" : "trend-down"}>
       {isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
@@ -340,7 +340,7 @@ function renderCurrencyTrend(current: number, previous: number) {
   if (diff === 0) return null;
   const isUp = diff > 0;
   const percent = Math.abs((diff / previous) * 100).toFixed(1);
-  
+
   return (
     <span className={isUp ? "trend-up" : "trend-down"}>
       {isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
@@ -350,7 +350,7 @@ function renderCurrencyTrend(current: number, previous: number) {
 }
 
 const ATTENDANT_COLORS = [
-  "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444", 
+  "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ef4444",
   "#ec4899", "#06b6d4", "#f97316", "#14b8a6", "#6366f1"
 ];
 
@@ -485,14 +485,14 @@ export function NewCustomersPage() {
       const month = customer.firstOrderDate.slice(0, 7);
       const originalName = customer.firstAttendant || "Sem Atendente";
       const attendantLower = originalName.toLowerCase();
-      
+
       const targetMatch = TARGET_ATTENDANTS.find(target => attendantLower.includes(target.toLowerCase()));
       if (!targetMatch) continue;
 
       if (!seriesMap.has(month)) {
         seriesMap.set(month, { month });
       }
-      
+
       const point = seriesMap.get(month)!;
       point[targetMatch] = (point[targetMatch] || 0) + 1;
       allAttendants.add(targetMatch);
@@ -607,11 +607,11 @@ export function NewCustomersPage() {
           <div className="metric-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>Gasto no Mês</span>
             {metrics.spendSource && (
-              <span style={{ 
-                fontSize: "0.6rem", 
-                padding: "0.15rem 0.4rem", 
-                borderRadius: "6px", 
-                background: metrics.spendSource === 'api' ? "rgba(59, 130, 246, 0.1)" : "rgba(100, 116, 139, 0.1)", 
+              <span style={{
+                fontSize: "0.6rem",
+                padding: "0.15rem 0.4rem",
+                borderRadius: "6px",
+                background: metrics.spendSource === 'api' ? "rgba(59, 130, 246, 0.1)" : "rgba(100, 116, 139, 0.1)",
                 color: metrics.spendSource === 'api' ? "#3b82f6" : "#64748b",
                 fontWeight: 800,
                 letterSpacing: "0.025em"
@@ -631,11 +631,11 @@ export function NewCustomersPage() {
           <div className="metric-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span>CAC no Mês</span>
             {metrics.spendSource && (
-              <span style={{ 
-                fontSize: "0.6rem", 
-                padding: "0.15rem 0.4rem", 
-                borderRadius: "6px", 
-                background: metrics.spendSource === 'api' ? "rgba(217, 119, 6, 0.1)" : "rgba(100, 116, 139, 0.1)", 
+              <span style={{
+                fontSize: "0.6rem",
+                padding: "0.15rem 0.4rem",
+                borderRadius: "6px",
+                background: metrics.spendSource === 'api' ? "rgba(217, 119, 6, 0.1)" : "rgba(100, 116, 139, 0.1)",
                 color: metrics.spendSource === 'api' ? "#d97706" : "#64748b",
                 fontWeight: 800,
                 letterSpacing: "0.025em"
@@ -668,8 +668,8 @@ export function NewCustomersPage() {
               <LineChart data={derivedDailySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
@@ -707,9 +707,9 @@ export function NewCustomersPage() {
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem" }}>
                 {attendantBreakdown.map((item, idx) => (
-                  <div 
+                  <div
                     key={item.name}
-                    style={{ 
+                    style={{
                       background: idx === 0 ? "rgba(59, 130, 246, 0.06)" : "#ffffff",
                       border: idx === 0 ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid #e2e8f0",
                       borderRadius: "14px",
@@ -724,12 +724,12 @@ export function NewCustomersPage() {
                       <span style={{ fontSize: "1rem" }}>🏆</span>
                     )}
                     <span style={{ fontWeight: 600, color: "#1e293b", fontSize: "0.85rem" }}>{item.name}</span>
-                    <span style={{ 
-                      background: idx === 0 ? "#3b82f6" : "#f1f5f9", 
-                      padding: "0.1rem 0.5rem", 
-                      borderRadius: "6px", 
-                      fontSize: "0.8rem", 
-                      fontWeight: 700, 
+                    <span style={{
+                      background: idx === 0 ? "#3b82f6" : "#f1f5f9",
+                      padding: "0.1rem 0.5rem",
+                      borderRadius: "6px",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
                       color: idx === 0 ? "#ffffff" : "#475569"
                     }}>
                       {item.count}
@@ -819,7 +819,7 @@ export function NewCustomersPage() {
         </section>
       </div>
 
-      <article className="premium-panel" style={{ marginTop: "2rem" }}>
+      {/* <article className="premium-panel" style={{ marginTop: "2rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
           <p className="metric-helper" style={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 800, color: "var(--accent)", letterSpacing: "0.05em", marginBottom: "0.4rem" }}>
             Inteligência de Venda
@@ -875,7 +875,7 @@ export function NewCustomersPage() {
             </div>
           </div>
         </div>
-      </article>
+      </article> */}
 
       <section className="premium-panel" style={{ marginTop: "1.5rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
@@ -1061,11 +1061,11 @@ export function NewCustomersPage() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginTop: "1rem", justifyContent: "center" }}>
             {attendantsHistory.names.map((name, index) => (
               <div key={name} style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                <div style={{ 
-                  width: "10px", 
-                  height: "10px", 
-                  borderRadius: "2px", 
-                  background: ATTENDANT_COLOR_MAP[name] || ATTENDANT_COLORS[index % ATTENDANT_COLORS.length] 
+                <div style={{
+                  width: "10px",
+                  height: "10px",
+                  borderRadius: "2px",
+                  background: ATTENDANT_COLOR_MAP[name] || ATTENDANT_COLORS[index % ATTENDANT_COLORS.length]
                 }} />
                 <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#64748b" }}>{name}</span>
               </div>
@@ -1090,20 +1090,20 @@ export function NewCustomersPage() {
                 .map((entry, index) => {
                   const isActive = entry.month === activeMonth;
                   const isExpanded = entry.month === expandedMonth;
-                  
+
                   const monthCustomers = acquisitionQuery.data.recentCustomers
                     .filter(c => c.firstOrderDate.startsWith(entry.month))
                     .sort((a, b) => b.firstOrderDate.localeCompare(a.firstOrderDate));
 
                   return (
                     <Fragment key={entry.month}>
-                      <tr 
+                      <tr
                         onClick={() => {
                           setExpandedMonth(isExpanded ? null : entry.month);
                           setSelectedMonth(entry.month);
                         }}
-                        style={{ 
-                          borderBottom: (index === data.monthlySeries.length - 1 && !isExpanded) ? "none" : "1px solid #f1f5f9", 
+                        style={{
+                          borderBottom: (index === data.monthlySeries.length - 1 && !isExpanded) ? "none" : "1px solid #f1f5f9",
                           background: isActive ? "rgba(41, 86, 215, 0.08)" : (index % 2 === 0 ? "#ffffff" : "rgba(248, 250, 252, 0.5)"),
                           cursor: "pointer",
                           transition: "all 0.2s"
