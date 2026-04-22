@@ -2,16 +2,20 @@ import type {
   AgendaItem,
   AgendaResponse,
   DashboardMetrics,
+  HistoricalReactivationEntry,
   InsightTag,
   ItemsSoldTrendPoint,
+  MonthlyTarget,
+  NewCustomerLeaderboardEntry,
+  ProspectingLeaderboardEntry,
   ReactivationLeaderboardEntry,
   ReactivationRecoveredClient,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
 import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
-import { getAcquisitionMetrics } from "./acquisitionService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
@@ -178,6 +182,88 @@ async function getSalesPerformance() {
     uniqueCustomers: Number(row.unique_customers ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
     totalItems: Number(row.total_items ?? 0),
+  }));
+}
+
+async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[]> {
+  const result = await pool.query(
+    `
+      WITH old_codes AS (
+        SELECT customer_code
+        FROM customers
+        WHERE source_system_first = 'history_xls'
+          AND customer_code ~ '^(CL|KH|OEM)[0-9]+$'
+      ),
+      ranked_orders AS (
+        SELECT
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          o.order_date::date AS order_date,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS first_order_amount,
+          COALESCE(o.item_count, 0)::int AS first_item_count,
+          ROW_NUMBER() OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+          ) AS order_rank
+        FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        WHERE NOT (
+          c.source_system_first = 'supabase_2026'
+          AND EXISTS (
+            SELECT 1
+            FROM old_codes oc
+            WHERE c.display_name LIKE oc.customer_code || ' %'
+               OR c.display_name LIKE oc.customer_code || '-%'
+               OR c.display_name LIKE oc.customer_code || ' -%'
+          )
+        )
+          AND c.customer_code != 'OEM417'
+          AND c.display_name NOT ILIKE '%MARX%'
+      )
+      SELECT
+        attendant,
+        COUNT(*)::int AS new_customers,
+        COALESCE(SUM(first_order_amount), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(first_item_count), 0)::int AS total_items
+      FROM ranked_orders
+      WHERE order_rank = 1
+        AND date_trunc('month', order_date) = date_trunc('month', CURRENT_DATE)
+      GROUP BY attendant
+      ORDER BY new_customers DESC, total_revenue DESC, attendant ASC
+      LIMIT 10
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant ?? "Sem atendente"),
+    newCustomers: Number(row.new_customers ?? 0),
+    totalRevenue: Number(row.total_revenue ?? 0),
+    totalItems: Number(row.total_items ?? 0),
+  }));
+}
+
+async function getProspectingLeaderboard(): Promise<ProspectingLeaderboardEntry[]> {
+  const result = await pool.query(
+    `
+      SELECT
+        COALESCE(NULLIF(seller_name, ''), 'Sem atendente') AS attendant,
+        COUNT(DISTINCT lead_id)::int AS contacted_leads,
+        COUNT(*)::int AS contact_attempts,
+        COUNT(*) FILTER (WHERE contact_type = 'FIRST_CONTACT')::int AS first_contacts
+      FROM prospect_contact_attempts
+      WHERE date_trunc('month', created_at AT TIME ZONE $1) = date_trunc('month', NOW() AT TIME ZONE $1)
+      GROUP BY COALESCE(NULLIF(seller_name, ''), 'Sem atendente')
+      ORDER BY contacted_leads DESC, first_contacts DESC, contact_attempts DESC, attendant ASC
+      LIMIT 10
+    `,
+    [env.PROSPECTING_TIMEZONE],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant ?? "Sem atendente"),
+    contactedLeads: Number(row.contacted_leads ?? 0),
+    contactAttempts: Number(row.contact_attempts ?? 0),
+    firstContacts: Number(row.first_contacts ?? 0),
   }));
 }
 
@@ -589,7 +675,7 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
 
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, itemsSoldTrend, currentMonthTargetData, ltvData] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, currentMonthTargetData, ltvData] =
     await Promise.all([
       pool.query(
         `
@@ -637,6 +723,8 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
       getHistoricalReactivationLeaderboard(),
       getPortfolioTrend(validatedTrendDays),
       getSalesPerformance(),
+      getNewCustomerLeaderboard(),
+      getProspectingLeaderboard(),
       getItemsSoldTrend(),
       pool.query(`
         SELECT target_amount 
@@ -720,6 +808,8 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
     reactivationHistory,
     portfolioTrend: alignedTrend,
     salesPerformance,
+    newCustomerLeaderboard,
+    prospectingLeaderboard,
     itemsSoldTrend,
     currentMonthTarget,
     currentMonthItemsSold,

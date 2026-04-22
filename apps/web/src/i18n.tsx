@@ -445,7 +445,6 @@ const exactTranslations: Record<string, string> = {
   "Selecionar idioma da interface": "选择界面语言",
   "Exibir em portugues do Brasil": "切换为巴西葡萄牙语",
   "Exibir em chines mandarim": "切换为中文",
-  "Usuario interno": "内部用户",
   "Sem email": "无邮箱",
   "Encerrar sessao": "结束会话",
   Sair: "退出",
