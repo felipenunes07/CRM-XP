@@ -1,21 +1,24 @@
+import { useUiLanguage } from "../i18n";
+
 interface PeriodSelectorProps {
-  value: '90d' | '6m' | '1y' | 'max';
-  onChange: (period: '90d' | '6m' | '1y' | 'max') => void;
+  value: "90d" | "6m" | "1y" | "max";
+  onChange: (period: "90d" | "6m" | "1y" | "max") => void;
   disabled?: boolean;
 }
 
-const periodOptions = [
-  { value: '90d' as const, label: '90 dias' },
-  { value: '6m' as const, label: '6 meses' },
-  { value: '1y' as const, label: '1 ano' },
-  { value: 'max' as const, label: 'Período Máximo' },
-];
-
 export function PeriodSelector({ value, onChange, disabled }: PeriodSelectorProps) {
+  const { tx } = useUiLanguage();
+  const periodOptions = [
+    { value: "90d" as const, label: tx("90 dias", "90天") },
+    { value: "6m" as const, label: tx("6 meses", "6个月") },
+    { value: "1y" as const, label: tx("1 ano", "1年") },
+    { value: "max" as const, label: tx("Periodo Maximo", "最长周期") },
+  ];
+
   return (
-    <div className="period-selector" role="radiogroup" aria-label="Selecionar período do gráfico">
+    <div className="period-selector" role="radiogroup" aria-label={tx("Selecionar periodo do grafico", "选择图表周期")}>
       {periodOptions.map((option) => (
-        <label key={option.value} className={`period-option ${value === option.value ? 'active' : ''}`}>
+        <label key={option.value} className={`period-option ${value === option.value ? "active" : ""}`}>
           <input
             type="radio"
             name="period"

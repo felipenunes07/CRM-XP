@@ -108,6 +108,66 @@ a {
     linear-gradient(180deg, #ffffff 0%, #f1f6ff 100%);
 }
 
+.sidebar-language-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(248, 251, 255, 0.82);
+  box-shadow: 0 10px 22px rgba(41, 86, 215, 0.05);
+}
+
+.sidebar-language-label {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.18rem;
+  border-radius: 999px;
+  border: 1px solid rgba(41, 86, 215, 0.08);
+  background: rgba(41, 86, 215, 0.04);
+  flex-shrink: 0;
+}
+
+.language-switch-button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  min-width: 3.25rem;
+  padding: 0.42rem 0.68rem;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.language-switch-button:hover {
+  color: var(--accent);
+  background: rgba(41, 86, 215, 0.06);
+}
+
+.language-switch-button.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 8px 18px rgba(41, 86, 215, 0.2);
+}
+
 .brand::before {
   content: "";
   position: absolute;
@@ -7383,5 +7443,575 @@ textarea {
   .inventory-snapshot-badges {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+.prospecting-command-panel {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top right, rgba(95, 140, 255, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(242, 247, 255, 0.96));
+}
+
+.prospecting-command-layout,
+.prospecting-operations-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.prospecting-command-layout {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+  align-items: start;
+}
+
+.prospecting-command-copy,
+.prospecting-command-sidebar,
+.prospecting-focus-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.prospecting-search-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.prospecting-search-grid .full-span {
+  grid-column: 1 / -1;
+}
+
+.prospecting-search-grid label,
+.prospecting-focus-metrics div {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.prospecting-search-grid label {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.prospecting-search-grid input,
+.prospecting-search-grid select {
+  width: 100%;
+  min-height: 48px;
+  border-radius: 18px;
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  padding: 0.88rem 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.prospecting-inline-actions {
+  display: flex;
+  align-items: end;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.prospecting-chip-group,
+.prospecting-map-badges,
+.prospecting-map-legend,
+.prospecting-focus-details,
+.prospecting-focus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.prospecting-chip-group {
+  margin-top: 0.95rem;
+}
+
+.prospecting-saved-block {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.prospecting-sidebar-card,
+.prospecting-focus-card,
+.prospecting-lead-rail,
+.prospecting-map-card {
+  border-radius: 24px;
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.88), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 248, 255, 0.96));
+}
+
+.prospecting-sidebar-card,
+.prospecting-focus-card,
+.prospecting-lead-rail {
+  padding: 1rem;
+}
+
+.prospecting-sidebar-card {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.prospecting-sidebar-card-top,
+.prospecting-map-toolbar,
+.prospecting-map-footer,
+.prospecting-focus-header,
+.prospecting-lead-rail-item,
+.prospecting-lead-rail-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.prospecting-sidebar-card-top p,
+.prospecting-focus-header p,
+.prospecting-focus-address {
+  margin: 0;
+  color: var(--muted);
+}
+
+.prospecting-sidebar-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--accent);
+  background: rgba(41, 86, 215, 0.1);
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  flex-shrink: 0;
+}
+
+.prospecting-sidebar-icon.accent-soft {
+  color: #3f6ef1;
+  background: rgba(95, 140, 255, 0.12);
+}
+
+.prospecting-stat-grid,
+.prospecting-focus-metrics,
+.prospecting-compact-kpis {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.prospecting-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.38rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  background: rgba(41, 86, 215, 0.08);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.prospecting-mode-badge.warning {
+  border-color: rgba(208, 154, 41, 0.2);
+  background: rgba(208, 154, 41, 0.12);
+  color: #9a6d11;
+}
+
+.prospecting-stat-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prospecting-stat-tile,
+.prospecting-compact-kpis div,
+.prospecting-focus-metrics div {
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(41, 86, 215, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.prospecting-stat-tile span,
+.prospecting-stat-tile small,
+.prospecting-compact-kpis span,
+.prospecting-focus-metrics span,
+.prospecting-map-focus-card small,
+.prospecting-lead-rail-header span,
+.prospecting-lead-rail-item small {
+  color: var(--muted);
+}
+
+.prospecting-stat-tile span,
+.prospecting-compact-kpis span,
+.prospecting-focus-metrics span {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.prospecting-stat-tile strong,
+.prospecting-compact-kpis strong,
+.prospecting-focus-metrics strong {
+  font-size: 1.22rem;
+  line-height: 1.05;
+}
+
+.prospecting-operations-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+  align-items: start;
+}
+
+.prospecting-map-card {
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.prospecting-map-toolbar strong,
+.prospecting-map-focus-card strong,
+.prospecting-focus-header h4,
+.prospecting-lead-rail-header h4 {
+  margin: 0.18rem 0 0;
+}
+
+.prospecting-map-badges span,
+.prospecting-map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  padding: 0.36rem 0.72rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  color: #4f6697;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.prospecting-map-frame {
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  background: linear-gradient(180deg, rgba(240, 246, 255, 0.96), rgba(229, 238, 255, 0.9));
+}
+
+.prospecting-map-frame iframe,
+.prospecting-map-grid,
+.prospecting-map-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.prospecting-map-frame iframe {
+  border: 0;
+  filter: saturate(0.95) contrast(1.05);
+}
+
+.prospecting-map-grid {
+  z-index: 1;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(47, 157, 103, 0.14) 0 6%, transparent 7%),
+    radial-gradient(circle at 68% 42%, rgba(41, 86, 215, 0.12) 0 7%, transparent 8%),
+    radial-gradient(circle at 46% 72%, rgba(41, 86, 215, 0.1) 0 5%, transparent 6%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 2px, transparent 2px 74px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.16) 0 2px, transparent 2px 68px),
+    linear-gradient(135deg, rgba(223, 232, 247, 0.7), rgba(204, 221, 244, 0.42));
+  opacity: 0.95;
+}
+
+.prospecting-map-overlay {
+  background:
+    radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.3), transparent 18%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.02), rgba(15, 23, 42, 0.1));
+  pointer-events: none;
+  z-index: 2;
+}
+
+.prospecting-map-pin {
+  position: absolute;
+  z-index: 3;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 18px 18px 18px 6px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 16px 24px rgba(15, 23, 42, 0.2);
+  transform: translate(-50%, -50%) rotate(-8deg);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    scale 160ms ease;
+}
+
+.prospecting-map-pin svg,
+.prospecting-map-pin span {
+  position: absolute;
+}
+
+.prospecting-map-pin span {
+  bottom: 3px;
+  right: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.prospecting-map-pin.tone-new {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
+.prospecting-map-pin.tone-claimed {
+  background: linear-gradient(135deg, #2956d7, #5f8cff);
+}
+
+.prospecting-map-pin.tone-contacted {
+  background: linear-gradient(135deg, #2f9d67, #65c58f);
+}
+
+.prospecting-map-pin.tone-discarded {
+  background: linear-gradient(135deg, #d9534f, #ef7f7b);
+}
+
+.prospecting-map-pin.active,
+.prospecting-map-pin:hover {
+  transform: translate(-50%, -50%) rotate(0deg) scale(1.08);
+  box-shadow: 0 22px 28px rgba(15, 23, 42, 0.28);
+}
+
+.prospecting-map-focus-card {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 4;
+  display: grid;
+  gap: 0.24rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.12);
+}
+
+.prospecting-map-focus-kicker {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.prospecting-map-footer {
+  align-items: center;
+}
+
+.prospecting-focus-panel {
+  align-content: start;
+}
+
+.prospecting-focus-header h4,
+.prospecting-lead-rail-header h4 {
+  font-size: 1.02rem;
+}
+
+.prospecting-focus-details span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.42rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(41, 86, 215, 0.06);
+  border: 1px solid rgba(41, 86, 215, 0.08);
+  color: #4f6697;
+  font-size: 0.82rem;
+}
+
+.prospecting-focus-address {
+  line-height: 1.5;
+}
+
+.prospecting-focus-actions {
+  margin-top: 0.2rem;
+}
+
+.prospecting-focus-empty,
+.prospecting-lead-rail-empty {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px dashed rgba(41, 86, 215, 0.2);
+  background: rgba(41, 86, 215, 0.04);
+  color: var(--muted);
+}
+
+.prospecting-setup-callout {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  border: 1px solid rgba(208, 154, 41, 0.24);
+  background: rgba(255, 248, 230, 0.82);
+  color: #7f5a12;
+}
+
+.prospecting-setup-callout strong,
+.prospecting-setup-callout p {
+  margin: 0;
+}
+
+.prospecting-focus-empty span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.prospecting-lead-rail-empty strong,
+.prospecting-lead-rail-empty p {
+  margin: 0;
+}
+
+.prospecting-lead-rail {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.prospecting-lead-rail-header span {
+  width: fit-content;
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(41, 86, 215, 0.08);
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.prospecting-lead-rail-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.prospecting-lead-rail-item {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(41, 86, 215, 0.1);
+  background: #fbfdff;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prospecting-lead-rail-item.active {
+  border-color: rgba(41, 86, 215, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(236, 243, 255, 0.98));
+  box-shadow: 0 18px 28px rgba(41, 86, 215, 0.08);
+}
+
+.prospecting-lead-rail-item > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.prospecting-lead-rail-item strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prospecting-lead-rail-index {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.prospecting-lead-rail-index.tone-new {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+
+.prospecting-lead-rail-index.tone-claimed {
+  background: linear-gradient(135deg, #2956d7, #5f8cff);
+}
+
+.prospecting-lead-rail-index.tone-contacted {
+  background: linear-gradient(135deg, #2f9d67, #65c58f);
+}
+
+.prospecting-lead-rail-index.tone-discarded {
+  background: linear-gradient(135deg, #d9534f, #ef7f7b);
+}
+
+.prospecting-lead-card {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.prospecting-lead-card:hover {
+  transform: translateY(-2px);
+}
+
+.prospecting-lead-card.is-selected {
+  border-color: rgba(41, 86, 215, 0.24);
+  box-shadow: 0 22px 36px rgba(41, 86, 215, 0.08);
+}
+
+@media (max-width: 1240px) {
+  .prospecting-command-layout,
+  .prospecting-operations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prospecting-command-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .prospecting-command-sidebar,
+  .prospecting-stat-grid,
+  .prospecting-focus-metrics,
+  .prospecting-compact-kpis,
+  .prospecting-search-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .prospecting-map-frame {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 720px) {
+  .prospecting-inline-actions,
+  .prospecting-sidebar-card-top,
+  .prospecting-map-toolbar,
+  .prospecting-map-footer,
+  .prospecting-focus-header,
+  .prospecting-lead-rail-item,
+  .prospecting-lead-rail-header {
+    flex-direction: column;
+  }
+
+  .prospecting-map-frame {
+    min-height: 360px;
+  }
+
+  .prospecting-map-focus-card {
+    left: 0.75rem;
+    right: 0.75rem;
+    bottom: 0.75rem;
   }
 }

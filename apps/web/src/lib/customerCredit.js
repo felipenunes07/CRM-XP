@@ -39,7 +39,24 @@ export function customerCreditStateClassName(value) {
     return "credit-badge-ok";
 }
 export function isOverdueCreditRow(row) {
-    return row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment;
+    // Only customers with active debt can be considered "overdue"
+    if (row.debtAmount <= 0) {
+        return false;
+    }
+    // Flag-based detection from Excel
+    const isFlagged = row.hasOverduePayment || row.hasSeverelyOverduePayment || row.hasNoPayment;
+    if (isFlagged) {
+        return true;
+    }
+    // Date-based detection (Days since last payment > payment term)
+    if (row.daysSinceLastPayment !== null &&
+        row.paymentTerm !== null &&
+        row.daysSinceLastPayment > row.paymentTerm &&
+        row.daysSinceLastPayment > 1 // Avoid false positives for 1-day differences
+    ) {
+        return true;
+    }
+    return false;
 }
 export function customerCreditPrimaryLabel(row) {
     if (row.debtAmount > 0) {

@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
+import { useUiLanguage } from "./i18n";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
@@ -24,8 +25,10 @@ const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage"
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 export default function App() {
+  const { tx } = useUiLanguage();
+
   return (
-    <Suspense fallback={<div className="page-loading fullscreen">Carregando tela...</div>}>
+    <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />

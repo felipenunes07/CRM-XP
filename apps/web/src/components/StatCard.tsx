@@ -11,15 +11,17 @@ export function StatCard({
   value: string;
   badge?: string;
   helper?: string;
-  tone?: "neutral" | "success" | "warning" | "danger";
+  tone?: "neutral" | "success" | "warning" | "danger" | "primary";
 }) {
   const Icon =
     tone === "success"
       ? UserCheck
       : tone === "warning"
-      ? UserMinus
+        ? UserMinus
       : tone === "danger"
-      ? UserX
+        ? UserX
+      : tone === "primary"
+        ? Activity
       : title.toLowerCase().includes("frequencia")
       ? Activity
       : Users;

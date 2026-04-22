@@ -1,5 +1,6 @@
 import type { SalesPerformanceEntry } from "@olist-crm/shared";
 import { formatNumber } from "../lib/format";
+import { useUiLanguage } from "../i18n";
 
 interface SalesPerformancePanelProps {
   salesPerformance: SalesPerformanceEntry[];
@@ -7,16 +8,18 @@ interface SalesPerformancePanelProps {
 }
 
 export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerformancePanelProps) {
+  const { tx } = useUiLanguage();
+
   if (isLoading) {
     return (
       <article className="panel insight-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Performance do mês</p>
-            <h3>Ranking Mensal</h3>
+            <p className="eyebrow">{tx("Performance do mes", "本月表现")}</p>
+            <h3>{tx("Ranking Mensal", "月度排名")}</h3>
           </div>
         </div>
-        <div className="page-loading">Carregando performance...</div>
+        <div className="page-loading">{tx("Carregando performance...", "正在加载表现数据...")}</div>
       </article>
     );
   }
@@ -31,24 +34,26 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
       <article className="panel insight-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Performance do mês</p>
-            <h3>Ranking Mensal</h3>
+            <p className="eyebrow">{tx("Performance do mes", "本月表现")}</p>
+            <h3>{tx("Ranking Mensal", "月度排名")}</h3>
           </div>
         </div>
-        <div className="empty-state">Nenhuma venda registrada neste mês.</div>
+        <div className="empty-state">{tx("Nenhuma venda registrada neste mes.", "本月暂无销售记录。")}</div>
       </article>
     );
   }
 
-  const maxOrders = Math.max(...filteredSalesPerformance.map((e) => e.totalOrders));
+  const maxOrders = Math.max(...filteredSalesPerformance.map((entry) => entry.totalOrders));
 
   return (
     <article className="panel insight-panel">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Performance do mês</p>
-          <h3>Ranking Mensal</h3>
-          <p className="panel-subcopy">Desempenho corporativo com base nas vendas do período.</p>
+          <p className="eyebrow">{tx("Performance do mes", "本月表现")}</p>
+          <h3>{tx("Ranking Mensal", "月度排名")}</h3>
+          <p className="panel-subcopy">
+            {tx("Desempenho corporativo com base nas vendas do periodo.", "基于当前周期销售数据的团队表现。")}
+          </p>
         </div>
       </div>
 
@@ -60,28 +65,26 @@ export function SalesPerformancePanel({ salesPerformance, isLoading }: SalesPerf
 
           return (
             <div key={entry.attendant} className={`ranking-card ${posClass}`}>
-              <div className="ranking-badge">
-                {index + 1}
-              </div>
+              <div className="ranking-badge">{index + 1}</div>
 
               <div className="ranking-content">
                 <div className="ranking-header">
                   <span className="ranking-name">{entry.attendant}</span>
-                  {index === 0 && <span className="ranking-tag">Top Performer</span>}
+                  {index === 0 && <span className="ranking-tag">{tx("Top Performer", "最佳表现")}</span>}
                 </div>
 
                 <div className="ranking-metrics">
                   <div className="ranking-metric">
                     <strong>{formatNumber(entry.totalOrders)}</strong>
-                    <span>vendas</span>
+                    <span>{tx("vendas", "销售")}</span>
                   </div>
                   <div className="ranking-metric">
                     <strong>{formatNumber(entry.totalItems)}</strong>
-                    <span>peças</span>
+                    <span>{tx("pecas", "件数")}</span>
                   </div>
                   <div className="ranking-metric">
                     <strong>{formatNumber(entry.uniqueCustomers)}</strong>
-                    <span>clientes</span>
+                    <span>{tx("clientes", "客户")}</span>
                   </div>
                 </div>
 

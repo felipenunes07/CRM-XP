@@ -4,7 +4,8 @@ import type { CustomerListItem } from "@olist-crm/shared";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { InfoHint } from "./InfoHint";
-import { formatCurrency, formatDate, formatDaysSince, statusLabel } from "../lib/format";
+import { formatCurrency, formatDate, formatDaysSince, getFormattingLocale, statusLabel } from "../lib/format";
+import { useUiLanguage } from "../i18n";
 
 type SortableColumnId =
   | "customer"
@@ -38,7 +39,7 @@ const columns: TableColumn[] = [
     minWidth: 220,
     sortable: true,
     defaultDirection: "asc",
-    getValue: (customer) => `${customer.displayName} ${customer.customerCode}`.trim().toLocaleLowerCase("pt-BR"),
+    getValue: (customer) => `${customer.displayName} ${customer.customerCode}`.trim().toLocaleLowerCase(getFormattingLocale()),
   },
   {
     id: "status",
@@ -156,7 +157,8 @@ function compareValues(left: number | string | null, right: number | string | nu
   }
 
   if (typeof left === "string" && typeof right === "string") {
-    return direction === "asc" ? left.localeCompare(right, "pt-BR") : right.localeCompare(left, "pt-BR");
+    const locale = getFormattingLocale();
+    return direction === "asc" ? left.localeCompare(right, locale) : right.localeCompare(left, locale);
   }
 
   const leftNumber = Number(left);
@@ -166,9 +168,50 @@ function compareValues(left: number | string | null, right: number | string | nu
 }
 
 export function CustomerTable({ customers }: { customers: CustomerListItem[] }) {
+  const { tx } = useUiLanguage();
   const [sortState, setSortState] = useState<{ columnId: SortableColumnId; direction: SortDirection } | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(initialColumnWidths);
   const resizeStateRef = useRef<{ columnId: ColumnId; startX: number; startWidth: number } | null>(null);
+  const locale = getFormattingLocale();
+
+  const localizedColumns = useMemo<TableColumn[]>(
+    () =>
+      columns.map((column) => ({
+        ...column,
+        label:
+          column.id === "customer"
+            ? tx("Cliente", "客户")
+            : column.id === "status"
+              ? tx("Status", "状态")
+              : column.id === "lastPurchaseAt"
+                ? tx("Ultima compra", "最近购买")
+                : column.id === "daysSinceLastPurchase"
+                  ? tx("Tempo sem comprar", "距上次购买")
+                  : column.id === "totalOrders"
+                    ? tx("Pedidos", "订单数")
+                    : column.id === "avgDaysBetweenOrders"
+                      ? tx("Media pedidos", "平均下单间隔")
+                      : column.id === "avgTicket"
+                        ? tx("Ticket medio", "平均客单价")
+                        : column.id === "totalSpent"
+                          ? tx("Total gasto", "累计消费")
+                          : column.id === "labels"
+                            ? tx("Rotulos", "标签")
+                            : column.id === "priorityScore"
+                              ? tx("Prioridade", "优先级")
+                              : tx("Insight", "洞察"),
+        hint:
+          column.id === "avgDaysBetweenOrders"
+            ? tx("Intervalo medio entre pedidos do cliente.", "客户两次下单之间的平均间隔。")
+            : column.id === "priorityScore"
+              ? tx(
+                  "Pontuacao de prioridade: 40% recencia, 25% valor do cliente, 20% queda de frequencia e 15% compra prevista vencida.",
+                  "优先级评分：40% 最近活跃度、25% 客户价值、20% 频率下滑、15% 预计购买逾期。",
+                )
+              : undefined,
+      })),
+    [tx],
+  );
 
   useEffect(() => {
     function handleMouseMove(event: MouseEvent) {
@@ -176,7 +219,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
         return;
       }
 
-      const activeColumn = columns.find((column) => column.id === resizeStateRef.current?.columnId);
+      const activeColumn = localizedColumns.find((column) => column.id === resizeStateRef.current?.columnId);
       if (!activeColumn) {
         return;
       }
@@ -204,7 +247,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, []);
+  }, [localizedColumns]);
 
   const sortedCustomers = useMemo(() => {
     if (!sortState) {
@@ -230,7 +273,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       .map((entry) => entry.customer);
   }, [customers, sortState]);
 
-  const tableWidth = columns.reduce((total, column) => total + (columnWidths[column.id] ?? column.width), 0);
+  const tableWidth = localizedColumns.reduce((total, column) => total + (columnWidths[column.id] ?? column.width), 0);
 
   function toggleSort(column: TableColumn) {
     const defaultDirection = column.defaultDirection;
@@ -272,7 +315,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
   if (!customers.length) {
     return (
       <div className="panel table-panel empty-panel">
-        <div className="empty-state">Nenhum cliente encontrado para esse filtro.</div>
+        <div className="empty-state">{tx("Nenhum cliente encontrado para esse filtro.", "当前筛选下没有找到客户。")}</div>
       </div>
     );
   }
@@ -282,13 +325,13 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       <div className="table-scroll">
         <table className="data-table" style={{ minWidth: `${tableWidth}px` }}>
           <colgroup>
-            {columns.map((column) => (
+            {localizedColumns.map((column) => (
               <col key={column.id} style={{ width: `${columnWidths[column.id]}px` }} />
             ))}
           </colgroup>
           <thead>
             <tr>
-              {columns.map((column) => {
+              {localizedColumns.map((column) => {
                 const isSorted = sortState?.columnId === column.id;
                 const activeDirection = isSorted ? sortState.direction : undefined;
 
@@ -313,7 +356,7 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                       <button
                         className="resize-handle"
                         type="button"
-                        aria-label={`Redimensionar coluna ${column.label}`}
+                        aria-label={`${tx("Redimensionar coluna", "调整列宽")} ${column.label}`}
                         onMouseDown={(event) => startResize(event, column.id)}
                       />
                     </div>
@@ -338,11 +381,13 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                 <td>{formatDate(customer.lastPurchaseAt)}</td>
                 <td>{formatDaysSince(customer.daysSinceLastPurchase)}</td>
                 <td>{customer.totalOrders}</td>
-                 <td>
+                <td>
                   {customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (
-                    `${Math.round(customer.avgDaysBetweenOrders)} dias`
+                    locale === "zh-CN"
+                      ? `${Math.round(customer.avgDaysBetweenOrders)}天`
+                      : `${Math.round(customer.avgDaysBetweenOrders)} dias`
                   ) : (
-                    <span className="muted-copy">—</span>
+                    <span className="muted-copy">-</span>
                   )}
                 </td>
                 <td>{formatCurrency(customer.avgTicket)}</td>
@@ -360,12 +405,12 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                         </span>
                       ))
                     ) : (
-                      <span className="muted-copy">Sem rotulo</span>
+                      <span className="muted-copy">{tx("Sem rotulo", "无标签")}</span>
                     )}
                   </div>
                 </td>
                 <td>{customer.priorityScore.toFixed(1)}</td>
-                <td>{customer.primaryInsight ?? "Sem alerta"}</td>
+                <td>{customer.primaryInsight ?? tx("Sem alerta", "无提醒")}</td>
               </tr>
             ))}
           </tbody>
