@@ -332,13 +332,6 @@ export function IdeaBoardPageView({
                                 <strong>{idea.title}</strong>
                                 <p>{truncateIdeaCopy(idea.description, 135)}</p>
                               </div>
-
-                              {inboxDeadline ? (
-                                <div className="idea-board-card-hint">
-                                  Fica em novas ideias ate {formatDateTime(inboxDeadline)}
-                                </div>
-                              ) : null}
-
                               {isManuallyPlaced ? (
                                 <div className="idea-board-card-hint subtle">Coluna ajustada manualmente por arraste.</div>
                               ) : null}
