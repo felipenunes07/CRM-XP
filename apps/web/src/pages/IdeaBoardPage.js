@@ -2,11 +2,13 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
+import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { IdeaBoardPageView } from "./IdeaBoardPageView";
 import { buildIdeaBoardLanes, buildIdeaCreatePayload, buildIdeaTimeline, buildIdeaVotePayload, emptyIdeaCreateDraft, emptyIdeaVoteDraft, } from "./ideaBoardPage.helpers";
 export function IdeaBoardPage() {
     const { token } = useAuth();
+    const { tx } = useUiLanguage();
     const queryClient = useQueryClient();
     const [selectedIdeaId, setSelectedIdeaId] = useState(null);
     const [activeLaneId, setActiveLaneId] = useState("ALL");
@@ -149,7 +151,7 @@ export function IdeaBoardPage() {
         }
         const confirmed = typeof window === "undefined"
             ? true
-            : window.confirm(`Excluir a ideia "${selectedIdeaQuery.data.title}"? Essa acao nao pode ser desfeita.`);
+            : window.confirm(tx(`Excluir a ideia "${selectedIdeaQuery.data.title}"? Essa acao nao pode ser desfeita.`, `确定要删除想法“${selectedIdeaQuery.data.title}”吗？此操作无法撤销。`));
         if (!confirmed) {
             return;
         }
