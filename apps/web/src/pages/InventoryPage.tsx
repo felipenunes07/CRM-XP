@@ -1099,7 +1099,7 @@ export function InventoryPage() {
                             <div className="inventory-stale-model-cell">
                               <strong>{item.modelLabel}</strong>
                               <span>
-                                {item.brand} Â· {item.family} Â· {item.sampleSkus.slice(0, 3).join(", ")}
+                                {item.brand} · {item.family} · {item.sampleSkus.slice(0, 3).join(", ")}
                               </span>
                             </div>
                           </td>
@@ -1232,7 +1232,7 @@ export function InventoryPage() {
                             <div className="inventory-stale-model-cell">
                               <strong>{item.modelLabel}</strong>
                               <span>
-                                {item.brand} Â· {item.family}
+                                {item.brand} · {item.family}
                               </span>
                             </div>
                           </td>

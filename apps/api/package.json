@@ -11,6 +11,7 @@
     "worker": "tsx src/worker.ts",
     "migrate": "tsx src/db/migrate.ts",
     "seed:admin": "tsx src/scripts/seedAdmin.ts",
+    "create:user": "tsx src/scripts/createUser.ts",
     "import:history": "tsx src/scripts/importHistory.ts",
     "import:supabase:2026": "tsx src/scripts/importSupabase2026.ts",
     "test": "vitest run",

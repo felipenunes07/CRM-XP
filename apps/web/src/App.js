@@ -1,6 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import { useAuth } from "./hooks/useAuth";
 import { useUiLanguage } from "./i18n";
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
@@ -22,7 +23,31 @@ const ProspectingPage = lazy(async () => ({ default: (await import("./pages/Pros
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
+function RouteLoadingFallback() {
+    const { tx } = useUiLanguage();
+    return _jsx("div", { className: "page-loading fullscreen", children: tx("Carregando tela...", "æ­£åœ¨åŠ è½½é¡µé¢...") });
+}
+function ProtectedShell() {
+    const { token, user, loading } = useAuth();
+    if (loading) {
+        return _jsx(RouteLoadingFallback, {});
+    }
+    if (!token || !user) {
+        return _jsx(Navigate, { to: "/login", replace: true });
+    }
+    return _jsx(AppShell, {});
+}
+function PublicLoginRoute() {
+    const { token, user, loading } = useAuth();
+    if (loading) {
+        return _jsx(RouteLoadingFallback, {});
+    }
+    if (token && user) {
+        return _jsx(Navigate, { to: "/", replace: true });
+    }
+    return _jsx(LoginPage, {});
+}
 export default function App() {
     const { tx } = useUiLanguage();
-    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: tx("Carregando tela...", "正在加载页面...") }), children: _jsxs(Routes, { children: [_jsxs(Route, { element: _jsx(AppShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/atendentes", element: _jsx(AttendantsPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/estoque", element: _jsx(InventoryPage, {}) }), _jsx(Route, { path: "/embaixadores", element: _jsx(AmbassadorsPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/clientes-novos", element: _jsx(NewCustomersPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/ideias-votacao", element: _jsx(IdeaBoardPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/disparador", element: _jsx(DisparadorPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) }), _jsx(Route, { path: "/prospeccao", element: _jsx(ProspectingPage, {}) }), _jsx(Route, { path: "/metas", element: _jsx(MetasPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/", replace: true }) })] }) }));
+    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: tx("Carregando tela...", "æ­£åœ¨åŠ è½½é¡µé¢...") }), children: _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: _jsx(PublicLoginRoute, {}) }), _jsxs(Route, { element: _jsx(ProtectedShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/atendentes", element: _jsx(AttendantsPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/estoque", element: _jsx(InventoryPage, {}) }), _jsx(Route, { path: "/embaixadores", element: _jsx(AmbassadorsPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/clientes-novos", element: _jsx(NewCustomersPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/ideias-votacao", element: _jsx(IdeaBoardPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/disparador", element: _jsx(DisparadorPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) }), _jsx(Route, { path: "/prospeccao", element: _jsx(ProspectingPage, {}) }), _jsx(Route, { path: "/metas", element: _jsx(MetasPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/login", replace: true }) })] }) }));
 }

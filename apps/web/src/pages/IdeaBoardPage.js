@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { IdeaBoardPageView } from "./IdeaBoardPageView";
-import { buildIdeaBoardLanes, buildIdeaCreatePayload, buildIdeaTimeline, buildIdeaVotePayload, emptyIdeaCreateDraft, emptyIdeaVoteDraft, } from "./ideaBoardPage.helpers";
+import { buildIdeaBoardLanes, buildIdeaCreatePayload, buildIdeaTimeline, getIdeaAutoLaneId, buildIdeaVotePayload, emptyIdeaCreateDraft, emptyIdeaVoteDraft, } from "./ideaBoardPage.helpers";
 export function IdeaBoardPage() {
     const { token } = useAuth();
     const { tx } = useUiLanguage();
@@ -18,6 +18,7 @@ export function IdeaBoardPage() {
     const [createError, setCreateError] = useState(null);
     const [voteError, setVoteError] = useState(null);
     const [deleteError, setDeleteError] = useState(null);
+    const [moveError, setMoveError] = useState(null);
     const [notifyError, setNotifyError] = useState(null);
     const [toastMessage, setToastMessage] = useState(null);
     const ideasQuery = useQuery({
@@ -39,6 +40,7 @@ export function IdeaBoardPage() {
         setVoteDraft(emptyIdeaVoteDraft);
         setVoteError(null);
         setDeleteError(null);
+        setMoveError(null);
         setNotifyError(null);
     }, [selectedIdeaId]);
     const lanes = useMemo(() => buildIdeaBoardLanes(ideasQuery.data ?? []), [ideasQuery.data]);
@@ -94,6 +96,21 @@ export function IdeaBoardPage() {
             setToastMessage("Ideia removida do mural.");
             queryClient.setQueryData(["idea-board"], (current) => current?.filter((idea) => idea.id !== ideaId) ?? []);
             queryClient.removeQueries({ queryKey: ["idea-board", ideaId] });
+            await queryClient.invalidateQueries({ queryKey: ["idea-board"] });
+        },
+    });
+    const moveMutation = useMutation({
+        mutationFn: ({ ideaId, laneId }) => api.moveIdeaLane(token, ideaId, { laneId }),
+        onSuccess: async (detail) => {
+            setMoveError(null);
+            queryClient.setQueryData(["idea-board", detail.id], detail);
+            queryClient.setQueryData(["idea-board"], (current) => {
+                if (!current?.length) {
+                    return [detail];
+                }
+                const nextIdeas = current.map((idea) => (idea.id === detail.id ? detail : idea));
+                return nextIdeas.some((idea) => idea.id === detail.id) ? nextIdeas : [detail, ...current];
+            });
             await queryClient.invalidateQueries({ queryKey: ["idea-board"] });
         },
     });
@@ -164,5 +181,14 @@ export function IdeaBoardPage() {
         setNotifyError(null);
         notifyMutation.mutate(selectedIdeaQuery.data.id);
     }
-    return (_jsx(IdeaBoardPageView, { ideas: ideasQuery.data ?? [], lanes: lanes, timeline: timeline, activeLaneId: activeLaneId, selectedIdea: selectedIdeaQuery.data ?? null, isCreateModalOpen: isCreateModalOpen, createDraft: createDraft, voteDraft: voteDraft, createError: createError ?? (createMutation.isError ? createMutation.error.message : null), voteError: voteError ?? (voteMutation.isError ? voteMutation.error.message : null), deleteError: deleteError ?? (deleteMutation.isError ? deleteMutation.error.message : null), notifyError: notifyError ?? (notifyMutation.isError ? notifyMutation.error.message : null), toastMessage: toastMessage, isIdeasLoading: ideasQuery.isLoading, isIdeaLoading: Boolean(selectedIdeaId) && selectedIdeaQuery.isLoading, isCreating: createMutation.isPending, isVoting: voteMutation.isPending, isDeleting: deleteMutation.isPending, isNotifying: notifyMutation.isPending, onActiveLaneChange: setActiveLaneId, onCreateDraftChange: setCreateDraft, onVoteDraftChange: setVoteDraft, onOpenCreateModal: handleOpenCreateModal, onCloseCreateModal: handleCloseCreateModal, onCreateIdea: handleCreateIdea, onDeleteIdea: handleDeleteIdea, onNotifyWhatsapp: handleNotifyWhatsapp, onSubmitVote: handleSubmitVote, onSelectIdea: handleSelectIdea, onCloseIdea: handleCloseIdea, onDismissToast: () => setToastMessage(null) }));
+    function handleMoveIdea(ideaId, laneId) {
+        const idea = ideasQuery.data?.find((item) => item.id === ideaId);
+        const autoLaneId = idea ? getIdeaAutoLaneId(idea) : null;
+        setMoveError(null);
+        moveMutation.mutate({
+            ideaId,
+            laneId: autoLaneId === laneId ? null : laneId,
+        });
+    }
+    return (_jsx(IdeaBoardPageView, { ideas: ideasQuery.data ?? [], lanes: lanes, timeline: timeline, activeLaneId: activeLaneId, selectedIdea: selectedIdeaQuery.data ?? null, isCreateModalOpen: isCreateModalOpen, createDraft: createDraft, voteDraft: voteDraft, createError: createError ?? (createMutation.isError ? createMutation.error.message : null), voteError: voteError ?? (voteMutation.isError ? voteMutation.error.message : null), deleteError: deleteError ?? (deleteMutation.isError ? deleteMutation.error.message : null), moveError: moveError ?? (moveMutation.isError ? moveMutation.error.message : null), notifyError: notifyError ?? (notifyMutation.isError ? notifyMutation.error.message : null), toastMessage: toastMessage, isIdeasLoading: ideasQuery.isLoading, isIdeaLoading: Boolean(selectedIdeaId) && selectedIdeaQuery.isLoading, isCreating: createMutation.isPending, isVoting: voteMutation.isPending, isDeleting: deleteMutation.isPending, isMoving: moveMutation.isPending, isNotifying: notifyMutation.isPending, onActiveLaneChange: setActiveLaneId, onCreateDraftChange: setCreateDraft, onVoteDraftChange: setVoteDraft, onOpenCreateModal: handleOpenCreateModal, onCloseCreateModal: handleCloseCreateModal, onCreateIdea: handleCreateIdea, onDeleteIdea: handleDeleteIdea, onMoveIdea: handleMoveIdea, onNotifyWhatsapp: handleNotifyWhatsapp, onSubmitVote: handleSubmitVote, onSelectIdea: handleSelectIdea, onCloseIdea: handleCloseIdea, onDismissToast: () => setToastMessage(null) }));
 }

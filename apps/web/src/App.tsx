@@ -24,13 +24,48 @@ const DisparadorPage = lazy(async () => ({ default: (await import("./pages/Dispa
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
+function RouteLoadingFallback() {
+  const { tx } = useUiLanguage();
+
+  return <div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>;
+}
+
+function ProtectedShell() {
+  const { token, user, loading } = useAuth();
+
+  if (loading) {
+    return <RouteLoadingFallback />;
+  }
+
+  if (!token || !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <AppShell />;
+}
+
+function PublicLoginRoute() {
+  const { token, user, loading } = useAuth();
+
+  if (loading) {
+    return <RouteLoadingFallback />;
+  }
+
+  if (token && user) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <LoginPage />;
+}
+
 export default function App() {
   const { tx } = useUiLanguage();
 
   return (
     <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>
       <Routes>
-        <Route element={<AppShell />}>
+        <Route path="/login" element={<PublicLoginRoute />} />
+        <Route element={<ProtectedShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
@@ -48,7 +83,7 @@ export default function App() {
           <Route path="/prospeccao" element={<ProspectingPage />} />
           <Route path="/metas" element={<MetasPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </Suspense>
   );

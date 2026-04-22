@@ -11,6 +11,13 @@ export interface JwtUser {
   name: string;
 }
 
+export interface CreateUserInput {
+  email: string;
+  password: string;
+  role: JwtUser["role"];
+  name: string;
+}
+
 export async function ensureDefaultAdmin() {
   const existing = await pool.query("SELECT id FROM users WHERE email = $1", [env.DEFAULT_ADMIN_EMAIL]);
   if (existing.rowCount) {
@@ -57,6 +64,32 @@ export async function login(email: string, password: string) {
   });
 
   return { token, user: payload };
+}
+
+export async function createUserAccount(input: CreateUserInput) {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedName = input.name.trim();
+
+  if (!normalizedName) {
+    throw new HttpError(400, "Nome do usuario obrigatorio");
+  }
+
+  const existing = await pool.query("SELECT id FROM users WHERE email = $1", [normalizedEmail]);
+  if (existing.rowCount) {
+    throw new HttpError(409, "Ja existe um usuario com esse email");
+  }
+
+  const passwordHash = await bcrypt.hash(input.password, 10);
+  const result = await pool.query(
+    `
+      INSERT INTO users (email, password_hash, name, role)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, email, name, role, created_at
+    `,
+    [normalizedEmail, passwordHash, normalizedName, input.role],
+  );
+
+  return result.rows[0];
 }
 
 export function verifyToken(token: string) {
