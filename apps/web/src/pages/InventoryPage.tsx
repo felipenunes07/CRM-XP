@@ -348,7 +348,7 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
         {stockSeries.length > 0 ? (
           <div className="trend-chart-wrap inventory-trend-chart">
             <ResponsiveContainer width="100%" height={230}>
-              <ComposedChart data={stockSeries}>
+              <ComposedChart syncId="inventory-overview" syncMethod="value" data={stockSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.12)" />
                 <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 12 }} />
                 <YAxis tickFormatter={(value) => formatCompactNumber(Number(value))} tick={{ fontSize: 12 }} />
@@ -411,7 +411,7 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
         {stockSeries.length > 0 ? (
           <div className="trend-chart-wrap inventory-trend-chart">
             <ResponsiveContainer width="100%" height={230}>
-              <ComposedChart data={stockSeries}>
+              <ComposedChart syncId="inventory-overview" syncMethod="value" data={stockSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.12)" />
                 <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 12 }} />
                 <YAxis tickFormatter={(value) => formatCompactNumber(Number(value))} tick={{ fontSize: 12 }} />
@@ -466,7 +466,7 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
         {salesSeries.length ? (
           <div className="trend-chart-wrap inventory-trend-chart">
             <ResponsiveContainer width="100%" height={280}>
-              <ComposedChart data={salesSeries}>
+              <ComposedChart syncId="inventory-overview" syncMethod="value" data={salesSeries}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.12)" />
                 <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 12 }} />
                 <YAxis
