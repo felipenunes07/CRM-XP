@@ -22,6 +22,7 @@ const ideas = [
         isAnonymous: true,
         authorDisplayName: "Anonimo",
         canDelete: true,
+        laneOverride: null,
         createdAt: "2026-04-17T12:00:00.000Z",
         updatedAt: "2026-04-17T12:00:00.000Z",
         voteSummary: {
@@ -46,6 +47,7 @@ const ideas = [
         isAnonymous: true,
         authorDisplayName: "Anonimo",
         canDelete: false,
+        laneOverride: null,
         createdAt: "2026-04-16T12:00:00.000Z",
         updatedAt: "2026-04-17T14:00:00.000Z",
         voteSummary: {
@@ -74,6 +76,7 @@ describe("IdeaBoard frontend", () => {
                 isAnonymous: true,
                 authorDisplayName: "Anonimo",
                 canDelete: true,
+                laneOverride: null,
                 createdAt: "2026-04-17T12:00:00.000Z",
                 updatedAt: "2026-04-17T12:00:00.000Z",
                 voteSummary: {
@@ -107,7 +110,7 @@ describe("IdeaBoard frontend", () => {
             }, voteDraft: {
                 option: null,
                 comment: "",
-            }, createError: null, voteError: null, deleteError: null, notifyError: null, toastMessage: "Voto salvo anonimamente.", isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
+            }, createError: null, voteError: null, deleteError: null, moveError: null, notifyError: null, toastMessage: "Voto salvo anonimamente.", isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isMoving: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onMoveIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
         expect(markup).toContain("Board em colunas no modelo Trello");
         expect(markup).toContain("Novas na mesa por 24h");
         expect(markup).toContain("Avisar time no WhatsApp");
@@ -121,13 +124,13 @@ describe("IdeaBoard frontend", () => {
                 description: "",
                 isAnonymous: true,
                 authorDisplayName: "",
-            }, voteDraft: { option: null, comment: "" }, createError: null, voteError: null, deleteError: null, notifyError: null, toastMessage: null, isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
+            }, voteDraft: { option: null, comment: "" }, createError: null, voteError: null, deleteError: null, moveError: null, notifyError: null, toastMessage: null, isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isMoving: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onMoveIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
         const identifiedMarkup = renderToStaticMarkup(_jsx(IdeaBoardPageView, { ideas: [], lanes: buildIdeaBoardLanes([]), timeline: buildIdeaTimeline([], 4), activeLaneId: "ALL", selectedIdea: null, isCreateModalOpen: true, createDraft: {
                 title: "",
                 description: "",
                 isAnonymous: false,
                 authorDisplayName: "",
-            }, voteDraft: { option: null, comment: "" }, createError: null, voteError: null, deleteError: null, notifyError: null, toastMessage: null, isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
+            }, voteDraft: { option: null, comment: "" }, createError: null, voteError: null, deleteError: null, moveError: null, notifyError: null, toastMessage: null, isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isMoving: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onMoveIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
         expect(anonymousMarkup).not.toContain("Nome para exibir");
         expect(identifiedMarkup).toContain("Nome para exibir");
     });
@@ -159,6 +162,7 @@ describe("IdeaBoard frontend", () => {
     it("classifies ideas into mural lanes", () => {
         expect(getIdeaLaneId({
             createdAt: "2026-04-22T04:00:00.000Z",
+            laneOverride: null,
             voteSummary: {
                 likeCount: 0,
                 maybeCount: 0,
@@ -168,6 +172,7 @@ describe("IdeaBoard frontend", () => {
         }, referenceTime)).toBe("INBOX");
         expect(getIdeaLaneId({
             createdAt: "2026-04-20T04:00:00.000Z",
+            laneOverride: null,
             voteSummary: {
                 likeCount: 3,
                 maybeCount: 1,
@@ -177,6 +182,7 @@ describe("IdeaBoard frontend", () => {
         }, referenceTime)).toBe("SUPPORT");
         expect(getIdeaLaneId({
             createdAt: "2026-04-20T04:00:00.000Z",
+            laneOverride: null,
             voteSummary: {
                 likeCount: 1,
                 maybeCount: 0,
@@ -186,6 +192,7 @@ describe("IdeaBoard frontend", () => {
         }, referenceTime)).toBe("STOP");
         expect(getIdeaLaneId({
             createdAt: "2026-04-20T04:00:00.000Z",
+            laneOverride: null,
             voteSummary: {
                 likeCount: 1,
                 maybeCount: 2,
@@ -193,5 +200,15 @@ describe("IdeaBoard frontend", () => {
                 totalVotes: 5,
             },
         }, referenceTime)).toBe("REFINE");
+        expect(getIdeaLaneId({
+            createdAt: "2026-04-22T04:00:00.000Z",
+            laneOverride: "STOP",
+            voteSummary: {
+                likeCount: 3,
+                maybeCount: 0,
+                noCount: 0,
+                totalVotes: 3,
+            },
+        }, referenceTime)).toBe("STOP");
     });
 });
