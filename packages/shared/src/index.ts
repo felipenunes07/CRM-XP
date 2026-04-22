@@ -52,6 +52,8 @@ export interface DashboardMetrics {
   reactivationHistory: HistoricalReactivationEntry[];
   portfolioTrend: PortfolioTrendPoint[];
   salesPerformance: SalesPerformanceEntry[];
+  newCustomerLeaderboard: NewCustomerLeaderboardEntry[];
+  prospectingLeaderboard: ProspectingLeaderboardEntry[];
   itemsSoldTrend: ItemsSoldTrendPoint[];
   currentMonthTarget: number | null;
   currentMonthItemsSold: number;
@@ -74,6 +76,20 @@ export interface SalesPerformanceEntry {
   uniqueCustomers: number;
   totalRevenue: number;
   totalItems: number;
+}
+
+export interface NewCustomerLeaderboardEntry {
+  attendant: string;
+  newCustomers: number;
+  totalRevenue: number;
+  totalItems: number;
+}
+
+export interface ProspectingLeaderboardEntry {
+  attendant: string;
+  contactedLeads: number;
+  contactAttempts: number;
+  firstContacts: number;
 }
 
 export interface AttendantMetricSnapshot {
