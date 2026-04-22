@@ -819,7 +819,7 @@ export function NewCustomersPage() {
         </section>
       </div>
 
-      {/* <article className="premium-panel" style={{ marginTop: "2rem" }}>
+      <article className="premium-panel" style={{ marginTop: "2rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
           <p className="metric-helper" style={{ textTransform: "uppercase", fontSize: "0.75rem", fontWeight: 800, color: "var(--accent)", letterSpacing: "0.05em", marginBottom: "0.4rem" }}>
             Inteligência de Venda
@@ -875,7 +875,7 @@ export function NewCustomersPage() {
             </div>
           </div>
         </div>
-      </article> */}
+      </article>
 
       <section className="premium-panel" style={{ marginTop: "1.5rem" }}>
         <div style={{ marginBottom: "1.5rem" }}>
