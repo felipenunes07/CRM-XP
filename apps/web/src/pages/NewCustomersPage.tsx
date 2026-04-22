@@ -205,7 +205,7 @@ function MonthlyTooltip({
   label,
 }: {
   active?: boolean;
-  payload?: Array<{ dataKey?: string; value?: number }>;
+  payload?: Array<{ dataKey?: string; value?: number; payload?: { newCustomers?: number; spend?: number; spendSource?: string } }>;
   label?: string;
 }) {
   if (!active || !payload?.length || !label) {
