@@ -883,6 +883,9 @@ export function DashboardPage() {
 
         <SalesPerformancePanel
           salesPerformance={metrics.salesPerformance}
+          reactivationLeaderboard={metrics.reactivationLeaderboard}
+          newCustomerLeaderboard={metrics.newCustomerLeaderboard}
+          prospectingLeaderboard={metrics.prospectingLeaderboard}
           isLoading={dashboardQuery.isLoading}
         />
       </section>

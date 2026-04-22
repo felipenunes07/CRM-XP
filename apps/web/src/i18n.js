@@ -425,6 +425,15 @@ const exactTranslations = {
     Ativos: "活跃",
     Inativos: "沉默",
     clientes: "客户",
+    Idioma: "语言",
+    "Selecionar idioma da interface": "选择界面语言",
+    "Exibir em portugues do Brasil": "切换为巴西葡萄牙语",
+    "Exibir em chines mandarim": "切换为中文",
+    "Sem email": "无邮箱",
+    "Encerrar sessao": "结束会话",
+    Sair: "退出",
+    "Sessao protegida": "受保护会话",
+    "Acesso interno por usuario e permissao da equipe.": "按用户与团队权限进行内部访问控制。",
 };
 const translationRules = [
     {
