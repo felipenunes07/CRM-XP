@@ -67,23 +67,25 @@ export function SalesPerformancePanel({
       })),
     },
     reactivation: {
-      label: tx("Recuperacao", "Reactivation"),
+      label: tx("Reativacao", "Reactivation"),
       description: tx(
         "Veja quem mais recuperou clientes inativos no mes atual.",
         "See who recovered the most inactive customers this month.",
       ),
       emptyMessage: tx(
-        "Nenhuma recuperacao registrada neste mes.",
+        "Nenhuma reativacao registrada neste mes.",
         "No reactivations registered this month.",
       ),
-      entries: reactivationLeaderboard.map((entry) => ({
-        attendant: entry.attendant,
-        metrics: [
-          { value: entry.recoveredCustomers, label: tx("clientes recuperados", "recovered customers") },
-          { value: entry.recoveredItems, label: tx("pecas recuperadas", "recovered items") },
-          { value: entry.recoveredRevenue, label: tx("faturamento", "revenue"), formatter: formatCurrency },
-        ],
-      })),
+      entries: [...reactivationLeaderboard]
+        .sort((a, b) => b.recoveredRevenue - a.recoveredRevenue)
+        .map((entry) => ({
+          attendant: entry.attendant,
+          metrics: [
+            { value: entry.recoveredRevenue, label: tx("faturamento", "revenue"), formatter: formatCurrency },
+            { value: entry.recoveredCustomers, label: tx("clientes reativados", "reactivated customers") },
+            { value: entry.recoveredItems, label: tx("pecas", "items") },
+          ],
+        })),
     },
     newCustomers: {
       label: tx("Clientes novos", "New customers"),
@@ -144,10 +146,13 @@ export function SalesPerformancePanel({
 
   return (
     <article className="panel insight-panel">
-      <div className="panel-header">
+      <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
           <p className="eyebrow">{tx("Performance do mes", "Month performance")}</p>
           <h3>{tx("Ranking Mensal", "Monthly ranking")}</h3>
+          <p className="panel-subcopy" style={{ marginTop: '0.4rem' }}>{currentView.description}</p>
+        </div>
+        <div className="ranking-tabs-container">
           <div className="ranking-tabs" role="tablist" aria-label={tx("Abas do ranking mensal", "Monthly ranking tabs")}>
             {Object.entries(rankingViews).map(([key, view]) => (
               <button
@@ -162,7 +167,6 @@ export function SalesPerformancePanel({
               </button>
             ))}
           </div>
-          <p className="panel-subcopy">{currentView.description}</p>
         </div>
       </div>
 
