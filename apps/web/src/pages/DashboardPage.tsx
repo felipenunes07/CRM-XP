@@ -24,8 +24,9 @@ import { CustomerTable } from "../components/CustomerTable";
 import { PeriodSelector } from "../components/PeriodSelector";
 import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
 import { useAuth } from "../hooks/useAuth";
+import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
-import { formatDate, formatNumber, formatShortDate, formatCurrency, formatPercent } from "../lib/format";
+import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 
 type TrendPeriod = '90d' | '6m' | '1y' | 'max';
 
@@ -151,7 +152,7 @@ function formatTrendTooltipLabel(value: string) {
 }
 
 function formatDecimal(value: number, fractionDigits = 1) {
-  return new Intl.NumberFormat("pt-BR", {
+  return new Intl.NumberFormat(getFormattingLocale(), {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).format(value);
@@ -233,18 +234,26 @@ function InactivityTooltip({
   payload?: Array<{ value?: number }>;
   label?: string;
 }) {
+  const { tx } = useUiLanguage();
+
   if (!active || !payload?.length || !label) {
     return null;
   }
 
   return (
     <div className="chart-tooltip">
-      <strong>{label} dias sem compra</strong>
+      <strong>{tx(`${label} dias sem compra`, `${label}天未购买`)}</strong>
       <div className="chart-tooltip-count">
         <strong>{formatNumber(payload[0]?.value ?? 0)}</strong>
-        <span>clientes nessa faixa</span>
+        <span>{tx("clientes nessa faixa", "该区间客户数")}</span>
       </div>
-      <p>{bucketTooltipNote(label)}</p>
+      <p>
+        {label === "0-14" || label === "15-30"
+          ? tx("Todos nesta faixa seguem no status Ativo.", "这个区间的客户都处于活跃状态。")
+          : label === "31-59" || label === "60-89"
+            ? tx("Todos nesta faixa ja estao em Atencao.", "这个区间的客户都已经处于关注状态。")
+            : tx("Todos nesta faixa ja estao Inativos.", "这个区间的客户都已经处于沉默状态。")}
+      </p>
     </div>
   );
 }
@@ -258,6 +267,8 @@ function TrendTooltip({
   payload?: Array<{ color?: string; dataKey?: string; value?: number; payload?: TrendCompositionPoint }>;
   label?: string;
 }) {
+  const { tx } = useUiLanguage();
+
   if (!active || !payload?.length || !label) {
     return null;
   }
@@ -270,7 +281,7 @@ function TrendTooltip({
       {point ? (
         <div className="chart-tooltip-count">
           <strong>{formatNumber(point.totalCustomers)}</strong>
-          <span>clientes na base nesse dia</span>
+          <span>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
         </div>
       ) : null}
       <div className="trend-tooltip-list">
@@ -280,11 +291,11 @@ function TrendTooltip({
             <div key={line.shareKey} className="trend-tooltip-item">
               <span className="trend-tooltip-label">
                 <span className="trend-tooltip-emoji" style={{ fontSize: "1.1rem", marginRight: "0.25rem" }}>{line.emoji}</span>
-                {line.label}
+                {line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
               </span>
               <div className="trend-tooltip-metric">
                 <strong>{formatTrendPercent(entry?.value ?? 0)}</strong>
-                <span>{formatNumber(point?.[line.countKey] ?? 0)} clientes</span>
+                <span>{formatNumber(point?.[line.countKey] ?? 0)} {tx("clientes", "客户")}</span>
               </div>
             </div>
           );
@@ -304,6 +315,7 @@ function formatShare(value: number, total: number) {
 
 export function DashboardPage() {
   const { token } = useAuth();
+  const { tx } = useUiLanguage();
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -352,19 +364,49 @@ export function DashboardPage() {
   });
 
   if (dashboardQuery.isLoading) {
-    return <div className="page-loading">Carregando dashboard...</div>;
+    return <div className="page-loading">{tx("Carregando dashboard...", "正在加载仪表盘...")}</div>;
   }
 
   if (dashboardQuery.isError || !dashboardQuery.data) {
-    return <div className="page-error">Nao foi possivel carregar o dashboard.</div>;
+    return <div className="page-error">{tx("Nao foi possivel carregar o dashboard.", "无法加载仪表盘。")}</div>;
   }
 
   const metrics = dashboardQuery.data;
-  const activeChartCopy = chartViewCopy[chartView];
+  const localizedChartViewCopy = {
+    inactivity: {
+      eyebrow: tx("Faixas de inatividade", "沉默区间"),
+      title: tx("Onde esta o risco de parada", "停购风险分布"),
+      description: tx(
+        "Clique em uma barra para filtrar a tabela abaixo. Os status comerciais seguem os cortes: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias.",
+        "点击柱状条可筛选下方表格。客户状态规则为：30天内为活跃，31到89天为关注，90天及以上为沉默。",
+      ),
+      toggleLabel: tx("Risco de parada", "停购风险"),
+      toggleHelper: tx("Veja as faixas de dias sem compra e filtre a lista.", "查看未购买天数区间并筛选列表。"),
+    },
+    trend: {
+      eyebrow: tx("Composicao da carteira", "客户池构成"),
+      title: tx("Composicao diaria da base", "客户池每日构成"),
+      description: tx(
+        "Cada dia soma 100% da carteira para mostrar, em percentual, se a base esta ganhando ativos ou acumulando inativos.",
+        "每一天都按客户池总量折算为100%，用于观察活跃客户是否增加，或沉默客户是否累积。",
+      ),
+      toggleLabel: tx("Evolucao da base", "客户池走势"),
+      toggleHelper: tx("Compare a participacao diaria de ativos, atencao e inativos.", "比较活跃、关注和沉默客户的每日占比。"),
+    },
+    screensSold: {
+      eyebrow: tx("Desempenho de vendas", "销售表现"),
+      title: tx("Quantidade de itens (telas) vendidas", "已售项目数量（屏）"),
+      description: tx(
+        "Acompanhe o volume mensal de itens vendidos. As linhas comparam o desempenho do ano atual com os anos anteriores.",
+        "跟踪每月售出数量，并将当前年份与往年表现进行对比。",
+      ),
+      toggleLabel: tx("Telas vendidas", "已售数量"),
+      toggleHelper: tx("Compare o volume mensal (2024 a 2026).", "比较每月销量（2024 至 2026）。"),
+    },
+  } as const;
+  const activeChartCopy = localizedChartViewCopy[chartView];
   const trendData = metrics.portfolioTrend.map(normalizeTrendPoint);
-  const latestTrendPoint = trendData[trendData.length - 1];
   const chartDescription = activeChartCopy.description;
-  const agendaItems = getAgendaPreviewItems(agendaQuery.data?.items);
   const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
   const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
   const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
@@ -372,7 +414,7 @@ export function DashboardPage() {
   const currentYear = new Date().getFullYear();
   const chartYears = [currentYear - 2, currentYear - 1, currentYear];
 
-  const monthNames = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
   const itemsSoldData = monthNames.map((monthName, idx) => {
     const monthNum = idx + 1;
     const point: any = { month: monthName };
@@ -394,7 +436,7 @@ export function DashboardPage() {
       await api.syncData(token!, "direct");
       window.location.reload();
     } catch (err) {
-      alert("Falha na sincronizacao: " + String(err));
+      alert(tx("Falha na sincronizacao: ", "同步失败：") + String(err));
     } finally {
       setIsSyncing(false);
     }
@@ -408,12 +450,12 @@ export function DashboardPage() {
   }
 
   async function handleSetTarget() {
-    const userInput = window.prompt("Meta de telas (mensal):", String(metrics.currentMonthTarget || ""));
+    const userInput = window.prompt(tx("Meta de telas (mensal):", "月度屏数目标："), String(metrics.currentMonthTarget || ""));
     if (userInput === null) return;
 
     const val = parseInt(userInput.replace(/\D/g, ''), 10);
     if (isNaN(val)) {
-      alert("Valor invalido");
+      alert(tx("Valor invalido", "数值无效"));
       return;
     }
 
@@ -422,7 +464,7 @@ export function DashboardPage() {
       await api.saveMonthlyTarget(token!, d.getFullYear(), d.getMonth() + 1, val);
       dashboardQuery.refetch();
     } catch (err) {
-      alert("Erro ao salvar: " + String(err));
+      alert(tx("Erro ao salvar: ", "保存失败：") + String(err));
     }
   }
 
@@ -445,21 +487,21 @@ export function DashboardPage() {
     .join(" ");
   const monthlyGoalHighlight =
     targetAmount === 0
-      ? "Sem meta"
+      ? tx("Sem meta", "未设置目标")
       : isTargetHit
         ? targetExceededBy > 0
-          ? `+${formatNumber(targetExceededBy)} acima`
-          : "Meta batida"
-        : `${targetPercent}% do alvo`;
+          ? tx(`+${formatNumber(targetExceededBy)} acima`, `超出 ${formatNumber(targetExceededBy)}`)
+          : tx("Meta batida", "已达成目标")
+        : tx(`${targetPercent}% do alvo`, `完成目标 ${targetPercent}%`);
   const monthlyGoalStatus =
     targetAmount === 0
-      ? "Defina sua meta no menu Metas para acompanhar o ritmo do mes."
+      ? tx("Defina sua meta no menu Metas para acompanhar o ritmo do mes.", "请先在目标页面设置本月目标，以便跟踪当前节奏。")
       : isTargetHit
         ? targetExceededBy > 0
-          ? `Voce ja passou ${formatNumber(targetExceededBy)} telas do alvo.`
-          : "Objetivo concluido neste mes."
-        : `Faltam ${formatNumber(targetRemaining)} para a meta`;
-  const monthlyGoalMetaLabel = targetAmount > 0 ? `Alvo ${formatNumber(targetAmount)}` : "Meta pendente";
+          ? tx(`Voce ja passou ${formatNumber(targetExceededBy)} telas do alvo.`, `已超出目标 ${formatNumber(targetExceededBy)} 屏。`)
+          : tx("Objetivo concluido neste mes.", "本月目标已完成。")
+        : tx(`Faltam ${formatNumber(targetRemaining)} para a meta`, `距离目标还差 ${formatNumber(targetRemaining)}`);
+  const monthlyGoalMetaLabel = targetAmount > 0 ? tx(`Alvo ${formatNumber(targetAmount)}`, `目标 ${formatNumber(targetAmount)}`) : tx("Meta pendente", "待设置目标");
 
   return (
     <div className="page-stack">
@@ -469,15 +511,15 @@ export function DashboardPage() {
         </div>
         <div className="hero-premium-content">
           <div className="hero-premium-copy">
-            <div className="premium-badge">Operacao comercial</div>
-            <h2 className="premium-title">Saude da carteira de clientes XP</h2>
-            <p className="premium-subtitle">Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.</p>
+            <div className="premium-badge">{tx("Operacao comercial", "销售运营")}</div>
+            <h2 className="premium-title">{tx("Saude da carteira de clientes XP", "XP 客户池健康度")}</h2>
+            <p className="premium-subtitle">{tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。")}</p>
             <div className="premium-actions">
               <Link className="premium-button primary" to="/agenda">
-                Abrir agenda do dia
+                {tx("Abrir agenda do dia", "打开今日日程")}
               </Link>
               <button className="premium-button ghost" type="button" disabled={isSyncing} onClick={handleSync}>
-                {isSyncing ? "Sincronizando..." : "Sincronizar Agora"}
+                {isSyncing ? tx("Sincronizando...", "同步中...") : tx("Sincronizar Agora", "立即同步")}
               </button>
             </div>
           </div>
@@ -490,14 +532,14 @@ export function DashboardPage() {
                 </svg>
               </div>
               <div className="premium-stat-info">
-                <span>Ultima sincronizacao</span>
+                <span>{tx("Ultima sincronizacao", "最近同步")}</span>
                 <strong>
-                  {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString("pt-BR") : "Pendente..."}
+                  {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString(getFormattingLocale()) : tx("Pendente...", "待处理...")}
                 </strong>
               </div>
             </div>
 
-            <div className="premium-stat-card interactive" onClick={handleSetTarget} title="Clique para editar a meta">
+            <div className="premium-stat-card interactive" onClick={handleSetTarget} title={tx("Clique para editar a meta", "点击编辑目标")}>
               <div className={`premium-stat-icon ${isTargetHit ? 'accent-success' : 'accent-blue'}`}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -505,10 +547,10 @@ export function DashboardPage() {
               </div>
               <div className="premium-stat-info">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Meta do mes</span>
+                  <span>{tx("Meta do mes", "本月目标")}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <strong>{formatNumber(itemsSold)} / {targetAmount > 0 ? formatNumber(targetAmount) : 'Definir'}</strong>
+                  <strong>{formatNumber(itemsSold)} / {targetAmount > 0 ? formatNumber(targetAmount) : tx("Definir", "设置")}</strong>
                   {targetAmount > 0 && (
                     <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }}>
                       <div style={{ width: `${Math.min(100, targetPercent)}%`, height: '100%', background: isTargetHit ? '#10b981' : '#3b82f6', transition: 'width 0.3s ease' }}></div>
@@ -525,8 +567,8 @@ export function DashboardPage() {
                 </svg>
               </div>
               <div className="premium-stat-info">
-                <span>Tempo medio de compra</span>
-                <strong>{metrics.averageFrequencyDays.toFixed(1)} <small>dias</small></strong>
+                <span>{tx("Tempo medio de compra", "平均购买周期")}</span>
+                <strong>{metrics.averageFrequencyDays.toFixed(1)} <small>{tx("dias", "天")}</small></strong>
               </div>
             </div>
           </div>
@@ -534,26 +576,26 @@ export function DashboardPage() {
       </section>
 
       <section className="stats-grid">
-        <StatCard title="Total de clientes" value={formatNumber(metrics.totalCustomers)} helper="Base comercial consolidada" />
+        <StatCard title={tx("Total de clientes", "客户总数")} value={formatNumber(metrics.totalCustomers)} helper={tx("Base comercial consolidada", "已汇总的销售客户池")} />
         <StatCard
-          title="Clientes ativos"
+          title={tx("Clientes ativos", "活跃客户")}
           value={formatNumber(metrics.statusCounts.ACTIVE)}
           badge={formatShare(metrics.statusCounts.ACTIVE, metrics.totalCustomers)}
-          helper="Clientes dentro da zona ativa"
+          helper={tx("Clientes dentro da zona ativa", "处于活跃区间的客户")}
           tone="success"
         />
         <StatCard
-          title="Clientes em atencao"
+          title={tx("Clientes em atencao", "关注客户")}
           value={formatNumber(metrics.statusCounts.ATTENTION)}
           badge={formatShare(metrics.statusCounts.ATTENTION, metrics.totalCustomers)}
-          helper="Clientes pedindo monitoramento"
+          helper={tx("Clientes pedindo monitoramento", "需要持续跟进的客户")}
           tone="warning"
         />
         <StatCard
-          title="Clientes inativos"
+          title={tx("Clientes inativos", "沉默客户")}
           value={formatNumber(metrics.statusCounts.INACTIVE)}
           badge={formatShare(metrics.statusCounts.INACTIVE, metrics.totalCustomers)}
-          helper="Clientes fora da zona ativa"
+          helper={tx("Clientes fora da zona ativa", "已离开活跃区间的客户")}
           tone="danger"
         />
         <StatCard
@@ -630,7 +672,7 @@ export function DashboardPage() {
               {chartView === "inactivity" ? (
                 <h3 className="header-with-info">
                   {activeChartCopy.title}
-                  <InfoHint text="As barras mostram dias sem compra. Regra de status atual: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias." />
+                  <InfoHint text={tx("As barras mostram dias sem compra. Regra de status atual: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias.", "柱状条展示未购买天数。当前状态规则：30天内为活跃，31到89天为关注，90天及以上为沉默。")} />
                 </h3>
               ) : (
                 <h3>{activeChartCopy.title}</h3>
@@ -638,8 +680,8 @@ export function DashboardPage() {
             </div>
           </div>
           <p className="panel-subcopy">{chartDescription}</p>
-          <div className="chart-switcher" role="tablist" aria-label="Alternar visualizacao dos graficos do dashboard">
-            {(Object.entries(chartViewCopy) as Array<[ChartView, (typeof chartViewCopy)[ChartView]]>).map(([view, copy]) => (
+          <div className="chart-switcher" role="tablist" aria-label={tx("Alternar visualizacao dos graficos do dashboard", "切换仪表盘图表视图")}>
+            {(Object.entries(localizedChartViewCopy) as Array<[ChartView, (typeof localizedChartViewCopy)[ChartView]]>).map(([view, copy]) => (
               <button
                 key={view}
                 type="button"
@@ -659,16 +701,16 @@ export function DashboardPage() {
             <>
               <div className="status-guide-grid">
                 <div className="status-guide-card is-active">
-                  <strong>Ativo</strong>
-                  <span>Ate 30 dias sem comprar</span>
+                  <strong>{tx("Ativo", "活跃")}</strong>
+                  <span>{tx("Ate 30 dias sem comprar", "距离上次购买不超过 30 天")}</span>
                 </div>
                 <div className="status-guide-card is-attention">
-                  <strong>Atencao</strong>
-                  <span>De 31 a 89 dias sem comprar</span>
+                  <strong>{tx("Atencao", "关注")}</strong>
+                  <span>{tx("De 31 a 89 dias sem comprar", "距离上次购买 31 到 89 天")}</span>
                 </div>
                 <div className="status-guide-card is-inactive">
-                  <strong>Inativo</strong>
-                  <span>90 dias ou mais sem comprar</span>
+                  <strong>{tx("Inativo", "沉默")}</strong>
+                  <span>{tx("90 dias ou mais sem comprar", "距离上次购买 90 天及以上")}</span>
                 </div>
               </div>
               <div className="chart-wrap">
@@ -703,9 +745,9 @@ export function DashboardPage() {
               </div>
               {selectedBucket ? (
                 <div className="inline-actions">
-                  <span className="tag">Filtro ativo: {selectedBucket}</span>
+                  <span className="tag">{tx("Filtro ativo:", "当前筛选：")} {selectedBucket}</span>
                   <button className="ghost-button" type="button" onClick={() => setSelectedBucket(null)}>
-                    Limpar filtro
+                    {tx("Limpar filtro", "清除筛选")}
                   </button>
                 </div>
               ) : null}
@@ -771,14 +813,14 @@ export function DashboardPage() {
                     </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="empty-state">Sem historico suficiente para montar a evolucao diaria da base.</div>
+                  <div className="empty-state">{tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。")}</div>
                 )}
               </div>
-              <div className="trend-legend" aria-label="Legenda do grafico de evolucao da base">
+              <div className="trend-legend" aria-label={tx("Legenda do grafico de evolucao da base", "客户池走势图例")}>
                 {trendSeries.map((series) => (
                   <span key={series.shareKey} className="trend-legend-item">
                     <span className="trend-legend-emoji" style={{ fontSize: "1.1rem", marginRight: "0.2rem" }}>{series.emoji}</span>
-                    {series.label}
+                    {series.label === "Ativos" ? tx("Ativos", "活跃") : series.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
                   </span>
                 ))}
               </div>
@@ -790,7 +832,7 @@ export function DashboardPage() {
                   <ComposedChart data={itemsSoldData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
                     <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
                     <XAxis dataKey="month" stroke="#5f6f95" tickLine={false} axisLine={false} />
-                    <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat("pt-BR").format(val)} />
+                    <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat(getFormattingLocale()).format(val)} />
                     <Tooltip
                       cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
                       content={({ active, payload, label }) => {
@@ -802,7 +844,7 @@ export function DashboardPage() {
                               {payload.map((entry: any) => (
                                 <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }}>
                                   <span style={{ color: entry.color, fontWeight: 500 }}>{entry.name}</span>
-                                  <strong>{formatNumber(entry.value)} telas</strong>
+                                  <strong>{tx(`${formatNumber(entry.value)} telas`, `${formatNumber(entry.value)} 屏`)}</strong>
                                 </div>
                               ))}
                             </div>
@@ -813,11 +855,11 @@ export function DashboardPage() {
                     <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="meta" name="Meta (Atual)" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-              <div className="trend-legend" aria-label="Legenda do grafico de telas vendidas">
+              <div className="trend-legend" aria-label={tx("Legenda do grafico de telas vendidas", "销量图例")}>
                 <span className="trend-legend-item">
                   <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
                   {chartYears[0]}
@@ -832,7 +874,7 @@ export function DashboardPage() {
                 </span>
                 <span className="trend-legend-item">
                   <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
-                  Meta (Atual)
+                  {tx("Meta (Atual)", "当前目标")}
                 </span>
               </div>
             </>
@@ -848,18 +890,18 @@ export function DashboardPage() {
       <section className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">{selectedBucket ? "Clientes filtrados pelo grafico" : "Fila por prioridade"}</p>
-            <h3>{selectedBucket ? `Clientes na faixa ${selectedBucket}` : "Clientes para o time abordar agora"}</h3>
+            <p className="eyebrow">{selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}</p>
+            <h3>{selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}</h3>
             <p className="panel-subcopy">
               {selectedBucket
-                ? "A selecao do grafico mostra apenas clientes da faixa escolhida."
-                : "Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras."}
+                ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
+                : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
             </p>
           </div>
         </div>
 
-        {tableQueryLoading ? <div className="page-loading">Carregando clientes priorizados...</div> : null}
-        {tableQueryError ? <div className="page-error">Nao foi possivel carregar essa lista de clientes.</div> : null}
+        {tableQueryLoading ? <div className="page-loading">{tx("Carregando clientes priorizados...", "正在加载优先客户...")}</div> : null}
+        {tableQueryError ? <div className="page-error">{tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。")}</div> : null}
         {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
       </section>
     </div>

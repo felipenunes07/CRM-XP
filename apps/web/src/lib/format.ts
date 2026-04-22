@@ -1,3 +1,5 @@
+let activeLocale = "pt-BR";
+
 function toSafeNumber(value: number | null | undefined) {
   if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
     return 0;
@@ -6,10 +8,30 @@ function toSafeNumber(value: number | null | undefined) {
   return value;
 }
 
+function isChineseLocale() {
+  return activeLocale === "zh-CN";
+}
+
+function localizedLabel(pt: string, zh: string) {
+  return isChineseLocale() ? zh : pt;
+}
+
+function buildUtcDate(parts: { year: string; month: string; day: string }) {
+  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+}
+
+export function setFormattingLocale(locale: string) {
+  activeLocale = locale === "zh-CN" ? "zh-CN" : "pt-BR";
+}
+
+export function getFormattingLocale() {
+  return activeLocale;
+}
+
 export function formatCurrency(value: number | null | undefined) {
   const safeValue = toSafeNumber(value);
 
-  return new Intl.NumberFormat("pt-BR", {
+  return new Intl.NumberFormat(activeLocale, {
     style: "currency",
     currency: "BRL",
     maximumFractionDigits: 2,
@@ -17,18 +39,18 @@ export function formatCurrency(value: number | null | undefined) {
 }
 
 export function formatNumber(value: number | null | undefined) {
-  return new Intl.NumberFormat("pt-BR", {
+  return new Intl.NumberFormat(activeLocale, {
     maximumFractionDigits: 0,
   }).format(toSafeNumber(value));
 }
 
-function extractCalendarDate(value: string) {
+function extractCalendarDate(value: string): { year: string; month: string; day: string } | null {
   const matched = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (matched) {
     return {
-      year: matched[1],
-      month: matched[2],
-      day: matched[3],
+      year: matched[1]!,
+      month: matched[2]!,
+      day: matched[3]!,
     };
   }
 
@@ -46,15 +68,20 @@ function extractCalendarDate(value: string) {
 
 export function formatDate(value: string | null) {
   if (!value) {
-    return "Sem registro";
+    return localizedLabel("Sem registro", "无记录");
   }
 
   const date = extractCalendarDate(value);
   if (!date) {
-    return "Sem registro";
+    return localizedLabel("Sem registro", "无记录");
   }
 
-  return `${date.day}/${date.month}/${date.year}`;
+  return new Intl.DateTimeFormat(activeLocale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(buildUtcDate(date));
 }
 
 export function formatShortDate(value: string | null) {
@@ -67,20 +94,24 @@ export function formatShortDate(value: string | null) {
     return "--";
   }
 
-  return `${date.day}/${date.month}`;
+  return new Intl.DateTimeFormat(activeLocale, {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "UTC",
+  }).format(buildUtcDate(date));
 }
 
 export function formatDateTime(value: string | null) {
   if (!value) {
-    return "Sem registro";
+    return localizedLabel("Sem registro", "无记录");
   }
 
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
-    return "Sem registro";
+    return localizedLabel("Sem registro", "无记录");
   }
 
-  return new Intl.DateTimeFormat("pt-BR", {
+  return new Intl.DateTimeFormat(activeLocale, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -91,33 +122,33 @@ export function formatDateTime(value: string | null) {
 
 export function formatDaysSince(value: number | null) {
   if (value === null || value === undefined) {
-    return "Sem base";
+    return localizedLabel("Sem base", "无数据");
   }
 
   if (value === 0) {
-    return "Hoje";
+    return localizedLabel("Hoje", "今天");
   }
 
   if (value === 1) {
-    return "1 dia";
+    return localizedLabel("1 dia", "1天");
   }
 
-  return `${value} dias`;
+  return isChineseLocale() ? `${value}天` : `${value} dias`;
 }
 
 export function formatPercent(value: number | null | undefined) {
   const safeValue = toSafeNumber(value);
 
-  return `${new Intl.NumberFormat("pt-BR", {
+  return `${new Intl.NumberFormat(activeLocale, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(safeValue * 100)}%`;
 }
 
 export function statusLabel(status: "ACTIVE" | "ATTENTION" | "INACTIVE") {
-  if (status === "ACTIVE") return "Ativo";
-  if (status === "ATTENTION") return "Atencao";
-  return "Inativo";
+  if (status === "ACTIVE") return localizedLabel("Ativo", "活跃");
+  if (status === "ATTENTION") return localizedLabel("Atencao", "关注");
+  return localizedLabel("Inativo", "沉默");
 }
 
 export function calculateDaysSince(dateString: string | null) {
