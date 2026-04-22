@@ -243,6 +243,12 @@ export const api = {
             method: "DELETE",
         }, token);
     },
+    moveIdeaLane(token, id, input) {
+        return request(`/api/ideas/${id}/lane`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
     notifyIdeaWhatsapp(token, id) {
         return request(`/api/ideas/${id}/notify-whatsapp`, {
             method: "POST",

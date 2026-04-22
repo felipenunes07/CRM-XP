@@ -7,6 +7,7 @@ const {
   deleteIdeaMock,
   getIdeaDetailMock,
   listIdeaFeedbacksMock,
+  moveIdeaToLaneMock,
   submitIdeaVoteMock,
   ensureEvolutionConfiguredMock,
   sendWhatsappTextMessageMock,
@@ -16,6 +17,7 @@ const {
   deleteIdeaMock: vi.fn(),
   getIdeaDetailMock: vi.fn(),
   listIdeaFeedbacksMock: vi.fn(),
+  moveIdeaToLaneMock: vi.fn(),
   submitIdeaVoteMock: vi.fn(),
   ensureEvolutionConfiguredMock: vi.fn(),
   sendWhatsappTextMessageMock: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock("./modules/ideas/ideaBoardService.js", () => ({
   deleteIdea: deleteIdeaMock,
   getIdeaDetail: getIdeaDetailMock,
   listIdeaFeedbacks: listIdeaFeedbacksMock,
+  moveIdeaToLane: moveIdeaToLaneMock,
   submitIdeaVote: submitIdeaVoteMock,
 }));
 
@@ -60,6 +63,7 @@ const ideaDetailFixture = {
     createdAt: "2026-04-17T12:10:00.000Z",
     updatedAt: "2026-04-17T12:10:00.000Z",
   },
+  laneOverride: null,
   feedbacks: [
     {
       id: "feedback-1",
@@ -79,6 +83,7 @@ describe("idea board routes", () => {
     deleteIdeaMock.mockReset();
     getIdeaDetailMock.mockReset();
     listIdeaFeedbacksMock.mockReset();
+    moveIdeaToLaneMock.mockReset();
     submitIdeaVoteMock.mockReset();
     ensureEvolutionConfiguredMock.mockReset();
     sendWhatsappTextMessageMock.mockReset();
@@ -156,6 +161,30 @@ describe("idea board routes", () => {
       {
         option: "LIKE",
         comment: "Boa ideia.",
+      },
+    );
+  });
+
+  it("moves an idea card to another lane", async () => {
+    moveIdeaToLaneMock.mockResolvedValue({
+      ...ideaDetailFixture,
+      laneOverride: "STOP",
+    });
+
+    const response = await request(createApp()).patch("/api/ideas/idea-1/lane").send({
+      laneId: "STOP",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.laneOverride).toBe("STOP");
+    expect(moveIdeaToLaneMock).toHaveBeenCalledWith(
+      "idea-1",
+      expect.objectContaining({
+        id: "00000000-0000-0000-0000-000000000001",
+        role: "ADMIN",
+      }),
+      {
+        laneId: "STOP",
       },
     );
   });

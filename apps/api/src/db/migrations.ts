@@ -566,6 +566,12 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_idea_board_items_created_by
     ON idea_board_items(created_by_user_id);
 
+  ALTER TABLE idea_board_items
+    ADD COLUMN IF NOT EXISTS lane_override TEXT;
+
+  CREATE INDEX IF NOT EXISTS idx_idea_board_items_lane_override
+    ON idea_board_items(lane_override);
+
   CREATE TABLE IF NOT EXISTS idea_board_votes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     idea_id UUID NOT NULL REFERENCES idea_board_items(id) ON DELETE CASCADE,

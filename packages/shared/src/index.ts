@@ -1253,6 +1253,7 @@ export interface WhatsappCampaignDetail extends WhatsappCampaignListItem {
 
 export type IdeaBoardStatus = "OPEN" | "CLOSED";
 export type IdeaVoteOption = "LIKE" | "MAYBE" | "NO";
+export type IdeaBoardColumnId = "INBOX" | "SUPPORT" | "REFINE" | "STOP";
 
 export interface IdeaVoteSummary {
   likeCount: number;
@@ -1285,6 +1286,7 @@ export interface IdeaBoardItem {
   isAnonymous: boolean;
   authorDisplayName: string;
   canDelete: boolean;
+  laneOverride: IdeaBoardColumnId | null;
   createdAt: string;
   updatedAt: string;
   voteSummary: IdeaVoteSummary;

@@ -25,6 +25,7 @@ export const ideaVoteOptions = [
         description: "Nao parece ser a melhor direcao agora.",
     },
 ];
+const NEW_IDEA_WINDOW_MS = 24 * 60 * 60 * 1000;
 const laneBlueprints = [
     {
         id: "ALL",
@@ -35,7 +36,7 @@ const laneBlueprints = [
     {
         id: "INBOX",
         title: "Novas na mesa",
-        description: "Entraram agora e ainda precisam de leitura do time.",
+        description: "Toda ideia nova fica aqui por 24h antes de ir para a coluna com mais votos.",
         accentClassName: "neutral",
     },
     {
@@ -64,6 +65,26 @@ function getVoteCounts(idea) {
         NO: idea.voteSummary.noCount,
     };
 }
+function resolveReferenceTime(referenceTime) {
+    if (referenceTime instanceof Date && !Number.isNaN(referenceTime.getTime())) {
+        return referenceTime;
+    }
+    return new Date();
+}
+export function isIdeaInInboxWindow(idea, referenceTime) {
+    const createdAt = new Date(idea.createdAt);
+    if (Number.isNaN(createdAt.getTime())) {
+        return false;
+    }
+    return resolveReferenceTime(referenceTime).getTime() - createdAt.getTime() < NEW_IDEA_WINDOW_MS;
+}
+export function getIdeaInboxDeadline(idea) {
+    const createdAt = new Date(idea.createdAt);
+    if (Number.isNaN(createdAt.getTime())) {
+        return null;
+    }
+    return new Date(createdAt.getTime() + NEW_IDEA_WINDOW_MS).toISOString();
+}
 export function getDominantVote(idea) {
     const counts = getVoteCounts(idea);
     const ordered = Object.entries(counts).sort((left, right) => right[1] - left[1]);
@@ -76,8 +97,8 @@ export function getDominantVote(idea) {
     }
     return top[0];
 }
-export function getIdeaLaneId(idea) {
-    if (idea.voteSummary.totalVotes === 0) {
+export function getIdeaLaneId(idea, referenceTime) {
+    if (isIdeaInInboxWindow(idea, referenceTime)) {
         return "INBOX";
     }
     const dominantVote = getDominantVote(idea);
@@ -89,11 +110,11 @@ export function getIdeaLaneId(idea) {
     }
     return "REFINE";
 }
-export function buildIdeaBoardLanes(ideas) {
+export function buildIdeaBoardLanes(ideas, referenceTime) {
     const byLane = new Map(laneBlueprints.map((lane) => [lane.id, []]));
     ideas.forEach((idea) => {
         byLane.get("ALL")?.push(idea);
-        byLane.get(getIdeaLaneId(idea))?.push(idea);
+        byLane.get(getIdeaLaneId(idea, referenceTime))?.push(idea);
     });
     return laneBlueprints.map((lane) => ({
         ...lane,
