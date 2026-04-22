@@ -113,7 +113,7 @@ export function ReactivationPage() {
           <p className="eyebrow" style={{ margin: 0, marginBottom: "0.2rem" }}>
             Ranking de Reativação
           </p>
-          <h2 className="premium-header-title">Recuperadoras de Ouro</h2>
+          <h2 className="premium-header-title">Reativação de Cliente</h2>
         </div>
         <button
           onClick={() => setIsCompactMode(!isCompactMode)}
@@ -196,75 +196,67 @@ export function ReactivationPage() {
 
       {activeTab === "current" && (
         <>
-          <div className="stats-grid" style={{ display: isCompactMode ? "none" : "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "1rem", paddingBottom: "1rem" }}>
-        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Mês analisado</p>
-            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
-              <Calendar size={16} color="var(--muted)" />
+        <div className="stats-grid" style={{ display: isCompactMode ? "none" : "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", paddingBottom: "1rem" }}>
+          <div className="stat-card tone-neutral">
+            <div className="stat-card-header">
+              <p className="stat-card-title">Mês analisado</p>
+              <div className="stat-card-icon">
+                <Calendar />
+              </div>
+            </div>
+            <div className="stat-card-body">
+              <strong>{monthLabel}</strong>
+            </div>
+            <div className="stat-card-footer">
+              <span className="stat-card-helper">Período do placar consolidado</span>
             </div>
           </div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{monthLabel}</strong>
-            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Período do placar consolidado</p>
-          </div>
-        </div>
 
-        <div className="stat-card" style={{ background: "rgba(47, 157, 103, 0.04)", border: "1px solid rgba(47, 157, 103, 0.2)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "3px", background: "var(--success)" }} />
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 700, color: "var(--success)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Recuperados</p>
-            <div style={{ background: "rgba(47, 157, 103, 0.15)", padding: "0.35rem", borderRadius: "8px" }}>
-              <UserCheck size={16} color="var(--success)" />
+          <div className="stat-card tone-success">
+            <div className="stat-card-header">
+              <p className="stat-card-title">Recuperados</p>
+              <div className="stat-card-icon">
+                <UserCheck />
+              </div>
+            </div>
+            <div className="stat-card-body">
+              <strong>{formatNumber(totalRecoveredCustomers)}</strong>
+            </div>
+            <div className="stat-card-footer">
+              <span className="stat-card-helper">Inativos +90 dias</span>
             </div>
           </div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <strong style={{ display: "block", fontSize: "1.5rem", color: "var(--success)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(totalRecoveredCustomers)}</strong>
-            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--success)", fontWeight: 500, opacity: 0.85, lineHeight: "1.2" }}>
-              Inativos +90 dias
-            </p>
-          </div>
-        </div>
 
-        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Faturamento</p>
-            <div style={{ background: "rgba(41, 86, 215, 0.08)", padding: "0.35rem", borderRadius: "8px" }}>
-              <TrendingUp size={16} color="var(--accent)" />
+          <div className="stat-card tone-warning">
+            <div className="stat-card-header">
+              <p className="stat-card-title">Faturamento</p>
+              <div className="stat-card-icon">
+                <TrendingUp />
+              </div>
+            </div>
+            <div className="stat-card-body">
+              <strong>{formatCurrency(totalRecoveredRevenue)}</strong>
+            </div>
+            <div className="stat-card-footer">
+              <span className="stat-card-helper">Retornado ao caixa</span>
             </div>
           </div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatCurrency(totalRecoveredRevenue)}</strong>
-            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Retornado ao caixa</p>
-          </div>
-        </div>
 
-        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Peças Vendidas</p>
-            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
-              <ShoppingBag size={16} color="var(--muted)" />
+          <div className="stat-card tone-purple">
+            <div className="stat-card-header">
+              <p className="stat-card-title">Peças Vendidas</p>
+              <div className="stat-card-icon">
+                <ShoppingBag />
+              </div>
+            </div>
+            <div className="stat-card-body">
+              <strong>{formatNumber(totalRecoveredItems)}</strong>
+            </div>
+            <div className="stat-card-footer">
+              <span className="stat-card-helper">Total em produtos</span>
             </div>
           </div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(totalRecoveredItems)}</strong>
-            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Total em produtos</p>
-          </div>
         </div>
-
-        <div className="stat-card" style={{ background: "#ffffff", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: "0.5rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <p style={{ margin: 0, fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Equipe Ativa</p>
-            <div style={{ background: "rgba(110, 127, 159, 0.1)", padding: "0.35rem", borderRadius: "8px" }}>
-              <Users size={16} color="var(--muted)" />
-            </div>
-          </div>
-          <div style={{ marginTop: "0.25rem" }}>
-            <strong style={{ display: "block", fontSize: "1.25rem", color: "var(--text)", lineHeight: "1.1", marginBottom: "0.2rem" }}>{formatNumber(leaderboard.length)}</strong>
-            <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--muted)" }}>Com reativação no mês</p>
-          </div>
-        </div>
-      </div>
 
       <section className="panel" style={{ padding: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div

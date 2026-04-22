@@ -627,6 +627,10 @@ a {
   background: conic-gradient(from 90deg at 50% 50%, transparent 65%, var(--danger) 100%);
 }
 
+.stat-card.tone-purple::before {
+  background: conic-gradient(from 90deg at 50% 50%, transparent 65%, #8b5cf6 100%);
+}
+
 /* Inner glass card (Shadcn style) */
 .stat-card::after {
   content: "";
@@ -660,6 +664,11 @@ a {
   --stat-accent-soft: rgba(217, 83, 79, 0.14);
 }
 
+.stat-card.tone-purple {
+  --stat-accent-color: #8b5cf6;
+  --stat-accent-soft: rgba(139, 92, 246, 0.14);
+}
+
 .stat-card:hover {
   transform: translateY(-4px) scale(1.01);
 }
@@ -683,6 +692,10 @@ a {
 
 .stat-card.tone-danger:hover {
   box-shadow: 0 10px 40px -10px rgba(217, 83, 79, 0.2);
+}
+
+.stat-card.tone-purple:hover {
+  box-shadow: 0 10px 40px -10px rgba(139, 92, 246, 0.2);
 }
 
 .stat-card-header {
@@ -816,6 +829,12 @@ a {
   background: rgba(217, 83, 79, 0.08);
   color: var(--danger);
   border-color: rgba(217, 83, 79, 0.15);
+}
+
+.stat-card-badge.tone-purple {
+  background: rgba(139, 92, 246, 0.08);
+  color: #8b5cf6;
+  border-color: rgba(139, 92, 246, 0.15);
 }
 
 .stat-card-helper {
