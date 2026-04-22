@@ -67,13 +67,13 @@ export function SalesPerformancePanel({
       })),
     },
     reactivation: {
-      label: tx("Recuperacao", "Reactivation"),
+      label: tx("Reativacao", "Reactivation"),
       description: tx(
         "Veja quem mais recuperou clientes inativos no mes atual.",
         "See who recovered the most inactive customers this month.",
       ),
       emptyMessage: tx(
-        "Nenhuma recuperacao registrada neste mes.",
+        "Nenhuma reativacao registrada neste mes.",
         "No reactivations registered this month.",
       ),
       entries: [...reactivationLeaderboard]
@@ -144,7 +144,7 @@ export function SalesPerformancePanel({
     );
   }
 
-  <div className="panel-header">
+  return (
     <article className="panel insight-panel">
       <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
@@ -176,19 +176,19 @@ export function SalesPerformancePanel({
         <RankingList entries={filteredEntries} topPerformerLabel={tx("Top Performer", "Top performer")} />
       )}
     </article>
-    );
+  );
 }
 
-    function RankingList({
-      entries,
-      topPerformerLabel,
+function RankingList({
+  entries,
+  topPerformerLabel,
 }: {
-      entries: RankingViewEntry[];
-    topPerformerLabel: string;
+  entries: RankingViewEntry[];
+  topPerformerLabel: string;
 }) {
   const maxMetricValue = Math.max(...entries.map((entry) => entry.metrics[0].value));
 
-    return (
+  return (
     <div className="ranking-balanced-list">
       {entries.map((entry, index) => {
         const isTop3 = index < 3;
@@ -222,5 +222,5 @@ export function SalesPerformancePanel({
         );
       })}
     </div>
-    );
+  );
 }
