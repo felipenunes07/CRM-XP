@@ -29,6 +29,7 @@ const ideas = [
     isAnonymous: true,
     authorDisplayName: "Anonimo",
     canDelete: true,
+    laneOverride: null,
     createdAt: "2026-04-17T12:00:00.000Z",
     updatedAt: "2026-04-17T12:00:00.000Z",
     voteSummary: {
@@ -53,6 +54,7 @@ const ideas = [
     isAnonymous: true,
     authorDisplayName: "Anonimo",
     canDelete: false,
+    laneOverride: null,
     createdAt: "2026-04-16T12:00:00.000Z",
     updatedAt: "2026-04-17T14:00:00.000Z",
     voteSummary: {
@@ -65,6 +67,7 @@ const ideas = [
     currentUserVote: null,
   },
 ];
+const referenceTime = new Date("2026-04-22T12:00:00.000Z");
 
 describe("IdeaBoard frontend", () => {
   it("renders the sidebar link and the ideas route outlet", () => {
@@ -86,7 +89,7 @@ describe("IdeaBoard frontend", () => {
     const markup = renderToStaticMarkup(
       <IdeaBoardPageView
         ideas={ideas}
-        lanes={buildIdeaBoardLanes(ideas)}
+        lanes={buildIdeaBoardLanes(ideas, referenceTime)}
         timeline={buildIdeaTimeline(ideas, 4)}
         activeLaneId="ALL"
         selectedIdea={{
@@ -97,6 +100,7 @@ describe("IdeaBoard frontend", () => {
           isAnonymous: true,
           authorDisplayName: "Anonimo",
           canDelete: true,
+          laneOverride: null,
           createdAt: "2026-04-17T12:00:00.000Z",
           updatedAt: "2026-04-17T12:00:00.000Z",
           voteSummary: {
@@ -137,6 +141,7 @@ describe("IdeaBoard frontend", () => {
         createError={null}
         voteError={null}
         deleteError={null}
+        moveError={null}
         notifyError={null}
         toastMessage="Voto salvo anonimamente."
         isIdeasLoading={false}
@@ -144,6 +149,7 @@ describe("IdeaBoard frontend", () => {
         isCreating={false}
         isVoting={false}
         isDeleting={false}
+        isMoving={false}
         isNotifying={false}
         onActiveLaneChange={() => undefined}
         onCreateDraftChange={() => undefined}
@@ -152,6 +158,7 @@ describe("IdeaBoard frontend", () => {
         onCloseCreateModal={() => undefined}
         onCreateIdea={() => undefined}
         onDeleteIdea={() => undefined}
+        onMoveIdea={() => undefined}
         onNotifyWhatsapp={() => undefined}
         onSubmitVote={() => undefined}
         onSelectIdea={() => undefined}
@@ -160,7 +167,8 @@ describe("IdeaBoard frontend", () => {
       />,
     );
 
-    expect(markup).toContain("Arraste os cards e clique para votar");
+    expect(markup).toContain("Board em colunas no modelo Trello");
+    expect(markup).toContain("Novas na mesa por 24h");
     expect(markup).toContain("Avisar time no WhatsApp");
     expect(markup).toContain("Voto salvo anonimamente.");
     expect(markup).toContain("Comentarios anonimos");
@@ -186,6 +194,7 @@ describe("IdeaBoard frontend", () => {
         createError={null}
         voteError={null}
         deleteError={null}
+        moveError={null}
         notifyError={null}
         toastMessage={null}
         isIdeasLoading={false}
@@ -193,6 +202,7 @@ describe("IdeaBoard frontend", () => {
         isCreating={false}
         isVoting={false}
         isDeleting={false}
+        isMoving={false}
         isNotifying={false}
         onActiveLaneChange={() => undefined}
         onCreateDraftChange={() => undefined}
@@ -201,6 +211,7 @@ describe("IdeaBoard frontend", () => {
         onCloseCreateModal={() => undefined}
         onCreateIdea={() => undefined}
         onDeleteIdea={() => undefined}
+        onMoveIdea={() => undefined}
         onNotifyWhatsapp={() => undefined}
         onSubmitVote={() => undefined}
         onSelectIdea={() => undefined}
@@ -227,6 +238,7 @@ describe("IdeaBoard frontend", () => {
         createError={null}
         voteError={null}
         deleteError={null}
+        moveError={null}
         notifyError={null}
         toastMessage={null}
         isIdeasLoading={false}
@@ -234,6 +246,7 @@ describe("IdeaBoard frontend", () => {
         isCreating={false}
         isVoting={false}
         isDeleting={false}
+        isMoving={false}
         isNotifying={false}
         onActiveLaneChange={() => undefined}
         onCreateDraftChange={() => undefined}
@@ -242,6 +255,7 @@ describe("IdeaBoard frontend", () => {
         onCloseCreateModal={() => undefined}
         onCreateIdea={() => undefined}
         onDeleteIdea={() => undefined}
+        onMoveIdea={() => undefined}
         onNotifyWhatsapp={() => undefined}
         onSubmitVote={() => undefined}
         onSelectIdea={() => undefined}
@@ -288,36 +302,83 @@ describe("IdeaBoard frontend", () => {
 
   it("classifies ideas into mural lanes", () => {
     expect(
-      getIdeaLaneId({
-        voteSummary: {
-          likeCount: 0,
-          maybeCount: 0,
-          noCount: 0,
-          totalVotes: 0,
+      getIdeaLaneId(
+        {
+          createdAt: "2026-04-22T04:00:00.000Z",
+          laneOverride: null,
+          voteSummary: {
+            likeCount: 0,
+            maybeCount: 0,
+            noCount: 0,
+            totalVotes: 0,
+          },
         },
-      }),
+        referenceTime,
+      ),
     ).toBe("INBOX");
 
     expect(
-      getIdeaLaneId({
-        voteSummary: {
-          likeCount: 3,
-          maybeCount: 1,
-          noCount: 0,
-          totalVotes: 4,
+      getIdeaLaneId(
+        {
+          createdAt: "2026-04-20T04:00:00.000Z",
+          laneOverride: null,
+          voteSummary: {
+            likeCount: 3,
+            maybeCount: 1,
+            noCount: 0,
+            totalVotes: 4,
+          },
         },
-      }),
+        referenceTime,
+      ),
     ).toBe("SUPPORT");
 
     expect(
-      getIdeaLaneId({
-        voteSummary: {
-          likeCount: 1,
-          maybeCount: 2,
-          noCount: 2,
-          totalVotes: 5,
+      getIdeaLaneId(
+        {
+          createdAt: "2026-04-20T04:00:00.000Z",
+          laneOverride: null,
+          voteSummary: {
+            likeCount: 1,
+            maybeCount: 0,
+            noCount: 4,
+            totalVotes: 5,
+          },
         },
-      }),
+        referenceTime,
+      ),
+    ).toBe("STOP");
+
+    expect(
+      getIdeaLaneId(
+        {
+          createdAt: "2026-04-20T04:00:00.000Z",
+          laneOverride: null,
+          voteSummary: {
+            likeCount: 1,
+            maybeCount: 2,
+            noCount: 2,
+            totalVotes: 5,
+          },
+        },
+        referenceTime,
+      ),
     ).toBe("REFINE");
+
+    expect(
+      getIdeaLaneId(
+        {
+          createdAt: "2026-04-22T04:00:00.000Z",
+          laneOverride: "STOP",
+          voteSummary: {
+            likeCount: 3,
+            maybeCount: 0,
+            noCount: 0,
+            totalVotes: 3,
+          },
+        },
+        referenceTime,
+      ),
+    ).toBe("STOP");
   });
 });
