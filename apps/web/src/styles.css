@@ -6447,6 +6447,13 @@ textarea {
   width: fit-content;
 }
 
+.inventory-table-secondary-text {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .inventory-stale-model-cell span {
   color: var(--muted);
   font-size: 0.8rem;
