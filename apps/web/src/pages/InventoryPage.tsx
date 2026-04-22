@@ -1065,68 +1065,92 @@ export function InventoryPage() {
           </section>
 
           <section className="inventory-card-list">
-            {visibleBuyingItems.map((item) => (
-              <article key={item.modelKey} className="panel inventory-line-card">
-                <div className="inventory-line-header">
+            {visibleBuyingItems.length ? (
+              <section className="panel inventory-stale-table-panel">
+                <div className="inventory-section-heading">
                   <div>
-                    <p className="eyebrow">Modelo</p>
-                    <h3>{item.modelLabel}</h3>
-                    <p className="panel-subcopy">{item.sampleSkus.slice(0, 3).join(", ")}</p>
+                    <p className="eyebrow">Compras</p>
+                    <h3>Tabela de compras</h3>
                   </div>
-                  <div className="inventory-note-pills">
-                    <span className={`inventory-status-pill tone-${productKindTone(item.productKind)}`}>
-                      {productKindLabel(item.productKind)}
-                    </span>
-                    <span className={`inventory-status-pill tone-${buyRecommendationTone(item.buyRecommendation)}`}>
-                      {buyRecommendationLabel(item.buyRecommendation)}
-                    </span>
-                  </div>
+                  <span>{formatNumber(visibleBuyingItems.length)} modelos</span>
                 </div>
 
-                <div className="inventory-line-metrics">
-                  <div>
-                    <span>Pecas</span>
-                    <strong>{formatNumber(item.stockUnits)}</strong>
-                  </div>
-                  <div>
-                    <span>SKUs ativos</span>
-                    <strong>{formatNumber(item.activeSkuCount)}</strong>
-                  </div>
-                  <div>
-                    <span>Venda 30/90</span>
-                    <strong>
-                      {formatNumber(item.sales30)} / {formatNumber(item.sales90)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Cobertura</span>
-                    <strong>{formatCoverage(item.coverageDays)}</strong>
-                  </div>
-                  <div>
-                    <span>Ultima venda</span>
-                    <strong>{formatDate(item.lastSaleAt)}</strong>
-                  </div>
-                  <div>
-                    <span>Ultima reposicao</span>
-                    <strong>{formatDate(item.lastRestockAt)}</strong>
-                  </div>
+                <div className="inventory-stale-table-wrap">
+                  <table className="data-table inventory-stale-table">
+                    <thead>
+                      <tr>
+                        <th>Modelo</th>
+                        <th>Tipo</th>
+                        <th>Em estoque</th>
+                        <th>SKUs ativos</th>
+                        <th>Venda 30/90</th>
+                        <th>Cobertura</th>
+                        <th>Ultima venda</th>
+                        <th>Ultima reposicao</th>
+                        <th>Valor em estoque</th>
+                        <th>Recomendacao</th>
+                        <th>Abrir</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleBuyingItems.map((item) => (
+                        <tr key={item.modelKey}>
+                          <td>
+                            <div className="inventory-stale-model-cell">
+                              <strong>{item.modelLabel}</strong>
+                              <span>
+                                {item.brand} Â· {item.family} Â· {item.sampleSkus.slice(0, 3).join(", ")}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`inventory-status-pill tone-${productKindTone(item.productKind)}`}>
+                              {productKindLabel(item.productKind)}
+                            </span>
+                          </td>
+                          <td>
+                            <strong>{formatNumber(item.stockUnits)}</strong>
+                          </td>
+                          <td>
+                            {formatNumber(item.activeSkuCount)}
+                            <span className="inventory-table-secondary-text">de {formatNumber(item.totalSkuCount)}</span>
+                          </td>
+                          <td>
+                            <strong>
+                              {formatNumber(item.sales30)} / {formatNumber(item.sales90)}
+                            </strong>
+                          </td>
+                          <td>{formatCoverage(item.coverageDays)}</td>
+                          <td>{formatDate(item.lastSaleAt)}</td>
+                          <td>{formatDate(item.lastRestockAt)}</td>
+                          <td>
+                            <div className="inventory-stale-value-cell">
+                              <strong>{formatCurrency(item.trappedValue)}</strong>
+                              {item.trappedValueEstimated ? <span className="inventory-note-pill tone-warning">Estimado</span> : null}
+                            </div>
+                          </td>
+                          <td>
+                            <div className="inventory-stale-value-cell">
+                              <span className={`inventory-status-pill tone-${buyRecommendationTone(item.buyRecommendation)}`}>
+                                {buyRecommendationLabel(item.buyRecommendation)}
+                              </span>
+                              {item.holdSales ? <span className="inventory-note-pill tone-danger">Segurar venda</span> : null}
+                            </div>
+                          </td>
+                          <td>
+                            <button type="button" className="primary-button small-button" onClick={() => openModel(item.modelKey)}>
+                              Abrir analise
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-
-                <div className="inventory-line-footer">
-                  <div className="inventory-note-pills">
-                    {item.holdSales ? <span className="inventory-note-pill tone-danger">Segurar venda</span> : null}
-                    {item.trappedValueEstimated ? <span className="inventory-note-pill tone-warning">Valor estimado</span> : null}
-                    <span className="inventory-note-pill tone-neutral">Valor em estoque {formatCurrency(item.trappedValue)}</span>
-                  </div>
-
-                  <button type="button" className="primary-button small-button" onClick={() => openModel(item.modelKey)}>
-                    Abrir analise
-                  </button>
-                </div>
-              </article>
-            ))}
-
-            {!visibleBuyingItems.length ? <div className="empty-state">Nenhum modelo entrou nesse filtro agora.</div> : null}
+              </section>
+            ) : (
+              <div className="empty-state">Nenhum modelo entrou nesse filtro agora.</div>
+            )}
           </section>
         </>
       ) : null}
@@ -1173,63 +1197,92 @@ export function InventoryPage() {
           </section>
 
           <section className="inventory-card-list">
-            {visibleRestockItems.map((item) => (
-              <article key={`${item.modelKey}-${item.lastRestockAt ?? "no-restock"}`} className="panel inventory-line-card">
-                <div className="inventory-line-header">
+            {visibleRestockItems.length ? (
+              <section className="panel inventory-stale-table-panel">
+                <div className="inventory-section-heading">
                   <div>
                     <p className="eyebrow">Reposicao</p>
-                    <h3>{item.modelLabel}</h3>
-                    <p className="panel-subcopy">Ultima entrada: {formatDate(item.lastRestockAt)}</p>
+                    <h3>Tabela de reposicao</h3>
                   </div>
-                  <span className={`inventory-status-pill tone-${restockStatusTone(item.status)}`}>
-                    {restockStatusLabel(item.status)}
-                  </span>
+                  <span>{formatNumber(visibleRestockItems.length)} modelos</span>
                 </div>
 
-                <div className="inventory-line-metrics">
-                  <div>
-                    <span>Entrou</span>
-                    <strong>{formatNumber(item.restockUnits)}</strong>
-                  </div>
-                  <div>
-                    <span>Antes / Depois</span>
-                    <strong>
-                      {formatNumber(item.stockBefore)} / {formatNumber(item.stockAfter)}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>Venda 7d antes</span>
-                    <strong>{formatNumber(item.sales7Before)}</strong>
-                  </div>
-                  <div>
-                    <span>Venda 7d depois</span>
-                    <strong>{formatNumber(item.sales7After)}</strong>
-                  </div>
-                  <div>
-                    <span>Estoque agora</span>
-                    <strong>{formatNumber(item.stockUnits)}</strong>
-                  </div>
-                  <div>
-                    <span>Cobertura</span>
-                    <strong>{formatCoverage(item.coverageDays)}</strong>
-                  </div>
+                <div className="inventory-stale-table-wrap">
+                  <table className="data-table inventory-stale-table">
+                    <thead>
+                      <tr>
+                        <th>Modelo</th>
+                        <th>Tipo</th>
+                        <th>Ultima entrada</th>
+                        <th>Entrou</th>
+                        <th>Antes / Depois</th>
+                        <th>Venda 7d antes</th>
+                        <th>Venda 7d depois</th>
+                        <th>Em estoque</th>
+                        <th>Cobertura</th>
+                        <th>Recomendacao</th>
+                        <th>Status</th>
+                        <th>Abrir</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleRestockItems.map((item) => (
+                        <tr key={`${item.modelKey}-${item.lastRestockAt ?? "no-restock"}`}>
+                          <td>
+                            <div className="inventory-stale-model-cell">
+                              <strong>{item.modelLabel}</strong>
+                              <span>
+                                {item.brand} Â· {item.family}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`inventory-status-pill tone-${productKindTone(item.productKind)}`}>
+                              {productKindLabel(item.productKind)}
+                            </span>
+                          </td>
+                          <td>{formatDate(item.lastRestockAt)}</td>
+                          <td>
+                            <strong>{formatNumber(item.restockUnits)}</strong>
+                          </td>
+                          <td>
+                            <strong>
+                              {formatNumber(item.stockBefore)} / {formatNumber(item.stockAfter)}
+                            </strong>
+                          </td>
+                          <td>{formatNumber(item.sales7Before)}</td>
+                          <td>{formatNumber(item.sales7After)}</td>
+                          <td>
+                            <div className="inventory-stale-value-cell">
+                              <strong>{formatNumber(item.stockUnits)}</strong>
+                              <span className="inventory-table-secondary-text">{formatNumber(item.activeSkuCount)} SKUs ativos</span>
+                            </div>
+                          </td>
+                          <td>{formatCoverage(item.coverageDays)}</td>
+                          <td>
+                            <span className={`inventory-status-pill tone-${buyRecommendationTone(item.buyRecommendation)}`}>
+                              {buyRecommendationLabel(item.buyRecommendation)}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`inventory-status-pill tone-${restockStatusTone(item.status)}`}>
+                              {restockStatusLabel(item.status)}
+                            </span>
+                          </td>
+                          <td>
+                            <button type="button" className="primary-button small-button" onClick={() => openModel(item.modelKey)}>
+                              Abrir analise
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-
-                <div className="inventory-line-footer">
-                  <div className="inventory-note-pills">
-                    <span className={`inventory-note-pill tone-${buyRecommendationTone(item.buyRecommendation)}`}>
-                      {buyRecommendationLabel(item.buyRecommendation)}
-                    </span>
-                  </div>
-
-                  <button type="button" className="primary-button small-button" onClick={() => openModel(item.modelKey)}>
-                    Abrir analise
-                  </button>
-                </div>
-              </article>
-            ))}
-
-            {!visibleRestockItems.length ? <div className="empty-state">Nenhum modelo entrou nesse periodo agora.</div> : null}
+              </section>
+            ) : (
+              <div className="empty-state">Nenhum modelo entrou nesse periodo agora.</div>
+            )}
           </section>
         </>
       ) : null}
