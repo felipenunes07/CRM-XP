@@ -97,7 +97,7 @@ export function getDominantVote(idea) {
     }
     return top[0];
 }
-export function getIdeaLaneId(idea, referenceTime) {
+export function getIdeaAutoLaneId(idea, referenceTime) {
     if (isIdeaInInboxWindow(idea, referenceTime)) {
         return "INBOX";
     }
@@ -109,6 +109,15 @@ export function getIdeaLaneId(idea, referenceTime) {
         return "STOP";
     }
     return "REFINE";
+}
+export function hasIdeaLaneOverride(idea) {
+    return Boolean(idea.laneOverride);
+}
+export function getIdeaLaneId(idea, referenceTime) {
+    if (idea.laneOverride) {
+        return idea.laneOverride;
+    }
+    return getIdeaAutoLaneId(idea, referenceTime);
 }
 export function buildIdeaBoardLanes(ideas, referenceTime) {
     const byLane = new Map(laneBlueprints.map((lane) => [lane.id, []]));
@@ -151,6 +160,11 @@ export function buildIdeaVotePayload(draft) {
     return {
         option: draft.option,
         comment: draft.comment.trim() || undefined,
+    };
+}
+export function buildIdeaMovePayload(draft) {
+    return {
+        laneId: draft.laneId,
     };
 }
 export function getIdeaVoteDraft(detail) {

@@ -5,6 +5,7 @@ import {
   ClipboardList,
   LayoutDashboard,
   Lightbulb,
+  LogOut,
   MessageSquareText,
   RadioTower,
   SearchCheck,
@@ -19,25 +20,25 @@ import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 
 export const appShellLinks = [
-  { to: "/", icon: LayoutDashboard, labelPt: "Dashboard", labelZh: "仪表盘" },
-  { to: "/metas", icon: Trophy, labelPt: "Metas", labelZh: "目标" },
-  { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes", labelZh: "销售团队" },
-  { to: "/clientes", icon: Users, labelPt: "Clientes", labelZh: "客户" },
-  { to: "/estoque", icon: Boxes, labelPt: "Estoque", labelZh: "库存" },
-  { to: "/embaixadores", icon: Star, labelPt: "Embaixadores", labelZh: "品牌大使" },
-  { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos", labelZh: "分群" },
-  { to: "/agenda", icon: ClipboardList, labelPt: "Agenda", labelZh: "日程" },
-  { to: "/clientes-novos", icon: UserPlus, labelPt: "Clientes novos", labelZh: "新客户" },
-  { to: "/reativacao", icon: Trophy, labelPt: "Reativacao", labelZh: "唤醒" },
-  { to: "/ideias-votacao", icon: Lightbulb, labelPt: "Ideias/Votacao", labelZh: "想法/投票" },
-  { to: "/mensagens", icon: MessageSquareText, labelPt: "Mensagens", labelZh: "消息模板" },
-  { to: "/disparador", icon: RadioTower, labelPt: "Disparador", labelZh: "批量发送" },
-  { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao", labelZh: "获客开发" },
-  { to: "/rotulos", icon: Tags, labelPt: "Rotulos", labelZh: "标签" },
+  { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/metas", icon: Trophy, labelPt: "Metas" },
+  { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
+  { to: "/clientes", icon: Users, labelPt: "Clientes" },
+  { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
+  { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
+  { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
+  { to: "/agenda", icon: ClipboardList, labelPt: "Agenda" },
+  { to: "/clientes-novos", icon: UserPlus, labelPt: "Clientes novos" },
+  { to: "/reativacao", icon: Trophy, labelPt: "Reativacao" },
+  { to: "/ideias-votacao", icon: Lightbulb, labelPt: "Ideias/Votacao" },
+  { to: "/mensagens", icon: MessageSquareText, labelPt: "Mensagens" },
+  { to: "/disparador", icon: RadioTower, labelPt: "Disparador" },
+  { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
+  { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
 ];
 
 export function AppShell() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { language, setLanguage, tx } = useUiLanguage();
   const userInitials = user?.name
     ?.split(" ")
@@ -58,14 +59,18 @@ export function AppShell() {
           </div>
 
           <div className="sidebar-language-card">
-            <span className="sidebar-language-label">{tx("Idioma", "语言")}</span>
-            <div className="language-switch" role="radiogroup" aria-label={tx("Selecionar idioma da interface", "选择界面语言")}>
+            <span className="sidebar-language-label">{tx("Idioma", "Idioma")}</span>
+            <div
+              className="language-switch"
+              role="radiogroup"
+              aria-label={tx("Selecionar idioma da interface", "Selecionar idioma da interface")}
+            >
               <button
                 type="button"
                 className={`language-switch-button ${language === "pt-BR" ? "active" : ""}`}
                 onClick={() => setLanguage("pt-BR")}
                 aria-pressed={language === "pt-BR"}
-                aria-label={tx("Exibir em português do Brasil", "切换为巴西葡萄牙语")}
+                aria-label={tx("Exibir em portugues do Brasil", "Exibir em portugues do Brasil")}
               >
                 PT
               </button>
@@ -74,7 +79,7 @@ export function AppShell() {
                 className={`language-switch-button ${language === "zh-CN" ? "active" : ""}`}
                 onClick={() => setLanguage("zh-CN")}
                 aria-pressed={language === "zh-CN"}
-                aria-label={tx("Exibir em chinês mandarim", "切换为中文")}
+                aria-label={tx("Exibir em chines mandarim", "Exibir em chines mandarim")}
               >
                 中文
               </button>
@@ -82,29 +87,39 @@ export function AppShell() {
           </div>
 
           <nav className="nav">
-            {appShellLinks.map(({ to, icon: Icon, labelPt, labelZh }) => (
+            {appShellLinks.map(({ to, icon: Icon, labelPt }) => (
               <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
                 <Icon size={18} />
-                <span>{language === "zh-CN" ? labelZh : labelPt}</span>
+                <span>{tx(labelPt, labelPt)}</span>
               </NavLink>
             ))}
           </nav>
         </div>
 
         <div className="sidebar-footer">
-          <div className="sidebar-user-card">
-            <div className="sidebar-user-avatar">{userInitials || "XP"}</div>
-            <div className="sidebar-user-copy">
-              <p className="eyebrow">{tx("Sessao interna", "内部会话")}</p>
-              <strong>{user?.name || tx("Usuario interno", "内部用户")}</strong>
-              <span className="sidebar-user-role">{user?.role || tx("Sem perfil", "未设置角色")}</span>
+          <div className="sidebar-session-card">
+            <span className="sidebar-user-avatar">{userInitials || "XP"}</span>
+            <div className="sidebar-user-summary">
+              <strong className="sidebar-user-name">{user?.name || tx("Usuario interno", "Usuario interno")}</strong>
+              <span className="sidebar-user-email">{user?.email || tx("Sem email", "Sem email")}</span>
             </div>
+            <button
+              type="button"
+              className="sidebar-logout-link"
+              onClick={logout}
+              aria-label={tx("Encerrar sessao", "Encerrar sessao")}
+              title={tx("Sair", "Sair")}
+            >
+              <LogOut size={16} />
+            </button>
           </div>
         </div>
       </aside>
 
       <main className="main-content">
-        <Outlet />
+        <div className="main-scroll-content">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
