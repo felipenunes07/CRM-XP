@@ -58,6 +58,7 @@ const ideas = [
         currentUserVote: null,
     },
 ];
+const referenceTime = new Date("2026-04-22T12:00:00.000Z");
 describe("IdeaBoard frontend", () => {
     it("renders the sidebar link and the ideas route outlet", () => {
         const markup = renderToStaticMarkup(_jsx(MemoryRouter, { initialEntries: ["/ideias-votacao"], children: _jsx(Routes, { children: _jsx(Route, { element: _jsx(AppShell, {}), children: _jsx(Route, { path: "/ideias-votacao", element: _jsx("div", { children: "Conteudo da aba" }) }) }) }) }));
@@ -65,7 +66,7 @@ describe("IdeaBoard frontend", () => {
         expect(markup).toContain("Conteudo da aba");
     });
     it("shows the canvas view, aggregate results and whatsapp notification button without exposing the current vote", () => {
-        const markup = renderToStaticMarkup(_jsx(IdeaBoardPageView, { ideas: ideas, lanes: buildIdeaBoardLanes(ideas), timeline: buildIdeaTimeline(ideas, 4), activeLaneId: "ALL", selectedIdea: {
+        const markup = renderToStaticMarkup(_jsx(IdeaBoardPageView, { ideas: ideas, lanes: buildIdeaBoardLanes(ideas, referenceTime), timeline: buildIdeaTimeline(ideas, 4), activeLaneId: "ALL", selectedIdea: {
                 id: "idea-1",
                 title: "Melhorar campanhas",
                 description: "Organizar melhor as aprovacoes.",
@@ -107,7 +108,8 @@ describe("IdeaBoard frontend", () => {
                 option: null,
                 comment: "",
             }, createError: null, voteError: null, deleteError: null, notifyError: null, toastMessage: "Voto salvo anonimamente.", isIdeasLoading: false, isIdeaLoading: false, isCreating: false, isVoting: false, isDeleting: false, isNotifying: false, onActiveLaneChange: () => undefined, onCreateDraftChange: () => undefined, onVoteDraftChange: () => undefined, onOpenCreateModal: () => undefined, onCloseCreateModal: () => undefined, onCreateIdea: () => undefined, onDeleteIdea: () => undefined, onNotifyWhatsapp: () => undefined, onSubmitVote: () => undefined, onSelectIdea: () => undefined, onCloseIdea: () => undefined, onDismissToast: () => undefined }));
-        expect(markup).toContain("Arraste os cards e clique para votar");
+        expect(markup).toContain("Board em colunas no modelo Trello");
+        expect(markup).toContain("Novas na mesa por 24h");
         expect(markup).toContain("Avisar time no WhatsApp");
         expect(markup).toContain("Voto salvo anonimamente.");
         expect(markup).toContain("Comentarios anonimos");
@@ -156,28 +158,40 @@ describe("IdeaBoard frontend", () => {
     });
     it("classifies ideas into mural lanes", () => {
         expect(getIdeaLaneId({
+            createdAt: "2026-04-22T04:00:00.000Z",
             voteSummary: {
                 likeCount: 0,
                 maybeCount: 0,
                 noCount: 0,
                 totalVotes: 0,
             },
-        })).toBe("INBOX");
+        }, referenceTime)).toBe("INBOX");
         expect(getIdeaLaneId({
+            createdAt: "2026-04-20T04:00:00.000Z",
             voteSummary: {
                 likeCount: 3,
                 maybeCount: 1,
                 noCount: 0,
                 totalVotes: 4,
             },
-        })).toBe("SUPPORT");
+        }, referenceTime)).toBe("SUPPORT");
         expect(getIdeaLaneId({
+            createdAt: "2026-04-20T04:00:00.000Z",
+            voteSummary: {
+                likeCount: 1,
+                maybeCount: 0,
+                noCount: 4,
+                totalVotes: 5,
+            },
+        }, referenceTime)).toBe("STOP");
+        expect(getIdeaLaneId({
+            createdAt: "2026-04-20T04:00:00.000Z",
             voteSummary: {
                 likeCount: 1,
                 maybeCount: 2,
                 noCount: 2,
                 totalVotes: 5,
             },
-        })).toBe("REFINE");
+        }, referenceTime)).toBe("REFINE");
     });
 });

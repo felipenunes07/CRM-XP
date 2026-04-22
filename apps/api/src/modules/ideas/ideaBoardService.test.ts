@@ -10,7 +10,7 @@ vi.mock("../../db/client.js", () => ({
   },
 }));
 
-import { createIdea, deleteIdea, listIdeaFeedbacks, submitIdeaVote } from "./ideaBoardService.js";
+import { createIdea, deleteIdea, listIdeaFeedbacks, moveIdeaToLane, submitIdeaVote } from "./ideaBoardService.js";
 
 describe("ideaBoardService", () => {
   afterEach(() => {
@@ -27,6 +27,7 @@ describe("ideaBoardService", () => {
           status: "OPEN",
           is_anonymous: true,
           author_display_name: null,
+          lane_override: null,
           created_at: "2026-04-17T12:00:00.000Z",
           updated_at: "2026-04-17T12:00:00.000Z",
         },
@@ -70,6 +71,7 @@ describe("ideaBoardService", () => {
           status: "OPEN",
           is_anonymous: false,
           author_display_name: "Time Comercial",
+          lane_override: null,
           created_at: "2026-04-17T12:00:00.000Z",
           updated_at: "2026-04-17T12:00:00.000Z",
         },
@@ -109,6 +111,7 @@ describe("ideaBoardService", () => {
             author_display_name: null,
             created_by_user_id: "00000000-0000-0000-0000-000000000001",
             can_delete: false,
+            lane_override: null,
             created_at: "2026-04-17T12:00:00.000Z",
             updated_at: "2026-04-17T12:30:00.000Z",
             like_count: 1,
@@ -135,15 +138,80 @@ describe("ideaBoardService", () => {
         ],
       });
 
-    const detail = await submitIdeaVote("idea-1", "00000000-0000-0000-0000-000000000002", {
-      option: "LIKE",
-      comment: "Gostei",
-    });
+    const detail = await submitIdeaVote(
+      "idea-1",
+      {
+        id: "00000000-0000-0000-0000-000000000002",
+        email: "manager@olist-crm.com.br",
+        role: "MANAGER",
+        name: "Manager",
+      },
+      {
+        option: "LIKE",
+        comment: "Gostei",
+      },
+    );
 
     expect(poolQueryMock.mock.calls[1]?.[0]).toContain("ON CONFLICT (idea_id, voted_by_user_id)");
     expect(detail.currentUserVote?.option).toBe("LIKE");
     expect(detail.canDelete).toBe(false);
     expect(detail.feedbacks[0]?.comment).toBe("Gostei");
+  });
+
+  it("persists a manual lane move and returns refreshed detail", async () => {
+    poolQueryMock
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "idea-1",
+            created_by_user_id: "00000000-0000-0000-0000-000000000001",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "idea-1",
+            title: "Nova ideia",
+            description: "Descricao da ideia",
+            status: "OPEN",
+            is_anonymous: true,
+            author_display_name: null,
+            created_by_user_id: "00000000-0000-0000-0000-000000000001",
+            can_delete: true,
+            lane_override: "SUPPORT",
+            created_at: "2026-04-17T12:00:00.000Z",
+            updated_at: "2026-04-17T12:35:00.000Z",
+            like_count: 1,
+            maybe_count: 0,
+            no_count: 0,
+            feedback_count: 0,
+            current_vote_option: null,
+            current_vote_comment: null,
+            current_vote_created_at: null,
+            current_vote_updated_at: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const detail = await moveIdeaToLane(
+      "idea-1",
+      {
+        id: "00000000-0000-0000-0000-000000000001",
+        email: "admin@olist-crm.com.br",
+        role: "ADMIN",
+        name: "Administrador Local",
+      },
+      {
+        laneId: "SUPPORT",
+      },
+    );
+
+    expect(poolQueryMock.mock.calls[1]?.[0]).toContain("UPDATE idea_board_items");
+    expect(poolQueryMock.mock.calls[1]?.[1]).toEqual(["idea-1", "SUPPORT"]);
+    expect(detail.laneOverride).toBe("SUPPORT");
   });
 
   it("returns public feedback rows without internal user data", async () => {

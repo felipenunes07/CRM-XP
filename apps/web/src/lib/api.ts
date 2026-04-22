@@ -304,6 +304,12 @@ export const api = {
       method: "DELETE",
     }, token);
   },
+  moveIdeaLane(token: string, id: string, input: { laneId: "INBOX" | "SUPPORT" | "REFINE" | "STOP" | null }) {
+    return request<IdeaBoardDetail>(`/api/ideas/${id}/lane`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }, token);
+  },
   notifyIdeaWhatsapp(token: string, id: string) {
     return request<void>(`/api/ideas/${id}/notify-whatsapp`, {
       method: "POST",

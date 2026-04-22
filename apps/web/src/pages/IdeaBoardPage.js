@@ -93,10 +93,8 @@ export function IdeaBoardPage() {
             setSelectedIdeaId(null);
             setToastMessage("Ideia removida do mural.");
             queryClient.setQueryData(["idea-board"], (current) => current?.filter((idea) => idea.id !== ideaId) ?? []);
-            await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["idea-board"] }),
-                queryClient.invalidateQueries({ queryKey: ["idea-board", ideaId] }),
-            ]);
+            queryClient.removeQueries({ queryKey: ["idea-board", ideaId] });
+            await queryClient.invalidateQueries({ queryKey: ["idea-board"] });
         },
     });
     const notifyMutation = useMutation({

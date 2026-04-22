@@ -56,6 +56,7 @@ import {
   getIdeaDetail,
   listIdeaFeedbacks,
   listIdeas,
+  moveIdeaToLane,
   submitIdeaVote,
 } from "./modules/ideas/ideaBoardService.js";
 import {
@@ -184,6 +185,10 @@ const createIdeaSchema = z
 const submitIdeaVoteSchema = z.object({
   option: z.enum(["LIKE", "MAYBE", "NO"]),
   comment: z.string().optional(),
+});
+
+const moveIdeaLaneSchema = z.object({
+  laneId: z.enum(["INBOX", "SUPPORT", "REFINE", "STOP"]).nullable(),
 });
 
 const manualImportSchema = z.object({
@@ -376,13 +381,35 @@ async function notifyIdeaBoardNewIdea(input: { title: string; description: strin
   }
 }
 
+function isAllowedCorsOrigin(origin?: string | null) {
+  if (!origin) {
+    return true;
+  }
+
+  if (webOrigins.includes(origin) || origin.endsWith(".trycloudflare.com")) {
+    return true;
+  }
+
+  try {
+    const hostname = new URL(origin).hostname;
+    return (
+      hostname.endsWith(".ngrok-free.dev") ||
+      hostname.endsWith(".ngrok-free.app") ||
+      hostname.endsWith(".ngrok.app") ||
+      hostname.endsWith(".ngrok.io")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function createApp() {
   const app = express();
 
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || webOrigins.includes(origin) || origin.endsWith(".trycloudflare.com")) {
+        if (isAllowedCorsOrigin(origin)) {
           callback(null, true);
           return;
         }
@@ -941,6 +968,14 @@ export function createApp() {
       response.json(
         await submitIdeaVote(String(request.params.id), request.user!, submitIdeaVoteSchema.parse(request.body)),
       );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/ideas/:id/lane", async (request, response, next) => {
+    try {
+      response.json(await moveIdeaToLane(String(request.params.id), request.user!, moveIdeaLaneSchema.parse(request.body)));
     } catch (error) {
       next(error);
     }

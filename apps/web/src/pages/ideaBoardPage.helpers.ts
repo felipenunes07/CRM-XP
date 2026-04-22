@@ -1,4 +1,4 @@
-import type { IdeaBoardDetail, IdeaBoardItem, IdeaVoteOption } from "@olist-crm/shared";
+import type { IdeaBoardColumnId, IdeaBoardDetail, IdeaBoardItem, IdeaVoteOption } from "@olist-crm/shared";
 
 export interface IdeaCreateDraft {
   title: string;
@@ -19,7 +19,7 @@ export interface IdeaTimelinePoint {
   totalCount: number;
 }
 
-export type IdeaBoardLaneId = "ALL" | "INBOX" | "SUPPORT" | "REFINE" | "STOP";
+export type IdeaBoardLaneId = "ALL" | IdeaBoardColumnId;
 
 export interface IdeaBoardLane {
   id: IdeaBoardLaneId;
@@ -41,6 +41,10 @@ export const emptyIdeaVoteDraft: IdeaVoteDraft = {
   comment: "",
 };
 
+export interface IdeaMoveDraft {
+  laneId: IdeaBoardColumnId;
+}
+
 export const ideaVoteOptions: Array<{ option: IdeaVoteOption; label: string; description: string }> = [
   {
     option: "LIKE",
@@ -59,6 +63,8 @@ export const ideaVoteOptions: Array<{ option: IdeaVoteOption; label: string; des
   },
 ];
 
+const NEW_IDEA_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 const laneBlueprints: Array<Omit<IdeaBoardLane, "items">> = [
   {
     id: "ALL",
@@ -69,7 +75,7 @@ const laneBlueprints: Array<Omit<IdeaBoardLane, "items">> = [
   {
     id: "INBOX",
     title: "Novas na mesa",
-    description: "Entraram agora e ainda precisam de leitura do time.",
+    description: "Toda ideia nova fica aqui por 24h antes de ir para a coluna com mais votos.",
     accentClassName: "neutral",
   },
   {
@@ -100,6 +106,35 @@ function getVoteCounts(idea: Pick<IdeaBoardItem, "voteSummary">) {
   } as const;
 }
 
+function resolveReferenceTime(referenceTime?: Date) {
+  if (referenceTime instanceof Date && !Number.isNaN(referenceTime.getTime())) {
+    return referenceTime;
+  }
+
+  return new Date();
+}
+
+export function isIdeaInInboxWindow(
+  idea: Pick<IdeaBoardItem, "createdAt">,
+  referenceTime?: Date,
+) {
+  const createdAt = new Date(idea.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    return false;
+  }
+
+  return resolveReferenceTime(referenceTime).getTime() - createdAt.getTime() < NEW_IDEA_WINDOW_MS;
+}
+
+export function getIdeaInboxDeadline(idea: Pick<IdeaBoardItem, "createdAt">) {
+  const createdAt = new Date(idea.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    return null;
+  }
+
+  return new Date(createdAt.getTime() + NEW_IDEA_WINDOW_MS).toISOString();
+}
+
 export function getDominantVote(idea: Pick<IdeaBoardItem, "voteSummary">): IdeaVoteOption | "TIE" | "NONE" {
   const counts = getVoteCounts(idea);
   const ordered = Object.entries(counts).sort((left, right) => right[1] - left[1]) as Array<[IdeaVoteOption, number]>;
@@ -116,8 +151,11 @@ export function getDominantVote(idea: Pick<IdeaBoardItem, "voteSummary">): IdeaV
   return top[0];
 }
 
-export function getIdeaLaneId(idea: Pick<IdeaBoardItem, "voteSummary">): IdeaBoardLaneId {
-  if (idea.voteSummary.totalVotes === 0) {
+export function getIdeaAutoLaneId(
+  idea: Pick<IdeaBoardItem, "voteSummary" | "createdAt">,
+  referenceTime?: Date,
+): IdeaBoardColumnId {
+  if (isIdeaInInboxWindow(idea, referenceTime)) {
     return "INBOX";
   }
 
@@ -133,14 +171,29 @@ export function getIdeaLaneId(idea: Pick<IdeaBoardItem, "voteSummary">): IdeaBoa
   return "REFINE";
 }
 
-export function buildIdeaBoardLanes(ideas: IdeaBoardItem[]): IdeaBoardLane[] {
+export function hasIdeaLaneOverride(idea: Pick<IdeaBoardItem, "laneOverride">) {
+  return Boolean(idea.laneOverride);
+}
+
+export function getIdeaLaneId(
+  idea: Pick<IdeaBoardItem, "voteSummary" | "createdAt" | "laneOverride">,
+  referenceTime?: Date,
+): IdeaBoardLaneId {
+  if (idea.laneOverride) {
+    return idea.laneOverride;
+  }
+
+  return getIdeaAutoLaneId(idea, referenceTime);
+}
+
+export function buildIdeaBoardLanes(ideas: IdeaBoardItem[], referenceTime?: Date): IdeaBoardLane[] {
   const byLane = new Map<IdeaBoardLaneId, IdeaBoardItem[]>(
     laneBlueprints.map((lane) => [lane.id, []]),
   );
 
   ideas.forEach((idea) => {
     byLane.get("ALL")?.push(idea);
-    byLane.get(getIdeaLaneId(idea))?.push(idea);
+    byLane.get(getIdeaLaneId(idea, referenceTime))?.push(idea);
   });
 
   return laneBlueprints.map((lane) => ({
@@ -186,6 +239,12 @@ export function buildIdeaVotePayload(draft: IdeaVoteDraft) {
   return {
     option: draft.option,
     comment: draft.comment.trim() || undefined,
+  };
+}
+
+export function buildIdeaMovePayload(draft: IdeaMoveDraft) {
+  return {
+    laneId: draft.laneId,
   };
 }
 

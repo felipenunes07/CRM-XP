@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { IdeaBoardItem } from "@olist-crm/shared";
+import type { IdeaBoardColumnId, IdeaBoardItem } from "@olist-crm/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
@@ -9,6 +9,7 @@ import {
   buildIdeaBoardLanes,
   buildIdeaCreatePayload,
   buildIdeaTimeline,
+  getIdeaAutoLaneId,
   buildIdeaVotePayload,
   emptyIdeaCreateDraft,
   emptyIdeaVoteDraft,
@@ -29,6 +30,7 @@ export function IdeaBoardPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const [notifyError, setNotifyError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -54,6 +56,7 @@ export function IdeaBoardPage() {
     setVoteDraft(emptyIdeaVoteDraft);
     setVoteError(null);
     setDeleteError(null);
+    setMoveError(null);
     setNotifyError(null);
   }, [selectedIdeaId]);
 
@@ -118,11 +121,27 @@ export function IdeaBoardPage() {
       queryClient.setQueryData<IdeaBoardItem[]>(["idea-board"], (current) =>
         current?.filter((idea) => idea.id !== ideaId) ?? [],
       );
+      queryClient.removeQueries({ queryKey: ["idea-board", ideaId] });
+      await queryClient.invalidateQueries({ queryKey: ["idea-board"] });
+    },
+  });
 
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["idea-board"] }),
-        queryClient.invalidateQueries({ queryKey: ["idea-board", ideaId] }),
-      ]);
+  const moveMutation = useMutation({
+    mutationFn: ({ ideaId, laneId }: { ideaId: string; laneId: IdeaBoardColumnId | null }) =>
+      api.moveIdeaLane(token!, ideaId, { laneId }),
+    onSuccess: async (detail) => {
+      setMoveError(null);
+      queryClient.setQueryData(["idea-board", detail.id], detail);
+      queryClient.setQueryData<IdeaBoardItem[]>(["idea-board"], (current) => {
+        if (!current?.length) {
+          return [detail];
+        }
+
+        const nextIdeas = current.map((idea) => (idea.id === detail.id ? detail : idea));
+        return nextIdeas.some((idea) => idea.id === detail.id) ? nextIdeas : [detail, ...current];
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["idea-board"] });
     },
   });
 
@@ -211,6 +230,17 @@ export function IdeaBoardPage() {
     notifyMutation.mutate(selectedIdeaQuery.data.id);
   }
 
+  function handleMoveIdea(ideaId: string, laneId: IdeaBoardColumnId) {
+    const idea = ideasQuery.data?.find((item) => item.id === ideaId);
+    const autoLaneId = idea ? getIdeaAutoLaneId(idea) : null;
+
+    setMoveError(null);
+    moveMutation.mutate({
+      ideaId,
+      laneId: autoLaneId === laneId ? null : laneId,
+    });
+  }
+
   return (
     <IdeaBoardPageView
       ideas={ideasQuery.data ?? []}
@@ -224,6 +254,7 @@ export function IdeaBoardPage() {
       createError={createError ?? (createMutation.isError ? createMutation.error.message : null)}
       voteError={voteError ?? (voteMutation.isError ? voteMutation.error.message : null)}
       deleteError={deleteError ?? (deleteMutation.isError ? deleteMutation.error.message : null)}
+      moveError={moveError ?? (moveMutation.isError ? moveMutation.error.message : null)}
       notifyError={notifyError ?? (notifyMutation.isError ? notifyMutation.error.message : null)}
       toastMessage={toastMessage}
       isIdeasLoading={ideasQuery.isLoading}
@@ -231,6 +262,7 @@ export function IdeaBoardPage() {
       isCreating={createMutation.isPending}
       isVoting={voteMutation.isPending}
       isDeleting={deleteMutation.isPending}
+      isMoving={moveMutation.isPending}
       isNotifying={notifyMutation.isPending}
       onActiveLaneChange={setActiveLaneId}
       onCreateDraftChange={setCreateDraft}
@@ -239,6 +271,7 @@ export function IdeaBoardPage() {
       onCloseCreateModal={handleCloseCreateModal}
       onCreateIdea={handleCreateIdea}
       onDeleteIdea={handleDeleteIdea}
+      onMoveIdea={handleMoveIdea}
       onNotifyWhatsapp={handleNotifyWhatsapp}
       onSubmitVote={handleSubmitVote}
       onSelectIdea={handleSelectIdea}

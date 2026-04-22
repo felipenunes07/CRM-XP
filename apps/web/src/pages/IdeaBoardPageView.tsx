@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
-import type { IdeaBoardDetail, IdeaBoardItem, IdeaVoteOption } from "@olist-crm/shared";
-import { BellRing, MessageSquareMore, Move, Plus, Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
+import { useMemo, useState, type DragEvent as ReactDragEvent } from "react";
+import type { IdeaBoardColumnId, IdeaBoardDetail, IdeaBoardItem, IdeaVoteOption } from "@olist-crm/shared";
+import { BellRing, Plus, Trash2, X } from "lucide-react";
 import {
+  hasIdeaLaneOverride,
   type IdeaBoardLane,
   type IdeaBoardLaneId,
   type IdeaCreateDraft,
@@ -9,8 +10,10 @@ import {
   type IdeaVoteDraft,
   formatIdeaStatus,
   formatIdeaVoteOption,
+  getIdeaInboxDeadline,
   getIdeaLaneId,
   getIdeaLaneTitle,
+  isIdeaInInboxWindow,
   ideaVoteOptions,
   truncateIdeaCopy,
 } from "./ideaBoardPage.helpers";
@@ -28,6 +31,7 @@ interface IdeaBoardPageViewProps {
   createError: string | null;
   voteError: string | null;
   deleteError: string | null;
+  moveError: string | null;
   notifyError: string | null;
   toastMessage: string | null;
   isIdeasLoading: boolean;
@@ -35,6 +39,7 @@ interface IdeaBoardPageViewProps {
   isCreating: boolean;
   isVoting: boolean;
   isDeleting: boolean;
+  isMoving: boolean;
   isNotifying: boolean;
   onActiveLaneChange: (laneId: IdeaBoardLaneId) => void;
   onCreateDraftChange: (draft: IdeaCreateDraft) => void;
@@ -43,45 +48,13 @@ interface IdeaBoardPageViewProps {
   onCloseCreateModal: () => void;
   onCreateIdea: () => void;
   onDeleteIdea: () => void;
+  onMoveIdea: (ideaId: string, laneId: IdeaBoardColumnId) => void;
   onNotifyWhatsapp: () => void;
   onSubmitVote: () => void;
   onSelectIdea: (ideaId: string) => void;
   onCloseIdea: () => void;
   onDismissToast: () => void;
 }
-
-type CanvasLaneId = Exclude<IdeaBoardLaneId, "ALL">;
-
-interface CanvasPosition {
-  x: number;
-  y: number;
-}
-
-interface CanvasLaneZone {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-const CANVAS_WIDTH = 2200;
-const CANVAS_HEIGHT = 1400;
-const NOTE_WIDTH = 272;
-const NOTE_HEIGHT = 190;
-
-const laneAnchors: Record<CanvasLaneId, CanvasPosition> = {
-  INBOX: { x: 140, y: 180 },
-  SUPPORT: { x: 1180, y: 220 },
-  REFINE: { x: 300, y: 880 },
-  STOP: { x: 1360, y: 920 },
-};
-
-const laneZones: Record<CanvasLaneId, CanvasLaneZone> = {
-  INBOX: { x: 72, y: 118, width: 920, height: 470 },
-  SUPPORT: { x: 1108, y: 158, width: 940, height: 470 },
-  REFINE: { x: 220, y: 818, width: 920, height: 470 },
-  STOP: { x: 1288, y: 858, width: 840, height: 470 },
-};
 
 function voteTone(option: IdeaVoteOption) {
   if (option === "LIKE") return "success";
@@ -93,21 +66,6 @@ function voteCountForOption(idea: IdeaBoardItem | IdeaBoardDetail, option: IdeaV
   if (option === "LIKE") return idea.voteSummary.likeCount;
   if (option === "MAYBE") return idea.voteSummary.maybeCount;
   return idea.voteSummary.noCount;
-}
-
-function seedCardPosition(laneId: CanvasLaneId, index: number): CanvasPosition {
-  const anchor = laneAnchors[laneId];
-  return {
-    x: anchor.x + (index % 3) * 308,
-    y: anchor.y + Math.floor(index / 3) * 228,
-  };
-}
-
-function clampPosition(position: CanvasPosition): CanvasPosition {
-  return {
-    x: Math.max(48, Math.min(position.x, CANVAS_WIDTH - NOTE_WIDTH - 48)),
-    y: Math.max(100, Math.min(position.y, CANVAS_HEIGHT - NOTE_HEIGHT - 48)),
-  };
 }
 
 export function IdeaBoardPageView({
@@ -122,6 +80,7 @@ export function IdeaBoardPageView({
   createError,
   voteError,
   deleteError,
+  moveError,
   notifyError,
   toastMessage,
   isIdeasLoading,
@@ -129,6 +88,7 @@ export function IdeaBoardPageView({
   isCreating,
   isVoting,
   isDeleting,
+  isMoving,
   isNotifying,
   onActiveLaneChange,
   onCreateDraftChange,
@@ -137,19 +97,31 @@ export function IdeaBoardPageView({
   onCloseCreateModal,
   onCreateIdea,
   onDeleteIdea,
+  onMoveIdea,
   onNotifyWhatsapp,
   onSubmitVote,
   onSelectIdea,
   onCloseIdea,
   onDismissToast,
 }: IdeaBoardPageViewProps) {
-  const [zoom, setZoom] = useState(1);
-  const [cardPositions, setCardPositions] = useState<Record<string, CanvasPosition>>({});
-
+  const [draggedIdeaId, setDraggedIdeaId] = useState<string | null>(null);
+  const [dropLaneId, setDropLaneId] = useState<IdeaBoardColumnId | null>(null);
   const canvasLanes = useMemo(
-    () => lanes.filter((lane): lane is IdeaBoardLane & { id: CanvasLaneId } => lane.id !== "ALL"),
+    () => lanes.filter((lane): lane is IdeaBoardLane & { id: Exclude<IdeaBoardLaneId, "ALL"> } => lane.id !== "ALL"),
     [lanes],
   );
+  const boardLanes = useMemo(() => {
+    if (activeLaneId === "ALL") {
+      return canvasLanes;
+    }
+
+    const activeCanvasLane = canvasLanes.find((lane) => lane.id === activeLaneId);
+    if (!activeCanvasLane) {
+      return canvasLanes;
+    }
+
+    return [activeCanvasLane, ...canvasLanes.filter((lane) => lane.id !== activeLaneId)];
+  }, [activeLaneId, canvasLanes]);
 
   const activeLane = useMemo(
     () => lanes.find((lane) => lane.id === activeLaneId) ?? lanes[0],
@@ -161,85 +133,49 @@ export function IdeaBoardPageView({
 
   const totalVotes = ideas.reduce((total, idea) => total + idea.voteSummary.totalVotes, 0);
   const totalComments = ideas.reduce((total, idea) => total + idea.feedbackCount, 0);
-  const visibleIdeas = activeLaneId === "ALL" ? ideas : activeLane?.items ?? [];
   const maxTimelineValue = Math.max(...timeline.map((point) => point.totalCount), 1);
+  const freshIdeasCount = canvasLanes.find((lane) => lane.id === "INBOX")?.items.length ?? 0;
 
-  useEffect(() => {
-    setCardPositions((previous) => {
-      const next = { ...previous };
-      const knownIds = new Set<string>();
-
-      canvasLanes.forEach((lane) => {
-        lane.items.forEach((idea, index) => {
-          knownIds.add(idea.id);
-          if (!next[idea.id]) {
-            next[idea.id] = seedCardPosition(lane.id, index);
-          }
-        });
-      });
-
-      Object.keys(next).forEach((ideaId) => {
-        if (!knownIds.has(ideaId)) {
-          delete next[ideaId];
-        }
-      });
-
-      return next;
-    });
-  }, [canvasLanes]);
-
-  function handleZoom(direction: "in" | "out") {
-    setZoom((current) => {
-      if (direction === "in") {
-        return Math.min(1.35, Number((current + 0.1).toFixed(2)));
-      }
-
-      return Math.max(0.8, Number((current - 0.1).toFixed(2)));
-    });
+  function handleCardDragStart(event: ReactDragEvent<HTMLButtonElement>, ideaId: string) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", ideaId);
+    setDraggedIdeaId(ideaId);
   }
 
-  function handleCardPointerDown(event: ReactPointerEvent<HTMLButtonElement>, ideaId: string) {
-    const target = event.currentTarget;
-    const pointerId = event.pointerId;
-    const startPointer = { x: event.clientX, y: event.clientY };
-    const startPosition = cardPositions[ideaId] ?? { x: 120, y: 120 };
-    let moved = false;
+  function handleCardDragEnd() {
+    setDraggedIdeaId(null);
+    setDropLaneId(null);
+  }
 
-    target.setPointerCapture(pointerId);
+  function handleColumnDragOver(event: ReactDragEvent<HTMLElement>, laneId: IdeaBoardColumnId) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dropLaneId !== laneId) {
+      setDropLaneId(laneId);
+    }
+  }
 
-    const handlePointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = (moveEvent.clientX - startPointer.x) / zoom;
-      const deltaY = (moveEvent.clientY - startPointer.y) / zoom;
+  function handleColumnDrop(event: ReactDragEvent<HTMLElement>, laneId: IdeaBoardColumnId) {
+    event.preventDefault();
+    const draggedId = event.dataTransfer.getData("text/plain") || draggedIdeaId;
+    setDropLaneId(null);
+    setDraggedIdeaId(null);
 
-      if (Math.abs(deltaX) > 4 || Math.abs(deltaY) > 4) {
-        moved = true;
-      }
+    if (!draggedId) {
+      return;
+    }
 
-      setCardPositions((previous) => ({
-        ...previous,
-        [ideaId]: clampPosition({
-          x: startPosition.x + deltaX,
-          y: startPosition.y + deltaY,
-        }),
-      }));
-    };
+    const draggedIdea = ideas.find((idea) => idea.id === draggedId);
+    if (!draggedIdea) {
+      return;
+    }
 
-    const releasePointer = () => {
-      target.removeEventListener("pointermove", handlePointerMove);
-      target.removeEventListener("pointerup", releasePointer);
-      target.removeEventListener("pointercancel", releasePointer);
-      if (target.hasPointerCapture(pointerId)) {
-        target.releasePointerCapture(pointerId);
-      }
+    const currentLaneId = getIdeaLaneId(draggedIdea) as IdeaBoardColumnId;
+    if (currentLaneId === laneId) {
+      return;
+    }
 
-      if (!moved) {
-        onSelectIdea(ideaId);
-      }
-    };
-
-    target.addEventListener("pointermove", handlePointerMove);
-    target.addEventListener("pointerup", releasePointer);
-    target.addEventListener("pointercancel", releasePointer);
+    onMoveIdea(draggedId, laneId);
   }
 
   return (
@@ -317,24 +253,17 @@ export function IdeaBoardPageView({
       <section className="panel idea-canvas-stage">
         <div className="idea-canvas-stage-top">
           <div className="idea-canvas-stage-copy">
-            <p className="eyebrow">Canvas</p>
-            <h3>Arraste os cards e clique para votar</h3>
+            <p className="eyebrow">Quadro</p>
+            <h3>Board em colunas no modelo Trello</h3>
+            <p className="panel-subcopy">
+              Toda ideia nova fica 24h em &quot;Novas na mesa&quot; e depois vai automaticamente para a coluna com mais votos.
+            </p>
           </div>
 
           <div className="idea-canvas-stage-actions">
-            <span className="tag subtle">
-              <Move size={14} />
-              arrastar e reposicionar
-            </span>
-            <div className="idea-canvas-zoom">
-              <button type="button" className="ghost-button small" onClick={() => handleZoom("out")}>
-                <ZoomOut size={14} />
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button type="button" className="ghost-button small" onClick={() => handleZoom("in")}>
-                <ZoomIn size={14} />
-              </button>
-            </div>
+            <span className="tag subtle">4 colunas</span>
+            <span className="tag subtle">Novas na mesa por 24h</span>
+            <span className="tag subtle">{formatNumber(freshIdeasCount)} novas agora</span>
           </div>
         </div>
 
@@ -346,82 +275,97 @@ export function IdeaBoardPageView({
 
         {!isIdeasLoading && ideas.length ? (
           <div className="idea-canvas-scroll">
-            <div
-              className="idea-canvas-scale-shell"
-              style={{
-                width: `${CANVAS_WIDTH * zoom}px`,
-                height: `${CANVAS_HEIGHT * zoom}px`,
-              }}
-            >
-              <div
-                className="idea-canvas-surface"
-                style={{
-                  width: `${CANVAS_WIDTH}px`,
-                  height: `${CANVAS_HEIGHT}px`,
-                  transform: `scale(${zoom})`,
-                }}
-              >
-                {canvasLanes.map((lane) => (
+            {moveError ? <div className="inline-error idea-board-error">{moveError}</div> : null}
+            <div className="idea-board-columns">
+              {boardLanes.map((lane) => {
+                const isActiveColumn = activeLaneId === "ALL" || activeLaneId === lane.id;
+                const isDimmed = activeLaneId !== "ALL" && activeLaneId !== lane.id;
+                const isDropTarget = dropLaneId === lane.id;
+
+                return (
                   <section
                     key={lane.id}
-                    className={`idea-canvas-zone ${activeLaneId === lane.id ? "active" : ""}`}
-                    style={{
-                      left: laneZones[lane.id].x,
-                      top: laneZones[lane.id].y,
-                      width: laneZones[lane.id].width,
-                      height: laneZones[lane.id].height,
+                    className={`idea-board-column ${lane.accentClassName} ${isActiveColumn ? "active" : ""} ${isDimmed ? "dimmed" : ""} ${isDropTarget ? "drop-target" : ""}`}
+                    onDragOver={(event) => handleColumnDragOver(event, lane.id)}
+                    onDragEnter={(event) => handleColumnDragOver(event, lane.id)}
+                    onDragLeave={() => {
+                      if (dropLaneId === lane.id) {
+                        setDropLaneId(null);
+                      }
                     }}
+                    onDrop={(event) => handleColumnDrop(event, lane.id)}
                   >
-                    <div className="idea-canvas-zone-label">
-                      <span className="tag">{lane.title}</span>
-                      <strong>{formatNumber(lane.items.length)} cards</strong>
+                    <div className="idea-board-column-head">
+                      <div className="idea-board-column-copy">
+                        <div className="idea-canvas-zone-label">
+                          <span className="tag">{lane.title}</span>
+                          <strong>{formatNumber(lane.items.length)} cards</strong>
+                        </div>
+                        <small>{lane.description}</small>
+                      </div>
                     </div>
-                    <small>{lane.description}</small>
+
+                    <div className="idea-board-column-list">
+                      {lane.items.length ? (
+                        lane.items.map((idea) => {
+                          const isFreshIdea = isIdeaInInboxWindow(idea);
+                          const inboxDeadline = isFreshIdea ? getIdeaInboxDeadline(idea) : null;
+                          const isDragging = draggedIdeaId === idea.id;
+                          const isManuallyPlaced = hasIdeaLaneOverride(idea);
+
+                          return (
+                            <button
+                              key={idea.id}
+                              type="button"
+                              className={`idea-board-card ${isDragging ? "dragging" : ""}`}
+                              onClick={() => onSelectIdea(idea.id)}
+                              draggable={!isMoving}
+                              onDragStart={(event) => handleCardDragStart(event, idea.id)}
+                              onDragEnd={handleCardDragEnd}
+                            >
+                              <div className="idea-canvas-note-top">
+                                <span className="tag">{idea.authorDisplayName}</span>
+                                <span className="tag subtle">{isFreshIdea ? "Nova ideia" : lane.title}</span>
+                              </div>
+
+                              <div className="idea-canvas-note-copy">
+                                <strong>{idea.title}</strong>
+                                <p>{truncateIdeaCopy(idea.description, 135)}</p>
+                              </div>
+
+                              {inboxDeadline ? (
+                                <div className="idea-board-card-hint">
+                                  Fica em novas ideias ate {formatDateTime(inboxDeadline)}
+                                </div>
+                              ) : null}
+
+                              {isManuallyPlaced ? (
+                                <div className="idea-board-card-hint subtle">Coluna ajustada manualmente por arraste.</div>
+                              ) : null}
+
+                              <div className="idea-canvas-note-votes">
+                                {ideaVoteOptions.map((item) => (
+                                  <div key={item.option} className="idea-canvas-vote-pill">
+                                    <span className={`idea-canvas-vote-dot ${voteTone(item.option)}`} />
+                                    <small>{formatNumber(voteCountForOption(idea, item.option))}</small>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="idea-canvas-note-footer">
+                                <small>{formatNumber(idea.feedbackCount)} comentarios</small>
+                                <small>{formatDateTime(idea.updatedAt)}</small>
+                              </div>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="idea-board-column-empty">Nenhum card nesta coluna por enquanto.</div>
+                      )}
+                    </div>
                   </section>
-                ))}
-
-                {visibleIdeas.map((idea) => {
-                  const laneId = getIdeaLaneId(idea) as CanvasLaneId;
-                  const position = cardPositions[idea.id] ?? seedCardPosition(laneId, 0);
-
-                  return (
-                    <button
-                      key={idea.id}
-                      type="button"
-                      className="idea-canvas-note"
-                      style={{
-                        left: `${position.x}px`,
-                        top: `${position.y}px`,
-                      }}
-                      onPointerDown={(event) => handleCardPointerDown(event, idea.id)}
-                    >
-                      <div className="idea-canvas-note-top">
-                        <span className="tag">{idea.authorDisplayName}</span>
-                        <span className="tag subtle">{getIdeaLaneTitle(laneId)}</span>
-                      </div>
-
-                      <div className="idea-canvas-note-copy">
-                        <strong>{idea.title}</strong>
-                        <p>{truncateIdeaCopy(idea.description, 115)}</p>
-                      </div>
-
-                      <div className="idea-canvas-note-votes">
-                        {ideaVoteOptions.map((item) => (
-                          <div key={item.option} className="idea-canvas-vote-pill">
-                            <span className={`idea-canvas-vote-dot ${voteTone(item.option)}`} />
-                            <small>{formatNumber(voteCountForOption(idea, item.option))}</small>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="idea-canvas-note-footer">
-                        <small>{formatNumber(idea.feedbackCount)} comentarios</small>
-                        <small>{formatDateTime(idea.updatedAt)}</small>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                );
+              })}
             </div>
           </div>
         ) : null}

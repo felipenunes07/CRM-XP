@@ -1,4 +1,12 @@
-import type { IdeaBoardDetail, IdeaBoardItem, IdeaUserVote, IdeaVoteFeedback, IdeaVoteOption, IdeaVoteSummary } from "@olist-crm/shared";
+import type {
+  IdeaBoardColumnId,
+  IdeaBoardDetail,
+  IdeaBoardItem,
+  IdeaUserVote,
+  IdeaVoteFeedback,
+  IdeaVoteOption,
+  IdeaVoteSummary,
+} from "@olist-crm/shared";
 import type { JwtUser } from "../platform/authService.js";
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
@@ -12,6 +20,7 @@ interface IdeaRow extends Record<string, unknown> {
   author_display_name: string | null;
   created_by_user_id?: string | null;
   can_delete?: boolean | null;
+  lane_override?: IdeaBoardColumnId | null;
   created_at: string;
   updated_at: string;
   like_count: number | string | null;
@@ -37,6 +46,7 @@ const IDEA_BASE_SELECT = `
       WHEN i.created_by_user_id = $1::uuid OR $2 = 'ADMIN' THEN TRUE
       ELSE FALSE
     END AS can_delete,
+    i.lane_override,
     i.created_at,
     i.updated_at,
     COALESCE(stats.like_count, 0) AS like_count,
@@ -112,6 +122,7 @@ function mapIdeaItem(row: IdeaRow): IdeaBoardItem {
     isAnonymous: Boolean(row.is_anonymous),
     authorDisplayName: row.is_anonymous ? "Anonimo" : String(row.author_display_name ?? "Anonimo"),
     canDelete: Boolean(row.can_delete),
+    laneOverride: row.lane_override ? String(row.lane_override) as IdeaBoardColumnId : null,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
     voteSummary: mapVoteSummary(row),
@@ -192,11 +203,12 @@ export async function createIdea(
         is_anonymous,
         author_display_name,
         created_by_user_id,
+        lane_override,
         created_at,
         updated_at
       )
-      VALUES ($1, $2, 'OPEN', $3, $4, $5, NOW(), NOW())
-      RETURNING id, title, description, status, is_anonymous, author_display_name, created_at, updated_at
+      VALUES ($1, $2, 'OPEN', $3, $4, $5, NULL, NOW(), NOW())
+      RETURNING id, title, description, status, is_anonymous, author_display_name, lane_override, created_at, updated_at
     `,
     [title, description, input.isAnonymous, authorDisplayName, user.id],
   );
@@ -214,6 +226,7 @@ export async function createIdea(
     isAnonymous: Boolean(row.is_anonymous),
     authorDisplayName: input.isAnonymous ? "Anonimo" : String(row.author_display_name ?? "Anonimo"),
     canDelete: true,
+    laneOverride: null,
     createdAt: toIsoString(row.created_at),
     updatedAt: toIsoString(row.updated_at),
     voteSummary: {
@@ -283,6 +296,34 @@ export async function submitIdeaVote(
         updated_at = NOW()
     `,
     [ideaId, user.id, input.option, normalizeOptionalText(input.comment)],
+  );
+
+  const detail = await getIdeaDetail(ideaId, user);
+  if (!detail) {
+    throw new HttpError(404, "Ideia nao encontrada");
+  }
+
+  return detail;
+}
+
+export async function moveIdeaToLane(
+  ideaId: string,
+  user: JwtUser,
+  input: { laneId: IdeaBoardColumnId | null },
+): Promise<IdeaBoardDetail> {
+  const idea = await getIdeaPermissionRow(ideaId);
+  if (!idea) {
+    throw new HttpError(404, "Ideia nao encontrada");
+  }
+
+  await pool.query(
+    `
+      UPDATE idea_board_items
+      SET lane_override = $2,
+          updated_at = NOW()
+      WHERE id = $1
+    `,
+    [ideaId, input.laneId],
   );
 
   const detail = await getIdeaDetail(ideaId, user);
