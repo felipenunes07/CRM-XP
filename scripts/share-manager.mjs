@@ -44,16 +44,29 @@ function restoreOriginalEnv() {
 }
 
 function waitForHttp(url, label) {
+  const urlsToTry = [url];
+  if (url.includes("localhost")) {
+    urlsToTry.push(url.replace("localhost", "127.0.0.1"));
+    urlsToTry.push(url.replace("localhost", "[::1]"));
+  }
+
   return new Promise((resolve) => {
+    let currentUrlIndex = 0;
     const tryConnect = () => {
-      const request = http.get(url, (response) => {
+      const targetUrl = urlsToTry[currentUrlIndex];
+      const request = http.get(targetUrl, (response) => {
         response.resume();
         resolve();
       });
 
       request.on("error", () => {
-        process.stdout.write(`Aguardando ${label}... \n`);
-        setTimeout(tryConnect, 1500);
+        // Only log on the first URL attempt of each cycle to avoid spam
+        if (currentUrlIndex === 0) {
+          process.stdout.write(`Aguardando ${label}... \n`);
+        }
+        
+        currentUrlIndex = (currentUrlIndex + 1) % urlsToTry.length;
+        setTimeout(tryConnect, 1000);
       });
     };
 
