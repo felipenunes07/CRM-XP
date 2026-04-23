@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -10,6 +10,7 @@ import {
   ComposedChart,
   LabelList,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ReferenceDot,
   ResponsiveContainer,
@@ -19,17 +20,19 @@ import {
 } from "recharts";
 import { Target, Users, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { AgendaItem, PortfolioTrendPoint } from "@olist-crm/shared";
+import type { AgendaItem, PortfolioTrendPoint, TrendRangeSelection } from "@olist-crm/shared";
 import { ContactQueueCard } from "../components/ContactQueueCard";
 import { InfoHint } from "../components/InfoHint";
 import { StatCard } from "../components/StatCard";
 import { CustomerTable } from "../components/CustomerTable";
 import { PeriodSelector } from "../components/PeriodSelector";
 import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
+import { TrendRangeAnalysisPanel } from "../components/TrendRangeAnalysisPanel";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
+import { isTrendRangeVisible, resolveTrendRangeSelection } from "./dashboardPage.helpers";
 
 type TrendPeriod = '90d' | '6m' | '1y' | 'max';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -728,6 +731,9 @@ export function DashboardPage() {
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [isSyncing, setIsSyncing] = useState(false);
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
+  const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
+  const [trendRangeDraft, setTrendRangeDraft] = useState<{ anchorDate: string; currentDate: string } | null>(null);
+  const suppressNextTrendClickRef = useRef(false);
 
   // Interactive Pins (Annotations) state
   const [userAnnotations, setUserAnnotations] = useState<ChartAnnotation[]>([]);
@@ -759,11 +765,65 @@ export function DashboardPage() {
   }, [isTrendFullScreen]);
 
   const handleChartClick = (data: any) => {
+    if (suppressNextTrendClickRef.current) {
+      suppressNextTrendClickRef.current = false;
+      return;
+    }
     if (!data || !data.activeLabel) return;
     const date = data.activeLabel;
     const existing = userAnnotations.find(a => a.date === date);
     setEditingAnnotation({ date, existing });
     setIsAnnotationModalOpen(true);
+  };
+
+  const handleTrendMouseDown = (state: { activeLabel?: string } | undefined) => {
+    const label = state?.activeLabel;
+    if (!label) {
+      return;
+    }
+
+    setTrendRangeDraft({ anchorDate: label, currentDate: label });
+  };
+
+  const handleTrendMouseMove = (state: { activeLabel?: string } | undefined) => {
+    const label = state?.activeLabel;
+    if (!trendRangeDraft || !label) {
+      return;
+    }
+
+    setTrendRangeDraft((current) =>
+      current
+        ? {
+            ...current,
+            currentDate: label,
+          }
+        : current,
+    );
+  };
+
+  const finalizeTrendRangeSelection = (fallbackLabel?: string, shouldSuppressClick = false) => {
+    if (!trendRangeDraft) {
+      return;
+    }
+
+    const resolvedRange = resolveTrendRangeSelection(
+      trendRangeDraft.anchorDate,
+      fallbackLabel ?? trendRangeDraft.currentDate,
+    );
+
+    if (resolvedRange) {
+      setSelectedTrendRange(resolvedRange);
+      if (shouldSuppressClick) {
+        suppressNextTrendClickRef.current = true;
+      }
+    }
+
+    setTrendRangeDraft(null);
+  };
+
+  const clearTrendRangeSelection = () => {
+    setTrendRangeDraft(null);
+    setSelectedTrendRange(null);
   };
 
   const handleSaveAnnotation = async (label: string, description: string) => {
@@ -858,6 +918,28 @@ export function DashboardPage() {
     enabled: Boolean(token && !selectedBucket),
   });
 
+  const trendRangeAnalysisQuery = useQuery({
+    queryKey: [
+      "dashboard-trend-range-analysis",
+      selectedTrendRange?.startDate,
+      selectedTrendRange?.endDate,
+    ],
+    queryFn: () =>
+      api.dashboardTrendRangeAnalysis(
+        token!,
+        selectedTrendRange!.startDate,
+        selectedTrendRange!.endDate,
+      ),
+    enabled: Boolean(token && selectedTrendRange),
+  });
+
+  useEffect(() => {
+    const availableTrendDates = dashboardQuery.data?.portfolioTrend?.map((point) => point.date) ?? [];
+    if (selectedTrendRange && availableTrendDates.length && !isTrendRangeVisible(selectedTrendRange, availableTrendDates)) {
+      setSelectedTrendRange(null);
+    }
+  }, [dashboardQuery.data?.portfolioTrend, selectedTrendRange]);
+
   if (dashboardQuery.isLoading) {
     return <div className="page-loading">{tx("Carregando dashboard...", "正在加载仪表盘...")}</div>;
   }
@@ -915,6 +997,12 @@ export function DashboardPage() {
 
     return { ...point, growth30d, growthPercent30d, slope, annotation };
   });
+  const trendRangePreview = resolveTrendRangeSelection(
+    trendRangeDraft?.anchorDate,
+    trendRangeDraft?.currentDate,
+  );
+  const activeTrendRange = selectedTrendRange ?? trendRangePreview;
+
   const isTrendPercentMode = trendDisplayMode === "percent";
   const trendDescription = isTrendPercentMode
     ? tx(
@@ -1314,12 +1402,37 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="trend-chart-wrap">
+                <div className="trend-range-selection-bar">
+                  {selectedTrendRange ? (
+                    <>
+                      <span>
+                        {tx("Periodo selecionado:", "Selected range:")}{" "}
+                        <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
+                        <strong>{formatDate(selectedTrendRange.endDate)}</strong>
+                      </span>
+                      <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
+                        {tx("Limpar faixa", "Clear range")}
+                      </button>
+                    </>
+                  ) : (
+                    <span>
+                      {tx(
+                        "Arraste sobre o grafico para analisar um periodo e listar quem ficou em Atencao ou Inativo nessa faixa.",
+                        "Drag across the chart to analyze a range and list who became attention or inactive during that window.",
+                      )}
+                    </span>
+                  )}
+                </div>
                 {trendData.length ? (
                   <ResponsiveContainer width="100%" height={420}>
                     <ComposedChart
                       data={trendData}
                       margin={{ top: 28, right: 18, left: 10, bottom: 4 }}
                       onClick={handleChartClick}
+                      onMouseDown={handleTrendMouseDown}
+                      onMouseMove={handleTrendMouseMove}
+                      onMouseUp={(state) => finalizeTrendRangeSelection(state?.activeLabel, true)}
+                      onMouseLeave={() => finalizeTrendRangeSelection()}
                       style={{ cursor: "pointer" }}
                     >
                       <defs>
@@ -1330,6 +1443,15 @@ export function DashboardPage() {
                           </linearGradient>
                         ))}
                       </defs>
+                      {activeTrendRange ? (
+                        <ReferenceArea
+                          x1={activeTrendRange.startDate}
+                          x2={activeTrendRange.endDate}
+                          fill="#dbeafe"
+                          fillOpacity={0.65}
+                          strokeOpacity={0}
+                        />
+                      ) : null}
                       {userAnnotations.map((ann) => (
                         <ReferenceLine
                           key={`line-${ann.date}`}
@@ -1527,6 +1649,14 @@ export function DashboardPage() {
         />
       </section>
 
+      {chartView === "trend" && selectedTrendRange ? (
+        <TrendRangeAnalysisPanel
+          analysis={trendRangeAnalysisQuery.data}
+          isLoading={trendRangeAnalysisQuery.isLoading}
+          isError={trendRangeAnalysisQuery.isError}
+          onClearSelection={clearTrendRangeSelection}
+        />
+      ) : (
       <section className="panel">
         <div className="panel-header">
           <div>
@@ -1544,6 +1674,7 @@ export function DashboardPage() {
         {tableQueryError ? <div className="page-error">{tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。")}</div> : null}
         {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
       </section>
+      )}
 
       <AnnotationModal
         isOpen={isAnnotationModalOpen}
@@ -1616,12 +1747,37 @@ export function DashboardPage() {
             >
               ✕
             </button>
+            <div className="trend-range-selection-bar fullscreen" style={{ marginBottom: "0.75rem" }}>
+              {selectedTrendRange ? (
+                <>
+                  <span>
+                    {tx("Periodo selecionado:", "Selected range:")}{" "}
+                    <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
+                    <strong>{formatDate(selectedTrendRange.endDate)}</strong>
+                  </span>
+                  <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
+                    {tx("Limpar faixa", "Clear range")}
+                  </button>
+                </>
+              ) : (
+                <span>
+                  {tx(
+                    "Arraste sobre o grafico para investigar um periodo especifico.",
+                    "Drag across the chart to investigate a specific range.",
+                  )}
+                </span>
+              )}
+            </div>
             <div style={{ flex: 1, minHeight: 0, paddingTop: "0.25rem" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={trendData}
                   margin={{ top: 15, right: 10, left: -27, bottom: -10 }}
                   onClick={handleChartClick}
+                  onMouseDown={handleTrendMouseDown}
+                  onMouseMove={handleTrendMouseMove}
+                  onMouseUp={(state) => finalizeTrendRangeSelection(state?.activeLabel, true)}
+                  onMouseLeave={() => finalizeTrendRangeSelection()}
                 >
                   <defs>
                     {trendSeries.map((series) => (
@@ -1631,6 +1787,15 @@ export function DashboardPage() {
                       </linearGradient>
                     ))}
                   </defs>
+                  {activeTrendRange ? (
+                    <ReferenceArea
+                      x1={activeTrendRange.startDate}
+                      x2={activeTrendRange.endDate}
+                      fill="#dbeafe"
+                      fillOpacity={0.65}
+                      strokeOpacity={0}
+                    />
+                  ) : null}
                   {userAnnotations.map((ann) => (
                     <ReferenceLine
                       key={`fs-line-${ann.date}`}
