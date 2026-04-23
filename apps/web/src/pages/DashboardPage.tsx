@@ -445,17 +445,14 @@ function TrendTooltip({
   return (
     <div 
       className="chart-tooltip trend-tooltip" 
-      style={{ 
-        width: isFullScreen ? "400px" : "auto",
-        minWidth: isFullScreen ? "400px" : "160px", 
-        padding: isFullScreen ? "1.5rem" : "0.6rem 0.75rem", 
-        borderRadius: "12px", 
+      style={isFullScreen ? { 
+        width: "400px", 
+        padding: "1.5rem", 
+        borderRadius: "16px", 
         boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)" 
-      }}
+      } : {}}
     >
-      <strong style={{ fontSize: isFullScreen ? "1.25rem" : "1rem", color: "#0f172a", marginBottom: isFullScreen ? "1rem" : "0.5rem", display: "block" }}>
-        {formatTrendTooltipLabel(label)}
-      </strong>
+      <strong style={isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}}>{formatTrendTooltipLabel(label)}</strong>
       {point?.annotation && (
         <div
           style={{
@@ -467,28 +464,19 @@ function TrendTooltip({
             borderLeft: "4px solid #2956d7"
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.4rem" }}>
-            <span style={{ fontSize: "1.5rem" }}>📌</span>
-            <strong style={{ fontSize: "1.1rem", color: "#1e293b" }}>{point.annotation.label}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>📌</span>
+            <strong style={{ fontSize: isFullScreen ? "1.1rem" : "0.95rem", color: "#1e293b" }}>{point.annotation.label}</strong>
           </div>
-          <p style={{ margin: 0, fontSize: "0.95rem", color: "#475569", lineHeight: "1.5" }}>
+          <p style={{ margin: 0, fontSize: isFullScreen ? "0.95rem" : "0.8rem", color: "#64748b", lineHeight: "1.4" }}>
             {point.annotation.description}
           </p>
         </div>
       )}
       {point ? (
-        <div 
-          className="chart-tooltip-count" 
-          style={{ 
-            marginBottom: isFullScreen ? "1.2rem" : "0.6rem", 
-            padding: isFullScreen ? "0" : "0.6rem 0.75rem",
-            backgroundColor: isFullScreen ? "transparent" : "rgba(41, 86, 215, 0.05)",
-            borderRadius: isFullScreen ? "0" : "10px",
-            borderBottom: isFullScreen ? "1px solid #f1f5f9" : "none",
-          }}
-        >
-          <strong style={{ fontSize: isFullScreen ? "1.75rem" : "1.2rem", color: "#2956d7", display: "block", lineHeight: 1.1 }}>{formatNumber(point.totalCustomers)}</strong>
-          <span style={{ fontSize: isFullScreen ? "0.95rem" : "0.75rem", color: "#64748b", fontWeight: 500 }}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
+        <div className="chart-tooltip-count" style={isFullScreen ? { marginBottom: "1.2rem", paddingBottom: "1.2rem", borderBottom: "1px solid #f1f5f9" } : {}}>
+          <strong style={isFullScreen ? { fontSize: "1.75rem", color: "#2956d7" } : {}}>{formatNumber(point.totalCustomers)}</strong>
+          <span style={isFullScreen ? { fontSize: "0.95rem" } : {}}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
         </div>
       ) : null}
       
@@ -515,6 +503,7 @@ function TrendTooltip({
           <strong style={{ fontSize: "1.1rem", color: "#059669" }}>{formatCurrency(point.trafficSpend)}</strong>
         </div>
       )}
+
       <div className="trend-tooltip-list">
         {mode === "count" && (
           <div className="trend-tooltip-item" style={{ display: "block", padding: isFullScreen ? "0.4rem 0" : "0.4rem 0" }}>
@@ -523,26 +512,26 @@ function TrendTooltip({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: isFullScreen ? "0.9rem" : "0.4rem",
+                gap: "0.9rem",
                 width: "100%",
               }}
             >
-              <span className="trend-tooltip-label" style={{ fontSize: isFullScreen ? "1rem" : "0.9rem", fontWeight: 600 }}>
+              <span className="trend-tooltip-label">
                 <span
                   aria-hidden="true"
                   style={{
                     display: "inline-block",
-                    width: "1rem",
-                    height: "0.25rem",
+                    width: isFullScreen ? "1rem" : "0.85rem",
+                    height: isFullScreen ? "0.25rem" : "0.2rem",
                     borderRadius: "999px",
                     backgroundColor: totalCustomersTrendLine.color,
-                    marginRight: "0.6rem",
+                    marginRight: "0.45rem",
                     verticalAlign: "middle",
                   }}
                 />
                 {tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
               </span>
-              <strong style={{ fontSize: isFullScreen ? "1.1rem" : "1rem" }}>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
+              <strong style={isFullScreen ? { fontSize: "1.1rem" } : {}}>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
             </div>
             {point?.slope !== undefined && (
               (() => {
@@ -556,18 +545,18 @@ function TrendTooltip({
                       flexDirection: "column",
                       alignItems: "flex-end",
                       marginTop: "0.4rem",
-                      borderTop: isFullScreen ? "1px solid rgba(41, 86, 215, 0.08)" : "none",
-                      paddingTop: isFullScreen ? "0.4rem" : "0",
+                      borderTop: "1px solid rgba(41, 86, 215, 0.08)",
+                      paddingTop: "0.4rem",
                       gap: "0.15rem",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: isFullScreen ? "1rem" : "0.85rem", color: slopeColor }}>
-                      <span style={{ fontWeight: 700, opacity: isFullScreen ? 0.9 : 0.5 }}>{tx("Inclinação da Reta:", "Line Slope:")}</span>
-                      <strong style={{ fontSize: isFullScreen ? "1.1rem" : "0.95rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: isFullScreen ? "1rem" : "0.9rem", color: slopeColor }}>
+                      <span style={{ fontWeight: 600, opacity: 0.9 }}>{tx("Inclinação da Reta:", "Line Slope:")}</span>
+                      <strong>
                         {slope > 0 ? "+" : ""}
                         {formatDecimal(slope, 2)}
                       </strong>
-                      <span style={{ fontSize: isFullScreen ? "0.85rem" : "0.75rem", opacity: 0.5 }}>{tx("clientes/dia", "clients/day")}</span>
+                      <span style={{ fontSize: isFullScreen ? "0.85rem" : "0.75rem", opacity: 0.8 }}>{tx("clientes/dia", "clients/day")}</span>
                     </div>
                     <div style={{ fontSize: "0.7rem", fontWeight: 500, color: slopeColor }}>
                       {slope > 4.0
@@ -599,21 +588,21 @@ function TrendTooltip({
           const customerCount = point?.[line.countKey] ?? entry?.value ?? 0;
           const share = point?.[line.shareKey] ?? 0;
           return (
-            <div key={line.countKey} className="trend-tooltip-item" style={{ padding: isFullScreen ? "0.6rem 0" : "0.3rem 0" }}>
-              <span className="trend-tooltip-label" style={{ fontSize: isFullScreen ? "1.1rem" : "0.85rem", fontWeight: 600 }}>
-                <span className="trend-tooltip-emoji" style={{ fontSize: isFullScreen ? "1.3rem" : "1.1rem", marginRight: isFullScreen ? "0.4rem" : "0.25rem" }}>{line.emoji}</span>
+            <div key={line.countKey} className="trend-tooltip-item">
+              <span className="trend-tooltip-label">
+                <span className="trend-tooltip-emoji" style={{ fontSize: isFullScreen ? "1.3rem" : "1.1rem", marginRight: "0.25rem" }}>{line.emoji}</span>
                 {line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
               </span>
-              <div className="trend-tooltip-metric" style={{ textAlign: "right" }}>
+              <div className="trend-tooltip-metric">
                 {mode === "percent" ? (
                   <>
-                    <strong style={{ fontSize: isFullScreen ? "1.2rem" : "0.9rem", display: "block" }}>{formatTrendPercent(share)}</strong>
-                    <span style={{ fontSize: isFullScreen ? "0.9rem" : "0.7rem", color: "#64748b" }}>{formatNumber(customerCount)} {tx("cl.", "cl.")}</span>
+                    <strong>{formatTrendPercent(share)}</strong>
+                    <span style={isFullScreen ? { fontSize: "0.9rem" } : {}}>{formatNumber(customerCount)} {tx("clientes", "customers")}</span>
                   </>
                 ) : (
                   <>
-                    <strong style={{ fontSize: isFullScreen ? "1.2rem" : "0.9rem", display: "block" }}>{formatNumber(customerCount)} {tx("cl.", "cl.")}</strong>
-                    <span style={{ fontSize: isFullScreen ? "0.9rem" : "0.7rem", color: "#64748b" }}>{formatTrendPercent(share)} {tx("base", "base")}</span>
+                    <strong>{formatNumber(customerCount)} {tx("clientes", "customers")}</strong>
+                    <span style={isFullScreen ? { fontSize: "0.9rem" } : {}}>{formatTrendPercent(share)} {tx("da base", "share of base")}</span>
                   </>
                 )}
               </div>
