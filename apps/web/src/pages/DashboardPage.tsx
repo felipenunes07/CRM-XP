@@ -772,7 +772,7 @@ export function DashboardPage() {
   const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
 
   const currentYear = new Date().getFullYear();
-  const chartYears = [currentYear - 2, currentYear - 1, currentYear];
+  const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
 
   const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
   const itemsSoldData = monthNames.map((monthName, idx) => {
@@ -1168,7 +1168,7 @@ export function DashboardPage() {
                         const point = trendData.find(d => d.date === ann.date);
                         const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
                         if (yValue === undefined) return null;
-                        
+
                         return (
                           <ReferenceDot
                             key={`dot-${ann.date}`}
@@ -1308,25 +1308,30 @@ export function DashboardPage() {
                         );
                       }}
                     />
-                    <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#e2e8f0" strokeWidth={1.5} strokeDasharray="3 3" dot={{ r: 2 }} activeDot={{ r: 4 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                    <Line type="monotone" dataKey={`year${chartYears[3]}`} name={String(chartYears[3])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
                     <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
               <div className="trend-legend" aria-label={tx("Legenda do grafico de telas vendidas", "销量图例")}>
                 <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#e2e8f0", marginRight: "0.4rem" }}></span>
                   {chartYears[0]}
                 </span>
                 <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
                   {chartYears[1]}
                 </span>
                 <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
                   {chartYears[2]}
+                </span>
+                <span className="trend-legend-item">
+                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                  {chartYears[3]}
                 </span>
                 <span className="trend-legend-item">
                   <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>

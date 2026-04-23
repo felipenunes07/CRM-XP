@@ -630,7 +630,7 @@ async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
         FROM orders o
         LEFT JOIN order_item_totals oi ON oi.order_id = o.id
-        WHERE o.order_date >= date_trunc('year', CURRENT_DATE - interval '2 years')
+        WHERE o.order_date >= '2023-01-01'::date
         GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
       )
       SELECT 
