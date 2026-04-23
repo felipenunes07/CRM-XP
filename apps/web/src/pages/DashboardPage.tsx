@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Area,
@@ -116,6 +117,17 @@ interface ChartAnnotation {
   description: string;
 }
 
+interface HoveredAnnotationState {
+  annotation: ChartAnnotation;
+  mouseX: number;
+  mouseY: number;
+}
+
+const FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH = 280;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT = 170;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_GAP = 18;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN = 16;
+
 type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
 type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number; annotation?: ChartAnnotation };
 
@@ -177,6 +189,27 @@ function formatTrendTooltipLabel(value: string) {
   }
 
   return formatDate(value);
+}
+
+function getFullScreenAnnotationTooltipPosition(mouseX: number, mouseY: number) {
+  const viewportWidth = typeof window === "undefined" ? mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? mouseY + FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT : window.innerHeight;
+  const shouldRenderToLeft =
+    mouseX > viewportWidth - (FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH + FULL_SCREEN_ANNOTATION_TOOLTIP_GAP + FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN);
+
+  const left = shouldRenderToLeft
+    ? Math.max(FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN, mouseX - FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH - FULL_SCREEN_ANNOTATION_TOOLTIP_GAP)
+    : Math.min(
+      mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_GAP,
+      viewportWidth - FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH - FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN,
+    );
+
+  const top = Math.max(
+    FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN,
+    Math.min(mouseY - 26, viewportHeight - FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT - FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN),
+  );
+
+  return { left, top };
 }
 
 function formatDecimal(value: number, fractionDigits = 1) {
@@ -456,7 +489,7 @@ function TrendTooltip({
       } : {}}
     >
       <strong style={isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}}>{formatTrendTooltipLabel(label)}</strong>
-      {point?.annotation && (
+      {!isFullScreen && point?.annotation && (
         <div
           style={{
             marginTop: "0.8rem",
@@ -618,6 +651,68 @@ function TrendTooltip({
   );
 }
 
+function FullScreenAnnotationReferenceDot({
+  cx,
+  cy,
+  annotation,
+  isHovered = false,
+  onHover,
+  onLeave,
+  onSelect,
+}: {
+  cx?: number;
+  cy?: number;
+  annotation: ChartAnnotation;
+  isHovered?: boolean;
+  onHover: (annotation: ChartAnnotation, event: ReactMouseEvent<SVGRectElement>) => void;
+  onLeave: () => void;
+  onSelect: (annotation: ChartAnnotation) => void;
+}) {
+  if (typeof cx !== "number" || typeof cy !== "number") {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={isHovered ? 14 : 11}
+        fill="rgba(41, 86, 215, 0.14)"
+        opacity={isHovered ? 1 : 0.45}
+        pointerEvents="none"
+      />
+      <circle cx={cx} cy={cy} r={8} fill="#fff" stroke="#2956d7" strokeWidth={3} pointerEvents="none" />
+      <text
+        x={cx}
+        y={cy - 20}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="24"
+        pointerEvents="none"
+      >
+        📌
+      </text>
+      <rect
+        x={cx - 24}
+        y={cy - 36}
+        width={48}
+        height={58}
+        rx={20}
+        fill="transparent"
+        style={{ cursor: "pointer" }}
+        onMouseEnter={(event) => onHover(annotation, event)}
+        onMouseMove={(event) => onHover(annotation, event)}
+        onMouseLeave={onLeave}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(annotation);
+        }}
+      />
+    </g>
+  );
+}
+
 function formatShare(value: number, total: number) {
   if (!total) {
     return "0% da base";
@@ -639,6 +734,7 @@ export function DashboardPage() {
   const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
   const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
+  const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
 
   // Fetch annotations from API
   const annotationsQuery = useQuery({
@@ -655,6 +751,12 @@ export function DashboardPage() {
       setUserAnnotations(annotationsQuery.data);
     }
   }, [annotationsQuery.data]);
+
+  useEffect(() => {
+    if (!isTrendFullScreen) {
+      setHoveredFullScreenAnnotation(null);
+    }
+  }, [isTrendFullScreen]);
 
   const handleChartClick = (data: any) => {
     if (!data || !data.activeLabel) return;
@@ -693,6 +795,26 @@ export function DashboardPage() {
         alert("Erro ao remover anotação.");
       }
     }
+  };
+
+  const handleFullScreenAnnotationHover = (
+    annotation: ChartAnnotation,
+    event: ReactMouseEvent<SVGRectElement>,
+  ) => {
+    setHoveredFullScreenAnnotation({
+      annotation,
+      mouseX: event.clientX,
+      mouseY: event.clientY,
+    });
+  };
+
+  const handleFullScreenAnnotationLeave = () => {
+    setHoveredFullScreenAnnotation(null);
+  };
+
+  const handleSelectAnnotation = (annotation: ChartAnnotation) => {
+    setEditingAnnotation({ date: annotation.date, existing: annotation });
+    setIsAnnotationModalOpen(true);
   };
 
   const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
@@ -811,6 +933,9 @@ export function DashboardPage() {
   const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
   const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
   const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
+  const fullScreenAnnotationTooltipPosition = hoveredFullScreenAnnotation
+    ? getFullScreenAnnotationTooltipPosition(hoveredFullScreenAnnotation.mouseX, hoveredFullScreenAnnotation.mouseY)
+    : null;
 
   const currentYear = new Date().getFullYear();
   const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
@@ -1453,75 +1578,45 @@ export function DashboardPage() {
               height: 100%;
               display: flex;
               flex-direction: column;
+              position: relative;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
               color: #1e293b;
             }
           `}</style>
 
-          <div className="fs-chart-card" style={{ padding: "1.5rem" }}>
-            <div className="trend-chart-toolbar" style={{
-              marginBottom: "1rem",
-              backgroundColor: "#f8fafc",
-              padding: "0.75rem 1.25rem",
-              borderRadius: "12px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1.5rem"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
-                <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
-                <div
-                  className="customers-view-switcher"
-                  role="tablist"
-                >
-                  {trendModeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={trendDisplayMode === option.value}
-                      className={`chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`}
-                      onClick={() => setTrendDisplayMode(option.value)}
-                    >
-                      <strong>{option.label}</strong>
-                      <span>{option.helper}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setIsTrendFullScreen(false)}
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "8px",
-                  border: "1px solid #e2e8f0",
-                  backgroundColor: "white",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "1.2rem",
-                  cursor: "pointer",
-                  color: "#64748b",
-                  transition: "all 0.2s"
-                }}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.backgroundColor = "#fee2e2";
-                  e.currentTarget.style.color = "#ef4444";
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.backgroundColor = "white";
-                  e.currentTarget.style.color = "#64748b";
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-
-            <div style={{ flex: 1, minHeight: 0 }}>
+          <div className="fs-chart-card fullscreen-trend-chart-card" style={{ padding: "1.5rem" }}>
+            <button
+              onClick={() => setIsTrendFullScreen(false)}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                width: "36px",
+                height: "36px",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                backgroundColor: "white",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "1.2rem",
+                cursor: "pointer",
+                color: "#64748b",
+                transition: "all 0.2s",
+                zIndex: 3,
+              }}
+              onMouseOver={(e) => {
+                e.currentTarget.style.backgroundColor = "#fee2e2";
+                e.currentTarget.style.color = "#ef4444";
+              }}
+              onMouseOut={(e) => {
+                e.currentTarget.style.backgroundColor = "white";
+                e.currentTarget.style.color = "#64748b";
+              }}
+            >
+              ✕
+            </button>
+            <div style={{ flex: 1, minHeight: 0, paddingTop: "0.25rem" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={trendData}
@@ -1564,6 +1659,30 @@ export function DashboardPage() {
                       />
                     );
                   })}
+                  {userAnnotations.map((ann) => {
+                    const point = trendData.find(d => d.date === ann.date);
+                    const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
+                    if (yValue === undefined) return null;
+
+                    return (
+                      <ReferenceDot
+                        key={`fs-hover-dot-${ann.date}`}
+                        x={ann.date}
+                        y={yValue}
+                        r={8}
+                        shape={(props: any) => (
+                          <FullScreenAnnotationReferenceDot
+                            {...props}
+                            annotation={ann}
+                            isHovered={hoveredFullScreenAnnotation?.annotation.date === ann.date}
+                            onHover={handleFullScreenAnnotationHover}
+                            onLeave={handleFullScreenAnnotationLeave}
+                            onSelect={handleSelectAnnotation}
+                          />
+                        )}
+                      />
+                    );
+                  })}
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis
                     dataKey="date"
@@ -1583,7 +1702,7 @@ export function DashboardPage() {
                   <Tooltip
                     content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
                     offset={24}
-                    position={{ x: trendDisplayMode === "percent" ? 110 : 132, y: 34 }}
+                    position={{ x: trendDisplayMode === "percent" ? 72 : 55, y: 0 }}
                     allowEscapeViewBox={{ x: true, y: true }}
                     wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
                   />
@@ -1634,6 +1753,23 @@ export function DashboardPage() {
                 </span>
               ))}
             </div>
+
+            {hoveredFullScreenAnnotation && fullScreenAnnotationTooltipPosition ? (
+              <div
+                className="full-screen-annotation-tooltip"
+                style={{
+                  left: `${fullScreenAnnotationTooltipPosition.left}px`,
+                  top: `${fullScreenAnnotationTooltipPosition.top}px`,
+                }}
+              >
+                <span className="full-screen-annotation-tooltip-eyebrow">{tx("Marco fixado", "Pinned marker")}</span>
+                <strong>{hoveredFullScreenAnnotation.annotation.label}</strong>
+                <span className="full-screen-annotation-tooltip-date">
+                  {formatTrendTooltipLabel(hoveredFullScreenAnnotation.annotation.date)}
+                </span>
+                <p>{hoveredFullScreenAnnotation.annotation.description}</p>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
