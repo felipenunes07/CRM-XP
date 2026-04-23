@@ -252,6 +252,64 @@ export interface PortfolioTrendPoint {
   trafficSpend?: number;
 }
 
+export type TrendRangeCustomerStatus = Extract<CustomerStatus, "ATTENTION" | "INACTIVE">;
+
+export interface TrendRangeSelection {
+  startDate: string;
+  endDate: string;
+}
+
+export interface TrendRangeAnalysisSummary {
+  startDate: string;
+  endDate: string;
+  totalCustomers: number;
+  attentionCustomers: number;
+  inactiveCustomers: number;
+  neverReturnedCustomers: number;
+  averageTicket: number;
+  estimatedMonthlyRevenueLoss: number;
+  estimatedMonthlyPiecesLoss: number;
+}
+
+export interface TrendRangeLostCustomer {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  worstStatus: TrendRangeCustomerStatus;
+  firstCriticalDate: string;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number | null;
+  avgTicket: number;
+  totalSpent: number;
+  lastAttendant: string | null;
+  estimatedMonthlyRevenueLoss: number;
+  estimatedMonthlyPiecesLoss: number;
+}
+
+export interface TrendRangeRecoveredSummary {
+  recoveredCustomers: number;
+  recoveredRevenue: number;
+  recoveredPieces: number;
+}
+
+export interface TrendRangeMonthlyLossPoint {
+  month: string;
+  expectedRevenue: number;
+  actualRevenue: number;
+  lostRevenue: number;
+  expectedPieces: number;
+  actualPieces: number;
+  lostPieces: number;
+}
+
+export interface TrendRangeAnalysisResponse {
+  selection: TrendRangeSelection;
+  summary: TrendRangeAnalysisSummary;
+  lostCustomers: TrendRangeLostCustomer[];
+  recoveredSummary: TrendRangeRecoveredSummary;
+  monthlyLossSeries: TrendRangeMonthlyLossPoint[];
+}
+
 export interface CustomerListItem {
   id: string;
   customerCode: string;

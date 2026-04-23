@@ -8674,3 +8674,199 @@ textarea {
     opacity: 0;
   }
 }
+
+.trend-range-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+  padding: 0.8rem 1rem;
+  border-radius: 14px;
+  background: rgba(41, 86, 215, 0.06);
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  color: var(--text);
+}
+
+.trend-range-selection-bar.fullscreen {
+  margin-right: 3rem;
+}
+
+.trend-range-selection-bar span {
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.trend-range-selection-bar strong {
+  color: var(--text);
+}
+
+.period-loss-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.period-loss-panel__header {
+  align-items: flex-start;
+}
+
+.period-loss-selection-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 999px;
+  background: rgba(41, 86, 215, 0.08);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.period-loss-selection-chip span {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.period-loss-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+}
+
+.period-loss-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
+}
+
+.period-loss-summary-card span {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.period-loss-summary-card strong {
+  font-size: 1.35rem;
+  color: var(--text);
+}
+
+.period-loss-summary-card.tone-warning {
+  background: linear-gradient(180deg, rgba(255, 248, 220, 0.9), rgba(255, 251, 235, 0.9));
+}
+
+.period-loss-summary-card.tone-danger {
+  background: linear-gradient(180deg, rgba(254, 242, 242, 0.95), rgba(255, 247, 247, 0.95));
+}
+
+.period-loss-recovered-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(16, 185, 129, 0.18);
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.95), rgba(240, 253, 250, 0.95));
+}
+
+.period-loss-recovered-card span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.period-loss-recovered-card strong {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 1.2rem;
+  color: #0f766e;
+}
+
+.period-loss-chart-card {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  padding: 1.1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+}
+
+.period-loss-chart-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.period-loss-series-wrap {
+  margin-top: 0.5rem;
+}
+
+.period-loss-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  background: #fff;
+}
+
+.period-loss-table {
+  width: 100%;
+  min-width: 1220px;
+  border-collapse: collapse;
+}
+
+.period-loss-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  color: var(--muted);
+  text-align: left;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.period-loss-table tbody td {
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+  color: var(--text);
+  font-size: 0.9rem;
+  vertical-align: middle;
+}
+
+.period-loss-table tbody tr:hover {
+  background: rgba(41, 86, 215, 0.03);
+}
+
+.period-loss-customer-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 200px;
+}
+
+.period-loss-customer-cell a {
+  color: #1d4ed8;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.period-loss-customer-cell a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  .period-loss-summary-grid,
+  .period-loss-recovered-card {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-range-selection-bar {
+    padding: 0.75rem 0.85rem;
+  }
+}

@@ -10,6 +10,10 @@ import type {
   ProspectingLeaderboardEntry,
   ReactivationLeaderboardEntry,
   ReactivationRecoveredClient,
+  TrendRangeAnalysisResponse,
+  TrendRangeCustomerStatus,
+  TrendRangeMonthlyLossPoint,
+  TrendRangeSelection,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
@@ -25,11 +29,134 @@ const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as co
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
 `;
+const TREND_RANGE_STATUS_SEVERITY: Record<TrendRangeCustomerStatus, number> = {
+  ATTENTION: 1,
+  INACTIVE: 2,
+};
+
+export interface TrendRangeAnalysisCustomerRow {
+  customer_id: string;
+  customer_code: string;
+  display_name: string;
+  worst_status: TrendRangeCustomerStatus;
+  first_critical_date: string;
+  last_purchase_at: string | null;
+  days_since_last_purchase: number | null;
+  total_orders: number;
+  total_spent: number;
+  avg_ticket: number;
+  last_attendant: string | null;
+  baseline_monthly_revenue: number;
+  baseline_monthly_pieces: number;
+  has_orders_after_range: boolean;
+  revenue_after_range: number;
+  pieces_after_range: number;
+}
+
+export interface TrendRangeAnalysisMonthlyRow {
+  month: string;
+  expected_revenue: number;
+  actual_revenue: number;
+  expected_pieces: number;
+  actual_pieces: number;
+}
 
 function getDashboardTrendMaxDays(referenceDate = new Date()) {
   const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
   const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
   return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
+}
+
+export function normalizeTrendRangeSelection(startDate: string, endDate: string): TrendRangeSelection {
+  return startDate <= endDate ? { startDate, endDate } : { startDate: endDate, endDate: startDate };
+}
+
+export function pickTrendRangeWorstStatus(statuses: TrendRangeCustomerStatus[]): TrendRangeCustomerStatus {
+  return statuses.reduce<TrendRangeCustomerStatus>((worstStatus, currentStatus) => {
+    return TREND_RANGE_STATUS_SEVERITY[currentStatus] > TREND_RANGE_STATUS_SEVERITY[worstStatus]
+      ? currentStatus
+      : worstStatus;
+  }, "ATTENTION");
+}
+
+export function buildTrendRangeAnalysisResponse(
+  selection: TrendRangeSelection,
+  customerRows: TrendRangeAnalysisCustomerRow[],
+  monthlyRows: TrendRangeAnalysisMonthlyRow[],
+): TrendRangeAnalysisResponse {
+  const normalizedSelection = normalizeTrendRangeSelection(selection.startDate, selection.endDate);
+  const totalOrders = customerRows.reduce((sum, row) => sum + Number(row.total_orders ?? 0), 0);
+  const totalSpent = customerRows.reduce((sum, row) => sum + Number(row.total_spent ?? 0), 0);
+  const lostRows = customerRows
+    .filter((row) => !row.has_orders_after_range)
+    .sort(
+      (left, right) =>
+        Number(right.baseline_monthly_revenue ?? 0) - Number(left.baseline_monthly_revenue ?? 0) ||
+        Number(right.total_spent ?? 0) - Number(left.total_spent ?? 0) ||
+        String(left.display_name ?? "").localeCompare(String(right.display_name ?? ""), "pt-BR"),
+    );
+  const recoveredRows = customerRows.filter((row) => row.has_orders_after_range);
+
+  const monthlyLossSeries: TrendRangeMonthlyLossPoint[] = monthlyRows.map((row) => {
+    const expectedRevenue = Number(row.expected_revenue ?? 0);
+    const actualRevenue = Number(row.actual_revenue ?? 0);
+    const expectedPieces = Number(row.expected_pieces ?? 0);
+    const actualPieces = Number(row.actual_pieces ?? 0);
+
+    return {
+      month: String(row.month),
+      expectedRevenue,
+      actualRevenue,
+      lostRevenue: Math.max(expectedRevenue - actualRevenue, 0),
+      expectedPieces,
+      actualPieces,
+      lostPieces: Math.max(expectedPieces - actualPieces, 0),
+    };
+  });
+
+  return {
+    selection: normalizedSelection,
+    summary: {
+      startDate: normalizedSelection.startDate,
+      endDate: normalizedSelection.endDate,
+      totalCustomers: customerRows.length,
+      attentionCustomers: customerRows.filter((row) => row.worst_status === "ATTENTION").length,
+      inactiveCustomers: customerRows.filter((row) => row.worst_status === "INACTIVE").length,
+      neverReturnedCustomers: lostRows.length,
+      averageTicket: totalOrders > 0 ? totalSpent / totalOrders : 0,
+      estimatedMonthlyRevenueLoss: lostRows.reduce(
+        (sum, row) => sum + Number(row.baseline_monthly_revenue ?? 0),
+        0,
+      ),
+      estimatedMonthlyPiecesLoss: lostRows.reduce(
+        (sum, row) => sum + Number(row.baseline_monthly_pieces ?? 0),
+        0,
+      ),
+    },
+    lostCustomers: lostRows.map((row) => ({
+      customerId: String(row.customer_id),
+      customerCode: String(row.customer_code ?? ""),
+      displayName: String(row.display_name ?? "Cliente sem nome"),
+      worstStatus: row.worst_status,
+      firstCriticalDate: String(row.first_critical_date),
+      lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
+      daysSinceLastPurchase:
+        row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
+          ? null
+          : Number(row.days_since_last_purchase),
+      avgTicket: Number(row.avg_ticket ?? 0),
+      totalSpent: Number(row.total_spent ?? 0),
+      lastAttendant: row.last_attendant ? String(row.last_attendant) : null,
+      estimatedMonthlyRevenueLoss: Number(row.baseline_monthly_revenue ?? 0),
+      estimatedMonthlyPiecesLoss: Number(row.baseline_monthly_pieces ?? 0),
+    })),
+    recoveredSummary: {
+      recoveredCustomers: recoveredRows.length,
+      recoveredRevenue: recoveredRows.reduce((sum, row) => sum + Number(row.revenue_after_range ?? 0), 0),
+      recoveredPieces: recoveredRows.reduce((sum, row) => sum + Number(row.pieces_after_range ?? 0), 0),
+    },
+    monthlyLossSeries,
+  };
 }
 
 function getInsightTags(row: Record<string, unknown>) {
@@ -506,6 +633,285 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
       trafficSpend: spendMap.get(monthKey) ?? 0,
     };
   });
+}
+
+export async function getTrendRangeAnalysis(startDate: string, endDate: string): Promise<TrendRangeAnalysisResponse> {
+  const selection = normalizeTrendRangeSelection(startDate, endDate);
+
+  const cohortResult = await pool.query<TrendRangeAnalysisCustomerRow>(
+    `
+      WITH params AS (
+        SELECT
+          $1::date AS start_date,
+          $2::date AS end_date,
+          CURRENT_DATE AS today
+      ),
+      ordered_before_end AS (
+        SELECT
+          o.customer_id,
+          o.order_date::date AS order_date,
+          LEAD(o.order_date::date) OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date, o.created_at, o.id
+          ) AS next_order_date
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.end_date
+      ),
+      status_intervals AS (
+        SELECT
+          obe.customer_id,
+          'ATTENTION'::text AS status,
+          GREATEST(obe.order_date + 31, p.start_date) AS interval_start,
+          LEAST(
+            COALESCE(obe.next_order_date - 1, p.end_date),
+            obe.order_date + 89,
+            p.end_date
+          ) AS interval_end
+        FROM ordered_before_end obe
+        CROSS JOIN params p
+        WHERE obe.order_date + 31 <= p.end_date
+
+        UNION ALL
+
+        SELECT
+          obe.customer_id,
+          'INACTIVE'::text AS status,
+          GREATEST(obe.order_date + 90, p.start_date) AS interval_start,
+          LEAST(
+            COALESCE(obe.next_order_date - 1, p.end_date),
+            p.end_date
+          ) AS interval_end
+        FROM ordered_before_end obe
+        CROSS JOIN params p
+        WHERE obe.order_date + 90 <= p.end_date
+      ),
+      cohort_customers AS (
+        SELECT
+          si.customer_id,
+          MIN(si.interval_start)::text AS first_critical_date,
+          CASE
+            WHEN MAX(
+              CASE
+                WHEN si.status = 'INACTIVE' THEN 2
+                ELSE 1
+              END
+            ) >= 2 THEN 'INACTIVE'
+            ELSE 'ATTENTION'
+          END::text AS worst_status
+        FROM status_intervals si
+        WHERE si.interval_start <= si.interval_end
+        GROUP BY si.customer_id
+      ),
+      order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS total_quantity
+        FROM order_items oi
+        GROUP BY oi.order_id
+      ),
+      customer_order_metrics AS (
+        SELECT
+          o.customer_id,
+          COUNT(DISTINCT o.id)::int AS total_orders,
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_spent,
+          BOOL_OR(o.order_date::date > p.end_date) AS has_orders_after_range,
+          COALESCE(
+            SUM(o.total_amount) FILTER (WHERE o.order_date::date > p.end_date),
+            0
+          )::numeric(14,2) AS revenue_after_range,
+          COALESCE(
+            SUM(oit.total_quantity) FILTER (WHERE o.order_date::date > p.end_date),
+            0
+          )::numeric(14,2) AS pieces_after_range
+        FROM orders o
+        CROSS JOIN params p
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        GROUP BY o.customer_id
+      ),
+      baseline_metrics AS (
+        SELECT
+          o.customer_id,
+          (COALESCE(SUM(o.total_amount), 0)::numeric(14,2) / 3.0)::numeric(14,2) AS baseline_monthly_revenue,
+          (COALESCE(SUM(oit.total_quantity), 0)::numeric(14,2) / 3.0)::numeric(14,2) AS baseline_monthly_pieces
+        FROM orders o
+        CROSS JOIN params p
+        JOIN cohort_customers cc ON cc.customer_id = o.customer_id
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        WHERE o.order_date::date BETWEEN (p.end_date - INTERVAL '89 days')::date AND p.end_date
+        GROUP BY o.customer_id
+      ),
+      last_order_before_end AS (
+        SELECT DISTINCT ON (o.customer_id)
+          o.customer_id,
+          o.order_date::date::text AS last_purchase_at,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS last_attendant
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.end_date
+        ORDER BY o.customer_id, o.order_date DESC, o.created_at DESC, o.id DESC
+      )
+      SELECT
+        cc.customer_id,
+        COALESCE(NULLIF(c.customer_code, ''), '') AS customer_code,
+        COALESCE(NULLIF(c.display_name, ''), 'Cliente sem nome') AS display_name,
+        cc.worst_status::text AS worst_status,
+        cc.first_critical_date,
+        lob.last_purchase_at,
+        CASE
+          WHEN lob.last_purchase_at IS NULL THEN NULL
+          ELSE (p.today - lob.last_purchase_at::date)::int
+        END AS days_since_last_purchase,
+        COALESCE(com.total_orders, 0)::int AS total_orders,
+        COALESCE(com.total_spent, 0)::numeric(14,2) AS total_spent,
+        CASE
+          WHEN COALESCE(com.total_orders, 0) > 0
+            THEN (COALESCE(com.total_spent, 0) / com.total_orders)::numeric(14,2)
+          ELSE 0::numeric(14,2)
+        END AS avg_ticket,
+        COALESCE(lob.last_attendant, NULLIF(c.last_attendant, ''), 'Sem atendente') AS last_attendant,
+        COALESCE(bm.baseline_monthly_revenue, 0)::numeric(14,2) AS baseline_monthly_revenue,
+        COALESCE(bm.baseline_monthly_pieces, 0)::numeric(14,2) AS baseline_monthly_pieces,
+        COALESCE(com.has_orders_after_range, false) AS has_orders_after_range,
+        COALESCE(com.revenue_after_range, 0)::numeric(14,2) AS revenue_after_range,
+        COALESCE(com.pieces_after_range, 0)::numeric(14,2) AS pieces_after_range
+      FROM cohort_customers cc
+      CROSS JOIN params p
+      JOIN customers c ON c.id = cc.customer_id
+      LEFT JOIN customer_order_metrics com ON com.customer_id = cc.customer_id
+      LEFT JOIN baseline_metrics bm ON bm.customer_id = cc.customer_id
+      LEFT JOIN last_order_before_end lob ON lob.customer_id = cc.customer_id
+      ORDER BY
+        COALESCE(com.has_orders_after_range, false) ASC,
+        COALESCE(bm.baseline_monthly_revenue, 0) DESC,
+        COALESCE(com.total_spent, 0) DESC,
+        c.display_name ASC
+    `,
+    [selection.startDate, selection.endDate],
+  );
+
+  if (!cohortResult.rows.length) {
+    return buildTrendRangeAnalysisResponse(selection, [], []);
+  }
+
+  const cohortRows = cohortResult.rows.map((row) => ({
+    ...row,
+    worst_status: pickTrendRangeWorstStatus([row.worst_status as TrendRangeCustomerStatus]),
+    total_orders: Number(row.total_orders ?? 0),
+    total_spent: Number(row.total_spent ?? 0),
+    avg_ticket: Number(row.avg_ticket ?? 0),
+    baseline_monthly_revenue: Number(row.baseline_monthly_revenue ?? 0),
+    baseline_monthly_pieces: Number(row.baseline_monthly_pieces ?? 0),
+    revenue_after_range: Number(row.revenue_after_range ?? 0),
+    pieces_after_range: Number(row.pieces_after_range ?? 0),
+    days_since_last_purchase:
+      row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
+        ? null
+        : Number(row.days_since_last_purchase),
+  }));
+
+  const monthlyResult = await pool.query<TrendRangeAnalysisMonthlyRow>(
+    `
+      WITH params AS (
+        SELECT
+          $1::date AS start_date,
+          $2::date AS end_date,
+          CURRENT_DATE AS today
+      ),
+      ordered_before_end AS (
+        SELECT
+          o.customer_id,
+          o.order_date::date AS order_date,
+          LEAD(o.order_date::date) OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date, o.created_at, o.id
+          ) AS next_order_date
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.end_date
+      ),
+      status_intervals AS (
+        SELECT
+          obe.customer_id,
+          GREATEST(obe.order_date + 31, p.start_date) AS interval_start,
+          LEAST(
+            COALESCE(obe.next_order_date - 1, p.end_date),
+            obe.order_date + 89,
+            p.end_date
+          ) AS interval_end
+        FROM ordered_before_end obe
+        CROSS JOIN params p
+        WHERE obe.order_date + 31 <= p.end_date
+
+        UNION ALL
+
+        SELECT
+          obe.customer_id,
+          GREATEST(obe.order_date + 90, p.start_date) AS interval_start,
+          LEAST(
+            COALESCE(obe.next_order_date - 1, p.end_date),
+            p.end_date
+          ) AS interval_end
+        FROM ordered_before_end obe
+        CROSS JOIN params p
+        WHERE obe.order_date + 90 <= p.end_date
+      ),
+      cohort_customers AS (
+        SELECT DISTINCT customer_id
+        FROM status_intervals
+        WHERE interval_start <= interval_end
+      ),
+      order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS total_quantity
+        FROM order_items oi
+        GROUP BY oi.order_id
+      ),
+      cohort_baseline AS (
+        SELECT
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) / 3.0 AS expected_revenue,
+          COALESCE(SUM(oit.total_quantity), 0)::numeric(14,2) / 3.0 AS expected_pieces
+        FROM orders o
+        CROSS JOIN params p
+        JOIN cohort_customers cc ON cc.customer_id = o.customer_id
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        WHERE o.order_date::date BETWEEN (p.end_date - INTERVAL '89 days')::date AND p.end_date
+      ),
+      month_series AS (
+        SELECT generate_series(
+          date_trunc('month', (SELECT end_date FROM params) + INTERVAL '1 month')::date,
+          date_trunc('month', (SELECT today FROM params))::date,
+          INTERVAL '1 month'
+        )::date AS month_start
+      ),
+      monthly_actuals AS (
+        SELECT
+          date_trunc('month', o.order_date)::date AS month_start,
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS actual_revenue,
+          COALESCE(SUM(oit.total_quantity), 0)::numeric(14,2) AS actual_pieces
+        FROM orders o
+        JOIN cohort_customers cc ON cc.customer_id = o.customer_id
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        CROSS JOIN params p
+        WHERE o.order_date::date > p.end_date
+        GROUP BY date_trunc('month', o.order_date)::date
+      )
+      SELECT
+        ms.month_start::text AS month,
+        COALESCE(cb.expected_revenue, 0)::numeric(14,2) AS expected_revenue,
+        COALESCE(ma.actual_revenue, 0)::numeric(14,2) AS actual_revenue,
+        COALESCE(cb.expected_pieces, 0)::numeric(14,2) AS expected_pieces,
+        COALESCE(ma.actual_pieces, 0)::numeric(14,2) AS actual_pieces
+      FROM month_series ms
+      CROSS JOIN cohort_baseline cb
+      LEFT JOIN monthly_actuals ma ON ma.month_start = ms.month_start
+      ORDER BY ms.month_start
+    `,
+    [selection.startDate, selection.endDate],
+  );
+
+  return buildTrendRangeAnalysisResponse(selection, cohortRows, monthlyResult.rows);
 }
 
 /**

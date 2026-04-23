@@ -36,6 +36,7 @@ import type {
   SavedSegment,
   SegmentDefinition,
   SegmentResult,
+  TrendRangeAnalysisResponse,
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
   WhatsappGroup,
@@ -98,6 +99,13 @@ export const api = {
       search.set("trendDays", String(trendDays));
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  dashboardTrendRangeAnalysis(token: string, startDate: string, endDate: string) {
+    const search = new URLSearchParams({
+      startDate,
+      endDate,
+    });
+    return request<TrendRangeAnalysisResponse>(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
   },
   getMonthlyTargets(token: string, year?: number) {
     const search = new URLSearchParams();
