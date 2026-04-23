@@ -19,6 +19,7 @@ import type {
   InventoryOverviewCard,
   InventoryOverviewResponse,
   InventoryProductEnrichment,
+  InventoryProductKind,
   InventoryQuadrant,
   InventoryQuadrantCell,
   InventoryRestockListItem,
@@ -204,7 +205,7 @@ function cleanInventoryModelLabel(model: string) {
     .trim();
 }
 
-function deriveInventoryProductKind(model: string) {
+function deriveInventoryProductKind(model: string): InventoryProductKind {
   return removeDiacritics(normalizeText(model)).toUpperCase().includes("DOC DE CARGA") ? "DOC_DE_CARGA" : "TELA";
 }
 
@@ -1566,7 +1567,6 @@ interface InventorySnapshotHistoryRow {
   date: string;
   importedAt: string;
   sku: string;
-  model: string;
   stockQuantity: number;
 }
 
@@ -1593,6 +1593,7 @@ interface InventoryTopCustomerRow {
 }
 
 interface InventoryModelAggregate {
+  sku: string;
   modelKey: string;
   modelLabel: string;
   brand: string;
@@ -1631,6 +1632,13 @@ interface InventoryModelSeriesValue {
   activeSkuCount: number;
   salesUnits: number;
   restockUnits: number;
+  hasSnapshot: boolean;
+}
+
+interface InventorySkuSeriesValue {
+  date: string;
+  stockUnits: number;
+  salesUnits: number;
   hasSnapshot: boolean;
 }
 
@@ -1724,12 +1732,217 @@ function quantile(values: number[], ratio: number) {
   return lowerValue + (upperValue - lowerValue) * (position - lower);
 }
 
-function buildInventoryModelKey(productKind: "DOC_DE_CARGA" | "TELA", brand: string, family: string) {
-  return `${productKind}::${normalizeCode(brand)}::${normalizeCode(family)}`;
+function buildInventoryAnalyticsKey(sku: string) {
+  return normalizeCode(sku) || sku;
 }
 
-function buildInventoryModelLabel(brand: string, family: string) {
-  return family === brand ? brand : `${brand} ${family}`.trim();
+export function buildInventorySeriesByModel(
+  currentModelKeyBySku: Map<string, string>,
+  historyRows: Pick<InventorySnapshotHistoryRow, "date" | "sku" | "stockQuantity">[],
+  salesDailyRows: Pick<InventorySalesDailyRow, "date" | "sku" | "salesUnits">[],
+) {
+  const skuSeriesBySku = new Map<
+    string,
+    {
+      modelKey: string;
+      pointMap: Map<string, InventorySkuSeriesValue>;
+    }
+  >();
+
+  const ensureSkuSeries = (sku: string) => {
+    const resolvedModelKey = currentModelKeyBySku.get(sku) ?? buildInventoryAnalyticsKey(sku);
+    if (!resolvedModelKey) {
+      return null;
+    }
+
+    const current =
+      skuSeriesBySku.get(sku) ??
+      ({
+        modelKey: resolvedModelKey,
+        pointMap: new Map<string, InventorySkuSeriesValue>(),
+      } as const);
+
+    if (!skuSeriesBySku.has(sku)) {
+      skuSeriesBySku.set(sku, {
+        modelKey: current.modelKey,
+        pointMap: new Map(current.pointMap),
+      });
+    }
+
+    const target = skuSeriesBySku.get(sku);
+    if (!target) {
+      return null;
+    }
+
+    return target;
+  };
+
+  for (const row of historyRows) {
+    const skuSeries = ensureSkuSeries(row.sku);
+    if (!skuSeries) {
+      continue;
+    }
+
+    const currentPoint = skuSeries.pointMap.get(row.date) ?? {
+      date: row.date,
+      stockUnits: 0,
+      salesUnits: 0,
+      hasSnapshot: false,
+    };
+
+    currentPoint.stockUnits += Number(row.stockQuantity ?? 0);
+    currentPoint.hasSnapshot = true;
+    skuSeries.pointMap.set(row.date, currentPoint);
+  }
+
+  for (const row of salesDailyRows) {
+    const skuSeries = ensureSkuSeries(row.sku);
+    if (!skuSeries) {
+      continue;
+    }
+
+    const currentPoint = skuSeries.pointMap.get(row.date) ?? {
+      date: row.date,
+      stockUnits: 0,
+      salesUnits: 0,
+      hasSnapshot: false,
+    };
+
+    currentPoint.salesUnits += toNumber(row.salesUnits);
+    skuSeries.pointMap.set(row.date, currentPoint);
+  }
+
+  const rawSeriesByModel = new Map<string, Map<string, InventoryModelSeriesValue>>();
+
+  for (const { modelKey, pointMap } of skuSeriesBySku.values()) {
+    let previousStockUnits: number | null = null;
+    const sortedPoints = [...pointMap.values()].sort((left, right) => left.date.localeCompare(right.date));
+
+    for (const point of sortedPoints) {
+      const expectedStock = previousStockUnits !== null ? Math.max(0, previousStockUnits - point.salesUnits) : 0;
+      const restockUnits =
+        point.hasSnapshot && previousStockUnits !== null
+          ? Math.max(0, Number((point.stockUnits - expectedStock).toFixed(0)))
+          : 0;
+
+      if (point.hasSnapshot) {
+        previousStockUnits = point.stockUnits;
+      }
+
+      const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
+      const currentModelPoint = modelSeries.get(point.date) ?? {
+        date: point.date,
+        stockUnits: 0,
+        activeSkuCount: 0,
+        salesUnits: 0,
+        restockUnits: 0,
+        hasSnapshot: false,
+      };
+
+      currentModelPoint.salesUnits += point.salesUnits;
+      currentModelPoint.restockUnits += restockUnits;
+
+      if (point.hasSnapshot) {
+        currentModelPoint.stockUnits += point.stockUnits;
+        currentModelPoint.activeSkuCount += point.stockUnits > 0 ? 1 : 0;
+        currentModelPoint.hasSnapshot = true;
+      }
+
+      modelSeries.set(point.date, currentModelPoint);
+      rawSeriesByModel.set(modelKey, modelSeries);
+    }
+  }
+
+  const seriesByModel = new Map<string, InventoryDailySeriesPoint[]>();
+  const overviewSeriesMap = new Map<
+    string,
+    {
+      date: string;
+      totalStockUnits: number;
+      totalStockUnitsTela: number;
+      totalStockUnitsDoc: number;
+      activeModelCount: number;
+      activeSkuCount: number;
+      activeSkuCountTela: number;
+      activeSkuCountDoc: number;
+      salesUnits: number;
+      restockUnits: number;
+    }
+  >();
+
+  for (const [modelKey, pointMap] of rawSeriesByModel.entries()) {
+    const normalizedPoints = [...pointMap.values()]
+      .sort((left, right) => left.date.localeCompare(right.date))
+      .map((point) => {
+        const overviewPoint = overviewSeriesMap.get(point.date) ?? {
+          date: point.date,
+          totalStockUnits: 0,
+          totalStockUnitsTela: 0,
+          totalStockUnitsDoc: 0,
+          activeModelCount: 0,
+          activeSkuCount: 0,
+          activeSkuCountTela: 0,
+          activeSkuCountDoc: 0,
+          salesUnits: 0,
+          restockUnits: 0,
+        };
+
+        overviewPoint.salesUnits += point.salesUnits;
+
+        if (point.hasSnapshot) {
+          overviewPoint.totalStockUnits += point.stockUnits;
+          overviewPoint.activeModelCount += point.stockUnits > 0 ? 1 : 0;
+          overviewPoint.activeSkuCount += point.activeSkuCount;
+          if (modelKey.startsWith("DOC_DE_CARGA::")) {
+            overviewPoint.activeSkuCountDoc += point.activeSkuCount;
+            overviewPoint.totalStockUnitsDoc += point.stockUnits;
+          } else {
+            overviewPoint.activeSkuCountTela += point.activeSkuCount;
+            overviewPoint.totalStockUnitsTela += point.stockUnits;
+          }
+        }
+
+        overviewPoint.restockUnits += point.restockUnits;
+        overviewSeriesMap.set(point.date, overviewPoint);
+
+        return {
+          date: point.date,
+          totalStockUnits: 0,
+          activeModelCount: 0,
+          salesUnits: point.salesUnits,
+          restockUnits: point.restockUnits,
+          stockUnits: point.hasSnapshot ? point.stockUnits : null,
+          activeSkuCount: point.hasSnapshot ? point.activeSkuCount : null,
+        } satisfies InventoryDailySeriesPoint;
+      });
+
+    seriesByModel.set(modelKey, normalizedPoints);
+  }
+
+  const overviewSeries = [...overviewSeriesMap.values()]
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-90)
+    .map(
+      (point) =>
+        ({
+          date: point.date,
+          totalStockUnits: point.totalStockUnits,
+          totalStockUnitsTela: point.totalStockUnitsTela,
+          totalStockUnitsDoc: point.totalStockUnitsDoc,
+          activeModelCount: point.activeModelCount,
+          activeSkuCount: point.activeSkuCount,
+          activeSkuCountTela: point.activeSkuCountTela,
+          activeSkuCountDoc: point.activeSkuCountDoc,
+          salesUnits: point.salesUnits,
+          restockUnits: point.restockUnits,
+          stockUnits: null,
+        }) satisfies InventoryDailySeriesPoint,
+    );
+
+  return {
+    overviewSeries,
+    seriesByModel,
+  };
 }
 
 function sortLocale(left: string, right: string) {
@@ -1805,6 +2018,7 @@ function resolveInventoryRestockStatus(input: {
 
 function buildBuyingListItem(model: InventoryModelAggregate): InventoryBuyingListItem {
   return {
+    sku: model.sku,
     modelKey: model.modelKey,
     modelLabel: model.modelLabel,
     brand: model.brand,
@@ -1862,7 +2076,6 @@ async function loadInventoryHistoryRows(limit = INVENTORY_HISTORY_SNAPSHOT_LIMIT
         s.imported_at::date::text AS date,
         s.imported_at::text AS "importedAt",
         isi.sku,
-        isi.model,
         isi.stock_quantity AS "stockQuantity"
       FROM recent_snapshots rs
       JOIN inventory_snapshots s ON s.id = rs.id
@@ -1975,7 +2188,7 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
   );
 }
 
-function computeBuyPriority(model: Pick<InventoryModelAggregate, "stockUnits" | "coverageDays" | "sales90" | "activeSkuCount" | "daysSinceLastSale">) {
+function computeBuyPriority(model: Pick<InventoryModelAggregate, "stockUnits" | "coverageDays" | "sales90" | "daysSinceLastSale">) {
   if (model.sales90 <= 0) {
     return 0;
   }
@@ -1986,10 +2199,9 @@ function computeBuyPriority(model: Pick<InventoryModelAggregate, "stockUnits" | 
       : Math.max(0, Math.round((45 - Math.min(model.coverageDays, 45)) * 3));
   const stockScore = model.stockUnits <= 0 ? 80 : model.stockUnits <= 10 ? 42 : 0;
   const demandScore = Math.min(220, Math.round(model.sales90));
-  const mixScore = model.activeSkuCount <= 2 ? 24 : model.activeSkuCount <= 4 ? 12 : 0;
   const recencyPenalty = model.daysSinceLastSale !== null && model.daysSinceLastSale > 60 ? 36 : 0;
 
-  return Math.max(0, demandScore + coverageScore + stockScore + mixScore - recencyPenalty);
+  return Math.max(0, demandScore + coverageScore + stockScore - recencyPenalty);
 }
 
 function buildOverviewHighlights(series: InventoryDailySeriesPoint[]) {
@@ -2051,10 +2263,11 @@ function buildModelBenchmarks(series: InventoryDailySeriesPoint[]): InventoryMod
   const stockPoints = series.filter((point) => point.stockUnits !== null && point.activeSkuCount !== null);
   const stockValues = stockPoints.map((point) => point.stockUnits ?? 0);
   const mixValues = stockPoints.map((point) => point.activeSkuCount ?? 0);
+  const hasMeaningfulMix = new Set(mixValues).size > 1;
   const stockLowCut = quantile(stockValues, 0.25);
   const stockHighCut = quantile(stockValues, 0.75);
-  const mixLowCut = quantile(mixValues, 0.25);
-  const mixHighCut = quantile(mixValues, 0.75);
+  const mixLowCut = hasMeaningfulMix ? quantile(mixValues, 0.25) : null;
+  const mixHighCut = hasMeaningfulMix ? quantile(mixValues, 0.75) : null;
 
   const lowStockAvgSales =
     stockLowCut === null
@@ -2085,19 +2298,19 @@ function buildModelHighlights(model: InventoryModelAggregate, benchmarks: Invent
   const highlights: string[] = [];
 
   if (benchmarks.lowStockAvgSales !== null) {
-    highlights.push(`Com estoque baixo, esse modelo vendeu em media ${benchmarks.lowStockAvgSales} pecas por dia.`);
+    highlights.push(`Com estoque baixo, esse SKU vendeu em media ${benchmarks.lowStockAvgSales} pecas por dia.`);
   }
 
   if (benchmarks.highStockAvgSales !== null) {
-    highlights.push(`Com estoque alto, esse modelo vendeu em media ${benchmarks.highStockAvgSales} pecas por dia.`);
+    highlights.push(`Com estoque alto, esse SKU vendeu em media ${benchmarks.highStockAvgSales} pecas por dia.`);
   }
 
   if (benchmarks.shortMixAvgSales !== null) {
-    highlights.push(`Com mix curto, esse modelo vendeu em media ${benchmarks.shortMixAvgSales} pecas por dia.`);
+    highlights.push(`Com mix curto, esse SKU vendeu em media ${benchmarks.shortMixAvgSales} pecas por dia.`);
   }
 
   if (benchmarks.wideMixAvgSales !== null) {
-    highlights.push(`Com mix amplo, esse modelo vendeu em media ${benchmarks.wideMixAvgSales} pecas por dia.`);
+    highlights.push(`Com mix amplo, esse SKU vendeu em media ${benchmarks.wideMixAvgSales} pecas por dia.`);
   }
 
   const lastRestockPoint = [...series].reverse().find((point) => point.restockUnits > 0);
@@ -2157,14 +2370,15 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
   const lastSaleBySku = new Map(lastSaleRows.map((row) => [row.sku, row.lastSaleAt]));
 
   for (const item of context.items) {
-    const modelKey = buildInventoryModelKey(item.productKind, item.brand, item.family);
-    const modelLabel = buildInventoryModelLabel(item.brand, item.family);
+    const modelKey = buildInventoryAnalyticsKey(item.sku);
+    const modelLabel = cleanInventoryModelLabel(item.model);
     modelKeyBySku.set(item.sku, modelKey);
 
     const unitValue =
       item.enrichment?.averageCostPrice ?? item.enrichment?.costPrice ?? item.enrichment?.price ?? item.price;
     const usesEstimatedValue = item.enrichment?.averageCostPrice == null && item.enrichment?.costPrice == null;
     const current = modelByKey.get(modelKey) ?? {
+      sku: item.sku,
       modelKey,
       modelLabel,
       brand: item.brand,
@@ -2235,146 +2449,19 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
     }
   }
 
-  const rawSeriesByModel = new Map<string, Map<string, InventoryModelSeriesValue>>();
-  const globalSeriesMap = new Map<
-    string,
-    {
-      date: string;
-      totalStockUnits: number;
-      totalStockUnitsTela: number;
-      totalStockUnitsDoc: number;
-      activeModelCount: number;
-      activeSkuCount: number;
-      activeSkuCountTela: number;
-      activeSkuCountDoc: number;
-      salesUnits: number;
-      restockUnits: number;
-    }
-  >();
-
-  for (const row of historyRows) {
-    const grouping = deriveInventoryGrouping(row.model);
-    const modelKey = buildInventoryModelKey(grouping.productKind, grouping.brand, grouping.family);
-    const date = toDateOnly(row.date) ?? row.date;
-    const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
-    const currentModelPoint = modelSeries.get(date) ?? {
-      date,
-      stockUnits: 0,
-      activeSkuCount: 0,
-      salesUnits: 0,
-      restockUnits: 0,
-      hasSnapshot: false,
-    };
-    currentModelPoint.stockUnits += Number(row.stockQuantity ?? 0);
-    currentModelPoint.activeSkuCount += Number(row.stockQuantity ?? 0) > 0 ? 1 : 0;
-    currentModelPoint.hasSnapshot = true;
-    modelSeries.set(date, currentModelPoint);
-    rawSeriesByModel.set(modelKey, modelSeries);
-  }
-
-  for (const saleRow of salesDailyRows) {
-    const modelKey = modelKeyBySku.get(saleRow.sku);
-    if (!modelKey) {
-      continue;
-    }
-
-    const date = toDateOnly(saleRow.date) ?? saleRow.date;
-    const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
-    const currentModelPoint = modelSeries.get(date) ?? {
-      date,
-      stockUnits: 0,
-      activeSkuCount: 0,
-      salesUnits: 0,
-      restockUnits: 0,
-      hasSnapshot: false,
-    };
-    currentModelPoint.salesUnits += saleRow.salesUnits;
-    modelSeries.set(date, currentModelPoint);
-    rawSeriesByModel.set(modelKey, modelSeries);
-  }
-
-  const seriesByModel = new Map<string, InventoryDailySeriesPoint[]>();
-
-  for (const [modelKey, pointMap] of rawSeriesByModel.entries()) {
-    let previousStockUnits: number | null = null;
-    const sortedPoints = [...pointMap.values()].sort((left, right) => left.date.localeCompare(right.date));
-
-    const normalizedPoints = sortedPoints.map((point) => {
-      const expectedStock = previousStockUnits !== null ? Math.max(0, previousStockUnits - point.salesUnits) : 0;
-      const restockUnits = point.hasSnapshot
-        ? previousStockUnits === null
-          ? 0
-          : Math.max(0, Number((point.stockUnits - expectedStock).toFixed(0)))
-        : 0;
-
-      if (point.hasSnapshot) {
-        previousStockUnits = point.stockUnits;
-      }
-
-      const globalPoint = globalSeriesMap.get(point.date) ?? {
-        date: point.date,
-        totalStockUnits: 0,
-        totalStockUnitsTela: 0,
-        totalStockUnitsDoc: 0,
-        activeModelCount: 0,
-        activeSkuCount: 0,
-        activeSkuCountTela: 0,
-        activeSkuCountDoc: 0,
-        salesUnits: 0,
-        restockUnits: 0,
-      };
-
-      globalPoint.salesUnits += point.salesUnits;
-
-      if (point.hasSnapshot) {
-        globalPoint.totalStockUnits += point.stockUnits;
-        globalPoint.activeModelCount += point.stockUnits > 0 ? 1 : 0;
-        globalPoint.activeSkuCount += point.activeSkuCount;
-        if (modelKey.startsWith("DOC_DE_CARGA")) {
-          globalPoint.activeSkuCountDoc += point.activeSkuCount;
-          globalPoint.totalStockUnitsDoc += point.stockUnits;
-        } else {
-          globalPoint.activeSkuCountTela += point.activeSkuCount;
-          globalPoint.totalStockUnitsTela += point.stockUnits;
-        }
-        globalPoint.restockUnits += restockUnits;
-      }
-
-      globalSeriesMap.set(point.date, globalPoint);
-
-      return {
-        date: point.date,
-        totalStockUnits: 0,
-        activeModelCount: 0,
-        salesUnits: point.salesUnits,
-        restockUnits,
-        stockUnits: point.hasSnapshot ? point.stockUnits : null,
-        activeSkuCount: point.hasSnapshot ? point.activeSkuCount : null,
-      } satisfies InventoryDailySeriesPoint;
-    });
-
-    seriesByModel.set(modelKey, normalizedPoints);
-  }
-
-  const overviewSeries = [...globalSeriesMap.values()]
-    .sort((left, right) => left.date.localeCompare(right.date))
-    .slice(-90)
-    .map(
-      (point) =>
-        ({
-          date: point.date,
-          totalStockUnits: point.totalStockUnits,
-          totalStockUnitsTela: point.totalStockUnitsTela,
-          totalStockUnitsDoc: point.totalStockUnitsDoc,
-          activeModelCount: point.activeModelCount,
-          activeSkuCount: point.activeSkuCount,
-          activeSkuCountTela: point.activeSkuCountTela,
-          activeSkuCountDoc: point.activeSkuCountDoc,
-          salesUnits: point.salesUnits,
-          restockUnits: point.restockUnits,
-          stockUnits: null,
-        }) satisfies InventoryDailySeriesPoint,
-    );
+  const { overviewSeries, seriesByModel } = buildInventorySeriesByModel(
+    modelKeyBySku,
+    historyRows.map((row) => ({
+      date: toDateOnly(row.date) ?? row.date,
+      sku: row.sku,
+      stockQuantity: Number(row.stockQuantity ?? 0),
+    })),
+    salesDailyRows.map((row) => ({
+      date: toDateOnly(row.date) ?? row.date,
+      sku: row.sku,
+      salesUnits: row.salesUnits,
+    })),
+  );
 
   for (const model of modelByKey.values()) {
     model.daysSinceLastSale = calculateDaysSinceDate(model.lastSaleAt);
@@ -2392,7 +2479,9 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
 
     const modelSeries = seriesByModel.get(model.modelKey) ?? [];
     const lastRestockPoint = [...modelSeries].reverse().find((point) => point.restockUnits > 0);
-    model.lastRestockAt = lastRestockPoint?.date ?? (model.deltaIn > 0 ? toDateOnly(context.snapshot.importedAt) : null);
+    model.lastRestockAt =
+      lastRestockPoint?.date ??
+      (context.previousSnapshot && model.deltaIn > 0 ? toDateOnly(context.snapshot.importedAt) : null);
     model.currentItems = [...model.currentItems].sort(
       (left, right) => right.stockCurrent - left.stockCurrent || right.sales90 - left.sales90 || sortLocale(left.model, right.model),
     );
@@ -2433,7 +2522,7 @@ function buildOverviewCards(models: InventoryModelAggregate[]): InventoryOvervie
     {
       key: "BUY_URGENT",
       title: "Comprar urgente",
-      helper: "Modelos que vendem e estao sem folga de estoque.",
+      helper: "SKUs que vendem e estao sem folga de estoque.",
       count: buyUrgent,
       tone: "danger",
       targetTab: "buying",
@@ -2478,25 +2567,48 @@ function buildOverviewCards(models: InventoryModelAggregate[]): InventoryOvervie
   ];
 }
 
-function mapRestockItem(
+function buildSyntheticRestockPoint(model: InventoryModelAggregate, series: InventoryDailySeriesPoint[]) {
+  if (model.deltaIn <= 0 || !model.lastRestockAt) {
+    return null;
+  }
+
+  const latestPoint = series.at(-1) ?? null;
+  return {
+    date: model.lastRestockAt,
+    totalStockUnits: 0,
+    activeModelCount: 0,
+    salesUnits: latestPoint?.salesUnits ?? 0,
+    restockUnits: model.deltaIn,
+    stockUnits: latestPoint?.stockUnits ?? model.stockUnits,
+    activeSkuCount: latestPoint?.activeSkuCount ?? model.activeSkuCount,
+  } satisfies InventoryDailySeriesPoint;
+}
+
+export function mapRestockItem(
   model: InventoryModelAggregate,
   series: InventoryDailySeriesPoint[],
   latestSeriesDate: string | null,
 ): InventoryRestockListItem | null {
   const lastRestockPoint = [...series].reverse().find((point) => point.restockUnits > 0) ?? null;
+  const effectiveRestockPoint = lastRestockPoint ?? buildSyntheticRestockPoint(model, series);
 
-  if (!lastRestockPoint && model.buyRecommendation !== "BUY_NOW") {
+  if (!effectiveRestockPoint) {
     return null;
   }
 
-  const effectiveRestockPoint = lastRestockPoint ?? series.at(-1) ?? null;
-  const restockIndex =
+  const directRestockIndex =
     effectiveRestockPoint
       ? series.findIndex(
           (point) =>
             point.date === effectiveRestockPoint.date && point.restockUnits === effectiveRestockPoint.restockUnits,
         )
       : -1;
+  const restockIndex =
+    directRestockIndex >= 0
+      ? directRestockIndex
+      : effectiveRestockPoint
+        ? series.findIndex((point) => point.date === effectiveRestockPoint.date)
+        : -1;
   const previousPoint = restockIndex > 0 ? series[restockIndex - 1] : null;
   const sales7Before = series
     .slice(Math.max(0, restockIndex - 7), Math.max(0, restockIndex))
@@ -2510,6 +2622,7 @@ function mapRestockItem(
   const restockUnits = effectiveRestockPoint?.restockUnits ?? 0;
 
   return {
+    sku: model.sku,
     modelKey: model.modelKey,
     modelLabel: model.modelLabel,
     brand: model.brand,
@@ -2719,6 +2832,7 @@ export async function getInventoryModels(): Promise<InventoryModelsResponse> {
     .map(
       (model) =>
         ({
+          sku: model.sku,
           modelKey: model.modelKey,
           modelLabel: model.modelLabel,
           brand: model.brand,

@@ -644,6 +644,7 @@ export interface InventoryOverviewResponse {
 }
 
 export interface InventoryBuyingListItem {
+  sku: string;
   modelKey: string;
   modelLabel: string;
   brand: string;
@@ -678,6 +679,7 @@ export interface InventoryBuyingResponse {
 }
 
 export interface InventoryRestockListItem {
+  sku: string;
   modelKey: string;
   modelLabel: string;
   brand: string;
@@ -744,6 +746,7 @@ export interface InventoryStaleResponse {
 }
 
 export interface InventoryModelListItem {
+  sku: string;
   modelKey: string;
   modelLabel: string;
   brand: string;
