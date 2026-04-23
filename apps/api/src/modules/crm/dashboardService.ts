@@ -16,6 +16,7 @@ import { env } from "../../lib/env.js";
 import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
+import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -483,13 +484,28 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
     );
   }
 
-  return result.rows.map((row) => ({
-    date: String(row.date),
-    totalCustomers: Number(row.total_customers ?? 0),
-    activeCount: Number(row.active_count ?? 0),
-    attentionCount: Number(row.attention_count ?? 0),
-    inactiveCount: Number(row.inactive_count ?? 0),
-  }));
+  // Fetch spend data for the range
+  const today = new Date();
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - (validatedDays - 1));
+  const since = startDate.toISOString().slice(0, 10);
+  const until = today.toISOString().slice(0, 10);
+  
+  const spendData = await getMetaAdsMonthlySpend(since, until).catch(() => []);
+  const spendMap = new Map(spendData.map((s) => [s.month, s.spend]));
+
+  return result.rows.map((row) => {
+    const date = String(row.date);
+    const monthKey = date.slice(0, 7);
+    return {
+      date,
+      totalCustomers: Number(row.total_customers ?? 0),
+      activeCount: Number(row.active_count ?? 0),
+      attentionCount: Number(row.attention_count ?? 0),
+      inactiveCount: Number(row.inactive_count ?? 0),
+      trafficSpend: spendMap.get(monthKey) ?? 0,
+    };
+  });
 }
 
 /**
