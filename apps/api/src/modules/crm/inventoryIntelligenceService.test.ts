@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildInventorySeriesByModel,
+  mapRestockItem,
   resolveInventoryBuyRecommendation,
   resolveInventoryDemandStatus,
   resolveInventoryQuadrant,
@@ -83,5 +85,114 @@ describe("resolveInventoryStaleAction", () => {
     expect(resolveInventoryStaleAction(98)).toBe("PROMOTION");
     expect(resolveInventoryStaleAction(143)).toBe("LIQUIDATE_REVIEW");
     expect(resolveInventoryStaleAction(null)).toBe("LIQUIDATE_REVIEW");
+  });
+});
+
+describe("buildInventorySeriesByModel", () => {
+  it("keeps restock history tied to the sku itself", () => {
+    const { seriesByModel } = buildInventorySeriesByModel(
+      new Map([["SKU-1", "SKU-1"]]),
+      [
+        { date: "2026-04-21", sku: "SKU-1", stockQuantity: 5 },
+        { date: "2026-04-22", sku: "SKU-1", stockQuantity: 7 },
+      ],
+      [],
+    );
+
+    expect(seriesByModel.get("SKU-1")).toEqual([
+      {
+        date: "2026-04-21",
+        totalStockUnits: 0,
+        activeModelCount: 0,
+        salesUnits: 0,
+        restockUnits: 0,
+        stockUnits: 5,
+        activeSkuCount: 1,
+      },
+      {
+        date: "2026-04-22",
+        totalStockUnits: 0,
+        activeModelCount: 0,
+        salesUnits: 0,
+        restockUnits: 2,
+        stockUnits: 7,
+        activeSkuCount: 1,
+      },
+    ]);
+    expect(seriesByModel.has("MT E6I")).toBe(false);
+  });
+});
+
+describe("mapRestockItem", () => {
+  function createModel(overrides: Record<string, unknown> = {}) {
+    return {
+      sku: "SKU-1",
+      modelKey: "SKU-1",
+      modelLabel: "MT E6S",
+      brand: "MT",
+      family: "E6S",
+      productKind: "TELA" as const,
+      stockUnits: 10,
+      activeSkuCount: 1,
+      totalSkuCount: 1,
+      sales7: 0,
+      sales30: 5,
+      sales90: 12,
+      orders30: 2,
+      orders90: 4,
+      lastSaleAt: null,
+      daysSinceLastSale: null,
+      lastRestockAt: null,
+      coverageDays: 28,
+      deltaIn: 0,
+      deltaOut: 0,
+      trappedValue: 0,
+      trappedValueEstimated: false,
+      buyPriority: 1,
+      buyRecommendation: "BUY_NOW",
+      holdSales: false,
+      qualityLabels: [],
+      sampleSkus: [],
+      depositNames: [],
+      supplierNames: [],
+      reservedStock: 0,
+      currentItems: [],
+      ...overrides,
+    } as any;
+  }
+
+  it("does not include buy-now models when no restock was actually detected", () => {
+    expect(mapRestockItem(createModel(), [], "2026-04-23")).toBeNull();
+  });
+
+  it("uses the current snapshot delta when the daily series collapsed the intraday entry", () => {
+    const item = mapRestockItem(
+      createModel({
+        buyRecommendation: "WATCH",
+        deltaIn: 4,
+        lastRestockAt: "2026-04-23",
+      }),
+      [
+        {
+          date: "2026-04-23",
+          totalStockUnits: 0,
+          activeModelCount: 0,
+          salesUnits: 0,
+          restockUnits: 0,
+          stockUnits: 10,
+          activeSkuCount: 1,
+        },
+      ],
+      "2026-04-23",
+    );
+
+    expect(item).toMatchObject({
+      sku: "SKU-1",
+      lastRestockAt: "2026-04-23",
+      restockUnits: 4,
+      stockBefore: 6,
+      stockAfter: 10,
+      status: "ARRIVED_TODAY",
+    });
   });
 });

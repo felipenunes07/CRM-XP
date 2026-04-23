@@ -61,9 +61,9 @@ const viewTabs = [
   },
   {
     value: "models" as const,
-    label: "Modelos",
-    helper: "Abra cada modelo com calma e acompanhe estoque, vendas, reposicoes e clientes.",
-    title: "Analise por modelo",
+    label: "SKUs",
+    helper: "Abra cada SKU com calma e acompanhe estoque, vendas, reposicoes e clientes.",
+    title: "Analise por SKU",
   },
 ] as const;
 
@@ -274,7 +274,7 @@ function formatSeriesValue(dataKey: string, value: number) {
   }
 
   if (dataKey.includes("Count")) {
-    return `${formatNumber(value)} modelos`;
+    return `${formatNumber(value)} SKUs`;
   }
 
   return formatNumber(value);
@@ -577,13 +577,13 @@ function ModelDetailPanel({
   isLoading: boolean;
 }) {
   if (isLoading) {
-    return <section className="panel inventory-detail-panel">Carregando analise do modelo...</section>;
+    return <section className="panel inventory-detail-panel">Carregando analise do SKU...</section>;
   }
 
   if (!detail?.model) {
     return (
       <section className="panel inventory-detail-panel inventory-detail-empty">
-        <div className="empty-state">Escolha um modelo da lista para abrir a analise completa.</div>
+        <div className="empty-state">Escolha um SKU da lista para abrir a analise completa.</div>
       </section>
     );
   }
@@ -592,12 +592,12 @@ function ModelDetailPanel({
 
   return (
     <section className="panel inventory-detail-panel">
-          <div className="inventory-detail-header">
+      <div className="inventory-detail-header">
         <div>
-          <p className="eyebrow">Detalhe do modelo</p>
-          <h3>{model.modelLabel}</h3>
+          <p className="eyebrow">Detalhe do SKU</p>
+          <h3>{model.sku}</h3>
           <p className="panel-subcopy">
-            {buyRecommendationLabel(model.buyRecommendation)} · {model.sampleSkus.slice(0, 3).join(", ")}
+            {model.modelLabel} · {buyRecommendationLabel(model.buyRecommendation)}
           </p>
         </div>
         <div className="inventory-note-pills">
@@ -616,7 +616,7 @@ function ModelDetailPanel({
           <strong>{formatNumber(model.stockUnits)}</strong>
         </article>
         <article className="inventory-mini-stat">
-          <span>SKUs ativos</span>
+          <span>SKU ativo</span>
           <strong>{formatNumber(model.activeSkuCount)}</strong>
         </article>
         <article className="inventory-mini-stat">
@@ -690,7 +690,7 @@ function ModelDetailPanel({
               ))}
             </div>
           ) : (
-            <div className="empty-state">Sem clientes com historico deste modelo.</div>
+            <div className="empty-state">Sem clientes com historico deste SKU.</div>
           )}
         </section>
 
@@ -721,7 +721,7 @@ function ModelDetailPanel({
 
         <section className="inventory-detail-column">
           <div className="inventory-section-heading">
-            <h4>SKUs do modelo</h4>
+            <h4>SKU selecionado</h4>
             <span>{formatNumber(detail.skus.length)}</span>
           </div>
           <div className="inventory-detail-list">
@@ -840,7 +840,7 @@ export function InventoryPage() {
   const visibleModels = useMemo(() => {
     return (modelsQuery.data?.items ?? []).filter((item) => {
       if (deferredSearch) {
-        const haystack = [item.modelLabel, item.brand, item.family, item.sampleSkus.join(" "), item.qualityLabels.join(" ")]
+        const haystack = [item.sku, item.modelLabel, item.brand, item.family, item.qualityLabels.join(" ")]
           .join(" ")
           .toLowerCase();
 
@@ -1072,17 +1072,17 @@ export function InventoryPage() {
                     <p className="eyebrow">Compras</p>
                     <h3>Tabela de compras</h3>
                   </div>
-                  <span>{formatNumber(visibleBuyingItems.length)} modelos</span>
+                  <span>{formatNumber(visibleBuyingItems.length)} SKUs</span>
                 </div>
 
                 <div className="inventory-stale-table-wrap">
                   <table className="data-table inventory-stale-table">
                     <thead>
                       <tr>
-                        <th>Modelo</th>
+                        <th>SKU</th>
                         <th>Tipo</th>
                         <th>Em estoque</th>
-                        <th>SKUs ativos</th>
+                        <th>Status SKU</th>
                         <th>Venda 30/90</th>
                         <th>Cobertura</th>
                         <th>Ultima venda</th>
@@ -1097,9 +1097,9 @@ export function InventoryPage() {
                         <tr key={item.modelKey}>
                           <td>
                             <div className="inventory-stale-model-cell">
-                              <strong>{item.modelLabel}</strong>
+                              <strong>{item.sku}</strong>
                               <span>
-                                {item.brand} · {item.family} · {item.sampleSkus.slice(0, 3).join(", ")}
+                                {item.modelLabel} · {item.brand} · {item.family}
                               </span>
                             </div>
                           </td>
@@ -1112,8 +1112,8 @@ export function InventoryPage() {
                             <strong>{formatNumber(item.stockUnits)}</strong>
                           </td>
                           <td>
-                            {formatNumber(item.activeSkuCount)}
-                            <span className="inventory-table-secondary-text">de {formatNumber(item.totalSkuCount)}</span>
+                            <strong>{item.activeSkuCount > 0 ? "Ativo" : "Sem saldo"}</strong>
+                            <span className="inventory-table-secondary-text">{formatNumber(item.totalSkuCount)} linha(s)</span>
                           </td>
                           <td>
                             <strong>
@@ -1149,7 +1149,7 @@ export function InventoryPage() {
                 </div>
               </section>
             ) : (
-              <div className="empty-state">Nenhum modelo entrou nesse filtro agora.</div>
+              <div className="empty-state">Nenhum SKU entrou nesse filtro agora.</div>
             )}
           </section>
         </>
@@ -1204,14 +1204,14 @@ export function InventoryPage() {
                     <p className="eyebrow">Reposicao</p>
                     <h3>Tabela de reposicao</h3>
                   </div>
-                  <span>{formatNumber(visibleRestockItems.length)} modelos</span>
+                  <span>{formatNumber(visibleRestockItems.length)} SKUs</span>
                 </div>
 
                 <div className="inventory-stale-table-wrap">
                   <table className="data-table inventory-stale-table">
                     <thead>
                       <tr>
-                        <th>Modelo</th>
+                        <th>SKU</th>
                         <th>Tipo</th>
                         <th>Ultima entrada</th>
                         <th>Entrou</th>
@@ -1230,9 +1230,9 @@ export function InventoryPage() {
                         <tr key={`${item.modelKey}-${item.lastRestockAt ?? "no-restock"}`}>
                           <td>
                             <div className="inventory-stale-model-cell">
-                              <strong>{item.modelLabel}</strong>
+                              <strong>{item.sku}</strong>
                               <span>
-                                {item.brand} · {item.family}
+                                {item.modelLabel} · {item.brand} · {item.family}
                               </span>
                             </div>
                           </td>
@@ -1255,7 +1255,7 @@ export function InventoryPage() {
                           <td>
                             <div className="inventory-stale-value-cell">
                               <strong>{formatNumber(item.stockUnits)}</strong>
-                              <span className="inventory-table-secondary-text">{formatNumber(item.activeSkuCount)} SKUs ativos</span>
+                              <span className="inventory-table-secondary-text">{item.activeSkuCount > 0 ? "SKU ativo" : "Sem saldo"}</span>
                             </div>
                           </td>
                           <td>{formatCoverage(item.coverageDays)}</td>
@@ -1281,7 +1281,7 @@ export function InventoryPage() {
                 </div>
               </section>
             ) : (
-              <div className="empty-state">Nenhum modelo entrou nesse periodo agora.</div>
+              <div className="empty-state">Nenhum SKU entrou nesse periodo agora.</div>
             )}
           </section>
         </>
@@ -1396,7 +1396,7 @@ export function InventoryPage() {
                 </div>
               </section>
             ) : (
-              <div className="empty-state">Nenhum modelo entrou nessa faixa agora.</div>
+              <div className="empty-state">Nenhum SKU entrou nessa faixa agora.</div>
             )}
           </section>
         </>
@@ -1407,8 +1407,8 @@ export function InventoryPage() {
           <section className="panel inventory-search-panel">
             <div className="inventory-search-grid">
               <label>
-                Buscar modelo, marca, familia ou SKU
-                <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Ex.: A05, Xiaomi, 1308-1" />
+                Buscar SKU, modelo, marca ou familia
+                <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Ex.: 1308-1, A05, Xiaomi" />
               </label>
 
               <label>
@@ -1454,7 +1454,7 @@ export function InventoryPage() {
               <div className="inventory-section-heading">
                 <div>
                   <p className="eyebrow">Catalogo</p>
-                  <h3>Modelos para analisar</h3>
+                  <h3>SKUs para analisar</h3>
                 </div>
                 <span>{formatNumber(visibleModels.length)}</span>
               </div>
@@ -1468,9 +1468,9 @@ export function InventoryPage() {
                     onClick={() => setSelectedModelKey(item.modelKey)}
                   >
                     <div>
-                      <strong>{item.modelLabel}</strong>
+                      <strong>{item.sku}</strong>
                       <span>
-                        {productKindLabel(item.productKind)} · {item.sampleSkus.slice(0, 3).join(", ")} · {item.qualityLabels.slice(0, 2).join(", ") || "Sem qualidade"}
+                        {item.modelLabel} · {productKindLabel(item.productKind)} · {item.qualityLabels.slice(0, 2).join(", ") || "Sem qualidade"}
                       </span>
                     </div>
                     <div className="inventory-row-numbers">
@@ -1480,7 +1480,7 @@ export function InventoryPage() {
                   </button>
                 ))}
 
-                {!visibleModels.length ? <div className="empty-state">Nenhum modelo bateu com essa busca.</div> : null}
+                {!visibleModels.length ? <div className="empty-state">Nenhum SKU bateu com essa busca.</div> : null}
               </div>
             </section>
 
