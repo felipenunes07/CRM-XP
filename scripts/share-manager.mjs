@@ -91,7 +91,8 @@ async function main() {
     shutdown(code ?? 0);
   });
 
-  await waitForHttp("http://127.0.0.1:5173", "frontend em http://localhost:5173");
+  await waitForHttp("http://localhost:4000/api/health", "API em http://localhost:4000");
+  await waitForHttp("http://localhost:5173", "frontend em http://localhost:5173");
 
   console.log("Frontend online. Abrindo o link fixo do ngrok...");
   console.log(`Link esperado: https://${STATIC_NGROK_DOMAIN}`);

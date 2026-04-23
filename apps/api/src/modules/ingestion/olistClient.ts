@@ -603,7 +603,7 @@ export class OlistClient {
   }
 }
 
-export async function withRetry<T>(task: () => Promise<T>, attempts = 5) {
+export async function withRetry<T>(task: () => Promise<T>, attempts = 8) {
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -611,10 +611,17 @@ export async function withRetry<T>(task: () => Promise<T>, attempts = 5) {
       return await task();
     } catch (error) {
       lastError = error;
-      const delay = Math.min(32_000, 1_000 * 2 ** attempt) + Math.floor(Math.random() * 300);
+      
+      const isRateLimit = String(error).toLowerCase().includes("bloqueada") || 
+                         String(error).toLowerCase().includes("excedido");
+      
+      const baseDelay = isRateLimit ? 5000 : 1000;
+      const delay = Math.min(60_000, baseDelay * 2 ** attempt) + Math.floor(Math.random() * 500);
+      
       logger.warn("olist request retry", {
         attempt: attempt + 1,
         delay,
+        isRateLimit,
         error: String(error),
       });
       await new Promise((resolve) => setTimeout(resolve, delay));
