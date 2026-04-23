@@ -71,6 +71,10 @@ const totalCustomersTrendLine = {
     label: "Total de clientes",
     color: "#2956d7",
 };
+const FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH = 280;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT = 170;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_GAP = 18;
+const FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN = 16;
 const chartViewCopy = {
     inactivity: {
         eyebrow: "Faixas de inatividade",
@@ -119,6 +123,16 @@ function formatTrendTooltipLabel(value) {
         return "--";
     }
     return formatDate(value);
+}
+function getFullScreenAnnotationTooltipPosition(mouseX, mouseY) {
+    const viewportWidth = typeof window === "undefined" ? mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH : window.innerWidth;
+    const viewportHeight = typeof window === "undefined" ? mouseY + FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT : window.innerHeight;
+    const shouldRenderToLeft = mouseX > viewportWidth - (FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH + FULL_SCREEN_ANNOTATION_TOOLTIP_GAP + FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN);
+    const left = shouldRenderToLeft
+        ? Math.max(FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN, mouseX - FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH - FULL_SCREEN_ANNOTATION_TOOLTIP_GAP)
+        : Math.min(mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_GAP, viewportWidth - FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH - FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN);
+    const top = Math.max(FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN, Math.min(mouseY - 26, viewportHeight - FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT - FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN));
+    return { left, top };
 }
 function formatDecimal(value, fractionDigits = 1) {
     return new Intl.NumberFormat(getFormattingLocale(), {
@@ -253,29 +267,33 @@ function TrendTooltip({ active, payload, label, mode = "count", isFullScreen = f
         return null;
     }
     const point = payload[0]?.payload;
+    const trafficSpend = point?.trafficSpend ?? 0;
     return (_jsxs("div", { className: "chart-tooltip trend-tooltip", style: isFullScreen ? {
-            width: "400px",
+            width: "360px",
+            maxWidth: "calc(100vw - 4rem)",
+            boxSizing: "border-box",
             padding: "1.5rem",
             borderRadius: "16px",
             boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
-        } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}, children: formatTrendTooltipLabel(label) }), point?.annotation && (_jsxs("div", { style: {
+        } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}, children: formatTrendTooltipLabel(label) }), !isFullScreen && point?.annotation && (_jsxs("div", { style: {
                     marginTop: "0.8rem",
                     marginBottom: "0.8rem",
                     padding: "0.8rem",
                     backgroundColor: "rgba(41, 86, 215, 0.05)",
                     borderRadius: "8px",
                     borderLeft: "4px solid #2956d7"
-                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCCC" }), _jsx("strong", { style: { fontSize: isFullScreen ? "1.1rem" : "0.95rem", color: "#1e293b" }, children: point.annotation.label })] }), _jsx("p", { style: { margin: 0, fontSize: isFullScreen ? "0.95rem" : "0.8rem", color: "#64748b", lineHeight: "1.4" }, children: point.annotation.description })] })), point ? (_jsxs("div", { className: "chart-tooltip-count", style: isFullScreen ? { marginBottom: "1.2rem", paddingBottom: "1.2rem", borderBottom: "1px solid #f1f5f9" } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.75rem", color: "#2956d7" } : {}, children: formatNumber(point.totalCustomers) }), _jsx("span", { style: isFullScreen ? { fontSize: "0.95rem" } : {}, children: tx("clientes na base nesse dia", "当天客户池中的客户") })] })) : null, isFullScreen && point?.trafficSpend !== undefined && point.trafficSpend > 0 && (_jsxs("div", { style: {
+                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCCC" }), _jsx("strong", { style: { fontSize: isFullScreen ? "1.1rem" : "0.95rem", color: "#1e293b" }, children: point.annotation.label })] }), _jsx("p", { style: { margin: 0, fontSize: isFullScreen ? "0.95rem" : "0.8rem", color: "#64748b", lineHeight: "1.4" }, children: point.annotation.description })] })), point ? (_jsxs("div", { className: "chart-tooltip-count", style: isFullScreen ? { marginBottom: "1.2rem", paddingBottom: "1.2rem", borderBottom: "1px solid #f1f5f9" } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.75rem", color: "#2956d7" } : {}, children: formatNumber(point.totalCustomers) }), _jsx("span", { style: isFullScreen ? { fontSize: "0.95rem" } : {}, children: tx("clientes na base nesse dia", "当天客户池中的客户") })] })) : null, isFullScreen && point && (_jsxs("div", { style: {
                     marginTop: "-0.5rem",
                     marginBottom: "1.2rem",
                     padding: "0.8rem 1rem",
                     backgroundColor: "rgba(16, 185, 129, 0.05)",
                     borderRadius: "12px",
                     border: "1px solid rgba(16, 185, 129, 0.1)",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center"
-                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCB0" }), _jsx("span", { style: { fontSize: "0.95rem", fontWeight: 600, color: "#065f46" }, children: tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)") })] }), _jsx("strong", { style: { fontSize: "1.1rem", color: "#059669" }, children: formatCurrency(point.trafficSpend) })] })), _jsxs("div", { className: "trend-tooltip-list", children: [mode === "count" && (_jsxs("div", { className: "trend-tooltip-item", style: { display: "block", padding: isFullScreen ? "0.4rem 0" : "0.4rem 0" }, children: [_jsxs("div", { style: {
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) auto",
+                    alignItems: "center",
+                    gap: "0.75rem"
+                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCB0" }), _jsx("span", { style: { fontSize: "0.88rem", fontWeight: 700, color: "#065f46", lineHeight: "1.2", display: "block", maxWidth: "10.5rem" }, children: tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)") })] }), _jsx("strong", { style: { fontSize: "1.05rem", color: "#059669", whiteSpace: "nowrap", textAlign: "right" }, children: formatCurrency(trafficSpend) })] })), _jsxs("div", { className: "trend-tooltip-list", children: [mode === "count" && (_jsxs("div", { className: "trend-tooltip-item", style: { display: "block", padding: isFullScreen ? "0.4rem 0" : "0.4rem 0" }, children: [_jsxs("div", { style: {
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "space-between",
@@ -324,6 +342,15 @@ function TrendTooltip({ active, payload, label, mode = "count", isFullScreen = f
                         return (_jsxs("div", { className: "trend-tooltip-item", children: [_jsxs("span", { className: "trend-tooltip-label", children: [_jsx("span", { className: "trend-tooltip-emoji", style: { fontSize: isFullScreen ? "1.3rem" : "1.1rem", marginRight: "0.25rem" }, children: line.emoji }), line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")] }), _jsx("div", { className: "trend-tooltip-metric", children: mode === "percent" ? (_jsxs(_Fragment, { children: [_jsx("strong", { children: formatTrendPercent(share) }), _jsxs("span", { style: isFullScreen ? { fontSize: "0.9rem" } : {}, children: [formatNumber(customerCount), " ", tx("clientes", "customers")] })] })) : (_jsxs(_Fragment, { children: [_jsxs("strong", { children: [formatNumber(customerCount), " ", tx("clientes", "customers")] }), _jsxs("span", { style: isFullScreen ? { fontSize: "0.9rem" } : {}, children: [formatTrendPercent(share), " ", tx("da base", "share of base")] })] })) })] }, line.countKey));
                     })] })] }));
 }
+function FullScreenAnnotationReferenceDot({ cx, cy, annotation, isHovered = false, onHover, onLeave, onSelect, }) {
+    if (typeof cx !== "number" || typeof cy !== "number") {
+        return null;
+    }
+    return (_jsxs("g", { children: [_jsx("circle", { cx: cx, cy: cy, r: isHovered ? 14 : 11, fill: "rgba(41, 86, 215, 0.14)", opacity: isHovered ? 1 : 0.45, pointerEvents: "none" }), _jsx("circle", { cx: cx, cy: cy, r: 8, fill: "#fff", stroke: "#2956d7", strokeWidth: 3, pointerEvents: "none" }), _jsx("text", { x: cx, y: cy - 20, textAnchor: "middle", dominantBaseline: "central", fontSize: "24", pointerEvents: "none", children: "\uD83D\uDCCC" }), _jsx("rect", { x: cx - 24, y: cy - 36, width: 48, height: 58, rx: 20, fill: "transparent", style: { cursor: "pointer" }, onMouseEnter: (event) => onHover(annotation, event), onMouseMove: (event) => onHover(annotation, event), onMouseLeave: onLeave, onClick: (event) => {
+                    event.stopPropagation();
+                    onSelect(annotation);
+                } })] }));
+}
 function formatShare(value, total) {
     if (!total) {
         return "0% da base";
@@ -342,6 +369,7 @@ export function DashboardPage() {
     const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
     const [editingAnnotation, setEditingAnnotation] = useState(null);
     const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
+    const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState(null);
     // Fetch annotations from API
     const annotationsQuery = useQuery({
         queryKey: ["chart-annotations"],
@@ -356,6 +384,11 @@ export function DashboardPage() {
             setUserAnnotations(annotationsQuery.data);
         }
     }, [annotationsQuery.data]);
+    useEffect(() => {
+        if (!isTrendFullScreen) {
+            setHoveredFullScreenAnnotation(null);
+        }
+    }, [isTrendFullScreen]);
     const handleChartClick = (data) => {
         if (!data || !data.activeLabel)
             return;
@@ -394,6 +427,20 @@ export function DashboardPage() {
                 alert("Erro ao remover anotação.");
             }
         }
+    };
+    const handleFullScreenAnnotationHover = (annotation, event) => {
+        setHoveredFullScreenAnnotation({
+            annotation,
+            mouseX: event.clientX,
+            mouseY: event.clientY,
+        });
+    };
+    const handleFullScreenAnnotationLeave = () => {
+        setHoveredFullScreenAnnotation(null);
+    };
+    const handleSelectAnnotation = (annotation) => {
+        setEditingAnnotation({ date: annotation.date, existing: annotation });
+        setIsAnnotationModalOpen(true);
     };
     const [selectedPeriod, setSelectedPeriod] = useState("max");
     useEffect(() => {
@@ -482,6 +529,9 @@ export function DashboardPage() {
     const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
     const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
     const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
+    const fullScreenAnnotationTooltipPosition = hoveredFullScreenAnnotation
+        ? getFullScreenAnnotationTooltipPosition(hoveredFullScreenAnnotation.mouseX, hoveredFullScreenAnnotation.mouseY)
+        : null;
     const currentYear = new Date().getFullYear();
     const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
     const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
@@ -629,42 +679,47 @@ export function DashboardPage() {
               height: 100%;
               display: flex;
               flex-direction: column;
+              position: relative;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
               color: #1e293b;
             }
-          ` }), _jsxs("div", { className: "fs-chart-card", style: { padding: "1.5rem" }, children: [_jsxs("div", { className: "trend-chart-toolbar", style: {
-                                    marginBottom: "1rem",
-                                    backgroundColor: "#f8fafc",
-                                    padding: "0.75rem 1.25rem",
-                                    borderRadius: "12px",
+          ` }), _jsxs("div", { className: "fs-chart-card fullscreen-trend-chart-card", style: { padding: "1.5rem" }, children: [_jsx("button", { onClick: () => setIsTrendFullScreen(false), style: {
+                                    position: "absolute",
+                                    top: "1rem",
+                                    right: "1rem",
+                                    width: "36px",
+                                    height: "36px",
+                                    borderRadius: "8px",
+                                    border: "1px solid #e2e8f0",
+                                    backgroundColor: "white",
                                     display: "flex",
-                                    justifyContent: "space-between",
                                     alignItems: "center",
-                                    gap: "1.5rem"
-                                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "1.5rem" }, children: [_jsx(PeriodSelector, { value: selectedPeriod, onChange: setSelectedPeriod }), _jsx("div", { className: "customers-view-switcher", role: "tablist", children: trendModeOptions.map((option) => (_jsxs("button", { type: "button", role: "tab", "aria-selected": trendDisplayMode === option.value, className: `chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`, onClick: () => setTrendDisplayMode(option.value), children: [_jsx("strong", { children: option.label }), _jsx("span", { children: option.helper })] }, option.value))) })] }), _jsx("button", { onClick: () => setIsTrendFullScreen(false), style: {
-                                            width: "36px",
-                                            height: "36px",
-                                            borderRadius: "8px",
-                                            border: "1px solid #e2e8f0",
-                                            backgroundColor: "white",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            fontSize: "1.2rem",
-                                            cursor: "pointer",
-                                            color: "#64748b",
-                                            transition: "all 0.2s"
-                                        }, onMouseOver: (e) => {
-                                            e.currentTarget.style.backgroundColor = "#fee2e2";
-                                            e.currentTarget.style.color = "#ef4444";
-                                        }, onMouseOut: (e) => {
-                                            e.currentTarget.style.backgroundColor = "white";
-                                            e.currentTarget.style.color = "#64748b";
-                                        }, children: "\u2715" })] }), _jsx("div", { style: { flex: 1, minHeight: 0 }, children: _jsx(ResponsiveContainer, { width: "100%", height: "100%", children: _jsxs(ComposedChart, { data: trendData, margin: { top: 20, right: 30, left: 20, bottom: 20 }, onClick: handleChartClick, children: [_jsx("defs", { children: trendSeries.map((series) => (_jsxs("linearGradient", { id: `fs-${series.gradientId}`, x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: series.color, stopOpacity: series.fillOpacityStart }), _jsx("stop", { offset: "100%", stopColor: series.color, stopOpacity: series.fillOpacityEnd })] }, series.gradientId))) }), userAnnotations.map((ann) => (_jsx(ReferenceLine, { x: ann.date, stroke: "#94a3b8", strokeDasharray: "4 2", strokeWidth: 2, opacity: 0.6 }, `fs-line-${ann.date}`))), userAnnotations.map((ann) => {
+                                    justifyContent: "center",
+                                    fontSize: "1.2rem",
+                                    cursor: "pointer",
+                                    color: "#64748b",
+                                    transition: "all 0.2s",
+                                    zIndex: 3,
+                                }, onMouseOver: (e) => {
+                                    e.currentTarget.style.backgroundColor = "#fee2e2";
+                                    e.currentTarget.style.color = "#ef4444";
+                                }, onMouseOut: (e) => {
+                                    e.currentTarget.style.backgroundColor = "white";
+                                    e.currentTarget.style.color = "#64748b";
+                                }, children: "\u2715" }), _jsx("div", { style: { flex: 1, minHeight: 0, paddingTop: "0.25rem" }, children: _jsx(ResponsiveContainer, { width: "100%", height: "100%", children: _jsxs(ComposedChart, { data: trendData, margin: { top: 15, right: 10, left: -27, bottom: -10 }, onClick: handleChartClick, children: [_jsx("defs", { children: trendSeries.map((series) => (_jsxs("linearGradient", { id: `fs-${series.gradientId}`, x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: series.color, stopOpacity: series.fillOpacityStart }), _jsx("stop", { offset: "100%", stopColor: series.color, stopOpacity: series.fillOpacityEnd })] }, series.gradientId))) }), userAnnotations.map((ann) => (_jsx(ReferenceLine, { x: ann.date, stroke: "#94a3b8", strokeDasharray: "4 2", strokeWidth: 2, opacity: 0.6 }, `fs-line-${ann.date}`))), userAnnotations.map((ann) => {
                                                 const point = trendData.find(d => d.date === ann.date);
                                                 const yValue = point ? point[totalCustomersTrendLine.countKey] : undefined;
                                                 if (yValue === undefined)
                                                     return null;
                                                 return (_jsx(ReferenceDot, { x: ann.date, y: yValue, r: 8, fill: "#fff", stroke: "#2956d7", strokeWidth: 3, label: { position: "top", value: "📌", fontSize: 24, offset: 12 } }, `fs-dot-${ann.date}`));
-                                            }), _jsx(CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#f1f5f9" }), _jsx(XAxis, { dataKey: "date", stroke: "#94a3b8", tickFormatter: formatTrendAxisLabel, minTickGap: 40, style: { fontSize: "0.85rem" } }), _jsx(YAxis, { domain: trendDisplayMode === "percent" ? [0, 100] : [0, "auto"], ticks: trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined, stroke: "#94a3b8", tickFormatter: (val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val), style: { fontSize: "0.85rem" }, width: trendDisplayMode === "percent" ? 60 : 80 }), _jsx(Tooltip, { content: _jsx(TrendTooltip, { mode: trendDisplayMode, isFullScreen: isTrendFullScreen }), offset: 24, position: { x: 24, y: 24 }, allowEscapeViewBox: { x: true, y: true }, wrapperStyle: { zIndex: 20, pointerEvents: "none" } }), trendSeries.map((series) => (_jsx(Area, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, stroke: "none", fill: `url(#fs-${series.gradientId})`, dot: false, isAnimationActive: false }, series.shareKey))), trendSeries.map((series) => (_jsx(Line, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, name: series.label, stroke: series.color, strokeWidth: 2.5, dot: false, activeDot: { r: 5, fill: series.color, strokeWidth: 0 }, isAnimationActive: false }, `${series.shareKey}-line`))), trendDisplayMode !== "percent" ? (_jsx(Line, { type: "monotone", dataKey: totalCustomersTrendLine.countKey, name: tx("Total de clientes", "å®¢æˆ·æ€»æ•°"), stroke: totalCustomersTrendLine.color, strokeWidth: 4, dot: false, activeDot: { r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 } })) : null] }) }) }), _jsx("div", { className: "trend-legend", style: { marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }, children: trendSeries.map((series) => (_jsxs("span", { className: "trend-legend-item", style: { fontSize: "1rem" }, children: [_jsx("span", { className: "trend-legend-color", style: { backgroundColor: series.color, width: 14, height: 14 } }), series.label] }, series.shareKey))) })] })] }))] }));
+                                            }), userAnnotations.map((ann) => {
+                                                const point = trendData.find(d => d.date === ann.date);
+                                                const yValue = point ? point[totalCustomersTrendLine.countKey] : undefined;
+                                                if (yValue === undefined)
+                                                    return null;
+                                                return (_jsx(ReferenceDot, { x: ann.date, y: yValue, r: 8, shape: (props) => (_jsx(FullScreenAnnotationReferenceDot, { ...props, annotation: ann, isHovered: hoveredFullScreenAnnotation?.annotation.date === ann.date, onHover: handleFullScreenAnnotationHover, onLeave: handleFullScreenAnnotationLeave, onSelect: handleSelectAnnotation })) }, `fs-hover-dot-${ann.date}`));
+                                            }), _jsx(CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#f1f5f9" }), _jsx(XAxis, { dataKey: "date", stroke: "#94a3b8", tickFormatter: formatTrendAxisLabel, minTickGap: 40, style: { fontSize: "0.85rem" } }), _jsx(YAxis, { domain: trendDisplayMode === "percent" ? [0, 100] : [0, "auto"], ticks: trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined, stroke: "#94a3b8", tickFormatter: (val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val), style: { fontSize: "0.85rem" }, width: trendDisplayMode === "percent" ? 52 : 68 }), _jsx(Tooltip, { content: _jsx(TrendTooltip, { mode: trendDisplayMode, isFullScreen: isTrendFullScreen }), offset: 24, position: { x: trendDisplayMode === "percent" ? 72 : 55, y: 0 }, allowEscapeViewBox: { x: true, y: true }, wrapperStyle: { zIndex: 20, pointerEvents: "none" } }), trendSeries.map((series) => (_jsx(Area, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, stroke: "none", fill: `url(#fs-${series.gradientId})`, dot: false, isAnimationActive: false }, series.shareKey))), trendSeries.map((series) => (_jsx(Line, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, name: series.label, stroke: series.color, strokeWidth: 2.5, dot: false, activeDot: { r: 5, fill: series.color, strokeWidth: 0 }, isAnimationActive: false }, `${series.shareKey}-line`))), trendDisplayMode !== "percent" ? (_jsx(Line, { type: "monotone", dataKey: totalCustomersTrendLine.countKey, name: tx("Total de clientes", "å®¢æˆ·æ€»æ•°"), stroke: totalCustomersTrendLine.color, strokeWidth: 4, dot: false, activeDot: { r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 } })) : null] }) }) }), _jsx("div", { className: "trend-legend", style: { marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }, children: trendSeries.map((series) => (_jsxs("span", { className: "trend-legend-item", style: { fontSize: "1rem" }, children: [_jsx("span", { className: "trend-legend-color", style: { backgroundColor: series.color, width: 14, height: 14 } }), series.label] }, series.shareKey))) }), hoveredFullScreenAnnotation && fullScreenAnnotationTooltipPosition ? (_jsxs("div", { className: "full-screen-annotation-tooltip", style: {
+                                    left: `${fullScreenAnnotationTooltipPosition.left}px`,
+                                    top: `${fullScreenAnnotationTooltipPosition.top}px`,
+                                }, children: [_jsx("span", { className: "full-screen-annotation-tooltip-eyebrow", children: tx("Marco fixado", "Pinned marker") }), _jsx("strong", { children: hoveredFullScreenAnnotation.annotation.label }), _jsx("span", { className: "full-screen-annotation-tooltip-date", children: formatTrendTooltipLabel(hoveredFullScreenAnnotation.annotation.date) }), _jsx("p", { children: hoveredFullScreenAnnotation.annotation.description })] })) : null] })] }))] }));
 }
