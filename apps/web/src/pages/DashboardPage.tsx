@@ -9,6 +9,8 @@ import {
   ComposedChart,
   LabelList,
   Line,
+  ReferenceLine,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -107,8 +109,15 @@ const totalCustomersTrendLine = {
   color: "#2956d7",
 } as const;
 
+interface ChartAnnotation {
+  id?: string;
+  date: string;
+  label: string;
+  description: string;
+}
+
 type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
-type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number };
+type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number; annotation?: ChartAnnotation };
 
 const chartViewCopy = {
   inactivity: {
@@ -266,6 +275,118 @@ function bucketTooltipNote(label: string) {
   return "Todos nesta faixa ja estao Inativos.";
 }
 
+const AnnotationModal = ({
+  isOpen,
+  onClose,
+  onSave,
+  onDelete,
+  date,
+  initialData
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (label: string, description: string) => void;
+  onDelete?: () => void;
+  date: string;
+  initialData?: any
+}) => {
+  const [label, setLabel] = useState(initialData?.label ?? "");
+  const [description, setDescription] = useState(initialData?.description ?? "");
+
+  useEffect(() => {
+    setLabel(initialData?.label ?? "");
+    setDescription(initialData?.description ?? "");
+  }, [initialData, isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+      backdropFilter: "blur(4px)"
+    }}>
+      <div className="panel" style={{
+        width: "100%",
+        maxWidth: "500px",
+        margin: "1rem",
+        padding: "1.5rem",
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+          <h3 style={{ margin: 0 }}>{initialData ? "Editar Marco" : "Novo Marco"} - {date}</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "#64748b" }}>&times;</button>
+        </div>
+
+        <div style={{ marginBottom: "1.5rem" }}>
+          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b", marginBottom: "0.5rem" }}>Título</label>
+          <input
+            type="text"
+            autoFocus
+            className="form-input"
+            style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "1rem" }}
+            value={label}
+            onChange={e => setLabel(e.target.value)}
+            placeholder="Ex: Campanha de Reativação"
+          />
+        </div>
+
+        <div style={{ marginBottom: "1.5rem" }}>
+          <label style={{ display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b", marginBottom: "0.5rem" }}>Descrição</label>
+          <textarea
+            className="form-input"
+            style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "1rem", minHeight: "120px", resize: "vertical" }}
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Descreva o que houve neste dia..."
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: "1rem", justifyContent: "flex-end", alignItems: "center" }}>
+          {initialData && (
+            <button
+              onClick={onDelete}
+              style={{ padding: "0.75rem 1.25rem", borderRadius: "8px", border: "1px solid #fee2e2", backgroundColor: "#fef2f2", color: "#ef4444", fontWeight: 600, cursor: "pointer", marginRight: "auto" }}
+            >
+              Excluir
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            style={{ padding: "0.75rem 1.25rem", borderRadius: "8px", border: "1px solid #e2e8f0", backgroundColor: "#f8f9fa", color: "#64748b", fontWeight: 600, cursor: "pointer" }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(label, description)}
+            disabled={!label.trim()}
+            style={{
+              padding: "0.75rem 1.5rem",
+              borderRadius: "8px",
+              border: "none",
+              backgroundColor: label.trim() ? "#2956d7" : "#cbd5e1",
+              color: "white",
+              fontWeight: 600,
+              cursor: label.trim() ? "pointer" : "not-allowed",
+              transition: "all 0.2s"
+            }}
+          >
+            Salvar Marco
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function InactivityTooltip({
   active,
   payload,
@@ -321,6 +442,26 @@ function TrendTooltip({
   return (
     <div className="chart-tooltip trend-tooltip">
       <strong>{formatTrendTooltipLabel(label)}</strong>
+      {point?.annotation && (
+        <div
+          style={{
+            marginTop: "0.8rem",
+            marginBottom: "0.8rem",
+            padding: "0.8rem",
+            backgroundColor: "rgba(41, 86, 215, 0.05)",
+            borderRadius: "8px",
+            borderLeft: "4px solid #2956d7"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>📌</span>
+            <strong style={{ fontSize: "0.95rem", color: "#1e293b" }}>{point.annotation.label}</strong>
+          </div>
+          <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b", lineHeight: "1.4" }}>
+            {point.annotation.description}
+          </p>
+        </div>
+      )}
       {point ? (
         <div className="chart-tooltip-count">
           <strong>{formatNumber(point.totalCustomers)}</strong>
@@ -360,7 +501,7 @@ function TrendTooltip({
               (() => {
                 const slope = point.slope;
                 const slopeColor = slope > 2.5 ? "#059669" : slope > 1.5 ? "#10b981" : slope >= 1.0 ? "#34d399" : slope > 0.2 ? "#6ee7b7" : slope > -0.2 ? "#94a3b8" : slope > -0.5 ? "#f87171" : slope > -1.5 ? "#ef4444" : "#dc2626";
-                
+
                 return (
                   <div
                     style={{
@@ -385,20 +526,20 @@ function TrendTooltip({
                       {slope > 4.0
                         ? tx("Crescimento Explosivo", "Explosive Growth")
                         : slope > 2.5
-                        ? tx("Crescimento Exponencial", "Exponential Growth")
-                        : slope > 1.5
-                        ? tx("Crescimento Acelerado", "Accelerated Growth")
-                        : slope >= 1.0
-                        ? tx("Crescimento Constante", "Steady Growth")
-                        : slope > 0.2
-                        ? tx("Crescimento Leve", "Slight Growth")
-                        : slope > -0.2
-                        ? tx("Base Estabilizada", "Stabilized Base")
-                        : slope > -0.5
-                        ? tx("Retração Leve", "Slight Contraction")
-                        : slope > -1.5
-                        ? tx("Queda em Curso", "Ongoing Decline")
-                        : tx("Queda Crítica", "Critical Decline")}
+                          ? tx("Crescimento Exponencial", "Exponential Growth")
+                          : slope > 1.5
+                            ? tx("Crescimento Acelerado", "Accelerated Growth")
+                            : slope >= 1.0
+                              ? tx("Crescimento Constante", "Steady Growth")
+                              : slope > 0.2
+                                ? tx("Crescimento Leve", "Slight Growth")
+                                : slope > -0.2
+                                  ? tx("Base Estabilizada", "Stabilized Base")
+                                  : slope > -0.5
+                                    ? tx("Retração Leve", "Slight Contraction")
+                                    : slope > -1.5
+                                      ? tx("Queda em Curso", "Ongoing Decline")
+                                      : tx("Queda Crítica", "Critical Decline")}
                     </div>
                   </div>
                 );
@@ -451,10 +592,68 @@ export function DashboardPage() {
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>(() => {
-    const stored = sessionStorage.getItem("dashboard-trend-display-mode");
-    return stored === "percent" ? "percent" : "count";
+  const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
+
+  // Interactive Pins (Annotations) state
+  const [userAnnotations, setUserAnnotations] = useState<ChartAnnotation[]>([]);
+  const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
+  const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
+
+  // Fetch annotations from API
+  const annotationsQuery = useQuery({
+    queryKey: ["chart-annotations"],
+    queryFn: async () => {
+      const response = await api.getChartAnnotations(token!);
+      return response;
+    },
+    enabled: Boolean(token),
   });
+
+  useEffect(() => {
+    if (annotationsQuery.data) {
+      setUserAnnotations(annotationsQuery.data);
+    }
+  }, [annotationsQuery.data]);
+
+  const handleChartClick = (data: any) => {
+    if (!data || !data.activeLabel) return;
+    const date = data.activeLabel;
+    const existing = userAnnotations.find(a => a.date === date);
+    setEditingAnnotation({ date, existing });
+    setIsAnnotationModalOpen(true);
+  };
+
+  const handleSaveAnnotation = async (label: string, description: string) => {
+    if (!editingAnnotation) return;
+
+    try {
+      await api.saveChartAnnotation(token!, {
+        id: editingAnnotation.existing?.id,
+        date: editingAnnotation.date,
+        label,
+        description
+      });
+      annotationsQuery.refetch();
+      setIsAnnotationModalOpen(false);
+    } catch (error) {
+      alert("Erro ao salvar anotação.");
+    }
+  };
+
+  const handleDeleteAnnotation = async () => {
+    if (!editingAnnotation?.existing?.id) return;
+
+    if (window.confirm("Deseja remover este marco?")) {
+      try {
+        await api.deleteChartAnnotation(token!, editingAnnotation.existing.id);
+        annotationsQuery.refetch();
+        setIsAnnotationModalOpen(false);
+      } catch (error) {
+        alert("Erro ao remover anotação.");
+      }
+    }
+  };
+
   const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
 
   useEffect(() => {
@@ -549,18 +748,20 @@ export function DashboardPage() {
     const windowValues = array.slice(startIndex, index + 1).map(p => p.totalCustomers);
     const slope = calculateSlope(windowValues);
 
-    return { ...point, growth30d, growthPercent30d, slope };
+    const annotation = userAnnotations.find(a => point.date.startsWith(a.date));
+
+    return { ...point, growth30d, growthPercent30d, slope, annotation };
   });
   const isTrendPercentMode = trendDisplayMode === "percent";
   const trendDescription = isTrendPercentMode
     ? tx(
-        "Veja a participacao percentual diaria de ativos, atencao e inativos. Troque para quantidade quando quiser enxergar os clientes reais.",
-        "See the daily percentage share of active, attention, and inactive customers. Switch back to counts whenever you want the real totals.",
-      )
+      "Veja a participacao percentual diaria de ativos, atencao e inativos. Troque para quantidade quando quiser enxergar os clientes reais.",
+      "See the daily percentage share of active, attention, and inactive customers. Switch back to counts whenever you want the real totals.",
+    )
     : tx(
-        "Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.",
-        "Track the daily customer count in each status. The tooltip still shows each group's percentage share for the day.",
-      );
+      "Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.",
+      "Track the daily customer count in each status. The tooltip still shows each group's percentage share for the day.",
+    );
   const chartDescription = chartView === "trend" ? trendDescription : activeChartCopy.description;
   const trendModeOptions: Array<{ value: TrendDisplayMode; label: string; helper: string }> = [
     { value: "count", label: tx("Quantidade", "Count"), helper: tx("Clientes reais", "Real customers") },
@@ -939,7 +1140,12 @@ export function DashboardPage() {
               <div className="trend-chart-wrap">
                 {trendData.length ? (
                   <ResponsiveContainer width="100%" height={420}>
-                    <ComposedChart data={trendData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
+                    <ComposedChart
+                      data={trendData}
+                      margin={{ top: 28, right: 18, left: 10, bottom: 4 }}
+                      onClick={handleChartClick}
+                      style={{ cursor: "pointer" }}
+                    >
                       <defs>
                         {trendSeries.map((series) => (
                           <linearGradient key={series.gradientId} id={series.gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -948,6 +1154,35 @@ export function DashboardPage() {
                           </linearGradient>
                         ))}
                       </defs>
+                      {userAnnotations.map((ann) => (
+                        <ReferenceLine
+                          key={`line-${ann.date}`}
+                          x={ann.date}
+                          stroke="#cbd5e1"
+                          strokeDasharray="4 4"
+                          strokeWidth={2}
+                        />
+                      ))}
+                      {userAnnotations.map((ann) => {
+                        const point = trendData.find(d => d.date === ann.date);
+                        const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
+                        if (yValue === undefined) return null;
+                        
+                        return (
+                          <ReferenceDot
+                            key={`dot-${ann.date}`}
+                            x={ann.date}
+                            y={yValue}
+                            r={0}
+                            label={{
+                              position: "top",
+                              value: "📌",
+                              fontSize: 16,
+                              offset: 10,
+                            }}
+                          />
+                        );
+                      })}
                       <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
                       <XAxis
                         dataKey="date"
@@ -1000,21 +1235,59 @@ export function DashboardPage() {
                       ))}
                       {!isTrendPercentMode ? (
                         <Line
-                        type="monotone"
-                        dataKey={totalCustomersTrendLine.countKey}
-                        name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
-                        stroke={totalCustomersTrendLine.color}
-                        strokeWidth={3}
-                        dot={false}
-                        activeDot={{ r: 5, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
+                          type="monotone"
+                          dataKey={totalCustomersTrendLine.countKey}
+                          name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+                          stroke={totalCustomersTrendLine.color}
+                          strokeWidth={3}
+                          dot={false}
+                          activeDot={{ r: 5, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
                         />
                       ) : null}
                     </ComposedChart>
                   </ResponsiveContainer>
-                ) : (
-                  <div className="empty-state">{tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。")}</div>
-                )}
               </div>
+
+              {userAnnotations.length > 0 && (
+                <div style={{ 
+                  marginTop: "1.5rem", 
+                  marginBottom: "1rem",
+                  padding: "1rem", 
+                  backgroundColor: "#f8fafc", 
+                  borderRadius: "12px", 
+                  border: "1px solid #e2e8f0" 
+                }}>
+                  <h4 style={{ margin: "0 0 0.75rem 0", display: "flex", alignItems: "center", gap: "0.5rem", color: "#1e293b", fontSize: "1rem" }}>
+                    <span>📌</span> {tx("Marcos da Base", "Base Milestones")}
+                  </h4>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem" }}>
+                    {userAnnotations.sort((a, b) => b.date.localeCompare(a.date)).map((ann) => (
+                      <div 
+                        key={ann.id} 
+                        onClick={() => {
+                          setEditingAnnotation({ date: ann.date, existing: ann });
+                          setIsAnnotationModalOpen(true);
+                        }}
+                        style={{ 
+                          padding: "0.4rem 0.6rem", 
+                          backgroundColor: "white", 
+                          borderRadius: "8px", 
+                          border: "1px solid #e2e8f0", 
+                          fontSize: "0.8rem", 
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.4rem",
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <span style={{ fontWeight: "bold", color: "#64748b" }}>{ann.date}:</span>
+                        <span style={{ fontWeight: 600, color: "#1e293b" }}>{ann.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="trend-legend" aria-label={tx("Legenda do grafico de evolucao da base", "客户池走势图例")}>
                 {trendSeries.map((series) => (
                   <span key={series.shareKey} className="trend-legend-item">
@@ -1123,6 +1396,15 @@ export function DashboardPage() {
         {tableQueryError ? <div className="page-error">{tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。")}</div> : null}
         {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
       </section>
+
+      <AnnotationModal
+        isOpen={isAnnotationModalOpen}
+        onClose={() => setIsAnnotationModalOpen(false)}
+        date={editingAnnotation?.date ?? ""}
+        initialData={editingAnnotation?.existing}
+        onSave={handleSaveAnnotation}
+        onDelete={handleDeleteAnnotation}
+      />
     </div>
   );
 }

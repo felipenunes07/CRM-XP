@@ -681,6 +681,44 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
   }));
 }
 
+
+export async function getChartAnnotations() {
+  const result = await pool.query(
+    "SELECT id, date, label, description FROM chart_annotations ORDER BY date ASC"
+  );
+  return result.rows.map(row => ({
+    id: String(row.id),
+    date: String(row.date),
+    label: String(row.label),
+    description: String(row.description),
+  }));
+}
+
+export async function saveChartAnnotation(input: { id?: string; date: string; label: string; description: string }) {
+  if (input.id) {
+    const result = await pool.query(
+      `UPDATE chart_annotations 
+       SET date = $2, label = $3, description = $4 
+       WHERE id = $1 
+       RETURNING id, date, label, description`,
+      [input.id, input.date, input.label, input.description]
+    );
+    return result.rows[0];
+  } else {
+    const result = await pool.query(
+      `INSERT INTO chart_annotations (date, label, description) 
+       VALUES ($1, $2, $3) 
+       RETURNING id, date, label, description`,
+      [input.date, input.label, input.description]
+    );
+    return result.rows[0];
+  }
+}
+
+export async function deleteChartAnnotation(id: string) {
+  await pool.query("DELETE FROM chart_annotations WHERE id = $1", [id]);
+}
+
 export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
   const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, currentMonthTargetData, ltvData] =

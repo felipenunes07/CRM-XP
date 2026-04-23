@@ -43,6 +43,14 @@ import type {
   WhatsappImportSummary,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
+
+export interface ChartAnnotation {
+  id?: string;
+  date: string;
+  label: string;
+  description: string;
+}
+
 import type { AuthUser } from "../hooks/useAuth";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -469,4 +477,20 @@ export const api = {
       method: "POST",
     }, token);
   },
+
+  getChartAnnotations(token: string) {
+    return request<ChartAnnotation[]>("/api/dashboard/annotations", {}, token);
+  },
+  saveChartAnnotation(token: string, input: ChartAnnotation) {
+    return request<ChartAnnotation>("/api/dashboard/annotations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteChartAnnotation(token: string, id: string) {
+    return request<void>(`/api/dashboard/annotations/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
 };
+
