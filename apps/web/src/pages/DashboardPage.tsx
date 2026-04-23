@@ -1158,9 +1158,10 @@ export function DashboardPage() {
                         <ReferenceLine
                           key={`line-${ann.date}`}
                           x={ann.date}
-                          stroke="#cbd5e1"
-                          strokeDasharray="4 4"
+                          stroke="#94a3b8"
+                          strokeDasharray="4 2"
                           strokeWidth={2}
+                          opacity={0.6}
                         />
                       ))}
                       {userAnnotations.map((ann) => {
@@ -1173,12 +1174,15 @@ export function DashboardPage() {
                             key={`dot-${ann.date}`}
                             x={ann.date}
                             y={yValue}
-                            r={0}
+                            r={6}
+                            fill="#fff"
+                            stroke="#2956d7"
+                            strokeWidth={2}
                             label={{
                               position: "top",
                               value: "📌",
-                              fontSize: 16,
-                              offset: 10,
+                              fontSize: 18,
+                              offset: 8,
                             }}
                           />
                         );
@@ -1209,6 +1213,7 @@ export function DashboardPage() {
                       <Tooltip
                         content={<TrendTooltip mode={trendDisplayMode} />}
                         cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
+                        offset={24}
                       />
                       {trendSeries.map((series) => (
                         <Area
@@ -1246,6 +1251,9 @@ export function DashboardPage() {
                       ) : null}
                     </ComposedChart>
                   </ResponsiveContainer>
+                ) : (
+                  <div className="empty-state">{tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。")}</div>
+                )}
               </div>
 
               {userAnnotations.length > 0 && (
