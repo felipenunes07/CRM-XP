@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
+import { Meteors } from "../components/Meteors";
 
 export function LoginPage() {
   const { login, loading } = useAuth();
@@ -20,7 +21,8 @@ export function LoginPage() {
 
   return (
     <div className="login-shell">
-      <section className="login-hero">
+      <section className="login-hero relative z-10 overflow-hidden">
+        <Meteors number={30} />
         <img className="login-logo" src="/xp-factory-logo.png" alt="XP Factory" />
 
         <div className="login-hero-copy">
@@ -30,7 +32,7 @@ export function LoginPage() {
         </div>
       </section>
 
-      <form className="login-card" onSubmit={handleSubmit}>
+      <form className="login-card relative z-10" onSubmit={handleSubmit}>
         <div className="login-card-header">
           <p className="eyebrow">Acesso interno</p>
           <h2>Entrar no painel</h2>
