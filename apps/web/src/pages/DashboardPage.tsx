@@ -108,7 +108,7 @@ const totalCustomersTrendLine = {
 } as const;
 
 type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
-type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number>;
+type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number };
 
 const chartViewCopy = {
   inactivity: {
@@ -181,6 +181,28 @@ function formatTrendPercent(value: number, fractionDigits = 1) {
   const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
 
   return `${formatDecimal(safeValue, fractionDigits)}%`;
+}
+
+function calculateSlope(data: number[]) {
+  const n = data.length;
+  if (n < 2) return 0;
+
+  let sumX = 0;
+  let sumY = 0;
+  let sumXY = 0;
+  let sumX2 = 0;
+
+  for (let i = 0; i < n; i++) {
+    sumX += i;
+    sumY += data[i];
+    sumXY += i * data[i];
+    sumX2 += i * i;
+  }
+
+  const denominator = n * sumX2 - sumX * sumX;
+  if (denominator === 0) return 0;
+
+  return (n * sumXY - sumX * sumY) / denominator;
 }
 
 function normalizeTrendPoint(point: PortfolioTrendPoint): TrendCompositionPoint {
@@ -307,7 +329,7 @@ function TrendTooltip({
       ) : null}
       <div className="trend-tooltip-list">
         {mode === "count" ? (
-          <div className="trend-tooltip-item">
+          <div className="trend-tooltip-item" style={{ display: "block", padding: "0.4rem 0" }}>
             <div
               style={{
                 display: "flex",
@@ -318,22 +340,70 @@ function TrendTooltip({
               }}
             >
               <span className="trend-tooltip-label">
-            <span
-              aria-hidden="true"
-              style={{
-                display: "inline-block",
-                width: "0.85rem",
-                height: "0.2rem",
-                borderRadius: "999px",
-                backgroundColor: totalCustomersTrendLine.color,
-                marginRight: "0.45rem",
-                verticalAlign: "middle",
-              }}
-            />
-            {tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
-          </span>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "inline-block",
+                    width: "0.85rem",
+                    height: "0.2rem",
+                    borderRadius: "999px",
+                    backgroundColor: totalCustomersTrendLine.color,
+                    marginRight: "0.45rem",
+                    verticalAlign: "middle",
+                  }}
+                />
+                {tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+              </span>
               <strong>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
             </div>
+            {point?.slope !== undefined && (
+              (() => {
+                const slope = point.slope;
+                const slopeColor = slope > 2.5 ? "#059669" : slope > 1.5 ? "#10b981" : slope >= 1.0 ? "#34d399" : slope > 0.2 ? "#6ee7b7" : slope > -0.2 ? "#94a3b8" : slope > -0.5 ? "#f87171" : slope > -1.5 ? "#ef4444" : "#dc2626";
+                
+                return (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      marginTop: "0.4rem",
+                      borderTop: "1px solid rgba(41, 86, 215, 0.08)",
+                      paddingTop: "0.4rem",
+                      gap: "0.15rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.9rem", color: slopeColor }}>
+                      <span style={{ fontWeight: 600, opacity: 0.9 }}>{tx("Inclinação da Reta:", "Line Slope:")}</span>
+                      <strong>
+                        {slope > 0 ? "+" : ""}
+                        {formatDecimal(slope, 2)}
+                      </strong>
+                      <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>{tx("clientes/dia", "clients/day")}</span>
+                    </div>
+                    <div style={{ fontSize: "0.7rem", fontWeight: 500, color: slopeColor }}>
+                      {slope > 4.0
+                        ? tx("Crescimento Explosivo", "Explosive Growth")
+                        : slope > 2.5
+                        ? tx("Crescimento Exponencial", "Exponential Growth")
+                        : slope > 1.5
+                        ? tx("Crescimento Acelerado", "Accelerated Growth")
+                        : slope >= 1.0
+                        ? tx("Crescimento Constante", "Steady Growth")
+                        : slope > 0.2
+                        ? tx("Crescimento Leve", "Slight Growth")
+                        : slope > -0.2
+                        ? tx("Base Estabilizada", "Stabilized Base")
+                        : slope > -0.5
+                        ? tx("Retração Leve", "Slight Contraction")
+                        : slope > -1.5
+                        ? tx("Queda em Curso", "Ongoing Decline")
+                        : tx("Queda Crítica", "Critical Decline")}
+                    </div>
+                  </div>
+                );
+              })()
+            )}
           </div>
         ) : null}
         {trendSeries.map((line) => {
@@ -468,7 +538,19 @@ export function DashboardPage() {
     },
   } as const;
   const activeChartCopy = localizedChartViewCopy[chartView];
-  const trendData = metrics.portfolioTrend.map(normalizeTrendPoint);
+  const trendData = metrics.portfolioTrend.map(normalizeTrendPoint).map((point, index, array) => {
+    const referenceIndex30 = Math.max(0, index - 30);
+    const referencePoint30 = array[referenceIndex30];
+    const growth30d = point.totalCustomers - referencePoint30.totalCustomers;
+    const growthPercent30d = referencePoint30.totalCustomers > 0 ? (growth30d / referencePoint30.totalCustomers) * 100 : 0;
+
+    const windowSize = 14;
+    const startIndex = Math.max(0, index - (windowSize - 1));
+    const windowValues = array.slice(startIndex, index + 1).map(p => p.totalCustomers);
+    const slope = calculateSlope(windowValues);
+
+    return { ...point, growth30d, growthPercent30d, slope };
+  });
   const isTrendPercentMode = trendDisplayMode === "percent";
   const trendDescription = isTrendPercentMode
     ? tx(
@@ -791,7 +873,7 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="chart-wrap">
-                <ResponsiveContainer width="100%" height={280}>
+                <ResponsiveContainer width="100%" height={420}>
                   <BarChart
                     data={metrics.inactivityBuckets}
                     onClick={(state) => {
@@ -962,7 +1044,7 @@ export function DashboardPage() {
           ) : chartView === "screensSold" ? (
             <>
               <div className="trend-chart-wrap" style={{ marginTop: "1rem" }}>
-                <ResponsiveContainer width="100%" height={320}>
+                <ResponsiveContainer width="100%" height={420}>
                   <ComposedChart data={itemsSoldData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
                     <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
                     <XAxis dataKey="month" stroke="#5f6f95" tickLine={false} axisLine={false} />

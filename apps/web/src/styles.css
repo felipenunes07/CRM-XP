@@ -1237,9 +1237,9 @@ a {
 
 .chart-wrap {
   width: 100%;
-  height: 280px;
+  height: 420px;
   flex: 1;
-  min-height: 320px;
+  min-height: 420px;
   margin-top: 0.45rem;
   display: flex;
   align-items: flex-end;
@@ -1270,7 +1270,7 @@ a {
 .trend-chart-wrap {
   width: 100%;
   flex: 1;
-  min-height: 320px;
+  min-height: 420px;
   margin-top: 0.2rem;
   padding: 0.5rem 0.55rem 0.2rem 0.2rem;
   border-radius: 22px;
