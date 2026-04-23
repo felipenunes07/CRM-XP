@@ -444,15 +444,15 @@ function TrendTooltip({
   const trafficSpend = point?.trafficSpend ?? 0;
 
   return (
-    <div 
-      className="chart-tooltip trend-tooltip" 
-      style={isFullScreen ? { 
+    <div
+      className="chart-tooltip trend-tooltip"
+      style={isFullScreen ? {
         width: "360px",
         maxWidth: "calc(100vw - 4rem)",
         boxSizing: "border-box",
-        padding: "1.5rem", 
-        borderRadius: "16px", 
-        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)" 
+        padding: "1.5rem",
+        borderRadius: "16px",
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
       } : {}}
     >
       <strong style={isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}}>{formatTrendTooltipLabel(label)}</strong>
@@ -482,7 +482,7 @@ function TrendTooltip({
           <span style={isFullScreen ? { fontSize: "0.95rem" } : {}}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
         </div>
       ) : null}
-      
+
       {isFullScreen && point && (
         <div
           style={{
@@ -1178,8 +1178,8 @@ export function DashboardPage() {
                       </button>
                     ))}
                   </div>
-                  <button 
-                    className="icon-button" 
+                  <button
+                    className="icon-button"
                     onClick={() => setIsTrendFullScreen(true)}
                     title={tx("Ver em tela cheia", "Full screen view")}
                     style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "40px", height: "40px", backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", cursor: "pointer", color: "#64748b", transition: "all 0.2s" }}
@@ -1457,15 +1457,15 @@ export function DashboardPage() {
               color: #1e293b;
             }
           `}</style>
-          
+
           <div className="fs-chart-card" style={{ padding: "1.5rem" }}>
-            <div className="trend-chart-toolbar" style={{ 
-              marginBottom: "1rem", 
-              backgroundColor: "#f8fafc", 
-              padding: "0.75rem 1.25rem", 
-              borderRadius: "12px", 
-              display: "flex", 
-              justifyContent: "space-between", 
+            <div className="trend-chart-toolbar" style={{
+              marginBottom: "1rem",
+              backgroundColor: "#f8fafc",
+              padding: "0.75rem 1.25rem",
+              borderRadius: "12px",
+              display: "flex",
+              justifyContent: "space-between",
               alignItems: "center",
               gap: "1.5rem"
             }}>
@@ -1491,7 +1491,7 @@ export function DashboardPage() {
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={() => setIsTrendFullScreen(false)}
                 style={{
                   width: "36px",
@@ -1525,7 +1525,7 @@ export function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={trendData}
-                  margin={{ top: 42, right: 30, left: 28, bottom: 20 }}
+                  margin={{ top: 15, right: 10, left: -27, bottom: -10 }}
                   onClick={handleChartClick}
                 >
                   <defs>
@@ -1550,7 +1550,7 @@ export function DashboardPage() {
                     const point = trendData.find(d => d.date === ann.date);
                     const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
                     if (yValue === undefined) return null;
-                    
+
                     return (
                       <ReferenceDot
                         key={`fs-dot-${ann.date}`}
@@ -1565,20 +1565,20 @@ export function DashboardPage() {
                     );
                   })}
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis 
-                    dataKey="date" 
-                    stroke="#94a3b8" 
-                    tickFormatter={formatTrendAxisLabel} 
+                  <XAxis
+                    dataKey="date"
+                    stroke="#94a3b8"
+                    tickFormatter={formatTrendAxisLabel}
                     minTickGap={40}
                     style={{ fontSize: "0.85rem" }}
                   />
-                  <YAxis 
+                  <YAxis
                     domain={trendDisplayMode === "percent" ? [0, 100] : [0, "auto"]}
                     ticks={trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined}
-                    stroke="#94a3b8" 
+                    stroke="#94a3b8"
                     tickFormatter={(val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val)}
                     style={{ fontSize: "0.85rem" }}
-                    width={trendDisplayMode === "percent" ? 60 : 80}
+                    width={trendDisplayMode === "percent" ? 52 : 68}
                   />
                   <Tooltip
                     content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
@@ -1625,7 +1625,7 @@ export function DashboardPage() {
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            
+
             <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }}>
               {trendSeries.map((series) => (
                 <span key={series.shareKey} className="trend-legend-item" style={{ fontSize: "1rem" }}>
