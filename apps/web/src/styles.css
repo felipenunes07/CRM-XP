@@ -1123,6 +1123,19 @@ a {
   justify-content: flex-end;
 }
 
+.trend-chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.trend-chart-toolbar .period-selector,
+.trend-chart-toolbar .customers-view-switcher {
+  margin-bottom: 0;
+}
+
 .customers-doc-subcopy {
   margin: 0;
   max-width: 760px;
