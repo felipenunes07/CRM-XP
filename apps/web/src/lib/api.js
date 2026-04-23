@@ -368,4 +368,18 @@ export const api = {
             method: "POST",
         }, token);
     },
+    getChartAnnotations(token) {
+        return request("/api/dashboard/annotations", {}, token);
+    },
+    saveChartAnnotation(token, input) {
+        return request("/api/dashboard/annotations", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteChartAnnotation(token, id) {
+        return request(`/api/dashboard/annotations/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
 };

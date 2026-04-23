@@ -1,7 +1,7 @@
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { jsxs as _jsxs, jsx as _jsx, Fragment as _Fragment } from "react/jsx-runtime";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, } from "recharts";
+import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, ReferenceLine, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis, } from "recharts";
 import { Link } from "react-router-dom";
 import { InfoHint } from "../components/InfoHint";
 import { StatCard } from "../components/StatCard";
@@ -12,12 +12,20 @@ import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_TREND_START_YEAR = 2023;
+function getDashboardTrendMaxDays(referenceDate = new Date()) {
+    const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
+    const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+    return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
+}
 const periodOptions = [
     { value: '90d', label: '90 dias', days: 90 },
     { value: '6m', label: '6 meses', days: 180 },
     { value: '1y', label: '1 ano', days: 365 },
     { value: 'max', label: 'Período Máximo', days: 730 },
 ];
+const resolvedPeriodOptions = periodOptions.map((option) => option.value === "max" ? { ...option, days: getDashboardTrendMaxDays() } : option);
 const bucketFilters = {
     "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
     "15-30": { minDaysInactive: 15, maxDaysInactive: 30 },
@@ -58,6 +66,11 @@ const trendSeries = [
         fillOpacityEnd: 0.008,
     },
 ];
+const totalCustomersTrendLine = {
+    countKey: "totalCustomers",
+    label: "Total de clientes",
+    color: "#2956d7",
+};
 const chartViewCopy = {
     inactivity: {
         eyebrow: "Faixas de inatividade",
@@ -117,6 +130,26 @@ function formatTrendPercent(value, fractionDigits = 1) {
     const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
     return `${formatDecimal(safeValue, fractionDigits)}%`;
 }
+function calculateSlope(data) {
+    const n = data.length;
+    if (n < 2)
+        return 0;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+        const val = data[i] ?? 0;
+        sumX += i;
+        sumY += val;
+        sumXY += i * val;
+        sumX2 += i * i;
+    }
+    const denominator = n * sumX2 - sumX * sumX;
+    if (denominator === 0)
+        return 0;
+    return (n * sumXY - sumX * sumY) / denominator;
+}
 function normalizeTrendPoint(point) {
     const totalFromStatuses = point.activeCount + point.attentionCount + point.inactiveCount;
     const total = totalFromStatuses || point.totalCustomers;
@@ -165,6 +198,44 @@ function bucketTooltipNote(label) {
     }
     return "Todos nesta faixa ja estao Inativos.";
 }
+const AnnotationModal = ({ isOpen, onClose, onSave, onDelete, date, initialData }) => {
+    const [label, setLabel] = useState(initialData?.label ?? "");
+    const [description, setDescription] = useState(initialData?.description ?? "");
+    useEffect(() => {
+        setLabel(initialData?.label ?? "");
+        setDescription(initialData?.description ?? "");
+    }, [initialData, isOpen]);
+    if (!isOpen)
+        return null;
+    return (_jsx("div", { className: "modal-overlay", style: {
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            backdropFilter: "blur(4px)"
+        }, children: _jsxs("div", { className: "panel", style: {
+                width: "100%",
+                maxWidth: "500px",
+                margin: "1rem",
+                padding: "1.5rem",
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+            }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }, children: [_jsxs("h3", { style: { margin: 0 }, children: [initialData ? "Editar Marco" : "Novo Marco", " - ", date] }), _jsx("button", { onClick: onClose, style: { background: "none", border: "none", fontSize: "1.5rem", cursor: "pointer", color: "#64748b" }, children: "\u00D7" })] }), _jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("label", { style: { display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b", marginBottom: "0.5rem" }, children: "T\u00EDtulo" }), _jsx("input", { type: "text", autoFocus: true, className: "form-input", style: { width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "1rem" }, value: label, onChange: e => setLabel(e.target.value), placeholder: "Ex: Campanha de Reativa\u00E7\u00E3o" })] }), _jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("label", { style: { display: "block", fontSize: "0.875rem", fontWeight: 600, color: "#1e293b", marginBottom: "0.5rem" }, children: "Descri\u00E7\u00E3o" }), _jsx("textarea", { className: "form-input", style: { width: "100%", padding: "0.75rem", borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "1rem", minHeight: "120px", resize: "vertical" }, value: description, onChange: e => setDescription(e.target.value), placeholder: "Descreva o que houve neste dia..." })] }), _jsxs("div", { style: { display: "flex", gap: "1rem", justifyContent: "flex-end", alignItems: "center" }, children: [initialData && (_jsx("button", { onClick: onDelete, style: { padding: "0.75rem 1.25rem", borderRadius: "8px", border: "1px solid #fee2e2", backgroundColor: "#fef2f2", color: "#ef4444", fontWeight: 600, cursor: "pointer", marginRight: "auto" }, children: "Excluir" })), _jsx("button", { onClick: onClose, style: { padding: "0.75rem 1.25rem", borderRadius: "8px", border: "1px solid #e2e8f0", backgroundColor: "#f8f9fa", color: "#64748b", fontWeight: 600, cursor: "pointer" }, children: "Cancelar" }), _jsx("button", { onClick: () => onSave(label, description), disabled: !label.trim(), style: {
+                                padding: "0.75rem 1.5rem",
+                                borderRadius: "8px",
+                                border: "none",
+                                backgroundColor: label.trim() ? "#2956d7" : "#cbd5e1",
+                                color: "white",
+                                fontWeight: 600,
+                                cursor: label.trim() ? "pointer" : "not-allowed",
+                                transition: "all 0.2s"
+                            }, children: "Salvar Marco" })] })] }) }));
+};
 function InactivityTooltip({ active, payload, label, }) {
     const { tx } = useUiLanguage();
     if (!active || !payload?.length || !label) {
@@ -176,18 +247,82 @@ function InactivityTooltip({ active, payload, label, }) {
                         ? tx("Todos nesta faixa ja estao em Atencao.", "这个区间的客户都已经处于关注状态。")
                         : tx("Todos nesta faixa ja estao Inativos.", "这个区间的客户都已经处于沉默状态。") })] }));
 }
-function TrendTooltip({ active, payload, label, }) {
+function TrendTooltip({ active, payload, label, mode = "count", isFullScreen = false, }) {
     const { tx } = useUiLanguage();
     if (!active || !payload?.length || !label) {
         return null;
     }
     const point = payload[0]?.payload;
-    return (_jsxs("div", { className: "chart-tooltip trend-tooltip", children: [_jsx("strong", { children: formatTrendTooltipLabel(label) }), point ? (_jsxs("div", { className: "chart-tooltip-count", children: [_jsx("strong", { children: formatNumber(point.totalCustomers) }), _jsx("span", { children: tx("clientes na base nesse dia", "当天客户池中的客户") })] })) : null, _jsx("div", { className: "trend-tooltip-list", children: trendSeries.map((line) => {
-                    const entry = payload.find((payloadItem) => payloadItem.dataKey === line.countKey);
-                    const customerCount = point?.[line.countKey] ?? entry?.value ?? 0;
-                    const share = point?.[line.shareKey] ?? 0;
-                    return (_jsxs("div", { className: "trend-tooltip-item", children: [_jsxs("span", { className: "trend-tooltip-label", children: [_jsx("span", { className: "trend-tooltip-emoji", style: { fontSize: "1.1rem", marginRight: "0.25rem" }, children: line.emoji }), line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")] }), _jsxs("div", { className: "trend-tooltip-metric", children: [_jsxs("strong", { children: [formatNumber(customerCount), " ", tx("clientes", "customers")] }), _jsxs("span", { children: [formatTrendPercent(share), " ", tx("da base", "share of base")] })] })] }, line.countKey));
-                }) })] }));
+    return (_jsxs("div", { className: "chart-tooltip trend-tooltip", style: isFullScreen ? {
+            width: "400px",
+            padding: "1.5rem",
+            borderRadius: "16px",
+            boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+        } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}, children: formatTrendTooltipLabel(label) }), point?.annotation && (_jsxs("div", { style: {
+                    marginTop: "0.8rem",
+                    marginBottom: "0.8rem",
+                    padding: "0.8rem",
+                    backgroundColor: "rgba(41, 86, 215, 0.05)",
+                    borderRadius: "8px",
+                    borderLeft: "4px solid #2956d7"
+                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCCC" }), _jsx("strong", { style: { fontSize: isFullScreen ? "1.1rem" : "0.95rem", color: "#1e293b" }, children: point.annotation.label })] }), _jsx("p", { style: { margin: 0, fontSize: isFullScreen ? "0.95rem" : "0.8rem", color: "#64748b", lineHeight: "1.4" }, children: point.annotation.description })] })), point ? (_jsxs("div", { className: "chart-tooltip-count", style: isFullScreen ? { marginBottom: "1.2rem", paddingBottom: "1.2rem", borderBottom: "1px solid #f1f5f9" } : {}, children: [_jsx("strong", { style: isFullScreen ? { fontSize: "1.75rem", color: "#2956d7" } : {}, children: formatNumber(point.totalCustomers) }), _jsx("span", { style: isFullScreen ? { fontSize: "0.95rem" } : {}, children: tx("clientes na base nesse dia", "当天客户池中的客户") })] })) : null, isFullScreen && point?.trafficSpend !== undefined && point.trafficSpend > 0 && (_jsxs("div", { style: {
+                    marginTop: "-0.5rem",
+                    marginBottom: "1.2rem",
+                    padding: "0.8rem 1rem",
+                    backgroundColor: "rgba(16, 185, 129, 0.05)",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(16, 185, 129, 0.1)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center"
+                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.6rem" }, children: [_jsx("span", { style: { fontSize: "1.2rem" }, children: "\uD83D\uDCB0" }), _jsx("span", { style: { fontSize: "0.95rem", fontWeight: 600, color: "#065f46" }, children: tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)") })] }), _jsx("strong", { style: { fontSize: "1.1rem", color: "#059669" }, children: formatCurrency(point.trafficSpend) })] })), _jsxs("div", { className: "trend-tooltip-list", children: [mode === "count" && (_jsxs("div", { className: "trend-tooltip-item", style: { display: "block", padding: isFullScreen ? "0.4rem 0" : "0.4rem 0" }, children: [_jsxs("div", { style: {
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "space-between",
+                                    gap: "0.9rem",
+                                    width: "100%",
+                                }, children: [_jsxs("span", { className: "trend-tooltip-label", children: [_jsx("span", { "aria-hidden": "true", style: {
+                                                    display: "inline-block",
+                                                    width: isFullScreen ? "1rem" : "0.85rem",
+                                                    height: isFullScreen ? "0.25rem" : "0.2rem",
+                                                    borderRadius: "999px",
+                                                    backgroundColor: totalCustomersTrendLine.color,
+                                                    marginRight: "0.45rem",
+                                                    verticalAlign: "middle",
+                                                } }), tx("Total de clientes", "å®¢æˆ·æ€»æ•°")] }), _jsxs("strong", { style: isFullScreen ? { fontSize: "1.1rem" } : {}, children: [formatNumber(point?.totalCustomers ?? 0), " ", tx("clientes", "customers")] })] }), point?.slope !== undefined && ((() => {
+                                const slope = point.slope;
+                                const slopeColor = slope > 2.5 ? "#059669" : slope > 1.5 ? "#10b981" : slope >= 1.0 ? "#34d399" : slope > 0.2 ? "#6ee7b7" : slope > -0.2 ? "#94a3b8" : slope > -0.5 ? "#f87171" : slope > -1.5 ? "#ef4444" : "#dc2626";
+                                return (_jsxs("div", { style: {
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-end",
+                                        marginTop: "0.4rem",
+                                        borderTop: "1px solid rgba(41, 86, 215, 0.08)",
+                                        paddingTop: "0.4rem",
+                                        gap: "0.15rem",
+                                    }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: isFullScreen ? "1rem" : "0.9rem", color: slopeColor }, children: [_jsx("span", { style: { fontWeight: 600, opacity: 0.9 }, children: tx("Inclinação da Reta:", "Line Slope:") }), _jsxs("strong", { children: [slope > 0 ? "+" : "", formatDecimal(slope, 2)] }), _jsx("span", { style: { fontSize: isFullScreen ? "0.85rem" : "0.75rem", opacity: 0.8 }, children: tx("clientes/dia", "clients/day") })] }), _jsx("div", { style: { fontSize: "0.7rem", fontWeight: 500, color: slopeColor }, children: slope > 4.0
+                                                ? tx("Crescimento Explosivo", "Explosive Growth")
+                                                : slope > 2.5
+                                                    ? tx("Crescimento Exponencial", "Exponential Growth")
+                                                    : slope > 1.5
+                                                        ? tx("Crescimento Acelerado", "Accelerated Growth")
+                                                        : slope >= 1.0
+                                                            ? tx("Crescimento Constante", "Steady Growth")
+                                                            : slope > 0.2
+                                                                ? tx("Crescimento Leve", "Slight Growth")
+                                                                : slope > -0.2
+                                                                    ? tx("Base Estabilizada", "Stabilized Base")
+                                                                    : slope > -0.5
+                                                                        ? tx("Retração Leve", "Slight Contraction")
+                                                                        : slope > -1.5
+                                                                            ? tx("Queda em Curso", "Ongoing Decline")
+                                                                            : tx("Queda Crítica", "Critical Decline") })] }));
+                            })())] })), trendSeries.map((line) => {
+                        const entry = payload.find((payloadItem) => payloadItem.dataKey === line.countKey);
+                        const customerCount = point?.[line.countKey] ?? entry?.value ?? 0;
+                        const share = point?.[line.shareKey] ?? 0;
+                        return (_jsxs("div", { className: "trend-tooltip-item", children: [_jsxs("span", { className: "trend-tooltip-label", children: [_jsx("span", { className: "trend-tooltip-emoji", style: { fontSize: isFullScreen ? "1.3rem" : "1.1rem", marginRight: "0.25rem" }, children: line.emoji }), line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")] }), _jsx("div", { className: "trend-tooltip-metric", children: mode === "percent" ? (_jsxs(_Fragment, { children: [_jsx("strong", { children: formatTrendPercent(share) }), _jsxs("span", { style: isFullScreen ? { fontSize: "0.9rem" } : {}, children: [formatNumber(customerCount), " ", tx("clientes", "customers")] })] })) : (_jsxs(_Fragment, { children: [_jsxs("strong", { children: [formatNumber(customerCount), " ", tx("clientes", "customers")] }), _jsxs("span", { style: isFullScreen ? { fontSize: "0.9rem" } : {}, children: [formatTrendPercent(share), " ", tx("da base", "share of base")] })] })) })] }, line.countKey));
+                    })] })] }));
 }
 function formatShare(value, total) {
     if (!total) {
@@ -201,14 +336,70 @@ export function DashboardPage() {
     const [selectedBucket, setSelectedBucket] = useState(null);
     const [chartView, setChartView] = useState("inactivity");
     const [isSyncing, setIsSyncing] = useState(false);
-    const [selectedPeriod, setSelectedPeriod] = useState(() => {
-        const stored = sessionStorage.getItem('dashboard-trend-period');
-        return (stored === '90d' || stored === '6m' || stored === '1y') ? stored : '90d';
+    const [trendDisplayMode, setTrendDisplayMode] = useState("count");
+    // Interactive Pins (Annotations) state
+    const [userAnnotations, setUserAnnotations] = useState([]);
+    const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
+    const [editingAnnotation, setEditingAnnotation] = useState(null);
+    const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
+    // Fetch annotations from API
+    const annotationsQuery = useQuery({
+        queryKey: ["chart-annotations"],
+        queryFn: async () => {
+            const response = await api.getChartAnnotations(token);
+            return response;
+        },
+        enabled: Boolean(token),
     });
     useEffect(() => {
-        sessionStorage.setItem('dashboard-trend-period', selectedPeriod);
-    }, [selectedPeriod]);
-    const trendDays = periodOptions.find(opt => opt.value === selectedPeriod)?.days ?? 90;
+        if (annotationsQuery.data) {
+            setUserAnnotations(annotationsQuery.data);
+        }
+    }, [annotationsQuery.data]);
+    const handleChartClick = (data) => {
+        if (!data || !data.activeLabel)
+            return;
+        const date = data.activeLabel;
+        const existing = userAnnotations.find(a => a.date === date);
+        setEditingAnnotation({ date, existing });
+        setIsAnnotationModalOpen(true);
+    };
+    const handleSaveAnnotation = async (label, description) => {
+        if (!editingAnnotation)
+            return;
+        try {
+            await api.saveChartAnnotation(token, {
+                id: editingAnnotation.existing?.id,
+                date: editingAnnotation.date,
+                label,
+                description
+            });
+            annotationsQuery.refetch();
+            setIsAnnotationModalOpen(false);
+        }
+        catch (error) {
+            alert("Erro ao salvar anotação.");
+        }
+    };
+    const handleDeleteAnnotation = async () => {
+        if (!editingAnnotation?.existing?.id)
+            return;
+        if (window.confirm("Deseja remover este marco?")) {
+            try {
+                await api.deleteChartAnnotation(token, editingAnnotation.existing.id);
+                annotationsQuery.refetch();
+                setIsAnnotationModalOpen(false);
+            }
+            catch (error) {
+                alert("Erro ao remover anotação.");
+            }
+        }
+    };
+    const [selectedPeriod, setSelectedPeriod] = useState("max");
+    useEffect(() => {
+        sessionStorage.setItem("dashboard-trend-display-mode", trendDisplayMode);
+    }, [trendDisplayMode]);
+    const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
     const dashboardQuery = useQuery({
         queryKey: ["dashboard", trendDays],
         queryFn: () => api.dashboard(token, trendDays),
@@ -267,13 +458,32 @@ export function DashboardPage() {
         },
     };
     const activeChartCopy = localizedChartViewCopy[chartView];
-    const trendData = metrics.portfolioTrend.map(normalizeTrendPoint);
-    const chartDescription = activeChartCopy.description;
+    const trendData = metrics.portfolioTrend.map(normalizeTrendPoint).map((point, index, array) => {
+        const referenceIndex30 = Math.max(0, index - 30);
+        const referencePoint30 = array[referenceIndex30];
+        const growth30d = referencePoint30 ? point.totalCustomers - referencePoint30.totalCustomers : 0;
+        const growthPercent30d = (referencePoint30 && referencePoint30.totalCustomers > 0) ? (growth30d / referencePoint30.totalCustomers) * 100 : 0;
+        const windowSize = 14;
+        const startIndex = Math.max(0, index - (windowSize - 1));
+        const windowValues = array.slice(startIndex, index + 1).map(p => p.totalCustomers);
+        const slope = calculateSlope(windowValues);
+        const annotation = userAnnotations.find(a => point.date.startsWith(a.date));
+        return { ...point, growth30d, growthPercent30d, slope, annotation };
+    });
+    const isTrendPercentMode = trendDisplayMode === "percent";
+    const trendDescription = isTrendPercentMode
+        ? tx("Veja a participacao percentual diaria de ativos, atencao e inativos. Troque para quantidade quando quiser enxergar os clientes reais.", "See the daily percentage share of active, attention, and inactive customers. Switch back to counts whenever you want the real totals.")
+        : tx("Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.", "Track the daily customer count in each status. The tooltip still shows each group's percentage share for the day.");
+    const chartDescription = chartView === "trend" ? trendDescription : activeChartCopy.description;
+    const trendModeOptions = [
+        { value: "count", label: tx("Quantidade", "Count"), helper: tx("Clientes reais", "Real customers") },
+        { value: "percent", label: "%", helper: tx("Participacao", "Share") },
+    ];
     const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
     const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
     const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
     const currentYear = new Date().getFullYear();
-    const chartYears = [currentYear - 2, currentYear - 1, currentYear];
+    const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
     const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
     const itemsSoldData = monthNames.map((monthName, idx) => {
         const monthNum = idx + 1;
@@ -364,17 +574,97 @@ export function DashboardPage() {
                                     targetAmount === 0 ? "is-empty" : "",
                                 ]
                                     .filter(Boolean)
-                                    .join(" "), children: monthlyGoalStatus })] })] }), _jsxs("section", { className: "grid-two dashboard-grid", children: [_jsxs("article", { className: "panel chart-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: activeChartCopy.eyebrow }), chartView === "inactivity" ? (_jsxs("h3", { className: "header-with-info", children: [activeChartCopy.title, _jsx(InfoHint, { text: tx("As barras mostram dias sem compra. Regra de status atual: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias.", "柱状条展示未购买天数。当前状态规则：30天内为活跃，31到89天为关注，90天及以上为沉默。") })] })) : (_jsx("h3", { children: activeChartCopy.title }))] }) }), _jsx("p", { className: "panel-subcopy", children: chartDescription }), _jsx("div", { className: "chart-switcher", role: "tablist", "aria-label": tx("Alternar visualizacao dos graficos do dashboard", "切换仪表盘图表视图"), children: Object.entries(localizedChartViewCopy).map(([view, copy]) => (_jsxs("button", { type: "button", role: "tab", "aria-selected": chartView === view, "aria-pressed": chartView === view, className: `chart-switch-button ${chartView === view ? "active" : ""}`, onClick: () => handleChangeChartView(view), children: [_jsx("strong", { children: copy.toggleLabel }), _jsx("span", { children: copy.toggleHelper })] }, view))) }), chartView === "inactivity" ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "status-guide-grid", children: [_jsxs("div", { className: "status-guide-card is-active", children: [_jsx("strong", { children: tx("Ativo", "活跃") }), _jsx("span", { children: tx("Ate 30 dias sem comprar", "距离上次购买不超过 30 天") })] }), _jsxs("div", { className: "status-guide-card is-attention", children: [_jsx("strong", { children: tx("Atencao", "关注") }), _jsx("span", { children: tx("De 31 a 89 dias sem comprar", "距离上次购买 31 到 89 天") })] }), _jsxs("div", { className: "status-guide-card is-inactive", children: [_jsx("strong", { children: tx("Inativo", "沉默") }), _jsx("span", { children: tx("90 dias ou mais sem comprar", "距离上次购买 90 天及以上") })] })] }), _jsx("div", { className: "chart-wrap", children: _jsx(ResponsiveContainer, { width: "100%", height: 280, children: _jsxs(BarChart, { data: metrics.inactivityBuckets, onClick: (state) => {
+                                    .join(" "), children: monthlyGoalStatus })] })] }), _jsxs("section", { className: "grid-two dashboard-grid", children: [_jsxs("article", { className: "panel chart-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: activeChartCopy.eyebrow }), chartView === "inactivity" ? (_jsxs("h3", { className: "header-with-info", children: [activeChartCopy.title, _jsx(InfoHint, { text: tx("As barras mostram dias sem compra. Regra de status atual: Ativo ate 30 dias, Atencao de 31 a 89 dias e Inativo a partir de 90 dias.", "柱状条展示未购买天数。当前状态规则：30天内为活跃，31到89天为关注，90天及以上为沉默。") })] })) : (_jsx("h3", { children: activeChartCopy.title }))] }) }), _jsx("p", { className: "panel-subcopy", children: chartDescription }), _jsx("div", { className: "chart-switcher", role: "tablist", "aria-label": tx("Alternar visualizacao dos graficos do dashboard", "切换仪表盘图表视图"), children: Object.entries(localizedChartViewCopy).map(([view, copy]) => (_jsxs("button", { type: "button", role: "tab", "aria-selected": chartView === view, "aria-pressed": chartView === view, className: `chart-switch-button ${chartView === view ? "active" : ""}`, onClick: () => handleChangeChartView(view), children: [_jsx("strong", { children: copy.toggleLabel }), _jsx("span", { children: copy.toggleHelper })] }, view))) }), chartView === "inactivity" ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "status-guide-grid", children: [_jsxs("div", { className: "status-guide-card is-active", children: [_jsx("strong", { children: tx("Ativo", "活跃") }), _jsx("span", { children: tx("Ate 30 dias sem comprar", "距离上次购买不超过 30 天") })] }), _jsxs("div", { className: "status-guide-card is-attention", children: [_jsx("strong", { children: tx("Atencao", "关注") }), _jsx("span", { children: tx("De 31 a 89 dias sem comprar", "距离上次购买 31 到 89 天") })] }), _jsxs("div", { className: "status-guide-card is-inactive", children: [_jsx("strong", { children: tx("Inativo", "沉默") }), _jsx("span", { children: tx("90 dias ou mais sem comprar", "距离上次购买 90 天及以上") })] })] }), _jsx("div", { className: "chart-wrap", children: _jsx(ResponsiveContainer, { width: "100%", height: 420, children: _jsxs(BarChart, { data: metrics.inactivityBuckets, onClick: (state) => {
                                                     const label = state?.activeLabel;
                                                     if (!label || !(label in bucketFilters)) {
                                                         return;
                                                     }
                                                     setSelectedBucket((current) => (current === label ? null : label));
-                                                }, margin: { top: 32, right: 8, left: 0, bottom: 0 }, children: [_jsx(XAxis, { dataKey: "label", stroke: "#5f6f95" }), _jsx(Tooltip, { content: _jsx(InactivityTooltip, {}), cursor: { fill: "rgba(41, 86, 215, 0.04)" } }), _jsxs(Bar, { dataKey: "count", radius: [8, 8, 0, 0], cursor: "pointer", children: [_jsx(LabelList, { dataKey: "count", position: "top", offset: 10, formatter: (value) => formatNumber(value), className: "chart-bar-label" }), metrics.inactivityBuckets.map((bucket) => (_jsx(Cell, { fill: bucketColor(bucket.label, selectedBucket === bucket.label) }, bucket.label)))] })] }) }) }), selectedBucket ? (_jsxs("div", { className: "inline-actions", children: [_jsxs("span", { className: "tag", children: [tx("Filtro ativo:", "当前筛选："), " ", selectedBucket] }), _jsx("button", { className: "ghost-button", type: "button", onClick: () => setSelectedBucket(null), children: tx("Limpar filtro", "清除筛选") })] })) : null] })) : chartView === "trend" ? (_jsxs(_Fragment, { children: [_jsx(PeriodSelector, { value: selectedPeriod, onChange: setSelectedPeriod }), _jsx("div", { className: "trend-chart-wrap", children: trendData.length ? (_jsx(ResponsiveContainer, { width: "100%", height: 320, children: _jsxs(ComposedChart, { data: trendData, margin: { top: 12, right: 18, left: 10, bottom: 4 }, children: [_jsx("defs", { children: trendSeries.map((series) => (_jsxs("linearGradient", { id: series.gradientId, x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: series.color, stopOpacity: series.fillOpacityStart }), _jsx("stop", { offset: "100%", stopColor: series.color, stopOpacity: series.fillOpacityEnd })] }, series.gradientId))) }), _jsx(CartesianGrid, { stroke: "rgba(41, 86, 215, 0.08)", vertical: false }), _jsx(XAxis, { dataKey: "date", tickFormatter: (value) => formatTrendAxisLabel(String(value)), stroke: "#5f6f95", minTickGap: 24, tickLine: false, axisLine: false }), _jsx(YAxis, { domain: [0, "auto"], tickFormatter: (value) => formatNumber(Number(value)), stroke: "#5f6f95", tickLine: false, axisLine: false, allowDecimals: false, width: 72 }), _jsx(Tooltip, { content: _jsx(TrendTooltip, {}), cursor: { stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 } }), trendSeries.map((series) => (_jsx(Area, { type: "monotone", dataKey: series.countKey, stroke: "none", fill: `url(#${series.gradientId})`, dot: false, legendType: "none" }, series.shareKey))), trendSeries.map((series) => (_jsx(Line, { type: "monotone", dataKey: series.countKey, name: series.label, stroke: series.color, strokeWidth: 2, dot: false, activeDot: { r: 4, fill: series.color, strokeWidth: 0 } }, `${series.shareKey}-line`)))] }) })) : (_jsx("div", { className: "empty-state", children: tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。") })) }), _jsx("div", { className: "trend-legend", "aria-label": tx("Legenda do grafico de evolucao da base", "客户池走势图例"), children: trendSeries.map((series) => (_jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { className: "trend-legend-emoji", style: { fontSize: "1.1rem", marginRight: "0.2rem" }, children: series.emoji }), series.label === "Ativos" ? tx("Ativos", "活跃") : series.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")] }, series.shareKey))) })] })) : chartView === "screensSold" ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "trend-chart-wrap", style: { marginTop: "1rem" }, children: _jsx(ResponsiveContainer, { width: "100%", height: 320, children: _jsxs(ComposedChart, { data: itemsSoldData, margin: { top: 12, right: 18, left: 10, bottom: 4 }, children: [_jsx(CartesianGrid, { stroke: "rgba(41, 86, 215, 0.08)", vertical: false }), _jsx(XAxis, { dataKey: "month", stroke: "#5f6f95", tickLine: false, axisLine: false }), _jsx(YAxis, { stroke: "#5f6f95", tickLine: false, axisLine: false, width: 65, tickFormatter: (val) => new Intl.NumberFormat(getFormattingLocale()).format(val) }), _jsx(Tooltip, { cursor: { stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }, content: ({ active, payload, label }) => {
+                                                }, margin: { top: 32, right: 8, left: 0, bottom: 0 }, children: [_jsx(XAxis, { dataKey: "label", stroke: "#5f6f95" }), _jsx(Tooltip, { content: _jsx(InactivityTooltip, {}), cursor: { fill: "rgba(41, 86, 215, 0.04)" } }), _jsxs(Bar, { dataKey: "count", radius: [8, 8, 0, 0], cursor: "pointer", children: [_jsx(LabelList, { dataKey: "count", position: "top", offset: 10, formatter: (value) => formatNumber(value), className: "chart-bar-label" }), metrics.inactivityBuckets.map((bucket) => (_jsx(Cell, { fill: bucketColor(bucket.label, selectedBucket === bucket.label) }, bucket.label)))] })] }) }) }), selectedBucket ? (_jsxs("div", { className: "inline-actions", children: [_jsxs("span", { className: "tag", children: [tx("Filtro ativo:", "当前筛选："), " ", selectedBucket] }), _jsx("button", { className: "ghost-button", type: "button", onClick: () => setSelectedBucket(null), children: tx("Limpar filtro", "清除筛选") })] })) : null] })) : chartView === "trend" ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "trend-chart-toolbar", children: [_jsx(PeriodSelector, { value: selectedPeriod, onChange: setSelectedPeriod }), _jsxs("div", { style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: "1rem" }, children: [_jsx("div", { className: "customers-view-switcher", role: "tablist", "aria-label": tx("Alternar leitura do grafico de evolucao da base", "Switch trend chart mode"), children: trendModeOptions.map((option) => (_jsxs("button", { type: "button", role: "tab", "aria-selected": trendDisplayMode === option.value, "aria-pressed": trendDisplayMode === option.value, className: `chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`, onClick: () => setTrendDisplayMode(option.value), children: [_jsx("strong", { children: option.label }), _jsx("span", { children: option.helper })] }, option.value))) }), _jsx("button", { className: "icon-button", onClick: () => setIsTrendFullScreen(true), title: tx("Ver em tela cheia", "Full screen view"), style: { display: "flex", alignItems: "center", justifyContent: "center", width: "40px", height: "40px", backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", cursor: "pointer", color: "#64748b", transition: "all 0.2s" }, children: _jsx("span", { style: { fontSize: "1.2rem" }, children: "\u26F6" }) })] })] }), _jsx("div", { className: "trend-chart-wrap", children: trendData.length ? (_jsx(ResponsiveContainer, { width: "100%", height: 420, children: _jsxs(ComposedChart, { data: trendData, margin: { top: 28, right: 18, left: 10, bottom: 4 }, onClick: handleChartClick, style: { cursor: "pointer" }, children: [_jsx("defs", { children: trendSeries.map((series) => (_jsxs("linearGradient", { id: series.gradientId, x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: series.color, stopOpacity: series.fillOpacityStart }), _jsx("stop", { offset: "100%", stopColor: series.color, stopOpacity: series.fillOpacityEnd })] }, series.gradientId))) }), userAnnotations.map((ann) => (_jsx(ReferenceLine, { x: ann.date, stroke: "#94a3b8", strokeDasharray: "4 2", strokeWidth: 2, opacity: 0.6 }, `line-${ann.date}`))), userAnnotations.map((ann) => {
+                                                        const point = trendData.find(d => d.date === ann.date);
+                                                        const yValue = point ? point[totalCustomersTrendLine.countKey] : undefined;
+                                                        if (yValue === undefined)
+                                                            return null;
+                                                        return (_jsx(ReferenceDot, { x: ann.date, y: yValue, r: 6, fill: "#fff", stroke: "#2956d7", strokeWidth: 2, label: {
+                                                                position: "top",
+                                                                value: "📌",
+                                                                fontSize: 18,
+                                                                offset: 8,
+                                                            } }, `dot-${ann.date}`));
+                                                    }), _jsx(CartesianGrid, { stroke: "rgba(41, 86, 215, 0.08)", vertical: false }), _jsx(XAxis, { dataKey: "date", tickFormatter: (value) => formatTrendAxisLabel(String(value)), stroke: "#5f6f95", minTickGap: 24, tickLine: false, axisLine: false }), _jsx(YAxis, { domain: isTrendPercentMode ? [0, 100] : [0, "auto"], ticks: isTrendPercentMode ? [0, 25, 50, 75, 100] : undefined, tickFormatter: (value) => isTrendPercentMode
+                                                            ? formatTrendPercent(Number(value), 0)
+                                                            : formatNumber(Number(value)), stroke: "#5f6f95", tickLine: false, axisLine: false, allowDecimals: false, width: isTrendPercentMode ? 56 : 72 }), _jsx(Tooltip, { content: _jsx(TrendTooltip, { mode: trendDisplayMode, isFullScreen: isTrendFullScreen }), cursor: { stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }, offset: 24 }), trendSeries.map((series) => (_jsx(Area, { type: "monotone", dataKey: isTrendPercentMode ? series.shareKey : series.countKey, stroke: "none", fill: `url(#${series.gradientId})`, dot: false, legendType: "none" }, series.shareKey))), trendSeries.map((series) => (_jsx(Line, { type: "monotone", dataKey: isTrendPercentMode ? series.shareKey : series.countKey, name: series.label, stroke: series.color, strokeWidth: 2, dot: false, activeDot: { r: 4, fill: series.color, strokeWidth: 0 } }, `${series.shareKey}-line`))), !isTrendPercentMode ? (_jsx(Line, { type: "monotone", dataKey: totalCustomersTrendLine.countKey, name: tx("Total de clientes", "å®¢æˆ·æ€»æ•°"), stroke: totalCustomersTrendLine.color, strokeWidth: 3, dot: false, activeDot: { r: 5, fill: totalCustomersTrendLine.color, strokeWidth: 0 } })) : null] }) })) : (_jsx("div", { className: "empty-state", children: tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。") })) }), _jsxs("div", { className: "trend-legend", "aria-label": tx("Legenda do grafico de evolucao da base", "客户池走势图例"), children: [trendSeries.map((series) => (_jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { className: "trend-legend-emoji", style: { fontSize: "1.1rem", marginRight: "0.2rem" }, children: series.emoji }), series.label === "Ativos" ? tx("Ativos", "活跃") : series.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")] }, series.shareKey))), !isTrendPercentMode ? (_jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { "aria-hidden": "true", style: {
+                                                            display: "inline-block",
+                                                            width: "0.95rem",
+                                                            height: "0.2rem",
+                                                            borderRadius: "999px",
+                                                            backgroundColor: totalCustomersTrendLine.color,
+                                                            marginRight: "0.4rem",
+                                                            verticalAlign: "middle",
+                                                        } }), tx("Total de clientes", "Total customers")] })) : null] })] })) : chartView === "screensSold" ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "trend-chart-wrap", style: { marginTop: "1rem" }, children: _jsx(ResponsiveContainer, { width: "100%", height: 420, children: _jsxs(ComposedChart, { data: itemsSoldData, margin: { top: 12, right: 18, left: 10, bottom: 4 }, children: [_jsx(CartesianGrid, { stroke: "rgba(41, 86, 215, 0.08)", vertical: false }), _jsx(XAxis, { dataKey: "month", stroke: "#5f6f95", tickLine: false, axisLine: false }), _jsx(YAxis, { stroke: "#5f6f95", tickLine: false, axisLine: false, width: 65, tickFormatter: (val) => new Intl.NumberFormat(getFormattingLocale()).format(val) }), _jsx(Tooltip, { cursor: { stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }, content: ({ active, payload, label }) => {
                                                             if (!active || !payload || !payload.length)
                                                                 return null;
                                                             return (_jsxs("div", { className: "chart-tooltip", children: [_jsx("strong", { children: label }), _jsx("div", { style: { marginTop: "0.5rem" }, children: payload.map((entry) => (_jsxs("div", { style: { display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }, children: [_jsx("span", { style: { color: entry.color, fontWeight: 500 }, children: entry.name }), _jsx("strong", { children: tx(`${formatNumber(entry.value)} telas`, `${formatNumber(entry.value)} 屏`) })] }, entry.name))) })] }));
-                                                        } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[0]}`, name: String(chartYears[0]), stroke: "#a8c1ff", strokeWidth: 2, dot: { r: 3 }, activeDot: { r: 5 } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[1]}`, name: String(chartYears[1]), stroke: "#5f8cff", strokeWidth: 3, dot: { r: 3 }, activeDot: { r: 5 } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[2]}`, name: String(chartYears[2]), stroke: "#2956d7", strokeWidth: 4, dot: { r: 4 }, activeDot: { r: 6 } }), _jsx(Line, { type: "monotone", dataKey: "meta", name: tx("Meta (Atual)", "当前目标"), stroke: "#10b981", strokeWidth: 2, strokeDasharray: "5 5", dot: { r: 4, fill: "#10b981", strokeWidth: 0 }, activeDot: { r: 6 } })] }) }) }), _jsxs("div", { className: "trend-legend", "aria-label": tx("Legenda do grafico de telas vendidas", "销量图例"), children: [_jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" } }), chartYears[0]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" } }), chartYears[1]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" } }), chartYears[2]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" } }), tx("Meta (Atual)", "当前目标")] })] })] })) : null] }), _jsx(SalesPerformancePanel, { salesPerformance: metrics.salesPerformance, reactivationLeaderboard: metrics.reactivationLeaderboard, newCustomerLeaderboard: metrics.newCustomerLeaderboard, prospectingLeaderboard: metrics.prospectingLeaderboard, isLoading: dashboardQuery.isLoading })] }), _jsxs("section", { className: "panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列") }), _jsx("h3", { children: selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户") }), _jsx("p", { className: "panel-subcopy", children: selectedBucket
+                                                        } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[0]}`, name: String(chartYears[0]), stroke: "#e2e8f0", strokeWidth: 1.5, strokeDasharray: "3 3", dot: { r: 2 }, activeDot: { r: 4 } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[1]}`, name: String(chartYears[1]), stroke: "#a8c1ff", strokeWidth: 2, dot: { r: 3 }, activeDot: { r: 5 } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[2]}`, name: String(chartYears[2]), stroke: "#5f8cff", strokeWidth: 3, dot: { r: 3 }, activeDot: { r: 5 } }), _jsx(Line, { type: "monotone", dataKey: `year${chartYears[3]}`, name: String(chartYears[3]), stroke: "#2956d7", strokeWidth: 4, dot: { r: 4 }, activeDot: { r: 6 } }), _jsx(Line, { type: "monotone", dataKey: "meta", name: tx("Meta (Atual)", "当前目标"), stroke: "#10b981", strokeWidth: 2, strokeDasharray: "5 5", dot: { r: 4, fill: "#10b981", strokeWidth: 0 }, activeDot: { r: 6 } })] }) }) }), _jsxs("div", { className: "trend-legend", "aria-label": tx("Legenda do grafico de telas vendidas", "销量图例"), children: [_jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#e2e8f0", marginRight: "0.4rem" } }), chartYears[0]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" } }), chartYears[1]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" } }), chartYears[2]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" } }), chartYears[3]] }), _jsxs("span", { className: "trend-legend-item", children: [_jsx("span", { style: { display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" } }), tx("Meta (Atual)", "当前目标")] })] })] })) : null] }), _jsx(SalesPerformancePanel, { salesPerformance: metrics.salesPerformance, reactivationLeaderboard: metrics.reactivationLeaderboard, newCustomerLeaderboard: metrics.newCustomerLeaderboard, prospectingLeaderboard: metrics.prospectingLeaderboard, isLoading: dashboardQuery.isLoading })] }), _jsxs("section", { className: "panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列") }), _jsx("h3", { children: selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户") }), _jsx("p", { className: "panel-subcopy", children: selectedBucket
                                         ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
-                                        : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。") })] }) }), tableQueryLoading ? _jsx("div", { className: "page-loading", children: tx("Carregando clientes priorizados...", "正在加载优先客户...") }) : null, tableQueryError ? _jsx("div", { className: "page-error", children: tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。") }) : null, !tableQueryLoading && !tableQueryError ? _jsx(CustomerTable, { customers: tableCustomers }) : null] })] }));
+                                        : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。") })] }) }), tableQueryLoading ? _jsx("div", { className: "page-loading", children: tx("Carregando clientes priorizados...", "正在加载优先客户...") }) : null, tableQueryError ? _jsx("div", { className: "page-error", children: tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。") }) : null, !tableQueryLoading && !tableQueryError ? _jsx(CustomerTable, { customers: tableCustomers }) : null] }), _jsx(AnnotationModal, { isOpen: isAnnotationModalOpen, onClose: () => setIsAnnotationModalOpen(false), date: editingAnnotation?.date ?? "", initialData: editingAnnotation?.existing, onSave: handleSaveAnnotation, onDelete: handleDeleteAnnotation }), isTrendFullScreen && (_jsxs("div", { style: {
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: "rgba(15, 23, 42, 0.98)",
+                    zIndex: 9999,
+                    display: "flex",
+                    flexDirection: "column",
+                    padding: "2.5rem",
+                    animation: "fadeIn 0.3s ease-out",
+                    color: "white"
+                }, children: [_jsx("style", { children: `
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            .fs-chart-card {
+              background: white;
+              border-radius: 20px;
+              padding: 2.5rem;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+              box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+              color: #1e293b;
+            }
+          ` }), _jsxs("div", { className: "fs-chart-card", style: { padding: "1.5rem" }, children: [_jsxs("div", { className: "trend-chart-toolbar", style: {
+                                    marginBottom: "1rem",
+                                    backgroundColor: "#f8fafc",
+                                    padding: "0.75rem 1.25rem",
+                                    borderRadius: "12px",
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    gap: "1.5rem"
+                                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "1.5rem" }, children: [_jsx(PeriodSelector, { value: selectedPeriod, onChange: setSelectedPeriod }), _jsx("div", { className: "customers-view-switcher", role: "tablist", children: trendModeOptions.map((option) => (_jsxs("button", { type: "button", role: "tab", "aria-selected": trendDisplayMode === option.value, className: `chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`, onClick: () => setTrendDisplayMode(option.value), children: [_jsx("strong", { children: option.label }), _jsx("span", { children: option.helper })] }, option.value))) })] }), _jsx("button", { onClick: () => setIsTrendFullScreen(false), style: {
+                                            width: "36px",
+                                            height: "36px",
+                                            borderRadius: "8px",
+                                            border: "1px solid #e2e8f0",
+                                            backgroundColor: "white",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            fontSize: "1.2rem",
+                                            cursor: "pointer",
+                                            color: "#64748b",
+                                            transition: "all 0.2s"
+                                        }, onMouseOver: (e) => {
+                                            e.currentTarget.style.backgroundColor = "#fee2e2";
+                                            e.currentTarget.style.color = "#ef4444";
+                                        }, onMouseOut: (e) => {
+                                            e.currentTarget.style.backgroundColor = "white";
+                                            e.currentTarget.style.color = "#64748b";
+                                        }, children: "\u2715" })] }), _jsx("div", { style: { flex: 1, minHeight: 0 }, children: _jsx(ResponsiveContainer, { width: "100%", height: "100%", children: _jsxs(ComposedChart, { data: trendData, margin: { top: 20, right: 30, left: 20, bottom: 20 }, onClick: handleChartClick, children: [_jsx("defs", { children: trendSeries.map((series) => (_jsxs("linearGradient", { id: `fs-${series.gradientId}`, x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "0%", stopColor: series.color, stopOpacity: series.fillOpacityStart }), _jsx("stop", { offset: "100%", stopColor: series.color, stopOpacity: series.fillOpacityEnd })] }, series.gradientId))) }), userAnnotations.map((ann) => (_jsx(ReferenceLine, { x: ann.date, stroke: "#94a3b8", strokeDasharray: "4 2", strokeWidth: 2, opacity: 0.6 }, `fs-line-${ann.date}`))), userAnnotations.map((ann) => {
+                                                const point = trendData.find(d => d.date === ann.date);
+                                                const yValue = point ? point[totalCustomersTrendLine.countKey] : undefined;
+                                                if (yValue === undefined)
+                                                    return null;
+                                                return (_jsx(ReferenceDot, { x: ann.date, y: yValue, r: 8, fill: "#fff", stroke: "#2956d7", strokeWidth: 3, label: { position: "top", value: "📌", fontSize: 24, offset: 12 } }, `fs-dot-${ann.date}`));
+                                            }), _jsx(CartesianGrid, { strokeDasharray: "3 3", vertical: false, stroke: "#f1f5f9" }), _jsx(XAxis, { dataKey: "date", stroke: "#94a3b8", tickFormatter: formatTrendAxisLabel, minTickGap: 40, style: { fontSize: "0.85rem" } }), _jsx(YAxis, { domain: trendDisplayMode === "percent" ? [0, 100] : [0, "auto"], ticks: trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined, stroke: "#94a3b8", tickFormatter: (val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val), style: { fontSize: "0.85rem" }, width: trendDisplayMode === "percent" ? 60 : 80 }), _jsx(Tooltip, { content: _jsx(TrendTooltip, { mode: trendDisplayMode, isFullScreen: isTrendFullScreen }), offset: 24, position: { x: 24, y: 24 }, allowEscapeViewBox: { x: true, y: true }, wrapperStyle: { zIndex: 20, pointerEvents: "none" } }), trendSeries.map((series) => (_jsx(Area, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, stroke: "none", fill: `url(#fs-${series.gradientId})`, dot: false, isAnimationActive: false }, series.shareKey))), trendSeries.map((series) => (_jsx(Line, { type: "monotone", dataKey: trendDisplayMode === "percent" ? series.shareKey : series.countKey, name: series.label, stroke: series.color, strokeWidth: 2.5, dot: false, activeDot: { r: 5, fill: series.color, strokeWidth: 0 }, isAnimationActive: false }, `${series.shareKey}-line`))), trendDisplayMode !== "percent" ? (_jsx(Line, { type: "monotone", dataKey: totalCustomersTrendLine.countKey, name: tx("Total de clientes", "å®¢æˆ·æ€»æ•°"), stroke: totalCustomersTrendLine.color, strokeWidth: 4, dot: false, activeDot: { r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 } })) : null] }) }) }), _jsx("div", { className: "trend-legend", style: { marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }, children: trendSeries.map((series) => (_jsxs("span", { className: "trend-legend-item", style: { fontSize: "1rem" }, children: [_jsx("span", { className: "trend-legend-color", style: { backgroundColor: series.color, width: 14, height: 14 } }), series.label] }, series.shareKey))) })] })] }))] }));
 }

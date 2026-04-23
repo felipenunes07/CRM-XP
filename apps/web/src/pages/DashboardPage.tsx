@@ -441,12 +441,15 @@ function TrendTooltip({
   }
 
   const point = payload[0]?.payload;
+  const trafficSpend = point?.trafficSpend ?? 0;
 
   return (
     <div 
       className="chart-tooltip trend-tooltip" 
       style={isFullScreen ? { 
-        width: "400px", 
+        width: "360px",
+        maxWidth: "calc(100vw - 4rem)",
+        boxSizing: "border-box",
         padding: "1.5rem", 
         borderRadius: "16px", 
         boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)" 
@@ -480,7 +483,7 @@ function TrendTooltip({
         </div>
       ) : null}
       
-      {isFullScreen && point?.trafficSpend !== undefined && point.trafficSpend > 0 && (
+      {isFullScreen && point && (
         <div
           style={{
             marginTop: "-0.5rem",
@@ -489,18 +492,19 @@ function TrendTooltip({
             backgroundColor: "rgba(16, 185, 129, 0.05)",
             borderRadius: "12px",
             border: "1px solid rgba(16, 185, 129, 0.1)",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center"
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            alignItems: "center",
+            gap: "0.75rem"
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
             <span style={{ fontSize: "1.2rem" }}>💰</span>
-            <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#065f46" }}>
+            <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#065f46", lineHeight: "1.2", display: "block", maxWidth: "10.5rem" }}>
               {tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)")}
             </span>
           </div>
-          <strong style={{ fontSize: "1.1rem", color: "#059669" }}>{formatCurrency(point.trafficSpend)}</strong>
+          <strong style={{ fontSize: "1.05rem", color: "#059669", whiteSpace: "nowrap", textAlign: "right" }}>{formatCurrency(trafficSpend)}</strong>
         </div>
       )}
 
@@ -1521,7 +1525,7 @@ export function DashboardPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={trendData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                  margin={{ top: 42, right: 30, left: 28, bottom: 20 }}
                   onClick={handleChartClick}
                 >
                   <defs>
@@ -1576,7 +1580,13 @@ export function DashboardPage() {
                     style={{ fontSize: "0.85rem" }}
                     width={trendDisplayMode === "percent" ? 60 : 80}
                   />
-                  <Tooltip content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />} offset={24} />
+                  <Tooltip
+                    content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
+                    offset={24}
+                    position={{ x: trendDisplayMode === "percent" ? 110 : 132, y: 34 }}
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
+                  />
                   {trendSeries.map((series) => (
                     <Area
                       key={series.shareKey}
