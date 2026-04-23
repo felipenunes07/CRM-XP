@@ -211,6 +211,11 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
           INTERVAL '1 day'
         )::date AS day
       ),
+      target_days AS (
+        SELECT day FROM day_series
+        WHERE day NOT IN (SELECT day FROM dashboard_daily_metrics)
+           OR day >= CURRENT_DATE - 1 -- Always refresh today and yesterday to catch late syncs
+      ),
       customer_first_orders AS (
         SELECT customer_id, MIN(order_date)::date as first_order_day
         FROM orders
@@ -222,7 +227,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day <= 30)::int as active_count,
         COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day BETWEEN 31 AND 89)::int as attention_count,
         COUNT(c.id) FILTER (WHERE lo.last_order_day IS NULL OR d.day - lo.last_order_day >= 90)::int as inactive_count
-      FROM day_series d
+      FROM target_days d
       CROSS JOIN customers c
       JOIN customer_first_orders cfo ON cfo.customer_id = c.id AND cfo.first_order_day <= d.day
       LEFT JOIN LATERAL (
@@ -241,7 +246,6 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   await pool.query("BEGIN");
 
   try {
-    await pool.query("DELETE FROM dashboard_daily_metrics WHERE day >= CURRENT_DATE - ($1::int - 1)", [days]);
 
     for (const row of result.rows) {
       await pool.query(
