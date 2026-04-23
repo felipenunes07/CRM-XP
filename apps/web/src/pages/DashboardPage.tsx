@@ -1255,47 +1255,6 @@ export function DashboardPage() {
                   <div className="empty-state">{tx("Sem historico suficiente para montar a evolucao diaria da base.", "历史数据不足，无法生成客户池每日走势。")}</div>
                 )}
               </div>
-
-              {userAnnotations.length > 0 && (
-                <div style={{ 
-                  marginTop: "1.5rem", 
-                  marginBottom: "1rem",
-                  padding: "1rem", 
-                  backgroundColor: "#f8fafc", 
-                  borderRadius: "12px", 
-                  border: "1px solid #e2e8f0" 
-                }}>
-                  <h4 style={{ margin: "0 0 0.75rem 0", display: "flex", alignItems: "center", gap: "0.5rem", color: "#1e293b", fontSize: "1rem" }}>
-                    <span>📌</span> {tx("Marcos da Base", "Base Milestones")}
-                  </h4>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.6rem" }}>
-                    {userAnnotations.sort((a, b) => b.date.localeCompare(a.date)).map((ann) => (
-                      <div 
-                        key={ann.id} 
-                        onClick={() => {
-                          setEditingAnnotation({ date: ann.date, existing: ann });
-                          setIsAnnotationModalOpen(true);
-                        }}
-                        style={{ 
-                          padding: "0.4rem 0.6rem", 
-                          backgroundColor: "white", 
-                          borderRadius: "8px", 
-                          border: "1px solid #e2e8f0", 
-                          fontSize: "0.8rem", 
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.4rem",
-                          transition: "all 0.2s"
-                        }}
-                      >
-                        <span style={{ fontWeight: "bold", color: "#64748b" }}>{ann.date}:</span>
-                        <span style={{ fontWeight: 600, color: "#1e293b" }}>{ann.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
               <div className="trend-legend" aria-label={tx("Legenda do grafico de evolucao da base", "客户池走势图例")}>
                 {trendSeries.map((series) => (
                   <span key={series.shareKey} className="trend-legend-item">
