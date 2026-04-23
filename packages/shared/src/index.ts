@@ -249,6 +249,7 @@ export interface PortfolioTrendPoint {
   activeCount: number;
   attentionCount: number;
   inactiveCount: number;
+  trafficSpend?: number;
 }
 
 export interface CustomerListItem {
@@ -273,8 +274,6 @@ export interface CustomerListItem {
 }
 
 export interface CustomerDetail extends CustomerListItem {
-  totalOrders: number;
-  avgDaysBetweenOrders: number | null;
   purchaseFrequency90d: number;
   frequencyDropRatio: number;
   predictedNextPurchaseAt: string | null;
