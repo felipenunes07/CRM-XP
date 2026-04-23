@@ -29,11 +29,19 @@ import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 
 type TrendPeriod = '90d' | '6m' | '1y' | 'max';
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_TREND_START_YEAR = 2024;
 
 interface PeriodOption {
   value: TrendPeriod;
   label: string;
   days: number;
+}
+
+function getDashboardTrendMaxDays(referenceDate = new Date()) {
+  const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
+  const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
 }
 
 const periodOptions: PeriodOption[] = [
@@ -42,6 +50,10 @@ const periodOptions: PeriodOption[] = [
   { value: '1y', label: '1 ano', days: 365 },
   { value: 'max', label: 'Período Máximo', days: 730 },
 ];
+
+const resolvedPeriodOptions = periodOptions.map((option) =>
+  option.value === "max" ? { ...option, days: getDashboardTrendMaxDays() } : option,
+);
 
 const bucketFilters = {
   "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
@@ -54,6 +66,7 @@ const bucketFilters = {
 
 type BucketLabel = keyof typeof bucketFilters;
 type ChartView = "inactivity" | "trend" | "screensSold";
+type TrendDisplayMode = "count" | "percent";
 
 const trendSeries = [
   {
@@ -88,6 +101,12 @@ const trendSeries = [
   },
 ] as const;
 
+const totalCustomersTrendLine = {
+  countKey: "totalCustomers",
+  label: "Total de clientes",
+  color: "#2956d7",
+} as const;
+
 type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
 type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number>;
 
@@ -104,9 +123,9 @@ const chartViewCopy = {
     eyebrow: "Composicao da carteira",
     title: "Composicao diaria da base",
     description:
-      "Cada dia soma 100% da carteira para mostrar, em percentual, se a base esta ganhando ativos ou acumulando inativos.",
+      "Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.",
     toggleLabel: "Evolucao da base",
-    toggleHelper: "Compare a participacao diaria de ativos, atencao e inativos.",
+    toggleHelper: "Compare a quantidade diaria de ativos, atencao e inativos.",
   },
   screensSold: {
     eyebrow: "Desempenho de vendas",
@@ -262,10 +281,12 @@ function TrendTooltip({
   active,
   payload,
   label,
+  mode = "count",
 }: {
   active?: boolean;
   payload?: Array<{ color?: string; dataKey?: string; value?: number; payload?: TrendCompositionPoint }>;
   label?: string;
+  mode?: TrendDisplayMode;
 }) {
   const { tx } = useUiLanguage();
 
@@ -285,17 +306,58 @@ function TrendTooltip({
         </div>
       ) : null}
       <div className="trend-tooltip-list">
+        {mode === "count" ? (
+          <div className="trend-tooltip-item">
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "0.9rem",
+                width: "100%",
+              }}
+            >
+              <span className="trend-tooltip-label">
+            <span
+              aria-hidden="true"
+              style={{
+                display: "inline-block",
+                width: "0.85rem",
+                height: "0.2rem",
+                borderRadius: "999px",
+                backgroundColor: totalCustomersTrendLine.color,
+                marginRight: "0.45rem",
+                verticalAlign: "middle",
+              }}
+            />
+            {tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+          </span>
+              <strong>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
+            </div>
+          </div>
+        ) : null}
         {trendSeries.map((line) => {
-          const entry = payload.find((payloadItem) => payloadItem.dataKey === line.shareKey);
+          const entry = payload.find((payloadItem) => payloadItem.dataKey === line.countKey);
+          const customerCount = point?.[line.countKey] ?? entry?.value ?? 0;
+          const share = point?.[line.shareKey] ?? 0;
           return (
-            <div key={line.shareKey} className="trend-tooltip-item">
+            <div key={line.countKey} className="trend-tooltip-item">
               <span className="trend-tooltip-label">
                 <span className="trend-tooltip-emoji" style={{ fontSize: "1.1rem", marginRight: "0.25rem" }}>{line.emoji}</span>
                 {line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
               </span>
               <div className="trend-tooltip-metric">
-                <strong>{formatTrendPercent(entry?.value ?? 0)}</strong>
-                <span>{formatNumber(point?.[line.countKey] ?? 0)} {tx("clientes", "客户")}</span>
+                {mode === "percent" ? (
+                  <>
+                    <strong>{formatTrendPercent(share)}</strong>
+                    <span>{formatNumber(customerCount)} {tx("clientes", "customers")}</span>
+                  </>
+                ) : (
+                  <>
+                    <strong>{formatNumber(customerCount)} {tx("clientes", "customers")}</strong>
+                    <span>{formatTrendPercent(share)} {tx("da base", "share of base")}</span>
+                  </>
+                )}
               </div>
             </div>
           );
@@ -319,16 +381,17 @@ export function DashboardPage() {
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [isSyncing, setIsSyncing] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>(() => {
-    const stored = sessionStorage.getItem('dashboard-trend-period');
-    return (stored === '90d' || stored === '6m' || stored === '1y') ? stored : '90d';
+  const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>(() => {
+    const stored = sessionStorage.getItem("dashboard-trend-display-mode");
+    return stored === "percent" ? "percent" : "count";
   });
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
 
   useEffect(() => {
-    sessionStorage.setItem('dashboard-trend-period', selectedPeriod);
-  }, [selectedPeriod]);
+    sessionStorage.setItem("dashboard-trend-display-mode", trendDisplayMode);
+  }, [trendDisplayMode]);
 
-  const trendDays = periodOptions.find(opt => opt.value === selectedPeriod)?.days ?? 90;
+  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", trendDays],
@@ -387,11 +450,11 @@ export function DashboardPage() {
       eyebrow: tx("Composicao da carteira", "客户池构成"),
       title: tx("Composicao diaria da base", "客户池每日构成"),
       description: tx(
-        "Cada dia soma 100% da carteira para mostrar, em percentual, se a base esta ganhando ativos ou acumulando inativos.",
+        "Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.",
         "每一天都按客户池总量折算为100%，用于观察活跃客户是否增加，或沉默客户是否累积。",
       ),
       toggleLabel: tx("Evolucao da base", "客户池走势"),
-      toggleHelper: tx("Compare a participacao diaria de ativos, atencao e inativos.", "比较活跃、关注和沉默客户的每日占比。"),
+      toggleHelper: tx("Compare a quantidade diaria de ativos, atencao e inativos.", "比较活跃、关注和沉默客户的每日占比。"),
     },
     screensSold: {
       eyebrow: tx("Desempenho de vendas", "销售表现"),
@@ -406,7 +469,21 @@ export function DashboardPage() {
   } as const;
   const activeChartCopy = localizedChartViewCopy[chartView];
   const trendData = metrics.portfolioTrend.map(normalizeTrendPoint);
-  const chartDescription = activeChartCopy.description;
+  const isTrendPercentMode = trendDisplayMode === "percent";
+  const trendDescription = isTrendPercentMode
+    ? tx(
+        "Veja a participacao percentual diaria de ativos, atencao e inativos. Troque para quantidade quando quiser enxergar os clientes reais.",
+        "See the daily percentage share of active, attention, and inactive customers. Switch back to counts whenever you want the real totals.",
+      )
+    : tx(
+        "Acompanhe a quantidade diaria de clientes em cada status. O tooltip continua mostrando a participacao percentual de cada grupo no dia.",
+        "Track the daily customer count in each status. The tooltip still shows each group's percentage share for the day.",
+      );
+  const chartDescription = chartView === "trend" ? trendDescription : activeChartCopy.description;
+  const trendModeOptions: Array<{ value: TrendDisplayMode; label: string; helper: string }> = [
+    { value: "count", label: tx("Quantidade", "Count"), helper: tx("Clientes reais", "Real customers") },
+    { value: "percent", label: "%", helper: tx("Participacao", "Share") },
+  ];
   const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
   const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
   const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
@@ -754,10 +831,32 @@ export function DashboardPage() {
             </>
           ) : chartView === "trend" ? (
             <>
-              <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
+              <div className="trend-chart-toolbar">
+                <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
+                <div
+                  className="customers-view-switcher"
+                  role="tablist"
+                  aria-label={tx("Alternar leitura do grafico de evolucao da base", "Switch trend chart mode")}
+                >
+                  {trendModeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={trendDisplayMode === option.value}
+                      aria-pressed={trendDisplayMode === option.value}
+                      className={`chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`}
+                      onClick={() => setTrendDisplayMode(option.value)}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.helper}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="trend-chart-wrap">
                 {trendData.length ? (
-                  <ResponsiveContainer width="100%" height={320}>
+                  <ResponsiveContainer width="100%" height={420}>
                     <ComposedChart data={trendData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
                       <defs>
                         {trendSeries.map((series) => (
@@ -777,21 +876,28 @@ export function DashboardPage() {
                         axisLine={false}
                       />
                       <YAxis
-                        domain={[0, 100]}
-                        ticks={[0, 25, 50, 75, 100]}
-                        tickFormatter={(value) => formatTrendPercent(Number(value), 0)}
+                        domain={isTrendPercentMode ? [0, 100] : [0, "auto"]}
+                        ticks={isTrendPercentMode ? [0, 25, 50, 75, 100] : undefined}
+                        tickFormatter={(value) =>
+                          isTrendPercentMode
+                            ? formatTrendPercent(Number(value), 0)
+                            : formatNumber(Number(value))
+                        }
                         stroke="#5f6f95"
                         tickLine={false}
                         axisLine={false}
-                        width={56}
+                        allowDecimals={false}
+                        width={isTrendPercentMode ? 56 : 72}
                       />
-                      <Tooltip content={<TrendTooltip />} cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }} />
+                      <Tooltip
+                        content={<TrendTooltip mode={trendDisplayMode} />}
+                        cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
+                      />
                       {trendSeries.map((series) => (
                         <Area
                           key={series.shareKey}
                           type="monotone"
-                          dataKey={series.shareKey}
-                          stackId="portfolio-share"
+                          dataKey={isTrendPercentMode ? series.shareKey : series.countKey}
                           stroke="none"
                           fill={`url(#${series.gradientId})`}
                           dot={false}
@@ -802,7 +908,7 @@ export function DashboardPage() {
                         <Line
                           key={`${series.shareKey}-line`}
                           type="monotone"
-                          dataKey={series.shareKey}
+                          dataKey={isTrendPercentMode ? series.shareKey : series.countKey}
                           name={series.label}
                           stroke={series.color}
                           strokeWidth={2}
@@ -810,6 +916,17 @@ export function DashboardPage() {
                           activeDot={{ r: 4, fill: series.color, strokeWidth: 0 }}
                         />
                       ))}
+                      {!isTrendPercentMode ? (
+                        <Line
+                        type="monotone"
+                        dataKey={totalCustomersTrendLine.countKey}
+                        name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+                        stroke={totalCustomersTrendLine.color}
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 5, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
+                        />
+                      ) : null}
                     </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
@@ -823,6 +940,23 @@ export function DashboardPage() {
                     {series.label === "Ativos" ? tx("Ativos", "活跃") : series.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
                   </span>
                 ))}
+                {!isTrendPercentMode ? (
+                  <span className="trend-legend-item">
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        display: "inline-block",
+                        width: "0.95rem",
+                        height: "0.2rem",
+                        borderRadius: "999px",
+                        backgroundColor: totalCustomersTrendLine.color,
+                        marginRight: "0.4rem",
+                        verticalAlign: "middle",
+                      }}
+                    />
+                    {tx("Total de clientes", "Total customers")}
+                  </span>
+                ) : null}
               </div>
             </>
           ) : chartView === "screensSold" ? (
