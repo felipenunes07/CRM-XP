@@ -118,7 +118,7 @@ const customerQuerySchema = z.object({
 });
 
 const dashboardQuerySchema = z.object({
-  trendDays: z.coerce.number().int().min(1).max(1825).optional(),
+  trendDays: z.coerce.number().int().min(1).max(5000).optional(),
 });
 
 const monthlyTargetSchema = z.object({

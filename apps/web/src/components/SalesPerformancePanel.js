@@ -21,15 +21,17 @@ export function SalesPerformancePanel({ salesPerformance, reactivationLeaderboar
             })),
         },
         reactivation: {
-            label: tx("Recuperacao", "Reactivation"),
+            label: tx("Reativacao", "Reactivation"),
             description: tx("Veja quem mais recuperou clientes inativos no mes atual.", "See who recovered the most inactive customers this month."),
-            emptyMessage: tx("Nenhuma recuperacao registrada neste mes.", "No reactivations registered this month."),
-            entries: reactivationLeaderboard.map((entry) => ({
+            emptyMessage: tx("Nenhuma reativacao registrada neste mes.", "No reactivations registered this month."),
+            entries: [...reactivationLeaderboard]
+                .sort((a, b) => b.recoveredRevenue - a.recoveredRevenue)
+                .map((entry) => ({
                 attendant: entry.attendant,
                 metrics: [
-                    { value: entry.recoveredCustomers, label: tx("clientes recuperados", "recovered customers") },
-                    { value: entry.recoveredItems, label: tx("pecas recuperadas", "recovered items") },
                     { value: entry.recoveredRevenue, label: tx("faturamento", "revenue"), formatter: formatCurrency },
+                    { value: entry.recoveredCustomers, label: tx("clientes reativados", "reactivated customers") },
+                    { value: entry.recoveredItems, label: tx("pecas", "items") },
                 ],
             })),
         },
@@ -65,7 +67,7 @@ export function SalesPerformancePanel({ salesPerformance, reactivationLeaderboar
     if (isLoading) {
         return (_jsxs("article", { className: "panel insight-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: tx("Performance do mes", "Month performance") }), _jsx("h3", { children: tx("Ranking Mensal", "Monthly ranking") })] }) }), _jsx("div", { className: "page-loading", children: tx("Carregando performance...", "Loading performance...") })] }));
     }
-    return (_jsxs("article", { className: "panel insight-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: tx("Performance do mes", "Month performance") }), _jsx("h3", { children: tx("Ranking Mensal", "Monthly ranking") }), _jsx("div", { className: "ranking-tabs", role: "tablist", "aria-label": tx("Abas do ranking mensal", "Monthly ranking tabs"), children: Object.entries(rankingViews).map(([key, view]) => (_jsx("button", { type: "button", role: "tab", "aria-selected": activeTab === key, className: `ranking-tab ${activeTab === key ? "active" : ""}`, onClick: () => setActiveTab(key), children: view.label }, key))) }), _jsx("p", { className: "panel-subcopy", children: currentView.description })] }) }), !filteredEntries.length ? (_jsx("div", { className: "empty-state", children: currentView.emptyMessage })) : (_jsx(RankingList, { entries: filteredEntries, topPerformerLabel: tx("Top Performer", "Top performer") }))] }));
+    return (_jsxs("article", { className: "panel insight-panel", children: [_jsxs("div", { className: "panel-header", style: { alignItems: 'center' }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: tx("Performance do mes", "Month performance") }), _jsx("h3", { children: tx("Ranking Mensal", "Monthly ranking") }), _jsx("p", { className: "panel-subcopy", style: { marginTop: '0.4rem' }, children: currentView.description })] }), _jsx("div", { className: "ranking-tabs-container", children: _jsx("div", { className: "ranking-tabs", role: "tablist", "aria-label": tx("Abas do ranking mensal", "Monthly ranking tabs"), children: Object.entries(rankingViews).map(([key, view]) => (_jsx("button", { type: "button", role: "tab", "aria-selected": activeTab === key, className: `ranking-tab ${activeTab === key ? "active" : ""}`, onClick: () => setActiveTab(key), children: view.label }, key))) }) })] }), !filteredEntries.length ? (_jsx("div", { className: "empty-state", children: currentView.emptyMessage })) : (_jsx(RankingList, { entries: filteredEntries, topPerformerLabel: tx("Top Performer", "Top performer") }))] }));
 }
 function RankingList({ entries, topPerformerLabel, }) {
     const maxMetricValue = Math.max(...entries.map((entry) => entry.metrics[0].value));

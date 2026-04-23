@@ -18,10 +18,18 @@ import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./c
 import type { CustomerFilters } from "./customerService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_TREND_START_YEAR = 2024;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
 `;
+
+function getDashboardTrendMaxDays(referenceDate = new Date()) {
+  const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
+  const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
+}
 
 function getInsightTags(row: Record<string, unknown>) {
   return Array.isArray(row.insight_tags)
@@ -380,7 +388,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
 }
 
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
-  const validatedDays = Math.max(1, Math.min(730, Math.floor(days)));
+  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
   const freshnessResult = await pool.query<{
     today: string;
     latest_trend_day: string | null;
@@ -435,12 +443,12 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
 
 /**
  * Get portfolio trend data for the specified number of days
- * @param days Number of days of historical data to retrieve (1-730)
+ * @param days Number of days of historical data to retrieve
  * @returns Array of portfolio trend points
  */
 async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   // Validate days parameter
-  const validatedDays = Math.max(1, Math.min(730, Math.floor(days)));
+  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
 
   let result = await pool.query(
     `
