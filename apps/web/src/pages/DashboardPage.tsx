@@ -202,9 +202,10 @@ function calculateSlope(data: number[]) {
   let sumX2 = 0;
 
   for (let i = 0; i < n; i++) {
+    const val = data[i] ?? 0;
     sumX += i;
-    sumY += data[i];
-    sumXY += i * data[i];
+    sumY += val;
+    sumXY += i * val;
     sumX2 += i * i;
   }
 
@@ -425,11 +426,13 @@ function TrendTooltip({
   payload,
   label,
   mode = "count",
+  isFullScreen = false,
 }: {
   active?: boolean;
   payload?: Array<{ color?: string; dataKey?: string; value?: number; payload?: TrendCompositionPoint }>;
   label?: string;
   mode?: TrendDisplayMode;
+  isFullScreen?: boolean;
 }) {
   const { tx } = useUiLanguage();
 
@@ -440,8 +443,19 @@ function TrendTooltip({
   const point = payload[0]?.payload;
 
   return (
-    <div className="chart-tooltip trend-tooltip">
-      <strong>{formatTrendTooltipLabel(label)}</strong>
+    <div 
+      className="chart-tooltip trend-tooltip" 
+      style={{ 
+        width: isFullScreen ? "400px" : "auto",
+        minWidth: isFullScreen ? "400px" : "160px", 
+        padding: isFullScreen ? "1.5rem" : "0.6rem 0.75rem", 
+        borderRadius: "12px", 
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)" 
+      }}
+    >
+      <strong style={{ fontSize: isFullScreen ? "1.25rem" : "1rem", color: "#0f172a", marginBottom: isFullScreen ? "1rem" : "0.5rem", display: "block" }}>
+        {formatTrendTooltipLabel(label)}
+      </strong>
       {point?.annotation && (
         <div
           style={{
@@ -453,49 +467,82 @@ function TrendTooltip({
             borderLeft: "4px solid #2956d7"
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-            <span style={{ fontSize: "1.2rem" }}>📌</span>
-            <strong style={{ fontSize: "0.95rem", color: "#1e293b" }}>{point.annotation.label}</strong>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.4rem" }}>
+            <span style={{ fontSize: "1.5rem" }}>📌</span>
+            <strong style={{ fontSize: "1.1rem", color: "#1e293b" }}>{point.annotation.label}</strong>
           </div>
-          <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b", lineHeight: "1.4" }}>
+          <p style={{ margin: 0, fontSize: "0.95rem", color: "#475569", lineHeight: "1.5" }}>
             {point.annotation.description}
           </p>
         </div>
       )}
       {point ? (
-        <div className="chart-tooltip-count">
-          <strong>{formatNumber(point.totalCustomers)}</strong>
-          <span>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
+        <div 
+          className="chart-tooltip-count" 
+          style={{ 
+            marginBottom: isFullScreen ? "1.2rem" : "0.6rem", 
+            padding: isFullScreen ? "0" : "0.6rem 0.75rem",
+            backgroundColor: isFullScreen ? "transparent" : "rgba(41, 86, 215, 0.05)",
+            borderRadius: isFullScreen ? "0" : "10px",
+            borderBottom: isFullScreen ? "1px solid #f1f5f9" : "none",
+          }}
+        >
+          <strong style={{ fontSize: isFullScreen ? "1.75rem" : "1.2rem", color: "#2956d7", display: "block", lineHeight: 1.1 }}>{formatNumber(point.totalCustomers)}</strong>
+          <span style={{ fontSize: isFullScreen ? "0.95rem" : "0.75rem", color: "#64748b", fontWeight: 500 }}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
         </div>
       ) : null}
+      
+      {isFullScreen && point?.trafficSpend !== undefined && point.trafficSpend > 0 && (
+        <div
+          style={{
+            marginTop: "-0.5rem",
+            marginBottom: "1.2rem",
+            padding: "0.8rem 1rem",
+            backgroundColor: "rgba(16, 185, 129, 0.05)",
+            borderRadius: "12px",
+            border: "1px solid rgba(16, 185, 129, 0.1)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <span style={{ fontSize: "1.2rem" }}>💰</span>
+            <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#065f46" }}>
+              {tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)")}
+            </span>
+          </div>
+          <strong style={{ fontSize: "1.1rem", color: "#059669" }}>{formatCurrency(point.trafficSpend)}</strong>
+        </div>
+      )}
       <div className="trend-tooltip-list">
-        {mode === "count" ? (
-          <div className="trend-tooltip-item" style={{ display: "block", padding: "0.4rem 0" }}>
+        {mode === "count" && (
+          <div className="trend-tooltip-item" style={{ display: "block", padding: isFullScreen ? "0.4rem 0" : "0.4rem 0" }}>
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: "0.9rem",
+                gap: isFullScreen ? "0.9rem" : "0.4rem",
                 width: "100%",
               }}
             >
-              <span className="trend-tooltip-label">
+              <span className="trend-tooltip-label" style={{ fontSize: isFullScreen ? "1rem" : "0.9rem", fontWeight: 600 }}>
                 <span
                   aria-hidden="true"
                   style={{
                     display: "inline-block",
-                    width: "0.85rem",
-                    height: "0.2rem",
+                    width: "1rem",
+                    height: "0.25rem",
                     borderRadius: "999px",
                     backgroundColor: totalCustomersTrendLine.color,
-                    marginRight: "0.45rem",
+                    marginRight: "0.6rem",
                     verticalAlign: "middle",
                   }}
                 />
                 {tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
               </span>
-              <strong>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
+              <strong style={{ fontSize: isFullScreen ? "1.1rem" : "1rem" }}>{formatNumber(point?.totalCustomers ?? 0)} {tx("clientes", "customers")}</strong>
             </div>
             {point?.slope !== undefined && (
               (() => {
@@ -509,18 +556,18 @@ function TrendTooltip({
                       flexDirection: "column",
                       alignItems: "flex-end",
                       marginTop: "0.4rem",
-                      borderTop: "1px solid rgba(41, 86, 215, 0.08)",
-                      paddingTop: "0.4rem",
+                      borderTop: isFullScreen ? "1px solid rgba(41, 86, 215, 0.08)" : "none",
+                      paddingTop: isFullScreen ? "0.4rem" : "0",
                       gap: "0.15rem",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.9rem", color: slopeColor }}>
-                      <span style={{ fontWeight: 600, opacity: 0.9 }}>{tx("Inclinação da Reta:", "Line Slope:")}</span>
-                      <strong>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: isFullScreen ? "1rem" : "0.85rem", color: slopeColor }}>
+                      <span style={{ fontWeight: 700, opacity: isFullScreen ? 0.9 : 0.5 }}>{tx("Inclinação da Reta:", "Line Slope:")}</span>
+                      <strong style={{ fontSize: isFullScreen ? "1.1rem" : "0.95rem" }}>
                         {slope > 0 ? "+" : ""}
                         {formatDecimal(slope, 2)}
                       </strong>
-                      <span style={{ fontSize: "0.75rem", opacity: 0.8 }}>{tx("clientes/dia", "clients/day")}</span>
+                      <span style={{ fontSize: isFullScreen ? "0.85rem" : "0.75rem", opacity: 0.5 }}>{tx("clientes/dia", "clients/day")}</span>
                     </div>
                     <div style={{ fontSize: "0.7rem", fontWeight: 500, color: slopeColor }}>
                       {slope > 4.0
@@ -546,27 +593,27 @@ function TrendTooltip({
               })()
             )}
           </div>
-        ) : null}
+        )}
         {trendSeries.map((line) => {
           const entry = payload.find((payloadItem) => payloadItem.dataKey === line.countKey);
           const customerCount = point?.[line.countKey] ?? entry?.value ?? 0;
           const share = point?.[line.shareKey] ?? 0;
           return (
-            <div key={line.countKey} className="trend-tooltip-item">
-              <span className="trend-tooltip-label">
-                <span className="trend-tooltip-emoji" style={{ fontSize: "1.1rem", marginRight: "0.25rem" }}>{line.emoji}</span>
+            <div key={line.countKey} className="trend-tooltip-item" style={{ padding: isFullScreen ? "0.6rem 0" : "0.3rem 0" }}>
+              <span className="trend-tooltip-label" style={{ fontSize: isFullScreen ? "1.1rem" : "0.85rem", fontWeight: 600 }}>
+                <span className="trend-tooltip-emoji" style={{ fontSize: isFullScreen ? "1.3rem" : "1.1rem", marginRight: isFullScreen ? "0.4rem" : "0.25rem" }}>{line.emoji}</span>
                 {line.label === "Ativos" ? tx("Ativos", "活跃") : line.label === "Atencao" ? tx("Atencao", "关注") : tx("Inativos", "沉默")}
               </span>
-              <div className="trend-tooltip-metric">
+              <div className="trend-tooltip-metric" style={{ textAlign: "right" }}>
                 {mode === "percent" ? (
                   <>
-                    <strong>{formatTrendPercent(share)}</strong>
-                    <span>{formatNumber(customerCount)} {tx("clientes", "customers")}</span>
+                    <strong style={{ fontSize: isFullScreen ? "1.2rem" : "0.9rem", display: "block" }}>{formatTrendPercent(share)}</strong>
+                    <span style={{ fontSize: isFullScreen ? "0.9rem" : "0.7rem", color: "#64748b" }}>{formatNumber(customerCount)} {tx("cl.", "cl.")}</span>
                   </>
                 ) : (
                   <>
-                    <strong>{formatNumber(customerCount)} {tx("clientes", "customers")}</strong>
-                    <span>{formatTrendPercent(share)} {tx("da base", "share of base")}</span>
+                    <strong style={{ fontSize: isFullScreen ? "1.2rem" : "0.9rem", display: "block" }}>{formatNumber(customerCount)} {tx("cl.", "cl.")}</strong>
+                    <span style={{ fontSize: isFullScreen ? "0.9rem" : "0.7rem", color: "#64748b" }}>{formatTrendPercent(share)} {tx("base", "base")}</span>
                   </>
                 )}
               </div>
@@ -598,6 +645,7 @@ export function DashboardPage() {
   const [userAnnotations, setUserAnnotations] = useState<ChartAnnotation[]>([]);
   const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
+  const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
 
   // Fetch annotations from API
   const annotationsQuery = useQuery({
@@ -740,8 +788,8 @@ export function DashboardPage() {
   const trendData = metrics.portfolioTrend.map(normalizeTrendPoint).map((point, index, array) => {
     const referenceIndex30 = Math.max(0, index - 30);
     const referencePoint30 = array[referenceIndex30];
-    const growth30d = point.totalCustomers - referencePoint30.totalCustomers;
-    const growthPercent30d = referencePoint30.totalCustomers > 0 ? (growth30d / referencePoint30.totalCustomers) * 100 : 0;
+    const growth30d = referencePoint30 ? point.totalCustomers - referencePoint30.totalCustomers : 0;
+    const growthPercent30d = (referencePoint30 && referencePoint30.totalCustomers > 0) ? (growth30d / referencePoint30.totalCustomers) * 100 : 0;
 
     const windowSize = 14;
     const startIndex = Math.max(0, index - (windowSize - 1));
@@ -1116,25 +1164,35 @@ export function DashboardPage() {
             <>
               <div className="trend-chart-toolbar">
                 <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
-                <div
-                  className="customers-view-switcher"
-                  role="tablist"
-                  aria-label={tx("Alternar leitura do grafico de evolucao da base", "Switch trend chart mode")}
-                >
-                  {trendModeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={trendDisplayMode === option.value}
-                      aria-pressed={trendDisplayMode === option.value}
-                      className={`chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`}
-                      onClick={() => setTrendDisplayMode(option.value)}
-                    >
-                      <strong>{option.label}</strong>
-                      <span>{option.helper}</span>
-                    </button>
-                  ))}
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <div
+                    className="customers-view-switcher"
+                    role="tablist"
+                    aria-label={tx("Alternar leitura do grafico de evolucao da base", "Switch trend chart mode")}
+                  >
+                    {trendModeOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="tab"
+                        aria-selected={trendDisplayMode === option.value}
+                        aria-pressed={trendDisplayMode === option.value}
+                        className={`chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`}
+                        onClick={() => setTrendDisplayMode(option.value)}
+                      >
+                        <strong>{option.label}</strong>
+                        <span>{option.helper}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button 
+                    className="icon-button" 
+                    onClick={() => setIsTrendFullScreen(true)}
+                    title={tx("Ver em tela cheia", "Full screen view")}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "40px", height: "40px", backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "8px", cursor: "pointer", color: "#64748b", transition: "all 0.2s" }}
+                  >
+                    <span style={{ fontSize: "1.2rem" }}>⛶</span>
+                  </button>
                 </div>
               </div>
               <div className="trend-chart-wrap">
@@ -1211,7 +1269,7 @@ export function DashboardPage() {
                         width={isTrendPercentMode ? 56 : 72}
                       />
                       <Tooltip
-                        content={<TrendTooltip mode={trendDisplayMode} />}
+                        content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
                         cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
                         offset={24}
                       />
@@ -1377,6 +1435,209 @@ export function DashboardPage() {
         onSave={handleSaveAnnotation}
         onDelete={handleDeleteAnnotation}
       />
+
+      {isTrendFullScreen && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(15, 23, 42, 0.98)",
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "column",
+          padding: "2.5rem",
+          animation: "fadeIn 0.3s ease-out",
+          color: "white"
+        }}>
+          <style>{`
+            @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+            .fs-chart-card {
+              background: white;
+              border-radius: 20px;
+              padding: 2.5rem;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+              box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+              color: #1e293b;
+            }
+          `}</style>
+          
+          <div className="fs-chart-card" style={{ padding: "1.5rem" }}>
+            <div className="trend-chart-toolbar" style={{ 
+              marginBottom: "1rem", 
+              backgroundColor: "#f8fafc", 
+              padding: "0.75rem 1.25rem", 
+              borderRadius: "12px", 
+              display: "flex", 
+              justifyContent: "space-between", 
+              alignItems: "center",
+              gap: "1.5rem"
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "1.5rem" }}>
+                <PeriodSelector value={selectedPeriod} onChange={setSelectedPeriod} />
+                <div
+                  className="customers-view-switcher"
+                  role="tablist"
+                >
+                  {trendModeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={trendDisplayMode === option.value}
+                      className={`chart-switch-button ${trendDisplayMode === option.value ? "active" : ""}`}
+                      onClick={() => setTrendDisplayMode(option.value)}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.helper}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button 
+                onClick={() => setIsTrendFullScreen(false)}
+                style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                  backgroundColor: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.2rem",
+                  cursor: "pointer",
+                  color: "#64748b",
+                  transition: "all 0.2s"
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = "#fee2e2";
+                  e.currentTarget.style.color = "#ef4444";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = "white";
+                  e.currentTarget.style.color = "#64748b";
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={trendData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                  onClick={handleChartClick}
+                >
+                  <defs>
+                    {trendSeries.map((series) => (
+                      <linearGradient key={series.gradientId} id={`fs-${series.gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={series.color} stopOpacity={series.fillOpacityStart} />
+                        <stop offset="100%" stopColor={series.color} stopOpacity={series.fillOpacityEnd} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  {userAnnotations.map((ann) => (
+                    <ReferenceLine
+                      key={`fs-line-${ann.date}`}
+                      x={ann.date}
+                      stroke="#94a3b8"
+                      strokeDasharray="4 2"
+                      strokeWidth={2}
+                      opacity={0.6}
+                    />
+                  ))}
+                  {userAnnotations.map((ann) => {
+                    const point = trendData.find(d => d.date === ann.date);
+                    const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
+                    if (yValue === undefined) return null;
+                    
+                    return (
+                      <ReferenceDot
+                        key={`fs-dot-${ann.date}`}
+                        x={ann.date}
+                        y={yValue}
+                        r={8}
+                        fill="#fff"
+                        stroke="#2956d7"
+                        strokeWidth={3}
+                        label={{ position: "top", value: "📌", fontSize: 24, offset: 12 }}
+                      />
+                    );
+                  })}
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke="#94a3b8" 
+                    tickFormatter={formatTrendAxisLabel} 
+                    minTickGap={40}
+                    style={{ fontSize: "0.85rem" }}
+                  />
+                  <YAxis 
+                    domain={trendDisplayMode === "percent" ? [0, 100] : [0, "auto"]}
+                    ticks={trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined}
+                    stroke="#94a3b8" 
+                    tickFormatter={(val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val)}
+                    style={{ fontSize: "0.85rem" }}
+                    width={trendDisplayMode === "percent" ? 60 : 80}
+                  />
+                  <Tooltip content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />} offset={24} />
+                  {trendSeries.map((series) => (
+                    <Area
+                      key={series.shareKey}
+                      type="monotone"
+                      dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
+                      stroke="none"
+                      fill={`url(#fs-${series.gradientId})`}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                  {trendSeries.map((series) => (
+                    <Line
+                      key={`${series.shareKey}-line`}
+                      type="monotone"
+                      dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
+                      name={series.label}
+                      stroke={series.color}
+                      strokeWidth={2.5}
+                      dot={false}
+                      activeDot={{ r: 5, fill: series.color, strokeWidth: 0 }}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                  {trendDisplayMode !== "percent" ? (
+                    <Line
+                      type="monotone"
+                      dataKey={totalCustomersTrendLine.countKey}
+                      name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+                      stroke={totalCustomersTrendLine.color}
+                      strokeWidth={4}
+                      dot={false}
+                      activeDot={{ r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
+                    />
+                  ) : null}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }}>
+              {trendSeries.map((series) => (
+                <span key={series.shareKey} className="trend-legend-item" style={{ fontSize: "1rem" }}>
+                  <span className="trend-legend-color" style={{ backgroundColor: series.color, width: 14, height: 14 }}></span>
+                  {series.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
