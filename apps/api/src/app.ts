@@ -37,7 +37,7 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics, saveMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, getTrendRangeAnalysis, saveMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -119,6 +119,11 @@ const customerQuerySchema = z.object({
 
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(5000).optional(),
+});
+
+const trendRangeAnalysisQuerySchema = z.object({
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "startDate deve estar no formato YYYY-MM-DD"),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "endDate deve estar no formato YYYY-MM-DD"),
 });
 
 const monthlyTargetSchema = z.object({
@@ -528,6 +533,15 @@ export function createApp() {
     try {
       const query = dashboardQuerySchema.parse(request.query);
       response.json(await getDashboardMetrics(query.trendDays));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/trend-range-analysis", async (request, response, next) => {
+    try {
+      const query = trendRangeAnalysisQuerySchema.parse(request.query);
+      response.json(await getTrendRangeAnalysis(query.startDate, query.endDate));
     } catch (error) {
       next(error);
     }
