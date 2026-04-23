@@ -8408,6 +8408,8 @@ textarea {
 .login-hero {
   display: grid;
   align-content: center;
+  justify-items: center;
+  text-align: center;
   gap: 0.9rem;
   min-height: calc(100vh - 2.4rem);
   background:
@@ -8422,6 +8424,7 @@ textarea {
 
 .login-hero-copy {
   display: grid;
+  justify-items: center;
   gap: 0.5rem;
   max-width: 420px;
 }
@@ -8558,5 +8561,60 @@ textarea {
     left: 50%;
     right: auto;
     bottom: calc(100% + 0.55rem);
+  }
+}
+
+/* Utilities for Magic UI Components */
+.relative {
+  position: relative;
+}
+
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.z-10 {
+  z-index: 10;
+}
+
+/* Magic UI Meteors */
+.magic-meteor {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 2px;
+  width: 2px;
+  border-radius: 9999px;
+  background-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(41, 86, 215, 0.1);
+  transform: rotate(215deg);
+  animation: meteor 5s linear infinite;
+  z-index: 5;
+}
+
+.magic-meteor-tail {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 1px;
+  width: 50px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, var(--accent), transparent);
+  z-index: 4;
+}
+
+@keyframes meteor {
+  0% {
+    transform: rotate(215deg) translateX(0);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(215deg) translateX(-600px);
+    opacity: 0;
   }
 }
