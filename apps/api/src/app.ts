@@ -37,7 +37,7 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics, saveMonthlyTarget, getMonthlyTargets } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, saveMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -127,6 +127,13 @@ const monthlyTargetSchema = z.object({
   targetAmount: z.number().int().min(0),
   attendant: z.string().default('TOTAL'),
   targetRevenue: z.number().min(0).optional().default(0),
+});
+
+const chartAnnotationSchema = z.object({
+  id: z.string().uuid().optional(),
+  date: z.string().min(1),
+  label: z.string().min(1),
+  description: z.string().optional().default(""),
 });
 
 const attendantsQuerySchema = z.object({
@@ -521,6 +528,32 @@ export function createApp() {
     try {
       const query = dashboardQuerySchema.parse(request.query);
       response.json(await getDashboardMetrics(query.trendDays));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/annotations", async (_request, response, next) => {
+    try {
+      response.json(await getChartAnnotations());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/dashboard/annotations", async (request, response, next) => {
+    try {
+      const payload = chartAnnotationSchema.parse(request.body);
+      response.json(await saveChartAnnotation(payload));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/dashboard/annotations/:id", async (request, response, next) => {
+    try {
+      await deleteChartAnnotation(String(request.params.id));
+      response.status(204).send();
     } catch (error) {
       next(error);
     }
