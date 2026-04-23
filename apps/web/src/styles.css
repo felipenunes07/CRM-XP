@@ -1508,6 +1508,49 @@ a {
   box-shadow: var(--shadow);
 }
 
+.fullscreen-trend-chart-card .recharts-reference-dot .recharts-label {
+  display: none;
+}
+
+.full-screen-annotation-tooltip {
+  position: fixed;
+  z-index: 10030;
+  width: min(280px, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(41, 86, 215, 0.18);
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+}
+
+.full-screen-annotation-tooltip strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.full-screen-annotation-tooltip-eyebrow,
+.full-screen-annotation-tooltip-date {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2956d7;
+}
+
+.full-screen-annotation-tooltip-date {
+  color: #64748b;
+}
+
+.full-screen-annotation-tooltip p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+  font-size: 0.82rem;
+}
+
 .chart-tooltip strong {
   font-size: 0.95rem;
 }
