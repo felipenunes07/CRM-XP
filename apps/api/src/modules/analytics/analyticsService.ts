@@ -211,45 +211,29 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
           INTERVAL '1 day'
         )::date AS day
       ),
-      customer_first_order AS (
-        SELECT customer_id, MIN(order_date)::date AS first_order_day
+      customer_first_orders AS (
+        SELECT customer_id, MIN(order_date)::date as first_order_day
         FROM orders
         GROUP BY customer_id
-      ),
-      customer_days AS (
-        SELECT
-          d.day,
-          c.id AS customer_id,
-          (
-            SELECT MAX(o.order_date)::date
-            FROM orders o
-            WHERE o.customer_id = c.id
-              AND (o.order_date <= d.day OR d.day = CURRENT_DATE)
-          ) AS last_order_day
-        FROM day_series d
-        JOIN customers c ON TRUE
-        JOIN customer_first_order cfo
-          ON cfo.customer_id = c.id
-         AND (cfo.first_order_day <= d.day OR d.day = CURRENT_DATE)
       )
       SELECT
-        day::text AS day,
-        COUNT(*)::int AS total_customers,
-        COUNT(*) FILTER (
-          WHERE last_order_day IS NOT NULL
-            AND day - last_order_day <= 30
-        )::int AS active_count,
-        COUNT(*) FILTER (
-          WHERE last_order_day IS NOT NULL
-            AND day - last_order_day BETWEEN 31 AND 89
-        )::int AS attention_count,
-        COUNT(*) FILTER (
-          WHERE last_order_day IS NULL
-            OR day - last_order_day >= 90
-        )::int AS inactive_count
-      FROM customer_days
-      GROUP BY day
-      ORDER BY day
+        d.day::text as day,
+        COUNT(c.id)::int as total_customers,
+        COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day <= 30)::int as active_count,
+        COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day BETWEEN 31 AND 89)::int as attention_count,
+        COUNT(c.id) FILTER (WHERE lo.last_order_day IS NULL OR d.day - lo.last_order_day >= 90)::int as inactive_count
+      FROM day_series d
+      CROSS JOIN customers c
+      JOIN customer_first_orders cfo ON cfo.customer_id = c.id AND cfo.first_order_day <= d.day
+      LEFT JOIN LATERAL (
+        SELECT o.order_date::date as last_order_day
+        FROM orders o
+        WHERE o.customer_id = c.id AND o.order_date <= d.day
+        ORDER BY o.order_date DESC
+        LIMIT 1
+      ) lo ON TRUE
+      GROUP BY d.day
+      ORDER BY d.day
     `,
     [days],
   );
