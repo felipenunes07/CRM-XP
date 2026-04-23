@@ -19,7 +19,7 @@ import type { CustomerFilters } from "./customerService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2024;
+const DASHBOARD_TREND_START_YEAR = 2023;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]

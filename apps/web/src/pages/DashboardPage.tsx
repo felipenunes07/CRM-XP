@@ -32,7 +32,7 @@ import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from ".
 
 type TrendPeriod = '90d' | '6m' | '1y' | 'max';
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2024;
+const DASHBOARD_TREND_START_YEAR = 2023;
 
 interface PeriodOption {
   value: TrendPeriod;
