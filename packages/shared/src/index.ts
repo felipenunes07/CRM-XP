@@ -250,6 +250,7 @@ export interface PortfolioTrendPoint {
   attentionCount: number;
   inactiveCount: number;
   trafficSpend?: number;
+  dailyItemsSold?: number;
 }
 
 export type TrendRangeCustomerStatus = Extract<CustomerStatus, "ATTENTION" | "INACTIVE">;
