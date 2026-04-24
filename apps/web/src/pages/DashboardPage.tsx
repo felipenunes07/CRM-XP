@@ -132,7 +132,7 @@ const FULL_SCREEN_ANNOTATION_TOOLTIP_GAP = 18;
 const FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN = 16;
 
 type TrendShareKey = (typeof trendSeries)[number]["shareKey"];
-type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number; annotation?: ChartAnnotation };
+type TrendCompositionPoint = PortfolioTrendPoint & Record<TrendShareKey, number> & { growth30d?: number; growthPercent30d?: number; slope?: number; growthDaily?: number; annotation?: ChartAnnotation; dailyItemsSold?: number; weeklyItemsSold?: number };
 
 const chartViewCopy = {
   inactivity: {
@@ -457,6 +457,30 @@ function InactivityTooltip({
   );
 }
 
+function SalesTrendTooltip({ active, payload, label, tx }: any) {
+  if (!active || !payload || !payload.length) return null;
+  
+  const data = payload[0].payload;
+  if (data.weeklyItemsSold === undefined) return null;
+
+  return (
+    <div className="chart-tooltip" style={{ minWidth: "200px" }}>
+      <div style={{ borderBottom: "1px solid #f1f5f9", paddingBottom: "0.5rem", marginBottom: "0.5rem" }}>
+        <strong style={{ fontSize: "0.95rem" }}>{formatTrendTooltipLabel(label)}</strong>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontSize: "1.2rem" }}>📦</span>
+          <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#64748b" }}>
+            {tx("Itens Vendidos (Semana)", "Items Sold (Week)")}
+          </span>
+        </div>
+        <strong style={{ fontSize: "1.05rem", color: "#1e293b" }}>{formatNumber(data.weeklyItemsSold)}</strong>
+      </div>
+    </div>
+  );
+}
+
 function TrendTooltip({
   active,
   payload,
@@ -483,15 +507,15 @@ function TrendTooltip({
     <div
       className="chart-tooltip trend-tooltip"
       style={isFullScreen ? {
-        width: "360px",
+        width: "280px",
         maxWidth: "calc(100vw - 4rem)",
         boxSizing: "border-box",
-        padding: "1.5rem",
-        borderRadius: "16px",
-        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+        padding: "1rem",
+        borderRadius: "12px",
+        boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)"
       } : {}}
     >
-      <strong style={isFullScreen ? { fontSize: "1.25rem", marginBottom: "1rem", display: "block" } : {}}>{formatTrendTooltipLabel(label)}</strong>
+      <strong style={isFullScreen ? { fontSize: "1.1rem", marginBottom: "0.75rem", display: "block" } : {}}>{formatTrendTooltipLabel(label)}</strong>
       {!isFullScreen && point?.annotation && (
         <div
           style={{
@@ -513,9 +537,9 @@ function TrendTooltip({
         </div>
       )}
       {point ? (
-        <div className="chart-tooltip-count" style={isFullScreen ? { marginBottom: "1.2rem", paddingBottom: "1.2rem", borderBottom: "1px solid #f1f5f9" } : {}}>
-          <strong style={isFullScreen ? { fontSize: "1.75rem", color: "#2956d7" } : {}}>{formatNumber(point.totalCustomers)}</strong>
-          <span style={isFullScreen ? { fontSize: "0.95rem" } : {}}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
+        <div className="chart-tooltip-count" style={isFullScreen ? { marginBottom: "1rem", paddingBottom: "1rem", borderBottom: "1px solid #f1f5f9" } : {}}>
+          <strong style={isFullScreen ? { fontSize: "1.4rem", color: "#2956d7" } : {}}>{formatNumber(point.totalCustomers)}</strong>
+          <span style={isFullScreen ? { fontSize: "0.88rem" } : {}}>{tx("clientes na base nesse dia", "当天客户池中的客户")}</span>
         </div>
       ) : null}
 
@@ -543,6 +567,7 @@ function TrendTooltip({
           <strong style={{ fontSize: "1.05rem", color: "#059669", whiteSpace: "nowrap", textAlign: "right" }}>{formatCurrency(trafficSpend)}</strong>
         </div>
       )}
+
 
       <div className="trend-tooltip-list">
         {mode === "count" && (
@@ -740,6 +765,7 @@ export function DashboardPage() {
   const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
   const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
+  const [showSalesInTrend, setShowSalesInTrend] = useState(false);
   const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
 
   // Fetch annotations from API
@@ -995,8 +1021,19 @@ export function DashboardPage() {
 
     const annotation = userAnnotations.find(a => point.date.startsWith(a.date));
 
-    return { ...point, growth30d, growthPercent30d, slope, annotation };
+    const isEndOfWeek = (array.length - 1 - index) % 7 === 0;
+    let weeklyItemsSold = undefined;
+    if (isEndOfWeek) {
+      const startIndex = Math.max(0, index - 6);
+      weeklyItemsSold = array.slice(startIndex, index + 1).reduce((sum, p) => sum + (p.dailyItemsSold ?? 0), 0);
+    }
+
+    return { ...point, growth30d, growthPercent30d, slope, annotation, weeklyItemsSold };
   });
+
+  const weeklyTrendData = trendData.filter((_, index, array) => (array.length - 1 - index) % 7 === 0);
+  const finalTrendData = isTrendFullScreen ? weeklyTrendData : trendData;
+
   const trendRangePreview = resolveTrendRangeSelection(
     trendRangeDraft?.anchorDate,
     trendRangeDraft?.currentDate,
@@ -1707,37 +1744,92 @@ export function DashboardPage() {
           `}</style>
 
           <div className="fs-chart-card fullscreen-trend-chart-card" style={{ padding: "1.5rem" }}>
-            <button
-              onClick={() => setIsTrendFullScreen(false)}
-              style={{
-                position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                width: "36px",
-                height: "36px",
-                borderRadius: "8px",
-                border: "1px solid #e2e8f0",
-                backgroundColor: "white",
+            <div style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1.5rem",
+              paddingRight: "4rem"
+            }}>
+              
+              <div style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: "1.2rem",
-                cursor: "pointer",
-                color: "#64748b",
-                transition: "all 0.2s",
-                zIndex: 3,
-              }}
-              onMouseOver={(e) => {
-                e.currentTarget.style.backgroundColor = "#fee2e2";
-                e.currentTarget.style.color = "#ef4444";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.backgroundColor = "white";
-                e.currentTarget.style.color = "#64748b";
-              }}
-            >
-              ✕
-            </button>
+                gap: "0.75rem",
+                backgroundColor: "#f8fafc",
+                padding: "0.4rem",
+                borderRadius: "12px",
+                border: "1px solid #e2e8f0"
+              }}>
+                <button
+                  onClick={() => setShowSalesInTrend(false)}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "0.9rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    backgroundColor: !showSalesInTrend ? "white" : "transparent",
+                    color: !showSalesInTrend ? "#2563eb" : "#64748b",
+                    boxShadow: !showSalesInTrend ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                  }}
+                >
+                  {tx("Base Clientes", "Customer Base")}
+                </button>
+                <button
+                  onClick={() => setShowSalesInTrend(true)}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "8px",
+                    border: "none",
+                    fontSize: "0.9rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    backgroundColor: showSalesInTrend ? "white" : "transparent",
+                    color: showSalesInTrend ? "#2563eb" : "#64748b",
+                    boxShadow: showSalesInTrend ? "0 1px 3px rgba(0,0,0,0.1)" : "none"
+                  }}
+                >
+                  {tx("Vendas (Itens)", "Sales (Items)")}
+                </button>
+              </div>
+
+              <button
+                onClick={() => setIsTrendFullScreen(false)}
+                style={{
+                  position: "absolute",
+                  top: "1.5rem",
+                  right: "1.5rem",
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  backgroundColor: "white",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "1.2rem",
+                  cursor: "pointer",
+                  color: "#64748b",
+                  transition: "all 0.2s",
+                  zIndex: 10,
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+                }}
+                onMouseOver={(e) => {
+                  e.currentTarget.style.backgroundColor = "#fee2e2";
+                  e.currentTarget.style.color = "#ef4444";
+                }}
+                onMouseOut={(e) => {
+                  e.currentTarget.style.backgroundColor = "white";
+                  e.currentTarget.style.color = "#64748b";
+                }}
+              >
+                ✕
+              </button>
+            </div>
             {selectedTrendRange && (
               <div className="trend-range-selection-bar fullscreen" style={{ marginBottom: "0.75rem" }}>
                 <span>
@@ -1750,17 +1842,19 @@ export function DashboardPage() {
                 </button>
               </div>
             )}
-            <div style={{ flex: 1, minHeight: 0, paddingTop: "0.25rem" }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={trendData}
-                  margin={{ top: 15, right: 10, left: -27, bottom: -10 }}
-                  onClick={handleChartClick}
-                  onMouseDown={handleTrendMouseDown}
-                  onMouseMove={handleTrendMouseMove}
-                  onMouseUp={(state) => finalizeTrendRangeSelection(state?.activeLabel, true)}
-                  onMouseLeave={() => finalizeTrendRangeSelection()}
-                >
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "1.5rem", minHeight: 0 }}>
+              <div style={{ flex: showSalesInTrend ? 1.5 : 1, minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart
+                    syncId="fs-charts"
+                    data={finalTrendData}
+                    margin={{ top: 20, right: 20, left: 20, bottom: 0 }}
+                    onClick={handleChartClick}
+                    onMouseDown={handleTrendMouseDown}
+                    onMouseMove={handleTrendMouseMove}
+                    onMouseUp={(state) => finalizeTrendRangeSelection(state?.activeLabel, true)}
+                    onMouseLeave={() => finalizeTrendRangeSelection()}
+                  >
                   <defs>
                     {trendSeries.map((series) => (
                       <linearGradient key={series.gradientId} id={`fs-${series.gradientId}`} x1="0" y1="0" x2="0" y2="1">
@@ -1771,6 +1865,7 @@ export function DashboardPage() {
                   </defs>
                   {activeTrendRange ? (
                     <ReferenceArea
+                      yAxisId="customers"
                       x1={activeTrendRange.startDate}
                       x2={activeTrendRange.endDate}
                       fill="#dbeafe"
@@ -1780,6 +1875,7 @@ export function DashboardPage() {
                   ) : null}
                   {userAnnotations.map((ann) => (
                     <ReferenceLine
+                      yAxisId="customers"
                       key={`fs-line-${ann.date}`}
                       x={ann.date}
                       stroke="#94a3b8"
@@ -1795,6 +1891,7 @@ export function DashboardPage() {
 
                     return (
                       <ReferenceDot
+                        yAxisId="customers"
                         key={`fs-dot-${ann.date}`}
                         x={ann.date}
                         y={yValue}
@@ -1813,6 +1910,7 @@ export function DashboardPage() {
 
                     return (
                       <ReferenceDot
+                        yAxisId="customers"
                         key={`fs-hover-dot-${ann.date}`}
                         x={ann.date}
                         y={yValue}
@@ -1837,25 +1935,37 @@ export function DashboardPage() {
                     tickFormatter={formatTrendAxisLabel}
                     minTickGap={40}
                     style={{ fontSize: "0.85rem" }}
+                    padding={{ left: 0, right: 0 }}
                   />
                   <YAxis
+                    yAxisId="customers"
+                    orientation="left"
                     domain={trendDisplayMode === "percent" ? [0, 100] : [0, "auto"]}
                     ticks={trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined}
                     stroke="#94a3b8"
                     tickFormatter={(val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val)}
                     style={{ fontSize: "0.85rem" }}
-                    width={trendDisplayMode === "percent" ? 52 : 68}
+                    width={80}
+                  />
+                  <YAxis
+                    yAxisId="sales-ghost"
+                    orientation="right"
+                    width={80}
+                    tick={false}
+                    axisLine={false}
+                    tickLine={false}
                   />
                   <Tooltip
                     content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
                     offset={24}
-                    position={{ x: trendDisplayMode === "percent" ? 72 : 55, y: 0 }}
+                    position={{ x: 110, y: 0 }}
                     allowEscapeViewBox={{ x: true, y: true }}
                     wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
                   />
                   {trendSeries.map((series) => (
                     <Area
                       key={series.shareKey}
+                      yAxisId="customers"
                       type="monotone"
                       dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
                       stroke="none"
@@ -1867,6 +1977,7 @@ export function DashboardPage() {
                   {trendSeries.map((series) => (
                     <Line
                       key={`${series.shareKey}-line`}
+                      yAxisId="customers"
                       type="monotone"
                       dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
                       name={series.label}
@@ -1879,6 +1990,7 @@ export function DashboardPage() {
                   ))}
                   {trendDisplayMode !== "percent" ? (
                     <Line
+                      yAxisId="customers"
                       type="monotone"
                       dataKey={totalCustomersTrendLine.countKey}
                       name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
@@ -1892,13 +2004,74 @@ export function DashboardPage() {
               </ResponsiveContainer>
             </div>
 
-            <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }}>
-              {trendSeries.map((series) => (
-                <span key={series.shareKey} className="trend-legend-item" style={{ fontSize: "1rem" }}>
-                  <span className="trend-legend-color" style={{ backgroundColor: series.color, width: 14, height: 14 }}></span>
-                  {series.label}
-                </span>
-              ))}
+            {showSalesInTrend && (
+              <div style={{ height: "180px", minHeight: 0 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      syncId="fs-charts"
+                      data={finalTrendData}
+                      margin={{ top: 0, right: 20, left: 20, bottom: 10 }}
+                      barCategoryGap={0}
+                    >
+                      <XAxis
+                        dataKey="date"
+                        stroke="#cbd5e1"
+                        tickFormatter={formatTrendAxisLabel}
+                        minTickGap={40}
+                        style={{ fontSize: "0.85rem" }}
+                        padding={{ left: 0, right: 0 }}
+                      />
+                      <YAxis
+                        yAxisId="customers-ghost"
+                        orientation="left"
+                        width={80}
+                        tick={false}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        yAxisId="sales"
+                        orientation="right"
+                        stroke="#cbd5e1"
+                        tickFormatter={(val) => formatNumber(val)}
+                        style={{ fontSize: "0.85rem" }}
+                        width={80}
+                      />
+                      <Tooltip
+                        content={<SalesTrendTooltip tx={tx} />}
+                        offset={24}
+                        allowEscapeViewBox={{ x: true, y: true }}
+                        wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
+                      />
+                      <Bar
+                        yAxisId="sales"
+                        dataKey="weeklyItemsSold"
+                        fill="#bac9e2"
+                        radius={0}
+                      />
+                    </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+            <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem", display: "flex", gap: "2rem", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "1.5rem" }}>
+                {trendSeries.map((series) => (
+                  <span key={series.shareKey} className="trend-legend-item" style={{ fontSize: "1rem" }}>
+                    <span className="trend-legend-color" style={{ backgroundColor: series.color, width: 14, height: 14 }}></span>
+                    {series.label}
+                  </span>
+                ))}
+              </div>
+              {showSalesInTrend && (
+                <div style={{ marginLeft: "auto", display: "flex", gap: "1.5rem" }}>
+                  <span className="trend-legend-item" style={{ fontSize: "1rem" }}>
+                    <span className="trend-legend-color" style={{ backgroundColor: "#becbe3", width: 14, height: 14, borderRadius: "2px" }}></span>
+                    {tx("Itens Vendidos (Barras Semanais)", "Items Sold (Weekly Bars)")}
+                  </span>
+                </div>
+              )}
             </div>
 
             {hoveredFullScreenAnnotation && fullScreenAnnotationTooltipPosition ? (
