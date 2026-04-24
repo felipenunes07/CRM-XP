@@ -753,6 +753,7 @@ export function DashboardPage() {
   const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
   const [isTrendFullScreen, setIsTrendFullScreen] = useState(false);
   const [showSalesInTrend, setShowSalesInTrend] = useState(false);
+  const [salesBaseline, setSalesBaseline] = useState<number | null>(null);
   const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
 
   // Fetch annotations from API
@@ -2023,6 +2024,18 @@ export function DashboardPage() {
                       data={finalTrendData}
                       margin={{ top: 0, right: 20, left: 0, bottom: 10 }}
                       barCategoryGap={0}
+                      onClick={(state) => {
+                        if (state && state.chartY !== undefined) {
+                          // Calibrate the scale based on max sales + 10% Recharts padding
+                          const maxSales = Math.max(...finalTrendData.map(d => d.weeklyItemsSold ?? 0), 10);
+                          const chartHeight = 200 - 10 - 20; // Container height - bottom margin - internal padding
+                          const relativeY = 1 - (state.chartY / chartHeight);
+                          // Approximate conversion from pixel to data value
+                          const estimatedValue = Math.max(0, Math.round(maxSales * 1.15 * relativeY));
+                          setSalesBaseline(estimatedValue);
+                        }
+                      }}
+                      onDoubleClick={() => setSalesBaseline(null)}
                     >
                       <XAxis
                         dataKey="date"
@@ -2079,6 +2092,23 @@ export function DashboardPage() {
                         activeDot={{ r: 6, fill: "#10b981", strokeWidth: 0 }}
                         name={tx("Investimento em Tráfego", "Traffic Investment")}
                       />
+                      {salesBaseline !== null && (
+                        <ReferenceLine
+                          yAxisId="sales"
+                          y={salesBaseline}
+                          stroke="#ef4444"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          label={{ 
+                            value: `Meta: ${formatNumber(salesBaseline)}`, 
+                            position: "insideRight", 
+                            fill: "#ef4444", 
+                            fontSize: 12,
+                            fontWeight: 700,
+                            offset: 10
+                          }}
+                        />
+                      )}
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
