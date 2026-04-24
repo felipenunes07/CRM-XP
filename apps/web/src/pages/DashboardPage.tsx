@@ -1402,27 +1402,18 @@ export function DashboardPage() {
                 </div>
               </div>
               <div className="trend-chart-wrap">
-                <div className="trend-range-selection-bar">
-                  {selectedTrendRange ? (
-                    <>
-                      <span>
-                        {tx("Periodo selecionado:", "Selected range:")}{" "}
-                        <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
-                        <strong>{formatDate(selectedTrendRange.endDate)}</strong>
-                      </span>
-                      <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
-                        {tx("Limpar faixa", "Clear range")}
-                      </button>
-                    </>
-                  ) : (
+                {selectedTrendRange && (
+                  <div className="trend-range-selection-bar">
                     <span>
-                      {tx(
-                        "Arraste sobre o grafico para analisar um periodo e listar quem ficou em Atencao ou Inativo nessa faixa.",
-                        "Drag across the chart to analyze a range and list who became attention or inactive during that window.",
-                      )}
+                      {tx("Periodo selecionado:", "Selected range:")}{" "}
+                      <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
+                      <strong>{formatDate(selectedTrendRange.endDate)}</strong>
                     </span>
-                  )}
-                </div>
+                    <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
+                      {tx("Limpar faixa", "Clear range")}
+                    </button>
+                  </div>
+                )}
                 {trendData.length ? (
                   <ResponsiveContainer width="100%" height={420}>
                     <ComposedChart
@@ -1747,27 +1738,18 @@ export function DashboardPage() {
             >
               ✕
             </button>
-            <div className="trend-range-selection-bar fullscreen" style={{ marginBottom: "0.75rem" }}>
-              {selectedTrendRange ? (
-                <>
-                  <span>
-                    {tx("Periodo selecionado:", "Selected range:")}{" "}
-                    <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
-                    <strong>{formatDate(selectedTrendRange.endDate)}</strong>
-                  </span>
-                  <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
-                    {tx("Limpar faixa", "Clear range")}
-                  </button>
-                </>
-              ) : (
+            {selectedTrendRange && (
+              <div className="trend-range-selection-bar fullscreen" style={{ marginBottom: "0.75rem" }}>
                 <span>
-                  {tx(
-                    "Arraste sobre o grafico para investigar um periodo especifico.",
-                    "Drag across the chart to investigate a specific range.",
-                  )}
+                  {tx("Periodo selecionado:", "Selected range:")}{" "}
+                  <strong>{formatDate(selectedTrendRange.startDate)}</strong> {tx("ate", "to")}{" "}
+                  <strong>{formatDate(selectedTrendRange.endDate)}</strong>
                 </span>
-              )}
-            </div>
+                <button className="ghost-button" type="button" onClick={clearTrendRangeSelection}>
+                  {tx("Limpar faixa", "Clear range")}
+                </button>
+              </div>
+            )}
             <div style={{ flex: 1, minHeight: 0, paddingTop: "0.25rem" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
