@@ -459,24 +459,35 @@ function InactivityTooltip({
 
 function SalesTrendTooltip({ active, payload, label, tx }: any) {
   if (!active || !payload || !payload.length) return null;
-  
+
   const data = payload[0].payload;
   if (data.weeklyItemsSold === undefined) return null;
 
   return (
-    <div className="chart-tooltip" style={{ minWidth: "200px" }}>
+    <div className="chart-tooltip" style={{ minWidth: "220px", padding: "1rem" }}>
       <div style={{ borderBottom: "1px solid #f1f5f9", paddingBottom: "0.5rem", marginBottom: "0.5rem" }}>
         <strong style={{ fontSize: "0.95rem" }}>{formatTrendTooltipLabel(label)}</strong>
       </div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", marginBottom: "0.5rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ fontSize: "1.2rem" }}>📦</span>
-          <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#64748b" }}>
+          <span style={{ fontSize: "1.1rem" }}>📦</span>
+          <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }}>
             {tx("Itens Vendidos (Semana)", "Items Sold (Week)")}
           </span>
         </div>
-        <strong style={{ fontSize: "1.05rem", color: "#1e293b" }}>{formatNumber(data.weeklyItemsSold)}</strong>
+        <strong style={{ fontSize: "1rem", color: "#1e293b" }}>{formatNumber(data.weeklyItemsSold)}</strong>
       </div>
+      {data.trafficSpend !== undefined && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span style={{ fontSize: "1.1rem" }}>💰</span>
+            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }}>
+              {tx("Investimento em Tráfego", "Traffic Investment")}
+            </span>
+          </div>
+          <strong style={{ fontSize: "1rem", color: "#10b981" }}>{formatCurrency(data.trafficSpend)}</strong>
+        </div>
+      )}
     </div>
   );
 }
@@ -543,30 +554,6 @@ function TrendTooltip({
         </div>
       ) : null}
 
-      {isFullScreen && point && (
-        <div
-          style={{
-            marginTop: "-0.5rem",
-            marginBottom: "1.2rem",
-            padding: "0.8rem 1rem",
-            backgroundColor: "rgba(16, 185, 129, 0.05)",
-            borderRadius: "12px",
-            border: "1px solid rgba(16, 185, 129, 0.1)",
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) auto",
-            alignItems: "center",
-            gap: "0.75rem"
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
-            <span style={{ fontSize: "1.2rem" }}>💰</span>
-            <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "#065f46", lineHeight: "1.2", display: "block", maxWidth: "10.5rem" }}>
-              {tx("Investimento em Tráfego (Mês)", "Traffic Investment (Month)")}
-            </span>
-          </div>
-          <strong style={{ fontSize: "1.05rem", color: "#059669", whiteSpace: "nowrap", textAlign: "right" }}>{formatCurrency(trafficSpend)}</strong>
-        </div>
-      )}
 
 
       <div className="trend-tooltip-list">
@@ -820,9 +807,9 @@ export function DashboardPage() {
     setTrendRangeDraft((current) =>
       current
         ? {
-            ...current,
-            currentDate: label,
-          }
+          ...current,
+          currentDate: label,
+        }
         : current,
     );
   };
@@ -1685,23 +1672,23 @@ export function DashboardPage() {
           onClearSelection={clearTrendRangeSelection}
         />
       ) : (
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">{selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}</p>
-            <h3>{selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}</h3>
-            <p className="panel-subcopy">
-              {selectedBucket
-                ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
-                : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
-            </p>
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">{selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}</p>
+              <h3>{selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}</h3>
+              <p className="panel-subcopy">
+                {selectedBucket
+                  ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
+                  : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {tableQueryLoading ? <div className="page-loading">{tx("Carregando clientes priorizados...", "正在加载优先客户...")}</div> : null}
-        {tableQueryError ? <div className="page-error">{tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。")}</div> : null}
-        {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
-      </section>
+          {tableQueryLoading ? <div className="page-loading">{tx("Carregando clientes priorizados...", "正在加载优先客户...")}</div> : null}
+          {tableQueryError ? <div className="page-error">{tx("Nao foi possivel carregar essa lista de clientes.", "无法加载该客户列表。")}</div> : null}
+          {!tableQueryLoading && !tableQueryError ? <CustomerTable customers={tableCustomers} /> : null}
+        </section>
       )}
 
       <AnnotationModal
@@ -1724,7 +1711,7 @@ export function DashboardPage() {
           zIndex: 9999,
           display: "flex",
           flexDirection: "column",
-          padding: "2.5rem",
+          padding: "1rem",
           animation: "fadeIn 0.3s ease-out",
           color: "white"
         }}>
@@ -1743,7 +1730,7 @@ export function DashboardPage() {
             }
           `}</style>
 
-          <div className="fs-chart-card fullscreen-trend-chart-card" style={{ padding: "1.5rem" }}>
+          <div className="fs-chart-card fullscreen-trend-chart-card" style={{ padding: "0.5rem" }}>
             <div style={{
               display: "flex",
               justifyContent: "space-between",
@@ -1751,7 +1738,7 @@ export function DashboardPage() {
               marginBottom: "1.5rem",
               paddingRight: "4rem"
             }}>
-              
+
               <div style={{
                 display: "flex",
                 alignItems: "center",
@@ -1848,169 +1835,193 @@ export function DashboardPage() {
                   <ComposedChart
                     syncId="fs-charts"
                     data={finalTrendData}
-                    margin={{ top: 20, right: 20, left: 20, bottom: 0 }}
+                    margin={{ top: 15, right: 20, left: 0, bottom: 0 }}
                     onClick={handleChartClick}
                     onMouseDown={handleTrendMouseDown}
                     onMouseMove={handleTrendMouseMove}
                     onMouseUp={(state) => finalizeTrendRangeSelection(state?.activeLabel, true)}
                     onMouseLeave={() => finalizeTrendRangeSelection()}
                   >
-                  <defs>
-                    {trendSeries.map((series) => (
-                      <linearGradient key={series.gradientId} id={`fs-${series.gradientId}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={series.color} stopOpacity={series.fillOpacityStart} />
-                        <stop offset="100%" stopColor={series.color} stopOpacity={series.fillOpacityEnd} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  {activeTrendRange ? (
-                    <ReferenceArea
-                      yAxisId="customers"
-                      x1={activeTrendRange.startDate}
-                      x2={activeTrendRange.endDate}
-                      fill="#dbeafe"
-                      fillOpacity={0.65}
-                      strokeOpacity={0}
-                    />
-                  ) : null}
-                  {userAnnotations.map((ann) => (
-                    <ReferenceLine
-                      yAxisId="customers"
-                      key={`fs-line-${ann.date}`}
-                      x={ann.date}
+                    <defs>
+                      {trendSeries.map((series) => (
+                        <linearGradient key={series.gradientId} id={`fs-${series.gradientId}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={series.color} stopOpacity={series.fillOpacityStart} />
+                          <stop offset="100%" stopColor={series.color} stopOpacity={series.fillOpacityEnd} />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    {activeTrendRange ? (
+                      <ReferenceArea
+                        yAxisId="customers"
+                        x1={activeTrendRange.startDate}
+                        x2={activeTrendRange.endDate}
+                        fill="#dbeafe"
+                        fillOpacity={0.65}
+                        strokeOpacity={0}
+                      />
+                    ) : null}
+                    {userAnnotations.map((ann) => {
+                      // Find the closest date in the finalTrendData to show the vertical line
+                      const closestPoint = finalTrendData.reduce((prev, curr) => {
+                        return Math.abs(new Date(curr.date).getTime() - new Date(ann.date).getTime()) < 
+                               Math.abs(new Date(prev.date).getTime() - new Date(ann.date).getTime()) ? curr : prev;
+                      });
+                      
+                      return (
+                        <ReferenceLine
+                          yAxisId="customers"
+                          key={`fs-line-${ann.date}`}
+                          x={closestPoint.date}
+                          stroke="#94a3b8"
+                          strokeDasharray="4 2"
+                          strokeWidth={2}
+                          opacity={0.6}
+                        />
+                      );
+                    })}
+                    {userAnnotations.map((ann) => {
+                      const closestPoint = finalTrendData.reduce((prev, curr) => {
+                        return Math.abs(new Date(curr.date).getTime() - new Date(ann.date).getTime()) < 
+                               Math.abs(new Date(prev.date).getTime() - new Date(ann.date).getTime()) ? curr : prev;
+                      });
+                      
+                      const yValue = (closestPoint as any)[totalCustomersTrendLine.countKey];
+                      if (yValue === undefined) return null;
+
+                      return (
+                        <ReferenceDot
+                          yAxisId="customers"
+                          key={`fs-dot-${ann.date}`}
+                          x={closestPoint.date}
+                          y={yValue}
+                          r={8}
+                          fill="#fff"
+                          stroke="#2956d7"
+                          strokeWidth={3}
+                          label={{ position: "top", value: "📌", fontSize: 24, offset: 12 }}
+                        />
+                      );
+                    })}
+                    {userAnnotations.map((ann) => {
+                      const closestPoint = finalTrendData.reduce((prev, curr) => {
+                        return Math.abs(new Date(curr.date).getTime() - new Date(ann.date).getTime()) < 
+                               Math.abs(new Date(prev.date).getTime() - new Date(ann.date).getTime()) ? curr : prev;
+                      });
+
+                      const yValue = (closestPoint as any)[totalCustomersTrendLine.countKey];
+                      if (yValue === undefined) return null;
+
+                      return (
+                        <ReferenceDot
+                          yAxisId="customers"
+                          key={`fs-hover-dot-${ann.date}`}
+                          x={closestPoint.date}
+                          y={yValue}
+                          r={8}
+                          shape={(props: any) => (
+                            <FullScreenAnnotationReferenceDot
+                              {...props}
+                              annotation={ann}
+                              isHovered={hoveredFullScreenAnnotation?.annotation.date === ann.date}
+                              onHover={handleFullScreenAnnotationHover}
+                              onLeave={handleFullScreenAnnotationLeave}
+                              onSelect={handleSelectAnnotation}
+                            />
+                          )}
+                        />
+                      );
+                    })}
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="date"
                       stroke="#94a3b8"
-                      strokeDasharray="4 2"
-                      strokeWidth={2}
-                      opacity={0.6}
+                      tickFormatter={formatTrendAxisLabel}
+                      minTickGap={40}
+                      style={{ fontSize: "0.85rem" }}
+                      padding={{ left: 0, right: 0 }}
                     />
-                  ))}
-                  {userAnnotations.map((ann) => {
-                    const point = trendData.find(d => d.date === ann.date);
-                    const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
-                    if (yValue === undefined) return null;
-
-                    return (
-                      <ReferenceDot
+                    <YAxis
+                      yAxisId="customers"
+                      orientation="left"
+                      domain={trendDisplayMode === "percent" ? [0, 100] : [0, "auto"]}
+                      ticks={trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined}
+                      stroke="#94a3b8"
+                      tickFormatter={(val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val)}
+                      style={{ fontSize: "0.85rem" }}
+                      width={40}
+                    />
+                    <YAxis
+                      yAxisId="sales-ghost"
+                      orientation="right"
+                      width={0}
+                      tick={false}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      yAxisId="spend-ghost"
+                      orientation="right"
+                      width={0}
+                      tick={false}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
+                      offset={24}
+                      position={{ x: 110, y: 0 }}
+                      allowEscapeViewBox={{ x: true, y: true }}
+                      wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
+                    />
+                    {trendSeries.map((series) => (
+                      <Area
+                        key={series.shareKey}
                         yAxisId="customers"
-                        key={`fs-dot-${ann.date}`}
-                        x={ann.date}
-                        y={yValue}
-                        r={8}
-                        fill="#fff"
-                        stroke="#2956d7"
-                        strokeWidth={3}
-                        label={{ position: "top", value: "📌", fontSize: 24, offset: 12 }}
+                        type="monotone"
+                        dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
+                        stroke="none"
+                        fill={`url(#fs-${series.gradientId})`}
+                        dot={false}
+                        isAnimationActive={false}
                       />
-                    );
-                  })}
-                  {userAnnotations.map((ann) => {
-                    const point = trendData.find(d => d.date === ann.date);
-                    const yValue = point ? (point as any)[totalCustomersTrendLine.countKey] : undefined;
-                    if (yValue === undefined) return null;
-
-                    return (
-                      <ReferenceDot
+                    ))}
+                    {trendSeries.map((series) => (
+                      <Line
+                        key={`${series.shareKey}-line`}
                         yAxisId="customers"
-                        key={`fs-hover-dot-${ann.date}`}
-                        x={ann.date}
-                        y={yValue}
-                        r={8}
-                        shape={(props: any) => (
-                          <FullScreenAnnotationReferenceDot
-                            {...props}
-                            annotation={ann}
-                            isHovered={hoveredFullScreenAnnotation?.annotation.date === ann.date}
-                            onHover={handleFullScreenAnnotationHover}
-                            onLeave={handleFullScreenAnnotationLeave}
-                            onSelect={handleSelectAnnotation}
-                          />
-                        )}
+                        type="monotone"
+                        dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
+                        name={series.label}
+                        stroke={series.color}
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={{ r: 5, fill: series.color, strokeWidth: 0 }}
+                        isAnimationActive={false}
                       />
-                    );
-                  })}
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#94a3b8"
-                    tickFormatter={formatTrendAxisLabel}
-                    minTickGap={40}
-                    style={{ fontSize: "0.85rem" }}
-                    padding={{ left: 0, right: 0 }}
-                  />
-                  <YAxis
-                    yAxisId="customers"
-                    orientation="left"
-                    domain={trendDisplayMode === "percent" ? [0, 100] : [0, "auto"]}
-                    ticks={trendDisplayMode === "percent" ? [0, 25, 50, 75, 100] : undefined}
-                    stroke="#94a3b8"
-                    tickFormatter={(val) => trendDisplayMode === "percent" ? `${val}%` : formatNumber(val)}
-                    style={{ fontSize: "0.85rem" }}
-                    width={80}
-                  />
-                  <YAxis
-                    yAxisId="sales-ghost"
-                    orientation="right"
-                    width={80}
-                    tick={false}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    content={<TrendTooltip mode={trendDisplayMode} isFullScreen={isTrendFullScreen} />}
-                    offset={24}
-                    position={{ x: 110, y: 0 }}
-                    allowEscapeViewBox={{ x: true, y: true }}
-                    wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
-                  />
-                  {trendSeries.map((series) => (
-                    <Area
-                      key={series.shareKey}
-                      yAxisId="customers"
-                      type="monotone"
-                      dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
-                      stroke="none"
-                      fill={`url(#fs-${series.gradientId})`}
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                  {trendSeries.map((series) => (
-                    <Line
-                      key={`${series.shareKey}-line`}
-                      yAxisId="customers"
-                      type="monotone"
-                      dataKey={trendDisplayMode === "percent" ? series.shareKey : series.countKey}
-                      name={series.label}
-                      stroke={series.color}
-                      strokeWidth={2.5}
-                      dot={false}
-                      activeDot={{ r: 5, fill: series.color, strokeWidth: 0 }}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                  {trendDisplayMode !== "percent" ? (
-                    <Line
-                      yAxisId="customers"
-                      type="monotone"
-                      dataKey={totalCustomersTrendLine.countKey}
-                      name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
-                      stroke={totalCustomersTrendLine.color}
-                      strokeWidth={4}
-                      dot={false}
-                      activeDot={{ r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
-                    />
-                  ) : null}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
+                    ))}
+                    {trendDisplayMode !== "percent" ? (
+                      <Line
+                        yAxisId="customers"
+                        type="monotone"
+                        dataKey={totalCustomersTrendLine.countKey}
+                        name={tx("Total de clientes", "å®¢æˆ·æ€»æ•°")}
+                        stroke={totalCustomersTrendLine.color}
+                        strokeWidth={4}
+                        dot={false}
+                        activeDot={{ r: 6, fill: totalCustomersTrendLine.color, strokeWidth: 0 }}
+                      />
+                    ) : null}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
 
-            {showSalesInTrend && (
-              <div style={{ height: "180px", minHeight: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
+              {showSalesInTrend && (
+                <div style={{ height: "200px", minHeight: 0, marginTop: "2rem" }}>
+                  <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
                       syncId="fs-charts"
                       data={finalTrendData}
-                      margin={{ top: 0, right: 20, left: 20, bottom: 10 }}
+                      margin={{ top: 0, right: 20, left: 0, bottom: 10 }}
                       barCategoryGap={0}
                     >
                       <XAxis
@@ -2024,7 +2035,7 @@ export function DashboardPage() {
                       <YAxis
                         yAxisId="customers-ghost"
                         orientation="left"
-                        width={80}
+                        width={40}
                         tick={false}
                         axisLine={false}
                         tickLine={false}
@@ -2032,16 +2043,25 @@ export function DashboardPage() {
                       <YAxis
                         yAxisId="sales"
                         orientation="right"
-                        stroke="#cbd5e1"
-                        tickFormatter={(val) => formatNumber(val)}
-                        style={{ fontSize: "0.85rem" }}
-                        width={80}
+                        width={0}
+                        tick={false}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        yAxisId="spend"
+                        orientation="right"
+                        width={0}
+                        tick={false}
+                        axisLine={false}
+                        tickLine={false}
                       />
                       <Tooltip
                         content={<SalesTrendTooltip tx={tx} />}
                         offset={24}
-                        allowEscapeViewBox={{ x: true, y: true }}
-                        wrapperStyle={{ zIndex: 20, pointerEvents: "none" }}
+                        position={{ y: -100 }}
+                        allowEscapeViewBox={{ x: false, y: true }}
+                        wrapperStyle={{ zIndex: 100, pointerEvents: "none" }}
                       />
                       <Bar
                         yAxisId="sales"
@@ -2049,11 +2069,21 @@ export function DashboardPage() {
                         fill="#bac9e2"
                         radius={0}
                       />
+                      <Line
+                        yAxisId="spend"
+                        type="stepAfter"
+                        dataKey="trafficSpend"
+                        stroke="#10b981"
+                        strokeWidth={3}
+                        dot={false}
+                        activeDot={{ r: 6, fill: "#10b981", strokeWidth: 0 }}
+                        name={tx("Investimento em Tráfego", "Traffic Investment")}
+                      />
                     </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
 
             <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem", display: "flex", gap: "2rem", alignItems: "center" }}>
               <div style={{ display: "flex", gap: "1.5rem" }}>
