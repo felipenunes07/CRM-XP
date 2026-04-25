@@ -755,6 +755,10 @@ export function DashboardPage() {
   const [showSalesInTrend, setShowSalesInTrend] = useState(false);
   const [salesBaseline, setSalesBaseline] = useState<number | null>(null);
   const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
+  const [fsBottomChartHeight, setFsBottomChartHeight] = useState(240);
+  const [isDraggingFsResize, setIsDraggingFsResize] = useState(false);
+  const fsContainerRef = useRef<HTMLDivElement>(null);
+
 
   // Fetch annotations from API
   const annotationsQuery = useQuery({
@@ -890,6 +894,32 @@ export function DashboardPage() {
     setEditingAnnotation({ date: annotation.date, existing: annotation });
     setIsAnnotationModalOpen(true);
   };
+
+  const handleFsResizeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingFsResize(true);
+  };
+
+  useEffect(() => {
+    if (!isDraggingFsResize || !fsContainerRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const containerRect = fsContainerRef.current!.getBoundingClientRect();
+      const newHeight = containerRect.bottom - e.clientY - 120; // legend and bottom padding
+      setFsBottomChartHeight(Math.max(100, Math.min(newHeight, containerRect.height - 250)));
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingFsResize(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingFsResize]);
 
   const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
 
@@ -1728,6 +1758,30 @@ export function DashboardPage() {
               position: relative;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
               color: #1e293b;
+              user-select: ${isDraggingFsResize ? 'none' : 'auto'};
+            }
+            .fs-resize-divider {
+              height: 24px;
+              margin: -12px 0;
+              cursor: row-resize;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              z-index: 100;
+              position: relative;
+              transition: all 0.2s;
+            }
+            .fs-resize-divider:hover .divider-handle {
+              background-color: #3b82f6;
+              width: 80px;
+              height: 6px;
+            }
+            .divider-handle {
+              width: 60px;
+              height: 4px;
+              background-color: ${isDraggingFsResize ? "#3b82f6" : "#e2e8f0"};
+              border-radius: 999px;
+              transition: all 0.2s;
             }
           `}</style>
 
@@ -1830,8 +1884,8 @@ export function DashboardPage() {
                 </button>
               </div>
             )}
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "1.5rem", minHeight: 0 }}>
-              <div style={{ flex: showSalesInTrend ? 1.5 : 1, minHeight: 0 }}>
+            <div ref={fsContainerRef} style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart
                     syncId="fs-charts"
@@ -1888,7 +1942,7 @@ export function DashboardPage() {
                       
                       const yValue = (closestPoint as any)[totalCustomersTrendLine.countKey];
                       if (yValue === undefined) return null;
-
+ 
                       return (
                         <ReferenceDot
                           yAxisId="customers"
@@ -1908,10 +1962,10 @@ export function DashboardPage() {
                         return Math.abs(new Date(curr.date).getTime() - new Date(ann.date).getTime()) < 
                                Math.abs(new Date(prev.date).getTime() - new Date(ann.date).getTime()) ? curr : prev;
                       });
-
+ 
                       const yValue = (closestPoint as any)[totalCustomersTrendLine.countKey];
                       if (yValue === undefined) return null;
-
+ 
                       return (
                         <ReferenceDot
                           yAxisId="customers"
@@ -2015,9 +2069,13 @@ export function DashboardPage() {
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
-
+ 
               {showSalesInTrend && (
-                <div style={{ height: "200px", minHeight: 0, marginTop: "2rem" }}>
+                <>
+                  <div className="fs-resize-divider" onMouseDown={handleFsResizeMouseDown}>
+                    <div className="divider-handle" />
+                  </div>
+                  <div style={{ height: `${fsBottomChartHeight}px`, minHeight: 0, marginTop: "0.5rem" }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
                       syncId="fs-charts"
@@ -2112,8 +2170,9 @@ export function DashboardPage() {
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
-              )}
-            </div>
+              </>
+            )}
+          </div>
 
             <div className="trend-legend" style={{ marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem", display: "flex", gap: "2rem", alignItems: "center" }}>
               <div style={{ display: "flex", gap: "1.5rem" }}>
