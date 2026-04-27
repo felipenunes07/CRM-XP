@@ -104,6 +104,18 @@ function formatCustomerStatus(status: GeographicCustomerStat["status"], tx: Retu
   return tx("Inativo", "Inactive");
 }
 
+function customerStatusEmoji(status: GeographicCustomerStat["status"]) {
+  if (status === "ACTIVE") {
+    return "🟢";
+  }
+
+  if (status === "ATTENTION") {
+    return "🟡";
+  }
+
+  return "🔴";
+}
+
 export function GeographicView() {
   const { token } = useAuth();
   const { tx } = useUiLanguage();
@@ -229,7 +241,7 @@ export function GeographicView() {
     [geographicData.customerStats, normalizedSearch, selectedCity, selectedState],
   );
 
-  const tableRows = useMemo(() => filteredCustomers.slice(0, 28), [filteredCustomers]);
+  const tableRows = filteredCustomers;
   const cityFilterRows = useMemo(() => filteredCities.slice(0, 36), [filteredCities]);
   const topState = geographicData.stateStats[0] ?? null;
   const activeStateCode = hoveredState || selectedState || topState?.state || "";
@@ -645,7 +657,12 @@ export function GeographicView() {
                       </td>
                       <td>
                         <div className="region-table-number align-left">
-                          <strong>{formatDaysSincePurchase(row.daysSinceLastPurchase, tx)}</strong>
+                          <strong className="region-days-badge">
+                            <span className="region-days-emoji" aria-hidden="true">
+                              {customerStatusEmoji(row.status)}
+                            </span>
+                            <span>{formatDaysSincePurchase(row.daysSinceLastPurchase, tx)}</span>
+                          </strong>
                           <span>{tx("Ultima compra", "Last purchase")}</span>
                         </div>
                       </td>

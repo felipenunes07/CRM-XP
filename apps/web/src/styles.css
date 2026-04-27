@@ -9498,6 +9498,16 @@ textarea {
   font-size: 0.94rem;
 }
 
+.region-days-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.region-days-emoji {
+  line-height: 1;
+}
+
 .region-table-number span {
   color: var(--muted);
   font-size: 0.78rem;
