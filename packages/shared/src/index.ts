@@ -63,6 +63,10 @@ export interface DashboardMetrics {
   currentMonthItemsSold: number;
   estimatedLtv?: number;
   estimatedLifespanMonths?: number;
+  todaySalesAmount: number;
+  todayItemsSold: number;
+  todayOrdersCount: number;
+  todaySalesPerformance: SalesPerformanceEntry[];
 }
 
 export interface HistoricalReactivationEntry {
@@ -214,6 +218,10 @@ export interface AcquisitionSummary {
   estimatedLtv?: number;
   ltvCacRatio?: number | null;
   estimatedLifespanMonths?: number;
+  todaySalesAmount: number;
+  todayItemsSold: number;
+  todayOrdersCount: number;
+  todaySalesPerformance: SalesPerformanceEntry[];
   monthlyChurnRate?: number | null;
 }
 
