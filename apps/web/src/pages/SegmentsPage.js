@@ -5,6 +5,7 @@ import { CustomerTable } from "../components/CustomerTable";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatNumber } from "../lib/format";
+import { useUiLanguage } from "../i18n";
 const initialDefinition = {
     status: ["INACTIVE"],
     minDaysInactive: 90,
@@ -26,10 +27,14 @@ function summarizeSegment(segment) {
     if (segment.definition.labels?.length) {
         parts.push(`Rotulo: ${segment.definition.labels[0]}`);
     }
+    if (segment.definition.customerPrefix) {
+        parts.push(`Categoria: ${segment.definition.customerPrefix}`);
+    }
     return parts.length ? parts.join(" | ") : "Filtro dinamico salvo";
 }
 export function SegmentsPage() {
     const { token } = useAuth();
+    const { tx } = useUiLanguage();
     const queryClient = useQueryClient();
     const [definition, setDefinition] = useState(() => sanitizeSegmentDefinition(initialDefinition));
     const [segmentName, setSegmentName] = useState("");
@@ -120,7 +125,15 @@ export function SegmentsPage() {
                                                 }, placeholder: "Ex: Reativacao premium do mes" })] }), _jsxs("label", { className: "segment-filter-half", children: ["Status", _jsxs("select", { value: definition.status?.[0] ?? "", onChange: (event) => setDefinition((current) => ({
                                                     ...current,
                                                     status: event.target.value ? [event.target.value] : undefined,
-                                                })), children: [_jsx("option", { value: "", children: "Todos" }), _jsx("option", { value: "ACTIVE", children: "Ativos" }), _jsx("option", { value: "ATTENTION", children: "Atencao" }), _jsx("option", { value: "INACTIVE", children: "Inativos" })] })] }), _jsxs("label", { className: "segment-filter-half", children: ["Minimo de dias inativo", _jsx("input", { type: "number", value: definition.minDaysInactive ?? "", onChange: (event) => setDefinition((current) => ({
+                                                })), children: [_jsx("option", { value: "", children: "Todos" }), _jsx("option", { value: "ACTIVE", children: "Ativos" }), _jsx("option", { value: "ATTENTION", children: "Atencao" }), _jsx("option", { value: "INACTIVE", children: "Inativos" })] })] }), _jsxs("div", { className: "segment-filter-half", children: [_jsx("label", { children: tx("Categoria do cliente", "Customer category") }), _jsx("div", { className: "customers-view-switcher", role: "tablist", children: [
+                                                    { value: undefined, label: tx("Todas", "All") },
+                                                    { value: "CL", label: "CL" },
+                                                    { value: "KH", label: "KH" },
+                                                    { value: "LJ", label: "LJ" }
+                                                ].map((option) => (_jsx("button", { type: "button", role: "tab", "aria-selected": definition.customerPrefix === option.value, className: `chart-switch-button ${definition.customerPrefix === option.value ? "active" : ""}`, onClick: () => setDefinition((current) => ({
+                                                        ...current,
+                                                        customerPrefix: option.value,
+                                                    })), children: _jsx("strong", { children: option.label }) }, option.label))) })] }), _jsxs("label", { className: "segment-filter-half", children: ["Minimo de dias inativo", _jsx("input", { type: "number", value: definition.minDaysInactive ?? "", onChange: (event) => setDefinition((current) => ({
                                                     ...current,
                                                     minDaysInactive: event.target.value ? Number(event.target.value) : undefined,
                                                 })) })] }), _jsxs("label", { className: "segment-filter-half", children: ["Ticket minimo", _jsx("input", { type: "number", value: definition.minAvgTicket ?? "", onChange: (event) => setDefinition((current) => ({

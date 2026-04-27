@@ -1,4 +1,4 @@
-export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment";
+export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment" | "geographic";
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
 export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
 

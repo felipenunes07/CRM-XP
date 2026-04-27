@@ -5,8 +5,10 @@ import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
 import { startDailySyncScheduler } from "./modules/platform/syncService.js";
+import { runMigrations } from "./db/runMigrations.js";
 
 async function main() {
+  await runMigrations();
   await bootstrapPlatform();
   const scheduler = startDailySyncScheduler();
   const app = createApp();

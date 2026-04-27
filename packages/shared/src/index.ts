@@ -334,6 +334,8 @@ export interface CustomerListItem {
   isAmbassador: boolean;
   ambassadorAssignedAt: string | null;
   avgDaysBetweenOrders: number | null;
+  state: string | null;
+  city: string | null;
 }
 
 export interface CustomerDetail extends CustomerListItem {
@@ -369,11 +371,58 @@ export interface CustomerDocInsightListItem {
   docOrderCount: number;
   docRevenue: number;
   lastDocPurchaseAt: string | null;
+  state: string | null;
+  city: string | null;
 }
 
 export interface CustomerDocInsightsResponse {
   summary: CustomerDocInsightSummary;
   ranking: CustomerDocInsightListItem[];
+}
+
+export interface GeographicStateStat {
+  state: string;
+  customerCount: number;
+  orderCount: number;
+  cityCount: number;
+  totalPieces: number;
+  totalRevenue: number;
+}
+
+export interface GeographicCityStat {
+  state: string;
+  city: string;
+  customerCount: number;
+  orderCount: number;
+  totalPieces: number;
+  totalRevenue: number;
+}
+
+export interface GeographicCustomerStat {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  state: string;
+  city: string;
+  orderCount: number;
+  totalPieces: number;
+  totalRevenue: number;
+}
+
+export interface GeographicSalesSummary {
+  totalStates: number;
+  totalCities: number;
+  totalCustomers: number;
+  totalOrders: number;
+  totalPieces: number;
+  totalRevenue: number;
+}
+
+export interface GeographicSalesResponse {
+  summary: GeographicSalesSummary;
+  stateStats: GeographicStateStat[];
+  cityStats: GeographicCityStat[];
+  customerStats: GeographicCustomerStat[];
 }
 
 export type CustomerCreditRiskLevel = "OK" | "MONITORAR" | "ATENCAO" | "CRITICO";

@@ -32,12 +32,22 @@ export const api = {
      * @param token Authentication token
      * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
      */
-    dashboard(token, trendDays) {
+    dashboard(token, trendDays, customerPrefix) {
         const search = new URLSearchParams();
         if (trendDays !== undefined) {
             search.set("trendDays", String(trendDays));
         }
+        if (customerPrefix !== undefined) {
+            search.set("customerPrefix", customerPrefix);
+        }
         return request(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    dashboardTrendRangeAnalysis(token, startDate, endDate) {
+        const search = new URLSearchParams({
+            startDate,
+            endDate,
+        });
+        return request(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
     },
     getMonthlyTargets(token, year) {
         const search = new URLSearchParams();
@@ -89,6 +99,9 @@ export const api = {
     },
     customerDocInsights(token) {
         return request("/api/customer-insights/doc", {}, token);
+    },
+    getGeographicSalesStats(token) {
+        return request("/api/geographic/sales", {}, token);
     },
     customerCreditOverview(token) {
         return request("/api/customer-credit/overview", {}, token);
