@@ -130,6 +130,8 @@ export interface CustomerFilters {
   labels?: string[];
   excludeLabels?: string[];
   isAmbassador?: boolean;
+  purchasedInYearMonth?: string; // Format: "YYYY-MM"
+  customerPrefix?: string; // Example: "CL", "KH", "LJ"
 }
 
 export function buildWhere(filters: FilterLike) {
@@ -148,6 +150,23 @@ export function buildWhere(filters: FilterLike) {
     params.push(searchValue);
     const second = params.length;
     clauses.push(`(s.display_name ILIKE $${first} OR s.customer_code ILIKE $${second})`);
+  }
+
+  if (filters.customerPrefix) {
+    push((index) => `s.customer_code ~ ('^' || $${index} || '[0-9]+')`, filters.customerPrefix);
+  }
+
+  if (filters.purchasedInYearMonth) {
+    push(
+      (index) => `
+        EXISTS (
+          SELECT 1 FROM orders o
+          WHERE o.customer_id = s.customer_id
+            AND to_char(o.order_date, 'YYYY-MM') = $${index}
+        )
+      `,
+      filters.purchasedInYearMonth
+    );
   }
 
   if (filters.status?.length) {
