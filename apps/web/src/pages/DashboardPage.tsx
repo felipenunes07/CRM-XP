@@ -739,18 +739,26 @@ function formatShare(value: number, total: number) {
 export function DashboardPage() {
   const { token } = useAuth();
   const { tx } = useUiLanguage();
+
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
+  const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
+
+  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
+
+  const dashboardQuery = useQuery({
+    queryKey: ["dashboard", trendDays, selectedPrefix],
+    queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
+    enabled: Boolean(token),
+  });
+
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
-  const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
   const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState<"comparative" | "continuous">("comparative");
   const [selectedSaleMonth, setSelectedSaleMonth] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
   const [trendRangeDraft, setTrendRangeDraft] = useState<{ anchorDate: string; currentDate: string } | null>(null);
-  const suppressNextTrendClickRef = useRef(false);
-
-  // Interactive Pins (Annotations) state
   const [userAnnotations, setUserAnnotations] = useState<ChartAnnotation[]>([]);
   const [isAnnotationModalOpen, setIsAnnotationModalOpen] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState<{ date: string; existing?: ChartAnnotation } | null>(null);
@@ -760,10 +768,10 @@ export function DashboardPage() {
   const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
   const [fsBottomChartHeight, setFsBottomChartHeight] = useState(240);
   const [isDraggingFsResize, setIsDraggingFsResize] = useState(false);
+
+  const suppressNextTrendClickRef = useRef(false);
   const fsContainerRef = useRef<HTMLDivElement>(null);
 
-
-  // Fetch annotations from API
   const annotationsQuery = useQuery({
     queryKey: ["chart-annotations"],
     queryFn: async () => {
@@ -772,6 +780,100 @@ export function DashboardPage() {
     },
     enabled: Boolean(token),
   });
+
+  const agendaQuery = useQuery({
+    queryKey: ["dashboard-agenda-preview"],
+    queryFn: () => api.agenda(token!, 6, 0),
+    enabled: Boolean(token),
+  });
+
+  const filteredCustomersQuery = useQuery({
+    queryKey: ["dashboard-bucket-customers", selectedBucket],
+    queryFn: () =>
+      api.customers(token!, {
+        ...(selectedBucket ? bucketFilters[selectedBucket] : {}),
+        sortBy: "priority",
+        limit: 120,
+      }),
+    enabled: Boolean(token && selectedBucket),
+  });
+
+  const priorityCustomersQuery = useQuery({
+    queryKey: ["dashboard-priority-customers"],
+    queryFn: () =>
+      api.customers(token!, {
+        sortBy: "priority",
+        limit: 120,
+      }),
+    enabled: Boolean(token && !selectedBucket && !selectedSaleMonth),
+  });
+
+  const salesCustomersQuery = useQuery({
+    queryKey: ["dashboard-sales-customers", selectedSaleMonth, selectedPrefix],
+    queryFn: () =>
+      api.customers(token!, {
+        purchasedInYearMonth: selectedSaleMonth!,
+        customerPrefix: selectedPrefix,
+        sortBy: "priority",
+        limit: 120,
+      }),
+    enabled: Boolean(token && selectedSaleMonth && chartView === "screensSold"),
+  });
+
+  const trendRangeAnalysisQuery = useQuery({
+    queryKey: [
+      "dashboard-trend-range-analysis",
+      selectedTrendRange?.startDate,
+      selectedTrendRange?.endDate,
+    ],
+    queryFn: () =>
+      api.dashboardTrendRangeAnalysis(
+        token!,
+        selectedTrendRange!.startDate,
+        selectedTrendRange!.endDate,
+      ),
+    enabled: Boolean(token && selectedTrendRange),
+  });
+
+  const itemsSoldData = useMemo(() => {
+    const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
+    const trend = dashboardQuery.data?.itemsSoldTrend;
+    if (!trend) return [];
+
+    if (screensSoldPeriodMode === "continuous") {
+      return trend.map(m => {
+        const monthName = monthNames[m.month - 1];
+        return {
+          month: `${monthName}/${String(m.year).slice(2)}`,
+          rawDate: `${m.year}-${String(m.month).padStart(2, '0')}`,
+          totalItems: m.totalItems,
+          clItems: m.clItems,
+          khItems: m.khItems,
+          ljItems: m.ljItems,
+          otherItems: m.otherItems,
+          meta: m.targetAmount
+        };
+      });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+
+    return monthNames.map((monthName, idx) => {
+      const monthNum = idx + 1;
+      const point: any = { month: monthName };
+      chartYears.forEach(year => {
+        const dataForYearAndMonth = trend?.find(m => m.year === year && m.month === monthNum);
+        if (dataForYearAndMonth) {
+          point[`year${year}`] = dataForYearAndMonth.totalItems;
+          if (year === currentYear && dataForYearAndMonth.targetAmount) {
+            point.meta = dataForYearAndMonth.targetAmount;
+          }
+        }
+      });
+      return point;
+    });
+  }, [dashboardQuery.data?.itemsSoldTrend, screensSoldPeriodMode, tx]);
 
   useEffect(() => {
     if (annotationsQuery.data) {
@@ -784,6 +886,38 @@ export function DashboardPage() {
       setHoveredFullScreenAnnotation(null);
     }
   }, [isTrendFullScreen]);
+
+  useEffect(() => {
+    if (!isDraggingFsResize || !fsContainerRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const containerRect = fsContainerRef.current!.getBoundingClientRect();
+      const newHeight = containerRect.bottom - e.clientY - 120; // legend and bottom padding
+      setFsBottomChartHeight(Math.max(100, Math.min(newHeight, containerRect.height - 250)));
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingFsResize(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingFsResize]);
+
+  useEffect(() => {
+    sessionStorage.setItem("dashboard-trend-display-mode", trendDisplayMode);
+  }, [trendDisplayMode]);
+
+  useEffect(() => {
+    const availableTrendDates = dashboardQuery.data?.portfolioTrend?.map((point) => point.date) ?? [];
+    if (selectedTrendRange && availableTrendDates.length && !isTrendRangeVisible(selectedTrendRange, availableTrendDates)) {
+      setSelectedTrendRange(null);
+    }
+  }, [dashboardQuery.data?.portfolioTrend, selectedTrendRange]);
 
   const handleChartClick = (data: any) => {
     if (suppressNextTrendClickRef.current) {
@@ -903,141 +1037,6 @@ export function DashboardPage() {
     setIsDraggingFsResize(true);
   };
 
-  useEffect(() => {
-    if (!isDraggingFsResize || !fsContainerRef.current) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const containerRect = fsContainerRef.current!.getBoundingClientRect();
-      const newHeight = containerRect.bottom - e.clientY - 120; // legend and bottom padding
-      setFsBottomChartHeight(Math.max(100, Math.min(newHeight, containerRect.height - 250)));
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingFsResize(false);
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { passive: true });
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDraggingFsResize]);
-
-  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
-
-  useEffect(() => {
-    sessionStorage.setItem("dashboard-trend-display-mode", trendDisplayMode);
-  }, [trendDisplayMode]);
-
-  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
-
-  const dashboardQuery = useQuery({
-    queryKey: ["dashboard", trendDays, selectedPrefix],
-    queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
-    enabled: Boolean(token),
-  });
-
-  const agendaQuery = useQuery({
-    queryKey: ["dashboard-agenda-preview"],
-    queryFn: () => api.agenda(token!, 6, 0),
-    enabled: Boolean(token),
-  });
-
-  const filteredCustomersQuery = useQuery({
-    queryKey: ["dashboard-bucket-customers", selectedBucket],
-    queryFn: () =>
-      api.customers(token!, {
-        ...(selectedBucket ? bucketFilters[selectedBucket] : {}),
-        sortBy: "priority",
-        limit: 120,
-      }),
-    enabled: Boolean(token && selectedBucket),
-  });
-
-  const priorityCustomersQuery = useQuery({
-    queryKey: ["dashboard-priority-customers"],
-    queryFn: () =>
-      api.customers(token!, {
-        sortBy: "priority",
-        limit: 120,
-      }),
-    enabled: Boolean(token && !selectedBucket && !selectedSaleMonth),
-  });
-
-  const salesCustomersQuery = useQuery({
-    queryKey: ["dashboard-sales-customers", selectedSaleMonth, selectedPrefix],
-    queryFn: () =>
-      api.customers(token!, {
-        purchasedInYearMonth: selectedSaleMonth!,
-        customerPrefix: selectedPrefix,
-        sortBy: "priority",
-        limit: 120,
-      }),
-    enabled: Boolean(token && selectedSaleMonth && chartView === "screensSold"),
-  });
-
-  const trendRangeAnalysisQuery = useQuery({
-    queryKey: [
-      "dashboard-trend-range-analysis",
-      selectedTrendRange?.startDate,
-      selectedTrendRange?.endDate,
-    ],
-    queryFn: () =>
-      api.dashboardTrendRangeAnalysis(
-        token!,
-        selectedTrendRange!.startDate,
-        selectedTrendRange!.endDate,
-      ),
-    enabled: Boolean(token && selectedTrendRange),
-  });
-
-  useEffect(() => {
-    const availableTrendDates = dashboardQuery.data?.portfolioTrend?.map((point) => point.date) ?? [];
-    if (selectedTrendRange && availableTrendDates.length && !isTrendRangeVisible(selectedTrendRange, availableTrendDates)) {
-      setSelectedTrendRange(null);
-    }
-  }, [dashboardQuery.data?.portfolioTrend, selectedTrendRange]);
-
-  const itemsSoldData = useMemo(() => {
-    const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
-    const trend = dashboardQuery.data?.itemsSoldTrend;
-    if (!trend) return [];
-
-    if (screensSoldPeriodMode === "continuous") {
-      return trend.map(m => {
-        const monthName = monthNames[m.month - 1];
-        return {
-          month: `${monthName}/${String(m.year).slice(2)}`,
-          rawDate: `${m.year}-${String(m.month).padStart(2, '0')}`,
-          totalItems: m.totalItems,
-          clItems: m.clItems,
-          khItems: m.khItems,
-          ljItems: m.ljItems,
-          otherItems: m.otherItems,
-          meta: m.targetAmount
-        };
-      });
-    }
-
-    const currentYear = new Date().getFullYear();
-    const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
-
-    return monthNames.map((monthName, idx) => {
-      const monthNum = idx + 1;
-      const point: any = { month: monthName };
-      chartYears.forEach(year => {
-        const dataForYearAndMonth = trend?.find(m => m.year === year && m.month === monthNum);
-        if (dataForYearAndMonth) {
-          point[`year${year}`] = dataForYearAndMonth.totalItems;
-          if (year === currentYear && dataForYearAndMonth.targetAmount) {
-            point.meta = dataForYearAndMonth.targetAmount;
-          }
-        }
-      });
-      return point;
-    });
-  }, [dashboardQuery.data?.itemsSoldTrend, screensSoldPeriodMode, tx]);
 
 
   if (dashboardQuery.isLoading) {
@@ -1677,12 +1676,11 @@ export function DashboardPage() {
             </>
             ) : chartView === "screensSold" ? (
             <>
-              <div className="trend-chart-toolbar" style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between" }}>
+              <div className="trend-chart-toolbar" style={{ marginTop: "1rem" }}>
                 <div 
                   className="customers-view-switcher" 
                   role="tablist" 
                   aria-label={tx("Filtrar por categoria de cliente", "Filter by customer category")}
-                  style={{ marginLeft: 0 }}
                 >
                   {[
                     { value: undefined, label: tx("Total", "全部") },
@@ -1709,6 +1707,7 @@ export function DashboardPage() {
                 <div 
                   className="customers-view-switcher" 
                   role="tablist" 
+                  style={{ marginLeft: "auto" }}
                 >
                   <button
                     type="button"

@@ -81,6 +81,8 @@ function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
       row.avg_days_between_orders === ""
         ? null
         : Number(row.avg_days_between_orders),
+    state: row.state ? String(row.state) : null,
+    city: row.city ? String(row.city) : null,
   };
 }
 
@@ -94,6 +96,8 @@ function mapCustomerDocInsightRow(row: Record<string, unknown>): CustomerDocInsi
     docOrderCount: Number(row.doc_order_count ?? 0),
     docRevenue: Number(row.doc_revenue ?? 0),
     lastDocPurchaseAt: row.last_doc_purchase_at ? String(row.last_doc_purchase_at) : null,
+    state: row.state ? String(row.state) : null,
+    city: row.city ? String(row.city) : null,
   };
 }
 
@@ -132,6 +136,8 @@ export interface CustomerFilters {
   isAmbassador?: boolean;
   purchasedInYearMonth?: string; // Format: "YYYY-MM"
   customerPrefix?: string; // Example: "CL", "KH", "LJ"
+  state?: string;
+  city?: string;
 }
 
 export function buildWhere(filters: FilterLike) {
@@ -240,6 +246,14 @@ export function buildWhere(filters: FilterLike) {
     `);
   }
 
+  if (filters.state) {
+    push((index) => `s.state = $${index}`, filters.state);
+  }
+
+  if (filters.city) {
+    push((index) => `s.city = $${index}`, filters.city);
+  }
+
   return { whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
 }
 
@@ -281,6 +295,8 @@ export async function listCustomers(filters: CustomerFilters = {}) {
         s.insight_tags,
         s.last_attendant,
         s.avg_days_between_orders,
+        s.state,
+        s.city,
         EXISTS (
           SELECT 1
           FROM customer_label_assignments cla
@@ -329,7 +345,9 @@ export async function getCustomerDocInsights(limit = 120): Promise<CustomerDocIn
         COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS doc_quantity,
         COUNT(DISTINCT o.id)::int AS doc_order_count,
         COALESCE(SUM(oi.line_total), 0)::numeric(14,2) AS doc_revenue,
-        MAX(o.order_date)::date::text AS last_doc_purchase_at
+        MAX(o.order_date)::date::text AS last_doc_purchase_at,
+        s.state,
+        s.city
       FROM orders o
       JOIN order_items oi ON oi.order_id = o.id
       JOIN customers c ON c.id = o.customer_id
@@ -339,7 +357,9 @@ export async function getCustomerDocInsights(limit = 120): Promise<CustomerDocIn
         o.customer_id,
         c.customer_code,
         COALESCE(NULLIF(s.display_name, ''), c.display_name),
-        COALESCE(s.status, 'INACTIVE')
+        COALESCE(s.status, 'INACTIVE'),
+        s.state,
+        s.city
     )
   `;
 
@@ -367,9 +387,11 @@ export async function getCustomerDocInsights(limit = 120): Promise<CustomerDocIn
           doc_quantity,
           doc_order_count,
           doc_revenue,
-          last_doc_purchase_at
+          last_doc_purchase_at,
+          state,
+          city
         FROM doc_customer_totals
-        ORDER BY doc_quantity DESC, doc_order_count DESC, doc_revenue DESC, display_name ASC
+        ORDER BY doc_revenue DESC
         LIMIT $2
       `,
       [DOC_ITEM_DESCRIPTION_FILTER, safeLimit],

@@ -5,6 +5,7 @@ import { CustomerTable } from "../components/CustomerTable";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatNumber } from "../lib/format";
+import { useUiLanguage } from "../i18n";
 
 const initialDefinition: SegmentDefinition = {
   status: ["INACTIVE"],
@@ -42,6 +43,7 @@ function summarizeSegment(segment: SavedSegment) {
 
 export function SegmentsPage() {
   const { token } = useAuth();
+  const { tx } = useUiLanguage();
   const queryClient = useQueryClient();
   const [definition, setDefinition] = useState<SegmentDefinition>(() => sanitizeSegmentDefinition(initialDefinition));
   const [segmentName, setSegmentName] = useState("");
@@ -183,23 +185,33 @@ export function SegmentsPage() {
               </select>
             </label>
 
-            <label className="segment-filter-half">
-              Categoria do cliente
-              <select
-                value={definition.customerPrefix ?? ""}
-                onChange={(event) =>
-                  setDefinition((current) => ({
-                    ...current,
-                    customerPrefix: event.target.value || undefined,
-                  }))
-                }
-              >
-                <option value="">Todas</option>
-                <option value="CL">CL</option>
-                <option value="KH">KH</option>
-                <option value="LJ">LJ</option>
-              </select>
-            </label>
+            <div className="segment-filter-half">
+              <label>{tx("Categoria do cliente", "Customer category")}</label>
+              <div className="customers-view-switcher" role="tablist">
+                {[
+                  { value: undefined, label: tx("Todas", "All") },
+                  { value: "CL", label: "CL" },
+                  { value: "KH", label: "KH" },
+                  { value: "LJ", label: "LJ" }
+                ].map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    role="tab"
+                    aria-selected={definition.customerPrefix === option.value}
+                    className={`chart-switch-button ${definition.customerPrefix === option.value ? "active" : ""}`}
+                    onClick={() =>
+                      setDefinition((current) => ({
+                        ...current,
+                        customerPrefix: option.value,
+                      }))
+                    }
+                  >
+                    <strong>{option.label}</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <label className="segment-filter-half">
               Minimo de dias inativo

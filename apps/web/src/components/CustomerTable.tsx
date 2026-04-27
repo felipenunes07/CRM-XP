@@ -124,6 +124,13 @@ const columns: TableColumn[] = [
     width: 220,
     minWidth: 180,
   },
+  {
+    id: "location" as any,
+    label: "Região",
+    width: 140,
+    minWidth: 120,
+    getValue: (customer) => `${customer.city || ""} ${customer.state || ""}`.trim(),
+  },
 ];
 
 const initialColumnWidths = columns.reduce(
@@ -196,10 +203,12 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                         : column.id === "totalSpent"
                           ? tx("Total gasto", "累计消费")
                           : column.id === "labels"
-                            ? tx("Rotulos", "标签")
-                            : column.id === "priorityScore"
-                              ? tx("Prioridade", "优先级")
-                              : tx("Insight", "洞察"),
+                          ? tx("Rotulos", "标签")
+                          : column.id === "priorityScore"
+                            ? tx("Prioridade", "优先级")
+                            : column.id === "insight"
+                              ? tx("Insight", "洞察")
+                              : tx("Região", "地区"),
         hint:
           column.id === "avgDaysBetweenOrders"
             ? tx("Intervalo medio entre pedidos do cliente.", "客户两次下单之间的平均间隔。")
@@ -332,8 +341,8 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
           <thead>
             <tr>
               {localizedColumns.map((column) => {
-                const isSorted = sortState?.columnId === column.id;
-                const activeDirection = isSorted ? sortState.direction : undefined;
+                const isSorted = Boolean(sortState && sortState.columnId === column.id);
+                const activeDirection = isSorted ? sortState?.direction : undefined;
 
                 return (
                   <th key={column.id}>
@@ -411,6 +420,12 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
                 </td>
                 <td>{customer.priorityScore.toFixed(1)}</td>
                 <td>{customer.primaryInsight ?? tx("Sem alerta", "无提醒")}</td>
+                <td>
+                  <div className="location-cell">
+                    <span className="city-text">{customer.city || "-"}</span>
+                    {customer.state && <span className="state-badge">{customer.state}</span>}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

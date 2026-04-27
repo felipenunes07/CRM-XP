@@ -99,6 +99,13 @@ const columns = [
         width: 220,
         minWidth: 180,
     },
+    {
+        id: "location",
+        label: "Região",
+        width: 140,
+        minWidth: 120,
+        getValue: (customer) => `${customer.city || ""} ${customer.state || ""}`.trim(),
+    },
 ];
 const initialColumnWidths = columns.reduce((accumulator, column) => ({ ...accumulator, [column.id]: column.width }), {});
 function SortIndicator({ direction }) {
@@ -156,7 +163,9 @@ export function CustomerTable({ customers }) {
                                             ? tx("Rotulos", "标签")
                                             : column.id === "priorityScore"
                                                 ? tx("Prioridade", "优先级")
-                                                : tx("Insight", "洞察"),
+                                                : column.id === "insight"
+                                                    ? tx("Insight", "洞察")
+                                                    : tx("Região", "地区"),
         hint: column.id === "avgDaysBetweenOrders"
             ? tx("Intervalo medio entre pedidos do cliente.", "客户两次下单之间的平均间隔。")
             : column.id === "priorityScore"
@@ -240,10 +249,10 @@ export function CustomerTable({ customers }) {
         return (_jsx("div", { className: "panel table-panel empty-panel", children: _jsx("div", { className: "empty-state", children: tx("Nenhum cliente encontrado para esse filtro.", "当前筛选下没有找到客户。") }) }));
     }
     return (_jsx("div", { className: "panel table-panel", children: _jsx("div", { className: "table-scroll", children: _jsxs("table", { className: "data-table", style: { minWidth: `${tableWidth}px` }, children: [_jsx("colgroup", { children: localizedColumns.map((column) => (_jsx("col", { style: { width: `${columnWidths[column.id]}px` } }, column.id))) }), _jsx("thead", { children: _jsx("tr", { children: localizedColumns.map((column) => {
-                                const isSorted = sortState?.columnId === column.id;
-                                const activeDirection = isSorted ? sortState.direction : undefined;
+                                const isSorted = Boolean(sortState && sortState.columnId === column.id);
+                                const activeDirection = isSorted ? sortState?.direction : undefined;
                                 return (_jsx("th", { children: _jsxs("div", { className: "table-head-cell", children: [_jsxs("div", { className: "table-header-group", children: [column.sortable ? (_jsxs("button", { className: `table-sort-button ${isSorted ? "active" : ""}`, type: "button", onClick: () => toggleSort(column), children: [_jsx("span", { children: column.label }), _jsx(SortIndicator, { direction: activeDirection })] })) : (_jsx("span", { className: "table-head-static", children: column.label })), column.hint ? _jsx(InfoHint, { text: column.hint }) : null] }), _jsx("button", { className: "resize-handle", type: "button", "aria-label": `${tx("Redimensionar coluna", "调整列宽")} ${column.label}`, onMouseDown: (event) => startResize(event, column.id) })] }) }, column.id));
                             }) }) }), _jsx("tbody", { children: sortedCustomers.map((customer) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs(Link, { className: "table-link", to: `/clientes/${customer.id}`, children: [_jsx("strong", { children: customer.displayName }), _jsx("span", { children: customer.customerCode }), customer.isAmbassador ? _jsx("small", { className: "table-inline-badge", children: AMBASSADOR_LABEL_NAME }) : null] }) }), _jsx("td", { children: _jsx("span", { className: `status-badge status-${customer.status.toLowerCase()}`, children: statusLabel(customer.status) }) }), _jsx("td", { children: formatDate(customer.lastPurchaseAt) }), _jsx("td", { children: formatDaysSince(customer.daysSinceLastPurchase) }), _jsx("td", { children: customer.totalOrders }), _jsx("td", { children: customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (locale === "zh-CN"
                                         ? `${Math.round(customer.avgDaysBetweenOrders)}天`
-                                        : `${Math.round(customer.avgDaysBetweenOrders)} dias`) : (_jsx("span", { className: "muted-copy", children: "-" })) }), _jsx("td", { children: formatCurrency(customer.avgTicket) }), _jsx("td", { children: formatCurrency(customer.totalSpent) }), _jsx("td", { children: _jsx("div", { className: "tag-row compact", children: customer.labels.length ? (customer.labels.map((label) => (_jsx("span", { className: "tag", style: { background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }, children: label.name }, label.id)))) : (_jsx("span", { className: "muted-copy", children: tx("Sem rotulo", "无标签") })) }) }), _jsx("td", { children: customer.priorityScore.toFixed(1) }), _jsx("td", { children: customer.primaryInsight ?? tx("Sem alerta", "无提醒") })] }, customer.id))) })] }) }) }));
+                                        : `${Math.round(customer.avgDaysBetweenOrders)} dias`) : (_jsx("span", { className: "muted-copy", children: "-" })) }), _jsx("td", { children: formatCurrency(customer.avgTicket) }), _jsx("td", { children: formatCurrency(customer.totalSpent) }), _jsx("td", { children: _jsx("div", { className: "tag-row compact", children: customer.labels.length ? (customer.labels.map((label) => (_jsx("span", { className: "tag", style: { background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }, children: label.name }, label.id)))) : (_jsx("span", { className: "muted-copy", children: tx("Sem rotulo", "无标签") })) }) }), _jsx("td", { children: customer.priorityScore.toFixed(1) }), _jsx("td", { children: customer.primaryInsight ?? tx("Sem alerta", "无提醒") }), _jsx("td", { children: _jsxs("div", { className: "location-cell", children: [_jsx("span", { className: "city-text", children: customer.city || "-" }), customer.state && _jsx("span", { className: "state-badge", children: customer.state })] }) })] }, customer.id))) })] }) }) }));
 }

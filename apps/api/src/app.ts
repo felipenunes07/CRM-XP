@@ -60,6 +60,12 @@ import {
   submitIdeaVote,
 } from "./modules/ideas/ideaBoardService.js";
 import {
+  syncGeographicData,
+  getGeographicStats,
+  getGeographicSalesStats,
+  getCitiesByState,
+} from "./modules/crm/geographicService.js";
+import {
   claimProspectLead,
   createProspectKeywordPreset,
   createProspectContactAttempt,
@@ -117,6 +123,8 @@ const customerQuerySchema = z.object({
   isAmbassador: z.coerce.boolean().optional(),
   purchasedInYearMonth: z.string().regex(/^\d{4}-\d{2}$/, "deve estar no formato YYYY-MM").optional(),
   customerPrefix: z.string().optional(),
+  state: z.string().optional(),
+  city: z.string().optional(),
 });
 
 const dashboardQuerySchema = z.object({
@@ -161,6 +169,8 @@ const agendaQuerySchema = z.object({
   isAmbassador: z.coerce.boolean().optional(),
   purchasedInYearMonth: z.string().regex(/^\d{4}-\d{2}$/, "deve estar no formato YYYY-MM").optional(),
   customerPrefix: z.string().optional(),
+  state: z.string().optional(),
+  city: z.string().optional(),
 });
 
 const segmentSchema = z.object({
@@ -175,6 +185,8 @@ const segmentSchema = z.object({
   labels: z.array(z.string()).optional(),
   excludeLabels: z.array(z.string()).optional(),
   customerPrefix: z.string().optional(),
+  state: z.string().optional(),
+  city: z.string().optional(),
 });
 
 const messageSchema = z.object({
@@ -919,6 +931,38 @@ export function createApp() {
         throw new HttpError(404, "Publico salvo nao encontrado");
       }
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/geographic/sync", async (_request, response, next) => {
+    try {
+      response.json(await syncGeographicData());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/geographic/stats", async (_request, response, next) => {
+    try {
+      response.json(await getGeographicStats());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/geographic/sales", async (_request, response, next) => {
+    try {
+      response.json(await getGeographicSalesStats());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/geographic/cities/:state", async (request, response, next) => {
+    try {
+      response.json(await getCitiesByState(request.params.state));
     } catch (error) {
       next(error);
     }
