@@ -9829,3 +9829,11 @@ textarea {
   margin-top: -0.2rem;
   margin-bottom: 0.4rem;
 }
+
+.stat-card-subvalue {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: -0.1rem;
+  font-weight: 500;
+}
