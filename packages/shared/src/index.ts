@@ -972,6 +972,7 @@ export interface SegmentDefinition {
   stoppedTopCustomers?: boolean;
   labels?: string[];
   excludeLabels?: string[];
+  customerPrefix?: string;
 }
 
 export interface SegmentResult {
