@@ -38,9 +38,10 @@ describe("whatsappCore", () => {
   });
 
   describe("classifyWhatsappGroup", () => {
-    it("classifies CL and KH groups as customers with orders", () => {
+    it("classifies CL, KH and LJ groups as customers with orders", () => {
       expect(classifyWhatsappGroup("CL1049 - MINAS CELL / XP EXPOR TELAS")).toBe("WITH_ORDER");
       expect(classifyWhatsappGroup("KH22 - Parceiro XP")).toBe("WITH_ORDER");
+      expect(classifyWhatsappGroup("LJ027 - Davi Ma / XP EXPOR")).toBe("WITH_ORDER");
     });
 
     it("classifies Cliente groups as never bought from the company", () => {
@@ -48,7 +49,6 @@ describe("whatsappCore", () => {
     });
 
     it("classifies all remaining groups as OTHER", () => {
-      expect(classifyWhatsappGroup("LJ027 - Davi Ma / XP EXPOR")).toBe("OTHER");
       expect(classifyWhatsappGroup("Grupo Interno Comercial")).toBe("OTHER");
     });
   });
