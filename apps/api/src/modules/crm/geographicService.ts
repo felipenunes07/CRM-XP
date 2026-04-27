@@ -48,6 +48,9 @@ function mapStateStat(row: Record<string, unknown>): GeographicStateStat {
     cityCount: toNumber(row.city_count),
     totalPieces: toNumber(row.total_pieces),
     totalRevenue: toNumber(row.total_revenue),
+    activeCustomerCount: toNumber(row.active_customer_count),
+    attentionCustomerCount: toNumber(row.attention_customer_count),
+    inactiveCustomerCount: toNumber(row.inactive_customer_count),
   };
 }
 
@@ -69,6 +72,11 @@ function mapCustomerStat(row: Record<string, unknown>): GeographicCustomerStat {
     displayName: String(row.display_name ?? "Cliente sem nome"),
     state: String(row.state ?? ""),
     city: String(row.city ?? "Sem cidade"),
+    status: String(row.status ?? "INACTIVE") as GeographicCustomerStat["status"],
+    daysSinceLastPurchase:
+      row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
+        ? null
+        : toNumber(row.days_since_last_purchase),
     orderCount: toNumber(row.order_count),
     totalPieces: toNumber(row.total_pieces),
     totalRevenue: toNumber(row.total_revenue),
@@ -166,15 +174,19 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
       `
         ${LOCATION_SALES_CTE}
         SELECT
-          state,
-          COUNT(DISTINCT customer_id)::int AS customer_count,
-          COUNT(DISTINCT order_id)::int AS order_count,
-          COUNT(DISTINCT city)::int AS city_count,
-          COALESCE(SUM(total_pieces), 0)::numeric(14,2) AS total_pieces,
-          COALESCE(SUM(total_revenue), 0)::numeric(14,2) AS total_revenue
+          location_sales.state AS state,
+          COUNT(DISTINCT location_sales.customer_id)::int AS customer_count,
+          COUNT(DISTINCT location_sales.order_id)::int AS order_count,
+          COUNT(DISTINCT location_sales.city)::int AS city_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ACTIVE' THEN location_sales.customer_id END)::int AS active_customer_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ATTENTION' THEN location_sales.customer_id END)::int AS attention_customer_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'INACTIVE' THEN location_sales.customer_id END)::int AS inactive_customer_count,
+          COALESCE(SUM(location_sales.total_pieces), 0)::numeric(14,2) AS total_pieces,
+          COALESCE(SUM(location_sales.total_revenue), 0)::numeric(14,2) AS total_revenue
         FROM location_sales
-        GROUP BY state
-        ORDER BY total_pieces DESC, total_revenue DESC, state ASC
+        LEFT JOIN customer_snapshot cs ON cs.customer_id = location_sales.customer_id
+        GROUP BY location_sales.state
+        ORDER BY total_pieces DESC, total_revenue DESC, location_sales.state ASC
       `,
     ),
     pool.query(
@@ -202,6 +214,8 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
           COALESCE(NULLIF(MAX(cs.display_name), ''), MAX(c.display_name), 'Cliente sem nome') AS display_name,
           location_sales.state,
           COALESCE(location_sales.city, 'Sem cidade') AS city,
+          COALESCE(MAX(cs.status), 'INACTIVE') AS status,
+          MAX(cs.days_since_last_purchase)::int AS days_since_last_purchase,
           COUNT(DISTINCT location_sales.order_id)::int AS order_count,
           COALESCE(SUM(location_sales.total_pieces), 0)::numeric(14,2) AS total_pieces,
           COALESCE(SUM(location_sales.total_revenue), 0)::numeric(14,2) AS total_revenue

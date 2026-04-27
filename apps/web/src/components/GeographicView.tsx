@@ -34,6 +34,9 @@ function createEmptyStateStat(state: string): GeographicStateStat {
     cityCount: 0,
     totalPieces: 0,
     totalRevenue: 0,
+    activeCustomerCount: 0,
+    attentionCustomerCount: 0,
+    inactiveCustomerCount: 0,
   };
 }
 
@@ -69,6 +72,38 @@ function matchesCitySearch(item: GeographicCityStat, normalizedSearch: string) {
   return normalizeText(`${item.city} ${item.state}`).includes(normalizedSearch);
 }
 
+function toPercent(value: number, total: number) {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return (value / total) * 100;
+}
+
+function formatPercent(value: number) {
+  return `${value.toFixed(1)}%`;
+}
+
+function formatDaysSincePurchase(value: number | null, tx: ReturnType<typeof useUiLanguage>["tx"]) {
+  if (value === null || value === undefined) {
+    return tx("Sem historico", "No history");
+  }
+
+  return `${formatNumber(value)} ${tx("dias", "days")}`;
+}
+
+function formatCustomerStatus(status: GeographicCustomerStat["status"], tx: ReturnType<typeof useUiLanguage>["tx"]) {
+  if (status === "ACTIVE") {
+    return tx("Ativo", "Active");
+  }
+
+  if (status === "ATTENTION") {
+    return tx("Atencao", "Attention");
+  }
+
+  return tx("Inativo", "Inactive");
+}
+
 export function GeographicView() {
   const { token } = useAuth();
   const { tx } = useUiLanguage();
@@ -100,6 +135,66 @@ export function GeographicView() {
       })),
     [stateStatsByUf],
   );
+
+  const statePerformanceByUf = useMemo(() => {
+    const rows = geographicData.stateStats.map((item) => {
+      const activeRate = toPercent(item.activeCustomerCount, item.customerCount);
+      const attentionRate = toPercent(item.attentionCustomerCount, item.customerCount);
+      const inactiveRate = toPercent(item.inactiveCustomerCount, item.customerCount);
+
+      return {
+        ...item,
+        activeRate,
+        attentionRate,
+        inactiveRate,
+      };
+    });
+
+    const activeRanking = [...rows].sort(
+      (left, right) =>
+        right.activeRate - left.activeRate ||
+        left.inactiveRate - right.inactiveRate ||
+        right.customerCount - left.customerCount ||
+        left.state.localeCompare(right.state),
+    );
+
+    const inactiveRanking = [...rows].sort(
+      (left, right) =>
+        right.inactiveRate - left.inactiveRate ||
+        left.activeRate - right.activeRate ||
+        right.customerCount - left.customerCount ||
+        left.state.localeCompare(right.state),
+    );
+
+    const activeRankByState = new Map(activeRanking.map((item, index) => [item.state, index + 1]));
+    const inactiveRankByState = new Map(inactiveRanking.map((item, index) => [item.state, index + 1]));
+    const bestActiveState = activeRanking[0] ?? null;
+    const worstActiveState = activeRanking[activeRanking.length - 1] ?? null;
+    const highestAttentionState = [...rows].sort(
+      (left, right) =>
+        right.attentionRate - left.attentionRate ||
+        right.customerCount - left.customerCount ||
+        left.state.localeCompare(right.state),
+    )[0] ?? null;
+    const worstInactiveState = inactiveRanking[0] ?? null;
+
+    return {
+      bestActiveState,
+      worstActiveState,
+      highestAttentionState,
+      worstInactiveState,
+      byState: new Map(
+        rows.map((item) => [
+          item.state,
+          {
+            ...item,
+            activeRank: activeRankByState.get(item.state) ?? rows.length,
+            inactiveRank: inactiveRankByState.get(item.state) ?? rows.length,
+          },
+        ]),
+      ),
+    };
+  }, [geographicData.stateStats]);
 
   const selectedCity = useMemo(
     () => geographicData.cityStats.find((item) => cityKey(item) === selectedCityKey) ?? null,
@@ -146,6 +241,16 @@ export function GeographicView() {
     activeStateCode ? geographicData.cityStats.find((item) => item.state === activeStateCode) ?? null : null;
   const activeStateTopCustomer =
     activeStateCode ? geographicData.customerStats.find((item) => item.state === activeStateCode) ?? null : null;
+  const activeStatePerformance = activeStateCode ? statePerformanceByUf.byState.get(activeStateCode) ?? null : null;
+  const hoveredStateShape = hoveredState ? allStates.find((item) => item.uf === hoveredState) ?? null : null;
+  const hoveredTooltipClassName = hoveredStateShape
+    ? [
+        hoveredStateShape.centerX < 260 ? "align-right" : "",
+        hoveredStateShape.centerY < 150 ? "align-bottom" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : "";
   const maxStatePieces = Math.max(...geographicData.stateStats.map((item) => item.totalPieces), 1);
   const hasFilters = Boolean(selectedState || selectedCityKey || search.trim());
 
@@ -285,7 +390,7 @@ export function GeographicView() {
                       onBlur={() => setHoveredState("")}
                       role="button"
                       tabIndex={0}
-                      aria-label={`${state.label}: ${formatNumber(state.stat.totalPieces)} ${tx("pecas", "pieces")}`}
+                      aria-label={`${state.label}: ${formatNumber(state.stat.totalPieces)} ${tx("pecas", "pieces")} - ${formatPercent(toPercent(state.stat.activeCustomerCount, state.stat.customerCount))} ${tx("ativos", "active")}`}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
@@ -347,6 +452,44 @@ export function GeographicView() {
               </g>
             </svg>
 
+            {hoveredStateShape && activeStatePerformance ? (
+              <div
+                className={`region-map-tooltip${hoveredTooltipClassName ? ` ${hoveredTooltipClassName}` : ""}`}
+                style={{
+                  left: `${(hoveredStateShape.centerX / 880) * 100}%`,
+                  top: `${(hoveredStateShape.centerY / 720) * 100}%`,
+                }}
+              >
+                <div className="region-map-tooltip-header">
+                  <strong>{`${hoveredStateShape.uf} - ${hoveredStateShape.label}`}</strong>
+                  <small>
+                    #{activeStatePerformance.activeRank} {tx("em ativos", "in active")}
+                  </small>
+                </div>
+                <p>
+                  {formatNumber(activeStatePerformance.customerCount)} {tx("clientes", "customers")} -{" "}
+                  {formatNumber(activeStatePerformance.totalPieces)} {tx("pecas", "pieces")}
+                </p>
+                <div className="region-map-tooltip-metrics">
+                  <div className="active">
+                    <span>{tx("Ativos", "Active")}</span>
+                    <strong>{formatPercent(activeStatePerformance.activeRate)}</strong>
+                    <small>{formatNumber(activeStatePerformance.activeCustomerCount)}</small>
+                  </div>
+                  <div className="attention">
+                    <span>{tx("Atencao", "Attention")}</span>
+                    <strong>{formatPercent(activeStatePerformance.attentionRate)}</strong>
+                    <small>{formatNumber(activeStatePerformance.attentionCustomerCount)}</small>
+                  </div>
+                  <div className="inactive">
+                    <span>{tx("Inativos", "Inactive")}</span>
+                    <strong>{formatPercent(activeStatePerformance.inactiveRate)}</strong>
+                    <small>{formatNumber(activeStatePerformance.inactiveCustomerCount)}</small>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="region-map-legend">
               <span>{tx("Volume", "Volume")}</span>
               <div className="region-map-legend-bubbles" aria-hidden="true">
@@ -372,7 +515,13 @@ export function GeographicView() {
                     {formatNumber(activeStateStat.customerCount)} {tx("clientes", "customers")} -{" "}
                     {formatNumber(activeStateStat.totalPieces)} {tx("pecas", "pieces")}
                   </p>
-                  <span>{formatCurrency(activeStateStat.totalRevenue)}</span>
+                  {activeStatePerformance ? (
+                    <div className="region-map-focus-health">
+                      <span className="active">{`${formatPercent(activeStatePerformance.activeRate)} ${tx("ativos", "active")}`}</span>
+                      <span className="attention">{`${formatPercent(activeStatePerformance.attentionRate)} ${tx("atencao", "attention")}`}</span>
+                      <span className="inactive">{`${formatPercent(activeStatePerformance.inactiveRate)} ${tx("inativos", "inactive")}`}</span>
+                    </div>
+                  ) : null}
                   {activeStateTopCity ? (
                     <small>
                       {tx("Cidade lider", "Top city")}: {activeStateTopCity.city}
@@ -403,6 +552,33 @@ export function GeographicView() {
                 </span>
               </button>
             ))}
+          </div>
+
+          <div className="region-health-strip">
+            {statePerformanceByUf.bestActiveState ? (
+              <div className="region-health-card active">
+                <span>{tx("Melhor taxa ativa", "Best active rate")}</span>
+                <strong>{`${statePerformanceByUf.bestActiveState.state} - ${formatPercent(statePerformanceByUf.bestActiveState.activeRate)}`}</strong>
+              </div>
+            ) : null}
+            {statePerformanceByUf.worstActiveState ? (
+              <div className="region-health-card muted">
+                <span>{tx("Menor taxa ativa", "Lowest active rate")}</span>
+                <strong>{`${statePerformanceByUf.worstActiveState.state} - ${formatPercent(statePerformanceByUf.worstActiveState.activeRate)}`}</strong>
+              </div>
+            ) : null}
+            {statePerformanceByUf.highestAttentionState ? (
+              <div className="region-health-card attention">
+                <span>{tx("Maior taxa de atencao", "Highest attention rate")}</span>
+                <strong>{`${statePerformanceByUf.highestAttentionState.state} - ${formatPercent(statePerformanceByUf.highestAttentionState.attentionRate)}`}</strong>
+              </div>
+            ) : null}
+            {statePerformanceByUf.worstInactiveState ? (
+              <div className="region-health-card inactive">
+                <span>{tx("Maior taxa inativa", "Highest inactive rate")}</span>
+                <strong>{`${statePerformanceByUf.worstInactiveState.state} - ${formatPercent(statePerformanceByUf.worstInactiveState.inactiveRate)}`}</strong>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -451,9 +627,9 @@ export function GeographicView() {
             <table className="region-ranking-table">
               <thead>
                 <tr>
-                  <th>UF</th>
-                  <th>{tx("Cidade", "City")}</th>
                   <th>{tx("Cliente", "Customer")}</th>
+                  <th>{tx("Dias sem compra", "Days since purchase")}</th>
+                  <th>{tx("Cidade", "City")}</th>
                   <th>{tx("Pecas", "Pieces")}</th>
                 </tr>
               </thead>
@@ -461,17 +637,22 @@ export function GeographicView() {
                 {tableRows.length ? (
                   tableRows.map((row) => (
                     <tr key={`${row.customerId}-${row.state}-${row.city}`}>
-                      <td>{row.state}</td>
                       <td>
                         <div className="region-table-meta">
-                          <strong>{row.city}</strong>
-                          <span>{formatCurrency(row.totalRevenue)}</span>
+                          <strong>{row.displayName}</strong>
+                          <span>{`${row.customerCode || tx("Sem codigo", "No code")} - ${formatCustomerStatus(row.status, tx)}`}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="region-table-number align-left">
+                          <strong>{formatDaysSincePurchase(row.daysSinceLastPurchase, tx)}</strong>
+                          <span>{tx("Ultima compra", "Last purchase")}</span>
                         </div>
                       </td>
                       <td>
                         <div className="region-table-meta">
-                          <strong>{row.displayName}</strong>
-                          <span>{row.customerCode || tx("Sem codigo", "No code")}</span>
+                          <strong>{row.city}</strong>
+                          <span>{`${row.state} - ${formatCurrency(row.totalRevenue)}`}</span>
                         </div>
                       </td>
                       <td>
