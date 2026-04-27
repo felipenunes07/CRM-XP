@@ -532,6 +532,7 @@ export async function previewSegment(definition: SegmentDefinition): Promise<Seg
     minFrequencyDrop: definition.frequencyDropRatio,
     labels: definition.labels,
     excludeLabels: definition.excludeLabels,
+    customerPrefix: definition.customerPrefix,
     sortBy: "priority",
   });
 
