@@ -26,6 +26,10 @@ export interface ItemsSoldTrendPoint {
   totalOrders: number;
   totalRevenue: number;
   targetAmount?: number | null;
+  clItems?: number;
+  khItems?: number;
+  ljItems?: number;
+  otherItems?: number;
 }
 
 export interface MonthlyTarget {
