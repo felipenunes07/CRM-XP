@@ -741,6 +741,7 @@ export function DashboardPage() {
   const { tx } = useUiLanguage();
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
+  const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
   const [isSyncing, setIsSyncing] = useState(false);
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
@@ -930,8 +931,8 @@ export function DashboardPage() {
   const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard", trendDays],
-    queryFn: () => api.dashboard(token!, trendDays),
+    queryKey: ["dashboard", trendDays, selectedPrefix],
+    queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
     enabled: Boolean(token),
   });
 
@@ -1625,8 +1626,33 @@ export function DashboardPage() {
                 ) : null}
               </div>
             </>
-          ) : chartView === "screensSold" ? (
+            ) : chartView === "screensSold" ? (
             <>
+              <div className="trend-chart-toolbar" style={{ marginTop: "1rem" }}>
+                <div 
+                  className="customers-view-switcher" 
+                  role="tablist" 
+                  aria-label={tx("Filtrar por categoria de cliente", "Filter by customer category")}
+                >
+                  {[
+                    { value: undefined, label: tx("Total", "全部") },
+                    { value: "CL", label: "CL" },
+                    { value: "KH", label: "KH" },
+                    { value: "LJ", label: "LJ" }
+                  ].map((option) => (
+                    <button
+                      key={option.label}
+                      type="button"
+                      role="tab"
+                      aria-selected={selectedPrefix === option.value}
+                      className={`chart-switch-button ${selectedPrefix === option.value ? "active" : ""}`}
+                      onClick={() => setSelectedPrefix(option.value)}
+                    >
+                      <strong>{option.label}</strong>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="trend-chart-wrap" style={{ marginTop: "1rem" }}>
                 <ResponsiveContainer width="100%" height={420}>
                   <ComposedChart data={itemsSoldData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
@@ -1656,7 +1682,9 @@ export function DashboardPage() {
                     <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                     <Line type="monotone" dataKey={`year${chartYears[3]}`} name={String(chartYears[3])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                    <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                    {!selectedPrefix && (
+                      <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                    )}
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -1677,10 +1705,12 @@ export function DashboardPage() {
                   <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
                   {chartYears[3]}
                 </span>
-                <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
-                  {tx("Meta (Atual)", "当前目标")}
-                </span>
+                {!selectedPrefix && (
+                  <span className="trend-legend-item">
+                    <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
+                    {tx("Meta (Atual)", "当前目标")}
+                  </span>
+                )}
               </div>
             </>
           ) : null}

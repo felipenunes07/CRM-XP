@@ -64,7 +64,7 @@ export function classifyWhatsappGroup(sourceName: string | null | undefined): Wh
   const normalizedName = String(sourceName ?? "").trim();
   const sourceCode = extractWhatsappSourceCode(normalizedName);
 
-  if (sourceCode?.startsWith("CL") || sourceCode?.startsWith("KH")) {
+  if (sourceCode?.startsWith("CL") || sourceCode?.startsWith("KH") || sourceCode?.startsWith("LJ")) {
     return "WITH_ORDER";
   }
 
