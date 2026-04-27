@@ -31,7 +31,28 @@ interface RankingViewEntry {
   metrics: [RankingMetric, RankingMetric, RankingMetric];
 }
 
-const HIDDEN_ATTENDANTS = new Set(["iza", "sem atendente"]);
+const ALWAYS_HIDDEN_ATTENDANTS = new Set(["iza"]);
+const MONTHLY_HIDDEN_ATTENDANTS = new Set(["sem atendente"]);
+
+function sortSalesPerformanceEntries(entries: SalesPerformanceEntry[], rankingPeriod: "month" | "today") {
+  return [...entries].sort((left, right) => {
+    if (rankingPeriod === "today") {
+      return (
+        right.totalItems - left.totalItems ||
+        right.totalOrders - left.totalOrders ||
+        right.totalRevenue - left.totalRevenue ||
+        left.attendant.localeCompare(right.attendant, "pt-BR")
+      );
+    }
+
+    return (
+      right.totalOrders - left.totalOrders ||
+      right.totalRevenue - left.totalRevenue ||
+      right.totalItems - left.totalItems ||
+      left.attendant.localeCompare(right.attendant, "pt-BR")
+    );
+  });
+}
 
 export function SalesPerformancePanel({
   salesPerformance,
@@ -45,6 +66,10 @@ export function SalesPerformancePanel({
   const { tx } = useUiLanguage();
   const [activeTab, setActiveTab] = useState<RankingTab>("sales");
   const isToday = rankingPeriod === "today";
+  const orderedSalesPerformance = sortSalesPerformanceEntries(salesPerformance, rankingPeriod);
+  const hiddenAttendants = isToday
+    ? ALWAYS_HIDDEN_ATTENDANTS
+    : new Set([...ALWAYS_HIDDEN_ATTENDANTS, ...MONTHLY_HIDDEN_ATTENDANTS]);
 
   const rankingViews: Record<
     RankingTab,
@@ -58,18 +83,24 @@ export function SalesPerformancePanel({
     sales: {
       label: tx("Vendas", "Sales"),
       description: isToday
-        ? tx("Vendas realizadas hoje pelas vendedoras.", "Sales made today by the sellers.")
+        ? tx("Peças vendidas hoje por vendedora, com conferência direta do total diário.", "Items sold today by each seller, aligned with the daily total.")
         : tx("Desempenho corporativo com base nas vendas do periodo.", "Team performance based on sales in the selected period."),
       emptyMessage: isToday
-        ? tx("Nenhuma venda registrada hoje.", "No sales registered today.")
+        ? tx("Nenhuma peça registrada hoje.", "No items registered today.")
         : tx("Nenhuma venda registrada neste mes.", "No sales registered this month."),
-      entries: salesPerformance.map((entry) => ({
+      entries: orderedSalesPerformance.map((entry) => ({
         attendant: entry.attendant,
-        metrics: [
-          { value: entry.totalOrders, label: tx("vendas", "sales") },
-          { value: entry.totalItems, label: tx("pecas", "items") },
-          { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
-        ],
+        metrics: isToday
+          ? [
+              { value: entry.totalItems, label: tx("pecas", "items") },
+              { value: entry.totalOrders, label: tx("vendas", "sales") },
+              { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
+            ]
+          : [
+              { value: entry.totalOrders, label: tx("vendas", "sales") },
+              { value: entry.totalItems, label: tx("pecas", "items") },
+              { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
+            ],
       })),
     },
     reactivation: {
@@ -134,15 +165,15 @@ export function SalesPerformancePanel({
   };
 
   const currentView = rankingViews[activeTab];
-  const filteredEntries = currentView.entries.filter((entry) => !HIDDEN_ATTENDANTS.has(entry.attendant.toLowerCase()));
+  const filteredEntries = currentView.entries.filter((entry) => !hiddenAttendants.has(entry.attendant.toLowerCase()));
 
   if (isLoading) {
     return (
       <article className="panel insight-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">{isToday ? tx("Vendas de hoje", "Today's sales") : tx("Performance do mes", "Month performance")}</p>
-            <h3>{isToday ? tx("Ranking de Hoje", "Today's Ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
+            <p className="eyebrow">{isToday ? tx("Peças de hoje", "Today's items") : tx("Performance do mes", "Month performance")}</p>
+            <h3>{isToday ? tx("Ranking de Peças de Hoje", "Today's items ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
           </div>
         </div>
         <div className="page-loading">{tx("Carregando performance...", "Loading performance...")}</div>
@@ -156,8 +187,8 @@ export function SalesPerformancePanel({
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
             <div>
-              <p className="eyebrow">{isToday ? tx("Vendas de hoje", "Today's sales") : tx("Performance do mes", "Month performance")}</p>
-              <h3>{isToday ? tx("Ranking de Hoje", "Today's Ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
+              <p className="eyebrow">{isToday ? tx("Peças de hoje", "Today's items") : tx("Performance do mes", "Month performance")}</p>
+              <h3>{isToday ? tx("Ranking de Peças de Hoje", "Today's items ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
             </div>
             {isToday && onResetRanking && (
               <button 
