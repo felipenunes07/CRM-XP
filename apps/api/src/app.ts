@@ -119,6 +119,7 @@ const customerQuerySchema = z.object({
 
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(5000).optional(),
+  customerPrefix: z.string().optional(),
 });
 
 const trendRangeAnalysisQuerySchema = z.object({
@@ -532,7 +533,7 @@ export function createApp() {
   app.get("/api/dashboard/metrics", async (request, response, next) => {
     try {
       const query = dashboardQuerySchema.parse(request.query);
-      response.json(await getDashboardMetrics(query.trendDays));
+      response.json(await getDashboardMetrics(query.trendDays, query.customerPrefix));
     } catch (error) {
       next(error);
     }

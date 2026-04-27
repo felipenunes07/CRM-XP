@@ -93,10 +93,13 @@ export const api = {
    * @param token Authentication token
    * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
    */
-  dashboard(token: string, trendDays?: number) {
+  dashboard(token: string, trendDays?: number, customerPrefix?: string) {
     const search = new URLSearchParams();
     if (trendDays !== undefined) {
       search.set("trendDays", String(trendDays));
+    }
+    if (customerPrefix !== undefined) {
+      search.set("customerPrefix", customerPrefix);
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },

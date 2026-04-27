@@ -196,7 +196,7 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
           SELECT customer_code
           FROM customers
           WHERE source_system_first = 'history_xls'
-            AND customer_code ~ '^(CL|KH|OEM)[0-9]+$'
+            AND customer_code ~ '^(CL|KH|LJ)[0-9]+$'
         ),
         ranked_orders AS (
           SELECT

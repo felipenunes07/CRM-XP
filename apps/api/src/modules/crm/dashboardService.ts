@@ -328,7 +328,7 @@ async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[
         SELECT customer_code
         FROM customers
         WHERE source_system_first = 'history_xls'
-          AND customer_code ~ '^(CL|KH|OEM)[0-9]+$'
+          AND customer_code ~ '^(CL|KH|LJ)[0-9]+$'
       ),
       ranked_orders AS (
         SELECT
@@ -1056,7 +1056,15 @@ async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactiv
   }));
 }
 
-async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
+async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTrendPoint[]> {
+  const params: any[] = [];
+  let prefixFilter = "";
+
+  if (customerPrefix) {
+    params.push(customerPrefix);
+    prefixFilter = `AND c.customer_code ~ ('^' || $1 || '[0-9]+')`;
+  }
+
   const result = await pool.query(
     `
       WITH order_item_totals AS (
@@ -1072,8 +1080,10 @@ async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
           COUNT(DISTINCT o.id)::int AS total_orders,
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
         FROM orders o
+        JOIN customers c ON c.id = o.customer_id
         LEFT JOIN order_item_totals oi ON oi.order_id = o.id
         WHERE o.order_date >= '2023-01-01'::date
+          ${prefixFilter}
         GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
       )
       SELECT 
@@ -1082,7 +1092,8 @@ async function getItemsSoldTrend(): Promise<ItemsSoldTrendPoint[]> {
       FROM sales s
       LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month
       ORDER BY s.year ASC, s.month ASC
-    `
+    `,
+    params
   );
 
   return result.rows.map(row => ({
@@ -1162,9 +1173,9 @@ export async function deleteChartAnnotation(id: string) {
   await pool.query("DELETE FROM chart_annotations WHERE id = $1", [id]);
 }
 
-export async function getDashboardMetrics(trendDays?: number): Promise<DashboardMetrics> {
+export async function getDashboardMetrics(trendDays?: number, customerPrefix?: string): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, currentMonthTargetData, ltvData] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, globalItemsSoldTrend, currentMonthTargetData, ltvData] =
     await Promise.all([
       pool.query(
         `
@@ -1214,7 +1225,8 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
       getSalesPerformance(),
       getNewCustomerLeaderboard(),
       getProspectingLeaderboard(),
-      getItemsSoldTrend(),
+      getItemsSoldTrend(customerPrefix),
+      getItemsSoldTrend(undefined), // Global trend for cards
       pool.query(`
         SELECT target_amount 
         FROM monthly_targets 
@@ -1256,7 +1268,7 @@ export async function getDashboardMetrics(trendDays?: number): Promise<Dashboard
   const snapshotInactive = Number(row?.inactive_count ?? 0);
 
   const currentYearDate = new Date();
-  const currentMonthData = itemsSoldTrend.find(i => i.year === currentYearDate.getFullYear() && i.month === currentYearDate.getMonth() + 1);
+  const currentMonthData = globalItemsSoldTrend.find(i => i.year === currentYearDate.getFullYear() && i.month === currentYearDate.getMonth() + 1);
   const currentMonthItemsSold = currentMonthData?.totalItems ?? 0;
   const currentMonthTarget = currentMonthTargetData.rows[0]?.target_amount ? Number(currentMonthTargetData.rows[0].target_amount) : null;
 
