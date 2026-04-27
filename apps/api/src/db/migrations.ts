@@ -709,4 +709,13 @@ export const migrations = [
   ALTER TABLE monthly_targets DROP CONSTRAINT IF EXISTS monthly_targets_pkey;
   ALTER TABLE monthly_targets ADD PRIMARY KEY (year, month, attendant);
   `,
+  `
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS city TEXT;
+  CREATE INDEX IF NOT EXISTS idx_customers_state_city ON customers(state, city);
+
+  ALTER TABLE customer_snapshot ADD COLUMN IF NOT EXISTS state TEXT;
+  ALTER TABLE customer_snapshot ADD COLUMN IF NOT EXISTS city TEXT;
+  CREATE INDEX IF NOT EXISTS idx_customer_snapshot_state_city ON customer_snapshot(state, city);
+  `,
 ];

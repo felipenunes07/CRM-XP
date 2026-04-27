@@ -12,6 +12,7 @@ import type {
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
+  GeographicSalesResponse,
   IdeaBoardDetail,
   IdeaBoardItem,
   IdeaVoteFeedback,
@@ -159,6 +160,9 @@ export const api = {
   },
   customerDocInsights(token: string) {
     return request<CustomerDocInsightsResponse>("/api/customer-insights/doc", {}, token);
+  },
+  getGeographicSalesStats(token: string) {
+    return request<GeographicSalesResponse>("/api/geographic/sales", {}, token);
   },
   customerCreditOverview(token: string) {
     return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token);

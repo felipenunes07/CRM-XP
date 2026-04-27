@@ -10,6 +10,7 @@ import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
 import { CustomerTable } from "../components/CustomerTable";
 import { StatCard } from "../components/StatCard";
+import { GeographicView } from "../components/GeographicView";
 import {
   buildCustomersQueryParams,
   type CreditKpiFilter,
@@ -37,6 +38,12 @@ const viewTabs = [
     label: "Credito & Pagamento",
     helper: "Leitura diaria de saldo, credito liberado e risco financeiro da carteira.",
     title: "Credito e pagamento da carteira",
+  },
+  {
+    value: "geographic" as const,
+    label: "Região",
+    helper: "Mapa e volume de vendas por estado e cidade.",
+    title: "Visão geográfica da carteira",
   },
 ];
 
@@ -326,6 +333,10 @@ export function CustomersPage() {
             Ranking global no historico total da base, considerando como DOC os itens cuja descricao contenha{" "}
             <code>DOC DE CARGA</code>.
           </p>
+        ) : state.activeView === "geographic" ? (
+          <p className="panel-subcopy">
+            Mapa com leitura espacial da carteira, ranking por cidade e filtros de estado para aproximar a experiencia do Power BI.
+          </p>
         ) : (
           <div className="filters-grid filters-grid-six">
             <label>
@@ -467,6 +478,8 @@ export function CustomersPage() {
             </>
           ) : null}
         </>
+      ) : state.activeView === "geographic" ? (
+        <GeographicView />
       ) : (
         <>
           {creditOverviewQuery.isLoading ? <div className="page-loading">Carregando credito e pagamento...</div> : null}
