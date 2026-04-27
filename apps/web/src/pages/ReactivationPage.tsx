@@ -502,6 +502,20 @@ export function ReactivationPage() {
                         );
                       })}
                     </tbody>
+                    <tfoot style={{ background: "rgba(41,86,215,0.05)", borderTop: "2px solid var(--line)" }}>
+                      <tr>
+                        <td colSpan={2} style={{ padding: "1.25rem 1.5rem", textAlign: "right", fontWeight: 800, color: "var(--text)", fontSize: "0.9rem", letterSpacing: "0.05em" }}>TOTAL DO MÊS</td>
+                        <td style={{ padding: "1.25rem 1.5rem", textAlign: "center", fontWeight: 800, color: "var(--success)", fontSize: "1.1rem" }}>
+                          {formatNumber(entries.reduce((sum, e) => sum + e.recoveredCustomers, 0))}
+                        </td>
+                        <td style={{ padding: "1.25rem 1.5rem", textAlign: "center", fontWeight: 800, color: "var(--text)", fontSize: "1.1rem" }}>
+                          {formatNumber(entries.reduce((sum, e) => sum + e.recoveredItems, 0))}
+                        </td>
+                        <td style={{ padding: "1.25rem 1.5rem", textAlign: "right", fontWeight: 800, color: "var(--success)", fontSize: "1.2rem" }}>
+                          {formatCurrency(entries.reduce((sum, e) => sum + e.recoveredRevenue, 0))}
+                        </td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               </section>
