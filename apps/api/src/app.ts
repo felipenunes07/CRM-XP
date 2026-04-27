@@ -174,6 +174,7 @@ const segmentSchema = z.object({
   stoppedTopCustomers: z.boolean().optional(),
   labels: z.array(z.string()).optional(),
   excludeLabels: z.array(z.string()).optional(),
+  customerPrefix: z.string().optional(),
 });
 
 const messageSchema = z.object({

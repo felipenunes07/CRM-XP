@@ -33,6 +33,10 @@ function summarizeSegment(segment: SavedSegment) {
     parts.push(`Rotulo: ${segment.definition.labels[0]}`);
   }
 
+  if (segment.definition.customerPrefix) {
+    parts.push(`Categoria: ${segment.definition.customerPrefix}`);
+  }
+
   return parts.length ? parts.join(" | ") : "Filtro dinamico salvo";
 }
 
@@ -176,6 +180,24 @@ export function SegmentsPage() {
                 <option value="ACTIVE">Ativos</option>
                 <option value="ATTENTION">Atencao</option>
                 <option value="INACTIVE">Inativos</option>
+              </select>
+            </label>
+
+            <label className="segment-filter-half">
+              Categoria do cliente
+              <select
+                value={definition.customerPrefix ?? ""}
+                onChange={(event) =>
+                  setDefinition((current) => ({
+                    ...current,
+                    customerPrefix: event.target.value || undefined,
+                  }))
+                }
+              >
+                <option value="">Todas</option>
+                <option value="CL">CL</option>
+                <option value="KH">KH</option>
+                <option value="LJ">LJ</option>
               </select>
             </label>
 
