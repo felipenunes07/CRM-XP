@@ -1077,6 +1077,10 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
           EXTRACT(YEAR FROM o.order_date)::int AS year,
           EXTRACT(MONTH FROM o.order_date)::int AS month,
           COALESCE(SUM(oi.quantity), 0)::int AS total_items,
+          COALESCE(SUM(CASE WHEN c.customer_code ~ '^CL[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS cl_items,
+          COALESCE(SUM(CASE WHEN c.customer_code ~ '^KH[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS kh_items,
+          COALESCE(SUM(CASE WHEN c.customer_code ~ '^LJ[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS lj_items,
+          COALESCE(SUM(CASE WHEN c.customer_code !~ '^(CL|KH|LJ)[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS other_items,
           COUNT(DISTINCT o.id)::int AS total_orders,
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
         FROM orders o
@@ -1100,6 +1104,10 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     year: Number(row.year ?? 0),
     month: Number(row.month ?? 0),
     totalItems: Number(row.total_items ?? 0),
+    clItems: row.cl_items !== undefined ? Number(row.cl_items) : undefined,
+    khItems: row.kh_items !== undefined ? Number(row.kh_items) : undefined,
+    ljItems: row.lj_items !== undefined ? Number(row.lj_items) : undefined,
+    otherItems: row.other_items !== undefined ? Number(row.other_items) : undefined,
     totalOrders: Number(row.total_orders ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
     targetAmount: row.target_amount ? Number(row.target_amount) : null,

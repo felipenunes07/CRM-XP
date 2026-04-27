@@ -115,6 +115,8 @@ const customerQuerySchema = z.object({
   labels: z.string().optional(),
   excludeLabels: z.string().optional(),
   isAmbassador: z.coerce.boolean().optional(),
+  purchasedInYearMonth: z.string().regex(/^\d{4}-\d{2}$/, "deve estar no formato YYYY-MM").optional(),
+  customerPrefix: z.string().optional(),
 });
 
 const dashboardQuerySchema = z.object({
@@ -157,6 +159,8 @@ const agendaQuerySchema = z.object({
   labels: z.string().optional(),
   excludeLabels: z.string().optional(),
   isAmbassador: z.coerce.boolean().optional(),
+  purchasedInYearMonth: z.string().regex(/^\d{4}-\d{2}$/, "deve estar no formato YYYY-MM").optional(),
+  customerPrefix: z.string().optional(),
 });
 
 const segmentSchema = z.object({
@@ -1245,3 +1249,5 @@ export function createApp() {
 
   return app;
 }
+
+

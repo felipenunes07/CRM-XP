@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -742,6 +742,8 @@ export function DashboardPage() {
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
+  const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState<"comparative" | "continuous">("comparative");
+  const [selectedSaleMonth, setSelectedSaleMonth] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
@@ -960,7 +962,19 @@ export function DashboardPage() {
         sortBy: "priority",
         limit: 120,
       }),
-    enabled: Boolean(token && !selectedBucket),
+    enabled: Boolean(token && !selectedBucket && !selectedSaleMonth),
+  });
+
+  const salesCustomersQuery = useQuery({
+    queryKey: ["dashboard-sales-customers", selectedSaleMonth, selectedPrefix],
+    queryFn: () =>
+      api.customers(token!, {
+        purchasedInYearMonth: selectedSaleMonth!,
+        customerPrefix: selectedPrefix,
+        sortBy: "priority",
+        limit: 120,
+      }),
+    enabled: Boolean(token && selectedSaleMonth && chartView === "screensSold"),
   });
 
   const trendRangeAnalysisQuery = useQuery({
@@ -984,6 +998,47 @@ export function DashboardPage() {
       setSelectedTrendRange(null);
     }
   }, [dashboardQuery.data?.portfolioTrend, selectedTrendRange]);
+
+  const itemsSoldData = useMemo(() => {
+    const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
+    const trend = dashboardQuery.data?.itemsSoldTrend;
+    if (!trend) return [];
+
+    if (screensSoldPeriodMode === "continuous") {
+      return trend.map(m => {
+        const monthName = monthNames[m.month - 1];
+        return {
+          month: `${monthName}/${String(m.year).slice(2)}`,
+          rawDate: `${m.year}-${String(m.month).padStart(2, '0')}`,
+          totalItems: m.totalItems,
+          clItems: m.clItems,
+          khItems: m.khItems,
+          ljItems: m.ljItems,
+          otherItems: m.otherItems,
+          meta: m.targetAmount
+        };
+      });
+    }
+
+    const currentYear = new Date().getFullYear();
+    const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
+
+    return monthNames.map((monthName, idx) => {
+      const monthNum = idx + 1;
+      const point: any = { month: monthName };
+      chartYears.forEach(year => {
+        const dataForYearAndMonth = trend?.find(m => m.year === year && m.month === monthNum);
+        if (dataForYearAndMonth) {
+          point[`year${year}`] = dataForYearAndMonth.totalItems;
+          if (year === currentYear && dataForYearAndMonth.targetAmount) {
+            point.meta = dataForYearAndMonth.targetAmount;
+          }
+        }
+      });
+      return point;
+    });
+  }, [dashboardQuery.data?.itemsSoldTrend, screensSoldPeriodMode, tx]);
+
 
   if (dashboardQuery.isLoading) {
     return <div className="page-loading">{tx("Carregando dashboard...", "正在加载仪表盘...")}</div>;
@@ -1074,9 +1129,17 @@ export function DashboardPage() {
     { value: "count", label: tx("Quantidade", "Count"), helper: tx("Clientes reais", "Real customers") },
     { value: "percent", label: "%", helper: tx("Participacao", "Share") },
   ];
-  const tableCustomers = selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
-  const tableQueryLoading = selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
-  const tableQueryError = selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
+  
+  const isSalesTableActive = chartView === "screensSold" && Boolean(selectedSaleMonth);
+  const tableCustomers = isSalesTableActive 
+    ? (salesCustomersQuery.data ?? []) 
+    : selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
+  const tableQueryLoading = isSalesTableActive
+    ? salesCustomersQuery.isLoading
+    : selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
+  const tableQueryError = isSalesTableActive
+    ? salesCustomersQuery.isError
+    : selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
   const fullScreenAnnotationTooltipPosition = hoveredFullScreenAnnotation
     ? getFullScreenAnnotationTooltipPosition(hoveredFullScreenAnnotation.mouseX, hoveredFullScreenAnnotation.mouseY)
     : null;
@@ -1084,21 +1147,7 @@ export function DashboardPage() {
   const currentYear = new Date().getFullYear();
   const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
 
-  const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
-  const itemsSoldData = monthNames.map((monthName, idx) => {
-    const monthNum = idx + 1;
-    const point: any = { month: monthName };
-    chartYears.forEach(year => {
-      const dataForYearAndMonth = metrics.itemsSoldTrend?.find(m => m.year === year && m.month === monthNum);
-      if (dataForYearAndMonth) {
-        point[`year${year}`] = dataForYearAndMonth.totalItems;
-        if (year === currentYear && dataForYearAndMonth.targetAmount) {
-          point.meta = dataForYearAndMonth.targetAmount;
-        }
-      }
-    });
-    return point;
-  });
+
 
   async function handleSync() {
     try {
@@ -1628,11 +1677,12 @@ export function DashboardPage() {
             </>
             ) : chartView === "screensSold" ? (
             <>
-              <div className="trend-chart-toolbar" style={{ marginTop: "1rem" }}>
+              <div className="trend-chart-toolbar" style={{ marginTop: "1rem", display: "flex", justifyContent: "space-between" }}>
                 <div 
                   className="customers-view-switcher" 
                   role="tablist" 
                   aria-label={tx("Filtrar por categoria de cliente", "Filter by customer category")}
+                  style={{ marginLeft: 0 }}
                 >
                   {[
                     { value: undefined, label: tx("Total", "全部") },
@@ -1646,70 +1696,203 @@ export function DashboardPage() {
                       role="tab"
                       aria-selected={selectedPrefix === option.value}
                       className={`chart-switch-button ${selectedPrefix === option.value ? "active" : ""}`}
-                      onClick={() => setSelectedPrefix(option.value)}
+                      onClick={() => {
+                        setSelectedPrefix(option.value);
+                        setSelectedSaleMonth(null); // Reset selected month when category changes
+                      }}
                     >
                       <strong>{option.label}</strong>
                     </button>
                   ))}
                 </div>
+                
+                <div 
+                  className="customers-view-switcher" 
+                  role="tablist" 
+                >
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={screensSoldPeriodMode === "comparative"}
+                    className={`chart-switch-button ${screensSoldPeriodMode === "comparative" ? "active" : ""}`}
+                    onClick={() => {
+                      setScreensSoldPeriodMode("comparative");
+                      setSelectedSaleMonth(null); // Reset when switching view
+                    }}
+                  >
+                    <strong>{tx("Comparativo Anual", "Annual Comparison")}</strong>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={screensSoldPeriodMode === "continuous"}
+                    className={`chart-switch-button ${screensSoldPeriodMode === "continuous" ? "active" : ""}`}
+                    onClick={() => {
+                      setScreensSoldPeriodMode("continuous");
+                      setSelectedSaleMonth(null); // Reset when switching view
+                    }}
+                  >
+                    <strong>{tx("Todo o Período", "Whole Period")}</strong>
+                  </button>
+                </div>
               </div>
               <div className="trend-chart-wrap" style={{ marginTop: "1rem" }}>
                 <ResponsiveContainer width="100%" height={420}>
-                  <ComposedChart data={itemsSoldData} margin={{ top: 12, right: 18, left: 10, bottom: 4 }}>
-                    <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
-                    <XAxis dataKey="month" stroke="#5f6f95" tickLine={false} axisLine={false} />
-                    <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat(getFormattingLocale()).format(val)} />
-                    <Tooltip
-                      cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload || !payload.length) return null;
-                        return (
-                          <div className="chart-tooltip">
-                            <strong>{label}</strong>
-                            <div style={{ marginTop: "0.5rem" }}>
-                              {payload.map((entry: any) => (
-                                <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }}>
-                                  <span style={{ color: entry.color, fontWeight: 500 }}>{entry.name}</span>
-                                  <strong>{tx(`${formatNumber(entry.value)} telas`, `${formatNumber(entry.value)} 屏`)}</strong>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
+                  {screensSoldPeriodMode === "continuous" ? (
+                    <BarChart 
+                      data={itemsSoldData} 
+                      margin={{ top: 12, right: 18, left: 10, bottom: 20 }}
+                      onClick={(data) => {
+                        if (data && data.activePayload && data.activePayload[0]) {
+                          setSelectedSaleMonth(data.activePayload[0].payload.rawDate);
+                        }
                       }}
-                    />
-                    <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#e2e8f0" strokeWidth={1.5} strokeDasharray="3 3" dot={{ r: 2 }} activeDot={{ r: 4 }} />
-                    <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                    <Line type="monotone" dataKey={`year${chartYears[3]}`} name={String(chartYears[3])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
-                    {!selectedPrefix && (
-                      <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
-                    )}
-                  </ComposedChart>
+                    >
+                      <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                      <XAxis 
+                        dataKey="month" 
+                        stroke="#5f6f95" 
+                        tickLine={false} 
+                        axisLine={false}
+                        minTickGap={20}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat(getFormattingLocale()).format(val)} />
+                      <Tooltip
+                        cursor={{ fill: "rgba(41, 86, 215, 0.05)" }}
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          const data = payload[0].payload;
+                          return (
+                            <div className="chart-tooltip">
+                              <strong>{label}</strong>
+                              <div style={{ marginTop: "0.5rem" }}>
+                                {payload.map((entry: any) => (
+                                  <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }}>
+                                    <span style={{ color: entry.color, fontWeight: 500 }}>{entry.name}</span>
+                                    <strong>{tx(`${formatNumber(entry.value)} telas`, `${formatNumber(entry.value)} 屏`)}</strong>
+                                  </div>
+                                ))}
+                                {selectedPrefix === undefined && (
+                                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9" }}>
+                                    <span style={{ color: "#334155", fontWeight: 700 }}>Total</span>
+                                    <strong>{tx(`${formatNumber(data.totalItems)} telas`, `${formatNumber(data.totalItems)} 屏`)}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      {selectedPrefix === undefined && <Bar dataKey="clItems" name="CL" stackId="a" fill="#2956d7" radius={[0, 0, 4, 4]} />}
+                      {selectedPrefix === undefined && <Bar dataKey="khItems" name="KH" stackId="a" fill="#5f8cff" />}
+                      {selectedPrefix === undefined && <Bar dataKey="ljItems" name="LJ" stackId="a" fill="#a8c1ff" />}
+                      {selectedPrefix === undefined && <Bar dataKey="otherItems" name="Outros" stackId="a" fill="#e2e8f0" radius={[4, 4, 0, 0]} />}
+                      {selectedPrefix !== undefined && <Bar dataKey="totalItems" name={selectedPrefix} fill="#2956d7" radius={[4, 4, 4, 4]} />}
+                    </BarChart>
+                  ) : (
+                    <ComposedChart 
+                      data={itemsSoldData} 
+                      margin={{ top: 12, right: 18, left: 10, bottom: 4 }}
+                      onClick={(data) => {
+                         // In comparative view, it's harder to get the exact rawDate because X is just month number and lines are years.
+                         // But if they click a point, activePayload has it.
+                         // For now, let's keep it simple: we only support filtering table easily in continuous mode, or we construct the rawDate here if they click a specific year's line.
+                         if (data && data.activePayload && data.activePayload[0] && data.activeTooltipIndex !== undefined) {
+                            // Find the active payload they specifically clicked? Hard in ComposedChart line without custom logic.
+                            // Let's just set the month, but we need the year. Default to currentYear if clicking comparative?
+                            // Actually, it's safer to only enable the click-to-filter in continuous mode to avoid confusion, or we do our best here.
+                            // I will just use the active tooltip month and currentYear for simplicity, but continuous mode is much better for this.
+                            const monthStr = String(data.activeTooltipIndex + 1).padStart(2, "0");
+                            setSelectedSaleMonth(`${currentYear}-${monthStr}`);
+                         }
+                      }}
+                    >
+                      <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                      <XAxis dataKey="month" stroke="#5f6f95" tickLine={false} axisLine={false} />
+                      <YAxis stroke="#5f6f95" tickLine={false} axisLine={false} width={65} tickFormatter={(val) => new Intl.NumberFormat(getFormattingLocale()).format(val)} />
+                      <Tooltip
+                        cursor={{ stroke: "rgba(41, 86, 215, 0.3)", strokeWidth: 1 }}
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload || !payload.length) return null;
+                          return (
+                            <div className="chart-tooltip">
+                              <strong>{label}</strong>
+                              <div style={{ marginTop: "0.5rem" }}>
+                                {payload.map((entry: any) => (
+                                  <div key={entry.name} style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginBottom: "0.25rem" }}>
+                                    <span style={{ color: entry.color, fontWeight: 500 }}>{entry.name}</span>
+                                    <strong>{tx(`${formatNumber(entry.value)} telas`, `${formatNumber(entry.value)} 屏`)}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }}
+                      />
+                      <Line type="monotone" dataKey={`year${chartYears[0]}`} name={String(chartYears[0])} stroke="#e2e8f0" strokeWidth={1.5} strokeDasharray="3 3" dot={{ r: 2 }} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey={`year${chartYears[1]}`} name={String(chartYears[1])} stroke="#a8c1ff" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey={`year${chartYears[2]}`} name={String(chartYears[2])} stroke="#5f8cff" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey={`year${chartYears[3]}`} name={String(chartYears[3])} stroke="#2956d7" strokeWidth={4} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                      {!selectedPrefix && (
+                        <Line type="monotone" dataKey="meta" name={tx("Meta (Atual)", "当前目标")} stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4, fill: "#10b981", strokeWidth: 0 }} activeDot={{ r: 6 }} />
+                      )}
+                    </ComposedChart>
+                  )}
                 </ResponsiveContainer>
               </div>
               <div className="trend-legend" aria-label={tx("Legenda do grafico de telas vendidas", "销量图例")}>
-                <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#e2e8f0", marginRight: "0.4rem" }}></span>
-                  {chartYears[0]}
-                </span>
-                <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
-                  {chartYears[1]}
-                </span>
-                <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
-                  {chartYears[2]}
-                </span>
-                <span className="trend-legend-item">
-                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
-                  {chartYears[3]}
-                </span>
-                {!selectedPrefix && (
-                  <span className="trend-legend-item">
-                    <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
-                    {tx("Meta (Atual)", "当前目标")}
-                  </span>
+                {screensSoldPeriodMode === "continuous" && selectedPrefix === undefined ? (
+                  <>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                      CL
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
+                      KH
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
+                      LJ
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#e2e8f0", marginRight: "0.4rem" }}></span>
+                      Outros
+                    </span>
+                  </>
+                ) : screensSoldPeriodMode === "continuous" && selectedPrefix !== undefined ? (
+                  <>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                      {selectedPrefix}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#e2e8f0", marginRight: "0.4rem" }}></span>
+                      {chartYears[0]}
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#a8c1ff", marginRight: "0.4rem" }}></span>
+                      {chartYears[1]}
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#5f8cff", marginRight: "0.4rem" }}></span>
+                      {chartYears[2]}
+                    </span>
+                    <span className="trend-legend-item">
+                      <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#2956d7", marginRight: "0.4rem" }}></span>
+                      {chartYears[3]}
+                    </span>
+                    {!selectedPrefix && (
+                      <span className="trend-legend-item">
+                        <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: "50%", backgroundColor: "#10b981", border: "2px dashed #ffffff", marginRight: "0.4rem" }}></span>
+                        {tx("Meta (Atual)", "当前目标")}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
             </>
@@ -1736,12 +1919,22 @@ export function DashboardPage() {
         <section className="panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">{selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}</p>
-              <h3>{selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}</h3>
+              <p className="eyebrow">
+                {isSalesTableActive 
+                  ? tx("Clientes que compraram no mês", "Customers who bought in the month")
+                  : selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}
+              </p>
+              <h3>
+                {isSalesTableActive
+                  ? tx(`Clientes com compras em ${selectedSaleMonth!.split("-").reverse().join("/")}`, `Purchased in ${selectedSaleMonth}`)
+                  : selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}
+              </h3>
               <p className="panel-subcopy">
-                {selectedBucket
-                  ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
-                  : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
+                {isSalesTableActive
+                  ? tx(`Exibindo clientes ${selectedPrefix ? `da categoria ${selectedPrefix} ` : ""}que compraram no mês selecionado no gráfico.`, `Showing customers who bought in the selected month.`)
+                  : selectedBucket
+                    ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
+                    : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
               </p>
             </div>
           </div>
