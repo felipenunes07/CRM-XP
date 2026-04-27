@@ -35,24 +35,29 @@ const pedidoObterSchema = z.object({
         id: z.coerce.number(),
         numero: z.union([z.string(), z.number()]),
         data_pedido: z.string().optional(),
-        cliente: z.object({
-          codigo: z.string().optional(),
-          nome: z.string(),
-          fone: z.string().optional(),
-          email: z.string().optional(),
-        }),
+        cliente: z
+          .object({
+            codigo: z.string().optional(),
+            nome: z.string(),
+            fone: z.string().optional(),
+            email: z.string().optional(),
+          })
+          .passthrough(),
         itens: z.array(
           z.object({
-            item: z.object({
-              codigo: z.string().optional(),
-              descricao: z.string(),
-              quantidade: z.union([z.string(), z.number()]),
-              valor_unitario: z.union([z.string(), z.number()]),
-            }),
+            item: z
+              .object({
+                codigo: z.string().optional(),
+                descricao: z.string(),
+                quantidade: z.union([z.string(), z.number()]),
+                valor_unitario: z.union([z.string(), z.number()]),
+              })
+              .passthrough(),
           }),
         ),
         situacao: z.string().optional(),
       })
+      .passthrough()
       .optional(),
     erros: z.array(z.object({ erro: z.string() })).optional(),
   }),

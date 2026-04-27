@@ -297,17 +297,33 @@ async function getAgendaEligibleCount(filters: CustomerFilters = {}) {
 async function getSalesPerformance() {
   const result = await pool.query(
     `
+      WITH order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items
+        FROM order_items oi
+        GROUP BY oi.order_id
+      ),
+      scoped_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
+          COALESCE(oit.total_items, 0)::int AS total_items
+        FROM orders o
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        WHERE date_trunc('month', o.order_date) = date_trunc('month', CURRENT_DATE)
+      )
       SELECT
-        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-        COUNT(DISTINCT o.id)::int AS total_orders,
-        COUNT(DISTINCT o.customer_id)::int AS unique_customers,
-        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
-        COALESCE(SUM(oi.quantity), 0)::int AS total_items
-      FROM orders o
-      LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE date_trunc('month', o.order_date) = date_trunc('month', CURRENT_DATE)
-      GROUP BY COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente')
-      ORDER BY total_orders DESC, total_revenue DESC
+        so.attendant,
+        COUNT(*)::int AS total_orders,
+        COUNT(DISTINCT so.customer_id)::int AS unique_customers,
+        COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(so.total_items), 0)::int AS total_items
+      FROM scoped_orders so
+      GROUP BY so.attendant
+      ORDER BY total_orders DESC, total_revenue DESC, attendant ASC
       LIMIT 10
     `,
   );
@@ -324,17 +340,33 @@ async function getSalesPerformance() {
 async function getTodaySalesPerformance() {
   const result = await pool.query(
     `
+      WITH order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items
+        FROM order_items oi
+        GROUP BY oi.order_id
+      ),
+      scoped_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
+          COALESCE(oit.total_items, 0)::int AS total_items
+        FROM orders o
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        WHERE o.order_date::date = CURRENT_DATE
+      )
       SELECT
-        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-        COUNT(DISTINCT o.id)::int AS total_orders,
-        COUNT(DISTINCT o.customer_id)::int AS unique_customers,
-        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
-        COALESCE(SUM(oi.quantity), 0)::int AS total_items
-      FROM orders o
-      LEFT JOIN order_items oi ON oi.order_id = o.id
-      WHERE o.order_date::date = CURRENT_DATE
-      GROUP BY COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente')
-      ORDER BY total_orders DESC, total_revenue DESC
+        so.attendant,
+        COUNT(*)::int AS total_orders,
+        COUNT(DISTINCT so.customer_id)::int AS unique_customers,
+        COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(so.total_items), 0)::int AS total_items
+      FROM scoped_orders so
+      GROUP BY so.attendant
+      ORDER BY total_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
       LIMIT 10
     `,
   );
