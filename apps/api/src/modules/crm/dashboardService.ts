@@ -321,6 +321,33 @@ async function getSalesPerformance() {
   }));
 }
 
+async function getTodaySalesPerformance() {
+  const result = await pool.query(
+    `
+      SELECT
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+        COUNT(DISTINCT o.id)::int AS total_orders,
+        COUNT(DISTINCT o.customer_id)::int AS unique_customers,
+        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(oi.quantity), 0)::int AS total_items
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.order_date::date = CURRENT_DATE
+      GROUP BY COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente')
+      ORDER BY total_orders DESC, total_revenue DESC
+      LIMIT 10
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant ?? "Sem atendente"),
+    totalOrders: Number(row.total_orders ?? 0),
+    uniqueCustomers: Number(row.unique_customers ?? 0),
+    totalRevenue: Number(row.total_revenue ?? 0),
+    totalItems: Number(row.total_items ?? 0),
+  }));
+}
+
 async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[]> {
   const result = await pool.query(
     `
@@ -1183,7 +1210,7 @@ export async function deleteChartAnnotation(id: string) {
 
 export async function getDashboardMetrics(trendDays?: number, customerPrefix?: string): Promise<DashboardMetrics> {
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
-  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, globalItemsSoldTrend, currentMonthTargetData, ltvData] =
+  const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, globalItemsSoldTrend, currentMonthTargetData, ltvData, todaySalesPerformance, todaySalesData] =
     await Promise.all([
       pool.query(
         `
@@ -1259,6 +1286,15 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
           AVG(tenure_days / 30.44)::numeric(14,2) as avg_lifespan_months
         FROM customer_lifespan
       `),
+      getTodaySalesPerformance(),
+      pool.query(`
+        SELECT 
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) as total_amount,
+          COALESCE(SUM(oi.quantity), 0)::int as total_items
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.order_date::date = CURRENT_DATE
+      `),
     ]);
 
   const ltvRow = ltvData.rows[0];
@@ -1324,6 +1360,9 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
     currentMonthItemsSold,
     estimatedLtv,
     estimatedLifespanMonths: lifespanMonths,
+    todaySalesAmount: Number(todaySalesData.rows[0]?.total_amount ?? 0),
+    todayItemsSold: Number(todaySalesData.rows[0]?.total_items ?? 0),
+    todaySalesPerformance,
   };
 }
 

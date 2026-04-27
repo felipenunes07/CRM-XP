@@ -6,12 +6,14 @@ export function StatCard({
   badge,
   helper,
   tone = "neutral",
+  onClick,
 }: {
   title: string;
   value: string;
   badge?: string;
   helper?: string;
   tone?: "neutral" | "success" | "warning" | "danger" | "primary";
+  onClick?: () => void;
 }) {
   const Icon =
     tone === "success"
@@ -27,7 +29,10 @@ export function StatCard({
       : Users;
 
   return (
-    <article className={`stat-card tone-${tone}`}>
+    <article 
+      className={`stat-card tone-${tone} ${onClick ? 'interactive' : ''}`}
+      onClick={onClick}
+    >
       <div className="stat-card-header">
         <p className="stat-card-title">{title}</p>
         <div className={`stat-card-icon tone-${tone}`}>

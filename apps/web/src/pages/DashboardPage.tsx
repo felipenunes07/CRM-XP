@@ -756,6 +756,7 @@ export function DashboardPage() {
   const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState<"comparative" | "continuous">("comparative");
   const [selectedSaleMonth, setSelectedSaleMonth] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [rankingPeriod, setRankingPeriod] = useState<"month" | "today">("month");
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
   const [trendRangeDraft, setTrendRangeDraft] = useState<{ anchorDate: string; currentDate: string } | null>(null);
@@ -834,6 +835,20 @@ export function DashboardPage() {
       ),
     enabled: Boolean(token && selectedTrendRange),
   });
+
+  const businessDaysInMonth = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    let count = 0;
+    const date = new Date(year, month, 1);
+    while (date.getMonth() === month) {
+      const day = date.getDay();
+      if (day !== 0 && day !== 6) count++;
+      date.setDate(date.getDate() + 1);
+    }
+    return count;
+  }, []);
 
   const itemsSoldData = useMemo(() => {
     const monthNames = [tx("Jan", "1月"), tx("Fev", "2月"), tx("Mar", "3月"), tx("Abr", "4月"), tx("Mai", "5月"), tx("Jun", "6月"), tx("Jul", "7月"), tx("Ago", "8月"), tx("Set", "9月"), tx("Out", "10月"), tx("Nov", "11月"), tx("Dez", "12月")];
@@ -1187,6 +1202,7 @@ export function DashboardPage() {
   }
 
   const targetAmount = metrics.currentMonthTarget ?? 0;
+  const dailyGoal = targetAmount > 0 ? Math.ceil(targetAmount / businessDaysInMonth) : 0;
   const itemsSold = metrics.currentMonthItemsSold;
   const targetPercent = targetAmount > 0 ? Math.round((itemsSold / targetAmount) * 100) : 0;
   const isTargetHit = targetAmount > 0 && itemsSold >= targetAmount;
@@ -1317,10 +1333,12 @@ export function DashboardPage() {
           tone="danger"
         />
         <StatCard
-          title="LTV (Valor Vitalício)"
-          value={formatCurrency(metrics.estimatedLtv ?? 0)}
-          helper={`Expectativa de receita (Estimativa vida: ${formatNumber(metrics.estimatedLifespanMonths ?? 0)} meses)`}
-          tone="primary"
+          title="Peças de Hoje"
+          value={`${formatNumber(metrics.todayItemsSold)} itens`}
+          badge={dailyGoal > 0 ? `${Math.round((metrics.todayItemsSold / dailyGoal) * 100)}% da meta` : undefined}
+          helper={dailyGoal > 0 ? `Meta diária: ${formatNumber(dailyGoal)} itens (Meta mensal / ${businessDaysInMonth} dias úteis).` : "Total de itens vendidos hoje."}
+          tone={rankingPeriod === 'today' ? 'success' : 'primary'}
+          onClick={() => setRankingPeriod(prev => prev === 'today' ? 'month' : 'today')}
         />
         <article className={monthlyGoalCardClassName}>
           <div className="monthly-goal-card__header">
@@ -1899,11 +1917,13 @@ export function DashboardPage() {
         </article>
 
         <SalesPerformancePanel
-          salesPerformance={metrics.salesPerformance}
+          salesPerformance={rankingPeriod === 'today' ? metrics.todaySalesPerformance : metrics.salesPerformance}
           reactivationLeaderboard={metrics.reactivationLeaderboard}
           newCustomerLeaderboard={metrics.newCustomerLeaderboard}
           prospectingLeaderboard={metrics.prospectingLeaderboard}
           isLoading={dashboardQuery.isLoading}
+          rankingPeriod={rankingPeriod}
+          onResetRanking={() => setRankingPeriod('month')}
         />
       </section>
 
