@@ -14,6 +14,8 @@ interface SalesPerformancePanelProps {
   newCustomerLeaderboard: NewCustomerLeaderboardEntry[];
   prospectingLeaderboard: ProspectingLeaderboardEntry[];
   isLoading?: boolean;
+  rankingPeriod?: "month" | "today";
+  onResetRanking?: () => void;
 }
 
 type RankingTab = "sales" | "reactivation" | "newCustomers" | "prospecting";
@@ -37,9 +39,12 @@ export function SalesPerformancePanel({
   newCustomerLeaderboard,
   prospectingLeaderboard,
   isLoading,
+  rankingPeriod = "month",
+  onResetRanking,
 }: SalesPerformancePanelProps) {
   const { tx } = useUiLanguage();
   const [activeTab, setActiveTab] = useState<RankingTab>("sales");
+  const isToday = rankingPeriod === "today";
 
   const rankingViews: Record<
     RankingTab,
@@ -52,11 +57,12 @@ export function SalesPerformancePanel({
   > = {
     sales: {
       label: tx("Vendas", "Sales"),
-      description: tx(
-        "Desempenho corporativo com base nas vendas do periodo.",
-        "Team performance based on sales in the selected period.",
-      ),
-      emptyMessage: tx("Nenhuma venda registrada neste mes.", "No sales registered this month."),
+      description: isToday
+        ? tx("Vendas realizadas hoje pelas vendedoras.", "Sales made today by the sellers.")
+        : tx("Desempenho corporativo com base nas vendas do periodo.", "Team performance based on sales in the selected period."),
+      emptyMessage: isToday
+        ? tx("Nenhuma venda registrada hoje.", "No sales registered today.")
+        : tx("Nenhuma venda registrada neste mes.", "No sales registered this month."),
       entries: salesPerformance.map((entry) => ({
         attendant: entry.attendant,
         metrics: [
@@ -135,8 +141,8 @@ export function SalesPerformancePanel({
       <article className="panel insight-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">{tx("Performance do mes", "Month performance")}</p>
-            <h3>{tx("Ranking Mensal", "Monthly ranking")}</h3>
+            <p className="eyebrow">{isToday ? tx("Vendas de hoje", "Today's sales") : tx("Performance do mes", "Month performance")}</p>
+            <h3>{isToday ? tx("Ranking de Hoje", "Today's Ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
           </div>
         </div>
         <div className="page-loading">{tx("Carregando performance...", "Loading performance...")}</div>
@@ -148,8 +154,21 @@ export function SalesPerformancePanel({
     <article className="panel insight-panel">
       <div className="panel-header" style={{ alignItems: 'center' }}>
         <div>
-          <p className="eyebrow">{tx("Performance do mes", "Month performance")}</p>
-          <h3>{tx("Ranking Mensal", "Monthly ranking")}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+            <div>
+              <p className="eyebrow">{isToday ? tx("Vendas de hoje", "Today's sales") : tx("Performance do mes", "Month performance")}</p>
+              <h3>{isToday ? tx("Ranking de Hoje", "Today's Ranking") : tx("Ranking Mensal", "Monthly ranking")}</h3>
+            </div>
+            {isToday && onResetRanking && (
+              <button 
+                onClick={onResetRanking}
+                className="reset-filter-pill"
+                title={tx("Voltar para ranking mensal", "Back to monthly ranking")}
+              >
+                {tx("Voltar para Mensal", "Back to Monthly")}
+              </button>
+            )}
+          </div>
           <p className="panel-subcopy" style={{ marginTop: '0.4rem' }}>{currentView.description}</p>
         </div>
         <div className="ranking-tabs-container">
