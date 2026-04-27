@@ -363,7 +363,7 @@ async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[
           COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
           o.order_date::date AS order_date,
           COALESCE(o.total_amount, 0)::numeric(14,2) AS first_order_amount,
-          COALESCE(o.item_count, 0)::int AS first_item_count,
+          COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = o.id), 0)::int AS first_item_count,
           ROW_NUMBER() OVER (
             PARTITION BY o.customer_id
             ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC

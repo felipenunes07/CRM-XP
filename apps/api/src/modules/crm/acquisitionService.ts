@@ -198,19 +198,16 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
           WHERE source_system_first = 'history_xls'
             AND customer_code ~ '^(CL|KH|LJ)[0-9]+$'
         ),
-        ranked_orders AS (
+        all_eligible_orders AS (
           SELECT
-            o.customer_id AS "customerId",
-            c.customer_code AS "customerCode",
-            c.display_name AS "displayName",
-            o.order_date::date::text AS "firstOrderDate",
-            o.total_amount AS "firstOrderAmount",
-            o.item_count AS "firstItemCount",
-            NULLIF(o.last_attendant, '') AS "firstAttendant",
-            ROW_NUMBER() OVER (
-              PARTITION BY o.customer_id
-              ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
-            ) AS order_rank
+            o.customer_id,
+            o.order_date,
+            o.total_amount,
+            (SELECT COALESCE(SUM(quantity), 0)::int FROM order_items WHERE order_id = o.id) AS item_count,
+            NULLIF(o.last_attendant, '') AS attendant,
+            o.created_at,
+            o.id,
+            MIN(o.order_date) OVER (PARTITION BY o.customer_id) as first_date
           FROM orders o
           JOIN customers c ON c.id = o.customer_id
           WHERE NOT (
@@ -224,17 +221,35 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
           )
           AND c.customer_code != 'OEM417'
           AND c.display_name NOT ILIKE '%MARX%'
+        ),
+        first_order_attribution AS (
+          SELECT
+            customer_id,
+            attendant,
+            first_date,
+            ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date ASC, created_at ASC, id ASC) as rn
+          FROM all_eligible_orders
+        ),
+        first_month_aggregates AS (
+          SELECT
+            customer_id,
+            SUM(total_amount) as total_amount,
+            SUM(item_count) as total_items
+          FROM all_eligible_orders
+          WHERE TO_CHAR(order_date, 'YYYY-MM') = TO_CHAR(first_date, 'YYYY-MM')
+          GROUP BY customer_id
         )
         SELECT
-          "customerId",
-          "customerCode",
-          "displayName",
-          "firstOrderDate",
-          "firstOrderAmount",
-          "firstItemCount",
-          "firstAttendant"
-        FROM ranked_orders
-        WHERE order_rank = 1
+          fma.customer_id AS "customerId",
+          c.customer_code AS "customerCode",
+          c.display_name AS "displayName",
+          foa.first_date::text AS "firstOrderDate",
+          fma.total_amount AS "firstOrderAmount",
+          fma.total_items AS "firstItemCount",
+          foa.attendant AS "firstAttendant"
+        FROM first_month_aggregates fma
+        JOIN first_order_attribution foa ON foa.customer_id = fma.customer_id AND foa.rn = 1
+        JOIN customers c ON c.id = fma.customer_id
         ORDER BY "firstOrderDate" ASC, "displayName" ASC
       `,
     ),
