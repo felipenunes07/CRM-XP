@@ -2370,7 +2370,8 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
   const lastSaleBySku = new Map(lastSaleRows.map((row) => [row.sku, row.lastSaleAt]));
 
   for (const item of context.items) {
-    const modelKey = buildInventoryAnalyticsKey(item.sku);
+    const baseKey = buildInventoryAnalyticsKey(item.sku);
+    const modelKey = `${item.productKind}::${baseKey}`;
     const modelLabel = cleanInventoryModelLabel(item.model);
     modelKeyBySku.set(item.sku, modelKey);
 
