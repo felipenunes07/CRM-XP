@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MessageTemplate,
@@ -9,7 +9,7 @@ import type {
   WhatsappGroupClassification,
   WhatsappGroupMappingStatus,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, RefreshCw, Send, ShieldAlert, UploadCloud, XCircle } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
@@ -25,20 +25,7 @@ const quickFilters: Array<{ value: QuickFilter; label: string; description: stri
   { value: "PENDING_REVIEW", label: "Pendentes", description: "Sem mapeamento fechado." },
 ];
 
-function readFileAsBase64(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        reject(new Error("Nao foi possivel ler o arquivo selecionado."));
-        return;
-      }
-      resolve(reader.result);
-    };
-    reader.onerror = () => reject(new Error("Falha ao ler o arquivo selecionado."));
-    reader.readAsDataURL(file);
-  });
-}
+
 
 function buildGroupsQueryParams(input: {
   quickFilter: QuickFilter;
@@ -175,7 +162,7 @@ export function DisparadorPage() {
   const canImport = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
   const queryClient = useQueryClient();
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
   const [search, setSearch] = useState("");
   const [savedSegmentId, setSavedSegmentId] = useState("");
@@ -257,23 +244,7 @@ export function DisparadorPage() {
     },
   });
 
-  const importFileMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedFile) {
-        throw new Error("Escolha um arquivo antes de importar.");
-      }
 
-      const fileBase64 = await readFileAsBase64(selectedFile);
-      return api.importWhatsappGroups(token!, {
-        fileName: selectedFile.name,
-        fileBase64,
-      });
-    },
-    onSuccess: async () => {
-      setSelectedFile(null);
-      await invalidateWhatsappQueries();
-    },
-  });
 
   const createCampaignMutation = useMutation({
     mutationFn: () =>
@@ -344,15 +315,13 @@ export function DisparadorPage() {
   }, [selectedTemplateId, templatesQuery.data]);
 
   useEffect(() => {
-    if (!canImport || !mappingSummaryQuery.data || attemptedAutoImport || importDefaultMutation.isPending) {
+    if (!canImport || attemptedAutoImport || importDefaultMutation.isPending) {
       return;
     }
 
-    if (mappingSummaryQuery.data.totalGroups === 0) {
-      setAttemptedAutoImport(true);
-      importDefaultMutation.mutate();
-    }
-  }, [attemptedAutoImport, canImport, importDefaultMutation, mappingSummaryQuery.data]);
+    setAttemptedAutoImport(true);
+    importDefaultMutation.mutate();
+  }, [attemptedAutoImport, canImport, importDefaultMutation]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -376,9 +345,9 @@ export function DisparadorPage() {
 
   const selectedSavedSegment = savedSegmentsQuery.data?.find((segment) => segment.id === savedSegmentId) ?? null;
   const selectedTemplate = templatesQuery.data?.find((template) => template.id === selectedTemplateId) ?? null;
-  const importSummary = importDefaultMutation.data ?? importFileMutation.data;
-  const importError = (importDefaultMutation.error ?? importFileMutation.error) as Error | null;
-  const isImporting = importDefaultMutation.isPending || importFileMutation.isPending;
+  const importSummary = importDefaultMutation.data;
+  const importError = importDefaultMutation.error as Error | null;
+  const isImporting = importDefaultMutation.isPending;
   const liveCampaign = activeCampaignQuery.data ?? selectedCampaignQuery.data ?? createCampaignMutation.data ?? null;
   const liveCampaignFirstFailure = liveCampaign?.recipients.find((recipient) => recipient.status === "FAILED") ?? null;
   const liveCampaignIsRunning = liveCampaign ? ["QUEUED", "IN_PROGRESS"].includes(liveCampaign.status) : false;
@@ -430,9 +399,7 @@ export function DisparadorPage() {
       ? "Selecione os grupos abaixo para habilitar o disparo."
       : `Delay configurado entre ${minDelaySeconds}s e ${maxDelaySeconds}s por envio.`;
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setSelectedFile(event.target.files?.[0] ?? null);
-  }
+
 
   function toggleGroupSelection(groupId: string) {
     setSelectedGroupIds((current) =>
@@ -603,7 +570,7 @@ export function DisparadorPage() {
             <div>
               <p className="eyebrow">Passo 2</p>
               <h3>Base de grupos</h3>
-              <p className="panel-subcopy">A planilha padrao do desktop alimenta a tela. Atualize so quando quiser recarregar.</p>
+              <p className="panel-subcopy">Base sincronizada automaticamente do Google Sheets ao abrir esta pagina.</p>
             </div>
           </div>
 
@@ -625,40 +592,18 @@ export function DisparadorPage() {
               <strong>{formatDateTime(mappingSummaryQuery.data?.lastImportedAt ?? null)}</strong>
             </div>
           </div>
-
-          <div className="whatsapp-source-actions">
-            {canImport ? (
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => importDefaultMutation.mutate()}
-                disabled={isImporting}
-              >
-                {isImporting ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}
-                {isImporting ? "Atualizando..." : "Usar planilha padrao"}
-              </button>
-            ) : null}
-
-            {canImport ? (
-              <label className="whatsapp-file-input">
-                <UploadCloud size={16} />
-                <span>{selectedFile ? selectedFile.name : "Escolher outro arquivo"}</span>
-                <input type="file" accept=".xlsx,.xls" onChange={handleFileChange} />
-              </label>
-            ) : null}
-
-            {canImport && selectedFile ? (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => importFileMutation.mutate()}
-                disabled={isImporting}
-              >
-                Importar arquivo escolhido
-              </button>
-            ) : null}
-          </div>
-
+           <div className="whatsapp-source-actions">
+             {isImporting ? (
+               <div className="whatsapp-inline-note">
+                 <LoaderCircle size={16} className="spin" />
+                 <span>Sincronizando base do Google Sheets...</span>
+               </div>
+             ) : importDefaultMutation.isSuccess ? (
+               <div className="whatsapp-inline-note">
+                 <span>Base sincronizada automaticamente do Google Sheets.</span>
+               </div>
+             ) : null}
+           </div>
           {importSummary ? (
             <div className="whatsapp-summary-grid">
               <div>

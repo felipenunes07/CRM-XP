@@ -23,7 +23,11 @@ const envSchema = z.object({
   EVOLUTION_API_BASE_URL: z.string().default(""),
   EVOLUTION_API_KEY: z.string().default(""),
   EVOLUTION_INSTANCE_NAME: z.string().default(""),
-  WHATSAPP_DEFAULT_WORKBOOK_PATH: z.string().default("C:\\Users\\Felipe\\Desktop\\Grupos clientes e não clientes JID.xlsx"),
+  WHATSAPP_GROUPS_SHEET_CSV_URL: z
+    .string()
+    .default(
+      "https://docs.google.com/spreadsheets/d/1qAuw2ebWPJmcy_gl4Qf48GfmnSGLZumDfs62fpG2BGA/export?format=csv&gid=1602908530",
+    ),
   WHATSAPP_MIN_DELAY_SECONDS: z.coerce.number().int().min(1).default(183),
   WHATSAPP_MAX_DELAY_SECONDS: z.coerce.number().int().min(1).default(304),
   WHATSAPP_RECENT_CONTACT_BLOCK_DAYS: z.coerce.number().int().min(1).default(7),
