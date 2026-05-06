@@ -1827,6 +1827,8 @@ export function buildInventorySeriesByModel(
 
       if (point.hasSnapshot) {
         previousStockUnits = point.stockUnits;
+      } else if (previousStockUnits !== null) {
+        previousStockUnits = expectedStock;
       }
 
       const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
@@ -2618,9 +2620,9 @@ export function mapRestockItem(
     .slice(restockIndex >= 0 ? restockIndex + 1 : 0, restockIndex >= 0 ? restockIndex + 8 : 7)
     .reduce((sum, point) => sum + point.salesUnits, 0);
 
-  const stockBefore = previousPoint?.stockUnits ?? Math.max(0, model.stockUnits - model.deltaIn);
   const stockAfter = effectiveRestockPoint?.stockUnits ?? model.stockUnits;
   const restockUnits = effectiveRestockPoint?.restockUnits ?? 0;
+  const stockBefore = Math.max(0, stockAfter - restockUnits);
 
   return {
     sku: model.sku,
