@@ -1,5 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import XLSX from "xlsx";
 import type {
   CustomerStatus,
@@ -45,29 +43,45 @@ interface ParsedGroupRow {
   classification: WhatsappGroupClassification;
 }
 
-async function resolveDefaultWhatsappWorkbookPath() {
-  const candidates = [
-    env.WHATSAPP_DEFAULT_WORKBOOK_PATH,
-    "C:\\Users\\Felipe\\Desktop\\Grupos clientes e não clientes JID.xlsx",
-    path.resolve(process.cwd(), "..", "..", "..", "Grupos clientes e não clientes JID.xlsx"),
-    path.resolve(process.cwd(), "..", "..", "..", "..", "Grupos clientes e não clientes JID.xlsx"),
-  ]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean);
-
-  for (const candidate of candidates) {
-    try {
-      await fs.access(candidate);
-      return candidate;
-    } catch {
-      continue;
-    }
+function parseCsvRows(csvText: string): ParsedGroupRow[] {
+  const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length < 2) {
+    return [];
   }
 
-  throw new HttpError(
-    404,
-    "Nao encontrei a planilha padrao de grupos. Configure WHATSAPP_DEFAULT_WORKBOOK_PATH ou envie outro arquivo.",
-  );
+  const headerLine = lines[0]!;
+  const headers = headerLine.split(",").map((header) => header.trim().toLowerCase());
+  const nameIndex = headers.findIndex((header) => header === "name" || header === "nome");
+  const jidIndex = headers.findIndex((header) => header === "jid" || header === "whatsappjid");
+
+  if (nameIndex === -1 || jidIndex === -1) {
+    return [];
+  }
+
+  const uniqueRows = new Map<string, ParsedGroupRow>();
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+
+    const columns = line.split(",");
+    const sourceName = (columns[nameIndex] ?? "").trim();
+    const jid = normalizeWhatsappJid(columns[jidIndex] ?? "");
+
+    if (!sourceName || !jid) {
+      continue;
+    }
+
+    uniqueRows.set(jid, {
+      jid,
+      sourceName,
+      normalizedSourceName: normalizeWhatsappMatchName(sourceName),
+      sourceCode: extractWhatsappSourceCode(sourceName),
+      classification: classifyWhatsappGroup(sourceName),
+    });
+  }
+
+  return [...uniqueRows.values()];
 }
 
 export interface WhatsappGroupFilters {
@@ -454,9 +468,12 @@ export async function getWhatsappGroupsByIds(groupIds: string[]) {
 
 export async function importWhatsappGroupsFromWorkbook(fileBuffer: Buffer): Promise<WhatsappImportSummary> {
   const parsedRows = parseWorkbookRows(fileBuffer);
+  return importWhatsappGroupsFromParsedRows(parsedRows);
+}
 
+async function importWhatsappGroupsFromParsedRows(parsedRows: ParsedGroupRow[]): Promise<WhatsappImportSummary> {
   if (!parsedRows.length) {
-    throw new HttpError(400, "Nao foi encontrada nenhuma linha valida com Name e JID.");
+    throw new HttpError(400, "Nenhuma linha valida com Name e JID encontrada.");
   }
 
   const [customerMatchers, existingGroups] = await Promise.all([loadCustomersForAutoMap(), loadExistingGroups()]);
@@ -590,9 +607,27 @@ export async function importWhatsappGroupsFromWorkbook(fileBuffer: Buffer): Prom
 }
 
 export async function importWhatsappGroupsFromDefaultWorkbook() {
-  const workbookPath = await resolveDefaultWhatsappWorkbookPath();
-  const fileBuffer = await fs.readFile(workbookPath);
-  return importWhatsappGroupsFromWorkbook(fileBuffer);
+  const csvUrl = env.WHATSAPP_GROUPS_SHEET_CSV_URL;
+  if (!csvUrl) {
+    throw new HttpError(
+      400,
+      "URL do Google Sheets de grupos nao configurada. Configure WHATSAPP_GROUPS_SHEET_CSV_URL no .env.",
+    );
+  }
+
+  const response = await fetch(csvUrl);
+  if (!response.ok) {
+    throw new HttpError(502, `Nao foi possivel baixar a planilha de grupos do Google Sheets (${response.status}).`);
+  }
+
+  const csvText = await response.text();
+  const parsedRows = parseCsvRows(csvText);
+
+  if (!parsedRows.length) {
+    throw new HttpError(400, "A planilha do Google Sheets nao retornou nenhuma linha valida com Name e JID.");
+  }
+
+  return importWhatsappGroupsFromParsedRows(parsedRows);
 }
 
 export async function updateWhatsappGroupMatch(groupId: string, input: UpdateWhatsappGroupMatchInput): Promise<WhatsappGroup> {
