@@ -1819,16 +1819,14 @@ export function buildInventorySeriesByModel(
     const sortedPoints = [...pointMap.values()].sort((left, right) => left.date.localeCompare(right.date));
 
     for (const point of sortedPoints) {
-      const expectedStock = previousStockUnits !== null ? Math.max(0, previousStockUnits - point.salesUnits) : 0;
+      // Restock = snapshot stock increased vs previous snapshot (ignores CRM sales to avoid false positives)
       const restockUnits =
         point.hasSnapshot && previousStockUnits !== null
-          ? Math.max(0, Number((point.stockUnits - expectedStock).toFixed(0)))
+          ? Math.max(0, point.stockUnits - previousStockUnits)
           : 0;
 
       if (point.hasSnapshot) {
         previousStockUnits = point.stockUnits;
-      } else if (previousStockUnits !== null) {
-        previousStockUnits = expectedStock;
       }
 
       const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
