@@ -204,6 +204,17 @@ export function formatWhatsappJidPhone(jid: string | null | undefined) {
   return digits || rawId;
 }
 
+export function formatEvolutionSendTextTarget(destination: string) {
+  const trimmed = destination.trim();
+  if (trimmed.endsWith("@g.us")) {
+    return trimmed;
+  }
+
+  const [rawId = trimmed] = trimmed.split("@");
+  const digits = rawId.replace(/\D/g, "");
+  return digits || rawId;
+}
+
 export function isWhatsappFallbackDisplayName(name: string | null | undefined, remoteJid: string | null | undefined) {
   if (!name || !remoteJid) {
     return true;
@@ -263,6 +274,41 @@ export function detectWhatsappMessageRisk(content: string | null | undefined): W
   }
 
   return null;
+}
+
+export function getEvolutionMessageKey(message: WhatsappMonitorMessage) {
+  const messageId =
+    typeof message.metadata.messageId === "string"
+      ? message.metadata.messageId
+      : typeof message.metadata.providerMessageId === "string"
+        ? message.metadata.providerMessageId
+        : null;
+
+  if (!message.remoteJid || !messageId) {
+    return null;
+  }
+
+  return {
+    remoteJid: message.remoteJid,
+    fromMe: message.direction === "OUTBOUND",
+    id: messageId,
+  };
+}
+
+export function median(values: number[]) {
+  const finiteValues = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+  if (!finiteValues.length) {
+    return null;
+  }
+
+  const midpoint = Math.floor(finiteValues.length / 2);
+  if (finiteValues.length % 2) {
+    return finiteValues[midpoint] ?? null;
+  }
+
+  const left = finiteValues[midpoint - 1] ?? 0;
+  const right = finiteValues[midpoint] ?? 0;
+  return (left + right) / 2;
 }
 
 export function whatsappActivityDirection(activityType: DealActivity["activityType"]): WhatsappMonitorMessageDirection {

@@ -5,16 +5,27 @@ import type {
   WhatsappMonitorConversation,
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
+  WhatsappMonitorMetrics,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
+import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";
+import {
+  markWhatsappChatAsUnread,
+  markWhatsappMessagesAsRead,
+  sendWhatsappInstanceTextMessage,
+  type EvolutionInstanceConfig,
+  type EvolutionMessageKey,
+} from "./evolutionService.js";
 import {
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
   formatWhatsappJidPhone,
+  getEvolutionMessageKey,
   mapWhatsappActivityToMessage,
+  median,
 } from "./whatsappMonitorCore.js";
 
 interface ConversationFilters {
@@ -28,6 +39,43 @@ function isoDate(value: unknown, fallback = new Date()) {
 
 function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function extractProviderMessageId(payload: Record<string, unknown>) {
+  const key = asRecord(payload.key);
+  const keyId = optionalString(key?.id);
+  return keyId ?? optionalString(payload.messageId) ?? optionalString(payload.id);
+}
+
+function riskSql(alias: string) {
+  return `
+    (
+      lower(COALESCE(${alias}.content, '')) LIKE '%porra%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%caralho%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%merda%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%puta%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%fdp%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%senha%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%pix%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%cpf%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%cnpj%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%cartao%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%token%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%urgente%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%processo%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%reclamacao%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%procon%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%cancelar%'
+    )
+  `;
 }
 
 function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
@@ -370,6 +418,320 @@ export async function getWhatsappMonitorConversation(
   };
 }
 
+async function getWhatsappConversationEvolutionContext(dealId: string) {
+  const result = await pool.query(
+    `
+    WITH latest_instance AS (
+      SELECT da.metadata ->> 'instance' AS instance_name
+      FROM deal_activities da
+      WHERE da.deal_id = $1
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND da.metadata ->> 'instance' IS NOT NULL
+      ORDER BY da.created_at DESC
+      LIMIT 1
+    )
+    SELECT
+      d.id,
+      d.whatsapp_jid,
+      COALESCE(primary_instance.id, activity_instance.id) AS instance_id,
+      COALESCE(primary_instance.instance_name, activity_instance.instance_name) AS instance_name,
+      COALESCE(primary_instance.display_label, activity_instance.display_label) AS display_label,
+      COALESCE(primary_instance.evolution_base_url, activity_instance.evolution_base_url) AS evolution_base_url,
+      COALESCE(primary_instance.evolution_api_key, activity_instance.evolution_api_key) AS evolution_api_key
+    FROM deals d
+    LEFT JOIN whatsapp_instances primary_instance ON primary_instance.id = d.whatsapp_instance_id
+    LEFT JOIN latest_instance ON true
+    LEFT JOIN whatsapp_instances activity_instance
+      ON lower(activity_instance.instance_name) = lower(latest_instance.instance_name)
+    WHERE d.id = $1
+      AND d.whatsapp_jid IS NOT NULL
+    LIMIT 1
+    `,
+    [dealId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(404, "Conversa de WhatsApp nao encontrada.");
+  }
+
+  const remoteJid = optionalString(row.whatsapp_jid);
+  const instanceName = optionalString(row.instance_name);
+  const evolutionBaseUrl = optionalString(row.evolution_base_url);
+  const evolutionApiKey = optionalString(row.evolution_api_key);
+
+  return {
+    dealId: String(row.id),
+    remoteJid,
+    instanceId: row.instance_id ? String(row.instance_id) : null,
+    instanceLabel: optionalString(row.display_label),
+    evolution:
+      instanceName && evolutionBaseUrl && evolutionApiKey
+        ? {
+            instanceName,
+            evolutionBaseUrl,
+            evolutionApiKey,
+          }
+        : null,
+  };
+}
+
+async function getRecentEvolutionMessageKeys(dealId: string, onlyInbound = false): Promise<EvolutionMessageKey[]> {
+  const result = await pool.query(
+    `
+    SELECT id, deal_id, activity_type, actor_name, content, metadata, created_at
+    FROM deal_activities
+    WHERE deal_id = $1
+      AND activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      ${onlyInbound ? "AND activity_type = 'WHATSAPP_RECEIVED'" : ""}
+    ORDER BY created_at DESC
+    LIMIT 25
+    `,
+    [dealId],
+  );
+
+  return result.rows
+    .map((row) => getEvolutionMessageKey(mapWhatsappActivityToMessage(mapActivityRow(row))))
+    .filter((key): key is EvolutionMessageKey => Boolean(key));
+}
+
+async function syncConversationReadStateWithEvolution(dealId: string, unread: boolean) {
+  try {
+    const context = await getWhatsappConversationEvolutionContext(dealId);
+    if (!context.remoteJid || !context.evolution) {
+      return;
+    }
+
+    const keys = await getRecentEvolutionMessageKeys(dealId, !unread);
+    if (unread) {
+      await markWhatsappChatAsUnread(context.evolution, context.remoteJid, keys[0] ?? null);
+      return;
+    }
+
+    await markWhatsappMessagesAsRead(context.evolution, keys);
+  } catch (error) {
+    logger.warn("whatsapp monitor failed to sync read state with Evolution", {
+      dealId,
+      unread,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+export async function sendWhatsappMonitorReply(
+  dealId: string,
+  user: JwtUser,
+  messageText: string,
+): Promise<WhatsappMonitorConversationDetail> {
+  const text = messageText.trim();
+  if (!text) {
+    throw new HttpError(400, "Mensagem vazia.");
+  }
+
+  const context = await getWhatsappConversationEvolutionContext(dealId);
+  if (!context.remoteJid || !context.evolution) {
+    throw new HttpError(400, "Conversa sem instancia Evolution configurada.");
+  }
+
+  const providerPayload = await sendWhatsappInstanceTextMessage(context.evolution, context.remoteJid, text);
+  const providerMessageId =
+    extractProviderMessageId(providerPayload) ?? `monitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const createdAt = new Date().toISOString();
+
+  await pool.query(
+    `
+    INSERT INTO deal_activities (
+      deal_id, activity_type, actor_user_id, actor_name, content, metadata, created_at
+    )
+    SELECT $1, 'WHATSAPP_SENT', $2, $3, $4, $5::jsonb, $6
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM deal_activities
+      WHERE deal_id = $1
+        AND metadata ->> 'messageId' = $7
+    )
+    `,
+    [
+      dealId,
+      user.id,
+      user.name,
+      text,
+      JSON.stringify({
+        remoteJid: context.remoteJid,
+        messageId: providerMessageId,
+        providerMessageId,
+        providerPayload,
+        instance: context.evolution.instanceName,
+        instanceId: context.instanceId,
+        isGroup: context.remoteJid.endsWith("@g.us"),
+        senderName: user.name,
+        sentFromMonitor: true,
+      }),
+      createdAt,
+      providerMessageId,
+    ],
+  );
+
+  await Promise.all([
+    pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),
+    pool.query(
+      `
+      INSERT INTO whatsapp_conversation_reads (deal_id, user_id, last_read_at, force_unread, marked_unread_at, updated_at)
+      VALUES ($1, $2, NOW(), false, NULL, NOW())
+      ON CONFLICT (deal_id, user_id) DO UPDATE SET
+        last_read_at = NOW(),
+        force_unread = false,
+        marked_unread_at = NULL,
+        updated_at = NOW()
+      `,
+      [dealId, user.id],
+    ),
+  ]);
+
+  return getWhatsappMonitorConversation(dealId, user);
+}
+
+export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<WhatsappMonitorMetrics> {
+  const params: unknown[] = [];
+  const dealWhere = ["d.whatsapp_jid IS NOT NULL"];
+
+  if (user.role === "SELLER") {
+    params.push(user.name);
+    dealWhere.push(`d.assigned_to_name = $${params.length}`);
+  }
+
+  const whereSql = dealWhere.join(" AND ");
+  const [summaryResult, responseResult] = await Promise.all([
+    pool.query(
+      `
+      SELECT
+        COUNT(DISTINCT d.id)::int AS total_conversations,
+        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS received_messages,
+        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_SENT')::int AS sent_messages,
+        COUNT(*) FILTER (
+          WHERE da.metadata ? 'fileName'
+            OR da.metadata ? 'filename'
+            OR da.metadata ? 'mediaName'
+            OR da.metadata ? 'mimetype'
+            OR da.metadata ? 'mediaType'
+        )::int AS media_messages,
+        COUNT(*) FILTER (WHERE ${riskSql("da")})::int AS risk_events
+      FROM deals d
+      LEFT JOIN deal_activities da
+        ON da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      WHERE ${whereSql}
+      `,
+      params,
+    ),
+    pool.query(
+      `
+      SELECT
+        d.id AS deal_id,
+        d.whatsapp_instance_id,
+        COALESCE(wi.display_label, d.assigned_to_name, 'Sem agente') AS agent_name,
+        wi.profile_picture_url,
+        EXTRACT(EPOCH FROM (first_outbound.first_outbound_at - first_inbound.first_inbound_at)) / 60 AS response_minutes
+      FROM deals d
+      LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+      JOIN LATERAL (
+        SELECT MIN(da.created_at) AS first_inbound_at
+        FROM deal_activities da
+        WHERE da.deal_id = d.id
+          AND da.activity_type = 'WHATSAPP_RECEIVED'
+      ) first_inbound ON first_inbound.first_inbound_at IS NOT NULL
+      LEFT JOIN LATERAL (
+        SELECT MIN(da.created_at) AS first_outbound_at
+        FROM deal_activities da
+        WHERE da.deal_id = d.id
+          AND da.activity_type = 'WHATSAPP_SENT'
+          AND da.created_at > first_inbound.first_inbound_at
+      ) first_outbound ON true
+      WHERE ${whereSql}
+      `,
+      params,
+    ),
+  ]);
+
+  const summary = summaryResult.rows[0] ?? {};
+  const responseRows = responseResult.rows.map((row) => ({
+    agentId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
+    agentName: optionalString(row.agent_name) ?? "Sem agente",
+    profilePictureUrl: optionalString(row.profile_picture_url),
+    responseMinutes: row.response_minutes === null ? null : Number(row.response_minutes),
+  }));
+  const responseMinutes = responseRows
+    .map((row) => row.responseMinutes)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  const groupedAgents = new Map<
+    string,
+    {
+      agentId: string | null;
+      agentName: string;
+      profilePictureUrl: string | null;
+      conversationCount: number;
+      responseMinutes: number[];
+    }
+  >();
+
+  for (const row of responseRows) {
+    const key = row.agentId ?? row.agentName;
+    const current =
+      groupedAgents.get(key) ??
+      {
+        agentId: row.agentId,
+        agentName: row.agentName,
+        profilePictureUrl: row.profilePictureUrl,
+        conversationCount: 0,
+        responseMinutes: [],
+      };
+
+    current.conversationCount += 1;
+    if (row.responseMinutes !== null && Number.isFinite(row.responseMinutes)) {
+      current.responseMinutes.push(row.responseMinutes);
+    }
+    groupedAgents.set(key, current);
+  }
+
+  const agilityLeaders = Array.from(groupedAgents.values())
+    .map((agent) => ({
+      agentId: agent.agentId,
+      agentName: agent.agentName,
+      profilePictureUrl: agent.profilePictureUrl,
+      conversationCount: agent.conversationCount,
+      responseCount: agent.responseMinutes.length,
+      averageFirstResponseMinutes: agent.responseMinutes.length
+        ? agent.responseMinutes.reduce((sum, value) => sum + value, 0) / agent.responseMinutes.length
+        : null,
+      medianFirstResponseMinutes: median(agent.responseMinutes),
+    }))
+    .sort((left, right) => {
+      if (left.medianFirstResponseMinutes === null && right.medianFirstResponseMinutes === null) {
+        return right.responseCount - left.responseCount;
+      }
+      if (left.medianFirstResponseMinutes === null) return 1;
+      if (right.medianFirstResponseMinutes === null) return -1;
+      return left.medianFirstResponseMinutes - right.medianFirstResponseMinutes;
+    })
+    .slice(0, 5);
+
+  return {
+    summary: {
+      totalConversations: Number(summary.total_conversations ?? 0),
+      receivedMessages: Number(summary.received_messages ?? 0),
+      sentMessages: Number(summary.sent_messages ?? 0),
+      mediaMessages: Number(summary.media_messages ?? 0),
+      riskEvents: Number(summary.risk_events ?? 0),
+      averageFirstResponseMinutes: responseMinutes.length
+        ? responseMinutes.reduce((sum, value) => sum + value, 0) / responseMinutes.length
+        : null,
+      medianFirstResponseMinutes: median(responseMinutes),
+    },
+    agilityLeaders,
+  };
+}
+
 export async function setWhatsappConversationReadState(
   dealId: string,
   user: JwtUser,
@@ -406,6 +768,8 @@ export async function setWhatsappConversationReadState(
       [dealId, user.id],
     );
   }
+
+  void syncConversationReadStateWithEvolution(dealId, unread);
 
   return getWhatsappMonitorConversation(dealId, user);
 }

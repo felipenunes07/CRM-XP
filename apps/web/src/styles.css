@@ -10562,6 +10562,7 @@ textarea {
 }
 
 .wa-filter-button,
+.wa-filter-select,
 .wa-secondary-action,
 .wa-add-user {
   min-height: 2.65rem;
@@ -10579,7 +10580,35 @@ textarea {
   transition: 160ms ease;
 }
 
+.wa-filter-select {
+  position: relative;
+  padding: 0;
+}
+
+.wa-filter-select select {
+  min-width: 10.6rem;
+  min-height: 2.65rem;
+  border: 0;
+  border-radius: inherit;
+  appearance: none;
+  padding: 0.68rem 2.55rem 0.68rem 1rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  outline: 0;
+}
+
+.wa-filter-select svg {
+  position: absolute;
+  right: 0.85rem;
+  pointer-events: none;
+}
+
 .wa-filter-button:hover,
+.wa-filter-select:hover,
+.wa-filter-select:focus-within,
 .wa-secondary-action:hover {
   border-color: rgba(0, 168, 132, 0.42);
   color: var(--wa-green-dark);
@@ -10849,6 +10878,128 @@ textarea {
 .wa-chat-footer {
   border-top: 1px solid var(--wa-line);
   border-bottom: 0;
+}
+
+.wa-reply-composer {
+  min-width: 0;
+  padding: 0.8rem 1rem;
+  display: grid;
+  gap: 0.62rem;
+  background: rgba(247, 248, 250, 0.96);
+  border-top: 1px solid var(--wa-line);
+}
+
+.wa-chat-footer-info {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.wa-chat-footer-info > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.wa-chat-footer-info span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--wa-muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wa-suggested-reply {
+  min-width: 0;
+  padding: 0.58rem;
+  border: 1px solid rgba(126, 58, 242, 0.22);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.4rem;
+  background: #f5ecff;
+  color: #6f2dbd;
+}
+
+.wa-suggested-reply button {
+  width: fit-content;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.45rem 0.58rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #7432b8;
+  color: #ffffff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.wa-suggested-reply span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wa-reply-bar {
+  min-width: 0;
+  min-height: 3.05rem;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.45rem;
+}
+
+.wa-reply-bar textarea {
+  min-width: 0;
+  max-height: 7.5rem;
+  resize: vertical;
+  border: 1px solid var(--wa-line);
+  border-radius: 8px;
+  padding: 0.78rem 0.9rem;
+  outline: 0;
+  color: var(--wa-text);
+  font: inherit;
+  line-height: 1.35;
+}
+
+.wa-reply-bar textarea:focus {
+  border-color: rgba(0, 168, 132, 0.48);
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.1);
+}
+
+.wa-send-button {
+  width: 2.65rem;
+  height: 2.65rem;
+  border: 0;
+  border-radius: 8px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--wa-green);
+  color: #ffffff;
+  cursor: pointer;
+  transition: 160ms ease;
+}
+
+.wa-send-button:hover {
+  background: var(--wa-green-dark);
+}
+
+.wa-send-button:disabled,
+.wa-reply-bar .wa-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wa-reply-error {
+  color: #c9183a;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 .wa-chat-footer > div {
@@ -11400,12 +11551,24 @@ textarea {
   .wa-users-header,
   .wa-chat-header,
   .wa-chat-footer,
+  .wa-chat-footer-info,
   .wa-webhook-strip {
     flex-direction: column;
     align-items: flex-start;
   }
 
+  .wa-reply-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .wa-reply-bar .wa-icon-button,
+  .wa-send-button {
+    width: 100%;
+  }
+
   .wa-filter-button,
+  .wa-filter-select,
+  .wa-filter-select select,
   .wa-secondary-action,
   .wa-add-user {
     width: 100%;

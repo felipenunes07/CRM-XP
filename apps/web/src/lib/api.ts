@@ -52,6 +52,7 @@ import type {
   WhatsappMappingSummary,
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
+  WhatsappMonitorMetrics,
 } from "@olist-crm/shared";
 
 export interface ChartAnnotation {
@@ -523,11 +524,26 @@ export const api = {
     return request<WhatsappMonitorConversationDetail>(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
   },
 
+  whatsappMonitorMetrics(token: string) {
+    return request<WhatsappMonitorMetrics>("/api/whatsapp-monitor/metrics", {}, token);
+  },
+
   setWhatsappMonitorReadState(token: string, id: string, input: { unread: boolean }) {
     return request<WhatsappMonitorConversationDetail>(
       `/api/whatsapp-monitor/conversations/${id}/read-state`,
       {
         method: "PATCH",
+        body: JSON.stringify(input),
+      },
+      token,
+    );
+  },
+
+  sendWhatsappMonitorReply(token: string, id: string, input: { messageText: string }) {
+    return request<WhatsappMonitorConversationDetail>(
+      `/api/whatsapp-monitor/conversations/${id}/replies`,
+      {
+        method: "POST",
         body: JSON.stringify(input),
       },
       token,
@@ -544,17 +560,6 @@ export const api = {
 
   getChartAnnotations(token: string) {
     return request<ChartAnnotation[]>("/api/dashboard/annotations", {}, token);
-  },
-  saveChartAnnotation(token: string, input: ChartAnnotation) {
-    return request<ChartAnnotation>("/api/dashboard/annotations", {
-      method: "POST",
-      body: JSON.stringify(input),
-    }, token);
-  },
-  deleteChartAnnotation(token: string, id: string) {
-    return request<void>(`/api/dashboard/annotations/${id}`, {
-      method: "DELETE",
-    }, token);
   },
   saveChartAnnotation(token: string, input: ChartAnnotation) {
     return request<ChartAnnotation>("/api/dashboard/annotations", {

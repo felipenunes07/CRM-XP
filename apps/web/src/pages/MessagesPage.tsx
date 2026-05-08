@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   WhatsappMonitorAgent,
@@ -17,9 +17,12 @@ import {
   List,
   Menu,
   MoreVertical,
+  Paperclip,
   Plus,
   Search,
+  Send,
   ShieldCheck,
+  Smile,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -67,10 +70,35 @@ function riskTone(message: WhatsappMonitorMessage | WhatsappMonitorConversation)
   return message.risk.severity.toLocaleLowerCase("pt-BR");
 }
 
+function suggestedReplyFromMessages(messages: WhatsappMonitorMessage[]) {
+  const lastInbound = [...messages].reverse().find((message) => message.direction === "INBOUND");
+  const text = lastInbound?.content.toLocaleLowerCase("pt-BR") ?? "";
+
+  if (!lastInbound) {
+    return null;
+  }
+
+  if (text.includes("prazo") || text.includes("entrega")) {
+    return "Claro. Vou conferir o prazo atualizado e ja te retorno com a previsao mais segura.";
+  }
+
+  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento")) {
+    return "Perfeito. Vou revisar as condicoes e te envio a melhor opcao dentro do que combinamos.";
+  }
+
+  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento")) {
+    return "Recebi. Vou verificar o arquivo e te retorno com o proximo passo.";
+  }
+
+  return "Perfeito, obrigado pelo retorno. Vou verificar aqui e ja te respondo com a melhor orientacao.";
+}
+
 function attachmentName(message: WhatsappMonitorMessage) {
   const directName = message.metadata.fileName ?? message.metadata.filename ?? message.metadata.mediaName;
   return typeof directName === "string" ? directName : null;
 }
+
+type GroupFilter = "all" | "groups" | "contacts";
 
 function SearchBox({
   value,
@@ -234,8 +262,10 @@ export function MessagesPage() {
   const [activeAgentId, setActiveAgentId] = useState<string>("all");
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [replyText, setReplyText] = useState("");
   const profileRefreshRequestedRef = useRef(false);
 
   const conversationsQuery = useQuery({
@@ -251,6 +281,17 @@ export function MessagesPage() {
   const agents = conversationsQuery.data?.agents ?? [];
   const conversations = conversationsQuery.data?.conversations ?? [];
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
+  const filteredConversations = useMemo(() => {
+    if (groupFilter === "groups") {
+      return conversations.filter((conversation) => conversation.isGroup);
+    }
+
+    if (groupFilter === "contacts") {
+      return conversations.filter((conversation) => !conversation.isGroup);
+    }
+
+    return conversations;
+  }, [conversations, groupFilter]);
 
   const visibleAgents = useMemo(() => {
     const normalized = agentSearch.trim().toLocaleLowerCase("pt-BR");
@@ -264,25 +305,25 @@ export function MessagesPage() {
   }, [agents, agentSearch]);
 
   useEffect(() => {
-    if (!conversations.length) {
+    if (!filteredConversations.length) {
       setSelectedConversationId(null);
       return;
     }
 
     setSelectedConversationId((current) => {
-      if (current && conversations.some((conversation) => conversation.id === current)) {
+      if (current && filteredConversations.some((conversation) => conversation.id === current)) {
         return current;
       }
 
-      return conversations[0]?.id ?? null;
+      return filteredConversations[0]?.id ?? null;
     });
-  }, [conversations]);
+  }, [filteredConversations]);
 
   useEffect(() => {
     setChatMenuOpen(false);
   }, [selectedConversationId]);
 
-  const selectedConversation = conversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const selectedConversation = filteredConversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
   const conversationDetailQuery = useQuery({
     queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
     queryFn: () => api.whatsappMonitorConversation(token!, selectedConversationId!),
@@ -293,6 +334,16 @@ export function MessagesPage() {
     mutationFn: ({ id, unread }: { id: string; unread: boolean }) =>
       api.setWhatsappMonitorReadState(token!, id, { unread }),
     onSuccess: (updated) => {
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+    },
+  });
+
+  const sendReplyMutation = useMutation({
+    mutationFn: ({ id, messageText }: { id: string; messageText: string }) =>
+      api.sendWhatsappMonitorReply(token!, id, { messageText }),
+    onSuccess: (updated) => {
+      setReplyText("");
       queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
@@ -334,7 +385,25 @@ export function MessagesPage() {
   const detail = conversationDetailQuery.data;
   const currentConversation = detail ?? selectedConversation;
   const messages = detail?.messages ?? [];
-  const totalRisks = conversations.filter((conversation) => conversation.risk).length;
+  const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
+  const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
+
+  function openConversation(conversation: WhatsappMonitorConversation) {
+    setSelectedConversationId(conversation.id);
+    if (conversation.isUnread) {
+      readStateMutation.mutate({ id: conversation.id, unread: false });
+    }
+  }
+
+  function handleSendReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = replyText.trim();
+    if (!currentConversation || !text || sendReplyMutation.isPending) {
+      return;
+    }
+
+    sendReplyMutation.mutate({ id: currentConversation.id, messageText: text });
+  }
 
   if (conversationsQuery.isLoading) {
     return <div className="page-loading">Carregando monitoramento de WhatsApp...</div>;
@@ -347,12 +416,28 @@ export function MessagesPage() {
   return (
     <div className="whatsapp-monitor-page">
       <div className="wa-filter-strip">
-        {["Nome do contato", "Telefone do contato", "Periodo", "Grupo", "Status"].map((label) => (
+        {["Nome do contato", "Telefone do contato", "Periodo"].map((label) => (
           <button key={label} type="button" className="wa-filter-button">
             {label}
             <ChevronDown size={18} />
           </button>
         ))}
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar grupos"
+            value={groupFilter}
+            onChange={(event) => setGroupFilter(event.target.value as GroupFilter)}
+          >
+            <option value="all">Grupo: todos</option>
+            <option value="groups">Somente grupos</option>
+            <option value="contacts">Sem grupo</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
+        <button type="button" className="wa-filter-button">
+          Status
+          <ChevronDown size={18} />
+        </button>
         <button type="button" className="wa-filter-button">
           <Plus size={18} />
           Filtros
@@ -378,7 +463,7 @@ export function MessagesPage() {
               </span>
               <span className="wa-list-copy">
                 <strong>Todos os agentes</strong>
-                <small>{conversations.length} conversas monitoradas</small>
+                <small>{filteredConversations.length} conversas no filtro</small>
               </span>
             </button>
 
@@ -398,21 +483,21 @@ export function MessagesPage() {
         <aside className="wa-column conversations">
           <div className="wa-column-heading">
             <strong>Conversas</strong>
-            <span>{conversations.length}</span>
+            <span>{filteredConversations.length}</span>
           </div>
           <SearchBox value={conversationSearch} onChange={setConversationSearch} placeholder="Pesquisar" />
 
           <div className="wa-list">
-            {conversations.map((conversation) => (
+            {filteredConversations.map((conversation) => (
               <ConversationRow
                 key={conversation.id}
                 conversation={conversation}
                 active={conversation.id === selectedConversationId}
-                onClick={() => setSelectedConversationId(conversation.id)}
+                onClick={() => openConversation(conversation)}
               />
             ))}
 
-            {!conversations.length ? <div className="wa-empty-list">Nenhuma conversa encontrada.</div> : null}
+            {!filteredConversations.length ? <div className="wa-empty-list">Nenhuma conversa encontrada.</div> : null}
           </div>
         </aside>
 
@@ -499,16 +584,58 @@ export function MessagesPage() {
                 )}
               </div>
 
-              <div className="wa-chat-footer">
-                <div>
-                  <strong>Retencao em nuvem ativa</strong>
-                  <span>Ultima atividade: {formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)}</span>
+              <form className="wa-reply-composer" onSubmit={handleSendReply}>
+                <div className="wa-chat-footer-info">
+                  <div>
+                    <strong>Retencao em nuvem ativa</strong>
+                    <span>Ultima atividade: {formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)}</span>
+                  </div>
+                  <span className={`wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`}>
+                    <ShieldCheck size={14} />
+                    {totalRisks} alertas no recorte
+                  </span>
                 </div>
-                <span className={`wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`}>
-                  <ShieldCheck size={14} />
-                  {totalRisks} alertas no recorte
-                </span>
-              </div>
+                {suggestedReply ? (
+                  <div className="wa-suggested-reply">
+                    <button type="button" onClick={() => setReplyText(suggestedReply)}>
+                      <Sparkles size={16} />
+                      Resposta sugerida
+                    </button>
+                    <span>{suggestedReply}</span>
+                  </div>
+                ) : null}
+                <div className="wa-reply-bar">
+                  <button type="button" className="wa-icon-button" title="Anexar arquivo" disabled>
+                    <Paperclip size={20} />
+                  </button>
+                  <button type="button" className="wa-icon-button" title="Emoji" disabled>
+                    <Smile size={20} />
+                  </button>
+                  <textarea
+                    value={replyText}
+                    onChange={(event) => setReplyText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder="Responder pelo WhatsApp"
+                    rows={1}
+                  />
+                  <button
+                    type="submit"
+                    className="wa-send-button"
+                    title="Enviar resposta"
+                    disabled={!replyText.trim() || sendReplyMutation.isPending}
+                  >
+                    <Send size={20} />
+                  </button>
+                </div>
+                {sendReplyMutation.isError ? (
+                  <span className="wa-reply-error">Nao foi possivel enviar pela Evolution. Confira a instancia.</span>
+                ) : null}
+              </form>
             </>
           ) : (
             <div className="wa-empty-chat">
