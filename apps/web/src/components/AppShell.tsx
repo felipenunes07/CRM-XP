@@ -3,6 +3,7 @@ import {
   BarChart3,
   Boxes,
   ClipboardList,
+  Kanban,
   LayoutDashboard,
   Lightbulb,
   LogOut,
@@ -13,6 +14,7 @@ import {
   Tags,
   TrendingUp,
   Trophy,
+  UserCog,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -21,6 +23,7 @@ import { useUiLanguage } from "../i18n";
 
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
   { to: "/clientes", icon: Users, labelPt: "Clientes" },
@@ -35,6 +38,7 @@ export const appShellLinks = [
   { to: "/disparador", icon: RadioTower, labelPt: "Disparador" },
   { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
   { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
+  { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 
 export function AppShell() {
@@ -87,12 +91,19 @@ export function AppShell() {
           </div>
 
           <nav className="nav">
-            {appShellLinks.map(({ to, icon: Icon, labelPt }) => (
-              <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-                <Icon size={18} />
-                <span>{tx(labelPt, labelPt)}</span>
-              </NavLink>
-            ))}
+            {appShellLinks
+              .filter((link) => {
+                if (link.adminOnly && user?.role !== "ADMIN" && user?.role !== "MANAGER") {
+                  return false;
+                }
+                return true;
+              })
+              .map(({ to, icon: Icon, labelPt }) => (
+                <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+                  <Icon size={18} />
+                  <span>{tx(labelPt, labelPt)}</span>
+                </NavLink>
+              ))}
           </nav>
         </div>
 

@@ -12,6 +12,10 @@ import type {
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
+  DealActivity,
+  DealDetail,
+  DealPriority,
+  DealActivityType,
   GeographicSalesResponse,
   IdeaBoardDetail,
   IdeaBoardItem,
@@ -27,6 +31,7 @@ import type {
   InventoryStaleResponse,
   MessageTemplate,
   MonthlyTarget,
+  PipelineSummary,
   ProspectContactAttemptResult,
   ProspectKeywordPreset,
   ProspectLead,
@@ -43,7 +48,10 @@ import type {
   WhatsappGroup,
   WhatsappGroupsResponse,
   WhatsappImportSummary,
+  WhatsappInstanceItem,
   WhatsappMappingSummary,
+  WhatsappMonitorConversationDetail,
+  WhatsappMonitorConversationsResponse,
 } from "@olist-crm/shared";
 
 export interface ChartAnnotation {
@@ -493,6 +501,47 @@ export const api = {
     }, token);
   },
 
+  whatsappMonitorConversations(
+    token: string,
+    query: { instanceId?: string; search?: string } = {},
+  ) {
+    const search = new URLSearchParams();
+    if (query.instanceId) {
+      search.set("instanceId", query.instanceId);
+    }
+    if (query.search) {
+      search.set("search", query.search);
+    }
+    return request<WhatsappMonitorConversationsResponse>(
+      `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
+  },
+
+  whatsappMonitorConversation(token: string, id: string) {
+    return request<WhatsappMonitorConversationDetail>(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
+  },
+
+  setWhatsappMonitorReadState(token: string, id: string, input: { unread: boolean }) {
+    return request<WhatsappMonitorConversationDetail>(
+      `/api/whatsapp-monitor/conversations/${id}/read-state`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      },
+      token,
+    );
+  },
+
+  refreshWhatsappMonitorProfiles(token: string) {
+    return request<{ scanned: number; refreshed: number; refreshedInstances: number }>(
+      "/api/whatsapp-monitor/refresh-profiles",
+      { method: "POST" },
+      token,
+    );
+  },
+
   getChartAnnotations(token: string) {
     return request<ChartAnnotation[]>("/api/dashboard/annotations", {}, token);
   },
@@ -507,5 +556,91 @@ export const api = {
       method: "DELETE",
     }, token);
   },
-};
+  saveChartAnnotation(token: string, input: ChartAnnotation) {
+    return request<ChartAnnotation>("/api/dashboard/annotations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteChartAnnotation(token: string, id: string) {
+    return request<void>(`/api/dashboard/annotations/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
 
+  // ── Pipeline / Kanban ──────────────────────────────────────────
+
+  pipelineSummary(token: string, includeClosed = false) {
+    const q = includeClosed ? "?includeClosed=true" : "";
+    return request<PipelineSummary>(`/api/pipeline/summary${q}`, {}, token);
+  },
+  createDeal(token: string, input: {
+    title: string;
+    customerId?: string | null;
+    stageId: string;
+    expectedValue?: number;
+    expectedCloseDate?: string | null;
+    priority?: DealPriority;
+    notes?: string;
+    whatsappInstanceId?: string | null;
+    whatsappJid?: string | null;
+  }) {
+    return request<DealDetail>("/api/pipeline/deals", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  getDeal(token: string, id: string) {
+    return request<DealDetail>(`/api/pipeline/deals/${id}`, {}, token);
+  },
+  updateDeal(token: string, id: string, input: Record<string, unknown>) {
+    return request<DealDetail>(`/api/pipeline/deals/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  moveDealStage(token: string, id: string, stageId: string) {
+    return request<DealDetail>(`/api/pipeline/deals/${id}/stage`, {
+      method: "PATCH",
+      body: JSON.stringify({ stageId }),
+    }, token);
+  },
+  addDealActivity(token: string, id: string, input: { activityType: DealActivityType; content: string }) {
+    return request<DealActivity>(`/api/pipeline/deals/${id}/activities`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+
+  // ── WhatsApp Instances ─────────────────────────────────────────
+
+  whatsappInstanceDefaults(token: string) {
+    return request<{ baseUrl: string; apiKey: string }>("/api/whatsapp-instances/defaults", {}, token);
+  },
+  whatsappInstances(token: string) {
+    return request<WhatsappInstanceItem[]>("/api/whatsapp-instances", {}, token);
+  },
+  createWhatsappInstance(token: string, input: {
+    instanceName: string;
+    displayLabel: string;
+    phoneNumber?: string;
+    evolutionBaseUrl: string;
+    evolutionApiKey: string;
+    isDefault?: boolean;
+  }) {
+    return request<WhatsappInstanceItem>("/api/whatsapp-instances", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteWhatsappInstance(token: string, id: string) {
+    return request<void>(`/api/whatsapp-instances/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
+  configureWhatsappInstance(token: string, id: string) {
+    return request<void>(`/api/whatsapp-instances/${id}/configure`, {
+      method: "POST",
+    }, token);
+  },
+};

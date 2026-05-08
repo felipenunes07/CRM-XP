@@ -1441,3 +1441,159 @@ export interface IdeaBoardItem {
 export interface IdeaBoardDetail extends IdeaBoardItem {
   feedbacks: IdeaVoteFeedback[];
 }
+
+// ── Pipeline / Kanban ──────────────────────────────────────────────
+
+export type DealPriority = "LOW" | "MEDIUM" | "HIGH";
+export type DealActivityType =
+  | "STAGE_CHANGE"
+  | "NOTE"
+  | "WHATSAPP_SENT"
+  | "WHATSAPP_RECEIVED"
+  | "CALL"
+  | "MEETING"
+  | "TASK"
+  | "CREATED";
+
+export interface PipelineStage {
+  id: string;
+  name: string;
+  sortOrder: number;
+  color: string;
+  isWon: boolean;
+  isLost: boolean;
+  dealCount: number;
+  totalValue: number;
+}
+
+export interface DealListItem {
+  id: string;
+  title: string;
+  customerId: string | null;
+  customerCode: string | null;
+  customerDisplayName: string | null;
+  stageId: string;
+  assignedTo: string | null;
+  assignedToName: string | null;
+  whatsappInstanceId: string | null;
+  expectedValue: number;
+  expectedCloseDate: string | null;
+  priority: DealPriority;
+  lastActivityAt: string;
+  createdAt: string;
+  customerStatus?: CustomerStatus | null;
+}
+
+export interface DealDetail extends DealListItem {
+  notes: string;
+  lostReason: string | null;
+  wonAt: string | null;
+  lostAt: string | null;
+  whatsappJid: string | null;
+  activities: DealActivity[];
+}
+
+export interface DealActivity {
+  id: string;
+  dealId: string;
+  activityType: DealActivityType;
+  actorName: string | null;
+  content: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface PipelineSummary {
+  totalDeals: number;
+  totalValue: number;
+  wonDeals: number;
+  wonValue: number;
+  lostDeals: number;
+  avgDealAge: number;
+  stages: PipelineStage[];
+  deals: DealListItem[];
+}
+
+// ── WhatsApp Instances ─────────────────────────────────────────────
+
+export interface WhatsappInstanceItem {
+  id: string;
+  instanceName: string;
+  displayLabel: string;
+  phoneNumber: string | null;
+  profilePictureUrl: string | null;
+  status: "ACTIVE" | "PAUSED" | "DISCONNECTED";
+  isDefault: boolean;
+  assignedUserId: string | null;
+  assignedUserName: string | null;
+  lastHealthStatus: string | null;
+  lastHealthCheckAt: string | null;
+}
+
+export type WhatsappRiskSeverity = "LOW" | "MODERATE" | "HIGH";
+
+export interface WhatsappMessageRisk {
+  label: string;
+  severity: WhatsappRiskSeverity;
+  keyword: string;
+}
+
+export type WhatsappMonitorMessageDirection = "INBOUND" | "OUTBOUND" | "SYSTEM";
+
+export interface WhatsappMonitorMessage {
+  id: string;
+  dealId: string;
+  direction: WhatsappMonitorMessageDirection;
+  senderName: string | null;
+  senderJid: string | null;
+  senderProfilePictureUrl: string | null;
+  content: string;
+  createdAt: string;
+  remoteJid: string | null;
+  isGroup: boolean;
+  metadata: Record<string, unknown>;
+  risk: WhatsappMessageRisk | null;
+}
+
+export interface WhatsappMonitorAgent extends WhatsappInstanceItem {
+  profilePictureUrl: string | null;
+  conversationCount: number;
+  riskCount: number;
+  lastMessageAt: string | null;
+  sector: string | null;
+  managerName: string | null;
+  contactEmail: string | null;
+}
+
+export interface WhatsappMonitorConversation {
+  id: string;
+  dealId: string;
+  title: string;
+  contactName: string;
+  contactPhone: string;
+  remoteJid: string | null;
+  isGroup: boolean;
+  profilePictureUrl: string | null;
+  whatsappInstanceId: string | null;
+  instanceName: string | null;
+  agentName: string | null;
+  stageName: string | null;
+  priority: DealPriority;
+  lastMessage: string | null;
+  lastMessageAt: string;
+  unreadCount: number;
+  isUnread: boolean;
+  markedUnread: boolean;
+  lastReadAt: string | null;
+  eventCount: number;
+  risk: WhatsappMessageRisk | null;
+}
+
+export interface WhatsappMonitorConversationsResponse {
+  agents: WhatsappMonitorAgent[];
+  conversations: WhatsappMonitorConversation[];
+}
+
+export interface WhatsappMonitorConversationDetail extends WhatsappMonitorConversation {
+  messages: WhatsappMonitorMessage[];
+}

@@ -22,6 +22,8 @@ const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPag
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
+const PipelinePage = lazy(async () => ({ default: (await import("./pages/PipelinePage")).PipelinePage }));
+const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 function RouteLoadingFallback() {
@@ -67,6 +69,7 @@ export default function App() {
         <Route path="/login" element={<PublicLoginRoute />} />
         <Route element={<ProtectedShell />}>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/pipeline" element={<PipelinePage />} />
           <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
           <Route path="/estoque" element={<InventoryPage />} />
@@ -82,6 +85,8 @@ export default function App() {
           <Route path="/rotulos" element={<LabelsPage />} />
           <Route path="/prospeccao" element={<ProspectingPage />} />
           <Route path="/metas" element={<MetasPage />} />
+          <Route path="/usuarios" element={<WhatsappConfigPage />} />
+          <Route path="/config/whatsapp" element={<WhatsappConfigPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
