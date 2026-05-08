@@ -433,13 +433,13 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
     logger.info("Automating Evolution API configuration for new instance", { instanceName: instance.instanceName });
     await configureInstanceWebhook({
       instanceName: instance.instanceName,
-      evolutionBaseUrl: instance.evolutionBaseUrl,
-      evolutionApiKey: instance.evolutionApiKey,
+      evolutionBaseUrl: input.evolutionBaseUrl,
+      evolutionApiKey: input.evolutionApiKey,
     });
     await configureInstanceSettings({
       instanceName: instance.instanceName,
-      evolutionBaseUrl: instance.evolutionBaseUrl,
-      evolutionApiKey: instance.evolutionApiKey,
+      evolutionBaseUrl: input.evolutionBaseUrl,
+      evolutionApiKey: input.evolutionApiKey,
     });
     logger.info("Evolution API configuration completed", { instanceName: instance.instanceName });
   } catch (error) {
@@ -465,13 +465,13 @@ export async function configureWhatsappInstance(id: string): Promise<void> {
   logger.info("Manually triggering Evolution API configuration", { instanceName: instance.instanceName });
   await configureInstanceWebhook({
     instanceName: instance.instanceName,
-    evolutionBaseUrl: instance.evolutionBaseUrl,
-    evolutionApiKey: instance.evolutionApiKey,
+    evolutionBaseUrl: String(row.evolution_base_url),
+    evolutionApiKey: String(row.evolution_api_key),
   });
   await configureInstanceSettings({
     instanceName: instance.instanceName,
-    evolutionBaseUrl: instance.evolutionBaseUrl,
-    evolutionApiKey: instance.evolutionApiKey,
+    evolutionBaseUrl: String(row.evolution_base_url),
+    evolutionApiKey: String(row.evolution_api_key),
   });
   logger.info("Manual Evolution API configuration completed", { instanceName: instance.instanceName });
 }

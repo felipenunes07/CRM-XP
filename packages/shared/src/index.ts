@@ -1589,6 +1589,31 @@ export interface WhatsappMonitorConversation {
   risk: WhatsappMessageRisk | null;
 }
 
+export interface WhatsappMonitorSummaryMetrics {
+  totalConversations: number;
+  receivedMessages: number;
+  sentMessages: number;
+  mediaMessages: number;
+  riskEvents: number;
+  medianFirstResponseMinutes: number | null;
+  averageFirstResponseMinutes: number | null;
+}
+
+export interface WhatsappMonitorAgilityLeader {
+  agentId: string | null;
+  agentName: string;
+  profilePictureUrl: string | null;
+  conversationCount: number;
+  responseCount: number;
+  medianFirstResponseMinutes: number | null;
+  averageFirstResponseMinutes: number | null;
+}
+
+export interface WhatsappMonitorMetrics {
+  summary: WhatsappMonitorSummaryMetrics;
+  agilityLeaders: WhatsappMonitorAgilityLeader[];
+}
+
 export interface WhatsappMonitorConversationsResponse {
   agents: WhatsappMonitorAgent[];
   conversations: WhatsappMonitorConversation[];

@@ -3,9 +3,12 @@ import {
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
   extractEvolutionMessageContext,
+  formatEvolutionSendTextTarget,
   formatWhatsappJidPhone,
+  getEvolutionMessageKey,
   isWhatsappFallbackDisplayName,
   mapWhatsappActivityToMessage,
+  median,
 } from "./whatsappMonitorCore.js";
 
 describe("whatsappMonitorCore", () => {
@@ -108,5 +111,38 @@ describe("whatsappMonitorCore", () => {
     expect(isWhatsappFallbackDisplayName("[GRUPO] 12036337", "120363371542185615@g.us")).toBe(true);
     expect(isWhatsappFallbackDisplayName("Grupo Enterprise Comercial", "120363371542185615@g.us")).toBe(false);
     expect(isWhatsappFallbackDisplayName("+55 (11) 99876-5432", "5511998765432@s.whatsapp.net")).toBe(true);
+  });
+
+  it("formats the Evolution send target without losing group JIDs", () => {
+    expect(formatEvolutionSendTextTarget("5511998765432@s.whatsapp.net")).toBe("5511998765432");
+    expect(formatEvolutionSendTextTarget("120363371542185615@g.us")).toBe("120363371542185615@g.us");
+    expect(formatEvolutionSendTextTarget("+55 (11) 99876-5432")).toBe("5511998765432");
+  });
+
+  it("extracts Evolution message keys from monitor messages", () => {
+    const message = mapWhatsappActivityToMessage({
+      id: "activity-3",
+      dealId: "deal-3",
+      activityType: "WHATSAPP_RECEIVED",
+      actorName: "Amanda Carvalho",
+      content: "Oi",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "BAE594145F4C59B4",
+      },
+      createdAt: "2026-05-07T12:33:00.000Z",
+    });
+
+    expect(getEvolutionMessageKey(message)).toEqual({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      fromMe: false,
+      id: "BAE594145F4C59B4",
+    });
+  });
+
+  it("computes median values for response-time indicators", () => {
+    expect(median([12, 5, 20])).toBe(12);
+    expect(median([12, 5, 20, 8])).toBe(10);
+    expect(median([])).toBeNull();
   });
 });
