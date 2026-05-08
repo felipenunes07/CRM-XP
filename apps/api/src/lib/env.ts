@@ -38,6 +38,13 @@ const envSchema = z.object({
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("fvendas2026"),
   HISTORICAL_FILES: z.string().default(""),
+  // Dropbox API
+  DROPBOX_ACCESS_TOKEN: z.string().optional(),
+  DROPBOX_REFRESH_TOKEN: z.string().optional(),
+  DROPBOX_APP_KEY: z.string().optional(),
+  DROPBOX_APP_SECRET: z.string().optional(),
+  // Caminho no Dropbox (ex: /XP SALDO TEMPORARIO)
+  DROPBOX_CUSTOMER_CREDIT_PATH: z.string().default("/XP SALDO TEMPORARIO"),
   CUSTOMER_CREDIT_WORKBOOK_DIR: z
     .string()
     .default("C:\\Users\\Felipe\\Dropbox\\XP SALDO TEMPORARIO"),

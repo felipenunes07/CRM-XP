@@ -5,7 +5,7 @@ import XLSX from "xlsx";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   deriveCustomerCreditOperationalState,
-  findLatestCustomerCreditWorkbookInDirectory,
+  findLatestCustomerCreditWorkbook,
   parseCustomerCreditWorkbook,
 } from "./customerCreditService.js";
 
@@ -33,7 +33,7 @@ afterEach(async () => {
   );
 });
 
-describe("findLatestCustomerCreditWorkbookInDirectory", () => {
+describe("findLatestCustomerCreditWorkbook", () => {
   it("ignores other reports and picks the newest SALDO VENDAS workbook", async () => {
     const dir = await createTempDir();
     const reportPath = path.join(dir, "Relatorio de venda do produto 14.04.2026.xlsx");
@@ -48,7 +48,7 @@ describe("findLatestCustomerCreditWorkbookInDirectory", () => {
     await fs.utimes(saldoOldPath, new Date("2026-04-10T12:00:00.000Z"), new Date("2026-04-10T12:00:00.000Z"));
     await fs.utimes(saldoNewPath, new Date("2026-04-11T12:00:00.000Z"), new Date("2026-04-11T12:00:00.000Z"));
 
-    const file = await findLatestCustomerCreditWorkbookInDirectory(dir, "SALDO VENDAS");
+    const file = await findLatestCustomerCreditWorkbook(dir, "SALDO VENDAS");
 
     expect(file?.fileName).toBe("SALDO VENDAS - 11.04.xlsx");
   });

@@ -1779,7 +1779,7 @@ export function DashboardPage() {
                         cursor={{ fill: "rgba(41, 86, 215, 0.05)" }}
                         content={({ active, payload, label }) => {
                           if (!active || !payload || !payload.length) return null;
-                          const data = payload[0].payload;
+                          const data = payload[0]?.payload as { totalItems?: number } | undefined;
                           return (
                             <div className="chart-tooltip">
                               <strong>{label}</strong>
@@ -1793,7 +1793,7 @@ export function DashboardPage() {
                                 {selectedPrefix === undefined && (
                                   <div style={{ display: "flex", justifyContent: "space-between", gap: "1.5rem", marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9" }}>
                                     <span style={{ color: "#334155", fontWeight: 700 }}>Total</span>
-                                    <strong>{tx(`${formatNumber(data.totalItems)} telas`, `${formatNumber(data.totalItems)} 屏`)}</strong>
+                                    <strong>{tx(`${formatNumber(data?.totalItems ?? 0)} telas`, `${formatNumber(data?.totalItems ?? 0)} 屏`)}</strong>
                                   </div>
                                 )}
                               </div>
