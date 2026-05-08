@@ -16,6 +16,7 @@ import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import { normalizeCode, normalizeText, safeNumber } from "../../lib/normalize.js";
+import { cleanupTempFile, downloadLatestFileByPrefix } from "../../lib/dropboxClient.js";
 
 const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
@@ -508,10 +509,32 @@ async function getActiveSnapshotRecord() {
   return (result.rows[0] as SnapshotMetaRecord | undefined) ?? null;
 }
 
-export async function findLatestCustomerCreditWorkbookInDirectory(
+export async function findLatestCustomerCreditWorkbook(
   directory = env.CUSTOMER_CREDIT_WORKBOOK_DIR,
   prefix = env.CUSTOMER_CREDIT_WORKBOOK_PREFIX,
-): Promise<CustomerCreditWorkbookCandidate | null> {
+): Promise<(CustomerCreditWorkbookCandidate & { isTemp?: boolean }) | null> {
+  // Try Dropbox first if configured
+  if (env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY)) {
+    logger.info("Searching for latest credit workbook in Dropbox", {
+      path: env.DROPBOX_CUSTOMER_CREDIT_PATH,
+      prefix,
+    });
+
+    const dropboxFile = await downloadLatestFileByPrefix(env.DROPBOX_CUSTOMER_CREDIT_PATH, prefix);
+
+    if (dropboxFile) {
+      return {
+        fullPath: dropboxFile.localPath,
+        fileName: dropboxFile.fileName,
+        fileSizeBytes: dropboxFile.fileSizeBytes,
+        fileUpdatedAt: dropboxFile.fileUpdatedAt,
+        isTemp: true,
+      };
+    }
+  }
+
+  // Fallback to local directory
+  logger.info("Searching for latest credit workbook in local directory", { directory, prefix });
   const normalizedPrefix = normalizeText(prefix).toLowerCase();
   const entries = await fs.readdir(directory, { withFileTypes: true });
 
@@ -857,13 +880,13 @@ async function persistSnapshot(workbook: ParsedCustomerCreditWorkbook, rows: Res
 
 async function refreshSnapshotInternal(forceRefresh = false) {
   const activeSnapshot = await getActiveSnapshotRecord();
-  let latestWorkbook: CustomerCreditWorkbookCandidate | null = null;
+  let latestWorkbook: (CustomerCreditWorkbookCandidate & { isTemp?: boolean }) | null = null;
 
   try {
-    latestWorkbook = await findLatestCustomerCreditWorkbookInDirectory();
+    latestWorkbook = await findLatestCustomerCreditWorkbook();
   } catch (error) {
     if (activeSnapshot && !forceRefresh) {
-      logger.warn("failed to scan customer credit workbook directory, using cached snapshot", {
+      logger.warn("failed to scan customer credit workbook source, using cached snapshot", {
         error: String(error),
       });
       return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
@@ -879,7 +902,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
 
     throw new HttpError(
       500,
-      `Não encontrei nenhum arquivo ${env.CUSTOMER_CREDIT_WORKBOOK_PREFIX}*.xlsx em ${env.CUSTOMER_CREDIT_WORKBOOK_DIR}.`,
+      `Não encontrei nenhum arquivo ${env.CUSTOMER_CREDIT_WORKBOOK_PREFIX}*.xlsx no local especificado.`,
     );
   }
 
@@ -891,14 +914,26 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     Number(activeSnapshot.sourceFileSizeBytes) === latestWorkbook.fileSizeBytes &&
     toIsoTimestamp(activeSnapshot.sourceFileUpdatedAt) === latestWorkbook.fileUpdatedAt
   ) {
+    // If it's a temp file from Dropbox and we are using cached snapshot, clean it up
+    if (latestWorkbook.isTemp) {
+      await cleanupTempFile(latestWorkbook.fullPath);
+    }
     return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
   }
 
-  const workbook = await parseCustomerCreditWorkbook(latestWorkbook.fullPath);
-  const matches = await resolveCustomerMatches(workbook.rows);
-  const rows = resolveParsedRows(workbook.rows, matches);
+  try {
+    const workbook = await parseCustomerCreditWorkbook(latestWorkbook.fullPath);
+    const matches = await resolveCustomerMatches(workbook.rows);
+    const rows = resolveParsedRows(workbook.rows, matches);
 
-  return persistSnapshot(workbook, rows);
+    const snapshot = await persistSnapshot(workbook, rows);
+    return snapshot;
+  } finally {
+    // Always cleanup temp files from Dropbox
+    if (latestWorkbook.isTemp) {
+      await cleanupTempFile(latestWorkbook.fullPath);
+    }
+  }
 }
 
 export async function ensureCustomerCreditSnapshot(forceRefresh = false): Promise<CustomerCreditSnapshotMeta | null> {
