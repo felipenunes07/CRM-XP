@@ -1,24 +1,29 @@
+version: '3.8'
+
 services:
-  postgres:
-    image: postgres:16
-    container_name: olist-crm-postgres
-    environment:
-      POSTGRES_DB: olist_crm
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
+      - DROPBOX_ACCESS_TOKEN=${DROPBOX_ACCESS_TOKEN}
+      - DROPBOX_REFRESH_TOKEN=${DROPBOX_REFRESH_TOKEN}
+      - DROPBOX_APP_KEY=${DROPBOX_APP_KEY}
+      - DROPBOX_APP_SECRET=${DROPBOX_APP_SECRET}
+      - WEB_ORIGIN=${WEB_ORIGIN}
+    depends_on:
+      - redis
+    restart: always
 
   redis:
-    image: redis:7
-    container_name: olist-crm-redis
+    image: redis:alpine
     ports:
       - "6379:6379"
-    volumes:
-      - redis-data:/data
-
-volumes:
-  postgres-data:
-  redis-data:
+    restart: always
