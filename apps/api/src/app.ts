@@ -89,6 +89,7 @@ import {
   listWhatsappCampaigns,
 } from "./modules/whatsapp/whatsappCampaignService.js";
 import { ensureEvolutionConfigured, sendWhatsappTextMessage } from "./modules/whatsapp/evolutionService.js";
+import { refreshMissingWhatsappMonitorProfiles } from "./modules/whatsapp/evolutionMetadataService.js";
 import {
   getWhatsappMappingSummary,
   importWhatsappGroupsFromDefaultWorkbook,
@@ -100,7 +101,24 @@ import {
   WHATSAPP_GROUP_CLASSIFICATIONS,
   WHATSAPP_GROUP_MAPPING_STATUSES,
 } from "./modules/whatsapp/whatsappCore.js";
+import {
+  getWhatsappMonitorConversation,
+  listWhatsappMonitorConversations,
+  setWhatsappConversationReadState,
+} from "./modules/whatsapp/whatsappMonitorService.js";
 import { enqueueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
+import {
+  getPipelineSummary,
+  createDeal,
+  getDealDetail,
+  updateDeal,
+  moveDealStage,
+  addDealActivity,
+  listWhatsappInstances,
+  createWhatsappInstance,
+  deleteWhatsappInstance,
+} from "./modules/pipeline/pipelineService.js";
+import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -466,6 +484,16 @@ export function createApp() {
     try {
       const payload = loginSchema.parse(request.body);
       response.json(await login(payload.email, payload.password));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Evolution API webhook — public endpoint (no auth required)
+  app.post("/api/webhooks/evolution", async (request, response, next) => {
+    try {
+      const result = await handleEvolutionWebhook(request.body);
+      response.json(result);
     } catch (error) {
       next(error);
     }
@@ -1273,6 +1301,189 @@ export function createApp() {
     }
   });
 
+  // ── Pipeline / Kanban ──────────────────────────────────────────
+
+  const pipelineDealCreateSchema = z.object({
+    title: z.string().min(1),
+    customerId: z.string().uuid().nullable().optional(),
+    stageId: z.string().uuid(),
+    expectedValue: z.number().min(0).optional(),
+    expectedCloseDate: z.string().nullable().optional(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+    notes: z.string().optional(),
+    whatsappInstanceId: z.string().uuid().nullable().optional(),
+    whatsappJid: z.string().nullable().optional(),
+  });
+
+  const pipelineDealUpdateSchema = pipelineDealCreateSchema.partial().extend({
+    lostReason: z.string().optional(),
+  });
+
+  const pipelineActivitySchema = z.object({
+    activityType: z.enum(["NOTE", "CALL", "MEETING", "TASK", "WHATSAPP_SENT"]),
+    content: z.string().min(1),
+  });
+
+  const pipelineStageMovSchema = z.object({
+    stageId: z.string().uuid(),
+  });
+
+  const instanceCreateSchema = z.object({
+    instanceName: z.string().min(1),
+    displayLabel: z.string().min(1),
+    phoneNumber: z.string().optional(),
+    evolutionBaseUrl: z.string().url(),
+    evolutionApiKey: z.string().min(1),
+    isDefault: z.boolean().optional(),
+    assignedUserId: z.string().uuid().nullable().optional(),
+    assignedUserName: z.string().nullable().optional(),
+  });
+
+  const whatsappMonitorQuerySchema = z.object({
+    instanceId: z.string().uuid().optional(),
+    search: z.string().optional(),
+  });
+
+  const whatsappMonitorReadStateSchema = z.object({
+    unread: z.boolean(),
+  });
+
+  app.get("/api/pipeline/summary", async (request, response, next) => {
+    try {
+      const includeClosed = request.query.includeClosed === "true";
+      response.json(await getPipelineSummary(request.user!, includeClosed));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/pipeline/deals", async (request, response, next) => {
+    try {
+      const payload = pipelineDealCreateSchema.parse(request.body);
+      response.status(201).json(await createDeal(payload, request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/pipeline/deals/:id", async (request, response, next) => {
+    try {
+      response.json(await getDealDetail(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/pipeline/deals/:id", async (request, response, next) => {
+    try {
+      const payload = pipelineDealUpdateSchema.parse(request.body);
+      response.json(await updateDeal(String(request.params.id), payload, request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/pipeline/deals/:id/stage", async (request, response, next) => {
+    try {
+      const payload = pipelineStageMovSchema.parse(request.body);
+      response.json(await moveDealStage(String(request.params.id), payload.stageId, request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/pipeline/deals/:id/activities", async (request, response, next) => {
+    try {
+      const payload = pipelineActivitySchema.parse(request.body);
+      response.status(201).json(await addDealActivity(String(request.params.id), payload, request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── WhatsApp Instances ────────────────────────────────────────
+
+  app.get("/api/whatsapp-monitor/conversations", async (request, response, next) => {
+    try {
+      const query = whatsappMonitorQuerySchema.parse(request.query);
+      response.json(await listWhatsappMonitorConversations(request.user!, query));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-monitor/conversations/:id", async (request, response, next) => {
+    try {
+      response.json(await getWhatsappMonitorConversation(String(request.params.id), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/whatsapp-monitor/conversations/:id/read-state", async (request, response, next) => {
+    try {
+      const payload = whatsappMonitorReadStateSchema.parse(request.body);
+      response.json(await setWhatsappConversationReadState(String(request.params.id), request.user!, payload.unread));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-monitor/refresh-profiles", async (_request, response, next) => {
+    try {
+      response.json(await refreshMissingWhatsappMonitorProfiles());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-instances/defaults", requireRole(["ADMIN", "MANAGER"]), (_request, response, next) => {
+    try {
+      response.json({
+        baseUrl: env.EVOLUTION_API_BASE_URL,
+        apiKey: env.EVOLUTION_API_KEY,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-instances", async (_request, response, next) => {
+    try {
+      response.json(await listWhatsappInstances());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-instances", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = instanceCreateSchema.parse(request.body);
+      response.status(201).json(await createWhatsappInstance(payload));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-instances/:id/configure", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const { configureWhatsappInstance } = await import("./modules/pipeline/pipelineService.js");
+      await configureWhatsappInstance(String(request.params.id));
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN"]), async (request, response, next) => {
+    try {
+      await deleteWhatsappInstance(String(request.params.id));
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
     logger.error("request failed", { error: String(error) });
 
@@ -1294,5 +1505,3 @@ export function createApp() {
 
   return app;
 }
-
-
