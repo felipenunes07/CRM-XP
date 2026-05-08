@@ -103,7 +103,9 @@ import {
 } from "./modules/whatsapp/whatsappCore.js";
 import {
   getWhatsappMonitorConversation,
+  getWhatsappMonitorMetrics,
   listWhatsappMonitorConversations,
+  sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
 } from "./modules/whatsapp/whatsappMonitorService.js";
 import { enqueueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
@@ -1348,6 +1350,10 @@ export function createApp() {
     unread: z.boolean(),
   });
 
+  const whatsappMonitorReplySchema = z.object({
+    messageText: z.string().trim().min(1).max(4000),
+  });
+
   app.get("/api/pipeline/summary", async (request, response, next) => {
     try {
       const includeClosed = request.query.includeClosed === "true";
@@ -1412,6 +1418,14 @@ export function createApp() {
     }
   });
 
+  app.get("/api/whatsapp-monitor/metrics", async (request, response, next) => {
+    try {
+      response.json(await getWhatsappMonitorMetrics(request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/whatsapp-monitor/conversations/:id", async (request, response, next) => {
     try {
       response.json(await getWhatsappMonitorConversation(String(request.params.id), request.user!));
@@ -1424,6 +1438,15 @@ export function createApp() {
     try {
       const payload = whatsappMonitorReadStateSchema.parse(request.body);
       response.json(await setWhatsappConversationReadState(String(request.params.id), request.user!, payload.unread));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-monitor/conversations/:id/replies", async (request, response, next) => {
+    try {
+      const payload = whatsappMonitorReplySchema.parse(request.body);
+      response.status(201).json(await sendWhatsappMonitorReply(String(request.params.id), request.user!, payload.messageText));
     } catch (error) {
       next(error);
     }

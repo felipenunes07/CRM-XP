@@ -1,4 +1,17 @@
 import { env } from "../../lib/env.js";
+import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
+
+export interface EvolutionInstanceConfig {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}
+
+export interface EvolutionMessageKey {
+  remoteJid: string;
+  fromMe: boolean;
+  id: string;
+}
 
 export function ensureEvolutionConfigured() {
   if (!env.EVOLUTION_API_BASE_URL || !env.EVOLUTION_API_KEY || !env.EVOLUTION_INSTANCE_NAME) {
@@ -13,17 +26,48 @@ function buildEvolutionUrl(path: string) {
 export async function sendWhatsappTextMessage(destinationJid: string, messageText: string) {
   ensureEvolutionConfigured();
 
-  return requestEvolution(
-    env.EVOLUTION_API_BASE_URL,
-    env.EVOLUTION_API_KEY,
-    `/message/sendText/${encodeURIComponent(env.EVOLUTION_INSTANCE_NAME)}`,
-    "POST",
+  return sendWhatsappInstanceTextMessage(
     {
-      number: destinationJid,
-      text: messageText,
-      linkPreview: true,
+      instanceName: env.EVOLUTION_INSTANCE_NAME,
+      evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+      evolutionApiKey: env.EVOLUTION_API_KEY,
     },
+    destinationJid,
+    messageText,
   );
+}
+
+export async function sendWhatsappInstanceTextMessage(
+  instance: EvolutionInstanceConfig,
+  destinationJid: string,
+  messageText: string,
+) {
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendText/${encodeURIComponent(instance.instanceName)}`, "POST", {
+    number: formatEvolutionSendTextTarget(destinationJid),
+    text: messageText,
+    linkPreview: true,
+  });
+}
+
+export async function markWhatsappMessagesAsRead(instance: EvolutionInstanceConfig, readMessages: EvolutionMessageKey[]) {
+  if (!readMessages.length) {
+    return null;
+  }
+
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/chat/markMessageAsRead/${encodeURIComponent(instance.instanceName)}`, "POST", {
+    readMessages,
+  });
+}
+
+export async function markWhatsappChatAsUnread(instance: EvolutionInstanceConfig, chat: string, lastMessage: EvolutionMessageKey | null) {
+  if (!lastMessage) {
+    return null;
+  }
+
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/chat/markChatUnread/${encodeURIComponent(instance.instanceName)}`, "POST", {
+    lastMessage: [lastMessage],
+    chat,
+  });
 }
 
 export async function configureInstanceWebhook(instance: {
