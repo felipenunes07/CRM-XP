@@ -347,9 +347,8 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (defaultsQuery.data) {
       if (!evolutionBaseUrl) setEvolutionBaseUrl(defaultsQuery.data.baseUrl);
-      if (!evolutionApiKey) setEvolutionApiKey(defaultsQuery.data.apiKey);
     }
-  }, [defaultsQuery.data, evolutionApiKey, evolutionBaseUrl]);
+  }, [defaultsQuery.data, evolutionBaseUrl]);
 
   const createMutation = useMutation({
     mutationFn: () =>
