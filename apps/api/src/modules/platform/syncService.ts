@@ -96,15 +96,18 @@ async function shouldRunDailySync() {
 }
 
 export function startDailySyncScheduler() {
-  const checkAndRun = async () => {
-    try {
-      await runPrimarySync("startup-sync");
-    } catch (error) {
-      logger.error("startup sync failed", { error: String(error) });
-    }
-  };
+  if (!env.STARTUP_SYNC_ENABLED) {
+    logger.info("startup sync disabled");
+    return {
+      async close() {
+        return;
+      },
+    };
+  }
 
-  void checkAndRun();
+  void runPrimarySync("startup-sync").catch((error) => {
+    logger.error("startup sync failed", { error: String(error) });
+  });
 
   logger.info("startup sync triggered");
 
