@@ -207,7 +207,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
     const dealMatch = await pool.query(
       `
-      SELECT d.id FROM deals d
+      SELECT d.id, d.whatsapp_instance_id FROM deals d
       JOIN pipeline_stages ps ON ps.id = d.stage_id
       WHERE d.whatsapp_jid = $1
         AND ps.is_won = false AND ps.is_lost = false
@@ -229,7 +229,21 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         createdAt: context.createdAt,
       });
 
-      await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+      // Backfill whatsapp_instance_id if missing on the deal
+      if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
+        const instanceDetails = await getWhatsappInstanceDetails(instanceName);
+        if (instanceDetails) {
+          await pool.query(
+            "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
+            [instanceDetails.id, dealId],
+          );
+          logger.info("evolution webhook backfilled instance on deal", { dealId, instanceId: instanceDetails.id });
+        } else {
+          await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+        }
+      } else {
+        await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+      }
       logger.info("evolution webhook linked message to deal", { dealId, remoteJid });
     } else {
       const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
