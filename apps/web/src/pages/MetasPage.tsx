@@ -64,6 +64,18 @@ export function MetasPage() {
     }
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (target: { year: number; month: number; attendant: string }) =>
+      api.deleteMonthlyTarget(token!, target.year, target.month, target.attendant),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err) => {
+      alert("Falha ao excluir meta: " + String(err));
+    }
+  });
+
   const monthNames = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -175,12 +187,10 @@ export function MetasPage() {
             title="Remover Meta"
             onClick={() => {
               if (window.confirm("Remover esta meta?")) {
-                saveMutation.mutate({
+                deleteMutation.mutate({
                   year: target.year,
                   month: target.month,
-                  attendant: target.attendant,
-                  targetAmount: 0,
-                  targetRevenue: 0
+                  attendant: target.attendant
                 });
               }
             }}
