@@ -18,17 +18,21 @@ interface EvolutionWebhookPayload {
   data?: EvolutionMessageLike | EvolutionMessageLike[];
 }
 
-async function getWhatsappInstanceId(instanceName: string | null) {
+async function getWhatsappInstanceDetails(instanceName: string | null) {
   if (!instanceName) {
     return null;
   }
 
   const result = await pool.query(
-    "SELECT id FROM whatsapp_instances WHERE LOWER(instance_name) = LOWER($1) LIMIT 1",
+    "SELECT id, assigned_user_id, assigned_user_name FROM whatsapp_instances WHERE LOWER(instance_name) = LOWER($1) LIMIT 1",
     [instanceName],
   );
 
-  return result.rows[0]?.id ? String(result.rows[0].id) : null;
+  return result.rows[0] ? {
+    id: String(result.rows[0].id),
+    assignedUserId: result.rows[0].assigned_user_id ? String(result.rows[0].assigned_user_id) : null,
+    assignedUserName: result.rows[0].assigned_user_name ? String(result.rows[0].assigned_user_name) : null,
+  } : null;
 }
 
 function conversationTitle(input: {
@@ -237,19 +241,26 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           chatDisplayName,
           senderName,
         });
-        const whatsappInstanceId = await getWhatsappInstanceId(instanceName);
+        const instanceDetails = await getWhatsappInstanceDetails(instanceName);
         const autoMetadata = { ...metadata, autoCreated: true };
 
         const newDeal = await pool.query(
           `
           INSERT INTO deals (
             title, customer_display_name, stage_id, whatsapp_instance_id,
-            whatsapp_jid, expected_value, priority, last_activity_at
+            whatsapp_jid, expected_value, priority, last_activity_at,
+            assigned_to, assigned_to_name
           )
-          VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', $6)
+          VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', $6, $7, $8)
           RETURNING id
           `,
-          [dealTitle, dealTitle, stageId, whatsappInstanceId, remoteJid, context.createdAt],
+          [
+            dealTitle, dealTitle, stageId, 
+            instanceDetails?.id ?? null, 
+            remoteJid, context.createdAt,
+            instanceDetails?.assignedUserId ?? null,
+            instanceDetails?.assignedUserName ?? null
+          ],
         );
         const dealId = newDeal.rows[0].id;
 
