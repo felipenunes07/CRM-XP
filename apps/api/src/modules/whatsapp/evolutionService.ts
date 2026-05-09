@@ -78,7 +78,7 @@ export async function configureInstanceWebhook(instance: {
   const baseUrl = (env.PUBLIC_URL || "https://headline-delays-strengths-hazards.trycloudflare.com").replace(/\/+$/, "");
   const webhookUrl = `${baseUrl}/api/webhooks/evolution`;
 
-  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/webhook/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/webhook/instance/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
     enabled: true,
     url: webhookUrl,
     webhook_by_events: false,
@@ -88,15 +88,6 @@ export async function configureInstanceWebhook(instance: {
       "MESSAGES_UPDATE",
       "MESSAGES_DELETE",
       "SEND_MESSAGE",
-      "CONTACTS_UPSERT",
-      "CONTACTS_UPDATE",
-      "PRESENCE_UPDATE",
-      "CHATS_UPSERT",
-      "CHATS_UPDATE",
-      "CHATS_DELETE",
-      "GROUPS_UPSERT",
-      "GROUPS_UPDATE",
-      "GROUP_PARTICIPANTS_UPDATE",
       "CONNECTION_UPDATE",
     ],
   });
@@ -107,7 +98,7 @@ export async function configureInstanceSettings(instance: {
   evolutionBaseUrl: string;
   evolutionApiKey: string;
 }) {
-  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/settings/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/settings/instance/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
     reject_call: false,
     msg_call: "",
     groups_ignore: false,
