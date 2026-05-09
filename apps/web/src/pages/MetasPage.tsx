@@ -183,7 +183,7 @@ export function MetasPage() {
         </td>
         <td>
           <button 
-            className="ghost-btn icon-only danger"
+            className="premium-button-danger-icon"
             title="Remover Meta"
             onClick={() => {
               if (window.confirm("Remover esta meta?")) {
@@ -195,7 +195,7 @@ export function MetasPage() {
               }
             }}
           >
-            <Trash2 size={16} />
+            <Trash2 size={18} />
           </button>
         </td>
       </tr>

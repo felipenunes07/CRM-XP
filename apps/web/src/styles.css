@@ -4275,6 +4275,45 @@ textarea {
   border-color: var(--muted);
 }
 
+.premium-button-danger-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(217, 83, 79, 0.05);
+  border: 1px solid rgba(217, 83, 79, 0.1);
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.premium-button-danger-icon:hover {
+  background: var(--danger);
+  color: white;
+  transform: scale(1.1) rotate(5deg);
+  box-shadow: 0 4px 12px rgba(217, 83, 79, 0.25);
+  border-color: var(--danger);
+}
+
+.premium-button-danger-icon:active {
+  transform: scale(0.95);
+}
+
+
+@keyframes trash-shake {
+  0% { transform: rotate(0); }
+  25% { transform: rotate(-10deg); }
+  50% { transform: rotate(10deg); }
+  75% { transform: rotate(-10deg); }
+  100% { transform: rotate(0); }
+}
+
+.premium-button-danger-icon:hover svg {
+  animation: trash-shake 0.4s ease-in-out;
+}
+
 .hero-premium-stats {
   display: flex;
   flex-direction: column;
