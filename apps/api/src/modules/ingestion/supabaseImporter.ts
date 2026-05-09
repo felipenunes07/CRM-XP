@@ -251,6 +251,9 @@ export async function importSupabase2026() {
 
   const remotePool = new Pool({
     connectionString: env.SUPABASE_DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false,
+    },
   });
 
   let importRunId = "";
