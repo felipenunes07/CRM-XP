@@ -718,4 +718,196 @@ export const migrations = [
   ALTER TABLE customer_snapshot ADD COLUMN IF NOT EXISTS city TEXT;
   CREATE INDEX IF NOT EXISTS idx_customer_snapshot_state_city ON customer_snapshot(state, city);
   `,
+  `
+  -- WhatsApp instances (multi-number support)
+  CREATE TABLE IF NOT EXISTS whatsapp_instances (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instance_name VARCHAR(100) NOT NULL UNIQUE,
+    display_label VARCHAR(200) NOT NULL,
+    phone_number VARCHAR(20),
+    evolution_base_url TEXT NOT NULL,
+    evolution_api_key TEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    assigned_user_id UUID,
+    assigned_user_name VARCHAR(200),
+    last_health_check_at TIMESTAMPTZ,
+    last_health_status VARCHAR(20),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- Pipeline stages (configurable columns)
+  CREATE TABLE IF NOT EXISTS pipeline_stages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    color VARCHAR(7) DEFAULT '#6366f1',
+    is_won BOOLEAN NOT NULL DEFAULT FALSE,
+    is_lost BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- Default stages
+  INSERT INTO pipeline_stages (name, sort_order, color, is_won, is_lost) VALUES
+    ('Contato Inicial', 0, '#8b5cf6', false, false),
+    ('Orcamento Enviado', 1, '#3b82f6', false, false),
+    ('Negociacao', 2, '#f59e0b', false, false),
+    ('Fechado Ganho', 3, '#22c55e', true, false),
+    ('Perdido', 4, '#ef4444', false, true)
+  ON CONFLICT DO NOTHING;
+
+  -- Deals (negotiations)
+  CREATE TABLE IF NOT EXISTS deals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(300) NOT NULL,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code VARCHAR(50),
+    customer_display_name VARCHAR(300),
+    stage_id UUID NOT NULL REFERENCES pipeline_stages(id),
+    assigned_to UUID,
+    assigned_to_name VARCHAR(200),
+    whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL,
+    whatsapp_jid VARCHAR(200),
+    expected_value NUMERIC(12,2) DEFAULT 0,
+    expected_close_date DATE,
+    priority VARCHAR(10) DEFAULT 'MEDIUM',
+    notes TEXT DEFAULT '',
+    lost_reason TEXT,
+    won_at TIMESTAMPTZ,
+    lost_at TIMESTAMPTZ,
+    last_activity_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_deals_stage_id ON deals(stage_id);
+  CREATE INDEX IF NOT EXISTS idx_deals_customer_id ON deals(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_deals_assigned_to ON deals(assigned_to);
+
+  -- Deal activities / timeline
+  CREATE TABLE IF NOT EXISTS deal_activities (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+    activity_type VARCHAR(30) NOT NULL,
+    actor_user_id UUID,
+    actor_name VARCHAR(200),
+    content TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_deal_id ON deal_activities(deal_id);
+
+  DO $$
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'set_updated_at') THEN
+      DROP TRIGGER IF EXISTS set_whatsapp_instances_updated_at ON whatsapp_instances;
+      CREATE TRIGGER set_whatsapp_instances_updated_at BEFORE UPDATE ON whatsapp_instances FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+      DROP TRIGGER IF EXISTS set_deals_updated_at ON deals;
+      CREATE TRIGGER set_deals_updated_at BEFORE UPDATE ON deals FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    END IF;
+  END
+  $$;
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS whatsapp_incoming_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    remote_jid VARCHAR(200) NOT NULL,
+    sender_name VARCHAR(200),
+    message_text TEXT NOT NULL,
+    message_id VARCHAR(200) NOT NULL UNIQUE,
+    instance_name VARCHAR(100),
+    raw_payload JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_jid ON whatsapp_incoming_messages(remote_jid);
+  `,
+  `
+  ALTER TABLE whatsapp_incoming_messages
+    ADD COLUMN IF NOT EXISTS participant_jid VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS participant_name VARCHAR(200),
+    ADD COLUMN IF NOT EXISTS sender_profile_picture_url TEXT,
+    ADD COLUMN IF NOT EXISTS chat_display_name VARCHAR(300),
+    ADD COLUMN IF NOT EXISTS chat_profile_picture_url TEXT,
+    ADD COLUMN IF NOT EXISTS from_me BOOLEAN NOT NULL DEFAULT FALSE;
+
+  CREATE TABLE IF NOT EXISTS whatsapp_chat_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instance_name VARCHAR(100) NOT NULL DEFAULT '',
+    remote_jid VARCHAR(200) NOT NULL,
+    display_name VARCHAR(300),
+    profile_picture_url TEXT,
+    is_group BOOLEAN NOT NULL DEFAULT FALSE,
+    raw_profile JSONB DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(instance_name, remote_jid)
+  );
+
+  CREATE TABLE IF NOT EXISTS whatsapp_participant_profiles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instance_name VARCHAR(100) NOT NULL DEFAULT '',
+    participant_jid VARCHAR(200) NOT NULL,
+    display_name VARCHAR(300),
+    profile_picture_url TEXT,
+    raw_profile JSONB DEFAULT '{}'::jsonb,
+    last_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(instance_name, participant_jid)
+  );
+
+  CREATE TABLE IF NOT EXISTS whatsapp_conversation_reads (
+    deal_id UUID NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    last_read_at TIMESTAMPTZ,
+    force_unread BOOLEAN NOT NULL DEFAULT FALSE,
+    marked_unread_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (deal_id, user_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_participant
+    ON whatsapp_incoming_messages(participant_jid);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_profiles_remote_jid
+    ON whatsapp_chat_profiles(remote_jid);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_participant_profiles_participant_jid
+    ON whatsapp_participant_profiles(participant_jid);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_conversation_reads_user
+    ON whatsapp_conversation_reads(user_id);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_conversation_reads_force_unread
+    ON whatsapp_conversation_reads(user_id, force_unread)
+    WHERE force_unread = TRUE;
+
+  DO $$
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'set_updated_at') THEN
+      DROP TRIGGER IF EXISTS set_whatsapp_chat_profiles_updated_at ON whatsapp_chat_profiles;
+      CREATE TRIGGER set_whatsapp_chat_profiles_updated_at
+      BEFORE UPDATE ON whatsapp_chat_profiles
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+      DROP TRIGGER IF EXISTS set_whatsapp_participant_profiles_updated_at ON whatsapp_participant_profiles;
+      CREATE TRIGGER set_whatsapp_participant_profiles_updated_at
+      BEFORE UPDATE ON whatsapp_participant_profiles
+      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    END IF;
+  END
+  $$;
+  `,
+  `
+  ALTER TABLE whatsapp_instances
+    ADD COLUMN IF NOT EXISTS profile_picture_url TEXT;
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_instance_name
+    ON whatsapp_instances(instance_name);
+  `,
 ];
