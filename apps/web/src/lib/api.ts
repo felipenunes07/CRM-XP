@@ -131,6 +131,12 @@ export const api = {
       body: JSON.stringify({ year, month, targetAmount, attendant, targetRevenue }),
     }, token);
   },
+  deleteMonthlyTarget(token: string, year: number, month: number, attendant: string) {
+    const search = new URLSearchParams({ year: String(year), month: String(month), attendant });
+    return request<void>(`/api/dashboard/targets?${search.toString()}`, {
+      method: "DELETE",
+    }, token);
+  },
   acquisition(token: string) {
     return request<AcquisitionMetrics>("/api/dashboard/acquisition", {}, token);
   },
