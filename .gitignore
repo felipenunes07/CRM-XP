@@ -11,3 +11,5 @@ apps/web/dist/
 apps/api/dist/
 .vite/
 .runtime/
+
+.vercel
