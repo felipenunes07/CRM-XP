@@ -35,6 +35,15 @@ const envSchema = z.object({
   OLIST_API_TOKEN: z.string().optional(),
   OLIST_API_BASE_URL: z.string().default("https://api.tiny.com.br/api2"),
   OLIST_SYNC_START_DATE: z.string().default("2026-01-01"),
+  STARTUP_SYNC_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  WORKER_OLIST_SYNC_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  WORKER_OLIST_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
   HISTORICAL_FILES: z.string().default(""),
