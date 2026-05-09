@@ -7,7 +7,7 @@ import { env } from "./env.js";
 import { logger } from "./logger.js";
 
 const dbx = new Dropbox({
-  accessToken: env.DROPBOX_ACCESS_TOKEN,
+  accessToken: env.DROPBOX_REFRESH_TOKEN ? undefined : env.DROPBOX_ACCESS_TOKEN,
   refreshToken: env.DROPBOX_REFRESH_TOKEN,
   clientId: env.DROPBOX_APP_KEY,
   clientSecret: env.DROPBOX_APP_SECRET,
@@ -57,6 +57,7 @@ export async function downloadLatestFileByPrefix(folderPath: string, prefix: str
     
     return {
       localPath: tempFilePath,
+      sourcePath: latest.path_display ?? latest.path_lower ?? latest.name,
       fileName: latest.name,
       fileSizeBytes: latest.size,
       fileUpdatedAt: latest.server_modified,
@@ -82,6 +83,7 @@ export async function downloadFileByPath(dropboxPath: string) {
     
     return {
       localPath: tempFilePath,
+      sourcePath: response.result.path_display ?? response.result.path_lower ?? dropboxPath,
       fileName,
       fileSizeBytes: response.result.size,
       fileUpdatedAt: response.result.server_modified,

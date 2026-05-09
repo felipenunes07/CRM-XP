@@ -51,6 +51,7 @@ const FLAG_COLUMN_LABELS = [
 
 export interface CustomerCreditWorkbookCandidate {
   fullPath: string;
+  sourcePath: string;
   fileName: string;
   fileSizeBytes: number;
   fileUpdatedAt: string;
@@ -525,6 +526,7 @@ export async function findLatestCustomerCreditWorkbook(
     if (dropboxFile) {
       return {
         fullPath: dropboxFile.localPath,
+        sourcePath: dropboxFile.sourcePath,
         fileName: dropboxFile.fileName,
         fileSizeBytes: dropboxFile.fileSizeBytes,
         fileUpdatedAt: dropboxFile.fileUpdatedAt,
@@ -547,6 +549,7 @@ export async function findLatestCustomerCreditWorkbook(
         const stat = await fs.stat(fullPath);
         return {
           fullPath,
+          sourcePath: fullPath,
           fileName: entry.name,
           fileSizeBytes: stat.size,
           fileUpdatedAt: stat.mtime.toISOString(),
@@ -566,7 +569,11 @@ export async function findLatestCustomerCreditWorkbook(
   return candidates[0] ?? null;
 }
 
-export async function parseCustomerCreditWorkbook(filePath: string): Promise<ParsedCustomerCreditWorkbook> {
+export async function parseCustomerCreditWorkbook(
+  filePath: string,
+  sourcePath = filePath,
+  candidate?: CustomerCreditWorkbookCandidate,
+): Promise<ParsedCustomerCreditWorkbook> {
   const stat = await fs.stat(filePath);
   const workbook = XLSX.readFile(filePath, {
     raw: false,
@@ -588,9 +595,10 @@ export async function parseCustomerCreditWorkbook(filePath: string): Promise<Par
   return {
     candidate: {
       fullPath: filePath,
-      fileName: path.basename(filePath),
-      fileSizeBytes: stat.size,
-      fileUpdatedAt: stat.mtime.toISOString(),
+      sourcePath,
+      fileName: candidate?.fileName ?? path.basename(filePath),
+      fileSizeBytes: candidate?.fileSizeBytes ?? stat.size,
+      fileUpdatedAt: candidate?.fileUpdatedAt ?? stat.mtime.toISOString(),
     },
     sheetNames: workbook.SheetNames,
     rows,
@@ -669,7 +677,7 @@ async function registerSourceFile(
     `,
     [
       CUSTOMER_CREDIT_SOURCE_TYPE,
-      workbook.candidate.fullPath,
+      workbook.candidate.sourcePath,
       workbook.candidate.fileName,
       `${workbook.candidate.fileUpdatedAt}-${workbook.candidate.fileSizeBytes}`,
       workbook.candidate.fileSizeBytes,
@@ -847,7 +855,7 @@ async function persistSnapshot(workbook: ParsedCustomerCreditWorkbook, rows: Res
       `,
       [
         sourceFileId,
-        workbook.candidate.fullPath,
+        workbook.candidate.sourcePath,
         workbook.candidate.fileName,
         workbook.candidate.fileSizeBytes,
         workbook.candidate.fileUpdatedAt,
@@ -910,7 +918,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     activeSnapshot &&
     !forceRefresh &&
     Number(activeSnapshot.parserVersion ?? 0) === CUSTOMER_CREDIT_PARSER_VERSION &&
-    activeSnapshot.sourceFilePath === latestWorkbook.fullPath &&
+    activeSnapshot.sourceFilePath === latestWorkbook.sourcePath &&
     Number(activeSnapshot.sourceFileSizeBytes) === latestWorkbook.fileSizeBytes &&
     toIsoTimestamp(activeSnapshot.sourceFileUpdatedAt) === latestWorkbook.fileUpdatedAt
   ) {
@@ -922,7 +930,11 @@ async function refreshSnapshotInternal(forceRefresh = false) {
   }
 
   try {
-    const workbook = await parseCustomerCreditWorkbook(latestWorkbook.fullPath);
+    const workbook = await parseCustomerCreditWorkbook(
+      latestWorkbook.fullPath,
+      latestWorkbook.sourcePath,
+      latestWorkbook,
+    );
     const matches = await resolveCustomerMatches(workbook.rows);
     const rows = resolveParsedRows(workbook.rows, matches);
 

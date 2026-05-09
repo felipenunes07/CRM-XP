@@ -6,6 +6,16 @@
 
 <hr />
 
+## Nota de Deploy Atual
+
+O desenho de producao confirmado agora e:
+
+- Frontend em Vercel.
+- Backend API e worker em EasyPanel/VPS.
+- Postgres principal separado em `DATABASE_URL`.
+- Supabase apenas como fonte auxiliar/autenticacao, nao como banco principal do CRM.
+- Dados do Dropbox entram no Postgres principal via API/worker.
+
 ## 🚀 Sobre o Projeto
 
 O **CRM Inteligente Olist V2** é um ecossistema robusto projetado para lojistas que utilizam a plataforma Olist. Ele permite consolidar históricos complexos de vendas (XLSX), sincronizar pedidos em tempo real (Olist API V2) e gerar insights acionáveis para reativação de clientes, recorrência e gestão comercial estratégica.
