@@ -75,7 +75,7 @@ export async function configureInstanceWebhook(instance: {
   evolutionBaseUrl: string;
   evolutionApiKey: string;
 }) {
-  const baseUrl = (env.PUBLIC_URL || "https://headline-delays-strengths-hazards.trycloudflare.com").replace(/\/+$/, "");
+  const baseUrl = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
   const webhookUrl = `${baseUrl}/api/webhooks/evolution`;
 
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/webhook/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
@@ -96,7 +96,7 @@ export async function configureInstanceWebhook(instance: {
         "CHATS_UPDATE",
         "CHATS_DELETE",
         "GROUPS_UPSERT",
-        "GROUPS_UPDATE",
+        "GROUP_UPDATE",
         "GROUP_PARTICIPANTS_UPDATE",
         "CONNECTION_UPDATE",
       ],
