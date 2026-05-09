@@ -18,6 +18,26 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().default(""),
   JWT_SECRET: z.string().min(8),
+import path from "node:path";
+import dotenv from "dotenv";
+import { z } from "zod";
+
+for (const candidate of [
+  path.resolve(process.cwd(), ".env"),
+  path.resolve(process.cwd(), "../../.env"),
+  path.resolve(process.cwd(), "../../../.env"),
+]) {
+  dotenv.config({ path: candidate, override: false });
+}
+
+const envSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.coerce.number().default(4000),
+  WEB_ORIGIN: z.string().default("http://localhost:5173"),
+  PUBLIC_URL: z.string().default(""),
+  DATABASE_URL: z.string().min(1),
+  REDIS_URL: z.string().default(""),
+  JWT_SECRET: z.string().min(8),
   JWT_EXPIRES_IN: z.string().default("12h"),
   DEFAULT_ADMIN_EMAIL: z.string().email().default("admin@example.com"),
   DEFAULT_ADMIN_PASSWORD: z.string().min(6).default("change-me"),
@@ -28,6 +48,11 @@ const envSchema = z.object({
     .string()
     .default(
       "https://docs.google.com/spreadsheets/d/1qAuw2ebWPJmcy_gl4Qf48GfmnSGLZumDfs62fpG2BGA/export?format=csv&gid=1602908530",
+    ),
+  GEOGRAPHIC_SHEET_CSV_URL: z
+    .string()
+    .default(
+      "https://docs.google.com/spreadsheets/d/1qAuw2ebWPJmcy_gl4Qf48GfmnSGLZumDfs62fpG2BGA/export?format=csv&gid=1582301730",
     ),
   WHATSAPP_MIN_DELAY_SECONDS: z.coerce.number().int().min(1).default(183),
   WHATSAPP_MAX_DELAY_SECONDS: z.coerce.number().int().min(1).default(304),
