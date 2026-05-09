@@ -282,9 +282,17 @@ export async function listWhatsappMonitorConversations(
         OR EXISTS (
           SELECT 1
           FROM whatsapp_incoming_messages wim
-          JOIN whatsapp_instances wif ON wif.instance_name = wim.instance_name
+          JOIN whatsapp_instances wif ON LOWER(wif.instance_name) = LOWER(wim.instance_name)
           WHERE wim.remote_jid = d.whatsapp_jid
             AND wif.id = $${params.length}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM deal_activities da_inst
+          JOIN whatsapp_instances wif2 ON LOWER(wif2.instance_name) = LOWER(da_inst.metadata ->> 'instance')
+          WHERE da_inst.deal_id = d.id
+            AND da_inst.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+            AND wif2.id = $${params.length}
         )
       )
     `);
