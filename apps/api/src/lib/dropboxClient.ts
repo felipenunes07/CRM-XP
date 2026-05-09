@@ -60,9 +60,34 @@ export async function downloadLatestFileByPrefix(folderPath: string, prefix: str
       fileName: latest.name,
       fileSizeBytes: latest.size,
       fileUpdatedAt: latest.server_modified,
-    };
+    }
   } catch (error) {
     logger.error("Error downloading file from Dropbox", { folderPath, prefix, error });
+    throw error;
+  }
+}
+
+export async function downloadFileByPath(dropboxPath: string) {
+  try {
+    logger.info("Downloading file from Dropbox", { dropboxPath });
+    const response = await dbx.filesDownload({ path: dropboxPath });
+    const fileBuffer = (response.result as any).fileBinary;
+    const fileName = response.result.name;
+    
+    // Create a temp file
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "crm-xp-download-"));
+    const tempFilePath = path.join(tempDir, fileName);
+    
+    await fs.writeFile(tempFilePath, fileBuffer);
+    
+    return {
+      localPath: tempFilePath,
+      fileName,
+      fileSizeBytes: response.result.size,
+      fileUpdatedAt: response.result.server_modified,
+    };
+  } catch (error) {
+    logger.error("Error downloading file from Dropbox by path", { dropboxPath, error });
     throw error;
   }
 }

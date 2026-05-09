@@ -8,6 +8,7 @@ import { normalizeCode, normalizeText, safeNumber, toIsoDate } from "../../lib/n
 import { rebuildReadModels } from "../analytics/analyticsService.js";
 import { buildSaleLineFingerprint } from "./fingerprint.js";
 import type { NormalizedSaleRow } from "./types.js";
+import { downloadFileByPath, cleanupTempFile } from "../../lib/dropboxClient.js";
 
 const REQUIRED_HEADERS = [
   "data",
@@ -219,7 +220,17 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
 }
 
 export async function importHistoryFile(filePath: string) {
-  const workbook = XLSX.readFile(filePath, {
+  let actualPath = filePath;
+  let isTemp = false;
+
+  // If path starts with / or looks like a Dropbox path, download it
+  if (filePath.startsWith("/") || (process.env.NODE_ENV === "production" && !filePath.includes(":"))) {
+    const download = await downloadFileByPath(filePath);
+    actualPath = download.localPath;
+    isTemp = true;
+  }
+
+  const workbook = XLSX.readFile(actualPath, {
     raw: false,
     cellDates: false,
   });
@@ -301,5 +312,9 @@ export async function importHistoryFile(filePath: string) {
       [importRunId, rowsSeen, rowsInserted, rowsSeen - rowsInserted, String(error)],
     );
     throw error;
+  } finally {
+    if (isTemp && actualPath) {
+      await cleanupTempFile(actualPath);
+    }
   }
 }

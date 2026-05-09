@@ -17,6 +17,8 @@ function createInsight(
     docOrderCount,
     docRevenue,
     lastDocPurchaseAt: "2026-04-10",
+    state: null,
+    city: null,
   };
 }
 
