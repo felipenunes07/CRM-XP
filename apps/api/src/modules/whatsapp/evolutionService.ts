@@ -75,13 +75,14 @@ export async function configureInstanceWebhook(instance: {
   evolutionBaseUrl: string;
   evolutionApiKey: string;
 }) {
-  const webhookUrl = `${env.PUBLIC_URL || "https://headline-delays-strengths-hazards.trycloudflare.com"}/api/webhooks/evolution`;
+  const baseUrl = (env.PUBLIC_URL || "https://headline-delays-strengths-hazards.trycloudflare.com").replace(/\/+$/, "");
+  const webhookUrl = `${baseUrl}/api/webhooks/evolution`;
 
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/webhook/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
     enabled: true,
     url: webhookUrl,
-    byEvents: false,
-    base64: false,
+    webhook_by_events: false,
+    webhook_base64: false,
     events: [
       "MESSAGES_UPSERT",
       "MESSAGES_UPDATE",
@@ -107,13 +108,13 @@ export async function configureInstanceSettings(instance: {
   evolutionApiKey: string;
 }) {
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/settings/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
-    rejectCall: false,
-    msgCall: "",
-    groupsIgnore: false,
-    alwaysOnline: true,
-    readMessages: true,
-    readStatus: true,
-    syncFullHistory: false,
+    reject_call: false,
+    msg_call: "",
+    groups_ignore: false,
+    always_online: true,
+    read_messages: true,
+    read_status: true,
+    sync_full_history: false,
   });
 }
 
