@@ -1322,7 +1322,8 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       pool.query(`
         SELECT 
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) as total_amount,
-          COALESCE(SUM(oi.quantity), 0)::int as total_items
+          COALESCE(SUM(oi.quantity), 0)::int as total_items,
+          COUNT(DISTINCT o.id)::int as total_orders
         FROM orders o
         LEFT JOIN order_items oi ON oi.order_id = o.id
         WHERE o.order_date::date = CURRENT_DATE
@@ -1394,6 +1395,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
     estimatedLifespanMonths: lifespanMonths,
     todaySalesAmount: Number(todaySalesData.rows[0]?.total_amount ?? 0),
     todayItemsSold: Number(todaySalesData.rows[0]?.total_items ?? 0),
+    todayOrdersCount: Number(todaySalesData.rows[0]?.total_orders ?? 0),
     todaySalesPerformance,
   };
 }
@@ -1463,7 +1465,9 @@ export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFi
             FROM customer_label_assignments cla
             JOIN customer_labels cl ON cl.id = cla.label_id
             WHERE cla.customer_id = s.customer_id
-          ), '[]'::jsonb) AS labels
+          ), '[]'::jsonb) AS labels,
+          s.state,
+          s.city
         FROM customer_snapshot s
         ${finalWhere}
         ORDER BY s.priority_score DESC, s.total_spent DESC, s.display_name ASC
@@ -1506,6 +1510,8 @@ export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFi
       ambassadorAssignedAt: row.ambassador_assigned_at ? String(row.ambassador_assigned_at) : null,
       reason: buildAgendaReason(row, tags),
       suggestedAction: buildAgendaSuggestedAction(tags, status),
+      state: row.state ? String(row.state) : null,
+      city: row.city ? String(row.city) : null,
     } satisfies AgendaItem;
   });
 

@@ -381,6 +381,37 @@ export const api = {
             method: "POST",
         }, token);
     },
+    whatsappMonitorConversations(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.instanceId) {
+            search.set("instanceId", query.instanceId);
+        }
+        if (query.search) {
+            search.set("search", query.search);
+        }
+        return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    whatsappMonitorConversation(token, id) {
+        return request(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
+    },
+    whatsappMonitorMetrics(token) {
+        return request("/api/whatsapp-monitor/metrics", {}, token);
+    },
+    setWhatsappMonitorReadState(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/read-state`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    sendWhatsappMonitorReply(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/replies`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    refreshWhatsappMonitorProfiles(token) {
+        return request("/api/whatsapp-monitor/refresh-profiles", { method: "POST" }, token);
+    },
     getChartAnnotations(token) {
         return request("/api/dashboard/annotations", {}, token);
     },
@@ -393,6 +424,61 @@ export const api = {
     deleteChartAnnotation(token, id) {
         return request(`/api/dashboard/annotations/${id}`, {
             method: "DELETE",
+        }, token);
+    },
+    // ── Pipeline / Kanban ──────────────────────────────────────────
+    pipelineSummary(token, includeClosed = false) {
+        const q = includeClosed ? "?includeClosed=true" : "";
+        return request(`/api/pipeline/summary${q}`, {}, token);
+    },
+    createDeal(token, input) {
+        return request("/api/pipeline/deals", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getDeal(token, id) {
+        return request(`/api/pipeline/deals/${id}`, {}, token);
+    },
+    updateDeal(token, id, input) {
+        return request(`/api/pipeline/deals/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    moveDealStage(token, id, stageId) {
+        return request(`/api/pipeline/deals/${id}/stage`, {
+            method: "PATCH",
+            body: JSON.stringify({ stageId }),
+        }, token);
+    },
+    addDealActivity(token, id, input) {
+        return request(`/api/pipeline/deals/${id}/activities`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    // ── WhatsApp Instances ─────────────────────────────────────────
+    whatsappInstanceDefaults(token) {
+        return request("/api/whatsapp-instances/defaults", {}, token);
+    },
+    whatsappInstances(token) {
+        return request("/api/whatsapp-instances", {}, token);
+    },
+    createWhatsappInstance(token, input) {
+        return request("/api/whatsapp-instances", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteWhatsappInstance(token, id) {
+        return request(`/api/whatsapp-instances/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    configureWhatsappInstance(token, id) {
+        return request(`/api/whatsapp-instances/${id}/configure`, {
+            method: "POST",
         }, token);
     },
 };
