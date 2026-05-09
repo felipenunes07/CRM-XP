@@ -5,9 +5,9 @@ import type {
   GeographicStateStat,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
 
-const GEOGRAPHIC_SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1qAuw2ebWPJmcy_gl4Qf48GfmnSGLZumDfs62fpG2BGA/export?format=csv&gid=1582301730";
+const GEOGRAPHIC_SHEET_URL = env.GEOGRAPHIC_SHEET_CSV_URL;
 
 const LOCATION_SALES_CTE = `
   WITH normalized_orders AS (
