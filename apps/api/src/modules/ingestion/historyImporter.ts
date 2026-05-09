@@ -28,9 +28,19 @@ async function hashFile(filePath: string) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
-async function registerSourceFile(filePath: string, fileHash: string, metadata: Record<string, unknown>) {
-  const fileName = path.basename(filePath);
-  const stat = await fs.stat(filePath);
+function displayFileName(originalPath: string, localPath: string) {
+  const normalizedPath = originalPath.replace(/\\/g, "/");
+  return normalizedPath.split("/").filter(Boolean).at(-1) ?? path.basename(localPath);
+}
+
+async function registerSourceFile(
+  originalPath: string,
+  localPath: string,
+  fileHash: string,
+  metadata: Record<string, unknown>,
+) {
+  const fileName = displayFileName(originalPath, localPath);
+  const stat = await fs.stat(localPath);
   const result = await pool.query(
     `
       INSERT INTO source_files (
@@ -52,7 +62,7 @@ async function registerSourceFile(filePath: string, fileHash: string, metadata: 
         updated_at = NOW()
       RETURNING id
     `,
-    [filePath, fileName, fileHash, stat.size, metadata],
+    [originalPath, fileName, fileHash, stat.size, metadata],
   );
 
   return String(result.rows[0]?.id);
@@ -250,8 +260,9 @@ export async function importHistoryFile(filePath: string) {
     }
   }
 
-  const fileHash = await hashFile(filePath);
-  const sourceFileId = await registerSourceFile(filePath, fileHash, {
+  const fileHash = await hashFile(actualPath);
+  const sourceFileId = await registerSourceFile(filePath, actualPath, fileHash, {
+    localFileName: path.basename(actualPath),
     sheetNames: workbook.SheetNames,
     rows: rows.length,
   });
