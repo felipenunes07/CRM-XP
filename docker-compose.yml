@@ -14,7 +14,7 @@ services:
       - PUBLIC_URL=${PUBLIC_URL}
       - WEB_ORIGIN=${WEB_ORIGIN}
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://default:cbd4f2a4b9e39f01a07f@xpcrm_redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
       - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL}
@@ -58,7 +58,7 @@ services:
       - PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT=${PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT}
       - PROSPECTING_TIMEZONE=${PROSPECTING_TIMEZONE}
     depends_on:
-      - redis
+      - xpcrm_redis
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -77,7 +77,7 @@ services:
       - PUBLIC_URL=${PUBLIC_URL}
       - WEB_ORIGIN=${WEB_ORIGIN}
       - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://default:cbd4f2a4b9e39f01a07f@xpcrm_redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN}
       - DEFAULT_ADMIN_EMAIL=${DEFAULT_ADMIN_EMAIL}
@@ -121,11 +121,12 @@ services:
       - PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT=${PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT}
       - PROSPECTING_TIMEZONE=${PROSPECTING_TIMEZONE}
     depends_on:
-      - redis
+      - xpcrm_redis
     restart: always
 
-  redis:
+  xpcrm_redis:
     image: redis:alpine
+    command: redis-server --requirepass cbd4f2a4b9e39f01a07f
     volumes:
       - redis-data:/data
     restart: always
