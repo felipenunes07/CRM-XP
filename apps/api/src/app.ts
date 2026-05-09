@@ -37,7 +37,7 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics, getTrendRangeAnalysis, saveMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -634,6 +634,21 @@ export function createApp() {
     try {
       const payload = monthlyTargetSchema.parse(request.body);
       await saveMonthlyTarget(payload.year, payload.month, payload.targetAmount, payload.attendant, payload.targetRevenue);
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/dashboard/targets", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const year = parseInt(String(request.query.year), 10);
+      const month = parseInt(String(request.query.month), 10);
+      const attendant = String(request.query.attendant || 'TOTAL');
+      if (!year || !month) {
+        throw new HttpError(400, "Parâmetros year e month são obrigatórios");
+      }
+      await deleteMonthlyTarget(year, month, attendant);
       response.status(204).send();
     } catch (error) {
       next(error);

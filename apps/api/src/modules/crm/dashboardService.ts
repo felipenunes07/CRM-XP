@@ -1187,6 +1187,13 @@ export async function saveMonthlyTarget(year: number, month: number, targetAmoun
   );
 }
 
+export async function deleteMonthlyTarget(year: number, month: number, attendant: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM monthly_targets WHERE year = $1 AND month = $2 AND attendant = $3`,
+    [year, month, attendant]
+  );
+}
+
 export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]> {
   const query = year 
     ? { sql: `SELECT * FROM monthly_targets WHERE year = $1 ORDER BY year DESC, month DESC, attendant ASC`, params: [year] }
