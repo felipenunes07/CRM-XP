@@ -27,7 +27,7 @@ export async function runMigrations() {
     
     try {
       await pool.query("BEGIN");
-      await pool.query(sql);
+      await pool.query(sql as string);
       await pool.query("INSERT INTO migrations (version) VALUES ($1)", [version]);
       await pool.query("COMMIT");
       logger.info("migration executed successfully", { version });

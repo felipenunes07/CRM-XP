@@ -2,22 +2,52 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from "react";
 import { useUiLanguage } from "../i18n";
 import { formatCurrency, formatNumber } from "../lib/format";
-const HIDDEN_ATTENDANTS = new Set(["iza", "sem atendente"]);
-export function SalesPerformancePanel({ salesPerformance, reactivationLeaderboard, newCustomerLeaderboard, prospectingLeaderboard, isLoading, }) {
+const ALWAYS_HIDDEN_ATTENDANTS = new Set(["iza"]);
+const MONTHLY_HIDDEN_ATTENDANTS = new Set(["sem atendente"]);
+function sortSalesPerformanceEntries(entries, rankingPeriod) {
+    return [...entries].sort((left, right) => {
+        if (rankingPeriod === "today") {
+            return (right.totalItems - left.totalItems ||
+                right.totalOrders - left.totalOrders ||
+                right.totalRevenue - left.totalRevenue ||
+                left.attendant.localeCompare(right.attendant, "pt-BR"));
+        }
+        return (right.totalOrders - left.totalOrders ||
+            right.totalRevenue - left.totalRevenue ||
+            right.totalItems - left.totalItems ||
+            left.attendant.localeCompare(right.attendant, "pt-BR"));
+    });
+}
+export function SalesPerformancePanel({ salesPerformance, reactivationLeaderboard, newCustomerLeaderboard, prospectingLeaderboard, isLoading, rankingPeriod = "month", onResetRanking, }) {
     const { tx } = useUiLanguage();
     const [activeTab, setActiveTab] = useState("sales");
+    const isToday = rankingPeriod === "today";
+    const orderedSalesPerformance = sortSalesPerformanceEntries(salesPerformance, rankingPeriod);
+    const hiddenAttendants = isToday
+        ? ALWAYS_HIDDEN_ATTENDANTS
+        : new Set([...ALWAYS_HIDDEN_ATTENDANTS, ...MONTHLY_HIDDEN_ATTENDANTS]);
     const rankingViews = {
         sales: {
             label: tx("Vendas", "Sales"),
-            description: tx("Desempenho corporativo com base nas vendas do periodo.", "Team performance based on sales in the selected period."),
-            emptyMessage: tx("Nenhuma venda registrada neste mes.", "No sales registered this month."),
-            entries: salesPerformance.map((entry) => ({
+            description: isToday
+                ? tx("Peças vendidas hoje por vendedora, com conferência direta do total diário.", "Items sold today by each seller, aligned with the daily total.")
+                : tx("Desempenho corporativo com base nas vendas do periodo.", "Team performance based on sales in the selected period."),
+            emptyMessage: isToday
+                ? tx("Nenhuma peça registrada hoje.", "No items registered today.")
+                : tx("Nenhuma venda registrada neste mes.", "No sales registered this month."),
+            entries: orderedSalesPerformance.map((entry) => ({
                 attendant: entry.attendant,
-                metrics: [
-                    { value: entry.totalOrders, label: tx("vendas", "sales") },
-                    { value: entry.totalItems, label: tx("pecas", "items") },
-                    { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
-                ],
+                metrics: isToday
+                    ? [
+                        { value: entry.totalItems, label: tx("pecas", "items") },
+                        { value: entry.totalOrders, label: tx("vendas", "sales") },
+                        { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
+                    ]
+                    : [
+                        { value: entry.totalOrders, label: tx("vendas", "sales") },
+                        { value: entry.totalItems, label: tx("pecas", "items") },
+                        { value: entry.uniqueCustomers, label: tx("clientes", "customers") },
+                    ],
             })),
         },
         reactivation: {
@@ -63,11 +93,11 @@ export function SalesPerformancePanel({ salesPerformance, reactivationLeaderboar
         },
     };
     const currentView = rankingViews[activeTab];
-    const filteredEntries = currentView.entries.filter((entry) => !HIDDEN_ATTENDANTS.has(entry.attendant.toLowerCase()));
+    const filteredEntries = currentView.entries.filter((entry) => !hiddenAttendants.has(entry.attendant.toLowerCase()));
     if (isLoading) {
-        return (_jsxs("article", { className: "panel insight-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: tx("Performance do mes", "Month performance") }), _jsx("h3", { children: tx("Ranking Mensal", "Monthly ranking") })] }) }), _jsx("div", { className: "page-loading", children: tx("Carregando performance...", "Loading performance...") })] }));
+        return (_jsxs("article", { className: "panel insight-panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: isToday ? tx("Peças de hoje", "Today's items") : tx("Performance do mes", "Month performance") }), _jsx("h3", { children: isToday ? tx("Ranking de Peças de Hoje", "Today's items ranking") : tx("Ranking Mensal", "Monthly ranking") })] }) }), _jsx("div", { className: "page-loading", children: tx("Carregando performance...", "Loading performance...") })] }));
     }
-    return (_jsxs("article", { className: "panel insight-panel", children: [_jsxs("div", { className: "panel-header", style: { alignItems: 'center' }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: tx("Performance do mes", "Month performance") }), _jsx("h3", { children: tx("Ranking Mensal", "Monthly ranking") }), _jsx("p", { className: "panel-subcopy", style: { marginTop: '0.4rem' }, children: currentView.description })] }), _jsx("div", { className: "ranking-tabs-container", children: _jsx("div", { className: "ranking-tabs", role: "tablist", "aria-label": tx("Abas do ranking mensal", "Monthly ranking tabs"), children: Object.entries(rankingViews).map(([key, view]) => (_jsx("button", { type: "button", role: "tab", "aria-selected": activeTab === key, className: `ranking-tab ${activeTab === key ? "active" : ""}`, onClick: () => setActiveTab(key), children: view.label }, key))) }) })] }), !filteredEntries.length ? (_jsx("div", { className: "empty-state", children: currentView.emptyMessage })) : (_jsx(RankingList, { entries: filteredEntries, topPerformerLabel: tx("Top Performer", "Top performer") }))] }));
+    return (_jsxs("article", { className: "panel insight-panel", children: [_jsxs("div", { className: "panel-header", style: { alignItems: 'center' }, children: [_jsxs("div", { children: [_jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.8rem' }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", children: isToday ? tx("Peças de hoje", "Today's items") : tx("Performance do mes", "Month performance") }), _jsx("h3", { children: isToday ? tx("Ranking de Peças de Hoje", "Today's items ranking") : tx("Ranking Mensal", "Monthly ranking") })] }), isToday && onResetRanking && (_jsx("button", { onClick: onResetRanking, className: "reset-filter-pill", title: tx("Voltar para ranking mensal", "Back to monthly ranking"), children: tx("Voltar para Mensal", "Back to Monthly") }))] }), _jsx("p", { className: "panel-subcopy", style: { marginTop: '0.4rem' }, children: currentView.description })] }), _jsx("div", { className: "ranking-tabs-container", children: _jsx("div", { className: "ranking-tabs", role: "tablist", "aria-label": tx("Abas do ranking mensal", "Monthly ranking tabs"), children: Object.entries(rankingViews).map(([key, view]) => (_jsx("button", { type: "button", role: "tab", "aria-selected": activeTab === key, className: `ranking-tab ${activeTab === key ? "active" : ""}`, onClick: () => setActiveTab(key), children: view.label }, key))) }) })] }), !filteredEntries.length ? (_jsx("div", { className: "empty-state", children: currentView.emptyMessage })) : (_jsx(RankingList, { entries: filteredEntries, topPerformerLabel: tx("Top Performer", "Top performer") }))] }));
 }
 function RankingList({ entries, topPerformerLabel, }) {
     const maxMetricValue = Math.max(...entries.map((entry) => entry.metrics[0].value));

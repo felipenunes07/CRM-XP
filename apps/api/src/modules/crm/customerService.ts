@@ -129,7 +129,7 @@ export interface CustomerFilters {
   minAvgTicket?: number;
   minTotalSpent?: number;
   minFrequencyDrop?: number;
-  sortBy?: "priority" | "faturamento" | "recencia";
+  sortBy?: "priority" | "faturamento" | "recencia" | "avgDaysBetweenOrders";
   limit?: number;
   labels?: string[];
   excludeLabels?: string[];

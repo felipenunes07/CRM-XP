@@ -66,6 +66,7 @@ export function buildAcquisitionMetrics(
   spendPoints: MetaAdsMonthlySpendPoint[],
   ltvRow: { avg_lifespan_months: number | null; churn_rate: number | null } | null,
   globalStats: { avg_ticket: number; avg_freq_days: number } | null,
+  todayMetrics: { amount: number; items: number; orders: number; performance: any[] }
 ): AcquisitionMetrics {
   const safeWindow = Math.max(1, Math.floor(dailyWindowDays));
   const today = parseDateOnly(referenceDate);
@@ -171,6 +172,10 @@ export function buildAcquisitionMetrics(
       previousMonthAvgTicket: previousMonthNewCustomers > 0 ? previousMonthAmount / previousMonthNewCustomers : null,
       currentMonthSpendSource: currentMonthEntry?.spendSource,
       previousMonthSpendSource: previousMonthEntry?.spendSource,
+      todaySalesAmount: todayMetrics.amount,
+      todayItemsSold: todayMetrics.items,
+      todayOrdersCount: todayMetrics.orders,
+      todaySalesPerformance: todayMetrics.performance,
       ...calculateLtvFields(currentMonthEntry?.cac, previousMonthEntry?.cac, ltvRow, globalStats),
     },
     dailySeries,
@@ -180,7 +185,7 @@ export function buildAcquisitionMetrics(
 }
 
 export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WINDOW_DAYS): Promise<AcquisitionMetrics> {
-  const [todayResult, rowsResult] = await Promise.all([
+  const [todayResult, rowsResult, todaySalesResult, todayPerformanceResult] = await Promise.all([
     pool.query<{ today: string }>("SELECT CURRENT_DATE::text AS today"),
     pool.query<{
       customerId: string;
@@ -253,6 +258,45 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
         ORDER BY "firstOrderDate" ASC, "displayName" ASC
       `,
     ),
+    pool.query(`
+      SELECT 
+        COALESCE(SUM(o.total_amount), 0)::numeric(14,2) as total_amount,
+        COALESCE(SUM(oi.quantity), 0)::int as total_items,
+        COUNT(DISTINCT o.id)::int as total_orders
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.order_date::date = CURRENT_DATE
+    `),
+    pool.query(`
+      WITH order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items
+        FROM order_items oi
+        GROUP BY oi.order_id
+      ),
+      scoped_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
+          COALESCE(oit.total_items, 0)::int AS total_items
+        FROM orders o
+        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
+        WHERE o.order_date::date = CURRENT_DATE
+      )
+      SELECT
+        so.attendant,
+        COUNT(*)::int AS total_orders,
+        COUNT(DISTINCT so.customer_id)::int AS unique_customers,
+        COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
+        COALESCE(SUM(so.total_items), 0)::int AS total_items
+      FROM scoped_orders so
+      GROUP BY so.attendant
+      ORDER BY total_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
+      LIMIT 10
+    `)
   ]);
 
   const today = todayResult.rows[0]?.today ?? new Date().toISOString().slice(0, 10);
@@ -314,7 +358,19 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
     dailyWindowDays, 
     spendPoints, 
     ltvResult.rows[0] || null,
-    globalStatsResult.rows[0] || null
+    globalStatsResult.rows[0] || null,
+    {
+      amount: Number(todaySalesResult.rows[0]?.total_amount ?? 0),
+      items: Number(todaySalesResult.rows[0]?.total_items ?? 0),
+      orders: Number(todaySalesResult.rows[0]?.total_orders ?? 0),
+      performance: todayPerformanceResult.rows.map(row => ({
+        attendant: String(row.attendant ?? "Sem atendente"),
+        totalOrders: Number(row.total_orders ?? 0),
+        uniqueCustomers: Number(row.unique_customers ?? 0),
+        totalRevenue: Number(row.total_revenue ?? 0),
+        totalItems: Number(row.total_items ?? 0),
+      }))
+    }
   );
 }
 
