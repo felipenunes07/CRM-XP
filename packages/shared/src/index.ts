@@ -1702,6 +1702,19 @@ export interface WhatsappAgentActivityReport {
     responseCount: number;
     averageFirstResponseSeconds: number | null;
   };
+  previousSummary: {
+    attendedConversations: number;
+    attendedGroups: number;
+    attendedPrivates: number;
+    customerGroups: number;
+    internalGroups: number;
+    otherGroups: number;
+    sentMessages: number;
+    receivedMessages: number;
+    activeAgents: number;
+    responseCount: number;
+    averageFirstResponseSeconds: number | null;
+  } | null;
   days: WhatsappAgentActivityDay[];
   hours: number[];
   agents: WhatsappAgentActivitySummary[];
