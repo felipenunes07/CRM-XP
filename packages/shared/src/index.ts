@@ -407,6 +407,9 @@ export interface GeographicCityStat {
   orderCount: number;
   totalPieces: number;
   totalRevenue: number;
+  activeCustomerCount: number;
+  attentionCustomerCount: number;
+  inactiveCustomerCount: number;
 }
 
 export interface GeographicCustomerStat {

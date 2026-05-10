@@ -518,7 +518,9 @@ export function GeographicView() {
                           
                           let fill = "rgba(59, 130, 246, 0.85)";
                           if (mapMode === "health") {
-                            const adjustedRate = city.activeRate + (city.attentionRate * 0.5);
+                            const activeRate = toPercent(city.activeCustomerCount, city.customerCount);
+                            const attentionRate = toPercent(city.attentionCustomerCount, city.customerCount);
+                            const adjustedRate = activeRate + (attentionRate * 0.5);
                             let score = adjustedRate / 70;
                             if (score > 1) score = 1;
                             
