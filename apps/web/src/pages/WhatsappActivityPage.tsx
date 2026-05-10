@@ -6,8 +6,8 @@ import type {
   WhatsappAgentActivityDailyPoint,
   WhatsappAgentActivityReport,
 } from "@olist-crm/shared";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, Users } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, TrendingDown, TrendingUp, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 
@@ -65,6 +65,29 @@ function initials(name: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("");
+}
+
+function calculateGrowth(current: number, previous: number | null | undefined) {
+  if (previous === null || previous === undefined || previous === 0) {
+    return current > 0 ? 100 : 0;
+  }
+  return ((current - previous) / previous) * 100;
+}
+
+function GrowthIndicator({ current, previous, inverse = false }: { current: number; previous: number | null | undefined; inverse?: boolean }) {
+  const growth = calculateGrowth(current, previous);
+  if (growth === 0) return null;
+
+  const isPositive = growth > 0;
+  const isGood = inverse ? !isPositive : isPositive;
+  const Icon = isPositive ? ArrowUp : ArrowDown;
+
+  return (
+    <div className={`activity-growth-badge ${isGood ? "positive" : "negative"}`}>
+      <Icon size={12} />
+      <span>{Math.abs(Math.round(growth))}%</span>
+    </div>
+  );
 }
 
 function formatPhone(value: string | null) {
@@ -227,21 +250,31 @@ function ActivityChart({
   dataKey,
   data,
   response,
+  growth,
 }: {
   title: string;
   value: string;
   dataKey: keyof WhatsappAgentActivityDailyPoint;
   data: WhatsappAgentActivityDailyPoint[];
   response?: boolean;
+  growth?: number | null;
 }) {
   return (
     <div className="activity-chart-tile">
-      <div>
-        <span>{title}</span>
-        <strong>{value}</strong>
+      <div className="activity-chart-header">
+        <div>
+          <span>{title}</span>
+          <strong>{value}</strong>
+        </div>
+        {growth !== undefined && growth !== null && (
+          <div className={`activity-growth-pill ${growth >= 0 ? "positive" : "negative"}`}>
+            {growth >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {Math.abs(Math.round(growth))}%
+          </div>
+        )}
       </div>
       <ResponsiveContainer width="100%" height={230}>
-        <LineChart data={data} margin={{ top: 18, right: 18, left: 0, bottom: 8 }}>
+        <BarChart data={data} margin={{ top: 18, right: 18, left: 0, bottom: 8 }}>
           <CartesianGrid stroke="#edf0f5" vertical={false} />
           <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: "#d8dde7" }} tick={{ fontSize: 12 }} />
           <YAxis
@@ -257,9 +290,15 @@ function ActivityChart({
               response ? formatSeconds(Number(tooltipValue ?? 0)) : formatNumber(Number(tooltipValue ?? 0))
             }
             labelFormatter={(label) => String(label)}
+            cursor={{ fill: "#f1f4f9" }}
           />
-          <Line type="monotone" dataKey={dataKey} stroke="#287ee7" strokeWidth={2.4} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-        </LineChart>
+          <Bar
+            dataKey={dataKey}
+            fill="#287ee7"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={40}
+          />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
@@ -271,6 +310,7 @@ export function WhatsappActivityPage() {
   const [selectedAgentId, setSelectedAgentId] = useState("all");
   const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
+  const [showHeatmapNumbers, setShowHeatmapNumbers] = useState(true);
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
@@ -324,12 +364,29 @@ export function WhatsappActivityPage() {
     [cellMap],
   );
   const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
-  const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : [];
+  const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
+
+  const growthMetrics = useMemo(() => {
+    if (!report?.previousSummary) return null;
+    const s = report.summary;
+    const p = report.previousSummary;
+    return {
+      attendedConversations: calculateGrowth(s.attendedConversations, p.attendedConversations),
+      receivedMessages: calculateGrowth(s.receivedMessages, p.receivedMessages),
+      sentMessages: calculateGrowth(s.sentMessages, p.sentMessages),
+      averageFirstResponseSeconds: calculateGrowth(s.averageFirstResponseSeconds ?? 0, p.averageFirstResponseSeconds ?? 0),
+      attendedGroups: calculateGrowth(s.attendedGroups, p.attendedGroups),
+      attendedPrivates: calculateGrowth(s.attendedPrivates, p.attendedPrivates),
+      activeAgents: calculateGrowth(s.activeAgents, p.activeAgents),
+    };
+  }, [report]);
+
   const cards = [
     {
       key: "conversations",
       label: "Conversas atendidas",
       value: visibleSummary.attendedConversations,
+      previous: selectedAgentId === "all" ? report?.previousSummary?.attendedConversations : undefined,
       detail: "Privados e grupos de clientes",
       icon: MessageCircle,
     },
@@ -337,6 +394,7 @@ export function WhatsappActivityPage() {
       key: "groups",
       label: "Grupos atendidos",
       value: visibleSummary.attendedGroups,
+      previous: selectedAgentId === "all" ? report?.previousSummary?.attendedGroups : undefined,
       detail: `${formatNumber(visibleSummary.otherGroups)} nao classificados`,
       icon: Users,
     },
@@ -344,22 +402,25 @@ export function WhatsappActivityPage() {
       key: "private",
       label: "Privados atendidos",
       value: visibleSummary.attendedPrivates,
+      previous: selectedAgentId === "all" ? report?.previousSummary?.attendedPrivates : undefined,
       detail: "Conversas individuais",
       icon: Smartphone,
     },
     {
-      key: "sent",
+      key: "responses",
       label: "Mensagens enviadas",
       value: visibleSummary.sentMessages,
-      detail: "Respostas dos agentes",
+      previous: selectedAgentId === "all" ? report?.previousSummary?.sentMessages : undefined,
+      detail: "Total de respostas enviadas",
       icon: BarChart3,
     },
     {
       key: "received",
       label: "Mensagens recebidas",
       value: visibleSummary.receivedMessages,
-      detail: "Entradas no periodo",
-      icon: Clock3,
+      previous: selectedAgentId === "all" ? report?.previousSummary?.receivedMessages : undefined,
+      detail: "Total de mensagens de entrada",
+      icon: Clock3, // Using Clock3 for now, maybe MessageSquare or something else?
     },
   ];
 
@@ -457,13 +518,20 @@ export function WhatsappActivityPage() {
       {activeTab === "overview" ? (
         <>
           <section className="activity-metric-grid">
-            {cards.map(({ key, label, value, detail, icon: Icon }) => (
+            {cards.map(({ key, label, value, previous, detail, icon: Icon, isTime, inverse }) => (
               <div key={key} className="activity-metric-card">
                 <div className="activity-metric-icon">
                   <Icon size={18} />
                 </div>
                 <span>{label}</span>
-                <strong>{formatNumber(value)}</strong>
+                <div className="activity-metric-value">
+                  <strong>{isTime ? formatSeconds(value as number) : formatNumber(value as number)}</strong>
+                  <GrowthIndicator
+                    current={typeof value === "number" ? value : 0}
+                    previous={previous}
+                    inverse={inverse}
+                  />
+                </div>
                 <small>{detail}</small>
               </div>
             ))}
@@ -475,7 +543,25 @@ export function WhatsappActivityPage() {
                 <h2>Trafego de conversa</h2>
                 <span>{selectedAgent ? selectedAgent.agentName : "Todos os agentes"} - grupos unicos e privados atendidos</span>
               </div>
-              <div className="activity-live-chip">Em tempo real</div>
+              <div className="activity-heatmap-controls">
+                <div className="activity-heatmap-toggles">
+                  <button
+                    type="button"
+                    className={!showHeatmapNumbers ? "active" : ""}
+                    onClick={() => setShowHeatmapNumbers(false)}
+                  >
+                    Cor
+                  </button>
+                  <button
+                    type="button"
+                    className={showHeatmapNumbers ? "active" : ""}
+                    onClick={() => setShowHeatmapNumbers(true)}
+                  >
+                    Numero
+                  </button>
+                </div>
+                <div className="activity-live-chip">Em tempo real</div>
+              </div>
             </div>
 
             <div className="activity-heatmap-wrap">
@@ -505,7 +591,7 @@ export function WhatsappActivityPage() {
                           title={title}
                           onClick={() => setSelectedCellKey(key)}
                         >
-                          {cell.attendedConversations ? cell.attendedConversations : ""}
+                          {cell.attendedConversations && showHeatmapNumbers ? cell.attendedConversations : ""}
                         </button>
                       );
                     })}
@@ -623,18 +709,21 @@ export function WhatsappActivityPage() {
             value={formatNumber(visibleSummary.attendedConversations)}
             dataKey="attendedConversations"
             data={dailySeries}
+            growth={selectedAgentId === "all" ? growthMetrics?.attendedConversations : null}
           />
           <ActivityChart
             title="Mensagens Recebidas"
             value={formatNumber(visibleSummary.receivedMessages)}
             dataKey="receivedMessages"
             data={dailySeries}
+            growth={selectedAgentId === "all" ? growthMetrics?.receivedMessages : null}
           />
           <ActivityChart
             title="Mensagens enviadas"
             value={formatNumber(visibleSummary.sentMessages)}
             dataKey="sentMessages"
             data={dailySeries}
+            growth={selectedAgentId === "all" ? growthMetrics?.sentMessages : null}
           />
           <ActivityChart
             title="Tempo de Primeira Resposta"
@@ -642,6 +731,7 @@ export function WhatsappActivityPage() {
             dataKey="averageFirstResponseSeconds"
             data={dailySeries}
             response
+            growth={selectedAgentId === "all" ? growthMetrics?.averageFirstResponseSeconds : null}
           />
         </section>
       ) : null}
