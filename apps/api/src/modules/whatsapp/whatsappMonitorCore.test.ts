@@ -6,6 +6,7 @@ import {
   formatEvolutionSendTextTarget,
   formatWhatsappJidPhone,
   getEvolutionMessageKey,
+  isMonitorableWhatsappJid,
   isWhatsappFallbackDisplayName,
   mapWhatsappActivityToMessage,
   median,
@@ -15,6 +16,13 @@ describe("whatsappMonitorCore", () => {
   it("formats individual and group WhatsApp JIDs for the monitoring UI", () => {
     expect(formatWhatsappJidPhone("5511998765432@s.whatsapp.net")).toBe("+55 (11) 99876-5432");
     expect(formatWhatsappJidPhone("120363371542185615@g.us")).toBe("Grupo 120363371542185615");
+  });
+
+  it("rejects WhatsApp status broadcasts from the monitoring flow", () => {
+    expect(isMonitorableWhatsappJid("5511998765432@s.whatsapp.net")).toBe(true);
+    expect(isMonitorableWhatsappJid("120363371542185615@g.us")).toBe(true);
+    expect(isMonitorableWhatsappJid("status@broadcast")).toBe(false);
+    expect(isMonitorableWhatsappJid("1234567890@broadcast")).toBe(false);
   });
 
   it("flags profanity as a moderate risk event", () => {
