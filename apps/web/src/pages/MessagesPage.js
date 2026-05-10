@@ -59,6 +59,8 @@ function attachmentName(message) {
     const directName = message.metadata.fileName ?? message.metadata.filename ?? message.metadata.mediaName;
     return typeof directName === "string" ? directName : null;
 }
+const CONVERSATION_REFRESH_MS = 3000;
+const CHAT_REFRESH_MS = 2000;
 function SearchBox({ value, onChange, placeholder, }) {
     return (_jsxs("label", { className: "whatsapp-search", children: [_jsx(Search, { size: 18 }), _jsx("input", { value: value, onChange: (event) => onChange(event.target.value), placeholder: placeholder })] }));
 }
@@ -89,6 +91,9 @@ export function MessagesPage() {
     const [selectedConversationId, setSelectedConversationId] = useState(null);
     const [chatMenuOpen, setChatMenuOpen] = useState(false);
     const [replyText, setReplyText] = useState("");
+    const chatBodyRef = useRef(null);
+    const stickToBottomRef = useRef(true);
+    const lastScrolledConversationRef = useRef(null);
     const profileRefreshRequestedRef = useRef(false);
     const conversationsQuery = useQuery({
         queryKey: ["whatsapp-monitor-conversations", activeAgentId, conversationSearch],
@@ -97,6 +102,12 @@ export function MessagesPage() {
             search: conversationSearch || undefined,
         }),
         enabled: Boolean(token),
+        refetchInterval: CONVERSATION_REFRESH_MS,
+        refetchIntervalInBackground: false,
+        refetchOnMount: "always",
+        refetchOnReconnect: true,
+        refetchOnWindowFocus: true,
+        staleTime: 1000,
     });
     const agents = conversationsQuery.data?.agents ?? [];
     const conversations = conversationsQuery.data?.conversations ?? [];
@@ -137,6 +148,12 @@ export function MessagesPage() {
         queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
         queryFn: () => api.whatsappMonitorConversation(token, selectedConversationId),
         enabled: Boolean(token && selectedConversationId),
+        refetchInterval: selectedConversationId ? CHAT_REFRESH_MS : false,
+        refetchIntervalInBackground: false,
+        refetchOnMount: "always",
+        refetchOnReconnect: true,
+        refetchOnWindowFocus: true,
+        staleTime: 1000,
     });
     const readStateMutation = useMutation({
         mutationFn: ({ id, unread }) => api.setWhatsappMonitorReadState(token, id, { unread }),
@@ -181,8 +198,32 @@ export function MessagesPage() {
     const detail = conversationDetailQuery.data;
     const currentConversation = detail ?? selectedConversation;
     const messages = detail?.messages ?? [];
+    const lastMessageId = messages.at(-1)?.id ?? null;
     const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
     const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
+    useEffect(() => {
+        const element = chatBodyRef.current;
+        if (!element || !selectedConversationId) {
+            return;
+        }
+        const changedConversation = lastScrolledConversationRef.current !== selectedConversationId;
+        if (!changedConversation && !stickToBottomRef.current) {
+            return;
+        }
+        window.requestAnimationFrame(() => {
+            element.scrollTo({
+                top: element.scrollHeight,
+                behavior: changedConversation ? "auto" : "smooth",
+            });
+            lastScrolledConversationRef.current = selectedConversationId;
+        });
+    }, [lastMessageId, messages.length, selectedConversationId]);
+    useEffect(() => {
+        if (!selectedConversation?.isUnread || readStateMutation.isPending) {
+            return;
+        }
+        readStateMutation.mutate({ id: selectedConversation.id, unread: false });
+    }, [readStateMutation.isPending, selectedConversation?.id, selectedConversation?.isUnread]);
     function openConversation(conversation) {
         setSelectedConversationId(conversation.id);
         if (conversation.isUnread) {
@@ -209,7 +250,11 @@ export function MessagesPage() {
                                                                     }, children: "Marcar como lida" }), _jsx("button", { type: "button", disabled: readStateMutation.isPending, onClick: () => {
                                                                         readStateMutation.mutate({ id: currentConversation.id, unread: true });
                                                                         setChatMenuOpen(false);
-                                                                    }, children: "Marcar como nao lida" })] })) : null] })] })] }), _jsx("div", { className: "wa-chat-body", children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : messages.length ? (messages.map((message) => (_jsx(ChatMessageBubble, { message: message, showSender: currentConversation.isGroup && message.direction === "INBOUND" }, message.id)))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [_jsxs("div", { className: "wa-chat-footer-info", children: [_jsxs("div", { children: [_jsx("strong", { children: "Retencao em nuvem ativa" }), _jsxs("span", { children: ["Ultima atividade: ", formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)] })] }), _jsxs("span", { className: `wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`, children: [_jsx(ShieldCheck, { size: 14 }), totalRisks, " alertas no recorte"] })] }), suggestedReply ? (_jsxs("div", { className: "wa-suggested-reply", children: [_jsxs("button", { type: "button", onClick: () => setReplyText(suggestedReply), children: [_jsx(Sparkles, { size: 16 }), "Resposta sugerida"] }), _jsx("span", { children: suggestedReply })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", disabled: true, children: _jsx(Paperclip, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", disabled: true, children: _jsx(Smile, { size: 20 }) }), _jsx("textarea", { value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {
+                                                                    }, children: "Marcar como nao lida" })] })) : null] })] })] }), _jsx("div", { className: "wa-chat-body", ref: chatBodyRef, onScroll: (event) => {
+                                        const element = event.currentTarget;
+                                        const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+                                        stickToBottomRef.current = distanceFromBottom < 160;
+                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : messages.length ? (messages.map((message) => (_jsx(ChatMessageBubble, { message: message, showSender: currentConversation.isGroup && message.direction === "INBOUND" }, message.id)))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [_jsxs("div", { className: "wa-chat-footer-info", children: [_jsxs("div", { children: [_jsx("strong", { children: "Retencao em nuvem ativa" }), _jsxs("span", { children: ["Ultima atividade: ", formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)] })] }), _jsxs("span", { className: `wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`, children: [_jsx(ShieldCheck, { size: 14 }), totalRisks, " alertas no recorte"] })] }), suggestedReply ? (_jsxs("div", { className: "wa-suggested-reply", children: [_jsxs("button", { type: "button", onClick: () => setReplyText(suggestedReply), children: [_jsx(Sparkles, { size: 16 }), "Resposta sugerida"] }), _jsx("span", { children: suggestedReply })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", disabled: true, children: _jsx(Paperclip, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", disabled: true, children: _jsx(Smile, { size: 20 }) }), _jsx("textarea", { value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {
                                                         if (event.key === "Enter" && !event.shiftKey) {
                                                             event.preventDefault();
                                                             event.currentTarget.form?.requestSubmit();
