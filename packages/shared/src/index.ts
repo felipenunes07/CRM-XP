@@ -1614,6 +1614,78 @@ export interface WhatsappMonitorMetrics {
   agilityLeaders: WhatsappMonitorAgilityLeader[];
 }
 
+export interface WhatsappAgentActivityDay {
+  date: string;
+  label: string;
+  weekday: string;
+}
+
+export interface WhatsappAgentActivitySummary {
+  agentId: string;
+  agentName: string;
+  instanceName: string | null;
+  displayLabel: string | null;
+  phoneNumber: string | null;
+  profilePictureUrl: string | null;
+  sentMessages: number;
+  receivedMessages: number;
+  privateMessages: number;
+  groupMessages: number;
+  customerGroupMessages: number;
+  internalGroupMessages: number;
+  otherGroupMessages: number;
+  nightMessages: number;
+  crmMessages: number;
+  whatsappMessages: number;
+  activeHours: number;
+  lastMessageAt: string | null;
+}
+
+export interface WhatsappAgentActivityCell {
+  agentId: string;
+  agentName: string;
+  date: string;
+  hour: number;
+  sentMessages: number;
+  receivedMessages: number;
+  privateMessages: number;
+  groupMessages: number;
+  customerGroupMessages: number;
+  internalGroupMessages: number;
+  otherGroupMessages: number;
+  nightMessages: number;
+  crmMessages: number;
+  whatsappMessages: number;
+}
+
+export interface WhatsappAgentActivityReport {
+  period: {
+    startDate: string;
+    endDate: string;
+    days: number;
+    timezone: string;
+    nightStartHour: number;
+    nightEndHour: number;
+  };
+  summary: {
+    sentMessages: number;
+    receivedMessages: number;
+    privateMessages: number;
+    groupMessages: number;
+    customerGroupMessages: number;
+    internalGroupMessages: number;
+    otherGroupMessages: number;
+    nightMessages: number;
+    crmMessages: number;
+    whatsappMessages: number;
+    activeAgents: number;
+  };
+  days: WhatsappAgentActivityDay[];
+  hours: number[];
+  agents: WhatsappAgentActivitySummary[];
+  hourlyCells: WhatsappAgentActivityCell[];
+}
+
 export interface WhatsappMonitorConversationsResponse {
   agents: WhatsappMonitorAgent[];
   conversations: WhatsappMonitorConversation[];

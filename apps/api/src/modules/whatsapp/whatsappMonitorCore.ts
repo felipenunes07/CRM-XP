@@ -140,10 +140,11 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+  const fromMe = Boolean(key.fromMe);
   const senderJid =
     readString(key.participant) ??
     pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
-    (isGroup ? null : remoteJid);
+    (isGroup || fromMe ? null : remoteJid);
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);
@@ -153,7 +154,7 @@ export function extractEvolutionMessageContext(
     messageId: readString(key.id) ?? pickString(rawMessage, ["id", "messageId"]),
     instanceName: instanceName ?? null,
     isGroup,
-    fromMe: Boolean(key.fromMe),
+    fromMe,
     text: extractEvolutionMessageText(message),
     senderJid,
     senderName,
@@ -222,6 +223,15 @@ export function formatEvolutionSendTextTarget(destination: string) {
   const [rawId = trimmed] = trimmed.split("@");
   const digits = rawId.replace(/\D/g, "");
   return digits || rawId;
+}
+
+export function formatWhatsappPhoneJid(phone: string | null | undefined) {
+  if (!phone) {
+    return null;
+  }
+
+  const digits = phone.replace(/\D/g, "");
+  return digits ? `${digits}@s.whatsapp.net` : null;
 }
 
 export function isWhatsappFallbackDisplayName(name: string | null | undefined, remoteJid: string | null | undefined) {
