@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useState, useEffect } from "react";
 import {
   BarChart3,
   Boxes,
+  ChevronDown,
   ClipboardList,
   Kanban,
   LayoutDashboard,
@@ -10,6 +12,7 @@ import {
   MessageSquareText,
   Activity,
   RadioTower,
+  Search,
   SearchCheck,
   Star,
   Tags,
@@ -18,10 +21,12 @@ import {
   UserCog,
   UserPlus,
   Users,
+  Hexagon,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 
+/* ── link structure for external tests ── */
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
@@ -43,6 +48,129 @@ export const appShellLinks = [
   { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 
+/* ── Types ── */
+interface SidebarItem {
+  to: string;
+  labelPt: string;
+  icon?: React.ComponentType<{ size?: number }>;
+  adminOnly?: boolean;
+}
+
+interface SidebarGroup {
+  labelPt: string;
+  icon: React.ComponentType<{ size?: number }>;
+  children: SidebarItem[];
+  adminOnly?: boolean;
+}
+
+type SidebarEntry = SidebarItem | SidebarGroup;
+
+function isGroup(entry: SidebarEntry): entry is SidebarGroup {
+  return "children" in entry;
+}
+
+/* ── Sidebar menu structure ── */
+const sidebarMenu: SidebarEntry[] = [
+  { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
+  { to: "/metas", icon: Trophy, labelPt: "Metas" },
+  { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
+  {
+    labelPt: "Clientes",
+    icon: Users,
+    children: [
+      { to: "/clientes", labelPt: "Todos os Clientes" },
+      { to: "/clientes-novos", labelPt: "Clientes Novos" },
+      { to: "/reativacao", labelPt: "Reativação" },
+      { to: "/embaixadores", labelPt: "Embaixadores" },
+    ],
+  },
+  {
+    labelPt: "Comunicação",
+    icon: MessageSquareText,
+    children: [
+      { to: "/mensagens", labelPt: "Mensagens" },
+      { to: "/disparador", labelPt: "Disparador" },
+    ],
+  },
+  {
+    labelPt: "Relatórios",
+    icon: BarChart3,
+    children: [
+      { to: "/atividade-whatsapp", labelPt: "Relatorios WhatsApp" },
+      { to: "/estoque", labelPt: "Estoque" },
+      { to: "/segmentos", labelPt: "Segmentos" },
+      { to: "/rotulos", labelPt: "Rótulos" },
+    ],
+  },
+  {
+    labelPt: "Mais",
+    icon: ClipboardList,
+    children: [
+      { to: "/agenda", labelPt: "Agenda" },
+      { to: "/ideias-votacao", labelPt: "Ideias / Votação" },
+      { to: "/prospeccao", labelPt: "Prospecção" },
+    ],
+  },
+  { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
+];
+
+/* ── Collapsible group component ── */
+function SidebarGroupItem({
+  group,
+  tx,
+}: {
+  group: SidebarGroup;
+  tx: (pt: string, fallback: string) => string;
+}) {
+  const location = useLocation();
+  const childPaths = group.children.map((c) => c.to);
+  const isChildActive = childPaths.some(
+    (p) => location.pathname === p || location.pathname.startsWith(p + "/")
+  );
+  const [open, setOpen] = useState(isChildActive);
+
+  // Auto-open when a child route becomes active
+  useEffect(() => {
+    if (isChildActive && !open) setOpen(true);
+  }, [isChildActive]);
+
+  const Icon = group.icon;
+
+  return (
+    <li className="cw-group">
+      <button
+        type="button"
+        className={`cw-group-toggle ${isChildActive ? "is-active" : ""}`}
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <Icon size={16} />
+        <span className="cw-label">{tx(group.labelPt, group.labelPt)}</span>
+        <ChevronDown size={14} className={`cw-chevron ${open ? "open" : ""}`} />
+      </button>
+      {open && (
+        <ul className="cw-group-children">
+          {group.children.map((child) => (
+            <li key={child.to} className="cw-child-item">
+              <NavLink
+                to={child.to}
+                end={child.to === "/"}
+                className={({ isActive }) =>
+                  `cw-child-link ${isActive ? "active" : ""}`
+                }
+              >
+                {tx(child.labelPt, child.labelPt)}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+/* ── Main AppShell ── */
 export function AppShell() {
   const { user, logout } = useAuth();
   const { language, setLanguage, tx } = useUiLanguage();
@@ -53,19 +181,19 @@ export function AppShell() {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
+  const isAdminLike = user?.role === "ADMIN" || user?.role === "MANAGER";
+
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-top">
-          <div className="brand premium-brand">
-            <div className="brand-copy premium-brand-copy">
-              <p className="eyebrow">XP Factory</p>
-              <h1>XP CRM</h1>
-            </div>
+      <aside className="cw-sidebar">
+        {/* ── Header ── */}
+        <section className="cw-header">
+          <div className="cw-premium-brand">
+            <img src="/xp-factory-logo.png" alt="XP CRM" className="cw-logo-image" />
           </div>
 
           <div className="sidebar-language-card">
-            <span className="sidebar-language-label">{tx("Idioma", "Idioma")}</span>
+            <span className="sidebar-language-label">Idioma</span>
             <div
               className="language-switch"
               role="radiogroup"
@@ -91,42 +219,68 @@ export function AppShell() {
               </button>
             </div>
           </div>
+        </section>
 
-          <nav className="nav">
-            {appShellLinks
-              .filter((link) => {
-                if (link.adminOnly && user?.role !== "ADMIN" && user?.role !== "MANAGER") {
-                  return false;
+        {/* ── Navigation ── */}
+        <nav className="cw-nav">
+          <ul className="cw-menu">
+            {sidebarMenu
+              .filter((entry) => {
+                if (isGroup(entry)) {
+                  return !entry.adminOnly || isAdminLike;
                 }
-                return true;
+                return !entry.adminOnly || isAdminLike;
               })
-              .map(({ to, icon: Icon, labelPt }) => (
-                <NavLink key={to} to={to} end={to === "/"} className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
-                  <Icon size={18} />
-                  <span>{tx(labelPt, labelPt)}</span>
-                </NavLink>
-              ))}
-          </nav>
-        </div>
+              .map((entry) => {
+                if (isGroup(entry)) {
+                  return (
+                    <SidebarGroupItem
+                      key={entry.labelPt}
+                      group={entry}
+                      tx={tx}
+                    />
+                  );
+                }
+                const Icon = entry.icon!;
+                return (
+                  <li key={entry.to} className="cw-item">
+                    <NavLink
+                      to={entry.to}
+                      end={entry.to === "/"}
+                      className={({ isActive }) =>
+                        `cw-link ${isActive ? "active" : ""}`
+                      }
+                    >
+                      <Icon size={16} />
+                      <span className="cw-label">
+                        {tx(entry.labelPt, entry.labelPt)}
+                      </span>
+                    </NavLink>
+                  </li>
+                );
+              })}
+          </ul>
+        </nav>
 
-        <div className="sidebar-footer">
-          <div className="sidebar-session-card">
-            <span className="sidebar-user-avatar">{userInitials || "XP"}</span>
-            <div className="sidebar-user-summary">
-              <strong className="sidebar-user-name">{user?.name || tx("Usuario interno", "Usuario interno")}</strong>
-              <span className="sidebar-user-email">{user?.email || tx("Sem email", "Sem email")}</span>
+        {/* ── Footer / User ── */}
+        <section className="cw-footer">
+          <div className="cw-user-card">
+            <span className="cw-user-avatar">{userInitials || "XP"}</span>
+            <div className="cw-user-info">
+              <strong>{user?.name || tx("Usuario interno", "Usuario interno")}</strong>
+              <span>{user?.email || tx("Sem email", "Sem email")}</span>
             </div>
             <button
               type="button"
-              className="sidebar-logout-link"
+              className="cw-logout-btn"
               onClick={logout}
               aria-label={tx("Encerrar sessao", "Encerrar sessao")}
               title={tx("Sair", "Sair")}
             >
-              <LogOut size={16} />
+              <LogOut size={14} />
             </button>
           </div>
-        </div>
+        </section>
       </aside>
 
       <main className="main-content">
