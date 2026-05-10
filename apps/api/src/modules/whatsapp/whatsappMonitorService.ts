@@ -1,6 +1,7 @@
 import type {
   DealActivity,
   DealPriority,
+  WhatsappAgentActivityConversationKind,
   WhatsappAgentActivityReport,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
@@ -237,10 +238,6 @@ function buildActivityReportDays(days: number): WhatsappAgentActivityReport["day
       weekday: formatter.format(date),
     };
   });
-}
-
-function isActivityReportNightHour(hour: number) {
-  return hour >= ACTIVITY_REPORT_NIGHT_START_HOUR || hour < ACTIVITY_REPORT_NIGHT_END_HOUR;
 }
 
 function classifyWhatsappGroup(input: { isGroup: boolean; name: string | null }) {
@@ -941,37 +938,132 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
   };
 }
 
-type ActivityReportCounters = Omit<
-  WhatsappAgentActivityReport["agents"][number],
-  "agentId" | "agentName" | "instanceName" | "displayLabel" | "phoneNumber" | "profilePictureUrl" | "activeHours" | "lastMessageAt"
->;
+interface ActivityConversationAccumulator {
+  remoteJid: string;
+  name: string;
+  kind: WhatsappAgentActivityConversationKind;
+  sentMessages: number;
+  receivedMessages: number;
+}
 
-function createActivityReportCounters(): ActivityReportCounters {
+interface ActivityReportAccumulator {
+  sentMessages: number;
+  receivedMessages: number;
+  attendedConversations: Set<string>;
+  attendedPrivates: Set<string>;
+  customerGroups: Set<string>;
+  internalGroups: Set<string>;
+  otherGroups: Set<string>;
+  conversations: Map<string, ActivityConversationAccumulator>;
+  responseSeconds: number[];
+}
+
+function createActivityReportAccumulator(): ActivityReportAccumulator {
   return {
     sentMessages: 0,
     receivedMessages: 0,
-    privateMessages: 0,
-    groupMessages: 0,
-    customerGroupMessages: 0,
-    internalGroupMessages: 0,
-    otherGroupMessages: 0,
-    nightMessages: 0,
-    crmMessages: 0,
-    whatsappMessages: 0,
+    attendedConversations: new Set<string>(),
+    attendedPrivates: new Set<string>(),
+    customerGroups: new Set<string>(),
+    internalGroups: new Set<string>(),
+    otherGroups: new Set<string>(),
+    conversations: new Map<string, ActivityConversationAccumulator>(),
+    responseSeconds: [],
   };
 }
 
-function addActivityReportCounters(target: ActivityReportCounters, source: ActivityReportCounters) {
-  target.sentMessages += source.sentMessages;
-  target.receivedMessages += source.receivedMessages;
-  target.privateMessages += source.privateMessages;
-  target.groupMessages += source.groupMessages;
-  target.customerGroupMessages += source.customerGroupMessages;
-  target.internalGroupMessages += source.internalGroupMessages;
-  target.otherGroupMessages += source.otherGroupMessages;
-  target.nightMessages += source.nightMessages;
-  target.crmMessages += source.crmMessages;
-  target.whatsappMessages += source.whatsappMessages;
+function getActivityConversation(
+  accumulator: ActivityReportAccumulator,
+  remoteJid: string,
+  name: string | null,
+  kind: WhatsappAgentActivityConversationKind,
+) {
+  const current =
+    accumulator.conversations.get(remoteJid) ??
+    {
+      remoteJid,
+      name: name ?? formatWhatsappJidPhone(remoteJid),
+      kind,
+      sentMessages: 0,
+      receivedMessages: 0,
+    };
+
+  if (name && current.name === formatWhatsappJidPhone(remoteJid)) {
+    current.name = name;
+  }
+  current.kind = current.kind === "internal_group" ? current.kind : kind;
+  accumulator.conversations.set(remoteJid, current);
+  return current;
+}
+
+function registerActivityReportEvent(input: {
+  accumulator: ActivityReportAccumulator;
+  remoteJid: string;
+  chatName: string | null;
+  kind: WhatsappAgentActivityConversationKind;
+  isOutbound: boolean;
+}) {
+  const conversation = getActivityConversation(input.accumulator, input.remoteJid, input.chatName, input.kind);
+
+  if (input.isOutbound) {
+    input.accumulator.sentMessages += 1;
+    conversation.sentMessages += 1;
+
+    if (input.kind === "private") {
+      input.accumulator.attendedPrivates.add(input.remoteJid);
+      input.accumulator.attendedConversations.add(input.remoteJid);
+    } else if (input.kind === "internal_group") {
+      input.accumulator.internalGroups.add(input.remoteJid);
+    } else {
+      input.accumulator.attendedConversations.add(input.remoteJid);
+      if (input.kind === "customer_group") {
+        input.accumulator.customerGroups.add(input.remoteJid);
+      } else {
+        input.accumulator.otherGroups.add(input.remoteJid);
+      }
+    }
+  } else {
+    input.accumulator.receivedMessages += 1;
+    conversation.receivedMessages += 1;
+  }
+}
+
+function addResponseSeconds(accumulator: ActivityReportAccumulator, responseSeconds: number | null) {
+  if (responseSeconds !== null && Number.isFinite(responseSeconds) && responseSeconds >= 0) {
+    accumulator.responseSeconds.push(responseSeconds);
+  }
+}
+
+function average(values: number[]) {
+  if (!values.length) {
+    return null;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function publicActivityCounters(accumulator: ActivityReportAccumulator) {
+  const attendedGroups = new Set([...accumulator.customerGroups, ...accumulator.otherGroups]);
+
+  return {
+    attendedConversations: accumulator.attendedConversations.size,
+    attendedGroups: attendedGroups.size,
+    attendedPrivates: accumulator.attendedPrivates.size,
+    customerGroups: accumulator.customerGroups.size,
+    internalGroups: accumulator.internalGroups.size,
+    otherGroups: accumulator.otherGroups.size,
+    sentMessages: accumulator.sentMessages,
+    receivedMessages: accumulator.receivedMessages,
+    responseCount: accumulator.responseSeconds.length,
+    averageFirstResponseSeconds: average(accumulator.responseSeconds),
+  };
+}
+
+function publicActivityConversations(accumulator: ActivityReportAccumulator) {
+  return Array.from(accumulator.conversations.values())
+    .filter((conversation) => conversation.sentMessages > 0 || conversation.receivedMessages > 0)
+    .sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name))
+    .slice(0, 30);
 }
 
 export async function getWhatsappAgentActivityReport(
@@ -1058,7 +1150,7 @@ export async function getWhatsappAgentActivityReport(
       displayLabel: string | null;
       phoneNumber: string | null;
       profilePictureUrl: string | null;
-      counters: ActivityReportCounters;
+      accumulator: ActivityReportAccumulator;
       activeHours: Set<string>;
       lastMessageAt: string | null;
     }
@@ -1070,9 +1162,12 @@ export async function getWhatsappAgentActivityReport(
       agentName: string;
       date: string;
       hour: number;
-      counters: ActivityReportCounters;
+      accumulator: ActivityReportAccumulator;
     }
   >();
+  const dailyAccumulators = new Map<string, ActivityReportAccumulator>();
+  const summaryAccumulator = createActivityReportAccumulator();
+  const pendingInboundByAgentConversation = new Map<string, Date>();
 
   for (const row of result.rows) {
     const localDate = optionalString(row.local_date);
@@ -1081,16 +1176,21 @@ export async function getWhatsappAgentActivityReport(
       continue;
     }
 
-    const metadata = asRecord(row.metadata) ?? {};
     const remoteJid = optionalString(row.remote_jid);
+    if (!remoteJid) {
+      continue;
+    }
+
     const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
     const groupClass = classifyWhatsappGroup({
       isGroup,
       name: optionalString(row.chat_name),
     });
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
+    const chatName = optionalString(row.chat_name);
     const agentId = String(row.agent_id ?? "sem-agente");
     const agentName = String(row.agent_name ?? "Sem agente");
+    const createdAt = new Date(String(row.created_at));
     const current =
       agents.get(agentId) ??
       {
@@ -1100,7 +1200,7 @@ export async function getWhatsappAgentActivityReport(
         displayLabel: optionalString(row.display_label),
         phoneNumber: optionalString(row.phone_number),
         profilePictureUrl: optionalString(row.profile_picture_url),
-        counters: createActivityReportCounters(),
+        accumulator: createActivityReportAccumulator(),
         activeHours: new Set<string>(),
         lastMessageAt: null,
       };
@@ -1113,6 +1213,9 @@ export async function getWhatsappAgentActivityReport(
     current.lastMessageAt = isoDate(row.created_at);
     agents.set(agentId, current);
 
+    const dailyAccumulator = dailyAccumulators.get(localDate) ?? createActivityReportAccumulator();
+    dailyAccumulators.set(localDate, dailyAccumulator);
+
     const cellKey = `${agentId}:${localDate}:${localHour}`;
     const cell =
       cells.get(cellKey) ??
@@ -1121,44 +1224,34 @@ export async function getWhatsappAgentActivityReport(
         agentName,
         date: localDate,
         hour: localHour,
-        counters: createActivityReportCounters(),
+        accumulator: createActivityReportAccumulator(),
       };
     cell.agentName = agentName;
     cells.set(cellKey, cell);
 
-    const increments = createActivityReportCounters();
+    const pendingKey = `${agentId}:${remoteJid}`;
+    let responseSeconds: number | null = null;
     if (isOutbound) {
-      increments.sentMessages = 1;
-      if (groupClass === "private") {
-        increments.privateMessages = 1;
-      } else {
-        increments.groupMessages = 1;
-        if (groupClass === "customer_group") {
-          increments.customerGroupMessages = 1;
-        } else if (groupClass === "internal_group") {
-          increments.internalGroupMessages = 1;
-        } else {
-          increments.otherGroupMessages = 1;
-        }
+      const pendingInboundAt = pendingInboundByAgentConversation.get(pendingKey);
+      if (pendingInboundAt) {
+        responseSeconds = Math.max(0, (createdAt.getTime() - pendingInboundAt.getTime()) / 1000);
+        pendingInboundByAgentConversation.delete(pendingKey);
       }
-
-      if (isActivityReportNightHour(localHour)) {
-        increments.nightMessages = 1;
-      }
-
-      if (metadata.sentFromMonitor === true) {
-        increments.crmMessages = 1;
-      } else {
-        increments.whatsappMessages = 1;
-      }
-
       current.activeHours.add(`${localDate}:${localHour}`);
     } else {
-      increments.receivedMessages = 1;
+      pendingInboundByAgentConversation.set(pendingKey, createdAt);
     }
 
-    addActivityReportCounters(current.counters, increments);
-    addActivityReportCounters(cell.counters, increments);
+    for (const accumulator of [summaryAccumulator, dailyAccumulator, current.accumulator, cell.accumulator]) {
+      registerActivityReportEvent({
+        accumulator,
+        remoteJid,
+        chatName,
+        kind: groupClass,
+        isOutbound,
+      });
+      addResponseSeconds(accumulator, responseSeconds);
+    }
   }
 
   const agentRows = Array.from(agents.values())
@@ -1169,16 +1262,11 @@ export async function getWhatsappAgentActivityReport(
       displayLabel: agent.displayLabel,
       phoneNumber: agent.phoneNumber,
       profilePictureUrl: agent.profilePictureUrl,
-      ...agent.counters,
+      ...publicActivityCounters(agent.accumulator),
       activeHours: agent.activeHours.size,
       lastMessageAt: agent.lastMessageAt,
     }))
     .sort((left, right) => right.sentMessages - left.sentMessages || left.agentName.localeCompare(right.agentName));
-
-  const summaryCounters = createActivityReportCounters();
-  for (const agent of agentRows) {
-    addActivityReportCounters(summaryCounters, agent);
-  }
 
   return {
     period: {
@@ -1190,18 +1278,27 @@ export async function getWhatsappAgentActivityReport(
       nightEndHour: ACTIVITY_REPORT_NIGHT_END_HOUR,
     },
     summary: {
-      ...summaryCounters,
+      ...publicActivityCounters(summaryAccumulator),
       activeAgents: agentRows.filter((agent) => agent.sentMessages > 0).length,
     },
     days: reportDays,
     hours,
     agents: agentRows,
+    dailySeries: reportDays.map((day) => {
+      const accumulator = dailyAccumulators.get(day.date) ?? createActivityReportAccumulator();
+      return {
+        date: day.date,
+        label: day.label,
+        ...publicActivityCounters(accumulator),
+      };
+    }),
     hourlyCells: Array.from(cells.values()).map((cell) => ({
       agentId: cell.agentId,
       agentName: cell.agentName,
       date: cell.date,
       hour: cell.hour,
-      ...cell.counters,
+      ...publicActivityCounters(cell.accumulator),
+      conversations: publicActivityConversations(cell.accumulator),
     })),
   };
 }

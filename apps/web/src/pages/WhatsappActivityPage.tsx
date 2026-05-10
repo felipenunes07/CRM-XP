@@ -1,25 +1,61 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { WhatsappAgentActivityCell, WhatsappAgentActivityReport } from "@olist-crm/shared";
-import {
-  BarChart3,
-  Clock3,
-  MessageCircle,
-  Monitor,
-  Moon,
-  RefreshCw,
-  Smartphone,
-  Users,
-} from "lucide-react";
+import type {
+  WhatsappAgentActivityCell,
+  WhatsappAgentActivityConversation,
+  WhatsappAgentActivityDailyPoint,
+  WhatsappAgentActivityReport,
+} from "@olist-crm/shared";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 
 type ActivityWindowDays = 1 | 7 | 14 | 30;
+type ActivityTab = "overview" | "conversations" | "agents";
 
 const windowOptions: ActivityWindowDays[] = [1, 7, 14, 30];
+const tabs: Array<{ id: ActivityTab; label: string }> = [
+  { id: "overview", label: "Visao geral" },
+  { id: "conversations", label: "Conversas" },
+  { id: "agents", label: "Agentes" },
+];
+
+const EMPTY_SUMMARY = {
+  attendedConversations: 0,
+  attendedGroups: 0,
+  attendedPrivates: 0,
+  customerGroups: 0,
+  internalGroups: 0,
+  otherGroups: 0,
+  sentMessages: 0,
+  receivedMessages: 0,
+  responseCount: 0,
+  averageFirstResponseSeconds: null as number | null,
+};
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("pt-BR").format(value);
+}
+
+function formatSeconds(value: number | null) {
+  if (value === null || !Number.isFinite(value)) {
+    return "--";
+  }
+
+  if (value < 60) {
+    return `${Math.round(value)} Sec`;
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.round(value % 60);
+  if (minutes < 60) {
+    return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
 }
 
 function initials(name: string) {
@@ -52,33 +88,77 @@ function shortWeekday(value: string) {
   return value.replace("-feira", "").slice(0, 3);
 }
 
-function mergeCells(cells: WhatsappAgentActivityCell[]) {
-  return cells.reduce(
-    (total, cell) => ({
-      sentMessages: total.sentMessages + cell.sentMessages,
-      receivedMessages: total.receivedMessages + cell.receivedMessages,
-      privateMessages: total.privateMessages + cell.privateMessages,
-      groupMessages: total.groupMessages + cell.groupMessages,
-      customerGroupMessages: total.customerGroupMessages + cell.customerGroupMessages,
-      internalGroupMessages: total.internalGroupMessages + cell.internalGroupMessages,
-      otherGroupMessages: total.otherGroupMessages + cell.otherGroupMessages,
-      nightMessages: total.nightMessages + cell.nightMessages,
-      crmMessages: total.crmMessages + cell.crmMessages,
-      whatsappMessages: total.whatsappMessages + cell.whatsappMessages,
-    }),
-    {
-      sentMessages: 0,
-      receivedMessages: 0,
-      privateMessages: 0,
-      groupMessages: 0,
-      customerGroupMessages: 0,
-      internalGroupMessages: 0,
-      otherGroupMessages: 0,
-      nightMessages: 0,
-      crmMessages: 0,
-      whatsappMessages: 0,
-    },
+function mergeConversations(conversations: WhatsappAgentActivityConversation[]) {
+  const merged = new Map<string, WhatsappAgentActivityConversation>();
+
+  for (const conversation of conversations) {
+    const current =
+      merged.get(conversation.remoteJid) ??
+      {
+        ...conversation,
+        sentMessages: 0,
+        receivedMessages: 0,
+      };
+
+    current.name = current.name || conversation.name;
+    current.kind = current.kind === "internal_group" ? current.kind : conversation.kind;
+    current.sentMessages += conversation.sentMessages;
+    current.receivedMessages += conversation.receivedMessages;
+    merged.set(conversation.remoteJid, current);
+  }
+
+  return Array.from(merged.values()).sort(
+    (left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name),
   );
+}
+
+function summarizeCells(cells: WhatsappAgentActivityCell[]) {
+  const conversations = mergeConversations(cells.flatMap((cell) => cell.conversations));
+  const responseSecondsTotal = cells.reduce(
+    (sum, cell) => sum + (cell.averageFirstResponseSeconds ?? 0) * cell.responseCount,
+    0,
+  );
+  const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
+  const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
+  const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
+  const attended = conversations.filter((conversation) => conversation.sentMessages > 0);
+  const attendedGroups = attended.filter(
+    (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
+  );
+  const customerGroups = attended.filter((conversation) => conversation.kind === "customer_group");
+  const internalGroups = attended.filter((conversation) => conversation.kind === "internal_group");
+  const otherGroups = attended.filter((conversation) => conversation.kind === "other_group");
+  const privates = attended.filter((conversation) => conversation.kind === "private");
+
+  return {
+    attendedConversations: attendedGroups.length + privates.length,
+    attendedGroups: attendedGroups.length,
+    attendedPrivates: privates.length,
+    customerGroups: customerGroups.length,
+    internalGroups: internalGroups.length,
+    otherGroups: otherGroups.length,
+    sentMessages,
+    receivedMessages,
+    responseCount,
+    averageFirstResponseSeconds: responseCount ? responseSecondsTotal / responseCount : null,
+    conversations,
+  };
+}
+
+function buildDailySeries(report: WhatsappAgentActivityReport, cells: WhatsappAgentActivityCell[]) {
+  return report.days.map((day): WhatsappAgentActivityDailyPoint => {
+    const summary = summarizeCells(cells.filter((cell) => cell.date === day.date));
+    return {
+      date: day.date,
+      label: day.label,
+      attendedConversations: summary.attendedConversations,
+      attendedGroups: summary.attendedGroups,
+      attendedPrivates: summary.attendedPrivates,
+      sentMessages: summary.sentMessages,
+      receivedMessages: summary.receivedMessages,
+      averageFirstResponseSeconds: summary.averageFirstResponseSeconds,
+    };
+  });
 }
 
 function heatLevel(value: number, max: number) {
@@ -91,52 +171,106 @@ function heatLevel(value: number, max: number) {
   return 1;
 }
 
-function metricCards(summary: WhatsappAgentActivityReport["summary"] | ReturnType<typeof mergeCells>) {
-  const nonInternalGroups = summary.customerGroupMessages + summary.otherGroupMessages;
+function conversationKindLabel(kind: WhatsappAgentActivityConversation["kind"]) {
+  if (kind === "private") return "Privado";
+  if (kind === "customer_group") return "Grupo cliente";
+  if (kind === "internal_group") return "Grupo interno";
+  return "Grupo nao classificado";
+}
 
-  return [
-    {
-      key: "sent",
-      label: "Respostas",
-      value: summary.sentMessages,
-      detail: `${formatNumber(summary.whatsappMessages)} pelo WhatsApp`,
-      icon: MessageCircle,
-    },
-    {
-      key: "private",
-      label: "Privado",
-      value: summary.privateMessages,
-      detail: `${formatNumber(summary.receivedMessages)} recebidas`,
-      icon: Smartphone,
-    },
-    {
-      key: "groups",
-      label: "Grupos clientes",
-      value: nonInternalGroups,
-      detail: `${formatNumber(summary.internalGroupMessages)} internos separados`,
-      icon: Users,
-    },
-    {
-      key: "night",
-      label: "Noturno",
-      value: summary.nightMessages,
-      detail: "18h ate 08h",
-      icon: Moon,
-    },
-    {
-      key: "crm",
-      label: "Pelo CRM",
-      value: summary.crmMessages,
-      detail: `${formatNumber(summary.whatsappMessages)} fora do CRM`,
-      icon: Monitor,
-    },
+function chartTicks(value: number | string) {
+  return typeof value === "number" ? formatNumber(value) : value;
+}
+
+function responseTick(value: number | string) {
+  return typeof value === "number" ? formatSeconds(value) : value;
+}
+
+function downloadReportCsv(report: WhatsappAgentActivityReport, agentLabel: string, data: WhatsappAgentActivityDailyPoint[]) {
+  const header = [
+    "Periodo",
+    "Filtro",
+    "Data",
+    "Conversas atendidas",
+    "Grupos atendidos",
+    "Privados atendidos",
+    "Mensagens enviadas",
+    "Mensagens recebidas",
+    "Tempo medio primeira resposta",
   ];
+  const rows = data.map((item) => [
+    `${report.period.startDate} ate ${report.period.endDate}`,
+    agentLabel,
+    item.date,
+    String(item.attendedConversations),
+    String(item.attendedGroups),
+    String(item.attendedPrivates),
+    String(item.sentMessages),
+    String(item.receivedMessages),
+    formatSeconds(item.averageFirstResponseSeconds),
+  ]);
+  const csv = [header, ...rows]
+    .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `relatorio-whatsapp-${report.period.startDate}-${report.period.endDate}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function ActivityChart({
+  title,
+  value,
+  dataKey,
+  data,
+  response,
+}: {
+  title: string;
+  value: string;
+  dataKey: keyof WhatsappAgentActivityDailyPoint;
+  data: WhatsappAgentActivityDailyPoint[];
+  response?: boolean;
+}) {
+  return (
+    <div className="activity-chart-tile">
+      <div>
+        <span>{title}</span>
+        <strong>{value}</strong>
+      </div>
+      <ResponsiveContainer width="100%" height={230}>
+        <LineChart data={data} margin={{ top: 18, right: 18, left: 0, bottom: 8 }}>
+          <CartesianGrid stroke="#edf0f5" vertical={false} />
+          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: "#d8dde7" }} tick={{ fontSize: 12 }} />
+          <YAxis
+            allowDecimals={false}
+            tickLine={false}
+            axisLine={{ stroke: "#d8dde7" }}
+            tickFormatter={response ? responseTick : chartTicks}
+            tick={{ fontSize: 12 }}
+            width={response ? 48 : 32}
+          />
+          <Tooltip
+            formatter={(tooltipValue) =>
+              response ? formatSeconds(Number(tooltipValue ?? 0)) : formatNumber(Number(tooltipValue ?? 0))
+            }
+            labelFormatter={(label) => String(label)}
+          />
+          <Line type="monotone" dataKey={dataKey} stroke="#287ee7" strokeWidth={2.4} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
 }
 
 export function WhatsappActivityPage() {
   const { token } = useAuth();
   const [days, setDays] = useState<ActivityWindowDays>(7);
   const [selectedAgentId, setSelectedAgentId] = useState("all");
+  const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
+  const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
@@ -153,29 +287,81 @@ export function WhatsappActivityPage() {
     if (selectedAgentId === "all") return report.hourlyCells;
     return report.hourlyCells.filter((cell) => cell.agentId === selectedAgentId);
   }, [report, selectedAgentId]);
-  const visibleSummary = useMemo(() => mergeCells(visibleCells), [visibleCells]);
+  const visibleSummary = useMemo(() => {
+    if (!report) return { ...EMPTY_SUMMARY, conversations: [] };
+    if (selectedAgentId === "all") {
+      return { ...report.summary, conversations: summarizeCells(report.hourlyCells).conversations };
+    }
+    return summarizeCells(visibleCells);
+  }, [report, selectedAgentId, visibleCells]);
+  const dailySeries = useMemo(() => {
+    if (!report) return [];
+    return selectedAgentId === "all" ? report.dailySeries : buildDailySeries(report, visibleCells);
+  }, [report, selectedAgentId, visibleCells]);
+  const cellsBySlot = useMemo(() => {
+    const map = new Map<string, WhatsappAgentActivityCell[]>();
+    for (const cell of visibleCells) {
+      const key = `${cell.date}:${cell.hour}`;
+      map.set(key, [...(map.get(key) ?? []), cell]);
+    }
+    return map;
+  }, [visibleCells]);
   const cellMap = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof mergeCells>>();
+    const map = new Map<string, ReturnType<typeof summarizeCells>>();
     if (!report) return map;
 
     for (const day of report.days) {
       for (const hour of report.hours) {
-        map.set(`${day.date}:${hour}`, mergeCells([]));
+        const key = `${day.date}:${hour}`;
+        map.set(key, summarizeCells(cellsBySlot.get(key) ?? []));
       }
     }
 
-    for (const cell of visibleCells) {
-      const key = `${cell.date}:${cell.hour}`;
-      const current = map.get(key) ?? mergeCells([]);
-      map.set(key, mergeCells([current as WhatsappAgentActivityCell, cell]));
-    }
-
     return map;
-  }, [report, visibleCells]);
+  }, [report, cellsBySlot]);
   const maxCellValue = useMemo(
-    () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => cell.sentMessages)),
+    () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => cell.attendedConversations)),
     [cellMap],
   );
+  const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
+  const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : [];
+  const cards = [
+    {
+      key: "conversations",
+      label: "Conversas atendidas",
+      value: visibleSummary.attendedConversations,
+      detail: "Privados e grupos de clientes",
+      icon: MessageCircle,
+    },
+    {
+      key: "groups",
+      label: "Grupos atendidos",
+      value: visibleSummary.attendedGroups,
+      detail: `${formatNumber(visibleSummary.otherGroups)} nao classificados`,
+      icon: Users,
+    },
+    {
+      key: "private",
+      label: "Privados atendidos",
+      value: visibleSummary.attendedPrivates,
+      detail: "Conversas individuais",
+      icon: Smartphone,
+    },
+    {
+      key: "sent",
+      label: "Mensagens enviadas",
+      value: visibleSummary.sentMessages,
+      detail: "Respostas dos agentes",
+      icon: BarChart3,
+    },
+    {
+      key: "received",
+      label: "Mensagens recebidas",
+      value: visibleSummary.receivedMessages,
+      detail: "Entradas no periodo",
+      icon: Clock3,
+    },
+  ];
 
   useEffect(() => {
     if (!report || selectedAgentId === "all") return;
@@ -184,19 +370,23 @@ export function WhatsappActivityPage() {
     }
   }, [report, selectedAgentId]);
 
+  useEffect(() => {
+    setSelectedCellKey(null);
+  }, [selectedAgentId, days]);
+
   if (reportQuery.isLoading) {
-    return <div className="page-loading">Carregando atividade...</div>;
+    return <div className="page-loading">Carregando relatorios...</div>;
   }
 
   if (reportQuery.isError || !report) {
     return (
       <div className="whatsapp-activity-page">
-        <div className="activity-header">
+        <div className="activity-report-header">
           <div>
-            <p className="eyebrow">WhatsApp</p>
-            <h1>Atividade dos agentes</h1>
+            <h1>Relatorios WhatsApp</h1>
+            <span>Visao geral, conversas e agentes</span>
           </div>
-          <button type="button" className="secondary-button" onClick={() => reportQuery.refetch()}>
+          <button type="button" className="activity-primary-button" onClick={() => reportQuery.refetch()}>
             <RefreshCw size={16} />
             Tentar novamente
           </button>
@@ -206,18 +396,27 @@ export function WhatsappActivityPage() {
     );
   }
 
-  const cards = metricCards(selectedAgent ? visibleSummary : report.summary);
-
   return (
     <div className="whatsapp-activity-page">
-      <div className="activity-header">
+      <div className="activity-report-header">
         <div>
-          <p className="eyebrow">WhatsApp</p>
-          <h1>Atividade dos agentes</h1>
+          <h1>{activeTab === "overview" ? "Visao geral" : activeTab === "conversations" ? "Conversas" : "Visao Geral de Agentes"}</h1>
+          <span>
+            {activeTab === "agents"
+              ? "Acompanhe desempenho por agente e clique em uma vendedora para filtrar."
+              : "Acompanhe o atendimento por hora, agente e tipo de conversa."}
+          </span>
         </div>
         <div className="activity-actions">
+          <button
+            type="button"
+            className="activity-primary-button"
+            onClick={() => downloadReportCsv(report, selectedAgent?.agentName ?? "Todos os agentes", dailySeries)}
+          >
+            <Download size={16} />
+            Baixar relatorios de agentes
+          </button>
           <label className="activity-select">
-            <Clock3 size={16} />
             <select value={days} onChange={(event) => setDays(Number(event.target.value) as ActivityWindowDays)}>
               {windowOptions.map((option) => (
                 <option key={option} value={option}>
@@ -227,7 +426,6 @@ export function WhatsappActivityPage() {
             </select>
           </label>
           <label className="activity-select">
-            <Users size={16} />
             <select value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>
               <option value="all">Todos os agentes</option>
               {report.agents.map((agent) => (
@@ -243,128 +441,264 @@ export function WhatsappActivityPage() {
         </div>
       </div>
 
-      <section className="activity-metric-grid">
-        {cards.map(({ key, label, value, detail, icon: Icon }) => (
-          <div key={key} className="activity-metric-card">
-            <div className="activity-metric-icon">
-              <Icon size={18} />
-            </div>
-            <span>{label}</span>
-            <strong>{formatNumber(value)}</strong>
-            <small>{detail}</small>
-          </div>
+      <div className="activity-tabs" role="tablist" aria-label="Relatorios WhatsApp">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={activeTab === tab.id ? "active" : ""}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
         ))}
-      </section>
+      </div>
 
-      <section className="activity-panel">
-        <div className="activity-panel-header">
-          <div>
-            <h2>Respostas por hora</h2>
-            <span>{selectedAgent ? selectedAgent.agentName : "Todos os numeros conectados"}</span>
-          </div>
-          <div className="activity-live-chip">
-            <BarChart3 size={14} />
-            Atualiza em tempo real
-          </div>
-        </div>
-
-        <div className="activity-heatmap-wrap">
-          <div className="activity-heatmap">
-            <div className="activity-heatmap-corner" />
-            {report.hours.map((hour) => (
-              <div key={hour} className="activity-hour-label">
-                {hour}
-              </div>
-            ))}
-            {report.days.map((day) => (
-              <div className="activity-day-row" key={day.date}>
-                <div className="activity-day-label">
-                  <strong>{shortWeekday(day.weekday)}</strong>
-                  <span>{day.label}</span>
+      {activeTab === "overview" ? (
+        <>
+          <section className="activity-metric-grid">
+            {cards.map(({ key, label, value, detail, icon: Icon }) => (
+              <div key={key} className="activity-metric-card">
+                <div className="activity-metric-icon">
+                  <Icon size={18} />
                 </div>
-                {report.hours.map((hour) => {
-                  const cell = cellMap.get(`${day.date}:${hour}`) ?? mergeCells([]);
-                  const level = heatLevel(cell.sentMessages, maxCellValue);
-                  const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.sentMessages} respostas, ${cell.privateMessages} privado, ${cell.customerGroupMessages + cell.otherGroupMessages} grupos clientes`;
-                  return (
-                    <div
-                      key={`${day.date}:${hour}`}
-                      className={`activity-heat-cell level-${level} ${isNightHour(hour, report) ? "night" : ""}`}
-                      title={title}
-                    >
-                      {cell.sentMessages ? cell.sentMessages : ""}
-                    </div>
-                  );
-                })}
+                <span>{label}</span>
+                <strong>{formatNumber(value)}</strong>
+                <small>{detail}</small>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
+          </section>
 
-      <section className="activity-panel">
-        <div className="activity-panel-header">
-          <div>
-            <h2>Vendedoras</h2>
-            <span>{formatNumber(report.summary.activeAgents)} agentes com respostas no periodo</span>
-          </div>
-        </div>
+          <section className="activity-panel heatmap-panel">
+            <div className="activity-panel-header">
+              <div>
+                <h2>Trafego de conversa</h2>
+                <span>{selectedAgent ? selectedAgent.agentName : "Todos os agentes"} - grupos unicos e privados atendidos</span>
+              </div>
+              <div className="activity-live-chip">Em tempo real</div>
+            </div>
 
-        {report.agents.length ? (
+            <div className="activity-heatmap-wrap">
+              <div className="activity-heatmap">
+                <div className="activity-heatmap-corner" />
+                {report.hours.map((hour) => (
+                  <div key={hour} className="activity-hour-label">
+                    {hour}
+                  </div>
+                ))}
+                {report.days.map((day) => (
+                  <div className="activity-day-row" key={day.date}>
+                    <div className="activity-day-label">
+                      <strong>{shortWeekday(day.weekday)}</strong>
+                      <span>{day.label}</span>
+                    </div>
+                    {report.hours.map((hour) => {
+                      const key = `${day.date}:${hour}`;
+                      const cell = cellMap.get(key) ?? { ...EMPTY_SUMMARY, conversations: [] };
+                      const level = heatLevel(cell.attendedConversations, maxCellValue);
+                      const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.attendedGroups} grupos, ${cell.attendedPrivates} privados, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
+                      return (
+                        <button
+                          type="button"
+                          key={key}
+                          className={`activity-heat-cell level-${level} ${selectedCellKey === key ? "selected" : ""}`}
+                          title={title}
+                          onClick={() => setSelectedCellKey(key)}
+                        >
+                          {cell.attendedConversations ? cell.attendedConversations : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="activity-detail-grid">
+            <div className="activity-panel">
+              <div className="activity-panel-header">
+                <div>
+                  <h2>Detalhe do horario</h2>
+                  <span>{selectedCellKey ? selectedCellKey.replace(":", " - ") : "Clique em um quadrado do mapa"}</span>
+                </div>
+              </div>
+              {selectedCellSummary ? (
+                <div className="activity-cell-detail">
+                  <div className="activity-cell-stats">
+                    <span>
+                      <strong>{formatNumber(selectedCellSummary.attendedGroups)}</strong>
+                      grupos
+                    </span>
+                    <span>
+                      <strong>{formatNumber(selectedCellSummary.attendedPrivates)}</strong>
+                      privados
+                    </span>
+                    <span>
+                      <strong>{formatNumber(selectedCellSummary.sentMessages)}</strong>
+                      respostas
+                    </span>
+                  </div>
+                  <div className="activity-detail-columns">
+                    <div>
+                      <h3>Agentes ativos</h3>
+                      {selectedCellRows.filter((cell) => cell.sentMessages > 0).length ? (
+                        selectedCellRows
+                          .filter((cell) => cell.sentMessages > 0)
+                          .sort((left, right) => right.sentMessages - left.sentMessages)
+                          .map((cell) => (
+                            <button
+                              type="button"
+                              key={`${cell.agentId}-${cell.date}-${cell.hour}`}
+                              className="activity-detail-row"
+                              onClick={() => setSelectedAgentId(cell.agentId)}
+                            >
+                              <span>{cell.agentName}</span>
+                              <strong>{formatNumber(cell.sentMessages)}</strong>
+                            </button>
+                          ))
+                      ) : (
+                        <p>Nenhuma resposta nesse horario.</p>
+                      )}
+                    </div>
+                    <div>
+                      <h3>Conversas</h3>
+                      {selectedCellSummary.conversations.filter((conversation) => conversation.sentMessages > 0).length ? (
+                        selectedCellSummary.conversations
+                          .filter((conversation) => conversation.sentMessages > 0)
+                          .slice(0, 8)
+                          .map((conversation) => (
+                            <div key={conversation.remoteJid} className="activity-detail-row static">
+                              <span>
+                                {conversation.name}
+                                <small>{conversationKindLabel(conversation.kind)}</small>
+                              </span>
+                              <strong>{formatNumber(conversation.sentMessages)}</strong>
+                            </div>
+                          ))
+                      ) : (
+                        <p>Nenhuma conversa atendida nesse horario.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="activity-empty">Selecione uma celula para ver agentes, grupos e privados atendidos.</div>
+              )}
+            </div>
+
+            <div className="activity-panel">
+              <div className="activity-panel-header">
+                <div>
+                  <h2>Conversas por agentes</h2>
+                  <span>Clique para filtrar o mapa</span>
+                </div>
+              </div>
+              <div className="activity-agent-list">
+                {report.agents.slice(0, 6).map((agent) => (
+                  <button
+                    key={agent.agentId}
+                    type="button"
+                    className={`activity-agent-list-row ${selectedAgentId === agent.agentId ? "selected" : ""}`}
+                    onClick={() => setSelectedAgentId(agent.agentId)}
+                  >
+                    <span className="activity-avatar">{initials(agent.agentName) || "WA"}</span>
+                    <span>
+                      <strong>{agent.agentName}</strong>
+                      <small>{formatPhone(agent.phoneNumber)}</small>
+                    </span>
+                    <em>{formatNumber(agent.attendedConversations)}</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "conversations" ? (
+        <section className="activity-panel activity-chart-panel">
+          <ActivityChart
+            title="Conversas"
+            value={formatNumber(visibleSummary.attendedConversations)}
+            dataKey="attendedConversations"
+            data={dailySeries}
+          />
+          <ActivityChart
+            title="Mensagens Recebidas"
+            value={formatNumber(visibleSummary.receivedMessages)}
+            dataKey="receivedMessages"
+            data={dailySeries}
+          />
+          <ActivityChart
+            title="Mensagens enviadas"
+            value={formatNumber(visibleSummary.sentMessages)}
+            dataKey="sentMessages"
+            data={dailySeries}
+          />
+          <ActivityChart
+            title="Tempo de Primeira Resposta"
+            value={formatSeconds(visibleSummary.averageFirstResponseSeconds)}
+            dataKey="averageFirstResponseSeconds"
+            data={dailySeries}
+            response
+          />
+        </section>
+      ) : null}
+
+      {activeTab === "agents" ? (
+        <section className="activity-panel">
           <div className="activity-table-wrap">
             <table className="activity-table">
               <thead>
                 <tr>
                   <th>Agente</th>
-                  <th>Respostas</th>
-                  <th>Privado</th>
-                  <th>Grupos clientes</th>
-                  <th>Outros grupos</th>
-                  <th>Internos</th>
-                  <th>Noturno</th>
-                  <th>WhatsApp</th>
-                  <th>CRM</th>
-                  <th>Horas ativas</th>
+                  <th>N de Conversas</th>
+                  <th>Grupos atendidos</th>
+                  <th>Privados</th>
+                  <th>Mensagens enviadas</th>
+                  <th>Mensagens recebidas</th>
+                  <th>Tempo medio de primeira resposta</th>
                 </tr>
               </thead>
               <tbody>
-                {report.agents.map((agent) => (
-                  <tr key={agent.agentId}>
-                    <td>
-                      <button
-                        type="button"
-                        className="activity-agent-button"
-                        onClick={() => setSelectedAgentId(agent.agentId)}
-                      >
-                        <span className="activity-avatar">{initials(agent.agentName) || "WA"}</span>
-                        <span>
-                          <strong>{agent.agentName}</strong>
-                          <small>{formatPhone(agent.phoneNumber)}</small>
-                        </span>
-                      </button>
-                    </td>
-                    <td>{formatNumber(agent.sentMessages)}</td>
-                    <td>{formatNumber(agent.privateMessages)}</td>
-                    <td>{formatNumber(agent.customerGroupMessages)}</td>
-                    <td>{formatNumber(agent.otherGroupMessages)}</td>
-                    <td>{formatNumber(agent.internalGroupMessages)}</td>
-                    <td>{formatNumber(agent.nightMessages)}</td>
-                    <td>{formatNumber(agent.whatsappMessages)}</td>
-                    <td>{formatNumber(agent.crmMessages)}</td>
-                    <td>{formatNumber(agent.activeHours)}</td>
+                {report.agents.length ? (
+                  report.agents.map((agent) => (
+                    <tr key={agent.agentId}>
+                      <td>
+                        <button
+                          type="button"
+                          className="activity-agent-button"
+                          onClick={() => {
+                            setSelectedAgentId(agent.agentId);
+                            setActiveTab("overview");
+                          }}
+                        >
+                          <span className="activity-avatar">{initials(agent.agentName) || "WA"}</span>
+                          <span>
+                            <strong>{agent.agentName}</strong>
+                            <small>{formatPhone(agent.phoneNumber)}</small>
+                          </span>
+                        </button>
+                      </td>
+                      <td>{formatNumber(agent.attendedConversations)}</td>
+                      <td>{formatNumber(agent.attendedGroups)}</td>
+                      <td>{formatNumber(agent.attendedPrivates)}</td>
+                      <td>{formatNumber(agent.sentMessages)}</td>
+                      <td>{formatNumber(agent.receivedMessages)}</td>
+                      <td>{formatSeconds(agent.averageFirstResponseSeconds)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={7}>Nao ha dados disponiveis</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
-        ) : (
-          <div className="activity-empty">Nenhuma resposta registrada nesse periodo.</div>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
-}
-
-function isNightHour(hour: number, report: WhatsappAgentActivityReport) {
-  return hour >= report.period.nightStartHour || hour < report.period.nightEndHour;
 }
