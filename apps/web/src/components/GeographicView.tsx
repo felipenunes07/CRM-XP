@@ -80,7 +80,10 @@ function toPercent(value: number, total: number) {
   return (value / total) * 100;
 }
 
-function formatPercent(value: number) {
+function formatPercent(value: number | undefined | null) {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "0.0%";
+  }
   return `${value.toFixed(1)}%`;
 }
 
@@ -116,6 +119,31 @@ function customerStatusEmoji(status: GeographicCustomerStat["status"]) {
   return "🔴";
 }
 
+function getHealthColor(activeRate: number, attentionRate: number, inactiveRate: number, alpha = 1) {
+  if (activeRate === 0 && attentionRate === 0 && inactiveRate === 0) {
+    return `rgba(203, 213, 225, ${alpha})`;
+  }
+
+  const adjustedRate = activeRate + (attentionRate * 0.5);
+  let healthScore = adjustedRate / 70;
+  if (healthScore > 1) healthScore = 1;
+
+  let r, g, b;
+  if (healthScore < 0.5) {
+    const t = healthScore * 2;
+    r = 239 + (245 - 239) * t;
+    g = 68 + (158 - 68) * t;
+    b = 68 + (11 - 68) * t;
+  } else {
+    const t = (healthScore - 0.5) * 2;
+    r = 245 + (16 - 245) * t;
+    g = 158 + (185 - 158) * t;
+    b = 11 + (129 - 11) * t;
+  }
+
+  return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
+}
+
 export function GeographicView() {
   const { token } = useAuth();
   const { tx } = useUiLanguage();
@@ -123,6 +151,8 @@ export function GeographicView() {
   const [selectedCityKey, setSelectedCityKey] = useState("");
   const [search, setSearch] = useState("");
   const [hoveredState, setHoveredState] = useState("");
+  const [mapMode, setMapMode] = useState<"volume" | "health">("volume");
+  const [detailView, setDetailView] = useState<"customers" | "cities">("cities");
 
   const geographicQuery = useQuery({
     queryKey: ["geographic-sales-overview"],
@@ -221,7 +251,12 @@ export function GeographicView() {
         }
 
         return matchesCitySearch(item, normalizedSearch);
-      }),
+      }).map(item => ({
+        ...item,
+        activeRate: toPercent(item.activeCustomerCount, item.customerCount),
+        attentionRate: toPercent(item.attentionCustomerCount, item.customerCount),
+        inactiveRate: toPercent(item.inactiveCustomerCount, item.customerCount),
+      })),
     [geographicData.cityStats, normalizedSearch, selectedState],
   );
 
@@ -269,17 +304,20 @@ export function GeographicView() {
   function handleStateToggle(state: string) {
     setSelectedCityKey("");
     setSelectedState((current) => (current === state ? "" : state));
+    setDetailView("cities");
   }
 
   function handleCitySelect(city: GeographicCityStat) {
     setSelectedState(city.state);
     setSelectedCityKey(cityKey(city));
+    setDetailView("customers");
   }
 
   function clearFilters() {
     setSelectedState("");
     setSelectedCityKey("");
     setSearch("");
+    setDetailView("cities");
   }
 
   if (geographicQuery.isLoading) {
@@ -337,11 +375,31 @@ export function GeographicView() {
                 )}
               </p>
             </div>
-            {hasFilters ? (
-              <button type="button" className="ghost-button small" onClick={clearFilters}>
-                {tx("Limpar filtro", "Clear filter")}
-              </button>
-            ) : null}
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div className="view-toggle" style={{ display: "flex", background: "var(--surface-sunken)", padding: "4px", borderRadius: "8px", gap: "4px" }}>
+                <button 
+                  type="button" 
+                  className="ghost-button small"
+                  style={mapMode === "volume" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }}
+                  onClick={() => setMapMode("volume")}
+                >
+                  {tx("Por Volume", "By Volume")}
+                </button>
+                <button 
+                  type="button" 
+                  className="ghost-button small"
+                  style={mapMode === "health" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }}
+                  onClick={() => setMapMode("health")}
+                >
+                  {tx("Por Saúde", "By Health")}
+                </button>
+              </div>
+              {hasFilters ? (
+                <button type="button" className="ghost-button small" onClick={clearFilters}>
+                  {tx("Limpar filtro", "Clear filter")}
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="region-map-stage">
@@ -384,11 +442,22 @@ export function GeographicView() {
                   const isSelected = selectedState === state.uf;
                   const isHovered = hoveredState === state.uf;
                   const intensity = state.stat.totalPieces > 0 ? state.stat.totalPieces / maxStatePieces : 0;
-                  const fill = isSelected
-                    ? "rgba(59, 130, 246, 0.28)"
-                    : intensity > 0
-                      ? `rgba(59, 130, 246, ${0.12 + intensity * 0.26})`
-                      : "url(#region-stage-land)";
+                  
+                  let fill = "url(#region-stage-land)";
+                  if (mapMode === "volume") {
+                    fill = isSelected
+                      ? "rgba(59, 130, 246, 0.28)"
+                      : intensity > 0
+                        ? `rgba(59, 130, 246, ${0.12 + intensity * 0.26})`
+                        : "url(#region-stage-land)";
+                  } else {
+                    const perf = statePerformanceByUf.byState.get(state.uf);
+                    if (perf && state.stat.customerCount > 0) {
+                      fill = getHealthColor(perf.activeRate, perf.attentionRate, perf.inactiveRate, isSelected || isHovered ? 0.7 : 0.4);
+                    } else if (isSelected) {
+                      fill = "rgba(59, 130, 246, 0.15)";
+                    }
+                  }
 
                   return (
                     <path
@@ -424,9 +493,90 @@ export function GeographicView() {
 
                   const isSelected = selectedState === state.uf;
                   const isHovered = hoveredState === state.uf;
+                  
+                  if (selectedState && !isSelected) return null;
+
+                  if (isSelected) {
+                    const citiesInState = geographicData.cityStats.filter(c => c.state === state.uf);
+                    const sortedCities = [...citiesInState].sort((a, b) => b.totalPieces - a.totalPieces);
+                    const maxCityPieces = Math.max(...sortedCities.map(c => c.totalPieces), 1);
+                    
+                    const phi = Math.PI * (3 - Math.sqrt(5)); // Golden angle
+                    const maxSpiralRadius = 60; // Spread cities out
+                    const spread = sortedCities.length > 1 ? maxSpiralRadius / Math.sqrt(sortedCities.length - 1) : 0;
+
+                    return (
+                      <g key={`${state.uf}-city-bubbles`}>
+                        {sortedCities.map((city, i) => {
+                          const r = Math.sqrt(i) * spread;
+                          const theta = i * phi;
+                          const cx = state.centerX + r * Math.cos(theta);
+                          const cy = state.centerY + r * Math.sin(theta);
+                          
+                          const isCitySelected = selectedCityKey === cityKey(city);
+                          const cityRadius = 3 + Math.sqrt(city.totalPieces / maxCityPieces) * 11;
+                          
+                          let fill = "rgba(59, 130, 246, 0.85)";
+                          if (mapMode === "health") {
+                            const adjustedRate = city.activeRate + (city.attentionRate * 0.5);
+                            let score = adjustedRate / 70;
+                            if (score > 1) score = 1;
+                            
+                            let rCol, gCol, bCol;
+                            if (score < 0.5) {
+                              const t = score * 2;
+                              rCol = 239 + (245 - 239) * t;
+                              gCol = 68 + (158 - 68) * t;
+                              bCol = 68 + (11 - 68) * t;
+                            } else {
+                              const t = (score - 0.5) * 2;
+                              rCol = 245 + (16 - 245) * t;
+                              gCol = 158 + (185 - 158) * t;
+                              bCol = 11 + (129 - 11) * t;
+                            }
+                            fill = `rgba(${Math.round(rCol)}, ${Math.round(gCol)}, ${Math.round(bCol)}, ${isCitySelected ? 1 : 0.85})`;
+                          }
+
+                          return (
+                            <circle
+                              key={cityKey(city)}
+                              cx={cx}
+                              cy={cy}
+                              r={cityRadius + (isCitySelected ? 4 : 0)}
+                              fill={fill}
+                              stroke={isCitySelected ? "#ffffff" : "rgba(255,255,255,0.4)"}
+                              strokeWidth={isCitySelected ? 2.5 : 1}
+                              style={{ cursor: "pointer", transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCitySelect(city);
+                              }}
+                            >
+                              <title>{`${city.city}: ${formatNumber(city.totalPieces)} peças`}</title>
+                            </circle>
+                          );
+                        })}
+                      </g>
+                    );
+                  }
+
                   const radius = bubbleRadius(state.stat.totalPieces, maxStatePieces);
                   const intensity = state.stat.totalPieces / maxStatePieces;
                   const labelY = state.centerY - radius - 16;
+                  
+                  let haloFill = "transparent";
+                  let coreFill = "transparent";
+                  
+                  if (mapMode === "volume") {
+                    haloFill = `rgba(59, 130, 246, ${isSelected ? 0.24 : 0.12 + intensity * 0.1})`;
+                    coreFill = `rgba(37, 99, 235, ${0.44 + intensity * 0.36})`;
+                  } else {
+                    const perf = statePerformanceByUf.byState.get(state.uf);
+                    if (perf) {
+                      haloFill = getHealthColor(perf.activeRate, perf.attentionRate, perf.inactiveRate, isSelected ? 0.4 : 0.2);
+                      coreFill = getHealthColor(perf.activeRate, perf.attentionRate, perf.inactiveRate, 0.9);
+                    }
+                  }
 
                   return (
                     <g
@@ -440,14 +590,14 @@ export function GeographicView() {
                         cx={state.centerX}
                         cy={state.centerY}
                         r={radius + (isSelected ? 7 : 5)}
-                        fill={`rgba(59, 130, 246, ${isSelected ? 0.24 : 0.12 + intensity * 0.1})`}
+                        fill={haloFill}
                       />
                       <circle
                         className="region-bubble-core"
                         cx={state.centerX}
                         cy={state.centerY}
                         r={radius}
-                        fill={`rgba(37, 99, 235, ${0.44 + intensity * 0.36})`}
+                        fill={coreFill}
                       />
                       <circle className="region-bubble-stroke" cx={state.centerX} cy={state.centerY} r={radius} />
                       {isSelected || isHovered ? (
@@ -503,13 +653,27 @@ export function GeographicView() {
             ) : null}
 
             <div className="region-map-legend">
-              <span>{tx("Volume", "Volume")}</span>
-              <div className="region-map-legend-bubbles" aria-hidden="true">
-                <i style={{ width: 10, height: 10 }} />
-                <i style={{ width: 20, height: 20 }} />
-                <i style={{ width: 30, height: 30 }} />
-              </div>
-              <small>{tx("baixo -> alto", "low -> high")}</small>
+              {mapMode === "volume" ? (
+                <>
+                  <span>{tx("Volume", "Volume")}</span>
+                  <div className="region-map-legend-bubbles" aria-hidden="true">
+                    <i style={{ width: 10, height: 10 }} />
+                    <i style={{ width: 20, height: 20 }} />
+                    <i style={{ width: 30, height: 30 }} />
+                  </div>
+                  <small>{tx("baixo -> alto", "low -> high")}</small>
+                </>
+              ) : (
+                <>
+                  <span>{tx("Saúde da Carteira", "Portfolio Health")}</span>
+                  <div className="region-map-legend-health" aria-hidden="true" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <i style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--semantic-negative)' }} />
+                    <i style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--semantic-attention)' }} />
+                    <i style={{ width: 12, height: 12, borderRadius: '50%', background: 'var(--semantic-positive)' }} />
+                  </div>
+                  <small>{tx("inativo -> ativo", "inactive -> active")}</small>
+                </>
+              )}
             </div>
 
             <div className="region-map-focus">
@@ -595,19 +759,44 @@ export function GeographicView() {
         </section>
 
         <section className="panel region-side-panel">
-          <div className="region-panel-header side">
-            <div>
-              <p className="eyebrow">{tx("Detalhamento", "Detail")}</p>
-              <h3>
-                {selectedCity
-                  ? tx("Clientes da cidade selecionada", "Customers in selected city")
-                  : selectedState
-                    ? `${tx("Clientes em", "Customers in")} ${selectedState}`
-                    : tx("Clientes da carteira por regiao", "Portfolio customers by region")}
-              </h3>
+          <div className="region-panel-header side" style={{ flexDirection: "column", alignItems: "stretch", gap: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <p className="eyebrow">{tx("Detalhamento", "Detail")}</p>
+                <h3>
+                  {selectedCity
+                    ? tx("Detalhamento da cidade", "City detail")
+                    : selectedState
+                      ? `${tx("Detalhamento de", "Detail of")} ${selectedState}`
+                      : tx("Detalhamento por regiao", "Regional detail")}
+                </h3>
+              </div>
+              <div className="view-toggle" style={{ display: "flex", background: "var(--surface-sunken)", padding: "4px", borderRadius: "8px", gap: "4px" }}>
+                <button 
+                  type="button" 
+                  className="ghost-button small"
+                  style={detailView === "cities" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }}
+                  onClick={() => setDetailView("cities")}
+                >
+                  {tx("Cidades", "Cities")}
+                </button>
+                <button 
+                  type="button" 
+                  className="ghost-button small"
+                  style={detailView === "customers" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }}
+                  onClick={() => setDetailView("customers")}
+                >
+                  {tx("Clientes", "Customers")}
+                </button>
+              </div>
             </div>
-            <div className="region-side-totals">
-              <span>{formatNumber(filteredCustomers.length)} {tx("clientes", "customers")}</span>
+            
+            <div className="region-side-totals" style={{ marginTop: 0 }}>
+              {detailView === "cities" ? (
+                <span>{formatNumber(filteredCities.length)} {tx("cidades", "cities")}</span>
+              ) : (
+                <span>{formatNumber(filteredCustomers.length)} {tx("clientes", "customers")}</span>
+              )}
             </div>
           </div>
 
@@ -637,58 +826,126 @@ export function GeographicView() {
 
           <div className="region-table-shell">
             <table className="region-ranking-table">
-              <thead>
-                <tr>
-                  <th>{tx("Cliente", "Customer")}</th>
-                  <th>{tx("Dias sem compra", "Days since purchase")}</th>
-                  <th>{tx("Cidade", "City")}</th>
-                  <th>{tx("Pecas", "Pieces")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.length ? (
-                  tableRows.map((row) => (
-                    <tr key={`${row.customerId}-${row.state}-${row.city}`}>
-                      <td>
-                        <div className="region-table-meta">
-                          <strong>{row.displayName}</strong>
-                          <span>{`${row.customerCode || tx("Sem codigo", "No code")} - ${formatCustomerStatus(row.status, tx)}`}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="region-table-number align-left">
-                          <strong className="region-days-badge">
-                            <span className="region-days-emoji" aria-hidden="true">
-                              {customerStatusEmoji(row.status)}
-                            </span>
-                            <span>{formatDaysSincePurchase(row.daysSinceLastPurchase, tx)}</span>
-                          </strong>
-                          <span>{tx("Ultima compra", "Last purchase")}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="region-table-meta">
-                          <strong>{row.city}</strong>
-                          <span>{`${row.state} - ${formatCurrency(row.totalRevenue)}`}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="region-table-number">
-                          <strong>{formatNumber(row.totalPieces)}</strong>
-                          <span>{formatNumber(row.orderCount)} {tx("pedidos", "orders")}</span>
-                        </div>
-                      </td>
+              {detailView === "cities" ? (
+                <>
+                  <thead>
+                    <tr>
+                      <th>{tx("Cidade", "City")}</th>
+                      <th>{tx("Clientes", "Customers")}</th>
+                      <th>{tx("Receita", "Revenue")}</th>
+                      <th>{tx("Pecas", "Pieces")}</th>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="region-table-empty">
-                      {tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.")}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filteredCities.length ? (
+                      filteredCities.map((row) => (
+                        <tr 
+                          key={cityKey(row)} 
+                          style={{ cursor: "pointer" }}
+                          onClick={() => handleCitySelect(row)}
+                        >
+                          <td>
+                            <div className="region-table-meta">
+                              <strong>{row.city}</strong>
+                              <span>{row.state}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number align-left">
+                              <strong>{formatNumber(row.customerCount)}</strong>
+                              <div style={{ 
+                                display: 'flex', 
+                                height: '4px', 
+                                width: '100%', 
+                                maxWidth: '80px',
+                                background: 'var(--surface-sunken)',
+                                borderRadius: '2px', 
+                                overflow: 'hidden', 
+                                marginTop: '8px' 
+                              }}>
+                                <div style={{ width: `${row.activeRate}%`, background: 'var(--semantic-positive)' }} title={`Ativos: ${formatPercent(row.activeRate)}`} />
+                                <div style={{ width: `${row.attentionRate}%`, background: 'var(--semantic-attention)' }} title={`Atenção: ${formatPercent(row.attentionRate)}`} />
+                                <div style={{ width: `${row.inactiveRate}%`, background: 'var(--semantic-negative)' }} title={`Inativos: ${formatPercent(row.inactiveRate)}`} />
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number">
+                              <strong>{formatCurrency(row.totalRevenue)}</strong>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number">
+                              <strong>{formatNumber(row.totalPieces)}</strong>
+                              <span>{formatNumber(row.orderCount)} {tx("pedidos", "orders")}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="region-table-empty">
+                          {tx("Nenhuma cidade bateu com esse filtro.", "No city matched this filter.")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </>
+              ) : (
+                <>
+                  <thead>
+                    <tr>
+                      <th>{tx("Cliente", "Customer")}</th>
+                      <th>{tx("Dias sem compra", "Days since purchase")}</th>
+                      <th>{tx("Cidade", "City")}</th>
+                      <th>{tx("Pecas", "Pieces")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.length ? (
+                      tableRows.map((row) => (
+                        <tr key={`${row.customerId}-${row.state}-${row.city}`}>
+                          <td>
+                            <div className="region-table-meta">
+                              <strong>{row.displayName}</strong>
+                              <span>{`${row.customerCode || tx("Sem codigo", "No code")} - ${formatCustomerStatus(row.status, tx)}`}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number align-left">
+                              <strong className="region-days-badge">
+                                <span className="region-days-emoji" aria-hidden="true">
+                                  {customerStatusEmoji(row.status)}
+                                </span>
+                                <span>{formatDaysSincePurchase(row.daysSinceLastPurchase, tx)}</span>
+                              </strong>
+                              <span>{tx("Ultima compra", "Last purchase")}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-meta">
+                              <strong>{row.city}</strong>
+                              <span>{`${row.state} - ${formatCurrency(row.totalRevenue)}`}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number">
+                              <strong>{formatNumber(row.totalPieces)}</strong>
+                              <span>{formatNumber(row.orderCount)} {tx("pedidos", "orders")}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="region-table-empty">
+                          {tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </>
+              )}            </table>
           </div>
 
           <div className="region-filter-grid">
