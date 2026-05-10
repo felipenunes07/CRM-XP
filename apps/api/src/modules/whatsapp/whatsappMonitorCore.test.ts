@@ -4,6 +4,7 @@ import {
   detectWhatsappMessageRisk,
   extractEvolutionMessageContext,
   formatEvolutionSendTextTarget,
+  formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   getEvolutionMessageKey,
   isMonitorableWhatsappJid,
@@ -83,6 +84,26 @@ describe("whatsappMonitorCore", () => {
     expect(context.createdAt).toBe("2026-05-07T03:13:00.000Z");
   });
 
+  it("does not treat the customer JID as the sender for outbound direct messages", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "5511998765432@s.whatsapp.net",
+          fromMe: true,
+          id: "msg-out-1",
+        },
+        message: { conversation: "Mensagem respondida pelo celular" },
+      },
+      "comercial",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      fromMe: true,
+      senderJid: null,
+    });
+  });
+
   it("keeps group sender metadata when mapping stored activities to chat messages", () => {
     const message = mapWhatsappActivityToMessage({
       id: "activity-2",
@@ -125,6 +146,11 @@ describe("whatsappMonitorCore", () => {
     expect(formatEvolutionSendTextTarget("5511998765432@s.whatsapp.net")).toBe("5511998765432");
     expect(formatEvolutionSendTextTarget("120363371542185615@g.us")).toBe("120363371542185615@g.us");
     expect(formatEvolutionSendTextTarget("+55 (11) 99876-5432")).toBe("5511998765432");
+  });
+
+  it("formats a connected WhatsApp phone as an owner JID", () => {
+    expect(formatWhatsappPhoneJid("+55 (11) 91234-5678")).toBe("5511912345678@s.whatsapp.net");
+    expect(formatWhatsappPhoneJid(null)).toBeNull();
   });
 
   it("extracts Evolution message keys from monitor messages", () => {

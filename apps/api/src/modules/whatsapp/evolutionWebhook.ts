@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
+  formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
   type EvolutionMessageLike,
@@ -25,12 +26,19 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
   }
 
   const result = await pool.query(
-    "SELECT id, assigned_user_id, assigned_user_name FROM whatsapp_instances WHERE LOWER(instance_name) = LOWER($1) LIMIT 1",
+    `
+    SELECT id, display_label, phone_number, assigned_user_id, assigned_user_name
+    FROM whatsapp_instances
+    WHERE LOWER(instance_name) = LOWER($1)
+    LIMIT 1
+    `,
     [instanceName],
   );
 
   return result.rows[0] ? {
     id: String(result.rows[0].id),
+    displayLabel: result.rows[0].display_label ? String(result.rows[0].display_label) : null,
+    phoneNumber: result.rows[0].phone_number ? String(result.rows[0].phone_number) : null,
     assignedUserId: result.rows[0].assigned_user_id ? String(result.rows[0].assigned_user_id) : null,
     assignedUserName: result.rows[0].assigned_user_name ? String(result.rows[0].assigned_user_name) : null,
   } : null;
@@ -63,6 +71,9 @@ function buildActivityMetadata(input: {
   senderProfilePictureUrl: string | null;
   chatDisplayName: string | null;
   chatProfilePictureUrl: string | null;
+  instanceId?: string | null;
+  capturedFromWhatsapp?: boolean;
+  outboundSource?: string | null;
   autoCreated?: boolean;
 }) {
   return {
@@ -75,6 +86,9 @@ function buildActivityMetadata(input: {
     senderProfilePictureUrl: input.senderProfilePictureUrl,
     chatDisplayName: input.chatDisplayName,
     chatProfilePictureUrl: input.chatProfilePictureUrl,
+    ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+    ...(input.capturedFromWhatsapp ? { capturedFromWhatsapp: true } : {}),
+    ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
     ...(input.autoCreated ? { autoCreated: true } : {}),
   };
 }
@@ -82,6 +96,7 @@ function buildActivityMetadata(input: {
 async function insertDealActivity(input: {
   dealId: string;
   activityType: "WHATSAPP_SENT" | "WHATSAPP_RECEIVED";
+  actorUserId?: string | null;
   actorName: string;
   content: string;
   metadata: Record<string, unknown>;
@@ -89,18 +104,19 @@ async function insertDealActivity(input: {
 }) {
   await pool.query(
     `
-    INSERT INTO deal_activities (deal_id, activity_type, actor_name, content, metadata, created_at)
-    SELECT $1, $2, $3, $4, $5::jsonb, $6
+    INSERT INTO deal_activities (deal_id, activity_type, actor_user_id, actor_name, content, metadata, created_at)
+    SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
     WHERE NOT EXISTS (
       SELECT 1
       FROM deal_activities
-      WHERE metadata ->> 'messageId' = $7
+      WHERE metadata ->> 'messageId' = $8
         AND deal_id = $1
     )
     `,
     [
       input.dealId,
       input.activityType,
+      input.actorUserId ?? null,
       input.actorName,
       input.content,
       JSON.stringify(input.metadata),
@@ -163,32 +179,43 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
     const senderProfilePictureUrl = enriched.senderProfilePictureUrl ?? context.senderProfilePictureUrl;
     const instanceName = context.instanceName ?? "";
+    const instanceDetails = await getWhatsappInstanceDetails(instanceName);
+    const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
     const activityType = context.fromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
+    const actorUserId = context.fromMe ? instanceDetails?.assignedUserId ?? null : null;
     const actorName = context.fromMe
-      ? chatDisplayName ?? "WhatsApp corporativo"
+      ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
       : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
+    const activitySenderJid = context.fromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
+    const activitySenderName = context.fromMe
+      ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
+      : senderName;
     const metadata = buildActivityMetadata({
       remoteJid,
       messageId,
       instanceName,
       isGroup: context.isGroup,
-      senderJid: context.senderJid,
-      senderName,
+      senderJid: activitySenderJid,
+      senderName: activitySenderName,
       senderProfilePictureUrl,
       chatDisplayName,
       chatProfilePictureUrl,
+      instanceId: instanceDetails?.id ?? null,
+      capturedFromWhatsapp: context.fromMe,
+      outboundSource: context.fromMe ? "whatsapp_device" : null,
     });
 
     logger.info("evolution webhook incoming message", {
       remoteJid,
       isGroup: context.isGroup,
-      senderName,
-      senderJid: context.senderJid,
+      senderName: activitySenderName,
+      senderJid: activitySenderJid,
       chatDisplayName,
       hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
       textPreview: text.slice(0, 80),
       messageId,
       fromMe: context.fromMe,
+      actorUserId,
     });
 
     await pool.query(
@@ -209,8 +236,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         messageId,
         instanceName,
         JSON.stringify(msg),
-        context.senderJid,
-        senderName,
+        activitySenderJid,
+        activitySenderName,
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
@@ -237,6 +264,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       await insertDealActivity({
         dealId,
         activityType,
+        actorUserId,
         actorName,
         content: text,
         metadata,
@@ -245,7 +273,6 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
       // Backfill whatsapp_instance_id if missing on the deal
       if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
-        const instanceDetails = await getWhatsappInstanceDetails(instanceName);
         if (instanceDetails) {
           await pool.query(
             "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
@@ -267,9 +294,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           remoteJid,
           isGroup: context.isGroup,
           chatDisplayName,
-          senderName,
+          senderName: context.fromMe ? null : activitySenderName,
         });
-        const instanceDetails = await getWhatsappInstanceDetails(instanceName);
         const autoMetadata = { ...metadata, autoCreated: true };
 
         const newDeal = await pool.query(
@@ -295,6 +321,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         await insertDealActivity({
           dealId,
           activityType,
+          actorUserId,
           actorName,
           content: text,
           metadata: autoMetadata,

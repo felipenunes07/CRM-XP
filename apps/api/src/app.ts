@@ -104,6 +104,7 @@ import {
 import {
   getWhatsappMonitorConversation,
   getWhatsappMonitorMetrics,
+  getWhatsappAgentActivityReport,
   listWhatsappMonitorConversations,
   sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
@@ -1369,6 +1370,10 @@ export function createApp() {
     messageText: z.string().trim().min(1).max(4000),
   });
 
+  const whatsappActivityReportQuerySchema = z.object({
+    days: z.coerce.number().int().min(1).max(31).optional(),
+  });
+
   app.get("/api/pipeline/summary", async (request, response, next) => {
     try {
       const includeClosed = request.query.includeClosed === "true";
@@ -1436,6 +1441,15 @@ export function createApp() {
   app.get("/api/whatsapp-monitor/metrics", async (request, response, next) => {
     try {
       response.json(await getWhatsappMonitorMetrics(request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-monitor/activity-report", async (request, response, next) => {
+    try {
+      const query = whatsappActivityReportQuerySchema.parse(request.query);
+      response.json(await getWhatsappAgentActivityReport(request.user!, query.days));
     } catch (error) {
       next(error);
     }

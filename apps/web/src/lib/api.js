@@ -403,6 +403,13 @@ export const api = {
     whatsappMonitorMetrics(token) {
         return request("/api/whatsapp-monitor/metrics", {}, token);
     },
+    whatsappAgentActivityReport(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.days) {
+            search.set("days", String(query.days));
+        }
+        return request(`/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
     setWhatsappMonitorReadState(token, id, input) {
         return request(`/api/whatsapp-monitor/conversations/${id}/read-state`, {
             method: "PATCH",
