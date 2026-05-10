@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, Search, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, } from "lucide-react";
+import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 /* ── link structure for external tests ── */
@@ -98,7 +98,7 @@ export function AppShell() {
         .map((part) => part[0]?.toUpperCase())
         .join("");
     const isAdminLike = user?.role === "ADMIN" || user?.role === "MANAGER";
-    return (_jsxs("div", { className: "app-shell", children: [_jsxs("aside", { className: "cw-sidebar", children: [_jsxs("section", { className: "cw-header", children: [_jsxs("div", { className: "cw-brand-row", children: [_jsx("div", { className: "cw-brand-dot" }), _jsx("div", { className: "cw-brand-divider" }), _jsx("span", { className: "cw-brand-name", children: "XP Factory" })] }), _jsxs("div", { className: "cw-search-row", children: [_jsxs("div", { className: "cw-search-box", children: [_jsx(Search, { size: 14 }), _jsx("span", { children: "Pesquisar..." })] }), _jsxs("div", { className: "cw-lang-toggle", children: [_jsx("button", { type: "button", className: language === "pt-BR" ? "active" : "", onClick: () => setLanguage("pt-BR"), children: "PT" }), _jsx("button", { type: "button", className: language === "zh-CN" ? "active" : "", onClick: () => setLanguage("zh-CN"), children: "\u4E2D" })] })] })] }), _jsx("nav", { className: "cw-nav", children: _jsx("ul", { className: "cw-menu", children: sidebarMenu
+    return (_jsxs("div", { className: "app-shell", children: [_jsxs("aside", { className: "cw-sidebar", children: [_jsxs("section", { className: "cw-header", children: [_jsx("div", { className: "cw-premium-brand", children: _jsx("img", { src: "/xp-factory-logo.png", alt: "XP CRM", className: "cw-logo-image" }) }), _jsxs("div", { className: "sidebar-language-card", children: [_jsx("span", { className: "sidebar-language-label", children: "Idioma" }), _jsxs("div", { className: "language-switch", role: "radiogroup", "aria-label": tx("Selecionar idioma da interface", "Selecionar idioma da interface"), children: [_jsx("button", { type: "button", className: `language-switch-button ${language === "pt-BR" ? "active" : ""}`, onClick: () => setLanguage("pt-BR"), "aria-pressed": language === "pt-BR", "aria-label": tx("Exibir em portugues do Brasil", "Exibir em portugues do Brasil"), children: "PT" }), _jsx("button", { type: "button", className: `language-switch-button ${language === "zh-CN" ? "active" : ""}`, onClick: () => setLanguage("zh-CN"), "aria-pressed": language === "zh-CN", "aria-label": tx("Exibir em chines mandarim", "Exibir em chines mandarim"), children: "\u4E2D\u6587" })] })] })] }), _jsx("nav", { className: "cw-nav", children: _jsx("ul", { className: "cw-menu", children: sidebarMenu
                                 .filter((entry) => {
                                 if (isGroup(entry)) {
                                     return !entry.adminOnly || isAdminLike;
