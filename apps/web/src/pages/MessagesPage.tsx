@@ -100,6 +100,9 @@ function attachmentName(message: WhatsappMonitorMessage) {
 
 type GroupFilter = "all" | "groups" | "contacts";
 
+const CONVERSATION_REFRESH_MS = 3000;
+const CHAT_REFRESH_MS = 2000;
+
 function SearchBox({
   value,
   onChange,
@@ -266,6 +269,9 @@ export function MessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const chatBodyRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const lastScrolledConversationRef = useRef<string | null>(null);
   const profileRefreshRequestedRef = useRef(false);
 
   const conversationsQuery = useQuery({
@@ -276,6 +282,12 @@ export function MessagesPage() {
         search: conversationSearch || undefined,
       }),
     enabled: Boolean(token),
+    refetchInterval: CONVERSATION_REFRESH_MS,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    staleTime: 1000,
   });
 
   const agents = conversationsQuery.data?.agents ?? [];
@@ -328,6 +340,12 @@ export function MessagesPage() {
     queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
     queryFn: () => api.whatsappMonitorConversation(token!, selectedConversationId!),
     enabled: Boolean(token && selectedConversationId),
+    refetchInterval: selectedConversationId ? CHAT_REFRESH_MS : false,
+    refetchIntervalInBackground: false,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
+    staleTime: 1000,
   });
 
   const readStateMutation = useMutation({
@@ -385,8 +403,37 @@ export function MessagesPage() {
   const detail = conversationDetailQuery.data;
   const currentConversation = detail ?? selectedConversation;
   const messages = detail?.messages ?? [];
+  const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
+
+  useEffect(() => {
+    const element = chatBodyRef.current;
+    if (!element || !selectedConversationId) {
+      return;
+    }
+
+    const changedConversation = lastScrolledConversationRef.current !== selectedConversationId;
+    if (!changedConversation && !stickToBottomRef.current) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      element.scrollTo({
+        top: element.scrollHeight,
+        behavior: changedConversation ? "auto" : "smooth",
+      });
+      lastScrolledConversationRef.current = selectedConversationId;
+    });
+  }, [lastMessageId, messages.length, selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversation?.isUnread || readStateMutation.isPending) {
+      return;
+    }
+
+    readStateMutation.mutate({ id: selectedConversation.id, unread: false });
+  }, [readStateMutation.isPending, selectedConversation?.id, selectedConversation?.isUnread]);
 
   function openConversation(conversation: WhatsappMonitorConversation) {
     setSelectedConversationId(conversation.id);
@@ -568,7 +615,15 @@ export function MessagesPage() {
                 </div>
               </div>
 
-              <div className="wa-chat-body">
+              <div
+                className="wa-chat-body"
+                ref={chatBodyRef}
+                onScroll={(event) => {
+                  const element = event.currentTarget;
+                  const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+                  stickToBottomRef.current = distanceFromBottom < 160;
+                }}
+              >
                 {conversationDetailQuery.isLoading ? (
                   <div className="wa-empty-chat">Carregando conversa...</div>
                 ) : messages.length ? (
