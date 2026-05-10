@@ -1302,8 +1302,8 @@ export async function getWhatsappAgentActivityReport(
 
   return {
     period: {
-      startDate: reportDays[0].date,
-      endDate: reportDays[reportDays.length - 1].date,
+      startDate: reportDays[0]?.date ?? pivotDate,
+      endDate: reportDays[reportDays.length - 1]?.date ?? pivotDate,
       days,
       timezone: ACTIVITY_REPORT_TIMEZONE,
       nightStartHour: ACTIVITY_REPORT_NIGHT_START_HOUR,
