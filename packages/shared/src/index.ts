@@ -1620,6 +1620,27 @@ export interface WhatsappAgentActivityDay {
   weekday: string;
 }
 
+export type WhatsappAgentActivityConversationKind = "private" | "customer_group" | "internal_group" | "other_group";
+
+export interface WhatsappAgentActivityConversation {
+  remoteJid: string;
+  name: string;
+  kind: WhatsappAgentActivityConversationKind;
+  sentMessages: number;
+  receivedMessages: number;
+}
+
+export interface WhatsappAgentActivityDailyPoint {
+  date: string;
+  label: string;
+  attendedConversations: number;
+  attendedGroups: number;
+  attendedPrivates: number;
+  sentMessages: number;
+  receivedMessages: number;
+  averageFirstResponseSeconds: number | null;
+}
+
 export interface WhatsappAgentActivitySummary {
   agentId: string;
   agentName: string;
@@ -1627,17 +1648,17 @@ export interface WhatsappAgentActivitySummary {
   displayLabel: string | null;
   phoneNumber: string | null;
   profilePictureUrl: string | null;
+  attendedConversations: number;
+  attendedGroups: number;
+  attendedPrivates: number;
+  customerGroups: number;
+  internalGroups: number;
+  otherGroups: number;
   sentMessages: number;
   receivedMessages: number;
-  privateMessages: number;
-  groupMessages: number;
-  customerGroupMessages: number;
-  internalGroupMessages: number;
-  otherGroupMessages: number;
-  nightMessages: number;
-  crmMessages: number;
-  whatsappMessages: number;
   activeHours: number;
+  responseCount: number;
+  averageFirstResponseSeconds: number | null;
   lastMessageAt: string | null;
 }
 
@@ -1646,16 +1667,17 @@ export interface WhatsappAgentActivityCell {
   agentName: string;
   date: string;
   hour: number;
+  attendedConversations: number;
+  attendedGroups: number;
+  attendedPrivates: number;
+  customerGroups: number;
+  internalGroups: number;
+  otherGroups: number;
   sentMessages: number;
   receivedMessages: number;
-  privateMessages: number;
-  groupMessages: number;
-  customerGroupMessages: number;
-  internalGroupMessages: number;
-  otherGroupMessages: number;
-  nightMessages: number;
-  crmMessages: number;
-  whatsappMessages: number;
+  responseCount: number;
+  averageFirstResponseSeconds: number | null;
+  conversations: WhatsappAgentActivityConversation[];
 }
 
 export interface WhatsappAgentActivityReport {
@@ -1668,21 +1690,22 @@ export interface WhatsappAgentActivityReport {
     nightEndHour: number;
   };
   summary: {
+    attendedConversations: number;
+    attendedGroups: number;
+    attendedPrivates: number;
+    customerGroups: number;
+    internalGroups: number;
+    otherGroups: number;
     sentMessages: number;
     receivedMessages: number;
-    privateMessages: number;
-    groupMessages: number;
-    customerGroupMessages: number;
-    internalGroupMessages: number;
-    otherGroupMessages: number;
-    nightMessages: number;
-    crmMessages: number;
-    whatsappMessages: number;
     activeAgents: number;
+    responseCount: number;
+    averageFirstResponseSeconds: number | null;
   };
   days: WhatsappAgentActivityDay[];
   hours: number[];
   agents: WhatsappAgentActivitySummary[];
+  dailySeries: WhatsappAgentActivityDailyPoint[];
   hourlyCells: WhatsappAgentActivityCell[];
 }
 
