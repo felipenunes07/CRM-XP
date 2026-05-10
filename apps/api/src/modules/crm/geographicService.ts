@@ -62,6 +62,9 @@ function mapCityStat(row: Record<string, unknown>): GeographicCityStat {
     orderCount: toNumber(row.order_count),
     totalPieces: toNumber(row.total_pieces),
     totalRevenue: toNumber(row.total_revenue),
+    activeCustomerCount: toNumber(row.active_customer_count),
+    attentionCustomerCount: toNumber(row.attention_customer_count),
+    inactiveCustomerCount: toNumber(row.inactive_customer_count),
   };
 }
 
@@ -193,16 +196,20 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
       `
         ${LOCATION_SALES_CTE}
         SELECT
-          state,
-          city,
-          COUNT(DISTINCT customer_id)::int AS customer_count,
-          COUNT(DISTINCT order_id)::int AS order_count,
-          COALESCE(SUM(total_pieces), 0)::numeric(14,2) AS total_pieces,
-          COALESCE(SUM(total_revenue), 0)::numeric(14,2) AS total_revenue
+          location_sales.state AS state,
+          location_sales.city AS city,
+          COUNT(DISTINCT location_sales.customer_id)::int AS customer_count,
+          COUNT(DISTINCT location_sales.order_id)::int AS order_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ACTIVE' THEN location_sales.customer_id END)::int AS active_customer_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ATTENTION' THEN location_sales.customer_id END)::int AS attention_customer_count,
+          COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'INACTIVE' THEN location_sales.customer_id END)::int AS inactive_customer_count,
+          COALESCE(SUM(location_sales.total_pieces), 0)::numeric(14,2) AS total_pieces,
+          COALESCE(SUM(location_sales.total_revenue), 0)::numeric(14,2) AS total_revenue
         FROM location_sales
-        WHERE city IS NOT NULL
-        GROUP BY state, city
-        ORDER BY total_pieces DESC, total_revenue DESC, city ASC
+        LEFT JOIN customer_snapshot cs ON cs.customer_id = location_sales.customer_id
+        WHERE location_sales.city IS NOT NULL
+        GROUP BY location_sales.state, location_sales.city
+        ORDER BY total_pieces DESC, total_revenue DESC, location_sales.city ASC
       `,
     ),
     pool.query(
@@ -260,17 +267,21 @@ export async function getCitiesByState(state: string) {
     `
       ${LOCATION_SALES_CTE}
       SELECT
-        state,
-        city,
-        COUNT(DISTINCT customer_id)::int AS customer_count,
-        COUNT(DISTINCT order_id)::int AS order_count,
-        COALESCE(SUM(total_pieces), 0)::numeric(14,2) AS total_pieces,
-        COALESCE(SUM(total_revenue), 0)::numeric(14,2) AS total_revenue
+        location_sales.state AS state,
+        location_sales.city AS city,
+        COUNT(DISTINCT location_sales.customer_id)::int AS customer_count,
+        COUNT(DISTINCT location_sales.order_id)::int AS order_count,
+        COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ACTIVE' THEN location_sales.customer_id END)::int AS active_customer_count,
+        COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'ATTENTION' THEN location_sales.customer_id END)::int AS attention_customer_count,
+        COUNT(DISTINCT CASE WHEN COALESCE(cs.status, 'INACTIVE') = 'INACTIVE' THEN location_sales.customer_id END)::int AS inactive_customer_count,
+        COALESCE(SUM(location_sales.total_pieces), 0)::numeric(14,2) AS total_pieces,
+        COALESCE(SUM(location_sales.total_revenue), 0)::numeric(14,2) AS total_revenue
       FROM location_sales
-      WHERE state = $1
-        AND city IS NOT NULL
-      GROUP BY state, city
-      ORDER BY total_pieces DESC, total_revenue DESC, city ASC
+      LEFT JOIN customer_snapshot cs ON cs.customer_id = location_sales.customer_id
+      WHERE location_sales.state = $1
+        AND location_sales.city IS NOT NULL
+      GROUP BY location_sales.state, location_sales.city
+      ORDER BY total_pieces DESC, total_revenue DESC, location_sales.city ASC
     `,
     [normalizedState],
   );

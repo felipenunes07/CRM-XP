@@ -381,7 +381,16 @@ export function WhatsappActivityPage() {
     };
   }, [report]);
 
-  const cards = [
+  const cards: Array<{
+    key: string;
+    label: string;
+    value: number | null;
+    previous: number | undefined;
+    detail: string;
+    icon: any;
+    isTime?: boolean;
+    inverse?: boolean;
+  }> = [
     {
       key: "conversations",
       label: "Conversas atendidas",
@@ -628,8 +637,8 @@ export function WhatsappActivityPage() {
                   <div className="activity-detail-columns">
                     <div>
                       <h3>Agentes ativos</h3>
-                      {selectedCellRows.filter((cell) => cell.sentMessages > 0).length ? (
-                        selectedCellRows
+                      {(selectedCellRows ?? []).filter((cell) => cell.sentMessages > 0).length ? (
+                        (selectedCellRows ?? [])
                           .filter((cell) => cell.sentMessages > 0)
                           .sort((left, right) => right.sentMessages - left.sentMessages)
                           .map((cell) => (
