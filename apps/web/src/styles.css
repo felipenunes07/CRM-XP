@@ -12587,3 +12587,97 @@ body:has(.whatsapp-monitor-page) .main-content {
     align-items: flex-start;
   }
 }
+
+/* Whatsapp Activity Comparisons */
+.activity-metric-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.activity-growth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.activity-growth-badge.positive {
+  background: rgba(47, 157, 103, 0.1);
+  color: #2f9d67;
+}
+
+.activity-growth-badge.negative {
+  background: rgba(217, 83, 79, 0.1);
+  color: #d9534f;
+}
+
+.activity-chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+
+.activity-growth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.activity-growth-pill.positive {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.activity-growth-pill.negative {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.activity-metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+/* Heatmap Toggles */
+.activity-heatmap-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.activity-heatmap-toggles {
+  display: flex;
+  align-items: center;
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.2rem;
+}
+
+.activity-heatmap-toggles button {
+  border: 0;
+  background: transparent;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.activity-heatmap-toggles button.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}

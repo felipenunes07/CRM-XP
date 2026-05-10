@@ -1072,8 +1072,12 @@ export async function getWhatsappAgentActivityReport(
 ): Promise<WhatsappAgentActivityReport> {
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
   const reportDays = buildActivityReportDays(days);
-  const startDate = reportDays[0]?.date ?? localDateKey(new Date());
-  const endDate = reportDays[reportDays.length - 1]?.date ?? localDateKey(new Date());
+  const totalReportDays = buildActivityReportDays(days * 2);
+  
+  const startDate = totalReportDays[0]?.date ?? localDateKey(new Date());
+  const endDate = totalReportDays[totalReportDays.length - 1]?.date ?? localDateKey(new Date());
+  const pivotDate = reportDays[0]?.date ?? startDate;
+
   const params: unknown[] = [startDate, endDate];
   const where: string[] = [
     "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
@@ -1139,7 +1143,7 @@ export async function getWhatsappAgentActivityReport(
     params,
   );
 
-  const validDateKeys = new Set(reportDays.map((day) => day.date));
+  const currentPeriodDateKeys = new Set(reportDays.map((day) => day.date));
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
   const agents = new Map<
     string,
@@ -1167,12 +1171,17 @@ export async function getWhatsappAgentActivityReport(
   >();
   const dailyAccumulators = new Map<string, ActivityReportAccumulator>();
   const summaryAccumulator = createActivityReportAccumulator();
+  const previousSummaryAccumulator = createActivityReportAccumulator();
   const pendingInboundByAgentConversation = new Map<string, Date>();
+  
+  // To track active agents in each period correctly
+  const currentPeriodAgents = new Set<string>();
+  const previousPeriodAgents = new Set<string>();
 
   for (const row of result.rows) {
     const localDate = optionalString(row.local_date);
     const localHour = Number(row.local_hour);
-    if (!localDate || !validDateKeys.has(localDate) || !Number.isInteger(localHour)) {
+    if (!localDate || !Number.isInteger(localHour)) {
       continue;
     }
 
@@ -1191,43 +1200,8 @@ export async function getWhatsappAgentActivityReport(
     const agentId = String(row.agent_id ?? "sem-agente");
     const agentName = String(row.agent_name ?? "Sem agente");
     const createdAt = new Date(String(row.created_at));
-    const current =
-      agents.get(agentId) ??
-      {
-        agentId,
-        agentName,
-        instanceName: optionalString(row.instance_name),
-        displayLabel: optionalString(row.display_label),
-        phoneNumber: optionalString(row.phone_number),
-        profilePictureUrl: optionalString(row.profile_picture_url),
-        accumulator: createActivityReportAccumulator(),
-        activeHours: new Set<string>(),
-        lastMessageAt: null,
-      };
-
-    current.agentName = agentName;
-    current.instanceName ??= optionalString(row.instance_name);
-    current.displayLabel ??= optionalString(row.display_label);
-    current.phoneNumber ??= optionalString(row.phone_number);
-    current.profilePictureUrl ??= optionalString(row.profile_picture_url);
-    current.lastMessageAt = isoDate(row.created_at);
-    agents.set(agentId, current);
-
-    const dailyAccumulator = dailyAccumulators.get(localDate) ?? createActivityReportAccumulator();
-    dailyAccumulators.set(localDate, dailyAccumulator);
-
-    const cellKey = `${agentId}:${localDate}:${localHour}`;
-    const cell =
-      cells.get(cellKey) ??
-      {
-        agentId,
-        agentName,
-        date: localDate,
-        hour: localHour,
-        accumulator: createActivityReportAccumulator(),
-      };
-    cell.agentName = agentName;
-    cells.set(cellKey, cell);
+    
+    const isCurrentPeriod = localDate >= pivotDate;
 
     const pendingKey = `${agentId}:${remoteJid}`;
     let responseSeconds: number | null = null;
@@ -1237,20 +1211,78 @@ export async function getWhatsappAgentActivityReport(
         responseSeconds = Math.max(0, (createdAt.getTime() - pendingInboundAt.getTime()) / 1000);
         pendingInboundByAgentConversation.delete(pendingKey);
       }
-      current.activeHours.add(`${localDate}:${localHour}`);
+      if (isCurrentPeriod) {
+        currentPeriodAgents.add(agentId);
+      } else {
+        previousPeriodAgents.add(agentId);
+      }
     } else {
       pendingInboundByAgentConversation.set(pendingKey, createdAt);
     }
 
-    for (const accumulator of [summaryAccumulator, dailyAccumulator, current.accumulator, cell.accumulator]) {
+    if (isCurrentPeriod) {
+      const current =
+        agents.get(agentId) ??
+        {
+          agentId,
+          agentName,
+          instanceName: optionalString(row.instance_name),
+          displayLabel: optionalString(row.display_label),
+          phoneNumber: optionalString(row.phone_number),
+          profilePictureUrl: optionalString(row.profile_picture_url),
+          accumulator: createActivityReportAccumulator(),
+          activeHours: new Set<string>(),
+          lastMessageAt: null,
+        };
+
+      current.agentName = agentName;
+      current.instanceName ??= optionalString(row.instance_name);
+      current.displayLabel ??= optionalString(row.display_label);
+      current.phoneNumber ??= optionalString(row.phone_number);
+      current.profilePictureUrl ??= optionalString(row.profile_picture_url);
+      current.lastMessageAt = isoDate(row.created_at);
+      agents.set(agentId, current);
+
+      const dailyAccumulator = dailyAccumulators.get(localDate) ?? createActivityReportAccumulator();
+      dailyAccumulators.set(localDate, dailyAccumulator);
+
+      const cellKey = `${agentId}:${localDate}:${localHour}`;
+      const cell =
+        cells.get(cellKey) ??
+        {
+          agentId,
+          agentName,
+          date: localDate,
+          hour: localHour,
+          accumulator: createActivityReportAccumulator(),
+        };
+      cell.agentName = agentName;
+      cells.set(cellKey, cell);
+
+      if (isOutbound) {
+        current.activeHours.add(`${localDate}:${localHour}`);
+      }
+
+      for (const accumulator of [summaryAccumulator, dailyAccumulator, current.accumulator, cell.accumulator]) {
+        registerActivityReportEvent({
+          accumulator,
+          remoteJid,
+          chatName,
+          kind: groupClass,
+          isOutbound,
+        });
+        addResponseSeconds(accumulator, responseSeconds);
+      }
+    } else {
+      // Previous period
       registerActivityReportEvent({
-        accumulator,
+        accumulator: previousSummaryAccumulator,
         remoteJid,
         chatName,
         kind: groupClass,
         isOutbound,
       });
-      addResponseSeconds(accumulator, responseSeconds);
+      addResponseSeconds(previousSummaryAccumulator, responseSeconds);
     }
   }
 
@@ -1270,8 +1302,8 @@ export async function getWhatsappAgentActivityReport(
 
   return {
     period: {
-      startDate,
-      endDate,
+      startDate: reportDays[0].date,
+      endDate: reportDays[reportDays.length - 1].date,
       days,
       timezone: ACTIVITY_REPORT_TIMEZONE,
       nightStartHour: ACTIVITY_REPORT_NIGHT_START_HOUR,
@@ -1279,7 +1311,11 @@ export async function getWhatsappAgentActivityReport(
     },
     summary: {
       ...publicActivityCounters(summaryAccumulator),
-      activeAgents: agentRows.filter((agent) => agent.sentMessages > 0).length,
+      activeAgents: currentPeriodAgents.size,
+    },
+    previousSummary: {
+      ...publicActivityCounters(previousSummaryAccumulator),
+      activeAgents: previousPeriodAgents.size,
     },
     days: reportDays,
     hours,
