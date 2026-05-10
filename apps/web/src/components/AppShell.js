@@ -1,6 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, Boxes, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, } from "lucide-react";
+import { BarChart3, Boxes, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 export const appShellLinks = [
@@ -17,6 +17,7 @@ export const appShellLinks = [
     { to: "/reativacao", icon: Trophy, labelPt: "Reativacao" },
     { to: "/ideias-votacao", icon: Lightbulb, labelPt: "Ideias/Votacao" },
     { to: "/mensagens", icon: MessageSquareText, labelPt: "Mensagens" },
+    { to: "/atividade-whatsapp", icon: Activity, labelPt: "Atividade WhatsApp" },
     { to: "/disparador", icon: RadioTower, labelPt: "Disparador" },
     { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
     { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },

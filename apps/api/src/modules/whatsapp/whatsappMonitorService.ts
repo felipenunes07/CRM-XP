@@ -1,6 +1,7 @@
 import type {
   DealActivity,
   DealPriority,
+  WhatsappAgentActivityReport,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
   WhatsappMonitorConversationDetail,
@@ -32,6 +33,10 @@ interface ConversationFilters {
   instanceId?: string;
   search?: string;
 }
+
+const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
+const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
+const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
 
 function conversationMatchesInstanceSql(instanceAlias: string) {
   return `
@@ -70,6 +75,15 @@ function isoDate(value: unknown, fallback = new Date()) {
 
 function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function normalizeLabel(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -184,6 +198,67 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
     },
     createdAt: isoDate(row.created_at),
   };
+}
+
+function localDateParts(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ACTIVITY_REPORT_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === "year")?.value ?? "1970";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return { year, month, day };
+}
+
+function localDateKey(value: Date) {
+  const { year, month, day } = localDateParts(value);
+  return `${year}-${month}-${day}`;
+}
+
+function buildActivityReportDays(days: number): WhatsappAgentActivityReport["days"] {
+  const today = new Date();
+  const formatter = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: ACTIVITY_REPORT_TIMEZONE,
+    weekday: "long",
+  });
+
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date(today);
+    date.setUTCDate(today.getUTCDate() - (days - 1 - index));
+    const key = localDateKey(date);
+    const [, month = "01", day = "01"] = key.match(/^\d{4}-(\d{2})-(\d{2})$/) ?? [];
+
+    return {
+      date: key,
+      label: `${day}/${month}`,
+      weekday: formatter.format(date),
+    };
+  });
+}
+
+function isActivityReportNightHour(hour: number) {
+  return hour >= ACTIVITY_REPORT_NIGHT_START_HOUR || hour < ACTIVITY_REPORT_NIGHT_END_HOUR;
+}
+
+function classifyWhatsappGroup(input: { isGroup: boolean; name: string | null }) {
+  if (!input.isGroup) {
+    return "private" as const;
+  }
+
+  const normalized = normalizeLabel(input.name);
+
+  if (/^(cliente|clientes|cl)(\b|[\s\-_:.\d#])/.test(normalized)) {
+    return "customer_group" as const;
+  }
+
+  if (/(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor|expor|xp factory|crm)/.test(normalized)) {
+    return "internal_group" as const;
+  }
+
+  return "other_group" as const;
 }
 
 function conversationProfileJoinSql() {
@@ -863,6 +938,271 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
       medianFirstResponseMinutes: median(responseMinutes),
     },
     agilityLeaders,
+  };
+}
+
+type ActivityReportCounters = Omit<
+  WhatsappAgentActivityReport["agents"][number],
+  "agentId" | "agentName" | "instanceName" | "displayLabel" | "phoneNumber" | "profilePictureUrl" | "activeHours" | "lastMessageAt"
+>;
+
+function createActivityReportCounters(): ActivityReportCounters {
+  return {
+    sentMessages: 0,
+    receivedMessages: 0,
+    privateMessages: 0,
+    groupMessages: 0,
+    customerGroupMessages: 0,
+    internalGroupMessages: 0,
+    otherGroupMessages: 0,
+    nightMessages: 0,
+    crmMessages: 0,
+    whatsappMessages: 0,
+  };
+}
+
+function addActivityReportCounters(target: ActivityReportCounters, source: ActivityReportCounters) {
+  target.sentMessages += source.sentMessages;
+  target.receivedMessages += source.receivedMessages;
+  target.privateMessages += source.privateMessages;
+  target.groupMessages += source.groupMessages;
+  target.customerGroupMessages += source.customerGroupMessages;
+  target.internalGroupMessages += source.internalGroupMessages;
+  target.otherGroupMessages += source.otherGroupMessages;
+  target.nightMessages += source.nightMessages;
+  target.crmMessages += source.crmMessages;
+  target.whatsappMessages += source.whatsappMessages;
+}
+
+export async function getWhatsappAgentActivityReport(
+  user: JwtUser,
+  daysInput = 7,
+): Promise<WhatsappAgentActivityReport> {
+  const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
+  const reportDays = buildActivityReportDays(days);
+  const startDate = reportDays[0]?.date ?? localDateKey(new Date());
+  const endDate = reportDays[reportDays.length - 1]?.date ?? localDateKey(new Date());
+  const params: unknown[] = [startDate, endDate];
+  const where: string[] = [
+    "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
+    `da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
+    `da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
+    monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
+  ];
+
+  if (user.role === "SELLER") {
+    params.push(user.id, user.name);
+    const userIdParamIndex = params.length - 1;
+    const userNameParamIndex = params.length;
+    where.push(`
+      (
+        da.actor_user_id = $${userIdParamIndex}
+        OR d.assigned_to = $${userIdParamIndex}
+        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
+        OR wi.assigned_user_id = $${userIdParamIndex}
+        OR LOWER(COALESCE(wi.assigned_user_name, '')) = LOWER($${userNameParamIndex})
+      )
+    `);
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      COALESCE(wi.id::text, da.actor_user_id::text, NULLIF(da.metadata ->> 'instance', ''), 'sem-agente') AS agent_id,
+      COALESCE(wi.assigned_user_name, wi.display_label, da.actor_name, d.assigned_to_name, 'Sem agente') AS agent_name,
+      wi.instance_name,
+      wi.display_label,
+      wi.phone_number,
+      wi.profile_picture_url,
+      da.activity_type,
+      da.actor_user_id::text AS actor_user_id,
+      da.actor_name,
+      da.content,
+      da.metadata,
+      da.created_at,
+      COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
+      COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
+      TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
+      EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
+    FROM deal_activities da
+    JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN LATERAL (
+      SELECT wi_match.*
+      FROM whatsapp_instances wi_match
+      WHERE wi_match.id = d.whatsapp_instance_id
+        OR wi_match.id::text = da.metadata ->> 'instanceId'
+        OR LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
+      ORDER BY
+        CASE
+          WHEN wi_match.id = d.whatsapp_instance_id THEN 0
+          WHEN wi_match.id::text = da.metadata ->> 'instanceId' THEN 1
+          WHEN LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', '')) THEN 2
+          ELSE 3
+        END
+      LIMIT 1
+    ) wi ON true
+    WHERE ${where.join("\n      AND ")}
+    ORDER BY da.created_at ASC
+    `,
+    params,
+  );
+
+  const validDateKeys = new Set(reportDays.map((day) => day.date));
+  const hours = Array.from({ length: 24 }, (_, hour) => hour);
+  const agents = new Map<
+    string,
+    {
+      agentId: string;
+      agentName: string;
+      instanceName: string | null;
+      displayLabel: string | null;
+      phoneNumber: string | null;
+      profilePictureUrl: string | null;
+      counters: ActivityReportCounters;
+      activeHours: Set<string>;
+      lastMessageAt: string | null;
+    }
+  >();
+  const cells = new Map<
+    string,
+    {
+      agentId: string;
+      agentName: string;
+      date: string;
+      hour: number;
+      counters: ActivityReportCounters;
+    }
+  >();
+
+  for (const row of result.rows) {
+    const localDate = optionalString(row.local_date);
+    const localHour = Number(row.local_hour);
+    if (!localDate || !validDateKeys.has(localDate) || !Number.isInteger(localHour)) {
+      continue;
+    }
+
+    const metadata = asRecord(row.metadata) ?? {};
+    const remoteJid = optionalString(row.remote_jid);
+    const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+    const groupClass = classifyWhatsappGroup({
+      isGroup,
+      name: optionalString(row.chat_name),
+    });
+    const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
+    const agentId = String(row.agent_id ?? "sem-agente");
+    const agentName = String(row.agent_name ?? "Sem agente");
+    const current =
+      agents.get(agentId) ??
+      {
+        agentId,
+        agentName,
+        instanceName: optionalString(row.instance_name),
+        displayLabel: optionalString(row.display_label),
+        phoneNumber: optionalString(row.phone_number),
+        profilePictureUrl: optionalString(row.profile_picture_url),
+        counters: createActivityReportCounters(),
+        activeHours: new Set<string>(),
+        lastMessageAt: null,
+      };
+
+    current.agentName = agentName;
+    current.instanceName ??= optionalString(row.instance_name);
+    current.displayLabel ??= optionalString(row.display_label);
+    current.phoneNumber ??= optionalString(row.phone_number);
+    current.profilePictureUrl ??= optionalString(row.profile_picture_url);
+    current.lastMessageAt = isoDate(row.created_at);
+    agents.set(agentId, current);
+
+    const cellKey = `${agentId}:${localDate}:${localHour}`;
+    const cell =
+      cells.get(cellKey) ??
+      {
+        agentId,
+        agentName,
+        date: localDate,
+        hour: localHour,
+        counters: createActivityReportCounters(),
+      };
+    cell.agentName = agentName;
+    cells.set(cellKey, cell);
+
+    const increments = createActivityReportCounters();
+    if (isOutbound) {
+      increments.sentMessages = 1;
+      if (groupClass === "private") {
+        increments.privateMessages = 1;
+      } else {
+        increments.groupMessages = 1;
+        if (groupClass === "customer_group") {
+          increments.customerGroupMessages = 1;
+        } else if (groupClass === "internal_group") {
+          increments.internalGroupMessages = 1;
+        } else {
+          increments.otherGroupMessages = 1;
+        }
+      }
+
+      if (isActivityReportNightHour(localHour)) {
+        increments.nightMessages = 1;
+      }
+
+      if (metadata.sentFromMonitor === true) {
+        increments.crmMessages = 1;
+      } else {
+        increments.whatsappMessages = 1;
+      }
+
+      current.activeHours.add(`${localDate}:${localHour}`);
+    } else {
+      increments.receivedMessages = 1;
+    }
+
+    addActivityReportCounters(current.counters, increments);
+    addActivityReportCounters(cell.counters, increments);
+  }
+
+  const agentRows = Array.from(agents.values())
+    .map((agent) => ({
+      agentId: agent.agentId,
+      agentName: agent.agentName,
+      instanceName: agent.instanceName,
+      displayLabel: agent.displayLabel,
+      phoneNumber: agent.phoneNumber,
+      profilePictureUrl: agent.profilePictureUrl,
+      ...agent.counters,
+      activeHours: agent.activeHours.size,
+      lastMessageAt: agent.lastMessageAt,
+    }))
+    .sort((left, right) => right.sentMessages - left.sentMessages || left.agentName.localeCompare(right.agentName));
+
+  const summaryCounters = createActivityReportCounters();
+  for (const agent of agentRows) {
+    addActivityReportCounters(summaryCounters, agent);
+  }
+
+  return {
+    period: {
+      startDate,
+      endDate,
+      days,
+      timezone: ACTIVITY_REPORT_TIMEZONE,
+      nightStartHour: ACTIVITY_REPORT_NIGHT_START_HOUR,
+      nightEndHour: ACTIVITY_REPORT_NIGHT_END_HOUR,
+    },
+    summary: {
+      ...summaryCounters,
+      activeAgents: agentRows.filter((agent) => agent.sentMessages > 0).length,
+    },
+    days: reportDays,
+    hours,
+    agents: agentRows,
+    hourlyCells: Array.from(cells.values()).map((cell) => ({
+      agentId: cell.agentId,
+      agentName: cell.agentName,
+      date: cell.date,
+      hour: cell.hour,
+      ...cell.counters,
+    })),
   };
 }
 

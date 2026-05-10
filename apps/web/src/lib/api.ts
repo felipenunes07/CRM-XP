@@ -49,6 +49,7 @@ import type {
   WhatsappGroupsResponse,
   WhatsappImportSummary,
   WhatsappInstanceItem,
+  WhatsappAgentActivityReport,
   WhatsappMappingSummary,
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
@@ -532,6 +533,18 @@ export const api = {
 
   whatsappMonitorMetrics(token: string) {
     return request<WhatsappMonitorMetrics>("/api/whatsapp-monitor/metrics", {}, token);
+  },
+
+  whatsappAgentActivityReport(token: string, query: { days?: number } = {}) {
+    const search = new URLSearchParams();
+    if (query.days) {
+      search.set("days", String(query.days));
+    }
+    return request<WhatsappAgentActivityReport>(
+      `/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
   },
 
   setWhatsappMonitorReadState(token: string, id: string, input: { unread: boolean }) {
