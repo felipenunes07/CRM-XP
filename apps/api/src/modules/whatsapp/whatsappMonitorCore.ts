@@ -181,6 +181,15 @@ export function computeWhatsappUnreadState(inboundCountAfterRead: number, marked
   };
 }
 
+export function isMonitorableWhatsappJid(jid: string | null | undefined) {
+  if (!jid) {
+    return false;
+  }
+
+  const normalized = jid.trim().toLocaleLowerCase("pt-BR");
+  return normalized !== "status@broadcast" && !normalized.endsWith("@broadcast");
+}
+
 export function formatWhatsappJidPhone(jid: string | null | undefined) {
   if (!jid) {
     return "Sem telefone";

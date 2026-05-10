@@ -1,7 +1,11 @@
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
-import { isWhatsappFallbackDisplayName, type EvolutionMessageContext } from "./whatsappMonitorCore.js";
+import {
+  formatEvolutionSendTextTarget,
+  isWhatsappFallbackDisplayName,
+  type EvolutionMessageContext,
+} from "./whatsappMonitorCore.js";
 
 interface EvolutionInstanceConfig {
   instanceName: string;
@@ -174,7 +178,7 @@ async function fetchEvolutionProfilePicture(config: EvolutionInstanceConfig, jid
   const safeInstance = encodeURIComponent(config.instanceName);
   const payload = await fetchEvolutionJson(config, `/chat/fetchProfilePictureUrl/${safeInstance}`, {
     method: "POST",
-    body: JSON.stringify({ number: jid }),
+    body: JSON.stringify({ number: formatEvolutionSendTextTarget(jid) }),
   });
 
   return payload ? pickString(payload, ["profilePictureUrl", "profilePicUrl", "pictureUrl", "url"]) : null;
