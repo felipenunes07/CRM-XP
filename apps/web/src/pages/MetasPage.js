@@ -45,6 +45,16 @@ export function MetasPage() {
             alert("Falha ao salvar meta. Verifique se os dados estão corretos: " + String(err));
         }
     });
+    const deleteMutation = useMutation({
+        mutationFn: (target) => api.deleteMonthlyTarget(token, target.year, target.month, target.attendant),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
+            queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+        },
+        onError: (err) => {
+            alert("Falha ao excluir meta: " + String(err));
+        }
+    });
     const monthNames = [
         "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
         "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -110,17 +120,15 @@ export function MetasPage() {
         const actuals = getActualsFor(target.year, target.month, target.attendant);
         const progress = target.targetAmount > 0 ? Math.round((actuals.amount / target.targetAmount) * 100) : 0;
         const revenueProgress = target.targetRevenue > 0 ? Math.round((actuals.revenue / target.targetRevenue) * 100) : 0;
-        return (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' }, children: [_jsx(Calendar, { size: 14, className: "muted" }), _jsx("strong", { children: monthNames[target.month - 1] })] }) }), _jsx("td", { children: _jsx("span", { className: `badge ${target.attendant === 'TOTAL' ? 'primary' : 'neutral'}`, children: target.attendant === 'TOTAL' ? 'EMPRESA' : target.attendant }) }), _jsx("td", { children: formatNumber(target.targetAmount) }), _jsx("td", { style: { color: progress >= 100 ? 'var(--success)' : 'inherit', fontWeight: progress >= 100 ? 600 : 400 }, children: formatNumber(actuals.amount) }), _jsx("td", { children: _jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' }, children: [_jsx("div", { className: "progress-bar-small", style: { width: '60px', height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '3px', overflow: 'hidden' }, children: _jsx("div", { style: { width: `${Math.min(100, progress)}%`, height: '100%', background: progress >= 100 ? '#10b981' : '#3b82f6' } }) }), _jsxs("small", { children: [progress, "%"] })] }) }), _jsx("td", { style: { color: revenueProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: revenueProgress >= 100 ? 600 : 400 }, children: formatCurrency(actuals.revenue) }), _jsx("td", { children: _jsx("button", { className: "ghost-btn icon-only danger", title: "Remover Meta", onClick: () => {
+        return (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' }, children: [_jsx(Calendar, { size: 14, className: "muted" }), _jsx("strong", { children: monthNames[target.month - 1] })] }) }), _jsx("td", { children: _jsx("span", { className: `badge ${target.attendant === 'TOTAL' ? 'primary' : 'neutral'}`, children: target.attendant === 'TOTAL' ? 'EMPRESA' : target.attendant }) }), _jsx("td", { children: formatNumber(target.targetAmount) }), _jsx("td", { style: { color: progress >= 100 ? 'var(--success)' : 'inherit', fontWeight: progress >= 100 ? 600 : 400 }, children: formatNumber(actuals.amount) }), _jsx("td", { children: _jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.5rem' }, children: [_jsx("div", { className: "progress-bar-small", style: { width: '60px', height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '3px', overflow: 'hidden' }, children: _jsx("div", { style: { width: `${Math.min(100, progress)}%`, height: '100%', background: progress >= 100 ? '#10b981' : '#3b82f6' } }) }), _jsxs("small", { children: [progress, "%"] })] }) }), _jsx("td", { style: { color: revenueProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: revenueProgress >= 100 ? 600 : 400 }, children: formatCurrency(actuals.revenue) }), _jsx("td", { children: _jsx("button", { className: "premium-button-danger-icon", title: "Remover Meta", onClick: () => {
                             if (window.confirm("Remover esta meta?")) {
-                                saveMutation.mutate({
+                                deleteMutation.mutate({
                                     year: target.year,
                                     month: target.month,
-                                    attendant: target.attendant,
-                                    targetAmount: 0,
-                                    targetRevenue: 0
+                                    attendant: target.attendant
                                 });
                             }
-                        }, children: _jsx(Trash2, { size: 16 }) }) })] }, `${target.year}-${target.month}-${target.attendant}`));
+                        }, children: _jsx(Trash2, { size: 18 }) }) })] }, `${target.year}-${target.month}-${target.attendant}`));
     };
     const tableHeader = (_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "M\u00EAs / Ano" }), _jsx("th", { children: "Vendedora" }), _jsx("th", { children: "Meta Telas (un)" }), _jsx("th", { children: "Realizado Telas" }), _jsx("th", { children: "Progresso" }), _jsx("th", { children: "Faturamento (Realizado)" }), _jsx("th", { children: "A\u00E7\u00F5es" })] }) }));
     return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: "Gest\u00E3o Comercial" }), _jsx("h2", { className: "premium-title", children: "Planejamento de Metas" }), _jsx("p", { className: "premium-subtitle", children: "Defina objetivos mensais para o time e acompanhe o desempenho hist\u00F3rico com detalhamento por vendedora." }), _jsxs("div", { className: "premium-actions", style: { display: 'flex', gap: '1rem', flexWrap: 'wrap' }, children: [_jsxs("button", { className: "premium-button primary", onClick: () => setIsAdding(!isAdding), children: [_jsx(Plus, { size: 18 }), isAdding ? "Cancelar" : "Nova Meta"] }), _jsxs("div", { className: "year-selector", style: {

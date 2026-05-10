@@ -84,22 +84,7 @@ export async function configureInstanceWebhook(instance: {
       url: webhookUrl,
       byEvents: false,
       base64: false,
-      events: [
-        "MESSAGES_UPSERT",
-        "MESSAGES_UPDATE",
-        "MESSAGES_DELETE",
-        "SEND_MESSAGE",
-        "CONTACTS_UPSERT",
-        "CONTACTS_UPDATE",
-        "PRESENCE_UPDATE",
-        "CHATS_UPSERT",
-        "CHATS_UPDATE",
-        "CHATS_DELETE",
-        "GROUPS_UPSERT",
-        "GROUP_UPDATE",
-        "GROUP_PARTICIPANTS_UPDATE",
-        "CONNECTION_UPDATE",
-      ],
+      events: ["MESSAGES_UPSERT"],
     },
   });
 }
@@ -114,7 +99,7 @@ export async function configureInstanceSettings(instance: {
     groupsIgnore: false,
     alwaysOnline: true,
     readMessages: true,
-    readStatus: true,
+    readStatus: false,
     syncFullHistory: false,
   });
 }

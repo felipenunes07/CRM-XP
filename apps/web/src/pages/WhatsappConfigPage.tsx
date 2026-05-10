@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { api } from "../lib/api";
+import { API_BASE_URL, api } from "../lib/api";
 
 type UserTab = "monitorados" | "gestores" | "grupos";
 type StatusFilter = "all" | "ACTIVE" | "DISCONNECTED" | "PAUSED";
@@ -190,7 +190,8 @@ export function WhatsappConfigPage() {
     return instances.filter((instance) => instance.status === statusFilter);
   }, [activeTab, instances, statusFilter]);
 
-  const webhookUrl = `${window.location.origin}/api/webhooks/evolution`;
+  const webhookBaseUrl = (API_BASE_URL || window.location.origin).replace(/\/$/, "");
+  const webhookUrl = `${webhookBaseUrl}/api/webhooks/evolution`;
 
   function copyWebhook() {
     navigator.clipboard.writeText(webhookUrl).catch(() => undefined);

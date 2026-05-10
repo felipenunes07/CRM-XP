@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Copy, Grid3X3, List, MoreVertical, Plus, ShieldCheck, Trash2, Upload, UserRound, X, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { api } from "../lib/api";
+import { API_BASE_URL, api } from "../lib/api";
 function statusLabel(status) {
     if (status === "ACTIVE") {
         return "Conectado";
@@ -101,7 +101,8 @@ export function WhatsappConfigPage() {
         }
         return instances.filter((instance) => instance.status === statusFilter);
     }, [activeTab, instances, statusFilter]);
-    const webhookUrl = `${window.location.origin}/api/webhooks/evolution`;
+    const webhookBaseUrl = (API_BASE_URL || window.location.origin).replace(/\/$/, "");
+    const webhookUrl = `${webhookBaseUrl}/api/webhooks/evolution`;
     function copyWebhook() {
         navigator.clipboard.writeText(webhookUrl).catch(() => undefined);
         setCopiedWebhook(true);
@@ -146,10 +147,8 @@ function AddInstanceModal({ onClose }) {
         if (defaultsQuery.data) {
             if (!evolutionBaseUrl)
                 setEvolutionBaseUrl(defaultsQuery.data.baseUrl);
-            if (!evolutionApiKey)
-                setEvolutionApiKey(defaultsQuery.data.apiKey);
         }
-    }, [defaultsQuery.data, evolutionApiKey, evolutionBaseUrl]);
+    }, [defaultsQuery.data, evolutionBaseUrl]);
     const createMutation = useMutation({
         mutationFn: () => api.createWhatsappInstance(auth.token, {
             instanceName,

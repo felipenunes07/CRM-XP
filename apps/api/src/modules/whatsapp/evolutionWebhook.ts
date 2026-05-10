@@ -4,6 +4,7 @@ import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
   formatWhatsappJidPhone,
+  isMonitorableWhatsappJid,
   type EvolutionMessageLike,
 } from "./whatsappMonitorCore.js";
 
@@ -138,6 +139,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       continue;
     }
 
+    if (!isMonitorableWhatsappJid(remoteJid)) {
+      logger.info("evolution webhook skipped message: non-chat broadcast jid", {
+        instance,
+        remoteJid,
+        messageId,
+      });
+      continue;
+    }
+
     if (!text) {
       logger.info("evolution webhook skipped message: no text content (likely media without caption)", {
         instance,
@@ -171,7 +181,11 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
     logger.info("evolution webhook incoming message", {
       remoteJid,
+      isGroup: context.isGroup,
       senderName,
+      senderJid: context.senderJid,
+      chatDisplayName,
+      hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
       textPreview: text.slice(0, 80),
       messageId,
       fromMe: context.fromMe,
