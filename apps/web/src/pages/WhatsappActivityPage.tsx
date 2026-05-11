@@ -311,7 +311,7 @@ export function WhatsappActivityPage() {
   const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
   const [showHeatmapNumbers, setShowHeatmapNumbers] = useState(true);
-  const [heatmapMetric, setHeatmapMetric] = useState<"total" | "sent" | "received">("total");
+  const [heatmapMetric, setHeatmapMetric] = useState<"total" | "sent" | "received" | "conversations">("total");
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
@@ -364,6 +364,7 @@ export function WhatsappActivityPage() {
     () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
       if (heatmapMetric === "sent") return cell.sentMessages;
       if (heatmapMetric === "received") return cell.receivedMessages;
+      if (heatmapMetric === "conversations") return cell.attendedConversations;
       return cell.sentMessages + cell.receivedMessages;
     })),
     [cellMap, heatmapMetric],
@@ -596,6 +597,13 @@ export function WhatsappActivityPage() {
                   >
                     Recebida
                   </button>
+                  <button
+                    type="button"
+                    className={heatmapMetric === "conversations" ? "active" : ""}
+                    onClick={() => setHeatmapMetric("conversations")}
+                  >
+                    Conversas
+                  </button>
                 </div>
                 <div className="activity-live-chip">Em tempo real</div>
               </div>
@@ -618,7 +626,10 @@ export function WhatsappActivityPage() {
                     {report.hours.map((hour) => {
                       const key = `${day.date}:${hour}`;
                       const cell = cellMap.get(key) ?? { ...EMPTY_SUMMARY, conversations: [] };
-                      const value = heatmapMetric === "sent" ? cell.sentMessages : heatmapMetric === "received" ? cell.receivedMessages : cell.sentMessages + cell.receivedMessages;
+                      const value = heatmapMetric === "sent" ? cell.sentMessages : 
+                                    heatmapMetric === "received" ? cell.receivedMessages : 
+                                    heatmapMetric === "conversations" ? cell.attendedConversations :
+                                    cell.sentMessages + cell.receivedMessages;
                       const level = heatLevel(value, maxCellValue);
                       const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
                       return (
