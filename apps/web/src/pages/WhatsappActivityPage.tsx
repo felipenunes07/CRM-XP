@@ -144,7 +144,7 @@ function summarizeCells(cells: WhatsappAgentActivityCell[]) {
   const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
   const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
   const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
-  const attended = conversations;
+  const attended = conversations.filter((conversation) => conversation.sentMessages > 0 && conversation.receivedMessages > 0);
   const attendedGroups = attended.filter(
     (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
   );

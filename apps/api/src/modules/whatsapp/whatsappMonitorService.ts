@@ -1043,15 +1043,22 @@ function average(values: number[]) {
 }
 
 function publicActivityCounters(accumulator: ActivityReportAccumulator) {
-  const attendedGroups = new Set([...accumulator.customerGroups, ...accumulator.otherGroups]);
+  const conversations = Array.from(accumulator.conversations.values());
+  
+  // Critério de conversa concluída: Teve recebida E enviada (interação real)
+  const attended = conversations.filter(c => c.sentMessages > 0 && c.receivedMessages > 0);
+  
+  const attendedGroups = attended.filter(c => c.kind === "customer_group" || c.kind === "other_group");
+  const attendedPrivates = attended.filter(c => c.kind === "private");
+  const internalGroups = conversations.filter(c => c.kind === "internal_group" && c.sentMessages > 0);
 
   return {
-    attendedConversations: accumulator.attendedConversations.size,
-    attendedGroups: attendedGroups.size,
-    attendedPrivates: accumulator.attendedPrivates.size,
-    customerGroups: accumulator.customerGroups.size,
-    internalGroups: accumulator.internalGroups.size,
-    otherGroups: accumulator.otherGroups.size,
+    attendedConversations: attended.length,
+    attendedGroups: attendedGroups.length,
+    attendedPrivates: attendedPrivates.length,
+    customerGroups: attendedGroups.filter(c => c.kind === "customer_group").length,
+    internalGroups: internalGroups.length,
+    otherGroups: attendedGroups.filter(c => c.kind === "other_group").length,
     sentMessages: accumulator.sentMessages,
     receivedMessages: accumulator.receivedMessages,
     responseCount: accumulator.responseSeconds.length,
