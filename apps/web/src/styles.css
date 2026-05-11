@@ -12325,6 +12325,12 @@ body:has(.whatsapp-monitor-page) .main-content {
   box-shadow: 0 8px 20px rgba(40, 126, 231, 0.18);
 }
 
+.whatsapp-activity-page .activity-heat-cell.level-1 { background: #dbeafe; }
+.whatsapp-activity-page .activity-heat-cell.level-2 { background: #93c5fd; }
+.whatsapp-activity-page .activity-heat-cell.level-3 { background: #60a5fa; }
+.whatsapp-activity-page .activity-heat-cell.level-4 { background: #2563eb; color: #ffffff; }
+.whatsapp-activity-page .activity-heat-cell.level-5 { background: #0f766e; color: #ffffff; }
+
 .activity-detail-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(18rem, 0.65fr);
