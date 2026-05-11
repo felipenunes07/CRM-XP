@@ -15,7 +15,7 @@ import type {
   TrendRangeMonthlyLossPoint,
   TrendRangeSelection,
 } from "@olist-crm/shared";
-import { pool } from "../../db/client.js";
+import { pool, redis } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
@@ -1248,6 +1248,17 @@ export async function deleteChartAnnotation(id: string) {
 }
 
 export async function getDashboardMetrics(trendDays?: number, customerPrefix?: string): Promise<DashboardMetrics> {
+  const cacheKey = `dashboard_metrics:${trendDays ?? "default"}:${customerPrefix ?? "all"}`;
+  
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    logger.warn("failed to get dashboard metrics from cache", { error: String(error) });
+  }
+
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
   const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, globalItemsSoldTrend, currentMonthTargetData, ltvData, todaySalesPerformance, todaySalesData] =
     await Promise.all([
@@ -1373,7 +1384,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       )
     : portfolioTrend;
 
-  return {
+  const metrics: DashboardMetrics = {
     totalCustomers: snapshotTotal,
     statusCounts: {
       ACTIVE: snapshotActive,
@@ -1405,6 +1416,14 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
     todayOrdersCount: Number(todaySalesData.rows[0]?.total_orders ?? 0),
     todaySalesPerformance,
   };
+
+  try {
+    await redis.set(cacheKey, JSON.stringify(metrics), "EX", 300); // 5 minutes cache
+  } catch (error) {
+    logger.warn("failed to save dashboard metrics to cache", { error: String(error) });
+  }
+
+  return metrics;
 }
 
 export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFilters = {}): Promise<AgendaResponse> {
