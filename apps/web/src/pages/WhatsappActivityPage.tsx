@@ -144,7 +144,7 @@ function summarizeCells(cells: WhatsappAgentActivityCell[]) {
   const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
   const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
   const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
-  const attended = conversations.filter((conversation) => conversation.sentMessages > 0);
+  const attended = conversations;
   const attendedGroups = attended.filter(
     (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
   );
@@ -311,6 +311,7 @@ export function WhatsappActivityPage() {
   const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
   const [showHeatmapNumbers, setShowHeatmapNumbers] = useState(true);
+  const [heatmapMetric, setHeatmapMetric] = useState<"total" | "sent" | "received">("total");
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
@@ -360,8 +361,12 @@ export function WhatsappActivityPage() {
     return map;
   }, [report, cellsBySlot]);
   const maxCellValue = useMemo(
-    () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => cell.attendedConversations)),
-    [cellMap],
+    () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
+      if (heatmapMetric === "sent") return cell.sentMessages;
+      if (heatmapMetric === "received") return cell.receivedMessages;
+      return cell.sentMessages + cell.receivedMessages;
+    })),
+    [cellMap, heatmapMetric],
   );
   const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
   const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
@@ -569,6 +574,29 @@ export function WhatsappActivityPage() {
                     Numero
                   </button>
                 </div>
+                <div className="activity-heatmap-toggles">
+                  <button
+                    type="button"
+                    className={heatmapMetric === "total" ? "active" : ""}
+                    onClick={() => setHeatmapMetric("total")}
+                  >
+                    Total
+                  </button>
+                  <button
+                    type="button"
+                    className={heatmapMetric === "sent" ? "active" : ""}
+                    onClick={() => setHeatmapMetric("sent")}
+                  >
+                    Enviada
+                  </button>
+                  <button
+                    type="button"
+                    className={heatmapMetric === "received" ? "active" : ""}
+                    onClick={() => setHeatmapMetric("received")}
+                  >
+                    Recebida
+                  </button>
+                </div>
                 <div className="activity-live-chip">Em tempo real</div>
               </div>
             </div>
@@ -590,8 +618,9 @@ export function WhatsappActivityPage() {
                     {report.hours.map((hour) => {
                       const key = `${day.date}:${hour}`;
                       const cell = cellMap.get(key) ?? { ...EMPTY_SUMMARY, conversations: [] };
-                      const level = heatLevel(cell.attendedConversations, maxCellValue);
-                      const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.attendedGroups} grupos, ${cell.attendedPrivates} privados, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
+                      const value = heatmapMetric === "sent" ? cell.sentMessages : heatmapMetric === "received" ? cell.receivedMessages : cell.sentMessages + cell.receivedMessages;
+                      const level = heatLevel(value, maxCellValue);
+                      const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
                       return (
                         <button
                           type="button"
@@ -600,7 +629,7 @@ export function WhatsappActivityPage() {
                           title={title}
                           onClick={() => setSelectedCellKey(key)}
                         >
-                          {cell.attendedConversations && showHeatmapNumbers ? cell.attendedConversations : ""}
+                          {value && showHeatmapNumbers ? value : ""}
                         </button>
                       );
                     })}
