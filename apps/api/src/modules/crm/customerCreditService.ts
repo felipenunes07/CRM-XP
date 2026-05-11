@@ -11,7 +11,7 @@ import type {
   CustomerCreditRow,
   CustomerCreditSnapshotMeta,
 } from "@olist-crm/shared";
-import { pool } from "../../db/client.js";
+import { pool, redis } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
@@ -271,10 +271,15 @@ function normalizeHeaderLookup(value: string) {
 }
 
 function readWorkbookValue(row: Record<string, unknown>, exactKey: string, fragments: string[] = []) {
-  if (row[exactKey] !== undefined) {
-    return row[exactKey];
+  const normalizedExactKey = normalizeHeaderLookup(exactKey);
+  
+  // Try case-insensitive exact match first
+  const exactMatch = Object.entries(row).find(([key]) => normalizeHeaderLookup(key) === normalizedExactKey);
+  if (exactMatch) {
+    return exactMatch[1];
   }
 
+  // Fallback to fragment matching
   const match = Object.entries(row).find(([key]) => {
     const normalizedKey = normalizeHeaderLookup(key);
     return fragments.every((fragment) => normalizedKey.includes(normalizeHeaderLookup(fragment)));
@@ -575,14 +580,27 @@ export async function parseCustomerCreditWorkbook(
   candidate?: CustomerCreditWorkbookCandidate,
 ): Promise<ParsedCustomerCreditWorkbook> {
   const stat = await fs.stat(filePath);
+  logger.info("Parsing customer credit workbook", { filePath, size: stat.size });
+  
   const workbook = XLSX.readFile(filePath, {
     raw: false,
     cellDates: false,
   });
-  const sheet = workbook.Sheets[CUSTOMER_CREDIT_SHEET_NAME];
-  if (!sheet) {
-    throw new HttpError(400, `A planilha ${path.basename(filePath)} não contém a aba '${CUSTOMER_CREDIT_SHEET_NAME}'.`);
+  
+  // Find RESUMO sheet case-insensitively
+  const targetSheetName = CUSTOMER_CREDIT_SHEET_NAME.toUpperCase();
+  const actualSheetName = workbook.SheetNames.find(s => s.toUpperCase() === targetSheetName);
+  
+  if (!actualSheetName) {
+    logger.error("Required sheet not found in workbook", { 
+      expected: CUSTOMER_CREDIT_SHEET_NAME, 
+      available: workbook.SheetNames,
+      fileName: path.basename(filePath)
+    });
+    throw new HttpError(400, `A planilha ${path.basename(filePath)} não contém a aba '${CUSTOMER_CREDIT_SHEET_NAME}'. Abas disponíveis: ${workbook.SheetNames.join(", ")}`);
   }
+
+  const sheet = workbook.Sheets[actualSheetName];
 
   const rows = XLSX.utils
     .sheet_to_json<Record<string, unknown>>(sheet, {
@@ -908,9 +926,20 @@ async function refreshSnapshotInternal(forceRefresh = false) {
       return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
     }
 
+    const isDropboxConfigured = Boolean(env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY));
+    const locationInfo = isDropboxConfigured 
+      ? `no Dropbox (caminho: ${env.DROPBOX_CUSTOMER_CREDIT_PATH})`
+      : `na pasta local (caminho: ${env.CUSTOMER_CREDIT_WORKBOOK_DIR})`;
+
+    logger.error("No credit workbook found", { 
+      prefix: env.CUSTOMER_CREDIT_WORKBOOK_PREFIX, 
+      isDropboxConfigured,
+      path: isDropboxConfigured ? env.DROPBOX_CUSTOMER_CREDIT_PATH : env.CUSTOMER_CREDIT_WORKBOOK_DIR
+    });
+
     throw new HttpError(
       500,
-      `Não encontrei nenhum arquivo ${env.CUSTOMER_CREDIT_WORKBOOK_PREFIX}*.xlsx no local especificado.`,
+      `Não encontrei nenhum arquivo começando com "${env.CUSTOMER_CREDIT_WORKBOOK_PREFIX}" ${locationInfo}. Verifique se o nome do arquivo e as configurações de pasta estão corretos na VPS.`,
     );
   }
 
@@ -1108,7 +1137,19 @@ async function loadOverviewRows(snapshotId: string) {
   return filteredRows.sort(compareCreditRows);
 }
 
+const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview";
+
 export async function getCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
+  // Try cache first
+  try {
+    const cached = await redis.get(CREDIT_OVERVIEW_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    logger.warn("failed to read credit overview from cache", { error: String(error) });
+  }
+
   const snapshot = await ensureCustomerCreditSnapshot(false);
   if (!snapshot) {
     return {
@@ -1123,12 +1164,21 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
   const linkedRows = rows.filter((row) => row.matched);
   const unmatchedRows = rows.filter((row) => !row.matched);
 
-  return {
+  const response: CustomerCreditOverviewResponse = {
     snapshot,
     summary: buildOverviewSummary(linkedRows, unmatchedRows),
     linkedRows,
     unmatchedRows,
   };
+
+  // Save to cache
+  try {
+    await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300); // 5 minutes cache
+  } catch (error) {
+    logger.warn("failed to save credit overview to cache", { error: String(error) });
+  }
+
+  return response;
 }
 
 export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
@@ -1146,12 +1196,22 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
   const linkedRows = rows.filter((row) => row.matched);
   const unmatchedRows = rows.filter((row) => !row.matched);
 
-  return {
+  const response: CustomerCreditOverviewResponse = {
     snapshot,
     summary: buildOverviewSummary(linkedRows, unmatchedRows),
     linkedRows,
     unmatchedRows,
   };
+
+  // Invalidate cache
+  try {
+    await redis.del(CREDIT_OVERVIEW_CACHE_KEY);
+    await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300);
+  } catch (error) {
+    logger.warn("failed to update credit overview cache", { error: String(error) });
+  }
+
+  return response;
 }
 
 export async function getCustomerCreditDetail(customerId: string): Promise<CustomerCreditDetailResponse> {
