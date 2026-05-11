@@ -1,5 +1,5 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
-import { useMemo, useReducer } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BadgeDollarSign, ShieldAlert, TrendingUp } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
@@ -115,6 +115,7 @@ export function CustomersPage() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(customersPageReducer, undefined, createInitialCustomersPageState);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
@@ -148,6 +149,14 @@ export function CustomersPage() {
     onSuccess: (payload) => {
       queryClient.setQueryData(["customer-credit-overview"], payload);
       void queryClient.invalidateQueries({ queryKey: ["customer-credit-detail"] });
+      
+      if (payload.snapshot) {
+        const fileName = payload.snapshot.sourceFileName;
+        const fileDate = formatDateTime(payload.snapshot.sourceFileUpdatedAt);
+        setToastMessage(`Sincronizado com sucesso! Arquivo: ${fileName} (${fileDate})`);
+      } else {
+        setToastMessage("Sincronização concluída, mas nenhum dado foi retornado.");
+      }
     },
   });
 
@@ -668,6 +677,15 @@ export function CustomersPage() {
           ) : null}
         </>
       )}
+
+      {toastMessage ? (
+        <div className="idea-canvas-toast" style={{ background: "rgba(47, 157, 103, 0.96)" }}>
+          <span>{toastMessage}</span>
+          <button type="button" className="ghost-button icon-only" onClick={() => setToastMessage(null)} style={{ color: "white" }}>
+            Fechar
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
