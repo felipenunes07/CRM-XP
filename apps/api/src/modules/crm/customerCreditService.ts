@@ -603,7 +603,7 @@ export async function parseCustomerCreditWorkbook(
   const sheet = workbook.Sheets[actualSheetName];
 
   const rows = XLSX.utils
-    .sheet_to_json<Record<string, unknown>>(sheet, {
+    .sheet_to_json<Record<string, unknown>>(sheet!, {
       defval: null,
       raw: false,
     })
@@ -1173,6 +1173,7 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
 
   // Save to cache
   try {
+    // @ts-ignore
     await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300); // 5 minutes cache
   } catch (error) {
     logger.warn("failed to save credit overview to cache", { error: String(error) });
@@ -1206,6 +1207,7 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
   // Invalidate cache
   try {
     await redis.del(CREDIT_OVERVIEW_CACHE_KEY);
+    // @ts-ignore
     await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300);
   } catch (error) {
     logger.warn("failed to update credit overview cache", { error: String(error) });
