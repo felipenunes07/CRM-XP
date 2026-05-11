@@ -13,7 +13,7 @@ class MemoryRedis {
     return "PONG";
   }
 
-  async set(key: string, value: string) {
+  async set(key: string, value: string, _mode?: string, _duration?: number) {
     this.store.set(key, value);
     return "OK";
   }

@@ -17,6 +17,7 @@ import type {
 } from "@olist-crm/shared";
 import { pool, redis } from "../../db/client.js";
 import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
 import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
@@ -1418,6 +1419,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
   };
 
   try {
+    // @ts-ignore - Redis set arguments compatibility
     await redis.set(cacheKey, JSON.stringify(metrics), "EX", 300); // 5 minutes cache
   } catch (error) {
     logger.warn("failed to save dashboard metrics to cache", { error: String(error) });
