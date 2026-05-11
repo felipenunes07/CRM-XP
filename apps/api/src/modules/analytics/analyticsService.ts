@@ -43,8 +43,24 @@ async function upsertCustomers(customerCodes: string[]) {
     [customerCodes],
   );
 
+  const values: any[] = [];
+  const placeholders: string[] = [];
+  let paramIndex = 1;
+
   for (const row of result.rows) {
     const displayName = extractDisplayName(String(row.customer_label), String(row.customer_code));
+    values.push(
+      row.customer_code,
+      row.external_customer_id,
+      displayName,
+      normalizeName(displayName),
+      row.source_system,
+      row.attendant_name,
+    );
+    placeholders.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++})`);
+  }
+
+  if (placeholders.length > 0) {
     await pool.query(
       `
         INSERT INTO customers (
@@ -55,7 +71,7 @@ async function upsertCustomers(customerCodes: string[]) {
           source_system_first,
           last_attendant
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ${placeholders.join(",")}
         ON CONFLICT (customer_code) DO UPDATE
         SET
           external_customer_id = COALESCE(EXCLUDED.external_customer_id, customers.external_customer_id),
@@ -64,14 +80,7 @@ async function upsertCustomers(customerCodes: string[]) {
           last_attendant = COALESCE(EXCLUDED.last_attendant, customers.last_attendant),
           updated_at = NOW()
       `,
-      [
-        row.customer_code,
-        row.external_customer_id,
-        displayName,
-        normalizeName(displayName),
-        row.source_system,
-        row.attendant_name,
-      ],
+      values,
     );
   }
 }
@@ -103,75 +112,46 @@ async function rebuildOrders(customerCodes: string[]) {
     [customerCodes],
   );
 
-  for (const group of orderGroups.rows) {
-    const customerResult = await pool.query("SELECT id FROM customers WHERE customer_code = $1", [group.customer_code]);
-    const customerId = customerResult.rows[0]?.id as string | undefined;
-    if (!customerId) {
-      continue;
+  const customerMapResult = await pool.query("SELECT id, customer_code FROM customers WHERE customer_code = ANY($1)", [customerCodes]);
+  const customerMap = new Map(customerMapResult.rows.map(r => [r.customer_code, r.id]));
+
+  for (let i = 0; i < orderGroups.rows.length; i += 500) {
+    const chunk = orderGroups.rows.slice(i, i + 500);
+    
+    for (const group of chunk) {
+      const customerId = customerMap.get(group.customer_code);
+      if (!customerId) continue;
+
+      const inserted = await pool.query(
+        `
+          INSERT INTO orders (
+            source_system, external_order_id, order_number, customer_id, customer_code,
+            order_date, total_amount, status, item_count, last_attendant
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          RETURNING id
+        `,
+        [
+          group.source_system, group.external_order_id, group.order_number, customerId, group.customer_code,
+          group.sale_date, group.total_amount, group.order_status, group.item_count, group.last_attendant || null,
+        ],
+      );
+
+      const orderId = inserted.rows[0]?.id;
+      if (orderId) {
+        await pool.query(
+          `
+            INSERT INTO order_items (
+              order_id, sale_raw_id, sku, item_description, quantity, unit_price, line_total, attendant_name
+            )
+            SELECT $1, id, sku, item_description, quantity, unit_price, line_total, attendant_name
+            FROM sales_raw
+            WHERE source_system = $2 AND order_number = $3 AND customer_code = $4 AND sale_date = $5
+          `,
+          [orderId, group.source_system, group.order_number, group.customer_code, group.sale_date],
+        );
+      }
     }
-
-    const inserted = await pool.query(
-      `
-        INSERT INTO orders (
-          source_system,
-          external_order_id,
-          order_number,
-          customer_id,
-          customer_code,
-          order_date,
-          total_amount,
-          status,
-          item_count,
-          last_attendant
-        )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        RETURNING id
-      `,
-      [
-        group.source_system,
-        group.external_order_id,
-        group.order_number,
-        customerId,
-        group.customer_code,
-        group.sale_date,
-        group.total_amount,
-        group.order_status,
-        group.item_count,
-        group.last_attendant || null,
-      ],
-    );
-
-    const orderId = inserted.rows[0]?.id as string | undefined;
-    if (!orderId) {
-      continue;
-    }
-
-    await pool.query(
-      `
-        INSERT INTO order_items (
-          order_id,
-          sale_raw_id,
-          sku,
-          item_description,
-          quantity,
-          unit_price,
-          line_total,
-          attendant_name
-        )
-        SELECT
-          $1,
-          id,
-          sku,
-          item_description,
-          quantity,
-          unit_price,
-          line_total,
-          attendant_name
-        FROM sales_raw
-        WHERE source_system = $2 AND order_number = $3 AND customer_code = $4 AND sale_date = $5
-      `,
-      [orderId, group.source_system, group.order_number, group.customer_code, group.sale_date],
-    );
   }
 }
 
@@ -243,44 +223,37 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     [days],
   );
 
-  await pool.query("BEGIN");
+  const values: any[] = [];
+  const placeholders: string[] = [];
+  let paramIndex = 1;
 
-  try {
+  for (const row of result.rows) {
+    values.push(row.day, row.total_customers, row.active_count, row.attention_count, row.inactive_count);
+    placeholders.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, NOW())`);
+  }
 
-    for (const row of result.rows) {
-      await pool.query(
-        `
-          INSERT INTO dashboard_daily_metrics (
-            day,
-            total_customers,
-            active_count,
-            attention_count,
-            inactive_count,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, NOW())
-          ON CONFLICT (day) DO UPDATE
-          SET
-            total_customers = EXCLUDED.total_customers,
-            active_count = EXCLUDED.active_count,
-            attention_count = EXCLUDED.attention_count,
-            inactive_count = EXCLUDED.inactive_count,
-            updated_at = NOW()
-        `,
-        [
-          row.day,
-          row.total_customers,
-          row.active_count,
-          row.attention_count,
-          row.inactive_count,
-        ],
-      );
-    }
-
-    await pool.query("COMMIT");
-  } catch (error) {
-    await pool.query("ROLLBACK");
-    throw error;
+  if (placeholders.length > 0) {
+    await pool.query(
+      `
+        INSERT INTO dashboard_daily_metrics (
+          day,
+          total_customers,
+          active_count,
+          attention_count,
+          inactive_count,
+          updated_at
+        )
+        VALUES ${placeholders.join(",")}
+        ON CONFLICT (day) DO UPDATE
+        SET
+          total_customers = EXCLUDED.total_customers,
+          active_count = EXCLUDED.active_count,
+          attention_count = EXCLUDED.attention_count,
+          inactive_count = EXCLUDED.inactive_count,
+          updated_at = NOW()
+      `,
+      values,
+    );
   }
 
   // Override today's row with actual customer_snapshot counts so the last
@@ -323,39 +296,63 @@ export async function refreshCustomerSnapshots(customerCodes?: string[]) {
   const maxSpent = Math.max(1, ...monetaryValues);
   const maxOrders = Math.max(1, ...frequencyValues);
 
-  for (const aggregate of aggregates) {
-    const snapshot = computeCustomerSnapshot({
-      orderDates: aggregate.orderDates.map((date) => new Date(date)),
-      orderTotals: aggregate.orderTotals.map((value) => Number(value)),
-      maxSpent,
-      maxOrders,
-      highValueThreshold,
-    });
+  // Postgres has a limit of 65535 parameters. 
+  // With ~18 parameters per row, we can safely batch up to ~3000 rows.
+  // Current customer count is ~1600, so we can do it in one go.
+  // If it grows much larger, we should chunk this.
+  
+  const CHUNK_SIZE = 1000;
+  for (let i = 0; i < aggregates.length; i += CHUNK_SIZE) {
+    const chunkValues: any[] = [];
+    const chunkPlaceholders: string[] = [];
+    let chunkParamIndex = 1;
+
+    const chunkAggregates = aggregates.slice(i, i + CHUNK_SIZE);
+    
+    for (const aggregate of chunkAggregates) {
+      const snapshot = computeCustomerSnapshot({
+        orderDates: aggregate.orderDates.map((date) => new Date(date)),
+        orderTotals: aggregate.orderTotals.map((value) => Number(value)),
+        maxSpent,
+        maxOrders,
+        highValueThreshold,
+      });
+
+      const row = [
+        aggregate.customerId,
+        aggregate.displayName,
+        aggregate.customerCode,
+        snapshot.lastPurchaseAt?.toISOString() ?? null,
+        snapshot.daysSinceLastPurchase,
+        snapshot.totalOrders,
+        snapshot.totalSpent.toFixed(2),
+        snapshot.avgTicket.toFixed(2),
+        snapshot.avgGap?.toFixed(2) ?? null,
+        snapshot.purchaseFrequency90d.toFixed(2),
+        snapshot.frequencyDropRatio.toFixed(4),
+        snapshot.status,
+        snapshot.valueScore.toFixed(2),
+        snapshot.priorityScore.toFixed(2),
+        snapshot.predictedNextPurchaseAt?.toISOString() ?? null,
+        snapshot.primaryInsight,
+        snapshot.insightTags,
+        aggregate.lastAttendant,
+      ];
+
+      chunkValues.push(...row);
+      const rowPlaceholders = row.map(() => `$${chunkParamIndex++}`).join(",");
+      chunkPlaceholders.push(`(${rowPlaceholders}, NOW())`);
+    }
 
     await pool.query(
       `
         INSERT INTO customer_snapshot (
-          customer_id,
-          display_name,
-          customer_code,
-          last_purchase_at,
-          days_since_last_purchase,
-          total_orders,
-          total_spent,
-          avg_ticket,
-          avg_days_between_orders,
-          purchase_frequency_90d,
-          frequency_drop_ratio,
-          status,
-          value_score,
-          priority_score,
-          predicted_next_purchase_at,
-          primary_insight,
-          insight_tags,
-          last_attendant,
-          updated_at
+          customer_id, display_name, customer_code, last_purchase_at, days_since_last_purchase,
+          total_orders, total_spent, avg_ticket, avg_days_between_orders, purchase_frequency_90d,
+          frequency_drop_ratio, status, value_score, priority_score, predicted_next_purchase_at,
+          primary_insight, insight_tags, last_attendant, updated_at
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW())
+        VALUES ${chunkPlaceholders.join(",")}
         ON CONFLICT (customer_id) DO UPDATE
         SET
           display_name = EXCLUDED.display_name,
@@ -377,26 +374,7 @@ export async function refreshCustomerSnapshots(customerCodes?: string[]) {
           last_attendant = EXCLUDED.last_attendant,
           updated_at = NOW()
       `,
-      [
-        aggregate.customerId,
-        aggregate.displayName,
-        aggregate.customerCode,
-        snapshot.lastPurchaseAt?.toISOString() ?? null,
-        snapshot.daysSinceLastPurchase,
-        snapshot.totalOrders,
-        snapshot.totalSpent.toFixed(2),
-        snapshot.avgTicket.toFixed(2),
-        snapshot.avgGap?.toFixed(2) ?? null,
-        snapshot.purchaseFrequency90d.toFixed(2),
-        snapshot.frequencyDropRatio.toFixed(4),
-        snapshot.status,
-        snapshot.valueScore.toFixed(2),
-        snapshot.priorityScore.toFixed(2),
-        snapshot.predictedNextPurchaseAt?.toISOString() ?? null,
-        snapshot.primaryInsight,
-        snapshot.insightTags,
-        aggregate.lastAttendant,
-      ],
+      chunkValues,
     );
   }
 
