@@ -3,6 +3,7 @@ import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -94,6 +95,8 @@ export function CustomerDetailPage() {
   const customer = detailQuery.data ?? null;
   const creditRow = creditDetailQuery.data?.row ?? null;
   const creditSnapshot = creditDetailQuery.data?.snapshot ?? null;
+  const creditOrders = creditDetailQuery.data?.orders ?? [];
+  const creditPayments = creditDetailQuery.data?.payments ?? [];
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -367,6 +370,8 @@ export function CustomerDetailPage() {
                 )}
               </div>
             </div>
+
+            <CustomerCreditLedgerSections orders={creditOrders} payments={creditPayments} />
           </div>
         ) : (
           <div className="empty-state">
