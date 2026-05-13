@@ -1034,7 +1034,9 @@ interface ActivityReportAccumulator {
   sentMessages: number;
   receivedMessages: number;
   receivedUniquePrivates: Set<string>;
-  receivedUniqueGroups: Set<string>;
+  receivedUniqueCustomerGroups: Set<string>;
+  receivedUniqueInternalGroups: Set<string>;
+  receivedUniqueOtherGroups: Set<string>;
   attendedConversations: Set<string>;
   attendedPrivates: Set<string>;
   customerGroups: Set<string>;
@@ -1049,7 +1051,9 @@ function createActivityReportAccumulator(): ActivityReportAccumulator {
     sentMessages: 0,
     receivedMessages: 0,
     receivedUniquePrivates: new Set<string>(),
-    receivedUniqueGroups: new Set<string>(),
+    receivedUniqueCustomerGroups: new Set<string>(),
+    receivedUniqueInternalGroups: new Set<string>(),
+    receivedUniqueOtherGroups: new Set<string>(),
     attendedConversations: new Set<string>(),
     attendedPrivates: new Set<string>(),
     customerGroups: new Set<string>(),
@@ -1116,8 +1120,12 @@ function registerActivityReportEvent(input: {
     
     if (input.kind === "private") {
       input.accumulator.receivedUniquePrivates.add(input.remoteJid);
+    } else if (input.kind === "customer_group") {
+      input.accumulator.receivedUniqueCustomerGroups.add(input.remoteJid);
+    } else if (input.kind === "internal_group") {
+      input.accumulator.receivedUniqueInternalGroups.add(input.remoteJid);
     } else {
-      input.accumulator.receivedUniqueGroups.add(input.remoteJid);
+      input.accumulator.receivedUniqueOtherGroups.add(input.remoteJid);
     }
   }
 }
@@ -1150,7 +1158,7 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
   const groupConvs = conversations.filter((c) => c.kind !== "private");
 
   return {
-    attendedConversations: attended.length,
+    attendedConversations: attendedPrivates.length + attendedGroups.length,
     attendedGroups: attendedGroups.length,
     attendedPrivates: attendedPrivates.length,
     customerGroups: attendedGroups.filter((c) => c.kind === "customer_group").length,
@@ -1162,9 +1170,9 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
     receivedMessages: accumulator.receivedMessages,
     receivedMessagesPrivate: privateConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
     receivedMessagesGroup: groupConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
-    receivedUniqueMessages: accumulator.receivedUniquePrivates.size + accumulator.receivedUniqueGroups.size,
+    receivedUniqueMessages: accumulator.receivedUniquePrivates.size + accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
     receivedUniqueMessagesPrivate: accumulator.receivedUniquePrivates.size,
-    receivedUniqueMessagesGroup: accumulator.receivedUniqueGroups.size,
+    receivedUniqueMessagesGroup: accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
     responseCount: accumulator.responseSeconds.length,
     averageFirstResponseSeconds: average(accumulator.responseSeconds),
   };

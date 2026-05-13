@@ -151,9 +151,9 @@ function summarizeCells(cells: WhatsappAgentActivityCell[]) {
   const responseCount = cells.reduce((sum, cell) => sum + (cell.responseCount || 0), 0);
   const sentMessages = cells.reduce((sum, cell) => sum + (cell.sentMessages || 0), 0);
   const receivedMessages = cells.reduce((sum, cell) => sum + (cell.receivedMessages || 0), 0);
-  const receivedUniqueMessages = conversations.filter((c) => (c.receivedMessages || 0) > 0).length;
+  const receivedUniqueMessages = conversations.filter((c) => (c.receivedMessages || 0) > 0 && c.kind !== "internal_group").length;
   const receivedUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && (c.receivedMessages || 0) > 0).length;
-  const receivedUniqueMessagesGroup = conversations.filter((c) => c.kind !== "private" && (c.receivedMessages || 0) > 0).length;
+  const receivedUniqueMessagesGroup = conversations.filter((c) => (c.kind === "customer_group" || c.kind === "other_group") && (c.receivedMessages || 0) > 0).length;
   const attended = conversations.filter((conversation) => (conversation.sentMessages || 0) > 0 && (conversation.receivedMessages || 0) > 0);
   const attendedGroups = attended.filter(
     (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
