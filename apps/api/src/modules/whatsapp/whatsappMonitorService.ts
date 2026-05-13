@@ -1046,21 +1046,28 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
   const conversations = Array.from(accumulator.conversations.values());
 
   // Critério de conversa concluída: Teve recebida E enviada (interação real)
-  const attended = conversations.filter(c => c.sentMessages > 0 && c.receivedMessages > 0);
+  const attended = conversations.filter((c) => c.sentMessages > 0 && c.receivedMessages > 0);
 
-  const attendedGroups = attended.filter(c => c.kind === "customer_group" || c.kind === "other_group");
-  const attendedPrivates = attended.filter(c => c.kind === "private");
-  const internalGroups = conversations.filter(c => c.kind === "internal_group" && c.sentMessages > 0);
+  const attendedGroups = attended.filter((c) => c.kind === "customer_group" || c.kind === "other_group");
+  const attendedPrivates = attended.filter((c) => c.kind === "private");
+  const internalGroups = conversations.filter((c) => c.kind === "internal_group" && c.sentMessages > 0);
+
+  const privateConvs = conversations.filter((c) => c.kind === "private");
+  const groupConvs = conversations.filter((c) => c.kind !== "private");
 
   return {
     attendedConversations: attended.length,
     attendedGroups: attendedGroups.length,
     attendedPrivates: attendedPrivates.length,
-    customerGroups: attendedGroups.filter(c => c.kind === "customer_group").length,
+    customerGroups: attendedGroups.filter((c) => c.kind === "customer_group").length,
     internalGroups: internalGroups.length,
-    otherGroups: attendedGroups.filter(c => c.kind === "other_group").length,
+    otherGroups: attendedGroups.filter((c) => c.kind === "other_group").length,
     sentMessages: accumulator.sentMessages,
+    sentMessagesPrivate: privateConvs.reduce((sum, c) => sum + c.sentMessages, 0),
+    sentMessagesGroup: groupConvs.reduce((sum, c) => sum + c.sentMessages, 0),
     receivedMessages: accumulator.receivedMessages,
+    receivedMessagesPrivate: privateConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
+    receivedMessagesGroup: groupConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
     responseCount: accumulator.responseSeconds.length,
     averageFirstResponseSeconds: average(accumulator.responseSeconds),
   };
