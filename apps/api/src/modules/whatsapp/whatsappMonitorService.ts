@@ -1336,10 +1336,20 @@ export async function getWhatsappAgentActivityReport(
     agents: agentRows,
     dailySeries: reportDays.map((day) => {
       const accumulator = dailyAccumulators.get(day.date) ?? createActivityReportAccumulator();
+      const counts = publicActivityCounters(accumulator);
       return {
         date: day.date,
         label: day.label,
-        ...publicActivityCounters(accumulator),
+        attendedConversations: counts.attendedConversations,
+        attendedGroups: counts.attendedGroups,
+        attendedPrivates: counts.attendedPrivates,
+        sentMessages: counts.sentMessages,
+        sentMessagesPrivate: counts.sentMessagesPrivate,
+        sentMessagesGroup: counts.sentMessagesGroup,
+        receivedMessages: counts.receivedMessages,
+        receivedMessagesPrivate: counts.receivedMessagesPrivate,
+        receivedMessagesGroup: counts.receivedMessagesGroup,
+        averageFirstResponseSeconds: counts.averageFirstResponseSeconds,
       };
     }),
     hourlyCells: Array.from(cells.values()).map((cell) => ({
