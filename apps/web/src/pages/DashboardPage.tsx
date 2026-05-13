@@ -749,6 +749,8 @@ export function DashboardPage() {
     queryKey: ["dashboard", trendDays, selectedPrefix],
     queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
     enabled: Boolean(token),
+    refetchInterval: 15 * 60 * 1000, // Atualiza a cada 15 minutos para refletir sincronizações automáticas
+    refetchOnWindowFocus: true,
   });
 
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
