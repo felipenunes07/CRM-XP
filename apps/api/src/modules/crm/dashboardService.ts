@@ -314,7 +314,7 @@ async function getSalesPerformance() {
           COALESCE(oit.total_items, 0)::int AS total_items
         FROM orders o
         LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-        WHERE date_trunc('month', o.order_date) = date_trunc('month', CURRENT_DATE)
+        WHERE date_trunc('month', o.order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
       )
       SELECT
         so.attendant,
@@ -357,7 +357,7 @@ async function getTodaySalesPerformance() {
           COALESCE(oit.total_items, 0)::int AS total_items
         FROM orders o
         LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-        WHERE o.order_date::date = CURRENT_DATE
+        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
       )
       SELECT
         so.attendant,
@@ -423,7 +423,7 @@ async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[
         COALESCE(SUM(first_item_count), 0)::int AS total_items
       FROM ranked_orders
       WHERE order_rank = 1
-        AND date_trunc('month', order_date) = date_trunc('month', CURRENT_DATE)
+        AND date_trunc('month', order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
       GROUP BY attendant
       ORDER BY new_customers DESC, total_revenue DESC, attendant ASC
       LIMIT 10
@@ -492,7 +492,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
         FROM ordered
         WHERE previous_order_date IS NOT NULL
           AND (order_date - previous_order_date) >= 90
-          AND date_trunc('month', order_date) = date_trunc('month', CURRENT_DATE)
+          AND date_trunc('month', order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
       ),
       first_monthly_reactivations AS (
         SELECT
@@ -586,18 +586,18 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   }>(
     `
       SELECT
-        CURRENT_DATE::text AS today,
+        (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date::text AS today,
         (SELECT MAX(day)::text FROM dashboard_daily_metrics) AS latest_trend_day,
         (
           SELECT COUNT(*)::int
           FROM dashboard_daily_metrics
-          WHERE day >= CURRENT_DATE - ($1::int - 1)
+          WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ) AS trend_row_count,
         (SELECT COUNT(*)::int FROM customer_snapshot) AS snapshot_row_count,
         (
           SELECT COUNT(*)::int
           FROM customer_snapshot
-          WHERE updated_at::date < CURRENT_DATE
+          WHERE updated_at::date < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
         ) AS stale_snapshot_count
     `,
     [validatedDays],
@@ -654,10 +654,10 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
           COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
         FROM orders o
         LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.order_date >= CURRENT_DATE - ($1::int - 1)
+        WHERE o.order_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         GROUP BY o.order_date::date
       ) s ON s.day = m.day
-      WHERE m.day >= CURRENT_DATE - ($1::int - 1)
+      WHERE m.day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
       ORDER BY m.day
     `,
     [validatedDays],
@@ -681,10 +681,10 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
             COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
           FROM orders o
           LEFT JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.order_date >= CURRENT_DATE - ($1::int - 1)
+          WHERE o.order_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
           GROUP BY o.order_date::date
         ) s ON s.day = m.day
-        WHERE m.day >= CURRENT_DATE - ($1::int - 1)
+        WHERE m.day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ORDER BY m.day
       `,
       [validatedDays],
@@ -725,7 +725,7 @@ export async function getTrendRangeAnalysis(startDate: string, endDate: string):
         SELECT
           $1::date AS start_date,
           $2::date AS end_date,
-          CURRENT_DATE AS today
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
       ),
       ordered_before_end AS (
         SELECT
@@ -897,7 +897,7 @@ export async function getTrendRangeAnalysis(startDate: string, endDate: string):
         SELECT
           $1::date AS start_date,
           $2::date AS end_date,
-          CURRENT_DATE AS today
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
       ),
       ordered_before_end AS (
         SELECT
@@ -1316,8 +1316,8 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       pool.query(`
         SELECT target_amount 
         FROM monthly_targets 
-        WHERE year = EXTRACT(YEAR FROM CURRENT_DATE) 
-          AND month = EXTRACT(MONTH FROM CURRENT_DATE)
+        WHERE year = EXTRACT(YEAR FROM (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date) 
+          AND month = EXTRACT(MONTH FROM (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
           AND attendant = 'TOTAL'
       `),
       pool.query(`
@@ -1345,7 +1345,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
           COUNT(DISTINCT o.id)::int as total_orders
         FROM orders o
         LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.order_date::date = CURRENT_DATE
+        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
       `),
     ]);
 

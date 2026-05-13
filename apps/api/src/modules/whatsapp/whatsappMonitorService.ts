@@ -674,10 +674,10 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
     evolution:
       instanceName && evolutionBaseUrl && evolutionApiKey
         ? {
-            instanceName,
-            evolutionBaseUrl,
-            evolutionApiKey,
-          }
+          instanceName,
+          evolutionBaseUrl,
+          evolutionApiKey,
+        }
         : null,
   };
 }
@@ -1044,10 +1044,10 @@ function average(values: number[]) {
 
 function publicActivityCounters(accumulator: ActivityReportAccumulator) {
   const conversations = Array.from(accumulator.conversations.values());
-  
+
   // Critério de conversa concluída: Teve recebida E enviada (interação real)
   const attended = conversations.filter(c => c.sentMessages > 0 && c.receivedMessages > 0);
-  
+
   const attendedGroups = attended.filter(c => c.kind === "customer_group" || c.kind === "other_group");
   const attendedPrivates = attended.filter(c => c.kind === "private");
   const internalGroups = conversations.filter(c => c.kind === "internal_group" && c.sentMessages > 0);
@@ -1080,7 +1080,7 @@ export async function getWhatsappAgentActivityReport(
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
   const reportDays = buildActivityReportDays(days);
   const totalReportDays = buildActivityReportDays(days * 2);
-  
+
   const startDate = totalReportDays[0]?.date ?? localDateKey(new Date());
   const endDate = totalReportDays[totalReportDays.length - 1]?.date ?? localDateKey(new Date());
   const pivotDate = reportDays[0]?.date ?? startDate;
@@ -1180,7 +1180,7 @@ export async function getWhatsappAgentActivityReport(
   const summaryAccumulator = createActivityReportAccumulator();
   const previousSummaryAccumulator = createActivityReportAccumulator();
   const pendingInboundByAgentConversation = new Map<string, Date>();
-  
+
   // To track active agents in each period correctly
   const currentPeriodAgents = new Set<string>();
   const previousPeriodAgents = new Set<string>();
@@ -1207,7 +1207,7 @@ export async function getWhatsappAgentActivityReport(
     const agentId = String(row.agent_id ?? "sem-agente");
     const agentName = String(row.agent_name ?? "Sem agente");
     const createdAt = new Date(String(row.created_at));
-    
+
     const isCurrentPeriod = localDate >= pivotDate;
 
     const pendingKey = `${agentId}:${remoteJid}`;
