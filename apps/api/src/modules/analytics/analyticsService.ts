@@ -194,31 +194,35 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
       target_days AS (
         SELECT day FROM day_series
         WHERE day NOT IN (SELECT day FROM dashboard_daily_metrics)
-           OR day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1 -- Always refresh today and yesterday to catch late syncs
+           OR day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1
       ),
-      customer_first_orders AS (
-        SELECT customer_id, MIN(order_date)::date as first_order_day
-        FROM orders
-        GROUP BY customer_id
+      customer_stats_at_day AS (
+        SELECT
+          td.day,
+          c.id AS customer_id,
+          (
+            SELECT o.order_date::date
+            FROM orders o
+            WHERE o.customer_id = c.id AND o.order_date <= td.day
+            ORDER BY o.order_date DESC
+            LIMIT 1
+          ) AS last_order_day
+        FROM target_days td
+        CROSS JOIN customers c
+        WHERE EXISTS (
+          SELECT 1 FROM orders o2 
+          WHERE o2.customer_id = c.id AND o2.order_date <= td.day
+        )
       )
       SELECT
-        d.day::text as day,
-        COUNT(c.id)::int as total_customers,
-        COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day <= 30)::int as active_count,
-        COUNT(lo.last_order_day) FILTER (WHERE d.day - lo.last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(c.id) FILTER (WHERE lo.last_order_day IS NULL OR d.day - lo.last_order_day >= 90)::int as inactive_count
-      FROM target_days d
-      CROSS JOIN customers c
-      JOIN customer_first_orders cfo ON cfo.customer_id = c.id AND cfo.first_order_day <= d.day
-      LEFT JOIN LATERAL (
-        SELECT o.order_date::date as last_order_day
-        FROM orders o
-        WHERE o.customer_id = c.id AND o.order_date <= d.day
-        ORDER BY o.order_date DESC
-        LIMIT 1
-      ) lo ON TRUE
-      GROUP BY d.day
-      ORDER BY d.day
+        day::text as day,
+        COUNT(customer_id)::int as total_customers,
+        COUNT(*) FILTER (WHERE day - last_order_day <= 30)::int as active_count,
+        COUNT(*) FILTER (WHERE day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
+        COUNT(*) FILTER (WHERE last_order_day IS NULL OR day - last_order_day >= 90)::int as inactive_count
+      FROM customer_stats_at_day
+      GROUP BY day
+      ORDER BY day
     `,
     [days],
   );
