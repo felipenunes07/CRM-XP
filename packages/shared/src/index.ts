@@ -515,9 +515,40 @@ export interface CustomerCreditOverviewResponse {
   unmatchedRows: CustomerCreditRow[];
 }
 
+export interface CustomerCreditOrderEntry {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  orderNumber: string;
+  orderDate: string | null;
+  totalAmount: number;
+  units: number;
+  seller: string | null;
+  doc: string | null;
+  status: string;
+  lineCount: number;
+}
+
+export interface CustomerCreditPaymentEntry {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  paymentNumber: string;
+  paymentDate: string | null;
+  amount: number;
+  paymentType: string;
+  observation: string;
+}
+
 export interface CustomerCreditDetailResponse {
   snapshot: CustomerCreditSnapshotMeta | null;
   row: CustomerCreditRow | null;
+  orders: CustomerCreditOrderEntry[];
+  payments: CustomerCreditPaymentEntry[];
 }
 
 export interface InventorySnapshotMeta {

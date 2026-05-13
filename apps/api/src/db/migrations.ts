@@ -543,6 +543,61 @@ export const migrations = [
     ON customer_credit_snapshot_rows(risk_level);
   CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_operational_state
     ON customer_credit_snapshot_rows(operational_state);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_order_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_credit_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT NOT NULL,
+    source_display_name TEXT,
+    order_key TEXT NOT NULL,
+    order_number TEXT NOT NULL DEFAULT '',
+    order_date DATE,
+    total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    units INTEGER NOT NULL DEFAULT 0,
+    seller TEXT,
+    doc TEXT,
+    status TEXT NOT NULL DEFAULT '',
+    line_count INTEGER NOT NULL DEFAULT 0,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_snapshot_id
+    ON customer_credit_order_entries(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_customer_id
+    ON customer_credit_order_entries(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_customer_code
+    ON customer_credit_order_entries(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_order_date
+    ON customer_credit_order_entries(order_date DESC);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_payment_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_credit_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT NOT NULL,
+    source_display_name TEXT,
+    payment_key TEXT NOT NULL,
+    payment_number TEXT NOT NULL DEFAULT '',
+    payment_date DATE,
+    amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    payment_type TEXT NOT NULL DEFAULT '',
+    observation TEXT NOT NULL DEFAULT '',
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_snapshot_id
+    ON customer_credit_payment_entries(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_customer_id
+    ON customer_credit_payment_entries(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_customer_code
+    ON customer_credit_payment_entries(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_payment_date
+    ON customer_credit_payment_entries(payment_date DESC);
   `,
   `
   CREATE TABLE IF NOT EXISTS idea_board_items (

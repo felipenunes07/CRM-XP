@@ -7,6 +7,9 @@ const AppShell = lazy(async () => ({ default: (await import("./components/AppShe
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
 const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
+const CustomerFinancialPage = lazy(async () => ({
+  default: (await import("./pages/CustomerFinancialPage")).CustomerFinancialPage,
+}));
 const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
 const InventoryPage = lazy(async () => ({ default: (await import("./pages/InventoryPage")).InventoryPage }));
 const CustomerDetailPage = lazy(async () => ({
@@ -73,6 +76,7 @@ export default function App() {
           <Route path="/pipeline" element={<PipelinePage />} />
           <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
+          <Route path="/clientes/financeiro" element={<CustomerFinancialPage />} />
           <Route path="/estoque" element={<InventoryPage />} />
           <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
