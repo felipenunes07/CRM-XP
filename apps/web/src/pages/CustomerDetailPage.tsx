@@ -9,6 +9,7 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import {
   formatCurrency,
+  calculateDaysSince,
   formatDate,
   formatDateTime,
   formatDaysSince,
@@ -97,6 +98,8 @@ export function CustomerDetailPage() {
   const creditSnapshot = creditDetailQuery.data?.snapshot ?? null;
   const creditOrders = creditDetailQuery.data?.orders ?? [];
   const creditPayments = creditDetailQuery.data?.payments ?? [];
+  const creditDaysSinceLastPayment =
+    creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -347,7 +350,7 @@ export function CustomerDetailPage() {
               </div>
               <div>
                 <span>Dias sem pagar</span>
-                <strong>{formatDaysSince(creditRow.daysSinceLastPayment)}</strong>
+                <strong>{formatDaysSince(creditDaysSinceLastPayment)}</strong>
               </div>
             </div>
 

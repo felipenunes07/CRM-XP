@@ -12,6 +12,7 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import {
   formatCurrency,
+  calculateDaysSince,
   formatDate,
   formatDateTime,
   formatDaysSince,
@@ -171,6 +172,8 @@ export function CustomerFinancialPageView({
   const orderTotal = orders.reduce((sum, order) => sum + order.totalAmount, 0);
   const paymentTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
   const usage = creditRow ? usagePercent(creditRow) : null;
+  const daysSinceLastPayment =
+    creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
 
   return (
     <div className="page-stack customer-financial-page">
@@ -288,7 +291,7 @@ export function CustomerFinancialPageView({
                     helper={creditRow.paymentTerm ? `Prazo ${creditRow.paymentTerm} dias` : undefined}
                   />
                   <FinancialMetric label="Ultimo pedido" value={formatDate(creditRow.lastOrderDate)} helper={formatDaysSince(creditRow.daysSinceLastOrder)} />
-                  <FinancialMetric label="Ultimo pagamento" value={formatDate(creditRow.lastPaymentDate)} helper={formatDaysSince(creditRow.daysSinceLastPayment)} />
+                  <FinancialMetric label="Ultimo pagamento" value={formatDate(creditRow.lastPaymentDate)} helper={formatDaysSince(daysSinceLastPayment)} />
                   <FinancialMetric label="Pedidos no snapshot" value={formatNumber(orders.length)} helper={formatCurrency(orderTotal)} />
                   <FinancialMetric label="Pagamentos no snapshot" value={formatNumber(payments.length)} helper={formatCurrency(paymentTotal)} />
                 </div>
