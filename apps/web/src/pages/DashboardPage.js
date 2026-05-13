@@ -371,7 +371,21 @@ export function DashboardPage() {
     const [chartView, setChartView] = useState("inactivity");
     const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState("comparative");
     const [selectedSaleMonth, setSelectedSaleMonth] = useState(null);
-    const [isSyncing, setIsSyncing] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(() => {
+        // Inicializar verificando se há sincronização em andamento
+        const syncInProgress = localStorage.getItem('dashboard_sync_in_progress');
+        if (syncInProgress) {
+            const syncStartTime = parseInt(syncInProgress, 10);
+            const elapsed = Date.now() - syncStartTime;
+            // Se passou menos de 10 minutos, considera que ainda está sincronizando
+            if (elapsed < 10 * 60 * 1000) {
+                return true;
+            }
+            // Se passou mais de 10 minutos, limpar o flag
+            localStorage.removeItem('dashboard_sync_in_progress');
+        }
+        return false;
+    });
     const [rankingPeriod, setRankingPeriod] = useState("month");
     const [trendDisplayMode, setTrendDisplayMode] = useState("count");
     const [selectedTrendRange, setSelectedTrendRange] = useState(null);
@@ -492,6 +506,48 @@ export function DashboardPage() {
             setUserAnnotations(annotationsQuery.data);
         }
     }, [annotationsQuery.data]);
+    // Monitorar se a sincronização terminou
+    useEffect(() => {
+        if (!isSyncing)
+            return;
+        const syncInProgress = localStorage.getItem('dashboard_sync_in_progress');
+        if (!syncInProgress)
+            return;
+        const syncStartTime = parseInt(syncInProgress, 10);
+        // Verificar periodicamente se a sincronização terminou
+        const checkInterval = setInterval(async () => {
+            // É necessário fazer o refetch para pegar o lastSyncAt atualizado do banco
+            const result = await dashboardQuery.refetch();
+            const currentLastSync = result.data?.lastSyncAt;
+            if (currentLastSync) {
+                const lastSyncTime = new Date(currentLastSync).getTime();
+                // Se a data de última sincronização for posterior ao momento que iniciamos, terminou!
+                if (lastSyncTime > syncStartTime) {
+                    setIsSyncing(false);
+                    localStorage.removeItem('dashboard_sync_in_progress');
+                    clearInterval(checkInterval);
+                    // Atualizar as outras queries também
+                    agendaQuery.refetch();
+                    if (selectedBucket) {
+                        filteredCustomersQuery.refetch();
+                    }
+                    else if (!selectedSaleMonth) {
+                        priorityCustomersQuery.refetch();
+                    }
+                }
+            }
+        }, 10000); // Verifica a cada 10 segundos enquanto sincroniza
+        // Limpar após 12 minutos no máximo (margem de segurança)
+        const timeout = setTimeout(() => {
+            setIsSyncing(false);
+            localStorage.removeItem('dashboard_sync_in_progress');
+            clearInterval(checkInterval);
+        }, 12 * 60 * 1000);
+        return () => {
+            clearInterval(checkInterval);
+            clearTimeout(timeout);
+        };
+    }, [isSyncing, token, selectedBucket, selectedSaleMonth]);
     useEffect(() => {
         if (!isTrendFullScreen) {
             setHoveredFullScreenAnnotation(null);
@@ -701,11 +757,33 @@ export function DashboardPage() {
     async function handleSync() {
         try {
             setIsSyncing(true);
+            // Salvar timestamp no localStorage para persistir entre reloads
+            const syncStartTime = Date.now();
+            localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
+            // Executar a sincronização
             await api.syncData(token, "direct");
-            window.location.reload();
+            // Aguardar 3 segundos para garantir que o banco foi atualizado
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Primeira atualização dos dados
+            await dashboardQuery.refetch();
+            // Aguardar mais 2 segundos e fazer uma segunda atualização
+            // para garantir que pegou o lastSyncAt atualizado
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            await dashboardQuery.refetch();
+            // Atualizar outras queries
+            await agendaQuery.refetch();
+            if (selectedBucket) {
+                await filteredCustomersQuery.refetch();
+            }
+            else if (!selectedSaleMonth) {
+                await priorityCustomersQuery.refetch();
+            }
+            // Remover flag de sincronização em andamento
+            localStorage.removeItem('dashboard_sync_in_progress');
         }
         catch (err) {
             alert(tx("Falha na sincronizacao: ", "同步失败：") + String(err));
+            localStorage.removeItem('dashboard_sync_in_progress');
         }
         finally {
             setIsSyncing(false);
@@ -768,7 +846,40 @@ export function DashboardPage() {
                 : tx("Objetivo concluido neste mes.", "本月目标已完成。")
             : tx(`Faltam ${formatNumber(targetRemaining)} para a meta`, `距离目标还差 ${formatNumber(targetRemaining)}`);
     const monthlyGoalMetaLabel = targetAmount > 0 ? tx(`Alvo ${formatNumber(targetAmount)}`, `目标 ${formatNumber(targetAmount)}`) : tx("Meta pendente", "待设置目标");
-    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), _jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, children: isSyncing ? tx("Sincronizando...", "同步中...") : tx("Sincronizar Agora", "立即同步") })] })] }), _jsxs("div", { className: "hero-premium-stats", children: [_jsxs("div", { className: "premium-stat-card", children: [_jsx("div", { className: "premium-stat-icon", children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("span", { children: tx("Ultima sincronizacao", "最近同步") }), _jsx("strong", { children: metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString(getFormattingLocale()) : tx("Pendente...", "待处理...") })] })] }), _jsxs("div", { className: "premium-stat-card interactive", onClick: handleSetTarget, title: tx("Clique para editar a meta", "点击编辑目标"), children: [_jsx("div", { className: `premium-stat-icon ${isTargetHit ? 'accent-success' : 'accent-blue'}`, children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: _jsx("span", { children: tx("Meta do mes", "本月目标") }) }), _jsxs("div", { style: { display: 'flex', flexDirection: 'column', gap: '2px' }, children: [_jsxs("strong", { children: [formatNumber(itemsSold), " / ", targetAmount > 0 ? formatNumber(targetAmount) : tx("Definir", "设置")] }), targetAmount > 0 && (_jsx("div", { style: { width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }, children: _jsx("div", { style: { width: `${Math.min(100, targetPercent)}%`, height: '100%', background: isTargetHit ? '#10b981' : '#3b82f6', transition: 'width 0.3s ease' } }) }))] })] })] }), _jsxs("div", { className: "premium-stat-card", children: [_jsx("div", { className: "premium-stat-icon accent-purple", children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("span", { children: tx("Tempo medio de compra", "平均购买周期") }), _jsxs("strong", { children: [metrics.averageFrequencyDays.toFixed(1), " ", _jsx("small", { children: tx("dias", "天") })] })] })] })] })] })] }), _jsxs("section", { className: "stats-grid", children: [_jsx(StatCard, { title: tx("Total de clientes", "客户总数"), value: formatNumber(metrics.totalCustomers), helper: tx("Base comercial consolidada", "已汇总的销售客户池") }), _jsx(StatCard, { title: tx("Clientes ativos", "活跃客户"), value: formatNumber(metrics.statusCounts.ACTIVE), badge: formatShare(metrics.statusCounts.ACTIVE, metrics.totalCustomers), helper: tx("Clientes dentro da zona ativa", "处于活跃区间的客户"), tone: "success" }), _jsx(StatCard, { title: tx("Clientes em atencao", "关注客户"), value: formatNumber(metrics.statusCounts.ATTENTION), badge: formatShare(metrics.statusCounts.ATTENTION, metrics.totalCustomers), helper: tx("Clientes pedindo monitoramento", "需要持续跟进的客户"), tone: "warning" }), _jsx(StatCard, { title: tx("Clientes inativos", "沉默客户"), value: formatNumber(metrics.statusCounts.INACTIVE), badge: formatShare(metrics.statusCounts.INACTIVE, metrics.totalCustomers), helper: tx("Clientes fora da zona ativa", "已离开活跃区间的客户"), tone: "danger" }), _jsx(StatCard, { title: "Pe\u00E7as de Hoje", value: `${formatNumber(metrics.todayItemsSold)} itens`, badge: dailyGoal > 0 ? `${Math.round((metrics.todayItemsSold / dailyGoal) * 100)}% da meta` : undefined, helper: dailyGoal > 0 ? `Meta diária: ${formatNumber(dailyGoal)} itens (Meta mensal / ${businessDaysInMonth} dias úteis).` : "Total de itens vendidos hoje.", tone: rankingPeriod === 'today' ? 'success' : 'primary', onClick: () => setRankingPeriod(prev => prev === 'today' ? 'month' : 'today') }), _jsxs("article", { className: monthlyGoalCardClassName, children: [_jsxs("div", { className: "monthly-goal-card__header", children: [_jsxs("div", { className: "monthly-goal-card__copy", children: [_jsx("p", { className: "monthly-goal-card__eyebrow", children: "Meta mensal" }), _jsx("strong", { className: "monthly-goal-card__value", children: targetAmount > 0 ? `${formatNumber(itemsSold)} telas` : "Sem meta" }), _jsxs("div", { className: "monthly-goal-card__meta-row", children: [_jsxs("span", { className: "monthly-goal-card__pill", children: [_jsx("span", { className: "monthly-goal-card__pill-dot" }), monthlyGoalMetaLabel] }), _jsx("span", { className: "monthly-goal-card__highlight", children: monthlyGoalHighlight })] })] }), _jsxs("div", { className: "monthly-goal-card__progress", "aria-hidden": "true", children: [_jsxs("svg", { className: "monthly-goal-card__progress-ring", width: "72", height: "72", viewBox: "0 0 72 72", children: [_jsx("circle", { cx: "36", cy: "36", r: progressRadius, className: "monthly-goal-card__progress-track" }), _jsx("circle", { cx: "36", cy: "36", r: progressRadius, className: "monthly-goal-card__progress-fill", strokeDasharray: progressCircumference, strokeDashoffset: progressCircumference - (targetProgress / 100) * progressCircumference })] }), _jsx("div", { className: "monthly-goal-card__progress-core" }), _jsxs("div", { className: "monthly-goal-card__progress-label", children: [_jsx("strong", { children: targetAmount > 0 ? `${targetPercent}%` : "--" }), _jsx("span", { children: "meta" })] })] })] }), _jsx("span", { className: [
+    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), _jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, style: isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando...", "同步中..."), _jsx("span", { style: {
+                                                                position: 'absolute',
+                                                                right: '0.85rem',
+                                                                top: '50%',
+                                                                transform: 'translateY(-50%)',
+                                                                display: 'inline-block',
+                                                                width: '18px',
+                                                                height: '18px',
+                                                                border: '2.5px solid rgba(41, 86, 215, 0.15)',
+                                                                borderTopColor: '#2956d7',
+                                                                borderRadius: '50%',
+                                                                animation: 'spin 1s linear infinite'
+                                                            } })] })) : tx("Sincronizar Agora", "立即同步") })] }), isSyncing && (_jsxs("div", { style: {
+                                            marginTop: '1rem',
+                                            padding: '0.85rem 1.15rem',
+                                            backgroundColor: '#ffffff',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(41, 86, 215, 0.25)',
+                                            fontSize: '0.9rem',
+                                            color: '#1e293b',
+                                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: '0.4rem',
+                                            animation: 'fadeIn 0.3s ease-out'
+                                        }, children: [_jsxs("div", { style: { display: 'flex', alignItems: 'center', gap: '0.65rem' }, children: [_jsx("span", { style: { fontSize: '1.2rem' }, children: "\uD83D\uDD04" }), _jsx("strong", { style: { color: '#2956d7', fontWeight: 700 }, children: tx("Sincronização manual em andamento", "手动同步进行中") })] }), _jsx("p", { style: { margin: 0, color: '#475569', fontSize: '0.85rem', lineHeight: '1.5' }, children: tx("Processando dados do Supabase. Isso pode levar de 2 a 5 minutos. Não é necessário atualizar a página, os dados aparecerão automaticamente.", "正在处理 Supabase 数据。这可能需要 2 到 5 分钟。无需刷新页面，数据将自动出现。") })] }))] }), _jsxs("div", { className: "hero-premium-stats", children: [_jsxs("div", { className: "premium-stat-card", children: [_jsx("div", { className: "premium-stat-icon", children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("span", { children: tx("Ultima sincronizacao", "最近同步") }), _jsx("strong", { style: isSyncing ? { color: '#2956d7', display: 'flex', alignItems: 'center', gap: '0.5rem' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando agora...", "正在同步..."), _jsx("span", { style: {
+                                                                        display: 'inline-block',
+                                                                        width: '12px',
+                                                                        height: '12px',
+                                                                        border: '2px solid rgba(41, 86, 215, 0.3)',
+                                                                        borderTopColor: '#2956d7',
+                                                                        borderRadius: '50%',
+                                                                        animation: 'spin 1s linear infinite'
+                                                                    } })] })) : (metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString(getFormattingLocale()) : tx("Pendente...", "待处理...")) })] })] }), _jsxs("div", { className: "premium-stat-card interactive", onClick: handleSetTarget, title: tx("Clique para editar a meta", "点击编辑目标"), children: [_jsx("div", { className: `premium-stat-icon ${isTargetHit ? 'accent-success' : 'accent-blue'}`, children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: _jsx("span", { children: tx("Meta do mes", "本月目标") }) }), _jsxs("div", { style: { display: 'flex', flexDirection: 'column', gap: '2px' }, children: [_jsxs("strong", { children: [formatNumber(itemsSold), " / ", targetAmount > 0 ? formatNumber(targetAmount) : tx("Definir", "设置")] }), targetAmount > 0 && (_jsx("div", { style: { width: '100%', height: '4px', background: 'rgba(255,255,255,0.1)', borderRadius: '2px', overflow: 'hidden', marginTop: '2px' }, children: _jsx("div", { style: { width: `${Math.min(100, targetPercent)}%`, height: '100%', background: isTargetHit ? '#10b981' : '#3b82f6', transition: 'width 0.3s ease' } }) }))] })] })] }), _jsxs("div", { className: "premium-stat-card", children: [_jsx("div", { className: "premium-stat-icon accent-purple", children: _jsx("svg", { width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", xmlns: "http://www.w3.org/2000/svg", children: _jsx("path", { d: "M12 8V12L15 15M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }) }) }), _jsxs("div", { className: "premium-stat-info", children: [_jsx("span", { children: tx("Tempo medio de compra", "平均购买周期") }), _jsxs("strong", { children: [metrics.averageFrequencyDays.toFixed(1), " ", _jsx("small", { children: tx("dias", "天") })] })] })] })] })] })] }), _jsxs("section", { className: "stats-grid", children: [_jsx(StatCard, { title: tx("Total de clientes", "客户总数"), value: formatNumber(metrics.totalCustomers), helper: tx("Base comercial consolidada", "已汇总的销售客户池") }), _jsx(StatCard, { title: tx("Clientes ativos", "活跃客户"), value: formatNumber(metrics.statusCounts.ACTIVE), badge: formatShare(metrics.statusCounts.ACTIVE, metrics.totalCustomers), helper: tx("Clientes dentro da zona ativa", "处于活跃区间的客户"), tone: "success" }), _jsx(StatCard, { title: tx("Clientes em atencao", "关注客户"), value: formatNumber(metrics.statusCounts.ATTENTION), badge: formatShare(metrics.statusCounts.ATTENTION, metrics.totalCustomers), helper: tx("Clientes pedindo monitoramento", "需要持续跟进的客户"), tone: "warning" }), _jsx(StatCard, { title: tx("Clientes inativos", "沉默客户"), value: formatNumber(metrics.statusCounts.INACTIVE), badge: formatShare(metrics.statusCounts.INACTIVE, metrics.totalCustomers), helper: tx("Clientes fora da zona ativa", "已离开活跃区间的客户"), tone: "danger" }), _jsx(StatCard, { title: "Pe\u00E7as de Hoje", value: `${formatNumber(metrics.todayItemsSold)} itens`, badge: dailyGoal > 0 ? `${Math.round((metrics.todayItemsSold / dailyGoal) * 100)}% da meta` : undefined, helper: dailyGoal > 0 ? `Meta diária: ${formatNumber(dailyGoal)} itens (Meta mensal / ${businessDaysInMonth} dias úteis).` : "Total de itens vendidos hoje.", tone: rankingPeriod === 'today' ? 'success' : 'primary', onClick: () => setRankingPeriod(prev => prev === 'today' ? 'month' : 'today') }), _jsxs("article", { className: monthlyGoalCardClassName, children: [_jsxs("div", { className: "monthly-goal-card__header", children: [_jsxs("div", { className: "monthly-goal-card__copy", children: [_jsx("p", { className: "monthly-goal-card__eyebrow", children: "Meta mensal" }), _jsx("strong", { className: "monthly-goal-card__value", children: targetAmount > 0 ? `${formatNumber(itemsSold)} telas` : "Sem meta" }), _jsxs("div", { className: "monthly-goal-card__meta-row", children: [_jsxs("span", { className: "monthly-goal-card__pill", children: [_jsx("span", { className: "monthly-goal-card__pill-dot" }), monthlyGoalMetaLabel] }), _jsx("span", { className: "monthly-goal-card__highlight", children: monthlyGoalHighlight })] })] }), _jsxs("div", { className: "monthly-goal-card__progress", "aria-hidden": "true", children: [_jsxs("svg", { className: "monthly-goal-card__progress-ring", width: "72", height: "72", viewBox: "0 0 72 72", children: [_jsx("circle", { cx: "36", cy: "36", r: progressRadius, className: "monthly-goal-card__progress-track" }), _jsx("circle", { cx: "36", cy: "36", r: progressRadius, className: "monthly-goal-card__progress-fill", strokeDasharray: progressCircumference, strokeDashoffset: progressCircumference - (targetProgress / 100) * progressCircumference })] }), _jsx("div", { className: "monthly-goal-card__progress-core" }), _jsxs("div", { className: "monthly-goal-card__progress-label", children: [_jsx("strong", { children: targetAmount > 0 ? `${targetPercent}%` : "--" }), _jsx("span", { children: "meta" })] })] })] }), _jsx("span", { className: [
                                     "monthly-goal-card__status",
                                     isTargetHit ? "is-complete" : "",
                                     targetAmount === 0 ? "is-empty" : "",

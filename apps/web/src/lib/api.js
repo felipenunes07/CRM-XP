@@ -422,6 +422,12 @@ export const api = {
             body: JSON.stringify(input),
         }, token);
     },
+    sendWhatsappMonitorMediaReply(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/media-replies`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
     refreshWhatsappMonitorProfiles(token) {
         return request("/api/whatsapp-monitor/refresh-profiles", { method: "POST" }, token);
     },

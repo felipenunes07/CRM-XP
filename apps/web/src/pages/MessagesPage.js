@@ -44,16 +44,25 @@ function suggestedReplyFromMessages(messages) {
     if (!lastInbound) {
         return null;
     }
-    if (text.includes("prazo") || text.includes("entrega")) {
-        return "Claro. Vou conferir o prazo atualizado e ja te retorno com a previsao mais segura.";
+    if (text.includes("bom dia") || text.includes("boa tarde") || text.includes("boa noite") || text.includes("ola") || text.includes("oi")) {
+        return "Ola! Como posso te ajudar hoje?";
     }
-    if (text.includes("valor") || text.includes("preco") || text.includes("orcamento")) {
-        return "Perfeito. Vou revisar as condicoes e te envio a melhor opcao dentro do que combinamos.";
+    if (text.includes("prazo") || text.includes("entrega") || text.includes("chegar")) {
+        return "Vou conferir o prazo de entrega e ja te retorno.";
     }
-    if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento")) {
-        return "Recebi. Vou verificar o arquivo e te retorno com o proximo passo.";
+    if (text.includes("valor") || text.includes("preco") || text.includes("orcamento") || text.includes("quanto")) {
+        return "Vou revisar os valores e te envio a melhor condicao.";
     }
-    return "Perfeito, obrigado pelo retorno. Vou verificar aqui e ja te respondo com a melhor orientacao.";
+    if (text.includes("pix") || text.includes("pagamento") || text.includes("boleto") || text.includes("pago")) {
+        return "Vou verificar o status do pagamento e ja te confirmo.";
+    }
+    if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento") || text.includes("comprovante")) {
+        return "Recebi o documento. Vou analisar e te retorno.";
+    }
+    if (text.includes("obrigado") || text.includes("valeu") || text.includes("show") || text.includes("perfeito")) {
+        return "Disponha! Qualquer coisa estou por aqui.";
+    }
+    return "Obrigado pelo retorno. Vou verificar e ja te respondo.";
 }
 function attachmentName(message) {
     const directName = message.metadata.fileName ?? message.metadata.filename ?? message.metadata.mediaName;
@@ -81,6 +90,31 @@ function ChatMessageBubble({ message, showSender }) {
     const senderLabel = message.senderName || message.senderJid || "Participante";
     return (_jsxs("div", { className: `wa-message-row ${direction} ${showSender ? "with-sender" : ""}`, children: [showSender ? (_jsx(AgentAvatar, { name: senderLabel, imageUrl: message.senderProfilePictureUrl })) : null, _jsxs("div", { className: "wa-message-stack", children: [showSender ? _jsx("span", { className: "wa-message-sender", children: senderLabel }) : null, _jsxs("div", { className: `wa-bubble ${direction} ${message.risk ? "has-risk" : ""}`, children: [_jsx("p", { children: message.content }), fileName ? (_jsxs("div", { className: "wa-attachment", children: [_jsx(FileImage, { size: 18 }), _jsxs("div", { children: [_jsx("strong", { children: fileName }), _jsx("span", { children: "Arquivo enviado" })] })] })) : null, _jsx("time", { children: formatTime(message.createdAt) })] }), message.risk ? (_jsxs("div", { className: "wa-risk-row", children: [_jsxs("span", { className: `wa-risk-chip ${riskTone(message)}`, children: [_jsx(AlertTriangle, { size: 14 }), message.risk.label] }), _jsxs("span", { className: "wa-risk-chip neutral", children: [_jsx(ShieldCheck, { size: 14 }), message.risk.severity === "HIGH" ? "Alto" : message.risk.severity === "MODERATE" ? "Moderado" : "Baixo"] }), _jsxs("span", { className: "wa-risk-chip neutral", children: [_jsx(Check, { size: 14 }), "Novo evento"] })] })) : null] })] }));
 }
+function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result;
+            if (typeof result === "string") {
+                resolve(result.split(",")[1] ?? "");
+            }
+            else {
+                resolve("");
+            }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+function detectMediaType(file) {
+    if (file.type.startsWith("image/"))
+        return "image";
+    if (file.type.startsWith("video/"))
+        return "video";
+    if (file.type.startsWith("audio/"))
+        return "audio";
+    return "document";
+}
 export function MessagesPage() {
     const { token } = useAuth();
     const queryClient = useQueryClient();
@@ -91,6 +125,8 @@ export function MessagesPage() {
     const [selectedConversationId, setSelectedConversationId] = useState(null);
     const [chatMenuOpen, setChatMenuOpen] = useState(false);
     const [replyText, setReplyText] = useState("");
+    const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+    const fileInputRef = useRef(null);
     const chatBodyRef = useRef(null);
     const stickToBottomRef = useRef(true);
     const lastScrolledConversationRef = useRef(null);
@@ -170,6 +206,13 @@ export function MessagesPage() {
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
+    const sendMediaMutation = useMutation({
+        mutationFn: ({ id, mediaBase64, mediaType, fileName, }) => api.sendWhatsappMonitorMediaReply(token, id, { mediaBase64, mediaType, fileName }),
+        onSuccess: (updated) => {
+            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+            queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+        },
+    });
     const refreshProfilesMutation = useMutation({
         mutationFn: () => api.refreshWhatsappMonitorProfiles(token),
         onSuccess: () => {
@@ -238,6 +281,28 @@ export function MessagesPage() {
         }
         sendReplyMutation.mutate({ id: currentConversation.id, messageText: text });
     }
+    async function handleFileSelect(event) {
+        const file = event.target.files?.[0];
+        if (!file || !currentConversation || sendMediaMutation.isPending) {
+            return;
+        }
+        try {
+            const base64 = await readFileAsBase64(file);
+            sendMediaMutation.mutate({
+                id: currentConversation.id,
+                mediaBase64: base64,
+                mediaType: detectMediaType(file),
+                fileName: file.name,
+            });
+        }
+        catch (error) {
+            console.error("Failed to read file", error);
+        }
+        finally {
+            event.target.value = "";
+        }
+    }
+    const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
     if (conversationsQuery.isLoading) {
         return _jsx("div", { className: "page-loading", children: "Carregando monitoramento de WhatsApp..." });
     }
@@ -254,7 +319,10 @@ export function MessagesPage() {
                                         const element = event.currentTarget;
                                         const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                                         stickToBottomRef.current = distanceFromBottom < 160;
-                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : messages.length ? (messages.map((message) => (_jsx(ChatMessageBubble, { message: message, showSender: currentConversation.isGroup && message.direction === "INBOUND" }, message.id)))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [_jsxs("div", { className: "wa-chat-footer-info", children: [_jsxs("div", { children: [_jsx("strong", { children: "Retencao em nuvem ativa" }), _jsxs("span", { children: ["Ultima atividade: ", formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)] })] }), _jsxs("span", { className: `wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`, children: [_jsx(ShieldCheck, { size: 14 }), totalRisks, " alertas no recorte"] })] }), suggestedReply ? (_jsxs("div", { className: "wa-suggested-reply", children: [_jsxs("button", { type: "button", onClick: () => setReplyText(suggestedReply), children: [_jsx(Sparkles, { size: 16 }), "Resposta sugerida"] }), _jsx("span", { children: suggestedReply })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", disabled: true, children: _jsx(Paperclip, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", disabled: true, children: _jsx(Smile, { size: 20 }) }), _jsx("textarea", { value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {
+                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : messages.length ? (messages.map((message) => (_jsx(ChatMessageBubble, { message: message, showSender: currentConversation.isGroup && message.direction === "INBOUND" }, message.id)))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [_jsxs("div", { className: "wa-reply-bar", children: [_jsx("input", { type: "file", ref: fileInputRef, style: { display: "none" }, onChange: handleFileSelect }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", onClick: () => fileInputRef.current?.click(), disabled: sendMediaMutation.isPending, children: _jsx(Paperclip, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", onClick: () => setEmojiPickerOpen(!emojiPickerOpen), children: _jsx(Smile, { size: 20 }) }), emojiPickerOpen ? (_jsx("div", { className: "wa-emoji-picker", children: commonEmojis.map((emoji) => (_jsx("button", { type: "button", onClick: () => {
+                                                                    setReplyText((prev) => prev + emoji);
+                                                                    setEmojiPickerOpen(false);
+                                                                }, children: emoji }, emoji))) })) : null] }), _jsx("textarea", { value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {
                                                         if (event.key === "Enter" && !event.shiftKey) {
                                                             event.preventDefault();
                                                             event.currentTarget.form?.requestSubmit();
