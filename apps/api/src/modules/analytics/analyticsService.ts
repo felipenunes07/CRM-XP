@@ -186,15 +186,15 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     `
       WITH day_series AS (
         SELECT generate_series(
-          CURRENT_DATE - ($1::int - 1),
-          CURRENT_DATE,
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1),
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
           INTERVAL '1 day'
         )::date AS day
       ),
       target_days AS (
         SELECT day FROM day_series
         WHERE day NOT IN (SELECT day FROM dashboard_daily_metrics)
-           OR day >= CURRENT_DATE - 1 -- Always refresh today and yesterday to catch late syncs
+           OR day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1 -- Always refresh today and yesterday to catch late syncs
       ),
       customer_first_orders AS (
         SELECT customer_id, MIN(order_date)::date as first_order_day
@@ -263,7 +263,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
       day, total_customers, active_count, attention_count, inactive_count, updated_at
     )
     SELECT
-      CURRENT_DATE,
+      (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
       COUNT(*)::int,
       COUNT(*) FILTER (WHERE status = 'ACTIVE')::int,
       COUNT(*) FILTER (WHERE status = 'ATTENTION')::int,
