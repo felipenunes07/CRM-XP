@@ -430,6 +430,7 @@ export function WhatsappActivityPage() {
       attendedConversations: calculateGrowth(s.attendedConversations, p.attendedConversations),
       receivedMessages: calculateGrowth(s.receivedMessages, p.receivedMessages),
       sentMessages: calculateGrowth(s.sentMessages, p.sentMessages),
+      receivedUniqueMessages: calculateGrowth(s.receivedUniqueMessages, p.receivedUniqueMessages),
       averageFirstResponseSeconds: calculateGrowth(s.averageFirstResponseSeconds ?? 0, p.averageFirstResponseSeconds ?? 0),
       attendedGroups: calculateGrowth(s.attendedGroups, p.attendedGroups),
       attendedPrivates: calculateGrowth(s.attendedPrivates, p.attendedPrivates),
