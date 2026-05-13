@@ -76,7 +76,7 @@ export default function App() {
           <Route path="/pipeline" element={<PipelinePage />} />
           <Route path="/atendentes" element={<AttendantsPage />} />
           <Route path="/clientes" element={<CustomersPage />} />
-          <Route path="/clientes/financeiro" element={<CustomerFinancialPage />} />
+{/* <Route path="/clientes/financeiro" element={<CustomerFinancialPage />} /> */}
           <Route path="/estoque" element={<InventoryPage />} />
           <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
