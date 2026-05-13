@@ -1481,6 +1481,15 @@ export function createApp() {
     }
   });
 
+  app.post("/api/whatsapp-monitor/conversations/:id/media-replies", async (request, response, next) => {
+    try {
+      const { sendWhatsappMonitorMediaReply } = await import("./modules/whatsapp/whatsappMonitorService.js");
+      response.status(201).json(await sendWhatsappMonitorMediaReply(String(request.params.id), request.user!, request.body));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/whatsapp-monitor/refresh-profiles", async (_request, response, next) => {
     try {
       response.json(await refreshMissingWhatsappMonitorProfiles());

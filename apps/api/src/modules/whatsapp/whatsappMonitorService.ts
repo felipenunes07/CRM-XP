@@ -17,6 +17,7 @@ import type { JwtUser } from "../platform/authService.js";
 import {
   markWhatsappChatAsUnread,
   markWhatsappMessagesAsRead,
+  sendWhatsappInstanceMediaMessage,
   sendWhatsappInstanceTextMessage,
   type EvolutionInstanceConfig,
   type EvolutionMessageKey,
@@ -772,6 +773,89 @@ export async function sendWhatsappMonitorReply(
         isGroup: context.remoteJid.endsWith("@g.us"),
         senderName: user.name,
         sentFromMonitor: true,
+      }),
+      createdAt,
+      providerMessageId,
+    ],
+  );
+
+  await Promise.all([
+    pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),
+    pool.query(
+      `
+      INSERT INTO whatsapp_conversation_reads (deal_id, user_id, last_read_at, force_unread, marked_unread_at, updated_at)
+      VALUES ($1, $2, NOW(), false, NULL, NOW())
+      ON CONFLICT (deal_id, user_id) DO UPDATE SET
+        last_read_at = NOW(),
+        force_unread = false,
+        marked_unread_at = NULL,
+        updated_at = NOW()
+      `,
+      [dealId, user.id],
+    ),
+  ]);
+
+  return getWhatsappMonitorConversation(dealId, user);
+}
+
+export async function sendWhatsappMonitorMediaReply(
+  dealId: string,
+  user: JwtUser,
+  input: {
+    mediaBase64: string;
+    mediaType: "image" | "video" | "audio" | "document";
+    fileName?: string;
+    caption?: string;
+  },
+): Promise<WhatsappMonitorConversationDetail> {
+  const context = await getWhatsappConversationEvolutionContext(dealId);
+  if (!context.remoteJid || !context.evolution) {
+    throw new HttpError(400, "Conversa sem instancia Evolution configurada.");
+  }
+
+  const providerPayload = await sendWhatsappInstanceMediaMessage(
+    context.evolution,
+    context.remoteJid,
+    input.mediaBase64,
+    input.mediaType,
+    input.fileName,
+    input.caption,
+  );
+
+  const providerMessageId =
+    extractProviderMessageId(providerPayload) ?? `monitor-media-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const createdAt = new Date().toISOString();
+
+  await pool.query(
+    `
+    INSERT INTO deal_activities (
+      deal_id, activity_type, actor_user_id, actor_name, content, metadata, created_at
+    )
+    SELECT $1, 'WHATSAPP_SENT', $2, $3, $4, $5::jsonb, $6
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM deal_activities
+      WHERE deal_id = $1
+        AND metadata ->> 'messageId' = $7
+    )
+    `,
+    [
+      dealId,
+      user.id,
+      user.name,
+      input.caption || (input.fileName ? `Arquivo: ${input.fileName}` : `Midia enviada (${input.mediaType})`),
+      JSON.stringify({
+        remoteJid: context.remoteJid,
+        messageId: providerMessageId,
+        providerMessageId,
+        providerPayload,
+        instance: context.evolution.instanceName,
+        instanceId: context.instanceId,
+        isGroup: context.remoteJid.endsWith("@g.us"),
+        senderName: user.name,
+        sentFromMonitor: true,
+        mediaType: input.mediaType,
+        fileName: input.fileName,
       }),
       createdAt,
       providerMessageId,

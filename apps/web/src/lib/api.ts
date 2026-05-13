@@ -568,6 +568,25 @@ export const api = {
       token,
     );
   },
+  sendWhatsappMonitorMediaReply(
+    token: string,
+    id: string,
+    input: {
+      mediaBase64: string;
+      mediaType: "image" | "video" | "audio" | "document";
+      fileName?: string;
+      caption?: string;
+    },
+  ) {
+    return request<WhatsappMonitorConversationDetail>(
+      `/api/whatsapp-monitor/conversations/${id}/media-replies`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+      token,
+    );
+  },
 
   refreshWhatsappMonitorProfiles(token: string) {
     return request<{ scanned: number; refreshed: number; refreshedInstances: number }>(
