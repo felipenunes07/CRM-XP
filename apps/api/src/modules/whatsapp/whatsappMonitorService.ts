@@ -1033,6 +1033,8 @@ interface ActivityConversationAccumulator {
 interface ActivityReportAccumulator {
   sentMessages: number;
   receivedMessages: number;
+  receivedUniquePrivates: Set<string>;
+  receivedUniqueGroups: Set<string>;
   attendedConversations: Set<string>;
   attendedPrivates: Set<string>;
   customerGroups: Set<string>;
@@ -1046,6 +1048,8 @@ function createActivityReportAccumulator(): ActivityReportAccumulator {
   return {
     sentMessages: 0,
     receivedMessages: 0,
+    receivedUniquePrivates: new Set<string>(),
+    receivedUniqueGroups: new Set<string>(),
     attendedConversations: new Set<string>(),
     attendedPrivates: new Set<string>(),
     customerGroups: new Set<string>(),
@@ -1109,6 +1113,12 @@ function registerActivityReportEvent(input: {
   } else {
     input.accumulator.receivedMessages += 1;
     conversation.receivedMessages += 1;
+    
+    if (input.kind === "private") {
+      input.accumulator.receivedUniquePrivates.add(input.remoteJid);
+    } else {
+      input.accumulator.receivedUniqueGroups.add(input.remoteJid);
+    }
   }
 }
 
@@ -1152,6 +1162,9 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
     receivedMessages: accumulator.receivedMessages,
     receivedMessagesPrivate: privateConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
     receivedMessagesGroup: groupConvs.reduce((sum, c) => sum + c.receivedMessages, 0),
+    receivedUniqueMessages: accumulator.receivedUniquePrivates.size + accumulator.receivedUniqueGroups.size,
+    receivedUniqueMessagesPrivate: accumulator.receivedUniquePrivates.size,
+    receivedUniqueMessagesGroup: accumulator.receivedUniqueGroups.size,
     responseCount: accumulator.responseSeconds.length,
     averageFirstResponseSeconds: average(accumulator.responseSeconds),
   };
@@ -1442,6 +1455,9 @@ export async function getWhatsappAgentActivityReport(
         receivedMessages: counts.receivedMessages,
         receivedMessagesPrivate: counts.receivedMessagesPrivate,
         receivedMessagesGroup: counts.receivedMessagesGroup,
+        receivedUniqueMessages: counts.receivedUniqueMessages,
+        receivedUniqueMessagesPrivate: counts.receivedUniqueMessagesPrivate,
+        receivedUniqueMessagesGroup: counts.receivedUniqueMessagesGroup,
         averageFirstResponseSeconds: counts.averageFirstResponseSeconds,
       };
     }),
