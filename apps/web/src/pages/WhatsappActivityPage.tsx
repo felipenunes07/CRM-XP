@@ -747,27 +747,36 @@ export function WhatsappActivityPage() {
                       <strong>{formatNumber(selectedCellSummary.sentMessages)}</strong>
                       respostas
                     </span>
+                    <span>
+                      <strong>{formatNumber(selectedCellSummary.receivedMessages)}</strong>
+                      recebidas
+                    </span>
                   </div>
                   <div className="activity-detail-columns">
                     <div>
                       <h3>Agentes com trafego</h3>
                       {(selectedCellRows ?? []).filter((cell) => cell.sentMessages > 0 || cell.receivedMessages > 0).length ? (
                         (selectedCellRows ?? [])
-                          .filter((cell) => cell.sentMessages > 0)
-                          .sort((left, right) => right.sentMessages - left.sentMessages)
-                          .map((cell) => (
-                            <button
-                              type="button"
-                              key={`${cell.agentId}-${cell.date}-${cell.hour}`}
-                              className="activity-detail-row"
-                              onClick={() => setSelectedAgentId(cell.agentId)}
-                            >
-                              <span>{cell.agentName}</span>
-                              <strong>{formatNumber(cell.sentMessages)}</strong>
-                            </button>
-                          ))
+                          .filter((cell) => cell.sentMessages > 0 || cell.receivedMessages > 0)
+                          .sort((left, right) => (right.sentMessages + right.receivedMessages) - (left.sentMessages + left.receivedMessages))
+                          .map((cell) => {
+                            const val = heatmapMetric === "sent" ? cell.sentMessages : 
+                                        heatmapMetric === "received" ? cell.receivedMessages : 
+                                        cell.sentMessages + cell.receivedMessages;
+                            return (
+                              <button
+                                type="button"
+                                key={`${cell.agentId}-${cell.date}-${cell.hour}`}
+                                className="activity-detail-row"
+                                onClick={() => setSelectedAgentId(cell.agentId)}
+                              >
+                                <span>{cell.agentName}</span>
+                                <strong>{formatNumber(val)}</strong>
+                              </button>
+                            );
+                          })
                       ) : (
-                        <p>Nenhuma resposta nesse horario.</p>
+                        <p>Nenhuma atividade nesse horario.</p>
                       )}
                     </div>
                     <div>
@@ -777,21 +786,26 @@ export function WhatsappActivityPage() {
                           if (typeFilter === "private") return c.kind === "private";
                           if (typeFilter === "group") return c.kind !== "private";
                           return true;
-                        }).filter((c) => c.sentMessages > 0);
+                        }).filter((c) => c.sentMessages > 0 || c.receivedMessages > 0);
 
                         if (!filtered.length) {
                           return <p>Nenhuma conversa atendida nesse horario.</p>;
                         }
 
-                        return filtered.slice(0, 8).map((conversation) => (
-                          <div key={conversation.remoteJid} className="activity-detail-row static">
-                            <span>
-                              {conversation.name}
-                              <small>{conversationKindLabel(conversation.kind)}</small>
-                            </span>
-                            <strong>{formatNumber(conversation.sentMessages)}</strong>
-                          </div>
-                        ));
+                        return filtered.slice(0, 8).map((conversation) => {
+                          const val = heatmapMetric === "sent" ? conversation.sentMessages : 
+                                      heatmapMetric === "received" ? conversation.receivedMessages : 
+                                      conversation.sentMessages + conversation.receivedMessages;
+                          return (
+                            <div key={conversation.remoteJid} className="activity-detail-row static">
+                              <span>
+                                {conversation.name}
+                                <small>{conversationKindLabel(conversation.kind)}</small>
+                              </span>
+                              <strong>{formatNumber(val)}</strong>
+                            </div>
+                          );
+                        });
                       })()}
                     </div>
                   </div>
