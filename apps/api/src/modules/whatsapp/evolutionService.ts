@@ -49,6 +49,31 @@ export async function sendWhatsappInstanceTextMessage(
   });
 }
 
+export async function sendWhatsappInstanceMediaMessage(
+  instance: EvolutionInstanceConfig,
+  destinationJid: string,
+  mediaBase64: string,
+  mediaType: "image" | "video" | "audio" | "document",
+  fileName?: string,
+  caption?: string,
+) {
+  const payload: any = {
+    number: formatEvolutionSendTextTarget(destinationJid),
+    mediatype: mediaType,
+    media: mediaBase64,
+  };
+
+  if (caption) {
+    payload.caption = caption;
+  }
+
+  if (fileName) {
+    payload.fileName = fileName;
+  }
+
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+}
+
 export async function markWhatsappMessagesAsRead(instance: EvolutionInstanceConfig, readMessages: EvolutionMessageKey[]) {
   if (!readMessages.length) {
     return null;
