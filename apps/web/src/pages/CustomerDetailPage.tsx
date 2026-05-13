@@ -87,19 +87,19 @@ export function CustomerDetailPage() {
     queryFn: () => api.customerLabels(token!),
     enabled: Boolean(token),
   });
-  const creditDetailQuery = useQuery({
-    queryKey: ["customer-credit-detail", id],
-    queryFn: () => api.customerCreditDetail(token!, id!),
-    enabled: Boolean(token && id),
-  });
+  // const creditDetailQuery = useQuery({
+  //   queryKey: ["customer-credit-detail", id],
+  //   queryFn: () => api.customerCreditDetail(token!, id!),
+  //   enabled: Boolean(token && id),
+  // });
 
   const customer = detailQuery.data ?? null;
-  const creditRow = creditDetailQuery.data?.row ?? null;
-  const creditSnapshot = creditDetailQuery.data?.snapshot ?? null;
-  const creditOrders = creditDetailQuery.data?.orders ?? [];
-  const creditPayments = creditDetailQuery.data?.payments ?? [];
-  const creditDaysSinceLastPayment =
-    creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
+  const creditRow = null; // creditDetailQuery.data?.row ?? null;
+  const creditSnapshot = null; // creditDetailQuery.data?.snapshot ?? null;
+  const creditOrders = []; // creditDetailQuery.data?.orders ?? [];
+  const creditPayments = []; // creditDetailQuery.data?.payments ?? [];
+  const creditDaysSinceLastPayment = 0;
+    // creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -280,7 +280,7 @@ export function CustomerDetailPage() {
         </div>
       </section>
 
-      <section className="panel customer-credit-detail-panel">
+      {/* <section className="panel customer-credit-detail-panel">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Credito & Pagamento</p>
@@ -382,7 +382,7 @@ export function CustomerDetailPage() {
             do dia.
           </div>
         )}
-      </section>
+      </section> */}
 
       <section className="grid-two">
         <article className="panel">

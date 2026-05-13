@@ -33,7 +33,7 @@ export const appShellLinks = [
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
   { to: "/clientes", icon: Users, labelPt: "Clientes" },
-  { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
+// { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
   { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
   { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
   { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
@@ -81,7 +81,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: Users,
     children: [
       { to: "/clientes", labelPt: "Todos os Clientes" },
-      { to: "/clientes/financeiro", labelPt: "Financeiro" },
+// { to: "/clientes/financeiro", labelPt: "Financeiro" },
       { to: "/clientes-novos", labelPt: "Clientes Novos" },
       { to: "/reativacao", labelPt: "Reativação" },
       { to: "/embaixadores", labelPt: "Embaixadores" },
