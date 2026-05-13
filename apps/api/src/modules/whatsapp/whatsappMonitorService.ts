@@ -1237,7 +1237,7 @@ export async function getWhatsappAgentActivityReport(
       wi_base.id = d.whatsapp_instance_id 
       OR LOWER(wi_base.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
     )
-    JOIN users u ON (
+    LEFT JOIN users u ON (
       u.id = da.actor_user_id 
       OR u.id = d.assigned_to
       OR u.id = wi_base.assigned_user_id
