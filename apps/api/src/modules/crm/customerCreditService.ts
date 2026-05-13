@@ -708,6 +708,53 @@ function parseCustomerCreditPayments(sheet: XLSX.WorkSheet | undefined): ParsedC
     .filter((row): row is ParsedCustomerCreditPayment => Boolean(row));
 }
 
+function isAfterCustomerCreditDate(candidate: string | null, current: string | null) {
+  if (!candidate) {
+    return false;
+  }
+
+  if (!current) {
+    return true;
+  }
+
+  return candidate > current;
+}
+
+function reconcileRowsWithParsedPayments(
+  rows: ParsedCustomerCreditRow[],
+  payments: ParsedCustomerCreditPayment[],
+): ParsedCustomerCreditRow[] {
+  if (!payments.length) {
+    return rows;
+  }
+
+  const latestPaymentByCode = new Map<string, string>();
+  payments.forEach((payment) => {
+    if (isAfterCustomerCreditDate(payment.paymentDate, latestPaymentByCode.get(payment.customerCode) ?? null)) {
+      latestPaymentByCode.set(payment.customerCode, payment.paymentDate!);
+    }
+  });
+
+  if (!latestPaymentByCode.size) {
+    return rows;
+  }
+
+  return rows.map((row) => {
+    const latestPaymentDate = latestPaymentByCode.get(row.customerCode) ?? null;
+    if (!isAfterCustomerCreditDate(latestPaymentDate, row.lastPaymentDate)) {
+      return row;
+    }
+
+    return {
+      ...row,
+      lastPaymentDate: latestPaymentDate,
+      // RESUMO and PAG can disagree. Once the date comes from PAG, the stale
+      // RESUMO day count should not remain attached to the newer date.
+      daysSinceLastPayment: null,
+    };
+  });
+}
+
 async function getActiveSnapshotRecord() {
   const result = await pool.query(
     `
@@ -829,6 +876,7 @@ export async function parseCustomerCreditWorkbook(
     .filter((row): row is ParsedCustomerCreditRow => Boolean(row));
   const orders = parseCustomerCreditOrders(workbook.Sheets.OUT);
   const payments = parseCustomerCreditPayments(workbook.Sheets.PAG);
+  const reconciledRows = reconcileRowsWithParsedPayments(rows, payments);
 
   return {
     candidate: {
@@ -839,7 +887,7 @@ export async function parseCustomerCreditWorkbook(
       fileUpdatedAt: candidate?.fileUpdatedAt ?? stat.mtime.toISOString(),
     },
     sheetNames: workbook.SheetNames,
-    rows,
+    rows: reconciledRows,
     orders,
     payments,
   };
@@ -1493,6 +1541,25 @@ function mapCustomerCreditPaymentEntry(row: Record<string, unknown>): CustomerCr
   };
 }
 
+export function reconcileCustomerCreditRowWithPayments(
+  row: CustomerCreditRow,
+  payments: Pick<CustomerCreditPaymentEntry, "paymentDate">[],
+): CustomerCreditRow {
+  const latestPaymentDate = payments.reduce<string | null>((latest, payment) => {
+    return isAfterCustomerCreditDate(payment.paymentDate, latest) ? payment.paymentDate : latest;
+  }, null);
+
+  if (!isAfterCustomerCreditDate(latestPaymentDate, row.lastPaymentDate)) {
+    return row;
+  }
+
+  return {
+    ...row,
+    lastPaymentDate: latestPaymentDate,
+    daysSinceLastPayment: null,
+  };
+}
+
 function compareCreditRows(left: CustomerCreditRow, right: CustomerCreditRow) {
   const riskComparison = RISK_PRIORITY[left.riskLevel] - RISK_PRIORITY[right.riskLevel];
   if (riskComparison !== 0) {
@@ -1763,10 +1830,13 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
     ),
   ]);
 
+  const mappedPayments = paymentsResult.rows.map((row) => mapCustomerCreditPaymentEntry(row));
+  const mappedRow = result.rows[0] ? mapCustomerCreditRow(result.rows[0]) : null;
+
   return {
     snapshot,
-    row: result.rows[0] ? mapCustomerCreditRow(result.rows[0]) : null,
+    row: mappedRow ? reconcileCustomerCreditRowWithPayments(mappedRow, mappedPayments) : null,
     orders: ordersResult.rows.map((row) => mapCustomerCreditOrderEntry(row)),
-    payments: paymentsResult.rows.map((row) => mapCustomerCreditPaymentEntry(row)),
+    payments: mappedPayments,
   };
 }

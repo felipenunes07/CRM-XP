@@ -29,7 +29,11 @@ const EMPTY_SUMMARY = {
   internalGroups: 0,
   otherGroups: 0,
   sentMessages: 0,
+  sentMessagesPrivate: 0,
+  sentMessagesGroup: 0,
   receivedMessages: 0,
+  receivedMessagesPrivate: 0,
+  receivedMessagesGroup: 0,
   responseCount: 0,
   averageFirstResponseSeconds: null as number | null,
 };
@@ -182,7 +186,11 @@ function buildDailySeries(report: WhatsappAgentActivityReport, cells: WhatsappAg
       attendedGroups: summary.attendedGroups,
       attendedPrivates: summary.attendedPrivates,
       sentMessages: summary.sentMessages,
+      sentMessagesPrivate: summary.sentMessagesPrivate,
+      sentMessagesGroup: summary.sentMessagesGroup,
       receivedMessages: summary.receivedMessages,
+      receivedMessagesPrivate: summary.receivedMessagesPrivate,
+      receivedMessagesGroup: summary.receivedMessagesGroup,
       averageFirstResponseSeconds: summary.averageFirstResponseSeconds,
     };
   });
@@ -742,8 +750,8 @@ export function WhatsappActivityPage() {
                   </div>
                   <div className="activity-detail-columns">
                     <div>
-                      <h3>Agentes ativos</h3>
-                      {(selectedCellRows ?? []).filter((cell) => cell.sentMessages > 0).length ? (
+                      <h3>Agentes com trafego</h3>
+                      {(selectedCellRows ?? []).filter((cell) => cell.sentMessages > 0 || cell.receivedMessages > 0).length ? (
                         (selectedCellRows ?? [])
                           .filter((cell) => cell.sentMessages > 0)
                           .sort((left, right) => right.sentMessages - left.sentMessages)

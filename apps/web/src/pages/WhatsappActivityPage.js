@@ -19,7 +19,11 @@ const EMPTY_SUMMARY = {
     internalGroups: 0,
     otherGroups: 0,
     sentMessages: 0,
+    sentMessagesPrivate: 0,
+    sentMessagesGroup: 0,
     receivedMessages: 0,
+    receivedMessagesPrivate: 0,
+    receivedMessagesGroup: 0,
     responseCount: 0,
     averageFirstResponseSeconds: null,
 };
@@ -105,7 +109,7 @@ function summarizeCells(cells) {
     const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
     const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
     const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
-    const attended = conversations.filter((conversation) => conversation.sentMessages > 0);
+    const attended = conversations.filter((conversation) => conversation.sentMessages > 0 && conversation.receivedMessages > 0);
     const attendedGroups = attended.filter((conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group");
     const customerGroups = attended.filter((conversation) => conversation.kind === "customer_group");
     const internalGroups = attended.filter((conversation) => conversation.kind === "internal_group");
@@ -119,7 +123,11 @@ function summarizeCells(cells) {
         internalGroups: internalGroups.length,
         otherGroups: otherGroups.length,
         sentMessages,
+        sentMessagesPrivate: cells.reduce((sum, cell) => sum + (cell.sentMessagesPrivate || 0), 0),
+        sentMessagesGroup: cells.reduce((sum, cell) => sum + (cell.sentMessagesGroup || 0), 0),
         receivedMessages,
+        receivedMessagesPrivate: cells.reduce((sum, cell) => sum + (cell.receivedMessagesPrivate || 0), 0),
+        receivedMessagesGroup: cells.reduce((sum, cell) => sum + (cell.receivedMessagesGroup || 0), 0),
         responseCount,
         averageFirstResponseSeconds: responseCount ? responseSecondsTotal / responseCount : null,
         conversations,
@@ -135,7 +143,11 @@ function buildDailySeries(report, cells) {
             attendedGroups: summary.attendedGroups,
             attendedPrivates: summary.attendedPrivates,
             sentMessages: summary.sentMessages,
+            sentMessagesPrivate: summary.sentMessagesPrivate,
+            sentMessagesGroup: summary.sentMessagesGroup,
             receivedMessages: summary.receivedMessages,
+            receivedMessagesPrivate: summary.receivedMessagesPrivate,
+            receivedMessagesGroup: summary.receivedMessagesGroup,
             averageFirstResponseSeconds: summary.averageFirstResponseSeconds,
         };
     });
@@ -213,6 +225,8 @@ export function WhatsappActivityPage() {
     const [activeTab, setActiveTab] = useState("overview");
     const [selectedCellKey, setSelectedCellKey] = useState(null);
     const [showHeatmapNumbers, setShowHeatmapNumbers] = useState(true);
+    const [heatmapMetric, setHeatmapMetric] = useState("total");
+    const [typeFilter, setTypeFilter] = useState("all");
     const reportQuery = useQuery({
         queryKey: ["whatsapp-agent-activity-report", days],
         queryFn: () => api.whatsappAgentActivityReport(token, { days }),
@@ -232,16 +246,38 @@ export function WhatsappActivityPage() {
     const visibleSummary = useMemo(() => {
         if (!report)
             return { ...EMPTY_SUMMARY, conversations: [] };
-        if (selectedAgentId === "all") {
-            return { ...report.summary, conversations: summarizeCells(report.hourlyCells).conversations };
-        }
-        return summarizeCells(visibleCells);
-    }, [report, selectedAgentId, visibleCells]);
+        const summary = selectedAgentId === "all"
+            ? { ...report.summary, conversations: summarizeCells(report.hourlyCells).conversations }
+            : summarizeCells(visibleCells);
+        if (typeFilter === "all")
+            return summary;
+        return {
+            ...summary,
+            attendedConversations: typeFilter === "private" ? summary.attendedPrivates : summary.attendedGroups,
+            attendedGroups: typeFilter === "private" ? 0 : summary.attendedGroups,
+            attendedPrivates: typeFilter === "group" ? 0 : summary.attendedPrivates,
+            customerGroups: typeFilter === "private" ? 0 : summary.customerGroups,
+            internalGroups: typeFilter === "private" ? 0 : summary.internalGroups,
+            otherGroups: typeFilter === "private" ? 0 : summary.otherGroups,
+            sentMessages: typeFilter === "private" ? summary.sentMessagesPrivate : summary.sentMessagesGroup,
+            receivedMessages: typeFilter === "private" ? summary.receivedMessagesPrivate : summary.receivedMessagesGroup,
+        };
+    }, [report, selectedAgentId, visibleCells, typeFilter]);
     const dailySeries = useMemo(() => {
         if (!report)
             return [];
-        return selectedAgentId === "all" ? report.dailySeries : buildDailySeries(report, visibleCells);
-    }, [report, selectedAgentId, visibleCells]);
+        const series = selectedAgentId === "all" ? report.dailySeries : buildDailySeries(report, visibleCells);
+        if (typeFilter === "all")
+            return series;
+        return series.map((item) => ({
+            ...item,
+            attendedConversations: typeFilter === "private" ? item.attendedPrivates : item.attendedGroups,
+            attendedGroups: typeFilter === "private" ? 0 : item.attendedGroups,
+            attendedPrivates: typeFilter === "group" ? 0 : item.attendedPrivates,
+            sentMessages: typeFilter === "private" ? item.sentMessagesPrivate : item.sentMessagesGroup,
+            receivedMessages: typeFilter === "private" ? item.receivedMessagesPrivate : item.receivedMessagesGroup,
+        }));
+    }, [report, selectedAgentId, visibleCells, typeFilter]);
     const cellsBySlot = useMemo(() => {
         const map = new Map();
         for (const cell of visibleCells) {
@@ -262,7 +298,15 @@ export function WhatsappActivityPage() {
         }
         return map;
     }, [report, cellsBySlot]);
-    const maxCellValue = useMemo(() => Math.max(1, ...Array.from(cellMap.values()).map((cell) => cell.attendedConversations)), [cellMap]);
+    const maxCellValue = useMemo(() => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
+        if (heatmapMetric === "sent")
+            return cell.sentMessages;
+        if (heatmapMetric === "received")
+            return cell.receivedMessages;
+        if (heatmapMetric === "conversations")
+            return cell.attendedConversations;
+        return cell.sentMessages + cell.receivedMessages;
+    })), [cellMap, heatmapMetric]);
     const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
     const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
     const growthMetrics = useMemo(() => {
@@ -340,19 +384,55 @@ export function WhatsappActivityPage() {
     }
     return (_jsxs("div", { className: "whatsapp-activity-page", children: [_jsxs("div", { className: "activity-report-header", children: [_jsxs("div", { children: [_jsx("h1", { children: activeTab === "overview" ? "Visao geral" : activeTab === "conversations" ? "Conversas" : "Visao Geral de Agentes" }), _jsx("span", { children: activeTab === "agents"
                                     ? "Acompanhe desempenho por agente e clique em uma vendedora para filtrar."
-                                    : "Acompanhe o atendimento por hora, agente e tipo de conversa." })] }), _jsxs("div", { className: "activity-actions", children: [_jsxs("button", { type: "button", className: "activity-primary-button", onClick: () => downloadReportCsv(report, selectedAgent?.agentName ?? "Todos os agentes", dailySeries), children: [_jsx(Download, { size: 16 }), "Baixar relatorios de agentes"] }), _jsx("label", { className: "activity-select", children: _jsx("select", { value: days, onChange: (event) => setDays(Number(event.target.value)), children: windowOptions.map((option) => (_jsx("option", { value: option, children: option === 1 ? "Hoje" : `Ultimos ${option} dias` }, option))) }) }), _jsx("label", { className: "activity-select", children: _jsxs("select", { value: selectedAgentId, onChange: (event) => setSelectedAgentId(event.target.value), children: [_jsx("option", { value: "all", children: "Todos os agentes" }), report.agents.map((agent) => (_jsx("option", { value: agent.agentId, children: agent.agentName }, agent.agentId)))] }) }), _jsx("button", { type: "button", className: "activity-icon-button", onClick: () => reportQuery.refetch(), title: "Atualizar", children: _jsx(RefreshCw, { size: 17 }) })] })] }), _jsx("div", { className: "activity-tabs", role: "tablist", "aria-label": "Relatorios WhatsApp", children: tabs.map((tab) => (_jsx("button", { type: "button", className: activeTab === tab.id ? "active" : "", onClick: () => setActiveTab(tab.id), children: tab.label }, tab.id))) }), activeTab === "overview" ? (_jsxs(_Fragment, { children: [_jsx("section", { className: "activity-metric-grid", children: cards.map(({ key, label, value, previous, detail, icon: Icon, isTime, inverse }) => (_jsxs("div", { className: "activity-metric-card", children: [_jsx("div", { className: "activity-metric-icon", children: _jsx(Icon, { size: 18 }) }), _jsx("span", { children: label }), _jsxs("div", { className: "activity-metric-value", children: [_jsx("strong", { children: isTime ? formatSeconds(value) : formatNumber(value) }), _jsx(GrowthIndicator, { current: typeof value === "number" ? value : 0, previous: previous, inverse: inverse })] }), _jsx("small", { children: detail })] }, key))) }), _jsxs("section", { className: "activity-panel heatmap-panel", children: [_jsxs("div", { className: "activity-panel-header", children: [_jsxs("div", { children: [_jsx("h2", { children: "Trafego de conversa" }), _jsxs("span", { children: [selectedAgent ? selectedAgent.agentName : "Todos os agentes", " - grupos unicos e privados atendidos"] })] }), _jsxs("div", { className: "activity-heatmap-controls", children: [_jsxs("div", { className: "activity-heatmap-toggles", children: [_jsx("button", { type: "button", className: !showHeatmapNumbers ? "active" : "", onClick: () => setShowHeatmapNumbers(false), children: "Cor" }), _jsx("button", { type: "button", className: showHeatmapNumbers ? "active" : "", onClick: () => setShowHeatmapNumbers(true), children: "Numero" })] }), _jsx("div", { className: "activity-live-chip", children: "Em tempo real" })] })] }), _jsx("div", { className: "activity-heatmap-wrap", children: _jsxs("div", { className: "activity-heatmap", children: [_jsx("div", { className: "activity-heatmap-corner" }), report.hours.map((hour) => (_jsx("div", { className: "activity-hour-label", children: hour }, hour))), report.days.map((day) => (_jsxs("div", { className: "activity-day-row", children: [_jsxs("div", { className: "activity-day-label", children: [_jsx("strong", { children: shortWeekday(day.weekday) }), _jsx("span", { children: day.label })] }), report.hours.map((hour) => {
+                                    : "Acompanhe o atendimento por hora, agente e tipo de conversa." })] }), _jsxs("div", { className: "activity-actions", children: [_jsxs("button", { type: "button", className: "activity-primary-button", onClick: () => downloadReportCsv(report, selectedAgent?.agentName ?? "Todos os agentes", dailySeries), children: [_jsx(Download, { size: 16 }), "Baixar relatorios de agentes"] }), _jsx("label", { className: "activity-select", children: _jsx("select", { value: days, onChange: (event) => setDays(Number(event.target.value)), children: windowOptions.map((option) => (_jsx("option", { value: option, children: option === 1 ? "Hoje" : `Ultimos ${option} dias` }, option))) }) }), _jsx("label", { className: "activity-select", children: _jsxs("select", { value: selectedAgentId, onChange: (event) => setSelectedAgentId(event.target.value), children: [_jsx("option", { value: "all", children: "Todos os agentes" }), report.agents.map((agent) => (_jsx("option", { value: agent.agentId, children: agent.agentName }, agent.agentId)))] }) }), _jsxs("div", { className: "activity-heatmap-toggles", children: [_jsx("button", { type: "button", className: typeFilter === "all" ? "active" : "", onClick: () => setTypeFilter("all"), children: "Todas" }), _jsx("button", { type: "button", className: typeFilter === "private" ? "active" : "", onClick: () => setTypeFilter("private"), children: "Privado" }), _jsx("button", { type: "button", className: typeFilter === "group" ? "active" : "", onClick: () => setTypeFilter("group"), children: "Grupos" })] }), _jsx("button", { type: "button", className: "activity-icon-button", onClick: () => reportQuery.refetch(), title: "Atualizar", children: _jsx(RefreshCw, { size: 17 }) })] })] }), _jsx("div", { className: "activity-tabs", role: "tablist", "aria-label": "Relatorios WhatsApp", children: tabs.map((tab) => (_jsx("button", { type: "button", className: activeTab === tab.id ? "active" : "", onClick: () => setActiveTab(tab.id), children: tab.label }, tab.id))) }), activeTab === "overview" ? (_jsxs(_Fragment, { children: [_jsx("section", { className: "activity-metric-grid", children: cards.map(({ key, label, value, previous, detail, icon: Icon, isTime, inverse }) => (_jsxs("div", { className: "activity-metric-card", children: [_jsx("div", { className: "activity-metric-icon", children: _jsx(Icon, { size: 18 }) }), _jsx("span", { children: label }), _jsxs("div", { className: "activity-metric-value", children: [_jsx("strong", { children: isTime ? formatSeconds(value) : formatNumber(value) }), _jsx(GrowthIndicator, { current: typeof value === "number" ? value : 0, previous: previous, inverse: inverse })] }), _jsx("small", { children: detail })] }, key))) }), _jsxs("section", { className: "activity-panel heatmap-panel", children: [_jsxs("div", { className: "activity-panel-header", children: [_jsxs("div", { children: [_jsx("h2", { children: "Trafego de conversa" }), _jsxs("span", { children: [selectedAgent ? selectedAgent.agentName : "Todos os agentes", " - grupos unicos e privados atendidos"] })] }), _jsxs("div", { className: "activity-heatmap-controls", children: [_jsxs("div", { className: "activity-heatmap-toggles", children: [_jsx("button", { type: "button", className: !showHeatmapNumbers ? "active" : "", onClick: () => setShowHeatmapNumbers(false), children: "Cor" }), _jsx("button", { type: "button", className: showHeatmapNumbers ? "active" : "", onClick: () => setShowHeatmapNumbers(true), children: "Numero" })] }), _jsxs("div", { className: "activity-heatmap-toggles", children: [_jsx("button", { type: "button", className: heatmapMetric === "total" ? "active" : "", onClick: () => setHeatmapMetric("total"), children: "Total" }), _jsx("button", { type: "button", className: heatmapMetric === "sent" ? "active" : "", onClick: () => setHeatmapMetric("sent"), children: "Enviada" }), _jsx("button", { type: "button", className: heatmapMetric === "received" ? "active" : "", onClick: () => setHeatmapMetric("received"), children: "Recebida" }), _jsx("button", { type: "button", className: heatmapMetric === "conversations" ? "active" : "", onClick: () => setHeatmapMetric("conversations"), children: "Conversas" })] }), _jsx("div", { className: "activity-live-chip", children: "Em tempo real" })] })] }), _jsx("div", { className: "activity-heatmap-wrap", children: _jsxs("div", { className: "activity-heatmap", children: [_jsx("div", { className: "activity-heatmap-corner" }), report.hours.map((hour) => (_jsx("div", { className: "activity-hour-label", children: hour }, hour))), report.days.map((day) => (_jsxs("div", { className: "activity-day-row", children: [_jsxs("div", { className: "activity-day-label", children: [_jsx("strong", { children: shortWeekday(day.weekday) }), _jsx("span", { children: day.label })] }), report.hours.map((hour) => {
                                                     const key = `${day.date}:${hour}`;
                                                     const cell = cellMap.get(key) ?? { ...EMPTY_SUMMARY, conversations: [] };
-                                                    const level = heatLevel(cell.attendedConversations, maxCellValue);
-                                                    const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.attendedGroups} grupos, ${cell.attendedPrivates} privados, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
-                                                    return (_jsx("button", { type: "button", className: `activity-heat-cell level-${level} ${selectedCellKey === key ? "selected" : ""}`, title: title, onClick: () => setSelectedCellKey(key), children: cell.attendedConversations && showHeatmapNumbers ? cell.attendedConversations : "" }, key));
+                                                    const value = (() => {
+                                                        if (typeFilter === "private") {
+                                                            if (heatmapMetric === "sent")
+                                                                return cell.sentMessagesPrivate;
+                                                            if (heatmapMetric === "received")
+                                                                return cell.receivedMessagesPrivate;
+                                                            if (heatmapMetric === "conversations")
+                                                                return cell.attendedPrivates;
+                                                            return (cell.sentMessagesPrivate || 0) + (cell.receivedMessagesPrivate || 0);
+                                                        }
+                                                        if (typeFilter === "group") {
+                                                            if (heatmapMetric === "sent")
+                                                                return cell.sentMessagesGroup;
+                                                            if (heatmapMetric === "received")
+                                                                return cell.receivedMessagesGroup;
+                                                            if (heatmapMetric === "conversations")
+                                                                return cell.attendedGroups;
+                                                            return (cell.sentMessagesGroup || 0) + (cell.receivedMessagesGroup || 0);
+                                                        }
+                                                        if (heatmapMetric === "sent")
+                                                            return cell.sentMessages;
+                                                        if (heatmapMetric === "received")
+                                                            return cell.receivedMessages;
+                                                        if (heatmapMetric === "conversations")
+                                                            return cell.attendedConversations;
+                                                        return cell.sentMessages + cell.receivedMessages;
+                                                    })();
+                                                    const level = heatLevel(value, maxCellValue);
+                                                    const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
+                                                    return (_jsx("button", { type: "button", className: `activity-heat-cell level-${level} ${selectedCellKey === key ? "selected" : ""}`, title: title, onClick: () => setSelectedCellKey(key), children: value && showHeatmapNumbers ? value : "" }, key));
                                                 })] }, day.date)))] }) })] }), _jsxs("section", { className: "activity-detail-grid", children: [_jsxs("div", { className: "activity-panel", children: [_jsx("div", { className: "activity-panel-header", children: _jsxs("div", { children: [_jsx("h2", { children: "Detalhe do horario" }), _jsx("span", { children: selectedCellKey ? selectedCellKey.replace(":", " - ") : "Clique em um quadrado do mapa" })] }) }), selectedCellSummary ? (_jsxs("div", { className: "activity-cell-detail", children: [_jsxs("div", { className: "activity-cell-stats", children: [_jsxs("span", { children: [_jsx("strong", { children: formatNumber(selectedCellSummary.attendedGroups) }), "grupos"] }), _jsxs("span", { children: [_jsx("strong", { children: formatNumber(selectedCellSummary.attendedPrivates) }), "privados"] }), _jsxs("span", { children: [_jsx("strong", { children: formatNumber(selectedCellSummary.sentMessages) }), "respostas"] })] }), _jsxs("div", { className: "activity-detail-columns", children: [_jsxs("div", { children: [_jsx("h3", { children: "Agentes ativos" }), (selectedCellRows ?? []).filter((cell) => cell.sentMessages > 0).length ? ((selectedCellRows ?? [])
                                                                 .filter((cell) => cell.sentMessages > 0)
                                                                 .sort((left, right) => right.sentMessages - left.sentMessages)
-                                                                .map((cell) => (_jsxs("button", { type: "button", className: "activity-detail-row", onClick: () => setSelectedAgentId(cell.agentId), children: [_jsx("span", { children: cell.agentName }), _jsx("strong", { children: formatNumber(cell.sentMessages) })] }, `${cell.agentId}-${cell.date}-${cell.hour}`)))) : (_jsx("p", { children: "Nenhuma resposta nesse horario." }))] }), _jsxs("div", { children: [_jsx("h3", { children: "Conversas" }), selectedCellSummary.conversations.filter((conversation) => conversation.sentMessages > 0).length ? (selectedCellSummary.conversations
-                                                                .filter((conversation) => conversation.sentMessages > 0)
-                                                                .slice(0, 8)
-                                                                .map((conversation) => (_jsxs("div", { className: "activity-detail-row static", children: [_jsxs("span", { children: [conversation.name, _jsx("small", { children: conversationKindLabel(conversation.kind) })] }), _jsx("strong", { children: formatNumber(conversation.sentMessages) })] }, conversation.remoteJid)))) : (_jsx("p", { children: "Nenhuma conversa atendida nesse horario." }))] })] })] })) : (_jsx("div", { className: "activity-empty", children: "Selecione uma celula para ver agentes, grupos e privados atendidos." }))] }), _jsxs("div", { className: "activity-panel", children: [_jsx("div", { className: "activity-panel-header", children: _jsxs("div", { children: [_jsx("h2", { children: "Conversas por agentes" }), _jsx("span", { children: "Clique para filtrar o mapa" })] }) }), _jsx("div", { className: "activity-agent-list", children: report.agents.slice(0, 6).map((agent) => (_jsxs("button", { type: "button", className: `activity-agent-list-row ${selectedAgentId === agent.agentId ? "selected" : ""}`, onClick: () => setSelectedAgentId(agent.agentId), children: [_jsx("span", { className: "activity-avatar", children: initials(agent.agentName) || "WA" }), _jsxs("span", { children: [_jsx("strong", { children: agent.agentName }), _jsx("small", { children: formatPhone(agent.phoneNumber) })] }), _jsx("em", { children: formatNumber(agent.attendedConversations) })] }, agent.agentId))) })] })] })] })) : null, activeTab === "conversations" ? (_jsxs("section", { className: "activity-panel activity-chart-panel", children: [_jsx(ActivityChart, { title: "Conversas", value: formatNumber(visibleSummary.attendedConversations), dataKey: "attendedConversations", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.attendedConversations : null }), _jsx(ActivityChart, { title: "Mensagens Recebidas", value: formatNumber(visibleSummary.receivedMessages), dataKey: "receivedMessages", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.receivedMessages : null }), _jsx(ActivityChart, { title: "Mensagens enviadas", value: formatNumber(visibleSummary.sentMessages), dataKey: "sentMessages", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.sentMessages : null }), _jsx(ActivityChart, { title: "Tempo de Primeira Resposta", value: formatSeconds(visibleSummary.averageFirstResponseSeconds), dataKey: "averageFirstResponseSeconds", data: dailySeries, response: true, growth: selectedAgentId === "all" ? growthMetrics?.averageFirstResponseSeconds : null })] })) : null, activeTab === "agents" ? (_jsx("section", { className: "activity-panel", children: _jsx("div", { className: "activity-table-wrap", children: _jsxs("table", { className: "activity-table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "Agente" }), _jsx("th", { children: "N de Conversas" }), _jsx("th", { children: "Grupos atendidos" }), _jsx("th", { children: "Privados" }), _jsx("th", { children: "Mensagens enviadas" }), _jsx("th", { children: "Mensagens recebidas" }), _jsx("th", { children: "Tempo medio de primeira resposta" })] }) }), _jsx("tbody", { children: report.agents.length ? (report.agents.map((agent) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("button", { type: "button", className: "activity-agent-button", onClick: () => {
+                                                                .map((cell) => (_jsxs("button", { type: "button", className: "activity-detail-row", onClick: () => setSelectedAgentId(cell.agentId), children: [_jsx("span", { children: cell.agentName }), _jsx("strong", { children: formatNumber(cell.sentMessages) })] }, `${cell.agentId}-${cell.date}-${cell.hour}`)))) : (_jsx("p", { children: "Nenhuma resposta nesse horario." }))] }), _jsxs("div", { children: [_jsx("h3", { children: "Conversas" }), (() => {
+                                                                const filtered = selectedCellSummary.conversations.filter((c) => {
+                                                                    if (typeFilter === "private")
+                                                                        return c.kind === "private";
+                                                                    if (typeFilter === "group")
+                                                                        return c.kind !== "private";
+                                                                    return true;
+                                                                }).filter((c) => c.sentMessages > 0);
+                                                                if (!filtered.length) {
+                                                                    return _jsx("p", { children: "Nenhuma conversa atendida nesse horario." });
+                                                                }
+                                                                return filtered.slice(0, 8).map((conversation) => (_jsxs("div", { className: "activity-detail-row static", children: [_jsxs("span", { children: [conversation.name, _jsx("small", { children: conversationKindLabel(conversation.kind) })] }), _jsx("strong", { children: formatNumber(conversation.sentMessages) })] }, conversation.remoteJid)));
+                                                            })()] })] })] })) : (_jsx("div", { className: "activity-empty", children: "Selecione uma celula para ver agentes, grupos e privados atendidos." }))] }), _jsxs("div", { className: "activity-panel", children: [_jsx("div", { className: "activity-panel-header", children: _jsxs("div", { children: [_jsx("h2", { children: "Conversas por agentes" }), _jsx("span", { children: "Clique para filtrar o mapa" })] }) }), _jsx("div", { className: "activity-agent-list", children: report.agents.slice(0, 6).map((agent) => (_jsxs("button", { type: "button", className: `activity-agent-list-row ${selectedAgentId === agent.agentId ? "selected" : ""}`, onClick: () => setSelectedAgentId(agent.agentId), children: [_jsx("span", { className: "activity-avatar", children: initials(agent.agentName) || "WA" }), _jsxs("span", { children: [_jsx("strong", { children: agent.agentName }), _jsx("small", { children: formatPhone(agent.phoneNumber) })] }), _jsx("em", { children: formatNumber(agent.attendedConversations) })] }, agent.agentId))) })] })] })] })) : null, activeTab === "conversations" ? (_jsxs("section", { className: "activity-panel activity-chart-panel", children: [_jsx(ActivityChart, { title: "Conversas", value: formatNumber(visibleSummary.attendedConversations), dataKey: "attendedConversations", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.attendedConversations : null }), _jsx(ActivityChart, { title: "Mensagens Recebidas", value: formatNumber(visibleSummary.receivedMessages), dataKey: "receivedMessages", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.receivedMessages : null }), _jsx(ActivityChart, { title: "Mensagens enviadas", value: formatNumber(visibleSummary.sentMessages), dataKey: "sentMessages", data: dailySeries, growth: selectedAgentId === "all" ? growthMetrics?.sentMessages : null }), _jsx(ActivityChart, { title: "Tempo de Primeira Resposta", value: formatSeconds(visibleSummary.averageFirstResponseSeconds), dataKey: "averageFirstResponseSeconds", data: dailySeries, response: true, growth: selectedAgentId === "all" ? growthMetrics?.averageFirstResponseSeconds : null })] })) : null, activeTab === "agents" ? (_jsx("section", { className: "activity-panel", children: _jsx("div", { className: "activity-table-wrap", children: _jsxs("table", { className: "activity-table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: "Agente" }), _jsx("th", { children: "N de Conversas" }), _jsx("th", { children: "Grupos atendidos" }), _jsx("th", { children: "Privados" }), _jsx("th", { children: "Mensagens enviadas" }), _jsx("th", { children: "Mensagens recebidas" }), _jsx("th", { children: "Tempo medio de primeira resposta" })] }) }), _jsx("tbody", { children: report.agents.length ? (report.agents.map((agent) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("button", { type: "button", className: "activity-agent-button", onClick: () => {
                                                     setSelectedAgentId(agent.agentId);
                                                     setActiveTab("overview");
                                                 }, children: [_jsx("span", { className: "activity-avatar", children: initials(agent.agentName) || "WA" }), _jsxs("span", { children: [_jsx("strong", { children: agent.agentName }), _jsx("small", { children: formatPhone(agent.phoneNumber) })] })] }) }), _jsx("td", { children: formatNumber(agent.attendedConversations) }), _jsx("td", { children: formatNumber(agent.attendedGroups) }), _jsx("td", { children: formatNumber(agent.attendedPrivates) }), _jsx("td", { children: formatNumber(agent.sentMessages) }), _jsx("td", { children: formatNumber(agent.receivedMessages) }), _jsx("td", { children: formatSeconds(agent.averageFirstResponseSeconds) })] }, agent.agentId)))) : (_jsx("tr", { children: _jsx("td", { colSpan: 7, children: "Nao ha dados disponiveis" }) })) })] }) }) })) : null] }));

@@ -7,6 +7,7 @@ import {
   deriveCustomerCreditOperationalState,
   findLatestCustomerCreditWorkbook,
   parseCustomerCreditWorkbook,
+  reconcileCustomerCreditRowWithPayments,
   resolveParsedCreditOrders,
   resolveParsedCreditPayments,
 } from "./customerCreditService.js";
@@ -360,6 +361,58 @@ describe("parseCustomerCreditWorkbook", () => {
       }),
     ]);
   });
+
+  it("uses the latest PAG payment date when RESUMO last payment is stale", async () => {
+    const dir = await createTempDir();
+    const workbookPath = path.join(dir, "SALDO VENDAS - 12.05.xlsx");
+
+    await createWorkbook(
+      workbookPath,
+      [
+        [
+          "COD",
+          "Cliente",
+          " Devedor/未付 ",
+          " CREDITO ",
+          "OBS",
+          " Grau de risco ",
+          "Última data de pedido",
+          "Última data de pagamento",
+          "Dias desde último pedido",
+          "Dias desde último pagamento",
+          "Pontuação de Risco",
+        ],
+        [
+          "CL1205",
+          "Cristiano",
+          "-R$ 33438.71",
+          "R$ 0.00",
+          "",
+          "Atenção",
+          "3/24/26",
+          "3/28/26",
+          "16",
+          "12",
+          "10",
+        ],
+      ],
+      {
+        PAG: [
+          ["CODIGO", "N", "Cliente/客户", "COD", "Data/日期", " Valor/已付 ", "TIPO", "OBS"],
+          ["CL1205", "88998", "Cristiano", "CL1205", "5/07/26", "R$ 200.00", "TRF", ""],
+          ["CL1205", "88288", "Cristiano", "CL1205", "4/28/26", "R$ 90.00", "TRF", ""],
+        ],
+      },
+    );
+
+    const parsed = await parseCustomerCreditWorkbook(workbookPath);
+
+    expect(parsed.rows[0]).toMatchObject({
+      customerCode: "CL1205",
+      lastPaymentDate: "2026-05-07",
+      daysSinceLastPayment: null,
+    });
+  });
 });
 
 describe("deriveCustomerCreditOperationalState", () => {
@@ -440,6 +493,30 @@ describe("resolveParsedCreditDetails", () => {
       customerId: "customer-1",
       customerDisplayName: "Fast Phone CRM",
       sourceDisplayName: "Fast Phone",
+    });
+  });
+});
+
+describe("reconcileCustomerCreditRowWithPayments", () => {
+  it("aligns a persisted summary row with the newest payment detail", () => {
+    const row = {
+      customerCode: "CL1205",
+      lastPaymentDate: "2026-03-28",
+      daysSinceLastPayment: 12,
+    } as any;
+
+    const reconciled = reconcileCustomerCreditRowWithPayments(row, [
+      {
+        paymentDate: "2026-05-07",
+      } as any,
+      {
+        paymentDate: "2026-04-28",
+      } as any,
+    ]);
+
+    expect(reconciled).toMatchObject({
+      lastPaymentDate: "2026-05-07",
+      daysSinceLastPayment: null,
     });
   });
 });
