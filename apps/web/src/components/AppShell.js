@@ -11,6 +11,7 @@ export const appShellLinks = [
     { to: "/metas", icon: Trophy, labelPt: "Metas" },
     { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
     { to: "/clientes", icon: Users, labelPt: "Clientes" },
+    { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
     { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
     { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
     { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
@@ -39,6 +40,7 @@ const sidebarMenu = [
         icon: Users,
         children: [
             { to: "/clientes", labelPt: "Todos os Clientes" },
+            { to: "/clientes/financeiro", labelPt: "Financeiro" },
             { to: "/clientes-novos", labelPt: "Clientes Novos" },
             { to: "/reativacao", labelPt: "Reativação" },
             { to: "/embaixadores", labelPt: "Embaixadores" },
@@ -85,7 +87,7 @@ function SidebarGroupItem({ group, tx, }) {
             setOpen(true);
     }, [isChildActive]);
     const Icon = group.icon;
-    return (_jsxs("li", { className: "cw-group", children: [_jsxs("button", { type: "button", className: `cw-group-toggle ${isChildActive ? "is-active" : ""}`, onClick: () => setOpen(!open), "aria-expanded": open, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(group.labelPt, group.labelPt) }), _jsx(ChevronDown, { size: 14, className: `cw-chevron ${open ? "open" : ""}` })] }), open && (_jsx("ul", { className: "cw-group-children", children: group.children.map((child) => (_jsx("li", { className: "cw-child-item", children: _jsx(NavLink, { to: child.to, end: child.to === "/", className: ({ isActive }) => `cw-child-link ${isActive ? "active" : ""}`, children: tx(child.labelPt, child.labelPt) }) }, child.to))) }))] }));
+    return (_jsxs("li", { className: "cw-group", children: [_jsxs("button", { type: "button", className: `cw-group-toggle ${isChildActive ? "is-active" : ""}`, onClick: () => setOpen(!open), "aria-expanded": open, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(group.labelPt, group.labelPt) }), _jsx(ChevronDown, { size: 14, className: `cw-chevron ${open ? "open" : ""}` })] }), open && (_jsx("ul", { className: "cw-group-children", children: group.children.map((child) => (_jsx("li", { className: "cw-child-item", children: _jsx(NavLink, { to: child.to, end: child.to === "/" || child.to === "/clientes", className: ({ isActive }) => `cw-child-link ${isActive ? "active" : ""}`, children: tx(child.labelPt, child.labelPt) }) }, child.to))) }))] }));
 }
 /* ── Main AppShell ── */
 export function AppShell() {

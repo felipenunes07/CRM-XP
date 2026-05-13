@@ -5,8 +5,10 @@ import type { PoolClient } from "pg";
 import type {
   CustomerCreditDetailResponse,
   CustomerCreditOperationalState,
+  CustomerCreditOrderEntry,
   CustomerCreditOverviewResponse,
   CustomerCreditOverviewSummary,
+  CustomerCreditPaymentEntry,
   CustomerCreditRiskLevel,
   CustomerCreditRow,
   CustomerCreditSnapshotMeta,
@@ -22,7 +24,8 @@ const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
 const CUSTOMER_CREDIT_LOCK_NS = 8201;
 const CUSTOMER_CREDIT_LOCK_KEY = 1;
-const CUSTOMER_CREDIT_PARSER_VERSION = 6;
+const CUSTOMER_CREDIT_PARSER_VERSION = 7;
+const CUSTOMER_CREDIT_DETAIL_INSERT_CHUNK_SIZE = 5000;
 const RISK_PRIORITY: Record<CustomerCreditRiskLevel, number> = {
   CRITICO: 0,
   ATENCAO: 1,
@@ -86,15 +89,58 @@ export interface ParsedCustomerCreditRow {
   rawPayload: Record<string, unknown>;
 }
 
+export interface ParsedCustomerCreditOrder {
+  customerCode: string;
+  customerDisplayName: string | null;
+  orderKey: string;
+  orderNumber: string;
+  orderDate: string | null;
+  totalAmount: number;
+  units: number;
+  seller: string | null;
+  doc: string | null;
+  status: string;
+  lineCount: number;
+  rawPayload: Record<string, unknown>;
+}
+
+export interface ParsedCustomerCreditPayment {
+  customerCode: string;
+  customerDisplayName: string | null;
+  paymentKey: string;
+  paymentNumber: string;
+  paymentDate: string | null;
+  amount: number;
+  paymentType: string;
+  observation: string;
+  rawPayload: Record<string, unknown>;
+}
+
 export interface ParsedCustomerCreditWorkbook {
   candidate: CustomerCreditWorkbookCandidate;
   sheetNames: string[];
   rows: ParsedCustomerCreditRow[];
+  orders: ParsedCustomerCreditOrder[];
+  payments: ParsedCustomerCreditPayment[];
 }
+
+type CustomerCreditMatch = { id: string; displayName: string };
 
 interface ResolvedCustomerCreditRow extends ParsedCustomerCreditRow {
   customerId: string | null;
   customerDisplayName: string;
+}
+
+interface ResolvedCustomerCreditOrder extends Omit<ParsedCustomerCreditOrder, "customerDisplayName"> {
+  customerId: string | null;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+}
+
+interface ResolvedCustomerCreditPayment extends Omit<ParsedCustomerCreditPayment, "customerDisplayName"> {
+  customerId: string | null;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
 }
 
 interface SnapshotMetaRecord {
@@ -112,6 +158,14 @@ interface SnapshotMetaRecord {
 }
 
 let activeSnapshotPromise: Promise<CustomerCreditSnapshotMeta | null> | null = null;
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 function toIsoTimestamp(value: unknown) {
   if (value instanceof Date) {
@@ -337,6 +391,10 @@ function isActuallyOverCredit(balanceAmount: number, creditLimit: number) {
   return creditLimit > 0 && getDebtAmount(balanceAmount) > creditLimit;
 }
 
+function isInternalCustomerCode(customerCode: string) {
+  return customerCode.toUpperCase().startsWith("PP");
+}
+
 export function deriveCustomerCreditOperationalState(input: {
   balanceAmount: number;
   creditLimit: number;
@@ -370,7 +428,7 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
   }
 
   // Skip internal/system accounts (e.g. PP13, PP汇款6, PP汇款8).
-  if (customerCode.toUpperCase().startsWith("PP")) {
+  if (isInternalCustomerCode(customerCode)) {
     return null;
   }
 
@@ -488,6 +546,166 @@ function normalizeWorkbookRow(row: Record<string, unknown>): ParsedCustomerCredi
     hasDebtWithoutCredit,
     rawPayload: row,
   };
+}
+
+function normalizePaymentType(value: unknown) {
+  const normalized = normalizeComparableText(String(value ?? ""));
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.includes("转账") || normalized.includes("trf")) {
+    return "TRF";
+  }
+  if (normalized.includes("现金") || normalized.includes("dinheiro")) {
+    return "DINHEIRO";
+  }
+  if (normalized.includes("坏品抵账表") || normalized.includes("trocas")) {
+    return "TROCAS";
+  }
+  if (normalized.includes("退回") || normalized.includes("cancel")) {
+    return "CANCEL";
+  }
+  if (normalized.includes("cupom site")) {
+    return "CUPOM SITE";
+  }
+  if (normalized.includes("打标") || normalized.includes("logo")) {
+    return "LOGO";
+  }
+  if (normalized.includes("采购")) {
+    return "COMPRA";
+  }
+  return normalizeText(String(value ?? ""));
+}
+
+function normalizeCustomerName(value: unknown) {
+  return normalizeText(String(value ?? "")) || null;
+}
+
+function normalizeOrderSourceRow(row: Record<string, unknown>): ParsedCustomerCreditOrder | null {
+  const customerCode = normalizeCode(String(readWorkbookValue(row, "COD") ?? ""));
+  if (!customerCode || isInternalCustomerCode(customerCode)) {
+    return null;
+  }
+
+  const orderNumber = normalizeText(String(readWorkbookValue(row, "单号") ?? ""));
+  const orderDate = parseCustomerCreditDate(readWorkbookValue(row, "DATA"));
+  const totalAmount = safeNumber(readWorkbookValue(row, " TOTAL ", ["total"]));
+  const units = parseNullableInteger(readWorkbookValue(row, "N")) ?? 0;
+  const customerDisplayName = normalizeCustomerName(readWorkbookValue(row, "CLIENTE/客户", ["cliente"]));
+  const seller = normalizeText(String(readWorkbookValue(row, "VENDEDOR") ?? "")) || null;
+  const doc = normalizeText(String(readWorkbookValue(row, "DOC") ?? "")) || null;
+  const status = normalizeText(String(readWorkbookValue(row, "👌") ?? ""));
+  const fallbackOrderNumber = normalizeText(String(readWorkbookValue(row, "DATE COD") ?? ""));
+  const orderKey = [customerCode, orderDate ?? "", orderNumber || fallbackOrderNumber].join("|");
+
+  if (!orderNumber && !orderDate && totalAmount === 0) {
+    return null;
+  }
+
+  return {
+    customerCode,
+    customerDisplayName,
+    orderKey,
+    orderNumber,
+    orderDate,
+    totalAmount,
+    units,
+    seller,
+    doc,
+    status,
+    lineCount: 1,
+    rawPayload: {
+      dateCode: readWorkbookValue(row, "DATE COD") ?? null,
+      firstDescription: readWorkbookValue(row, "DESCRIÇÃO") ?? null,
+      firstSku: readWorkbookValue(row, "SKU") ?? null,
+      observation: readWorkbookValue(row, "OBS") ?? null,
+    },
+  };
+}
+
+function parseCustomerCreditOrders(sheet: XLSX.WorkSheet | undefined): ParsedCustomerCreditOrder[] {
+  if (!sheet) {
+    return [];
+  }
+
+  const grouped = new Map<string, ParsedCustomerCreditOrder>();
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: null,
+    raw: false,
+  });
+
+  for (const row of rows) {
+    const parsed = normalizeOrderSourceRow(row);
+    if (!parsed) {
+      continue;
+    }
+
+    const existing = grouped.get(parsed.orderKey);
+    if (!existing) {
+      grouped.set(parsed.orderKey, parsed);
+      continue;
+    }
+
+    existing.totalAmount += parsed.totalAmount;
+    existing.units += parsed.units;
+    existing.lineCount += parsed.lineCount;
+    existing.seller ??= parsed.seller;
+    existing.doc ??= parsed.doc;
+    if (!existing.status && parsed.status) {
+      existing.status = parsed.status;
+    }
+  }
+
+  return Array.from(grouped.values());
+}
+
+function normalizePaymentSourceRow(row: Record<string, unknown>): ParsedCustomerCreditPayment | null {
+  const customerCode = normalizeCode(String(readWorkbookValue(row, "COD") ?? ""));
+  if (!customerCode || isInternalCustomerCode(customerCode)) {
+    return null;
+  }
+
+  const paymentNumber = normalizeText(String(readWorkbookValue(row, "N") ?? ""));
+  const paymentDate = parseCustomerCreditDate(readWorkbookValue(row, "Data/日期", ["data"]));
+  const amount = safeNumber(readWorkbookValue(row, " Valor/已付 ", ["valor"]));
+  const paymentType = normalizePaymentType(readWorkbookValue(row, "TIPO"));
+  const observation = normalizeText(String(readWorkbookValue(row, "OBS") ?? ""));
+  const customerDisplayName = normalizeCustomerName(readWorkbookValue(row, "Cliente/客户", ["cliente"]));
+  const paymentKey = [customerCode, paymentDate ?? "", paymentNumber, amount.toFixed(2), paymentType].join("|");
+
+  if (!paymentNumber && !paymentDate && amount === 0) {
+    return null;
+  }
+
+  return {
+    customerCode,
+    customerDisplayName,
+    paymentKey,
+    paymentNumber,
+    paymentDate,
+    amount,
+    paymentType,
+    observation,
+    rawPayload: {
+      code: readWorkbookValue(row, "CODIGO") ?? null,
+      postedToGroupAt: readWorkbookValue(row, "单子发群") ?? null,
+      mini: readWorkbookValue(row, "MINI") ?? null,
+    },
+  };
+}
+
+function parseCustomerCreditPayments(sheet: XLSX.WorkSheet | undefined): ParsedCustomerCreditPayment[] {
+  if (!sheet) {
+    return [];
+  }
+
+  return XLSX.utils
+    .sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: null,
+      raw: false,
+    })
+    .map((row) => normalizePaymentSourceRow(row))
+    .filter((row): row is ParsedCustomerCreditPayment => Boolean(row));
 }
 
 async function getActiveSnapshotRecord() {
@@ -609,6 +827,8 @@ export async function parseCustomerCreditWorkbook(
     })
     .map((row) => normalizeWorkbookRow(row))
     .filter((row): row is ParsedCustomerCreditRow => Boolean(row));
+  const orders = parseCustomerCreditOrders(workbook.Sheets.OUT);
+  const payments = parseCustomerCreditPayments(workbook.Sheets.PAG);
 
   return {
     candidate: {
@@ -620,6 +840,8 @@ export async function parseCustomerCreditWorkbook(
     },
     sheetNames: workbook.SheetNames,
     rows,
+    orders,
+    payments,
   };
 }
 
@@ -655,7 +877,7 @@ async function resolveCustomerMatches(rows: ParsedCustomerCreditRow[]) {
 
 function resolveParsedRows(
   rows: ParsedCustomerCreditRow[],
-  matches: Map<string, { id: string; displayName: string }>,
+  matches: Map<string, CustomerCreditMatch>,
 ): ResolvedCustomerCreditRow[] {
   return rows.map((row) => {
     const matchedCustomer = matches.get(row.customerCode) ?? null;
@@ -664,6 +886,38 @@ function resolveParsedRows(
       ...row,
       customerId: matchedCustomer?.id ?? null,
       customerDisplayName: matchedCustomer?.displayName ?? row.sourceDisplayName ?? row.customerCode,
+    };
+  });
+}
+
+export function resolveParsedCreditOrders(
+  orders: ParsedCustomerCreditOrder[],
+  matches: Map<string, CustomerCreditMatch>,
+): ResolvedCustomerCreditOrder[] {
+  return orders.map((order) => {
+    const matchedCustomer = matches.get(order.customerCode) ?? null;
+
+    return {
+      ...order,
+      customerId: matchedCustomer?.id ?? null,
+      customerDisplayName: matchedCustomer?.displayName ?? order.customerDisplayName ?? order.customerCode,
+      sourceDisplayName: order.customerDisplayName,
+    };
+  });
+}
+
+export function resolveParsedCreditPayments(
+  payments: ParsedCustomerCreditPayment[],
+  matches: Map<string, CustomerCreditMatch>,
+): ResolvedCustomerCreditPayment[] {
+  return payments.map((payment) => {
+    const matchedCustomer = matches.get(payment.customerCode) ?? null;
+
+    return {
+      ...payment,
+      customerId: matchedCustomer?.id ?? null,
+      customerDisplayName: matchedCustomer?.displayName ?? payment.customerDisplayName ?? payment.customerCode,
+      sourceDisplayName: payment.customerDisplayName,
     };
   });
 }
@@ -702,6 +956,8 @@ async function registerSourceFile(
       JSON.stringify({
         sheetNames: workbook.sheetNames,
         rows: workbook.rows.length,
+        orders: workbook.orders.length,
+        payments: workbook.payments.length,
         fileUpdatedAt: workbook.candidate.fileUpdatedAt,
       }),
     ],
@@ -832,7 +1088,168 @@ async function insertSnapshotRows(
   );
 }
 
-async function persistSnapshot(workbook: ParsedCustomerCreditWorkbook, rows: ResolvedCustomerCreditRow[]) {
+async function insertSnapshotOrders(
+  client: PoolClient,
+  snapshotId: string,
+  orders: ResolvedCustomerCreditOrder[],
+) {
+  if (!orders.length) {
+    return;
+  }
+
+  const payload = orders.map((order) => ({
+    customer_id: order.customerId,
+    customer_code: order.customerCode,
+    customer_display_name: order.customerDisplayName,
+    source_display_name: order.sourceDisplayName,
+    order_key: order.orderKey,
+    order_number: order.orderNumber,
+    order_date: order.orderDate,
+    total_amount: order.totalAmount,
+    units: order.units,
+    seller: order.seller,
+    doc: order.doc,
+    status: order.status,
+    line_count: order.lineCount,
+    raw_payload: order.rawPayload,
+  }));
+
+  for (const chunk of chunkArray(payload, CUSTOMER_CREDIT_DETAIL_INSERT_CHUNK_SIZE)) {
+    await client.query(
+      `
+        INSERT INTO customer_credit_order_entries (
+          snapshot_id,
+          customer_id,
+          customer_code,
+          customer_display_name,
+          source_display_name,
+          order_key,
+          order_number,
+          order_date,
+          total_amount,
+          units,
+          seller,
+          doc,
+          status,
+          line_count,
+          raw_payload
+        )
+        SELECT
+          $1::uuid,
+          NULLIF(entry.customer_id, '')::uuid,
+          entry.customer_code,
+          entry.customer_display_name,
+          entry.source_display_name,
+          entry.order_key,
+          COALESCE(entry.order_number, ''),
+          NULLIF(entry.order_date, '')::date,
+          COALESCE(entry.total_amount, 0)::numeric(14, 2),
+          COALESCE(entry.units, 0),
+          entry.seller,
+          entry.doc,
+          COALESCE(entry.status, ''),
+          COALESCE(entry.line_count, 0),
+          COALESCE(entry.raw_payload, '{}'::jsonb)
+        FROM jsonb_to_recordset($2::jsonb) AS entry(
+          customer_id text,
+          customer_code text,
+          customer_display_name text,
+          source_display_name text,
+          order_key text,
+          order_number text,
+          order_date text,
+          total_amount numeric,
+          units integer,
+          seller text,
+          doc text,
+          status text,
+          line_count integer,
+          raw_payload jsonb
+        )
+      `,
+      [snapshotId, JSON.stringify(chunk)],
+    );
+  }
+}
+
+async function insertSnapshotPayments(
+  client: PoolClient,
+  snapshotId: string,
+  payments: ResolvedCustomerCreditPayment[],
+) {
+  if (!payments.length) {
+    return;
+  }
+
+  const payload = payments.map((payment) => ({
+    customer_id: payment.customerId,
+    customer_code: payment.customerCode,
+    customer_display_name: payment.customerDisplayName,
+    source_display_name: payment.sourceDisplayName,
+    payment_key: payment.paymentKey,
+    payment_number: payment.paymentNumber,
+    payment_date: payment.paymentDate,
+    amount: payment.amount,
+    payment_type: payment.paymentType,
+    observation: payment.observation,
+    raw_payload: payment.rawPayload,
+  }));
+
+  for (const chunk of chunkArray(payload, CUSTOMER_CREDIT_DETAIL_INSERT_CHUNK_SIZE)) {
+    await client.query(
+      `
+        INSERT INTO customer_credit_payment_entries (
+          snapshot_id,
+          customer_id,
+          customer_code,
+          customer_display_name,
+          source_display_name,
+          payment_key,
+          payment_number,
+          payment_date,
+          amount,
+          payment_type,
+          observation,
+          raw_payload
+        )
+        SELECT
+          $1::uuid,
+          NULLIF(entry.customer_id, '')::uuid,
+          entry.customer_code,
+          entry.customer_display_name,
+          entry.source_display_name,
+          entry.payment_key,
+          COALESCE(entry.payment_number, ''),
+          NULLIF(entry.payment_date, '')::date,
+          COALESCE(entry.amount, 0)::numeric(14, 2),
+          COALESCE(entry.payment_type, ''),
+          COALESCE(entry.observation, ''),
+          COALESCE(entry.raw_payload, '{}'::jsonb)
+        FROM jsonb_to_recordset($2::jsonb) AS entry(
+          customer_id text,
+          customer_code text,
+          customer_display_name text,
+          source_display_name text,
+          payment_key text,
+          payment_number text,
+          payment_date text,
+          amount numeric,
+          payment_type text,
+          observation text,
+          raw_payload jsonb
+        )
+      `,
+      [snapshotId, JSON.stringify(chunk)],
+    );
+  }
+}
+
+async function persistSnapshot(
+  workbook: ParsedCustomerCreditWorkbook,
+  rows: ResolvedCustomerCreditRow[],
+  orders: ResolvedCustomerCreditOrder[],
+  payments: ResolvedCustomerCreditPayment[],
+) {
   const client = await pool.connect();
 
   try {
@@ -886,6 +1303,8 @@ async function persistSnapshot(workbook: ParsedCustomerCreditWorkbook, rows: Res
 
     const snapshot = snapshotResult.rows[0] as SnapshotMetaRecord;
     await insertSnapshotRows(client, String(snapshot.id), rows);
+    await insertSnapshotOrders(client, String(snapshot.id), orders);
+    await insertSnapshotPayments(client, String(snapshot.id), payments);
     await client.query("COMMIT");
 
     logger.info("customer credit snapshot refreshed", {
@@ -893,6 +1312,8 @@ async function persistSnapshot(workbook: ParsedCustomerCreditWorkbook, rows: Res
       totalRows: rows.length,
       matchedRows: rows.filter((row) => row.customerId).length,
       unmatchedRows: rows.filter((row) => !row.customerId).length,
+      orderEntries: orders.length,
+      paymentEntries: payments.length,
     });
 
     return mapSnapshotMeta(snapshot as unknown as Record<string, unknown>);
@@ -966,8 +1387,10 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     );
     const matches = await resolveCustomerMatches(workbook.rows);
     const rows = resolveParsedRows(workbook.rows, matches);
+    const orders = resolveParsedCreditOrders(workbook.orders, matches);
+    const payments = resolveParsedCreditPayments(workbook.payments, matches);
 
-    const snapshot = await persistSnapshot(workbook, rows);
+    const snapshot = await persistSnapshot(workbook, rows, orders, payments);
     return snapshot;
   } finally {
     // Always cleanup temp files from Dropbox
@@ -1034,6 +1457,39 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
     hasNoOrder: Boolean(row.has_no_order),
     hasNegativeCredit: Boolean(row.has_negative_credit),
     hasDebtWithoutCredit: Boolean(row.has_debt_without_credit),
+  };
+}
+
+function mapCustomerCreditOrderEntry(row: Record<string, unknown>): CustomerCreditOrderEntry {
+  return {
+    id: String(row.id),
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    customerCode: String(row.customer_code ?? ""),
+    customerDisplayName: String(row.customer_display_name ?? row.source_display_name ?? row.customer_code ?? ""),
+    sourceDisplayName: row.source_display_name ? String(row.source_display_name) : null,
+    orderNumber: String(row.order_number ?? ""),
+    orderDate: row.order_date ? String(row.order_date) : null,
+    totalAmount: Number(row.total_amount ?? 0),
+    units: Number(row.units ?? 0),
+    seller: row.seller ? String(row.seller) : null,
+    doc: row.doc ? String(row.doc) : null,
+    status: String(row.status ?? ""),
+    lineCount: Number(row.line_count ?? 0),
+  };
+}
+
+function mapCustomerCreditPaymentEntry(row: Record<string, unknown>): CustomerCreditPaymentEntry {
+  return {
+    id: String(row.id),
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    customerCode: String(row.customer_code ?? ""),
+    customerDisplayName: String(row.customer_display_name ?? row.source_display_name ?? row.customer_code ?? ""),
+    sourceDisplayName: row.source_display_name ? String(row.source_display_name) : null,
+    paymentNumber: String(row.payment_number ?? ""),
+    paymentDate: row.payment_date ? String(row.payment_date) : null,
+    amount: Number(row.amount ?? 0),
+    paymentType: String(row.payment_type ?? ""),
+    observation: String(row.observation ?? ""),
   };
 }
 
@@ -1222,46 +1678,95 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
     return {
       snapshot: null,
       row: null,
+      orders: [],
+      payments: [],
     };
   }
 
-  const result = await pool.query(
-    `
-      SELECT
-        id,
-        customer_id,
-        customer_code,
-        customer_display_name,
-        source_display_name,
-        balance_amount,
-        credit_limit,
-        operational_state,
-        risk_level,
-        observation,
-        last_order_date::text AS last_order_date,
-        last_payment_date::text AS last_payment_date,
-        days_since_last_order,
-        days_since_last_payment,
-        payment_term,
-        risk_score,
-        flags,
-        has_over_credit,
-        has_overdue_payment,
-        has_severely_overdue_payment,
-        has_no_payment,
-        has_no_order,
-        has_negative_credit,
-        has_debt_without_credit
-      FROM customer_credit_snapshot_rows
-      WHERE snapshot_id = $1
-        AND customer_id = $2
-      LIMIT 1
-    `,
-    [snapshot.id, customerId],
-  );
+  const [result, ordersResult, paymentsResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          id,
+          customer_id,
+          customer_code,
+          customer_display_name,
+          source_display_name,
+          balance_amount,
+          credit_limit,
+          operational_state,
+          risk_level,
+          observation,
+          last_order_date::text AS last_order_date,
+          last_payment_date::text AS last_payment_date,
+          days_since_last_order,
+          days_since_last_payment,
+          payment_term,
+          risk_score,
+          flags,
+          has_over_credit,
+          has_overdue_payment,
+          has_severely_overdue_payment,
+          has_no_payment,
+          has_no_order,
+          has_negative_credit,
+          has_debt_without_credit
+        FROM customer_credit_snapshot_rows
+        WHERE snapshot_id = $1
+          AND customer_id = $2
+        LIMIT 1
+      `,
+      [snapshot.id, customerId],
+    ),
+    pool.query(
+      `
+        SELECT
+          id,
+          customer_id,
+          customer_code,
+          customer_display_name,
+          source_display_name,
+          order_number,
+          order_date::text AS order_date,
+          total_amount,
+          units,
+          seller,
+          doc,
+          status,
+          line_count
+        FROM customer_credit_order_entries
+        WHERE snapshot_id = $1
+          AND customer_id = $2
+        ORDER BY order_date DESC NULLS LAST, order_number DESC
+      `,
+      [snapshot.id, customerId],
+    ),
+    pool.query(
+      `
+        SELECT
+          id,
+          customer_id,
+          customer_code,
+          customer_display_name,
+          source_display_name,
+          payment_number,
+          payment_date::text AS payment_date,
+          amount,
+          payment_type,
+          observation
+        FROM customer_credit_payment_entries
+        WHERE snapshot_id = $1
+          AND customer_id = $2
+        ORDER BY payment_date DESC NULLS LAST, payment_number DESC
+      `,
+      [snapshot.id, customerId],
+    ),
+  ]);
 
   return {
     snapshot,
     row: result.rows[0] ? mapCustomerCreditRow(result.rows[0]) : null,
+    orders: ordersResult.rows.map((row) => mapCustomerCreditOrderEntry(row)),
+    payments: paymentsResult.rows.map((row) => mapCustomerCreditPaymentEntry(row)),
   };
 }
