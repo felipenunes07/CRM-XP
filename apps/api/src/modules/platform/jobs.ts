@@ -4,6 +4,7 @@ import { env, historicalFiles } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { importHistoryFile } from "../ingestion/historyImporter.js";
 import { syncOlistIncremental } from "../ingestion/olistSyncService.js";
+import { runPrimarySync } from "./syncService.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 
@@ -42,8 +43,8 @@ export async function enqueueHistoryImportJob(files = historicalFiles) {
 
 export async function enqueueOlistSyncJob() {
   if (!queue) {
-    await syncOlistIncremental();
-    return { id: `direct-olist-${Date.now()}` };
+    await runPrimarySync("worker-direct");
+    return { id: `direct-sync-${Date.now()}` };
   }
 
   return queue.add("olist-sync", {});
@@ -71,7 +72,7 @@ export function startWorkerProcessing() {
       }
 
       if (job.name === "olist-sync") {
-        return syncOlistIncremental();
+        return runPrimarySync("worker-queue");
       }
 
       throw new Error(`Unknown job: ${job.name}`);
