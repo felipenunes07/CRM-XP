@@ -78,19 +78,31 @@ function suggestedReplyFromMessages(messages: WhatsappMonitorMessage[]) {
     return null;
   }
 
-  if (text.includes("prazo") || text.includes("entrega")) {
-    return "Claro. Vou conferir o prazo atualizado e ja te retorno com a previsao mais segura.";
+  if (text.includes("bom dia") || text.includes("boa tarde") || text.includes("boa noite") || text.includes("ola") || text.includes("oi")) {
+    return "Ola! Como posso te ajudar hoje?";
   }
 
-  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento")) {
-    return "Perfeito. Vou revisar as condicoes e te envio a melhor opcao dentro do que combinamos.";
+  if (text.includes("prazo") || text.includes("entrega") || text.includes("chegar")) {
+    return "Vou conferir o prazo de entrega e ja te retorno.";
   }
 
-  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento")) {
-    return "Recebi. Vou verificar o arquivo e te retorno com o proximo passo.";
+  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento") || text.includes("quanto")) {
+    return "Vou revisar os valores e te envio a melhor condicao.";
   }
 
-  return "Perfeito, obrigado pelo retorno. Vou verificar aqui e ja te respondo com a melhor orientacao.";
+  if (text.includes("pix") || text.includes("pagamento") || text.includes("boleto") || text.includes("pago")) {
+    return "Vou verificar o status do pagamento e ja te confirmo.";
+  }
+
+  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento") || text.includes("comprovante")) {
+    return "Recebi o documento. Vou analisar e te retorno.";
+  }
+
+  if (text.includes("obrigado") || text.includes("valeu") || text.includes("show") || text.includes("perfeito")) {
+    return "Disponha! Qualquer coisa estou por aqui.";
+  }
+
+  return "Obrigado pelo retorno. Vou verificar e ja te respondo.";
 }
 
 function attachmentName(message: WhatsappMonitorMessage) {
@@ -259,6 +271,25 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
   );
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(",")[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function detectMediaType(file: File): "image" | "video" | "audio" | "document" {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "document";
+}
+
 export function MessagesPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
@@ -269,6 +300,8 @@ export function MessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastScrolledConversationRef = useRef<string | null>(null);
@@ -367,6 +400,24 @@ export function MessagesPage() {
     },
   });
 
+  const sendMediaMutation = useMutation({
+    mutationFn: ({
+      id,
+      mediaBase64,
+      mediaType,
+      fileName,
+    }: {
+      id: string;
+      mediaBase64: string;
+      mediaType: "image" | "video" | "audio" | "document";
+      fileName?: string;
+    }) => api.sendWhatsappMonitorMediaReply(token!, id, { mediaBase64, mediaType, fileName }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+    },
+  });
+
   const refreshProfilesMutation = useMutation({
     mutationFn: () => api.refreshWhatsappMonitorProfiles(token!),
     onSuccess: () => {
@@ -451,6 +502,29 @@ export function MessagesPage() {
 
     sendReplyMutation.mutate({ id: currentConversation.id, messageText: text });
   }
+
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !currentConversation || sendMediaMutation.isPending) {
+      return;
+    }
+
+    try {
+      const base64 = await readFileAsBase64(file);
+      sendMediaMutation.mutate({
+        id: currentConversation.id,
+        mediaBase64: base64,
+        mediaType: detectMediaType(file),
+        fileName: file.name,
+      });
+    } catch (error) {
+      console.error("Failed to read file", error);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
 
   if (conversationsQuery.isLoading) {
     return <div className="page-loading">Carregando monitoramento de WhatsApp...</div>;
@@ -640,32 +714,48 @@ export function MessagesPage() {
               </div>
 
               <form className="wa-reply-composer" onSubmit={handleSendReply}>
-                <div className="wa-chat-footer-info">
-                  <div>
-                    <strong>Retencao em nuvem ativa</strong>
-                    <span>Ultima atividade: {formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)}</span>
-                  </div>
-                  <span className={`wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`}>
-                    <ShieldCheck size={14} />
-                    {totalRisks} alertas no recorte
-                  </span>
-                </div>
-                {suggestedReply ? (
-                  <div className="wa-suggested-reply">
-                    <button type="button" onClick={() => setReplyText(suggestedReply)}>
-                      <Sparkles size={16} />
-                      Resposta sugerida
-                    </button>
-                    <span>{suggestedReply}</span>
-                  </div>
-                ) : null}
                 <div className="wa-reply-bar">
-                  <button type="button" className="wa-icon-button" title="Anexar arquivo" disabled>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                    onChange={handleFileSelect}
+                  />
+                  <button
+                    type="button"
+                    className="wa-icon-button"
+                    title="Anexar arquivo"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendMediaMutation.isPending}
+                  >
                     <Paperclip size={20} />
                   </button>
-                  <button type="button" className="wa-icon-button" title="Emoji" disabled>
-                    <Smile size={20} />
-                  </button>
+                  <div className="wa-menu-anchor">
+                    <button
+                      type="button"
+                      className="wa-icon-button"
+                      title="Emoji"
+                      onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                    >
+                      <Smile size={20} />
+                    </button>
+                    {emojiPickerOpen ? (
+                      <div className="wa-emoji-picker">
+                        {commonEmojis.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              setReplyText((prev) => prev + emoji);
+                              setEmojiPickerOpen(false);
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <textarea
                     value={replyText}
                     onChange={(event) => setReplyText(event.target.value)}
