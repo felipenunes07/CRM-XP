@@ -423,7 +423,7 @@ async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[
         COALESCE(SUM(first_item_count), 0)::int AS total_items
       FROM ranked_orders
       WHERE order_rank = 1
-        AND date_trunc('month', order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
+        AND order_date >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
       GROUP BY attendant
       ORDER BY new_customers DESC, total_revenue DESC, attendant ASC
       LIMIT 10
@@ -582,7 +582,7 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
     latest_trend_day: string | null;
     trend_row_count: number;
     snapshot_row_count: number;
-    stale_snapshot_count: number;
+    last_snapshot_refresh: string | null;
   }>(
     `
       SELECT
@@ -594,11 +594,7 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
           WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ) AS trend_row_count,
         (SELECT COUNT(*)::int FROM customer_snapshot) AS snapshot_row_count,
-        (
-          SELECT COUNT(*)::int
-          FROM customer_snapshot
-          WHERE updated_at::date < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
-        ) AS stale_snapshot_count
+        (SELECT MAX(updated_at)::text FROM customer_snapshot) AS last_snapshot_refresh
     `,
     [validatedDays],
   );
@@ -608,8 +604,12 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   const latestTrendDay = freshness?.latest_trend_day ?? null;
   const trendRowCount = Number(freshness?.trend_row_count ?? 0);
   const snapshotRowCount = Number(freshness?.snapshot_row_count ?? 0);
-  const staleSnapshotCount = Number(freshness?.stale_snapshot_count ?? 0);
-  const snapshotIsStale = snapshotRowCount === 0 || staleSnapshotCount > 0;
+  
+  // Cache strategy: Only refresh snapshots if they are older than 12 hours
+  const lastRefresh = freshness?.last_snapshot_refresh ? new Date(freshness.last_snapshot_refresh) : null;
+  const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime() > 12 * 60 * 60 * 1000);
+  
+  const snapshotIsStale = snapshotRowCount === 0 || isStale;
   const trendNeedsRefresh = trendRowCount < validatedDays || !latestTrendDay || latestTrendDay < today;
 
   if (!snapshotIsStale && !trendNeedsRefresh) {
@@ -617,12 +617,12 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   }
 
   if (snapshotIsStale) {
+    logger.info("dashboard metrics: triggering heavy snapshot refresh (stale or empty)");
     await refreshAllSnapshots();
   }
 
-  if (!snapshotIsStale && trendNeedsRefresh) {
-    await refreshDashboardDailyMetrics(validatedDays);
-  } else if (snapshotIsStale && validatedDays > DASHBOARD_TREND_WINDOW_DAYS) {
+  if (trendNeedsRefresh) {
+    logger.info("dashboard metrics: refreshing daily trends", { days: validatedDays });
     await refreshDashboardDailyMetrics(validatedDays);
   }
 
