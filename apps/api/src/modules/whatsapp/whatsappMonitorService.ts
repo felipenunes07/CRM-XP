@@ -1202,8 +1202,8 @@ export async function getWhatsappAgentActivityReport(
   const result = await pool.query(
     `
     SELECT
-      COALESCE(wi.id::text, da.actor_user_id::text, NULLIF(da.metadata ->> 'instance', ''), 'sem-agente') AS agent_id,
-      COALESCE(wi.assigned_user_name, wi.display_label, da.actor_name, d.assigned_to_name, 'Sem agente') AS agent_name,
+      COALESCE(u.id::text, 'sem-agente') AS agent_id,
+      COALESCE(u.name, 'Sem agente') AS agent_name,
       wi.instance_name,
       wi.display_label,
       wi.phone_number,
@@ -1220,22 +1220,26 @@ export async function getWhatsappAgentActivityReport(
       EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN users u ON (
+      u.id = da.actor_user_id 
+      OR u.id = d.assigned_to
+      OR LOWER(u.name) = LOWER(da.actor_name)
+      OR LOWER(u.name) = LOWER(d.assigned_to_name)
+    )
     LEFT JOIN LATERAL (
       SELECT wi_match.*
       FROM whatsapp_instances wi_match
-      WHERE wi_match.id = d.whatsapp_instance_id
-        OR wi_match.id::text = da.metadata ->> 'instanceId'
-        OR LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
+      WHERE (wi_match.id = d.whatsapp_instance_id OR wi_match.assigned_user_id = u.id)
       ORDER BY
         CASE
           WHEN wi_match.id = d.whatsapp_instance_id THEN 0
-          WHEN wi_match.id::text = da.metadata ->> 'instanceId' THEN 1
-          WHEN LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', '')) THEN 2
-          ELSE 3
+          WHEN wi_match.assigned_user_id = u.id THEN 1
+          ELSE 2
         END
       LIMIT 1
     ) wi ON true
     WHERE ${where.join("\n      AND ")}
+      AND (u.id IS NOT NULL OR da.activity_type = 'WHATSAPP_RECEIVED')
     ORDER BY da.created_at ASC
     `,
     params,
