@@ -1671,7 +1671,11 @@ export interface WhatsappAgentActivityDailyPoint {
   attendedGroups: number;
   attendedPrivates: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
   averageFirstResponseSeconds: number | null;
 }
 
@@ -1689,7 +1693,11 @@ export interface WhatsappAgentActivitySummary {
   internalGroups: number;
   otherGroups: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
   activeHours: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
@@ -1708,7 +1716,11 @@ export interface WhatsappAgentActivityCell {
   internalGroups: number;
   otherGroups: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
   conversations: WhatsappAgentActivityConversation[];
@@ -1731,7 +1743,11 @@ export interface WhatsappAgentActivityReport {
     internalGroups: number;
     otherGroups: number;
     sentMessages: number;
+    sentMessagesPrivate: number;
+    sentMessagesGroup: number;
     receivedMessages: number;
+    receivedMessagesPrivate: number;
+    receivedMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
@@ -1744,7 +1760,11 @@ export interface WhatsappAgentActivityReport {
     internalGroups: number;
     otherGroups: number;
     sentMessages: number;
+    sentMessagesPrivate: number;
+    sentMessagesGroup: number;
     receivedMessages: number;
+    receivedMessagesPrivate: number;
+    receivedMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
