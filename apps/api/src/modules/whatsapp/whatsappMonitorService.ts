@@ -1220,11 +1220,17 @@ export async function getWhatsappAgentActivityReport(
       EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN users u ON (
+    LEFT JOIN whatsapp_instances wi_base ON (
+      wi_base.id = d.whatsapp_instance_id 
+      OR LOWER(wi_base.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
+    )
+    JOIN users u ON (
       u.id = da.actor_user_id 
       OR u.id = d.assigned_to
+      OR u.id = wi_base.assigned_user_id
       OR LOWER(u.name) = LOWER(da.actor_name)
       OR LOWER(u.name) = LOWER(d.assigned_to_name)
+      OR LOWER(u.name) = LOWER(wi_base.assigned_user_name)
     )
     LEFT JOIN LATERAL (
       SELECT wi_match.*
@@ -1239,7 +1245,6 @@ export async function getWhatsappAgentActivityReport(
       LIMIT 1
     ) wi ON true
     WHERE ${where.join("\n      AND ")}
-      AND (u.id IS NOT NULL OR da.activity_type = 'WHATSAPP_RECEIVED')
     ORDER BY da.created_at ASC
     `,
     params,
