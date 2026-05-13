@@ -124,16 +124,16 @@ function mergeConversations(conversations: WhatsappAgentActivityConversation[]) 
   for (const conversation of conversations) {
     const current =
       merged.get(conversation.remoteJid) ??
-      {
+      ({
         ...conversation,
         sentMessages: 0,
         receivedMessages: 0,
-      };
+      } as WhatsappAgentActivityConversation);
 
     current.name = current.name || conversation.name;
     current.kind = current.kind === "internal_group" ? current.kind : conversation.kind;
-    current.sentMessages += conversation.sentMessages;
-    current.receivedMessages += conversation.receivedMessages;
+    current.sentMessages = (current.sentMessages || 0) + (conversation.sentMessages || 0);
+    current.receivedMessages = (current.receivedMessages || 0) + (conversation.receivedMessages || 0);
     merged.set(conversation.remoteJid, current);
   }
 
@@ -143,18 +143,18 @@ function mergeConversations(conversations: WhatsappAgentActivityConversation[]) 
 }
 
 function summarizeCells(cells: WhatsappAgentActivityCell[]) {
-  const conversations = mergeConversations(cells.flatMap((cell) => cell.conversations));
+  const conversations = mergeConversations(cells.flatMap((cell) => cell.conversations || []));
   const responseSecondsTotal = cells.reduce(
-    (sum, cell) => sum + (cell.averageFirstResponseSeconds ?? 0) * cell.responseCount,
+    (sum, cell) => sum + (cell.averageFirstResponseSeconds ?? 0) * (cell.responseCount || 0),
     0,
   );
-  const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
-  const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
-  const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
-  const receivedUniqueMessages = conversations.filter((c) => c.receivedMessages > 0).length;
-  const receivedUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && c.receivedMessages > 0).length;
-  const receivedUniqueMessagesGroup = conversations.filter((c) => c.kind !== "private" && c.receivedMessages > 0).length;
-  const attended = conversations.filter((conversation) => conversation.sentMessages > 0 && conversation.receivedMessages > 0);
+  const responseCount = cells.reduce((sum, cell) => sum + (cell.responseCount || 0), 0);
+  const sentMessages = cells.reduce((sum, cell) => sum + (cell.sentMessages || 0), 0);
+  const receivedMessages = cells.reduce((sum, cell) => sum + (cell.receivedMessages || 0), 0);
+  const receivedUniqueMessages = conversations.filter((c) => (c.receivedMessages || 0) > 0).length;
+  const receivedUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && (c.receivedMessages || 0) > 0).length;
+  const receivedUniqueMessagesGroup = conversations.filter((c) => c.kind !== "private" && (c.receivedMessages || 0) > 0).length;
+  const attended = conversations.filter((conversation) => (conversation.sentMessages || 0) > 0 && (conversation.receivedMessages || 0) > 0);
   const attendedGroups = attended.filter(
     (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
   );
@@ -469,7 +469,7 @@ export function WhatsappActivityPage() {
     {
       key: "private",
       label: "Privados atendidos",
-      value: visibleSummary.attendedPrivates,
+      value: visibleSummary.attendedPrivates || 0,
       previous: selectedAgentId === "all" ? report?.previousSummary?.attendedPrivates : undefined,
       detail: "Conversas individuais",
       icon: Smartphone,
@@ -477,7 +477,7 @@ export function WhatsappActivityPage() {
     {
       key: "responses",
       label: "Mensagens enviadas",
-      value: visibleSummary.sentMessages,
+      value: visibleSummary.sentMessages || 0,
       previous: selectedAgentId === "all"
         ? (typeFilter === "private" ? report?.previousSummary?.sentMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.sentMessagesGroup : report?.previousSummary?.sentMessages)
         : undefined,
@@ -487,7 +487,7 @@ export function WhatsappActivityPage() {
     {
       key: "received",
       label: "Mensagens recebidas",
-      value: visibleSummary.receivedMessages,
+      value: visibleSummary.receivedMessages || 0,
       previous: selectedAgentId === "all"
         ? (typeFilter === "private" ? report?.previousSummary?.receivedMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.receivedMessagesGroup : report?.previousSummary?.receivedMessages)
         : undefined,
@@ -497,7 +497,7 @@ export function WhatsappActivityPage() {
     {
       key: "received_unique",
       label: "Contatos recebidos",
-      value: visibleSummary.receivedUniqueMessages,
+      value: visibleSummary.receivedUniqueMessages || 0,
       previous: selectedAgentId === "all"
         ? (typeFilter === "private" ? report?.previousSummary?.receivedUniqueMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.receivedUniqueMessagesGroup : report?.previousSummary?.receivedUniqueMessages)
         : undefined,
