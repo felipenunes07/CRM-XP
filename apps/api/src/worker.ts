@@ -8,6 +8,7 @@ import { syncGeographicData } from "./modules/crm/geographicService.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/whatsappGroupService.js";
 import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
+import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
 
 async function main() {
   await bootstrapPlatform();

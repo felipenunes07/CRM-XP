@@ -30,6 +30,7 @@ import {
   mapWhatsappActivityToMessage,
   median,
 } from "./whatsappMonitorCore.js";
+import { createEventFromMessage } from "../events/eventsService.js";
 
 interface ConversationFilters {
   instanceId?: string;
@@ -779,6 +780,35 @@ export async function sendWhatsappMonitorReply(
     ],
   );
 
+  // Messaging Intelligence: Detect and create event
+  const monitorMessage: WhatsappMonitorMessage = {
+    id: providerMessageId,
+    dealId,
+    direction: "OUTBOUND",
+    senderName: user.name,
+    senderJid: null,
+    senderProfilePictureUrl: null,
+    content: text,
+    createdAt,
+    remoteJid: context.remoteJid,
+    isGroup: context.remoteJid.endsWith("@g.us"),
+    metadata: {
+      remoteJid: context.remoteJid,
+      messageId: providerMessageId,
+      instance: context.evolution.instanceName,
+      sentFromMonitor: true,
+    },
+    risk: detectWhatsappMessageRisk(text),
+  };
+
+  createEventFromMessage(monitorMessage, dealId).catch((err) => {
+    logger.warn("failed to create message event from monitor reply", {
+      dealId,
+      messageId: providerMessageId,
+      error: err.message,
+    });
+  });
+
   await Promise.all([
     pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),
     pool.query(
@@ -861,6 +891,37 @@ export async function sendWhatsappMonitorMediaReply(
       providerMessageId,
     ],
   );
+
+  // Messaging Intelligence: Detect and create event
+  const monitorMessage: WhatsappMonitorMessage = {
+    id: providerMessageId,
+    dealId,
+    direction: "OUTBOUND",
+    senderName: user.name,
+    senderJid: null,
+    senderProfilePictureUrl: null,
+    content: input.caption || (input.fileName ? `Arquivo: ${input.fileName}` : `Midia enviada (${input.mediaType})`),
+    createdAt,
+    remoteJid: context.remoteJid,
+    isGroup: context.remoteJid.endsWith("@g.us"),
+    metadata: {
+      remoteJid: context.remoteJid,
+      messageId: providerMessageId,
+      instance: context.evolution.instanceName,
+      sentFromMonitor: true,
+      mediaType: input.mediaType,
+      fileName: input.fileName,
+    },
+    risk: detectWhatsappMessageRisk(input.caption || ""),
+  };
+
+  createEventFromMessage(monitorMessage, dealId).catch((err) => {
+    logger.warn("failed to create message event from monitor media reply", {
+      dealId,
+      messageId: providerMessageId,
+      error: err.message,
+    });
+  });
 
   await Promise.all([
     pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),

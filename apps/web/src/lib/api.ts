@@ -57,6 +57,9 @@ import type {
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
   WhatsappMonitorMetrics,
+  EventsMetrics,
+  MessageEvent,
+  DailySentiment,
 } from "@olist-crm/shared";
 
 export interface ChartAnnotation {
@@ -782,5 +785,35 @@ export const api = {
     return request<void>(`/api/whatsapp-instances/${id}/configure`, {
       method: "POST",
     }, token);
+  },
+  getEventsMetrics(token: string, query: { from?: string; to?: string } = {}) {
+    const search = new URLSearchParams();
+    if (query.from) search.set("dateFrom", query.from);
+    if (query.to) search.set("dateTo", query.to);
+    return request<EventsMetrics>(`/api/events/metrics?${search.toString()}`, {}, token);
+  },
+  listEvents(token: string, filters: any, pagination: { page: number; pageSize: number }) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    search.set("page", String(pagination.page));
+    search.set("pageSize", String(pagination.pageSize));
+    return request<{ events: MessageEvent[]; total: number }>(`/api/events?${search.toString()}`, {}, token);
+  },
+  resolveEvent(token: string, id: string, input: { resolutionNote: string }) {
+    return request<MessageEvent>(`/api/events/${id}/resolve`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  getDailySentiments(token: string, query: { from?: string; to?: string }) {
+    const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const to = query.to || new Date().toISOString().split('T')[0];
+    const search = new URLSearchParams({
+      dateFrom: from,
+      dateTo: to,
+    });
+    return request<DailySentiment[]>(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
   },
 };

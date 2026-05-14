@@ -30,6 +30,7 @@ const DisparadorPage = lazy(async () => ({ default: (await import("./pages/Dispa
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const PipelinePage = lazy(async () => ({ default: (await import("./pages/PipelinePage")).PipelinePage }));
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
+const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 
 function RouteLoadingFallback() {
@@ -95,6 +96,7 @@ export default function App() {
           <Route path="/rotulos" element={<LabelsPage />} />
           <Route path="/prospeccao" element={<ProspectingPage />} />
           <Route path="/metas" element={<MetasPage />} />
+          <Route path="/eventos" element={<EventsPage />} />
           <Route path="/usuarios" element={<WhatsappConfigPage />} />
           <Route path="/config/whatsapp" element={<WhatsappConfigPage />} />
         </Route>

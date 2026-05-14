@@ -49,6 +49,12 @@ export const api = {
         });
         return request(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
     },
+    customerMovements(token, days = 7) {
+        const search = new URLSearchParams({
+            days: String(days),
+        });
+        return request(`/api/dashboard/movements?${search.toString()}`, {}, token);
+    },
     getMonthlyTargets(token, year) {
         const search = new URLSearchParams();
         if (year)
