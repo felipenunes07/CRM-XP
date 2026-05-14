@@ -8,4 +8,22 @@ import { AuthProvider } from "./hooks/useAuth";
 import { UiLanguageProvider } from "./i18n";
 import "./styles.css";
 const queryClient = new QueryClient();
+// Handle chunk load errors (caused by new deployments)
+window.addEventListener("error", (e) => {
+    const isChunkError = e.message?.includes("Failed to load module script") ||
+        e.message?.includes("dynamically imported module") ||
+        e.target instanceof HTMLScriptElement;
+    if (isChunkError) {
+        console.warn("Chunk load error detected, reloading page...", e);
+        window.location.reload();
+    }
+}, true);
+window.addEventListener("unhandledrejection", (e) => {
+    const message = e.reason?.message || "";
+    const stack = e.reason?.stack || "";
+    if (message.includes("Failed to fetch dynamically imported module") || stack.includes("Loading chunk")) {
+        console.warn("Dynamic import failure detected, reloading page...", e);
+        window.location.reload();
+    }
+});
 ReactDOM.createRoot(document.getElementById("root")).render(_jsx(React.StrictMode, { children: _jsx(QueryClientProvider, { client: queryClient, children: _jsx(BrowserRouter, { children: _jsx(UiLanguageProvider, { children: _jsx(AuthProvider, { children: _jsx(App, {}) }) }) }) }) }));

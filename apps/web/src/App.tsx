@@ -15,6 +15,7 @@ const InventoryPage = lazy(async () => ({ default: (await import("./pages/Invent
 const CustomerDetailPage = lazy(async () => ({
   default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
+const AutomationsPage = lazy(async () => ({ default: (await import("./pages/AutomationsPage")).AutomationsPage }));
 const SegmentsPage = lazy(async () => ({ default: (await import("./pages/SegmentsPage")).SegmentsPage }));
 const AgendaPage = lazy(async () => ({ default: (await import("./pages/AgendaPage")).AgendaPage }));
 const NewCustomersPage = lazy(async () => ({ default: (await import("./pages/NewCustomersPage")).NewCustomersPage }));
@@ -80,6 +81,7 @@ export default function App() {
           <Route path="/estoque" element={<InventoryPage />} />
           <Route path="/embaixadores" element={<AmbassadorsPage />} />
           <Route path="/clientes/:id" element={<CustomerDetailPage />} />
+          <Route path="/automacoes" element={<AutomationsPage />} />
           <Route path="/segmentos" element={<SegmentsPage />} />
           <Route path="/agenda" element={<AgendaPage />} />
           <Route path="/clientes-novos" element={<NewCustomersPage />} />

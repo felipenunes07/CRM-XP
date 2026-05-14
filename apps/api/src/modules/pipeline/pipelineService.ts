@@ -13,6 +13,7 @@ import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { configureInstanceSettings, configureInstanceWebhook } from "../whatsapp/evolutionService.js";
 import { logger } from "../../lib/logger.js";
+import { env } from "../../lib/env.js";
 
 // ── Stages ────────────────────────────────────────────────────────
 
@@ -386,8 +387,107 @@ function mapInstanceRow(row: Record<string, unknown>): WhatsappInstanceItem {
 }
 
 export async function listWhatsappInstances(): Promise<WhatsappInstanceItem[]> {
+  await syncEvolutionInstancesForSelection();
   const result = await pool.query("SELECT * FROM whatsapp_instances ORDER BY is_default DESC, display_label ASC");
   return result.rows.map(mapInstanceRow);
+}
+
+function collectEvolutionInstancePayload(payload: unknown): Record<string, unknown>[] {
+  if (Array.isArray(payload)) {
+    return payload.flatMap(collectEvolutionInstancePayload);
+  }
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    for (const key of ["instances", "data", "response", "result"]) {
+      const nested = record[key];
+      if (Array.isArray(nested)) {
+        return collectEvolutionInstancePayload(nested);
+      }
+    }
+    return [record];
+  }
+  return [];
+}
+
+function pickEvolutionString(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function readEvolutionInstanceName(record: Record<string, unknown>) {
+  const nested = record.instance && typeof record.instance === "object" ? (record.instance as Record<string, unknown>) : {};
+  return pickEvolutionString({ ...record, ...nested }, ["instanceName", "name", "instance", "id"]);
+}
+
+function phoneFromEvolutionJid(value: string | null) {
+  if (!value) return null;
+  const [phone] = value.split("@");
+  const digits = phone?.replace(/\D/g, "") ?? "";
+  return digits || null;
+}
+
+async function syncEvolutionInstancesForSelection() {
+  if (!env.EVOLUTION_API_BASE_URL || !env.EVOLUTION_API_KEY) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${env.EVOLUTION_API_BASE_URL.replace(/\/+$/, "")}/instance/fetchInstances`, {
+      headers: { apikey: env.EVOLUTION_API_KEY },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(`Evolution API respondeu com status ${response.status}`);
+    }
+
+    const instances = collectEvolutionInstancePayload(payload);
+    for (const raw of instances) {
+      const nested = raw.instance && typeof raw.instance === "object" ? (raw.instance as Record<string, unknown>) : {};
+      const source = { ...raw, ...nested };
+      const instanceName = readEvolutionInstanceName(raw);
+      if (!instanceName) {
+        continue;
+      }
+
+      const displayLabel = pickEvolutionString(source, ["displayName", "profileName", "name"]) ?? instanceName;
+      const ownerJid = pickEvolutionString(source, ["ownerJid", "owner", "wuid", "number"]);
+      const phoneNumber = phoneFromEvolutionJid(ownerJid);
+
+      await pool.query(
+        `
+        INSERT INTO whatsapp_instances (
+          instance_name,
+          display_label,
+          phone_number,
+          evolution_base_url,
+          evolution_api_key,
+          status,
+          last_health_status,
+          last_health_check_at,
+          is_default
+        )
+        VALUES ($1, $2, $3, $4, $5, 'ACTIVE', 'OK', NOW(), false)
+        ON CONFLICT (instance_name) DO UPDATE SET
+          display_label = COALESCE(NULLIF(whatsapp_instances.display_label, ''), EXCLUDED.display_label),
+          phone_number = COALESCE(NULLIF(whatsapp_instances.phone_number, ''), EXCLUDED.phone_number),
+          evolution_base_url = EXCLUDED.evolution_base_url,
+          evolution_api_key = EXCLUDED.evolution_api_key,
+          status = CASE WHEN whatsapp_instances.status = 'DISCONNECTED' THEN 'ACTIVE' ELSE whatsapp_instances.status END,
+          last_health_status = 'OK',
+          last_health_check_at = NOW(),
+          updated_at = NOW()
+        `,
+        [instanceName, displayLabel, phoneNumber, env.EVOLUTION_API_BASE_URL, env.EVOLUTION_API_KEY],
+      );
+    }
+  } catch (error) {
+    logger.warn("Nao foi possivel sincronizar instancias da Evolution para selecao", { error: String(error) });
+  }
 }
 
 export interface CreateInstanceInput {

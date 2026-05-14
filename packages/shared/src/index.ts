@@ -1069,6 +1069,8 @@ export interface SegmentDefinition {
   labels?: string[];
   excludeLabels?: string[];
   customerPrefix?: string;
+  state?: string;
+  city?: string;
 }
 
 export interface SegmentResult {
@@ -1108,6 +1110,83 @@ export interface SavedSegment {
   id: string;
   name: string;
   definition: SegmentDefinition;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageAutomationStatus = "ACTIVE" | "PAUSED";
+export type MessageAutomationChannel = "WHATSAPP_GROUP";
+export type MessageAutomationSendMode = "AUTOMATIC" | "APPROVAL";
+export type MessageAutomationTriggerMode = "SCHEDULED" | "ON_STAGE_ENTRY";
+export type MessageAutomationScheduleFrequency = "DAILY" | "WEEKLY";
+
+export interface MessageAutomationSchedule {
+  frequency: MessageAutomationScheduleFrequency;
+  weekdays?: number[];
+  time: string;
+  timezone: string;
+}
+
+export interface MessageAutomation {
+  id: string;
+  name: string;
+  status: MessageAutomationStatus;
+  channel: MessageAutomationChannel;
+  sendMode: MessageAutomationSendMode;
+  triggerMode: MessageAutomationTriggerMode;
+  savedSegmentId: string | null;
+  savedSegmentName: string | null;
+  segmentDefinition: SegmentDefinition;
+  flowDefinition: Record<string, unknown>;
+  whatsappInstanceId: string | null;
+  whatsappInstanceName: string | null;
+  whatsappInstanceLabel: string | null;
+  templateId: string | null;
+  templateTitle: string | null;
+  messageText: string;
+  schedule: MessageAutomationSchedule;
+  overrideRecentBlock: boolean;
+  minDelaySeconds: number;
+  maxDelaySeconds: number;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageAutomationRunStatus =
+  | "PENDING_APPROVAL"
+  | "ENQUEUED"
+  | "APPROVED"
+  | "REJECTED"
+  | "NO_MATCH"
+  | "FAILED";
+
+export interface MessageAutomationRunAudienceSnapshot {
+  totalCustomerCount: number;
+  customerIds: string[];
+  eligibleGroupIds: string[];
+  blockedGroupIds: string[];
+  unmappedCustomerIds: string[];
+}
+
+export interface MessageAutomationRun {
+  id: string;
+  automationId: string;
+  automationName: string;
+  status: MessageAutomationRunStatus;
+  scheduledFor: string;
+  resolvedAt: string | null;
+  audienceSnapshot: MessageAutomationRunAudienceSnapshot;
+  mappedGroupCount: number;
+  unmappedCustomerCount: number;
+  blockedRecentCount: number;
+  campaignId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  rejectedAt: string | null;
+  rejectedByUserId: string | null;
+  errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
 }
