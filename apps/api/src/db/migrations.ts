@@ -410,6 +410,8 @@ export const migrations = [
     template_title TEXT,
     saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
     saved_segment_name TEXT,
+    whatsapp_instance_id UUID,
+    whatsapp_instance_label TEXT,
     message_text TEXT NOT NULL,
     filters_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     min_delay_seconds INTEGER NOT NULL DEFAULT 183,
@@ -427,6 +429,10 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_status ON whatsapp_campaigns(status);
   CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at ON whatsapp_campaigns(created_at DESC);
+
+  ALTER TABLE whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID,
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_label TEXT;
 
   CREATE TABLE IF NOT EXISTS whatsapp_campaign_recipients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -964,5 +970,99 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_instance_name
     ON whatsapp_instances(instance_name);
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS message_automations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'PAUSED')),
+    channel TEXT NOT NULL CHECK (channel = 'WHATSAPP_GROUP'),
+    send_mode TEXT NOT NULL DEFAULT 'APPROVAL',
+    trigger_mode TEXT NOT NULL DEFAULT 'SCHEDULED',
+    saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
+    saved_segment_name TEXT,
+    segment_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    flow_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL,
+    template_id UUID REFERENCES message_templates(id) ON DELETE SET NULL,
+    message_text TEXT NOT NULL DEFAULT '',
+    schedule_json JSONB NOT NULL DEFAULT '{"frequency":"DAILY","time":"09:00","timezone":"America/Sao_Paulo"}'::jsonb,
+    override_recent_block BOOLEAN NOT NULL DEFAULT FALSE,
+    min_delay_seconds INTEGER NOT NULL DEFAULT 183,
+    max_delay_seconds INTEGER NOT NULL DEFAULT 304,
+    next_run_at TIMESTAMPTZ,
+    last_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automations_status_next_run
+    ON message_automations(status, next_run_at);
+
+  ALTER TABLE message_automations
+    ADD COLUMN IF NOT EXISTS send_mode TEXT NOT NULL DEFAULT 'APPROVAL',
+    ADD COLUMN IF NOT EXISTS trigger_mode TEXT NOT NULL DEFAULT 'SCHEDULED',
+    ADD COLUMN IF NOT EXISTS flow_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL;
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automations DROP CONSTRAINT IF EXISTS message_automations_send_mode_check;
+    ALTER TABLE message_automations
+      ADD CONSTRAINT message_automations_send_mode_check CHECK (send_mode IN ('AUTOMATIC', 'APPROVAL'));
+  END $$;
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automations DROP CONSTRAINT IF EXISTS message_automations_trigger_mode_check;
+    ALTER TABLE message_automations
+      ADD CONSTRAINT message_automations_trigger_mode_check CHECK (trigger_mode IN ('SCHEDULED', 'ON_STAGE_ENTRY'));
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS message_automation_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    automation_id UUID NOT NULL REFERENCES message_automations(id) ON DELETE CASCADE,
+    scheduled_for TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    status TEXT NOT NULL CHECK (status IN ('PENDING_APPROVAL', 'ENQUEUED', 'APPROVED', 'REJECTED', 'NO_MATCH', 'FAILED')),
+    audience_snapshot JSONB NOT NULL DEFAULT '{"totalCustomerCount":0,"customerIds":[],"eligibleGroupIds":[],"blockedGroupIds":[],"unmappedCustomerIds":[]}'::jsonb,
+    mapped_group_count INTEGER NOT NULL DEFAULT 0,
+    unmapped_customer_count INTEGER NOT NULL DEFAULT 0,
+    blocked_recent_count INTEGER NOT NULL DEFAULT 0,
+    campaign_id UUID REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL,
+    approved_at TIMESTAMPTZ,
+    approved_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    rejected_at TIMESTAMPTZ,
+    rejected_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automation_runs_status_scheduled_for
+    ON message_automation_runs(status, scheduled_for DESC);
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automation_runs DROP CONSTRAINT IF EXISTS message_automation_runs_status_check;
+    ALTER TABLE message_automation_runs
+      ADD CONSTRAINT message_automation_runs_status_check
+      CHECK (status IN ('PENDING_APPROVAL', 'ENQUEUED', 'APPROVED', 'REJECTED', 'NO_MATCH', 'FAILED'));
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS message_automation_customer_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    automation_id UUID NOT NULL REFERENCES message_automations(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    event_key TEXT NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_triggered_run_id UUID REFERENCES message_automation_runs(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (automation_id, customer_id, event_key)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automation_customer_events_lookup
+    ON message_automation_customer_events(automation_id, event_key, customer_id);
   `,
 ];

@@ -45,6 +45,16 @@ import {
   updateSavedSegment,
 } from "./modules/crm/segmentService.js";
 import {
+  approveMessageAutomationRun,
+  createMessageAutomation,
+  deleteMessageAutomation,
+  listMessageAutomationRuns,
+  listMessageAutomations,
+  rejectMessageAutomationRun,
+  runMessageAutomationNow,
+  updateMessageAutomation,
+} from "./modules/crm/automationService.js";
+import {
   createMessageTemplate,
   deleteMessageTemplate,
   listMessageTemplates,
@@ -271,6 +281,39 @@ const customerAmbassadorSchema = z.object({
 const savedSegmentSchema = z.object({
   name: z.string().min(1),
   definition: segmentSchema,
+});
+
+const automationScheduleSchema = z.object({
+  frequency: z.enum(["DAILY", "WEEKLY"]),
+  weekdays: z.array(z.number().int().min(0).max(6)).optional(),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "deve estar no formato HH:mm"),
+  timezone: z.string().min(1),
+});
+
+const automationSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(["ACTIVE", "PAUSED"]),
+  channel: z.literal("WHATSAPP_GROUP"),
+  sendMode: z.enum(["AUTOMATIC", "APPROVAL"]).optional(),
+  triggerMode: z.enum(["SCHEDULED", "ON_STAGE_ENTRY"]).optional(),
+  savedSegmentId: z.string().uuid().nullable().optional(),
+  segmentDefinition: segmentSchema,
+  flowDefinition: z.record(z.unknown()).optional(),
+  whatsappInstanceId: z.string().uuid().nullable().optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  messageText: z.string().min(1),
+  schedule: automationScheduleSchema,
+  overrideRecentBlock: z.boolean().optional(),
+  minDelaySeconds: z.number().int().min(1).optional(),
+  maxDelaySeconds: z.number().int().min(1).optional(),
+});
+
+const automationRunsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const automationRunNowSchema = z.object({
+  sendMode: z.enum(["AUTOMATIC", "APPROVAL"]).optional(),
 });
 
 const optionalQueryBoolean = z.preprocess((value) => {
@@ -1017,6 +1060,80 @@ export function createApp() {
   app.get("/api/geographic/cities/:state", async (request, response, next) => {
     try {
       response.json(await getCitiesByState(request.params.state));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/automations", async (_request, response, next) => {
+    try {
+      response.json(await listMessageAutomations());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.status(201).json(await createMessageAutomation(automationSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/automations/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const updated = await updateMessageAutomation(String(request.params.id), automationSchema.parse(request.body));
+      if (!updated) {
+        throw new HttpError(404, "Automacao nao encontrada");
+      }
+      response.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/automations/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const deleted = await deleteMessageAutomation(String(request.params.id));
+      if (!deleted) {
+        throw new HttpError(404, "Automacao nao encontrada");
+      }
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/:id/run-now", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = automationRunNowSchema.parse(request.body ?? {});
+      response.json(await runMessageAutomationNow(String(request.params.id), request.user!, payload.sendMode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/automations/runs", async (request, response, next) => {
+    try {
+      const query = automationRunsQuerySchema.parse(request.query);
+      response.json(await listMessageAutomationRuns(query.limit ?? 100));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/runs/:id/approve", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.json(await approveMessageAutomationRun(String(request.params.id), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/runs/:id/reject", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.json(await rejectMessageAutomationRun(String(request.params.id), request.user!));
     } catch (error) {
       next(error);
     }

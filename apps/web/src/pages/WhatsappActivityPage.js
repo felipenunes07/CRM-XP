@@ -100,22 +100,24 @@ function mergeConversations(conversations) {
             };
         current.name = current.name || conversation.name;
         current.kind = current.kind === "internal_group" ? current.kind : conversation.kind;
-        current.sentMessages += conversation.sentMessages;
-        current.receivedMessages += conversation.receivedMessages;
+        current.sentMessages = (current.sentMessages || 0) + (conversation.sentMessages || 0);
+        current.receivedMessages = (current.receivedMessages || 0) + (conversation.receivedMessages || 0);
         merged.set(conversation.remoteJid, current);
     }
-    return Array.from(merged.values()).sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name));
+    return Array.from(merged.values())
+        .sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name))
+        .slice(0, 100);
 }
 function summarizeCells(cells) {
-    const conversations = mergeConversations(cells.flatMap((cell) => cell.conversations));
-    const responseSecondsTotal = cells.reduce((sum, cell) => sum + (cell.averageFirstResponseSeconds ?? 0) * cell.responseCount, 0);
-    const responseCount = cells.reduce((sum, cell) => sum + cell.responseCount, 0);
-    const sentMessages = cells.reduce((sum, cell) => sum + cell.sentMessages, 0);
-    const receivedMessages = cells.reduce((sum, cell) => sum + cell.receivedMessages, 0);
-    const receivedUniqueMessages = cells.reduce((sum, cell) => sum + (cell.receivedUniqueMessages || 0), 0);
-    const receivedUniqueMessagesPrivate = cells.reduce((sum, cell) => sum + (cell.receivedUniqueMessagesPrivate || 0), 0);
-    const receivedUniqueMessagesGroup = cells.reduce((sum, cell) => sum + (cell.receivedUniqueMessagesGroup || 0), 0);
-    const attended = conversations.filter((conversation) => conversation.sentMessages > 0 && conversation.receivedMessages > 0);
+    const conversations = mergeConversations(cells.flatMap((cell) => cell.conversations || []));
+    const responseSecondsTotal = cells.reduce((sum, cell) => sum + (cell.averageFirstResponseSeconds ?? 0) * (cell.responseCount || 0), 0);
+    const responseCount = cells.reduce((sum, cell) => sum + (cell.responseCount || 0), 0);
+    const sentMessages = cells.reduce((sum, cell) => sum + (cell.sentMessages || 0), 0);
+    const receivedMessages = cells.reduce((sum, cell) => sum + (cell.receivedMessages || 0), 0);
+    const receivedUniqueMessages = conversations.filter((c) => (c.receivedMessages || 0) > 0 && c.kind !== "internal_group").length;
+    const receivedUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && (c.receivedMessages || 0) > 0).length;
+    const receivedUniqueMessagesGroup = conversations.filter((c) => (c.kind === "customer_group" || c.kind === "other_group") && (c.receivedMessages || 0) > 0).length;
+    const attended = conversations.filter((conversation) => (conversation.sentMessages || 0) > 0 && (conversation.receivedMessages || 0) > 0);
     const attendedGroups = attended.filter((conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group");
     const customerGroups = attended.filter((conversation) => conversation.kind === "customer_group");
     const internalGroups = attended.filter((conversation) => conversation.kind === "internal_group");
@@ -273,6 +275,7 @@ export function WhatsappActivityPage() {
             otherGroups: typeFilter === "private" ? 0 : summary.otherGroups,
             sentMessages: typeFilter === "private" ? summary.sentMessagesPrivate : summary.sentMessagesGroup,
             receivedMessages: typeFilter === "private" ? summary.receivedMessagesPrivate : summary.receivedMessagesGroup,
+            receivedUniqueMessages: typeFilter === "private" ? summary.receivedUniqueMessagesPrivate : summary.receivedUniqueMessagesGroup,
         };
     }, [report, selectedAgentId, visibleCells, typeFilter]);
     const dailySeries = useMemo(() => {
@@ -288,6 +291,7 @@ export function WhatsappActivityPage() {
             attendedPrivates: typeFilter === "group" ? 0 : item.attendedPrivates,
             sentMessages: typeFilter === "private" ? item.sentMessagesPrivate : item.sentMessagesGroup,
             receivedMessages: typeFilter === "private" ? item.receivedMessagesPrivate : item.receivedMessagesGroup,
+            receivedUniqueMessages: typeFilter === "private" ? item.receivedUniqueMessagesPrivate : item.receivedUniqueMessagesGroup,
         }));
     }, [report, selectedAgentId, visibleCells, typeFilter]);
     const cellsBySlot = useMemo(() => {
@@ -311,6 +315,28 @@ export function WhatsappActivityPage() {
         return map;
     }, [report, cellsBySlot]);
     const maxCellValue = useMemo(() => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
+        if (typeFilter === "private") {
+            if (heatmapMetric === "sent")
+                return cell.sentMessagesPrivate;
+            if (heatmapMetric === "received")
+                return cell.receivedMessagesPrivate;
+            if (heatmapMetric === "received_unique")
+                return cell.receivedUniqueMessagesPrivate;
+            if (heatmapMetric === "conversations")
+                return cell.attendedPrivates;
+            return (cell.sentMessagesPrivate || 0) + (cell.receivedMessagesPrivate || 0);
+        }
+        if (typeFilter === "group") {
+            if (heatmapMetric === "sent")
+                return cell.sentMessagesGroup;
+            if (heatmapMetric === "received")
+                return cell.receivedMessagesGroup;
+            if (heatmapMetric === "received_unique")
+                return cell.receivedUniqueMessagesGroup;
+            if (heatmapMetric === "conversations")
+                return cell.attendedGroups;
+            return (cell.sentMessagesGroup || 0) + (cell.receivedMessagesGroup || 0);
+        }
         if (heatmapMetric === "sent")
             return cell.sentMessages;
         if (heatmapMetric === "received")
@@ -320,7 +346,7 @@ export function WhatsappActivityPage() {
         if (heatmapMetric === "conversations")
             return cell.attendedConversations;
         return cell.sentMessages + cell.receivedMessages;
-    })), [cellMap, heatmapMetric]);
+    })), [cellMap, heatmapMetric, typeFilter]);
     const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
     const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
     const growthMetrics = useMemo(() => {
@@ -359,7 +385,7 @@ export function WhatsappActivityPage() {
         {
             key: "private",
             label: "Privados atendidos",
-            value: visibleSummary.attendedPrivates,
+            value: visibleSummary.attendedPrivates || 0,
             previous: selectedAgentId === "all" ? report?.previousSummary?.attendedPrivates : undefined,
             detail: "Conversas individuais",
             icon: Smartphone,
@@ -367,24 +393,30 @@ export function WhatsappActivityPage() {
         {
             key: "responses",
             label: "Mensagens enviadas",
-            value: visibleSummary.sentMessages,
-            previous: selectedAgentId === "all" ? report?.previousSummary?.sentMessages : undefined,
+            value: visibleSummary.sentMessages || 0,
+            previous: selectedAgentId === "all"
+                ? (typeFilter === "private" ? report?.previousSummary?.sentMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.sentMessagesGroup : report?.previousSummary?.sentMessages)
+                : undefined,
             detail: "Total de respostas enviadas",
             icon: BarChart3,
         },
         {
             key: "received",
             label: "Mensagens recebidas",
-            value: visibleSummary.receivedMessages,
-            previous: selectedAgentId === "all" ? report?.previousSummary?.receivedMessages : undefined,
+            value: visibleSummary.receivedMessages || 0,
+            previous: selectedAgentId === "all"
+                ? (typeFilter === "private" ? report?.previousSummary?.receivedMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.receivedMessagesGroup : report?.previousSummary?.receivedMessages)
+                : undefined,
             detail: "Total de mensagens de entrada",
             icon: Clock3,
         },
         {
             key: "received_unique",
             label: "Contatos recebidos",
-            value: visibleSummary.receivedUniqueMessages,
-            previous: selectedAgentId === "all" ? report?.previousSummary?.receivedUniqueMessages : undefined,
+            value: visibleSummary.receivedUniqueMessages || 0,
+            previous: selectedAgentId === "all"
+                ? (typeFilter === "private" ? report?.previousSummary?.receivedUniqueMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.receivedUniqueMessagesGroup : report?.previousSummary?.receivedUniqueMessages)
+                : undefined,
             detail: "Unique customers/groups",
             icon: Users,
         },

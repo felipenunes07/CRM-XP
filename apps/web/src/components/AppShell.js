@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, } from "lucide-react";
+import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 /* ── link structure for external tests ── */
@@ -14,6 +14,7 @@ export const appShellLinks = [
     // { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
     { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
     { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
+    { to: "/automacoes", icon: Hexagon, labelPt: "Automacoes", adminOnly: true },
     { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
     { to: "/agenda", icon: ClipboardList, labelPt: "Agenda" },
     { to: "/clientes-novos", icon: UserPlus, labelPt: "Clientes novos" },
@@ -51,6 +52,7 @@ const sidebarMenu = [
         icon: MessageSquareText,
         children: [
             { to: "/mensagens", labelPt: "Mensagens" },
+            { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
             { to: "/disparador", labelPt: "Disparador" },
         ],
     },
@@ -76,9 +78,10 @@ const sidebarMenu = [
     { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
 ];
 /* ── Collapsible group component ── */
-function SidebarGroupItem({ group, tx, }) {
+function SidebarGroupItem({ group, tx, isAdminLike, }) {
     const location = useLocation();
-    const childPaths = group.children.map((c) => c.to);
+    const visibleChildren = group.children.filter((child) => !child.adminOnly || isAdminLike);
+    const childPaths = visibleChildren.map((c) => c.to);
     const isChildActive = childPaths.some((p) => location.pathname === p || location.pathname.startsWith(p + "/"));
     const [open, setOpen] = useState(isChildActive);
     // Auto-open when a child route becomes active
@@ -87,7 +90,7 @@ function SidebarGroupItem({ group, tx, }) {
             setOpen(true);
     }, [isChildActive]);
     const Icon = group.icon;
-    return (_jsxs("li", { className: "cw-group", children: [_jsxs("button", { type: "button", className: `cw-group-toggle ${isChildActive ? "is-active" : ""}`, onClick: () => setOpen(!open), "aria-expanded": open, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(group.labelPt, group.labelPt) }), _jsx(ChevronDown, { size: 14, className: `cw-chevron ${open ? "open" : ""}` })] }), open && (_jsx("ul", { className: "cw-group-children", children: group.children.map((child) => (_jsx("li", { className: "cw-child-item", children: _jsx(NavLink, { to: child.to, end: child.to === "/" || child.to === "/clientes", className: ({ isActive }) => `cw-child-link ${isActive ? "active" : ""}`, children: tx(child.labelPt, child.labelPt) }) }, child.to))) }))] }));
+    return (_jsxs("li", { className: "cw-group", children: [_jsxs("button", { type: "button", className: `cw-group-toggle ${isChildActive ? "is-active" : ""}`, onClick: () => setOpen(!open), "aria-expanded": open, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(group.labelPt, group.labelPt) }), _jsx(ChevronDown, { size: 14, className: `cw-chevron ${open ? "open" : ""}` })] }), open && (_jsx("ul", { className: "cw-group-children", children: visibleChildren.map((child) => (_jsx("li", { className: "cw-child-item", children: _jsx(NavLink, { to: child.to, end: child.to === "/" || child.to === "/clientes", className: ({ isActive }) => `cw-child-link ${isActive ? "active" : ""}`, children: tx(child.labelPt, child.labelPt) }) }, child.to))) }))] }));
 }
 /* ── Main AppShell ── */
 export function AppShell() {
@@ -109,7 +112,7 @@ export function AppShell() {
                             })
                                 .map((entry) => {
                                 if (isGroup(entry)) {
-                                    return (_jsx(SidebarGroupItem, { group: entry, tx: tx }, entry.labelPt));
+                                    return (_jsx(SidebarGroupItem, { group: entry, tx: tx, isAdminLike: isAdminLike }, entry.labelPt));
                                 }
                                 const Icon = entry.icon;
                                 return (_jsx("li", { className: "cw-item", children: _jsxs(NavLink, { to: entry.to, end: entry.to === "/", className: ({ isActive }) => `cw-link ${isActive ? "active" : ""}`, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(entry.labelPt, entry.labelPt) })] }) }, entry.to));

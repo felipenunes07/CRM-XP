@@ -8,7 +8,7 @@ import {
   markRecipientSent,
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
-import { sendWhatsappTextMessage } from "./evolutionService.js";
+import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } from "./evolutionService.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 const connection = queueEnabled
@@ -47,7 +47,9 @@ async function processRecipientDispatch(recipientId: string) {
   }
 
   try {
-    const payload = await sendWhatsappTextMessage(context.jid, context.messageText);
+    const payload = context.evolutionInstance
+      ? await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText)
+      : await sendWhatsappTextMessage(context.jid, context.messageText);
     await markRecipientSent(context, payload, extractProviderMessageId(payload), payload.status ? String(payload.status) : null);
     return { sent: true };
   } catch (error) {

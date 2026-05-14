@@ -225,6 +225,45 @@ export const api = {
             method: "DELETE",
         }, token);
     },
+    automations(token) {
+        return request("/api/automations", {}, token);
+    },
+    createAutomation(token, input) {
+        return request("/api/automations", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateAutomation(token, id, input) {
+        return request(`/api/automations/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteAutomation(token, id) {
+        return request(`/api/automations/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    runAutomationNow(token, id, sendMode) {
+        return request(`/api/automations/${id}/run-now`, {
+            method: "POST",
+            body: JSON.stringify(sendMode ? { sendMode } : {}),
+        }, token);
+    },
+    automationRuns(token, limit = 100) {
+        return request(`/api/automations/runs?limit=${limit}`, {}, token);
+    },
+    approveAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/approve`, {
+            method: "POST",
+        }, token);
+    },
+    rejectAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/reject`, {
+            method: "POST",
+        }, token);
+    },
     messageTemplates(token) {
         return request("/api/messages/templates", {}, token);
     },

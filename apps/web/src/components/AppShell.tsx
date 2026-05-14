@@ -36,6 +36,7 @@ export const appShellLinks = [
 // { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
   { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
   { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
+  { to: "/automacoes", icon: Hexagon, labelPt: "Automacoes", adminOnly: true },
   { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
   { to: "/agenda", icon: ClipboardList, labelPt: "Agenda" },
   { to: "/clientes-novos", icon: UserPlus, labelPt: "Clientes novos" },
@@ -92,6 +93,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: MessageSquareText,
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
+      { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
     ],
   },
@@ -121,12 +123,15 @@ const sidebarMenu: SidebarEntry[] = [
 function SidebarGroupItem({
   group,
   tx,
+  isAdminLike,
 }: {
   group: SidebarGroup;
   tx: (pt: string, fallback: string) => string;
+  isAdminLike: boolean;
 }) {
   const location = useLocation();
-  const childPaths = group.children.map((c) => c.to);
+  const visibleChildren = group.children.filter((child) => !child.adminOnly || isAdminLike);
+  const childPaths = visibleChildren.map((c) => c.to);
   const isChildActive = childPaths.some(
     (p) => location.pathname === p || location.pathname.startsWith(p + "/")
   );
@@ -153,7 +158,7 @@ function SidebarGroupItem({
       </button>
       {open && (
         <ul className="cw-group-children">
-          {group.children.map((child) => (
+          {visibleChildren.map((child) => (
             <li key={child.to} className="cw-child-item">
               <NavLink
                 to={child.to}
@@ -236,13 +241,14 @@ export function AppShell() {
               .map((entry) => {
                 if (isGroup(entry)) {
                   return (
-                    <SidebarGroupItem
-                      key={entry.labelPt}
-                      group={entry}
-                      tx={tx}
-                    />
-                  );
-                }
+            <SidebarGroupItem
+              key={entry.labelPt}
+              group={entry}
+              tx={tx}
+              isAdminLike={isAdminLike}
+            />
+          );
+        }
                 const Icon = entry.icon!;
                 return (
                   <li key={entry.to} className="cw-item">

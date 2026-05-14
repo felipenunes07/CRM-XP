@@ -7,11 +7,13 @@ import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js
 import { syncGeographicData } from "./modules/crm/geographicService.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/whatsappGroupService.js";
 import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditService.js";
+import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 
 async function main() {
   await bootstrapPlatform();
   const worker = startWorkerProcessing();
   const whatsappWorker = startWhatsappDispatchWorker();
+  const automationScheduler = startMessageAutomationScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
 
@@ -86,6 +88,7 @@ async function main() {
 
   const shutdown = async () => {
     intervals.forEach(clearInterval);
+    await automationScheduler.close();
     await worker.close();
     await whatsappWorker.close();
     await redis.quit();

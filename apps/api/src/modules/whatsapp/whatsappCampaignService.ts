@@ -18,6 +18,7 @@ export interface CreateWhatsappCampaignInput {
   name: string;
   templateId?: string | null;
   savedSegmentId?: string | null;
+  whatsappInstanceId?: string | null;
   messageText: string;
   filtersSnapshot?: Record<string, unknown>;
   groupIds: string[];
@@ -61,6 +62,11 @@ interface DispatchRecipientContext {
   sourceCode: string | null;
   createdByUserId: string;
   createdByName: string;
+  evolutionInstance: {
+    instanceName: string;
+    evolutionBaseUrl: string;
+    evolutionApiKey: string;
+  } | null;
 }
 
 function mapProgress(row: Partial<CampaignProgressRow>): WhatsappCampaignProgress {
@@ -228,10 +234,13 @@ export async function createWhatsappCampaign(
     throw new HttpError(400, "O intervalo minimo nao pode ser maior do que o maximo.");
   }
 
-  const [groups, templateResult, savedSegmentResult] = await Promise.all([
+  const [groups, templateResult, savedSegmentResult, whatsappInstanceResult] = await Promise.all([
     getWhatsappGroupsByIds(uniqueGroupIds),
     input.templateId ? pool.query("SELECT id, title FROM message_templates WHERE id = $1", [input.templateId]) : null,
     input.savedSegmentId ? pool.query("SELECT id, name FROM saved_segments WHERE id = $1", [input.savedSegmentId]) : null,
+    input.whatsappInstanceId
+      ? pool.query("SELECT id, display_label FROM whatsapp_instances WHERE id = $1 AND status = 'ACTIVE'", [input.whatsappInstanceId])
+      : null,
   ]);
 
   if (groups.length !== uniqueGroupIds.length) {
@@ -250,6 +259,10 @@ export async function createWhatsappCampaign(
     throw new HttpError(404, "Publico salvo nao encontrado.");
   }
 
+  if (input.whatsappInstanceId && !whatsappInstanceResult?.rows[0]) {
+    throw new HttpError(404, "Instancia WhatsApp ativa nao encontrada.");
+  }
+
   const campaignClient = await pool.connect();
   const enqueuedJobs: EnqueuedRecipientJob[] = [];
 
@@ -265,6 +278,8 @@ export async function createWhatsappCampaign(
           template_title,
           saved_segment_id,
           saved_segment_name,
+          whatsapp_instance_id,
+          whatsapp_instance_label,
           message_text,
           filters_snapshot,
           min_delay_seconds,
@@ -273,7 +288,7 @@ export async function createWhatsappCampaign(
           created_by_user_id,
           created_by_name
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)
         RETURNING id, created_at
       `,
       [
@@ -282,6 +297,8 @@ export async function createWhatsappCampaign(
         templateResult?.rows[0]?.title ? String(templateResult.rows[0].title) : null,
         input.savedSegmentId ?? null,
         savedSegmentResult?.rows[0]?.name ? String(savedSegmentResult.rows[0].name) : null,
+        input.whatsappInstanceId ?? null,
+        whatsappInstanceResult?.rows[0]?.display_label ? String(whatsappInstanceResult.rows[0].display_label) : null,
         trimmedMessage,
         JSON.stringify(input.filtersSnapshot ?? {}),
         minDelaySeconds,
@@ -509,9 +526,14 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           wc.message_text,
           wc.template_id,
           wc.created_by_user_id,
-          wc.created_by_name
+          wc.created_by_name,
+          wc.whatsapp_instance_id,
+          wi.instance_name AS whatsapp_instance_name,
+          wi.evolution_base_url AS whatsapp_evolution_base_url,
+          wi.evolution_api_key AS whatsapp_evolution_api_key
         FROM whatsapp_campaign_recipients r
         JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+        LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id AND wi.status = 'ACTIVE'
         WHERE r.id = $1
         FOR UPDATE
       `,
@@ -584,6 +606,14 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       sourceCode: row.source_code ? String(row.source_code) : null,
       createdByUserId: String(row.created_by_user_id ?? ""),
       createdByName: String(row.created_by_name ?? ""),
+      evolutionInstance:
+        row.whatsapp_instance_id && row.whatsapp_instance_name && row.whatsapp_evolution_base_url && row.whatsapp_evolution_api_key
+          ? {
+              instanceName: String(row.whatsapp_instance_name),
+              evolutionBaseUrl: String(row.whatsapp_evolution_base_url),
+              evolutionApiKey: String(row.whatsapp_evolution_api_key),
+            }
+          : null,
     };
   } catch (error) {
     await client.query("ROLLBACK");
