@@ -23,6 +23,7 @@ const ReactivationPage = lazy(async () => ({ default: (await import("./pages/Rea
 const IdeaBoardPage = lazy(async () => ({ default: (await import("./pages/IdeaBoardPage")).IdeaBoardPage }));
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
 const WhatsappActivityPage = lazy(async () => ({ default: (await import("./pages/WhatsappActivityPage")).WhatsappActivityPage }));
+const MovementsPage = lazy(async () => ({ default: (await import("./pages/MovementsPage")).MovementsPage }));
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
@@ -89,6 +90,7 @@ export default function App() {
           <Route path="/ideias-votacao" element={<IdeaBoardPage />} />
           <Route path="/mensagens" element={<MessagesPage />} />
           <Route path="/atividade-whatsapp" element={<WhatsappActivityPage />} />
+          <Route path="/movimentacao" element={<MovementsPage />} />
           <Route path="/disparador" element={<DisparadorPage />} />
           <Route path="/rotulos" element={<LabelsPage />} />
           <Route path="/prospeccao" element={<ProspectingPage />} />

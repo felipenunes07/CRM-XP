@@ -1551,3 +1551,89 @@ export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFi
     hasMore: safeOffset + items.length < totalEligible,
   };
 }
+
+export async function getCustomerMovements(days: number = 7): Promise<CustomerMovementsResponse> {
+  const validatedDays = Math.max(1, Math.min(365, Math.floor(days)));
+  
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int) AS t1,
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS t2
+      ),
+      last_orders AS (
+        SELECT
+          o.customer_id,
+          MAX(CASE WHEN o.order_date::date <= p.t1 THEN o.order_date::date END) as last_order_t1,
+          MAX(o.order_date::date) as last_order_t2
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.t2
+        GROUP BY o.customer_id
+      ),
+      customer_statuses AS (
+        SELECT
+          c.id as customer_id,
+          c.customer_code,
+          c.display_name,
+          lo.last_order_t2 as last_purchase_at,
+          CASE
+            WHEN lo.last_order_t1 IS NULL THEN 'NEW'
+            WHEN p.t1 - lo.last_order_t1 <= 30 THEN 'ACTIVE'
+            WHEN p.t1 - lo.last_order_t1 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t1,
+          CASE
+            WHEN lo.last_order_t2 IS NULL THEN 'INACTIVE'
+            WHEN p.t2 - lo.last_order_t2 <= 30 THEN 'ACTIVE'
+            WHEN p.t2 - lo.last_order_t2 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t2,
+          COALESCE(p.t2 - lo.last_order_t2, 999) AS days_since_last_purchase
+        FROM customers c
+        LEFT JOIN last_orders lo ON c.id = lo.customer_id
+        CROSS JOIN params p
+      )
+      SELECT 
+        customer_id,
+        customer_code,
+        display_name,
+        status_t1,
+        status_t2,
+        last_purchase_at::text as last_purchase_at,
+        days_since_last_purchase
+      FROM customer_statuses
+      WHERE status_t1 <> status_t2
+      ORDER BY 
+        CASE 
+          WHEN status_t1 = 'ACTIVE' AND status_t2 = 'ATTENTION' THEN 1
+          WHEN status_t1 = 'ATTENTION' AND status_t2 = 'INACTIVE' THEN 2
+          WHEN status_t2 = 'ACTIVE' THEN 3
+          ELSE 4
+        END,
+        days_since_last_purchase ASC
+    `,
+    [validatedDays],
+  );
+
+  const movements = result.rows.map((row) => ({
+    customerId: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name),
+    fromStatus: row.status_t1 as any,
+    toStatus: row.status_t2 as any,
+    lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
+    daysSinceLastPurchase: Number(row.days_since_last_purchase),
+  }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - validatedDays);
+
+  return {
+    startDate: startDate.toISOString().slice(0, 10),
+    endDate: today,
+    movements,
+  };
+}

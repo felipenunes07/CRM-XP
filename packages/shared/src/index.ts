@@ -1,6 +1,6 @@
 export type SourceSystem = "history_xls" | "olist_v2" | "supabase_2026";
 
-export type CustomerStatus = "ACTIVE" | "ATTENTION" | "INACTIVE";
+export type CustomerStatus = "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW";
 export const AMBASSADOR_LABEL_NAME = "Embaixador";
 export const AMBASSADOR_LABEL_COLOR = "#d09a29";
 
