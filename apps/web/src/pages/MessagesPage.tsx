@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   WhatsappMonitorAgent,
@@ -297,11 +298,14 @@ function detectMediaType(file: File): "image" | "video" | "audio" | "document" {
 export function MessagesPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlDealId = searchParams.get("dealId");
+
   const [activeAgentId, setActiveAgentId] = useState<string>("all");
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);

@@ -93,6 +93,12 @@ import { requireAuth, requireRole } from "./modules/platform/authMiddleware.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
+  getEventsMetrics,
+  listEvents,
+  resolveEvent,
+  getDailySentiments,
+} from "./modules/events/eventsService.js";
+import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
   getWhatsappCampaignDetail,
@@ -1631,6 +1637,83 @@ export function createApp() {
   app.post("/api/whatsapp-monitor/refresh-profiles", async (_request, response, next) => {
     try {
       response.json(await refreshMissingWhatsappMonitorProfiles());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Messaging Intelligence Events ──────────────────────────
+
+  const eventResolutionSchema = z.object({
+    resolutionNote: z.string().trim().min(1).max(5000),
+  });
+
+  const eventsFiltersSchema = z.object({
+    eventType: z.string().optional(),
+    severity: z.string().optional(),
+    resolved: z.enum(["true", "false"]).optional(),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    agentId: z.string().optional(),
+    search: z.string().optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/events/metrics", async (request, response, next) => {
+    try {
+      const { dateFrom, dateTo } = request.query;
+      const metrics = await getEventsMetrics(request.user!, {
+        from: dateFrom as string,
+        to: dateTo as string,
+      });
+      response.json(metrics);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events", async (request, response, next) => {
+    try {
+      const query = eventsFiltersSchema.parse(request.query);
+      const filters = {
+        ...query,
+        eventType: query.eventType ? (query.eventType.split(",") as any) : undefined,
+        severity: query.severity ? (query.severity.split(",") as any) : undefined,
+        resolved: query.resolved === "true" ? true : query.resolved === "false" ? false : undefined,
+      };
+
+      const result = await listEvents(request.user!, filters, {
+        page: query.page || 1,
+        pageSize: query.pageSize || 20,
+      });
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/events/:id/resolve", async (request, response, next) => {
+    try {
+      const payload = eventResolutionSchema.parse(request.body);
+      const event = await resolveEvent(request.params.id, request.user!, payload);
+      response.json(event);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/sentiments/daily", async (request, response, next) => {
+    try {
+      const { dateFrom, dateTo } = request.query;
+      if (!dateFrom || !dateTo) {
+        throw new HttpError(400, "dateFrom and dateTo are required");
+      }
+      const sentiments = await getDailySentiments(request.user!, {
+        from: dateFrom as string,
+        to: dateTo as string,
+      });
+      response.json(sentiments);
     } catch (error) {
       next(error);
     }

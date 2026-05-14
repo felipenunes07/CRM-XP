@@ -1070,7 +1070,7 @@ export const migrations = [
   CREATE TABLE IF NOT EXISTS message_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     deal_id UUID NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
-    message_id UUID,
+    message_id TEXT,
     activity_id UUID REFERENCES deal_activities(id) ON DELETE SET NULL,
     event_type VARCHAR(30) NOT NULL,
     severity VARCHAR(20) NOT NULL,
@@ -1112,5 +1112,19 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_event_sentiments_date ON event_sentiments(date DESC);
   CREATE INDEX IF NOT EXISTS idx_event_sentiments_instance ON event_sentiments(whatsapp_instance_id);
+  `,
+  `
+  -- Event Resolutions (audit trail)
+  CREATE TABLE IF NOT EXISTS event_resolutions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES message_events(id) ON DELETE CASCADE,
+    resolved_by UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    resolution_note TEXT NOT NULL,
+    resolved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_event_id ON event_resolutions(event_id);
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_by ON event_resolutions(resolved_by);
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_at ON event_resolutions(resolved_at DESC);
   `,
 ];

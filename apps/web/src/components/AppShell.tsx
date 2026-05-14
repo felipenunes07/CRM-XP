@@ -17,6 +17,7 @@ import {
   Star,
   Tags,
   TrendingUp,
+  ShieldAlert,
   Trophy,
   UserCog,
   UserPlus,
@@ -93,6 +94,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: MessageSquareText,
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
+      { to: "/eventos", labelPt: "Inteligencia / Eventos" },
       { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
     ],
