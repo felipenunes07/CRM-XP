@@ -1220,15 +1220,36 @@ export async function getWhatsappAgentActivityReport(
     `);
   }
 
-  const result = await pool.query(
-    `
-    SELECT
-      COALESCE(u.id::text, 'sem-agente') AS agent_id,
-      COALESCE(u.name, 'Sem agente') AS agent_name,
+  const allInstances = await pool.query(`
+    SELECT 
+      wi.id as instance_id,
       wi.instance_name,
       wi.display_label,
       wi.phone_number,
       wi.profile_picture_url,
+      u.id as user_id,
+      u.name as user_name
+    FROM whatsapp_instances wi
+    LEFT JOIN users u ON u.id = wi.assigned_user_id
+    WHERE wi.status = 'ACTIVE'
+  `);
+
+  const result = await pool.query(
+    `
+    SELECT
+      COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
+      COALESCE(
+        CASE 
+          WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL 
+          THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) || ')'
+          ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name)
+        END,
+        'Sem agente'
+      ) AS agent_name,
+      COALESCE(wi_base.instance_name, wi.instance_name) as instance_name,
+      COALESCE(wi_base.display_label, wi.display_label) as display_label,
+      COALESCE(wi_base.phone_number, wi.phone_number) as phone_number,
+      COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) as profile_picture_url,
       da.activity_type,
       da.actor_user_id::text AS actor_user_id,
       da.actor_name,
@@ -1305,6 +1326,26 @@ export async function getWhatsappAgentActivityReport(
   // To track active agents in each period correctly
   const currentPeriodAgents = new Set<string>();
   const previousPeriodAgents = new Set<string>();
+
+  // Pre-populate with all active instances/assigned users
+  for (const row of allInstances.rows) {
+    const agentId = row.user_id ? String(row.user_id) : `instance:${row.instance_id}`;
+    const agentName = row.user_name && row.user_name !== row.display_label && row.user_name !== row.instance_name
+      ? `${row.user_name} (${row.display_label || row.instance_name})`
+      : row.user_name || row.display_label || row.instance_name || "Agente desconhecido";
+    
+    agents.set(agentId, {
+      agentId,
+      agentName,
+      instanceName: row.instance_name ? String(row.instance_name) : null,
+      displayLabel: row.display_label ? String(row.display_label) : null,
+      phoneNumber: row.phone_number ? String(row.phone_number) : null,
+      profilePictureUrl: row.profile_picture_url ? String(row.profile_picture_url) : null,
+      accumulator: createActivityReportAccumulator(),
+      activeHours: new Set<string>(),
+      lastMessageAt: null,
+    });
+  }
 
   for (const row of result.rows) {
     const localDate = optionalString(row.local_date);
