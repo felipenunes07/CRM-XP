@@ -64,6 +64,11 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   WORKER_CREDIT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
+  WORKER_SENTIMENT_AGGREGATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS: z.coerce.number().int().positive().default(6),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
   HISTORICAL_FILES: z.string().default(""),

@@ -1878,3 +1878,130 @@ export interface WhatsappMonitorConversationsResponse {
 export interface WhatsappMonitorConversationDetail extends WhatsappMonitorConversation {
   messages: WhatsappMonitorMessage[];
 }
+
+// ── Event Types ─────────────────────────────────────────────
+
+export type EventType =
+  | "RISK"
+  | "POSITIVE_FEEDBACK"
+  | "NEGATIVE_FEEDBACK"
+  | "COMPLAINT"
+  | "PRAISE"
+  | "QUESTION"
+  | "ESCALATION";
+
+export type EventSeverity = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+
+export interface ConversationContext {
+  contactName: string;
+  contactPhone: string;
+  agentName: string | null;
+  instanceName: string | null;
+  isGroup: boolean;
+}
+
+export interface MessageEvent {
+  id: string;
+  dealId: string;
+  messageId: string;
+  eventType: EventType;
+  severity: EventSeverity;
+  label: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  detectedAt: string;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  resolvedBy: string | null;
+  conversationContext: ConversationContext;
+}
+
+// ── Sentiment Analysis ─────────────────────────────────────
+
+export interface DailySentiment {
+  date: string;
+  positiveCount: number;
+  negativeCount: number;
+  neutralCount: number;
+  averageScore: number;
+  totalMessages: number;
+}
+
+export interface SentimentTrend {
+  daily: DailySentiment[];
+  weeklyAverage: number;
+  monthlyAverage: number;
+  trend: "IMPROVING" | "DECLINING" | "STABLE";
+}
+
+// ── Metrics ────────────────────────────────────────────────
+
+export interface EventsSummary {
+  totalEvents: number;
+  unresolvedEvents: number;
+  riskEvents: number;
+  positiveFeedbacks: number;
+  negativeFeedbacks: number;
+  complaintsCount: number;
+  resolutionRate: number;
+  bySeverity: Record<string, number>;
+  averageSentiment: number;
+}
+
+export interface BottleneckAgent {
+  agentId: string | null;
+  agentName: string;
+  unresolvedCount: number;
+  averageResponseMinutes: number | null;
+  conversationCount: number;
+}
+
+export interface OperationalEfficiency {
+  averageResponseTimeMinutes: number | null;
+  medianResponseTimeMinutes: number | null;
+  averageResolutionTimeHours: number | null;
+  messagesPerAgent: number | null;
+  peakHourStart: number | null;
+  peakHourEnd: number | null;
+  bottleneckAgents: BottleneckAgent[];
+}
+
+export interface TopEvent {
+  eventType: EventType;
+  label: string;
+  count: number;
+  severity: EventSeverity;
+  lastOccurrence: string;
+}
+
+export interface EventsMetrics {
+  summary: EventsSummary;
+  operationalEfficiency: OperationalEfficiency;
+  sentimentAnalysis: SentimentTrend;
+  topEvents: TopEvent[];
+}
+
+// ── Filters ────────────────────────────────────────────────
+
+export interface EventsFilters {
+  eventType?: EventType[];
+  severity?: EventSeverity[];
+  resolved?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  agentId?: string;
+  search?: string;
+}
+
+// ── API Responses ──────────────────────────────────────────
+
+export interface EventsListResponse {
+  events: MessageEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface EventResolutionInput {
+  resolutionNote: string;
+}

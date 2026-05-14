@@ -61,6 +61,7 @@ const sidebarMenu = [
         icon: BarChart3,
         children: [
             { to: "/atividade-whatsapp", labelPt: "Relatorios WhatsApp" },
+            { to: "/movimentacao", labelPt: "Movimentação da Base" },
             { to: "/estoque", labelPt: "Estoque" },
             { to: "/segmentos", labelPt: "Segmentos" },
             { to: "/rotulos", labelPt: "Rótulos" },

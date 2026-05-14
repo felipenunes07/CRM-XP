@@ -8,6 +8,9 @@ import {
   isMonitorableWhatsappJid,
   type EvolutionMessageLike,
 } from "./whatsappMonitorCore.js";
+import { detectWhatsappMessageRisk } from "./whatsappMonitorCore.js";
+import { createEventFromMessage } from "../events/eventsService.js";
+import { WhatsappMonitorMessage } from "@olist-crm/shared";
 
 /**
  * Handles MESSAGES_UPSERT events from Evolution API webhook.
@@ -271,6 +274,30 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         createdAt: context.createdAt,
       });
 
+      // Messaging Intelligence: Detect and create event
+      const monitorMessage: WhatsappMonitorMessage = {
+        id: messageId,
+        dealId,
+        direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+        senderName: activitySenderName,
+        senderJid: activitySenderJid,
+        senderProfilePictureUrl,
+        content: text,
+        createdAt: context.createdAt,
+        remoteJid,
+        isGroup: context.isGroup,
+        metadata,
+        risk: detectWhatsappMessageRisk(text),
+      };
+
+      createEventFromMessage(monitorMessage, dealId).catch((err) => {
+        logger.warn("failed to create message event from webhook", {
+          dealId,
+          messageId,
+          error: err.message,
+        });
+      });
+
       // Backfill whatsapp_instance_id if missing on the deal
       if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
         if (instanceDetails) {
@@ -326,6 +353,30 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           content: text,
           metadata: autoMetadata,
           createdAt: context.createdAt,
+        });
+
+        // Messaging Intelligence: Detect and create event for new deal
+        const monitorMessage: WhatsappMonitorMessage = {
+          id: messageId,
+          dealId,
+          direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+          senderName: activitySenderName,
+          senderJid: activitySenderJid,
+          senderProfilePictureUrl,
+          content: text,
+          createdAt: context.createdAt,
+          remoteJid,
+          isGroup: context.isGroup,
+          metadata: autoMetadata,
+          risk: detectWhatsappMessageRisk(text),
+        };
+
+        createEventFromMessage(monitorMessage, dealId).catch((err) => {
+          logger.warn("failed to create message event for new deal from webhook", {
+            dealId,
+            messageId,
+            error: err.message,
+          });
         });
         logger.info("evolution webhook auto-created deal", { dealId, remoteJid });
       }
