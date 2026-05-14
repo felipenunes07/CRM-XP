@@ -1173,6 +1173,7 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
     receivedUniqueMessages: accumulator.receivedUniquePrivates.size + accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
     receivedUniqueMessagesPrivate: accumulator.receivedUniquePrivates.size,
     receivedUniqueMessagesGroup: accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
+    attendedConversationsCount: accumulator.attendedConversations.size, // Use the Set for accurate unique count across periods
     responseCount: accumulator.responseSeconds.length,
     averageFirstResponseSeconds: average(accumulator.responseSeconds),
   };
@@ -1182,7 +1183,7 @@ function publicActivityConversations(accumulator: ActivityReportAccumulator) {
   return Array.from(accumulator.conversations.values())
     .filter((conversation) => conversation.sentMessages > 0 || conversation.receivedMessages > 0)
     .sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name))
-    .slice(0, 30);
+    .slice(0, 100);
 }
 
 export async function getWhatsappAgentActivityReport(
