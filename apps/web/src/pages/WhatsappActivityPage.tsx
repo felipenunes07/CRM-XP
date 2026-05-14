@@ -137,9 +137,9 @@ function mergeConversations(conversations: WhatsappAgentActivityConversation[]) 
     merged.set(conversation.remoteJid, current);
   }
 
-  return Array.from(merged.values()).sort(
-    (left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name),
-  );
+  return Array.from(merged.values())
+    .sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name))
+    .slice(0, 100);
 }
 
 function summarizeCells(cells: WhatsappAgentActivityCell[]) {
@@ -413,13 +413,27 @@ export function WhatsappActivityPage() {
   }, [report, cellsBySlot]);
   const maxCellValue = useMemo(
     () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
+      if (typeFilter === "private") {
+        if (heatmapMetric === "sent") return cell.sentMessagesPrivate;
+        if (heatmapMetric === "received") return cell.receivedMessagesPrivate;
+        if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesPrivate;
+        if (heatmapMetric === "conversations") return cell.attendedPrivates;
+        return (cell.sentMessagesPrivate || 0) + (cell.receivedMessagesPrivate || 0);
+      }
+      if (typeFilter === "group") {
+        if (heatmapMetric === "sent") return cell.sentMessagesGroup;
+        if (heatmapMetric === "received") return cell.receivedMessagesGroup;
+        if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesGroup;
+        if (heatmapMetric === "conversations") return cell.attendedGroups;
+        return (cell.sentMessagesGroup || 0) + (cell.receivedMessagesGroup || 0);
+      }
       if (heatmapMetric === "sent") return cell.sentMessages;
       if (heatmapMetric === "received") return cell.receivedMessages;
       if (heatmapMetric === "received_unique") return cell.receivedUniqueMessages;
       if (heatmapMetric === "conversations") return cell.attendedConversations;
       return cell.sentMessages + cell.receivedMessages;
     })),
-    [cellMap, heatmapMetric],
+    [cellMap, heatmapMetric, typeFilter],
   );
   const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
   const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
