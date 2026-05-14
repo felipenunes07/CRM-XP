@@ -30,6 +30,8 @@ import type {
   InventorySnapshotMeta,
   InventoryStaleResponse,
   MessageTemplate,
+  MessageAutomation,
+  MessageAutomationRun,
   MonthlyTarget,
   PipelineSummary,
   ProspectContactAttemptResult,
@@ -301,6 +303,94 @@ export const api = {
   deleteSavedSegment(token: string, id: string) {
     return request<void>(`/api/segments/saved/${id}`, {
       method: "DELETE",
+    }, token);
+  },
+  automations(token: string) {
+    return request<MessageAutomation[]>("/api/automations", {}, token);
+  },
+  createAutomation(
+    token: string,
+    input: {
+      name: string;
+      status: "ACTIVE" | "PAUSED";
+      channel: "WHATSAPP_GROUP";
+      sendMode?: "AUTOMATIC" | "APPROVAL";
+      triggerMode?: "SCHEDULED" | "ON_STAGE_ENTRY";
+      savedSegmentId?: string | null;
+      segmentDefinition: SegmentDefinition;
+      flowDefinition?: Record<string, unknown>;
+      whatsappInstanceId?: string | null;
+      templateId?: string | null;
+      messageText: string;
+      schedule: {
+        frequency: "DAILY" | "WEEKLY";
+        weekdays?: number[];
+        time: string;
+        timezone: string;
+      };
+      overrideRecentBlock?: boolean;
+      minDelaySeconds?: number;
+      maxDelaySeconds?: number;
+    },
+  ) {
+    return request<MessageAutomation>("/api/automations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  updateAutomation(
+    token: string,
+    id: string,
+    input: {
+      name: string;
+      status: "ACTIVE" | "PAUSED";
+      channel: "WHATSAPP_GROUP";
+      sendMode?: "AUTOMATIC" | "APPROVAL";
+      triggerMode?: "SCHEDULED" | "ON_STAGE_ENTRY";
+      savedSegmentId?: string | null;
+      segmentDefinition: SegmentDefinition;
+      flowDefinition?: Record<string, unknown>;
+      whatsappInstanceId?: string | null;
+      templateId?: string | null;
+      messageText: string;
+      schedule: {
+        frequency: "DAILY" | "WEEKLY";
+        weekdays?: number[];
+        time: string;
+        timezone: string;
+      };
+      overrideRecentBlock?: boolean;
+      minDelaySeconds?: number;
+      maxDelaySeconds?: number;
+    },
+  ) {
+    return request<MessageAutomation>(`/api/automations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteAutomation(token: string, id: string) {
+    return request<void>(`/api/automations/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
+  runAutomationNow(token: string, id: string, sendMode?: "AUTOMATIC" | "APPROVAL") {
+    return request<MessageAutomationRun>(`/api/automations/${id}/run-now`, {
+      method: "POST",
+      body: JSON.stringify(sendMode ? { sendMode } : {}),
+    }, token);
+  },
+  automationRuns(token: string, limit = 100) {
+    return request<MessageAutomationRun[]>(`/api/automations/runs?limit=${limit}`, {}, token);
+  },
+  approveAutomationRun(token: string, id: string) {
+    return request<MessageAutomationRun>(`/api/automations/runs/${id}/approve`, {
+      method: "POST",
+    }, token);
+  },
+  rejectAutomationRun(token: string, id: string) {
+    return request<MessageAutomationRun>(`/api/automations/runs/${id}/reject`, {
+      method: "POST",
     }, token);
   },
   messageTemplates(token: string) {
