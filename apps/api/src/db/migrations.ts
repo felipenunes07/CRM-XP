@@ -1065,4 +1065,52 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_message_automation_customer_events_lookup
     ON message_automation_customer_events(automation_id, event_key, customer_id);
   `,
+  `
+  -- Messaging Intelligence Events
+  CREATE TABLE IF NOT EXISTS message_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+    message_id UUID,
+    activity_id UUID REFERENCES deal_activities(id) ON DELETE SET NULL,
+    event_type VARCHAR(30) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    label VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    resolution_note TEXT,
+    resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION')),
+    CHECK (severity IN ('LOW', 'MODERATE', 'HIGH', 'CRITICAL'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_events_deal_id ON message_events(deal_id);
+  CREATE INDEX IF NOT EXISTS idx_message_events_event_type ON message_events(event_type);
+  CREATE INDEX IF NOT EXISTS idx_message_events_severity ON message_events(severity);
+  CREATE INDEX IF NOT EXISTS idx_message_events_detected_at ON message_events(detected_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_message_events_resolved ON message_events(resolved_at) WHERE resolved_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_message_events_activity_id ON message_events(activity_id);
+  `,
+  `
+  -- Event Sentiments (daily aggregation)
+  CREATE TABLE IF NOT EXISTS event_sentiments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date DATE NOT NULL,
+    whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+    positive_count INTEGER NOT NULL DEFAULT 0,
+    negative_count INTEGER NOT NULL DEFAULT 0,
+    neutral_count INTEGER NOT NULL DEFAULT 0,
+    average_score NUMERIC(4,3) NOT NULL DEFAULT 0,
+    total_messages INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(date, whatsapp_instance_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_sentiments_date ON event_sentiments(date DESC);
+  CREATE INDEX IF NOT EXISTS idx_event_sentiments_instance ON event_sentiments(whatsapp_instance_id);
+  `,
 ];
