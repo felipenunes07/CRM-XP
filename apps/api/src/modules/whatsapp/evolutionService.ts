@@ -122,7 +122,7 @@ export async function configureInstanceSettings(instance: {
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/settings/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
     rejectCall: false,
     groupsIgnore: false,
-    alwaysOnline: true,
+    alwaysOnline: false,
     readMessages: false,
     readStatus: false,
     syncFullHistory: false,
