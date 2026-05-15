@@ -1100,6 +1100,10 @@ interface ActivityReportAccumulator {
   receivedUniqueCustomerGroups: Set<string>;
   receivedUniqueInternalGroups: Set<string>;
   receivedUniqueOtherGroups: Set<string>;
+  sentUniquePrivates: Set<string>;
+  sentUniqueCustomerGroups: Set<string>;
+  sentUniqueInternalGroups: Set<string>;
+  sentUniqueOtherGroups: Set<string>;
   attendedConversations: Set<string>;
   attendedPrivates: Set<string>;
   customerGroups: Set<string>;
@@ -1117,6 +1121,10 @@ function createActivityReportAccumulator(): ActivityReportAccumulator {
     receivedUniqueCustomerGroups: new Set<string>(),
     receivedUniqueInternalGroups: new Set<string>(),
     receivedUniqueOtherGroups: new Set<string>(),
+    sentUniquePrivates: new Set<string>(),
+    sentUniqueCustomerGroups: new Set<string>(),
+    sentUniqueInternalGroups: new Set<string>(),
+    sentUniqueOtherGroups: new Set<string>(),
     attendedConversations: new Set<string>(),
     attendedPrivates: new Set<string>(),
     customerGroups: new Set<string>(),
@@ -1167,14 +1175,18 @@ function registerActivityReportEvent(input: {
     if (input.kind === "private") {
       input.accumulator.attendedPrivates.add(input.remoteJid);
       input.accumulator.attendedConversations.add(input.remoteJid);
+      input.accumulator.sentUniquePrivates.add(input.remoteJid);
     } else if (input.kind === "internal_group") {
       input.accumulator.internalGroups.add(input.remoteJid);
+      input.accumulator.sentUniqueInternalGroups.add(input.remoteJid);
     } else {
       input.accumulator.attendedConversations.add(input.remoteJid);
       if (input.kind === "customer_group") {
         input.accumulator.customerGroups.add(input.remoteJid);
+        input.accumulator.sentUniqueCustomerGroups.add(input.remoteJid);
       } else {
         input.accumulator.otherGroups.add(input.remoteJid);
+        input.accumulator.sentUniqueOtherGroups.add(input.remoteJid);
       }
     }
   } else {
@@ -1236,6 +1248,9 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
     receivedUniqueMessages: accumulator.receivedUniquePrivates.size + accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
     receivedUniqueMessagesPrivate: accumulator.receivedUniquePrivates.size,
     receivedUniqueMessagesGroup: accumulator.receivedUniqueCustomerGroups.size + accumulator.receivedUniqueOtherGroups.size,
+    sentUniqueMessages: accumulator.sentUniquePrivates.size + accumulator.sentUniqueCustomerGroups.size + accumulator.sentUniqueOtherGroups.size,
+    sentUniqueMessagesPrivate: accumulator.sentUniquePrivates.size,
+    sentUniqueMessagesGroup: accumulator.sentUniqueCustomerGroups.size + accumulator.sentUniqueOtherGroups.size,
     attendedConversationsCount: accumulator.attendedConversations.size, // Use the Set for accurate unique count across periods
     responseCount: accumulator.responseSeconds.length,
     averageFirstResponseSeconds: average(accumulator.responseSeconds),
@@ -1571,6 +1586,9 @@ export async function getWhatsappAgentActivityReport(
         receivedUniqueMessages: counts.receivedUniqueMessages,
         receivedUniqueMessagesPrivate: counts.receivedUniqueMessagesPrivate,
         receivedUniqueMessagesGroup: counts.receivedUniqueMessagesGroup,
+        sentUniqueMessages: counts.sentUniqueMessages,
+        sentUniqueMessagesPrivate: counts.sentUniqueMessagesPrivate,
+        sentUniqueMessagesGroup: counts.sentUniqueMessagesGroup,
         averageFirstResponseSeconds: counts.averageFirstResponseSeconds,
       };
     }),

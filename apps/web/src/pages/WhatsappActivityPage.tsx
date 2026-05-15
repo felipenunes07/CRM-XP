@@ -7,7 +7,7 @@ import type {
   WhatsappAgentActivityReport,
 } from "@olist-crm/shared";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, TrendingDown, TrendingUp, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, TrendingDown, TrendingUp, Users, UserCheck } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 
@@ -154,6 +154,9 @@ function summarizeCells(cells: WhatsappAgentActivityCell[]) {
   const receivedUniqueMessages = conversations.filter((c) => (c.receivedMessages || 0) > 0 && c.kind !== "internal_group").length;
   const receivedUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && (c.receivedMessages || 0) > 0).length;
   const receivedUniqueMessagesGroup = conversations.filter((c) => (c.kind === "customer_group" || c.kind === "other_group") && (c.receivedMessages || 0) > 0).length;
+  const sentUniqueMessages = conversations.filter((c) => (c.sentMessages || 0) > 0 && c.kind !== "internal_group").length;
+  const sentUniqueMessagesPrivate = conversations.filter((c) => c.kind === "private" && (c.sentMessages || 0) > 0).length;
+  const sentUniqueMessagesGroup = conversations.filter((c) => (c.kind === "customer_group" || c.kind === "other_group") && (c.sentMessages || 0) > 0).length;
   const attended = conversations.filter((conversation) => (conversation.sentMessages || 0) > 0 && (conversation.receivedMessages || 0) > 0);
   const attendedGroups = attended.filter(
     (conversation) => conversation.kind === "customer_group" || conversation.kind === "other_group",
@@ -179,6 +182,9 @@ function summarizeCells(cells: WhatsappAgentActivityCell[]) {
     receivedUniqueMessages,
     receivedUniqueMessagesPrivate,
     receivedUniqueMessagesGroup,
+    sentUniqueMessages,
+    sentUniqueMessagesPrivate,
+    sentUniqueMessagesGroup,
     responseCount,
     averageFirstResponseSeconds: responseCount ? responseSecondsTotal / responseCount : null,
     conversations,
@@ -203,6 +209,9 @@ function buildDailySeries(report: WhatsappAgentActivityReport, cells: WhatsappAg
       receivedUniqueMessages: summary.receivedUniqueMessages,
       receivedUniqueMessagesPrivate: summary.receivedUniqueMessagesPrivate,
       receivedUniqueMessagesGroup: summary.receivedUniqueMessagesGroup,
+      sentUniqueMessages: summary.sentUniqueMessages,
+      sentUniqueMessagesPrivate: summary.sentUniqueMessagesPrivate,
+      sentUniqueMessagesGroup: summary.sentUniqueMessagesGroup,
       averageFirstResponseSeconds: summary.averageFirstResponseSeconds,
     };
   });
@@ -335,7 +344,10 @@ export function WhatsappActivityPage() {
   const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
   const [showHeatmapNumbers, setShowHeatmapNumbers] = useState(true);
-  const [heatmapMetric, setHeatmapMetric] = useState<"total" | "sent" | "received" | "received_unique" | "conversations">("total");
+  const [heatmapMetric, setHeatmapMetric] = useState<
+    "total" | "sent" | "received" | "received_unique" | "sent_unique" | "conversations"
+  >("total");
+  const [isUniqueMetric, setIsUniqueMetric] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "private" | "group">("all");
 
   const reportQuery = useQuery({
@@ -414,24 +426,23 @@ export function WhatsappActivityPage() {
   const maxCellValue = useMemo(
     () => Math.max(1, ...Array.from(cellMap.values()).map((cell) => {
       if (typeFilter === "private") {
-        if (heatmapMetric === "sent") return cell.sentMessagesPrivate;
-        if (heatmapMetric === "received") return cell.receivedMessagesPrivate;
-        if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesPrivate;
+        if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessagesPrivate ?? 0) : cell.sentMessagesPrivate;
+        if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessagesPrivate ?? 0) : cell.receivedMessagesPrivate;
         if (heatmapMetric === "conversations") return cell.attendedPrivates;
         return (cell.sentMessagesPrivate || 0) + (cell.receivedMessagesPrivate || 0);
       }
       if (typeFilter === "group") {
-        if (heatmapMetric === "sent") return cell.sentMessagesGroup;
-        if (heatmapMetric === "received") return cell.receivedMessagesGroup;
-        if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesGroup;
+        if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessagesGroup ?? 0) : cell.sentMessagesGroup;
+        if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessagesGroup ?? 0) : cell.receivedMessagesGroup;
         if (heatmapMetric === "conversations") return cell.attendedGroups;
         return (cell.sentMessagesGroup || 0) + (cell.receivedMessagesGroup || 0);
       }
-      if (heatmapMetric === "sent") return cell.sentMessages;
-      if (heatmapMetric === "received") return cell.receivedMessages;
-      if (heatmapMetric === "received_unique") return cell.receivedUniqueMessages;
+      if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessages ?? 0) : cell.sentMessages;
+      if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessages ?? 0) : cell.receivedMessages;
       if (heatmapMetric === "conversations") return cell.attendedConversations;
-      return cell.sentMessages + cell.receivedMessages;
+      return isUniqueMetric 
+        ? (cell.sentUniqueMessages ?? 0) + (cell.receivedUniqueMessages ?? 0)
+        : (cell.sentMessages || 0) + (cell.receivedMessages || 0);
     })),
     [cellMap, heatmapMetric, typeFilter],
   );
@@ -515,8 +526,18 @@ export function WhatsappActivityPage() {
       previous: selectedAgentId === "all"
         ? (typeFilter === "private" ? report?.previousSummary?.receivedUniqueMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.receivedUniqueMessagesGroup : report?.previousSummary?.receivedUniqueMessages)
         : undefined,
-      detail: "Unique customers/groups",
+      detail: "Clientes/grupos que enviaram",
       icon: Users,
+    },
+    {
+      key: "sent_unique",
+      label: "Contatos enviados",
+      value: visibleSummary.sentUniqueMessages || 0,
+      previous: selectedAgentId === "all"
+        ? (typeFilter === "private" ? report?.previousSummary?.sentUniqueMessagesPrivate : typeFilter === "group" ? report?.previousSummary?.sentUniqueMessagesGroup : report?.previousSummary?.sentUniqueMessages)
+        : undefined,
+      detail: "Clientes/grupos que receberam",
+      icon: UserCheck,
     },
   ];
 
@@ -682,13 +703,6 @@ export function WhatsappActivityPage() {
                 <div className="activity-heatmap-toggles">
                   <button
                     type="button"
-                    className={heatmapMetric === "total" ? "active" : ""}
-                    onClick={() => setHeatmapMetric("total")}
-                  >
-                    Total
-                  </button>
-                  <button
-                    type="button"
                     className={heatmapMetric === "sent" ? "active" : ""}
                     onClick={() => setHeatmapMetric("sent")}
                   >
@@ -701,12 +715,23 @@ export function WhatsappActivityPage() {
                   >
                     Recebida
                   </button>
+                </div>
+                <div className="activity-heatmap-toggles">
                   <button
                     type="button"
-                    className={heatmapMetric === "received_unique" ? "active" : ""}
-                    onClick={() => setHeatmapMetric("received_unique")}
+                    className={isUniqueMetric ? "active" : ""}
+                    onClick={() => setIsUniqueMetric(!isUniqueMetric)}
                   >
-                    Recebida (Única)
+                    {isUniqueMetric ? "Único: ON" : "Único: OFF"}
+                  </button>
+                </div>
+                <div className="activity-heatmap-toggles">
+                  <button
+                    type="button"
+                    className={heatmapMetric === "total" ? "active" : ""}
+                    onClick={() => setHeatmapMetric("total")}
+                  >
+                    Total
                   </button>
                   <button
                     type="button"
@@ -739,27 +764,29 @@ export function WhatsappActivityPage() {
                       const cell = cellMap.get(key) ?? { ...EMPTY_SUMMARY, conversations: [] };
                       const value = (() => {
                         if (typeFilter === "private") {
-                          if (heatmapMetric === "sent") return cell.sentMessagesPrivate;
-                          if (heatmapMetric === "received") return cell.receivedMessagesPrivate;
-                          if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesPrivate;
+                          if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessagesPrivate ?? 0) : cell.sentMessagesPrivate;
+                          if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessagesPrivate ?? 0) : cell.receivedMessagesPrivate;
                           if (heatmapMetric === "conversations") return cell.attendedPrivates;
                           return (cell.sentMessagesPrivate || 0) + (cell.receivedMessagesPrivate || 0);
                         }
                         if (typeFilter === "group") {
-                          if (heatmapMetric === "sent") return cell.sentMessagesGroup;
-                          if (heatmapMetric === "received") return cell.receivedMessagesGroup;
-                          if (heatmapMetric === "received_unique") return cell.receivedUniqueMessagesGroup;
+                          if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessagesGroup ?? 0) : cell.sentMessagesGroup;
+                          if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessagesGroup ?? 0) : cell.receivedMessagesGroup;
                           if (heatmapMetric === "conversations") return cell.attendedGroups;
                           return (cell.sentMessagesGroup || 0) + (cell.receivedMessagesGroup || 0);
                         }
-                        if (heatmapMetric === "sent") return cell.sentMessages;
-                        if (heatmapMetric === "received") return cell.receivedMessages;
-                        if (heatmapMetric === "received_unique") return cell.receivedUniqueMessages;
+                        if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessages ?? 0) : cell.sentMessages;
+                        if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessages ?? 0) : cell.receivedMessages;
                         if (heatmapMetric === "conversations") return cell.attendedConversations;
-                        return cell.sentMessages + cell.receivedMessages;
+                        return isUniqueMetric
+                          ? (cell.sentUniqueMessages ?? 0) + (cell.receivedUniqueMessages ?? 0)
+                          : (cell.sentMessages || 0) + (cell.receivedMessages || 0);
                       })();
                       const level = heatLevel(value, maxCellValue);
-                      const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${cell.sentMessages} respostas, ${cell.receivedMessages} recebidas`;
+                      const sentCount = isUniqueMetric ? (cell.sentUniqueMessages ?? 0) : cell.sentMessages;
+                      const receivedCount = isUniqueMetric ? (cell.receivedUniqueMessages ?? 0) : cell.receivedMessages;
+                      const countLabel = isUniqueMetric ? "unicos" : "";
+                      const title = `${day.label} ${String(hour).padStart(2, "0")}h - ${cell.attendedConversations} conversas, ${sentCount} enviados ${countLabel}, ${receivedCount} recebidos ${countLabel}`;
                       return (
                         <button
                           type="button"
