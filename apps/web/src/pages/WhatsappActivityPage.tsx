@@ -7,7 +7,7 @@ import type {
   WhatsappAgentActivityReport,
 } from "@olist-crm/shared";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Smartphone, TrendingDown, TrendingUp, Users, UserCheck } from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Search, Smartphone, TrendingDown, TrendingUp, Users, UserCheck } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 
@@ -349,6 +349,7 @@ export function WhatsappActivityPage() {
   >("total");
   const [isUniqueMetric, setIsUniqueMetric] = useState(false);
   const [typeFilter, setTypeFilter] = useState<"all" | "private" | "group">("all");
+  const [conversationSearch, setConversationSearch] = useState("");
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
@@ -384,6 +385,7 @@ export function WhatsappActivityPage() {
       sentMessages: typeFilter === "private" ? summary.sentMessagesPrivate : summary.sentMessagesGroup,
       receivedMessages: typeFilter === "private" ? summary.receivedMessagesPrivate : summary.receivedMessagesGroup,
       receivedUniqueMessages: typeFilter === "private" ? summary.receivedUniqueMessagesPrivate : summary.receivedUniqueMessagesGroup,
+      sentUniqueMessages: typeFilter === "private" ? (summary.sentUniqueMessagesPrivate ?? 0) : (summary.sentUniqueMessagesGroup ?? 0),
     };
   }, [report, selectedAgentId, visibleCells, typeFilter]);
   const dailySeries = useMemo(() => {
@@ -400,6 +402,7 @@ export function WhatsappActivityPage() {
       sentMessages: typeFilter === "private" ? item.sentMessagesPrivate : item.sentMessagesGroup,
       receivedMessages: typeFilter === "private" ? item.receivedMessagesPrivate : item.receivedMessagesGroup,
       receivedUniqueMessages: typeFilter === "private" ? item.receivedUniqueMessagesPrivate : item.receivedUniqueMessagesGroup,
+      sentUniqueMessages: typeFilter === "private" ? (item.sentUniqueMessagesPrivate ?? 0) : (item.sentUniqueMessagesGroup ?? 0),
     }));
   }, [report, selectedAgentId, visibleCells, typeFilter]);
   const cellsBySlot = useMemo(() => {
@@ -848,6 +851,7 @@ export function WhatsappActivityPage() {
                             const val = heatmapMetric === "sent" ? cell.sentMessages : 
                                         heatmapMetric === "received" ? cell.receivedMessages : 
                                         heatmapMetric === "received_unique" ? cell.receivedUniqueMessages :
+                                        heatmapMetric === "conversations" ? cell.attendedConversations :
                                         cell.sentMessages + cell.receivedMessages;
                             return (
                               <button
@@ -932,44 +936,97 @@ export function WhatsappActivityPage() {
       ) : null}
 
       {activeTab === "conversations" ? (
-        <section className="activity-panel activity-chart-panel">
-          <ActivityChart
-            title="Conversas"
-            value={formatNumber(visibleSummary.attendedConversations)}
-            dataKey="attendedConversations"
-            data={dailySeries}
-            growth={selectedAgentId === "all" ? growthMetrics?.attendedConversations : null}
-          />
-          <ActivityChart
-            title="Mensagens Recebidas"
-            value={formatNumber(visibleSummary.receivedMessages)}
-            dataKey="receivedMessages"
-            data={dailySeries}
-            growth={selectedAgentId === "all" ? growthMetrics?.receivedMessages : null}
-          />
-          <ActivityChart
-            title="Mensagens enviadas"
-            value={formatNumber(visibleSummary.sentMessages)}
-            dataKey="sentMessages"
-            data={dailySeries}
-            growth={selectedAgentId === "all" ? growthMetrics?.sentMessages : null}
-          />
-          <ActivityChart
-            title="Contatos Recebidos"
-            value={formatNumber(visibleSummary.receivedUniqueMessages)}
-            dataKey="receivedUniqueMessages"
-            data={dailySeries}
-            growth={selectedAgentId === "all" ? growthMetrics?.receivedUniqueMessages : null}
-          />
-          <ActivityChart
-            title="Tempo de Primeira Resposta"
-            value={formatSeconds(visibleSummary.averageFirstResponseSeconds)}
-            dataKey="averageFirstResponseSeconds"
-            data={dailySeries}
-            response
-            growth={selectedAgentId === "all" ? growthMetrics?.averageFirstResponseSeconds : null}
-          />
-        </section>
+        <div className="activity-conversations-layout">
+          <aside className="activity-conversations-list-panel">
+            <div className="activity-panel-header">
+              <div>
+                <h2>Lista de conversas</h2>
+                <span>{visibleSummary.conversations.length} encontradas no periodo</span>
+              </div>
+            </div>
+            <div className="activity-search-box">
+              <Search size={18} />
+              <input 
+                type="text" 
+                placeholder="Pesquisar por nome ou JID..." 
+                value={conversationSearch}
+                onChange={(e) => setConversationSearch(e.target.value)}
+              />
+            </div>
+            <div className="activity-conversations-scroll">
+              <table className="activity-table mini">
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Tipo</th>
+                    <th>Enviadas</th>
+                    <th>Recebidas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSummary.conversations
+                    .filter(c => {
+                      const search = conversationSearch.toLowerCase();
+                      const matchesSearch = c.name.toLowerCase().includes(search) || c.remoteJid.toLowerCase().includes(search);
+                      if (!matchesSearch) return false;
+                      
+                      if (typeFilter === "private") return c.kind === "private";
+                      if (typeFilter === "group") return c.kind !== "private";
+                      return true;
+                    })
+                    .slice(0, 100)
+                    .map((conv) => (
+                      <tr key={conv.remoteJid}>
+                        <td>{conv.name || conv.remoteJid}</td>
+                        <td><small>{conversationKindLabel(conv.kind)}</small></td>
+                        <td>{conv.sentMessages}</td>
+                        <td>{conv.receivedMessages}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </aside>
+
+          <section className="activity-panel activity-chart-panel">
+            <ActivityChart
+              title="Conversas atendidas"
+              value={formatNumber(visibleSummary.attendedConversations)}
+              dataKey="attendedConversations"
+              data={dailySeries}
+              growth={selectedAgentId === "all" ? growthMetrics?.attendedConversations : null}
+            />
+            <ActivityChart
+              title="Mensagens Recebidas"
+              value={formatNumber(visibleSummary.receivedMessages)}
+              dataKey="receivedMessages"
+              data={dailySeries}
+              growth={selectedAgentId === "all" ? growthMetrics?.receivedMessages : null}
+            />
+            <ActivityChart
+              title="Mensagens enviadas"
+              value={formatNumber(visibleSummary.sentMessages)}
+              dataKey="sentMessages"
+              data={dailySeries}
+              growth={selectedAgentId === "all" ? growthMetrics?.sentMessages : null}
+            />
+            <ActivityChart
+              title="Contatos Recebidos"
+              value={formatNumber(visibleSummary.receivedUniqueMessages)}
+              dataKey="receivedUniqueMessages"
+              data={dailySeries}
+              growth={selectedAgentId === "all" ? growthMetrics?.receivedUniqueMessages : null}
+            />
+            <ActivityChart
+              title="Tempo de Primeira Resposta"
+              value={formatSeconds(visibleSummary.averageFirstResponseSeconds)}
+              dataKey="averageFirstResponseSeconds"
+              data={dailySeries}
+              response
+              growth={selectedAgentId === "all" ? growthMetrics?.averageFirstResponseSeconds : null}
+            />
+          </section>
+        </div>
       ) : null}
 
       {activeTab === "agents" ? (
