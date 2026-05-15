@@ -276,6 +276,8 @@ export interface CustomerMovement {
 }
 
 export interface CustomerMovementsResponse {
+  startDate: string;
+  endDate: string;
   movements: CustomerMovement[];
 }
 
