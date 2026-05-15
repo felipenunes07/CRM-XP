@@ -1,6 +1,6 @@
 import type { EventSeverity, EventType, WhatsappMessageRisk } from "@olist-crm/shared";
 import { pool } from "../db/client.js";
-import { classifyMessageContent } from "../modules/events/eventsService.js";
+import { classifyMessageContent, MESSAGE_CLASSIFIER_VERSION } from "../modules/events/eventsService.js";
 
 interface MessageEventRow {
   id: string;
@@ -33,7 +33,7 @@ function readRisk(metadata: Record<string, unknown> | null): WhatsappMessageRisk
 function mergeMetadata(row: MessageEventRow, classification: ReturnType<typeof classifyMessageContent>) {
   return {
     ...(row.metadata ?? {}),
-    classifierVersion: "2026-05-15-v2",
+    classifierVersion: MESSAGE_CLASSIFIER_VERSION,
     reclassifiedAt: new Date().toISOString(),
     previousEventType: row.event_type,
     previousSeverity: row.severity,
@@ -77,7 +77,7 @@ async function main() {
       row.event_type !== classification.eventType ||
       row.severity !== classification.severity ||
       row.label !== classification.label ||
-      (row.metadata?.classifierVersion !== "2026-05-15-v2");
+      (row.metadata?.classifierVersion !== MESSAGE_CLASSIFIER_VERSION);
 
     summary.byType[classification.eventType] = (summary.byType[classification.eventType] ?? 0) + 1;
 

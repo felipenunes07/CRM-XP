@@ -17,6 +17,8 @@ import {
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
 
+export const MESSAGE_CLASSIFIER_VERSION = "2026-05-15-v3";
+
 type MessageClassificationCategory =
   | "risk"
   | "opportunity"
@@ -256,6 +258,26 @@ function hasAnyToken(ctx: ClassificationText, tokens: Iterable<string>) {
   return false;
 }
 
+function getMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function readRiskFromMetadata(metadata: Record<string, unknown>): WhatsappMessageRisk | null {
+  const originalRisk = metadata.originalRisk;
+  if (!originalRisk || typeof originalRisk !== "object" || Array.isArray(originalRisk)) {
+    return null;
+  }
+
+  const risk = originalRisk as Partial<WhatsappMessageRisk>;
+  if (!risk.label || !risk.severity || !risk.keyword) {
+    return null;
+  }
+
+  return risk as WhatsappMessageRisk;
+}
+
 function countMatches(value: string, pattern: RegExp) {
   return value.match(pattern)?.length ?? 0;
 }
@@ -320,6 +342,10 @@ function hasCommercialIntent(ctx: ClassificationText) {
   }
 
   if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS)) {
+    return true;
+  }
+
+  if ((ctx.normalized.includes("?") || hasAnyToken(ctx, ["quais", "qual", "tendo"])) && hasAnyToken(ctx, PRODUCT_TOKENS)) {
     return true;
   }
 
@@ -589,16 +615,50 @@ export function generateLabelFromType(eventType: EventType): string {
   }
 }
 
+function buildClassificationMetadata(
+  metadata: Record<string, unknown>,
+  classification: MessageEventClassification,
+  row?: { event_type?: string; severity?: string; label?: string }
+) {
+  return {
+    ...metadata,
+    classifierVersion: MESSAGE_CLASSIFIER_VERSION,
+    previousEventType: row?.event_type,
+    previousSeverity: row?.severity,
+    previousLabel: row?.label,
+    sentimentScore: classification.sentimentScore,
+    classificationReason: classification.reason,
+    classificationConfidence: classification.confidence,
+    classificationCategory: classification.category,
+    classificationEvidence: classification.evidence,
+    actionRequired: classification.actionRequired,
+    shouldCreateEvent: classification.shouldCreateEvent,
+  };
+}
+
 function mapEventRow(row: any): MessageEvent {
+  const metadata = getMetadataRecord(row.metadata);
+  const shouldReclassify = metadata.classifierVersion !== MESSAGE_CLASSIFIER_VERSION;
+  const classification = shouldReclassify
+    ? classifyMessageContent(row.content, readRiskFromMetadata(metadata))
+    : null;
+
+  const eventType = classification?.eventType ?? row.event_type as EventType;
+  const severity = classification?.severity ?? row.severity as EventSeverity;
+  const label = classification?.label ?? row.label;
+  const eventMetadata = classification
+    ? buildClassificationMetadata(metadata, classification, row)
+    : metadata;
+
   return {
     id: row.id,
     dealId: row.deal_id,
     messageId: row.message_id,
-    eventType: row.event_type as EventType,
-    severity: row.severity as EventSeverity,
-    label: row.label,
+    eventType,
+    severity,
+    label,
     content: row.content,
-    metadata: row.metadata || {},
+    metadata: eventMetadata,
     detectedAt: row.detected_at.toISOString(),
     resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
     resolutionNote: row.resolution_note,
@@ -611,6 +671,55 @@ function mapEventRow(row: any): MessageEvent {
       isGroup: false
     }
   };
+}
+
+function eventRequiresAction(event: MessageEvent) {
+  if (typeof event.metadata.actionRequired === "boolean") {
+    return event.metadata.actionRequired;
+  }
+
+  return ["RISK", "ESCALATION", "COMPLAINT", "NEGATIVE_FEEDBACK", "CHURN_RISK", "SALES_OPPORTUNITY", "QUESTION"]
+    .includes(event.eventType);
+}
+
+function shouldListEvent(event: MessageEvent) {
+  if (event.metadata.shouldCreateEvent === false) {
+    return false;
+  }
+
+  return event.eventType !== "GREETING" && event.eventType !== "NEUTRAL";
+}
+
+async function persistMappedClassification(row: any, event: MessageEvent) {
+  if (row.metadata?.classifierVersion === MESSAGE_CLASSIFIER_VERSION && row.event_type === event.eventType) {
+    return;
+  }
+
+  await pool.query(`
+    UPDATE message_events
+    SET
+      event_type = $1,
+      severity = $2,
+      label = $3,
+      metadata = $4,
+      resolved_at = CASE
+        WHEN $5::boolean THEN COALESCE(resolved_at, NOW())
+        ELSE resolved_at
+      END,
+      resolution_note = CASE
+        WHEN $5::boolean THEN COALESCE(resolution_note, 'Reclassificado automaticamente como ruido informativo.')
+        ELSE resolution_note
+      END,
+      updated_at = NOW()
+    WHERE id = $6
+  `, [
+    event.eventType,
+    event.severity,
+    event.label,
+    event.metadata,
+    !shouldListEvent(event),
+    event.id,
+  ]);
 }
 
 async function fetchConversationContext(dealId: string): Promise<ConversationContext> {
@@ -722,7 +831,7 @@ export async function createEventFromMessage(
     remoteJid: message.remoteJid,
     isGroup: message.isGroup,
     sentimentScore,
-    classifierVersion: "2026-05-15-v2",
+    classifierVersion: MESSAGE_CLASSIFIER_VERSION,
     classificationReason: classification.reason,
     classificationConfidence: classification.confidence,
     classificationCategory: classification.category,
@@ -877,7 +986,7 @@ export async function listEvents(
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `, params);
 
-  const events = eventsResult.rows.map(row => {
+  const mappedEvents = await Promise.all(eventsResult.rows.map(async row => {
     const event = mapEventRow(row);
     event.conversationContext = {
       contactName: row.customer_name || row.deal_title || "Desconhecido",
@@ -886,8 +995,13 @@ export async function listEvents(
       instanceName: row.instance_name,
       isGroup: (row.whatsapp_jid || "").endsWith("@g.us")
     };
+    await persistMappedClassification(row, event);
     return event;
-  });
+  }));
+
+  const events = filters.eventType && filters.eventType.length > 0
+    ? mappedEvents
+    : mappedEvents.filter(shouldListEvent);
 
   return {
     events,
