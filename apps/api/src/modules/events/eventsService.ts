@@ -17,7 +17,7 @@ import {
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
 
-export const MESSAGE_CLASSIFIER_VERSION = "2026-05-15-v3";
+export const MESSAGE_CLASSIFIER_VERSION = "2026-05-15-v4";
 
 type MessageClassificationCategory =
   | "risk"
@@ -341,7 +341,7 @@ function hasCommercialIntent(ctx: ClassificationText) {
     return true;
   }
 
-  if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS)) {
+  if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS) && ctx.normalized.includes("?")) {
     return true;
   }
 
@@ -365,8 +365,6 @@ function categoryFromEventType(eventType: EventType): MessageClassificationCateg
     case "RISK":
     case "ESCALATION":
       return "risk";
-    case "SALES_OPPORTUNITY":
-      return "opportunity";
     case "COMPLAINT":
     case "NEGATIVE_FEEDBACK":
     case "CHURN_RISK":
@@ -375,6 +373,7 @@ function categoryFromEventType(eventType: EventType): MessageClassificationCateg
     case "POSITIVE_FEEDBACK":
       return "feedback";
     case "QUESTION":
+    case "SALES_OPPORTUNITY":
       return "question";
     default:
       return "noise";
@@ -398,7 +397,7 @@ function buildClassification(
     reason: input.reason ?? "Classificacao por contexto da mensagem.",
     category,
     actionRequired,
-    shouldCreateEvent: eventType !== "GREETING" && eventType !== "NEUTRAL",
+    shouldCreateEvent: eventType !== "GREETING" && eventType !== "NEUTRAL" && category !== "feedback" && eventType !== "SALES_OPPORTUNITY",
     evidence: input.evidence ?? [],
   };
 }
@@ -474,10 +473,10 @@ export function classifyMessageContent(
   }
 
   if (hasCommercialIntent(ctx)) {
-    return buildClassification("SALES_OPPORTUNITY", ctx, {
-      category: "opportunity",
+    return buildClassification("QUESTION", ctx, {
+      category: "question",
       confidence: 0.88,
-      reason: "Mensagem pede preco, frete, disponibilidade, catalogo ou condicao comercial.",
+      reason: "Mensagem indica interesse comercial ou duvida sobre produto/preco.",
       evidence: ctx.tokens.filter((token) => COMMERCIAL_TOKENS.has(token)).slice(0, 5),
     });
   }

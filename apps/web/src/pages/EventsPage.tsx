@@ -120,8 +120,6 @@ export function EventsPage() {
             <p style={{ margin: 0, fontSize: "14px", lineHeight: "1.5", color: "var(--text-color)" }}>
               Hoje tivemos <strong>{metricsQuery.data.executiveSummary.complaintsCount}</strong> reclamações, 
               sendo <strong>{metricsQuery.data.executiveSummary.vipComplaintsCount}</strong> de clientes de alto valor. 
-              Temos <strong>{metricsQuery.data.executiveSummary.opportunitiesCount}</strong> oportunidades comerciais identificadas, 
-              com <strong>{metricsQuery.data.executiveSummary.unansweredOpportunitiesCount}</strong> sem resposta há mais de 2h.
               {metricsQuery.data.executiveSummary.bottleneckAgentText && (
                 <> <span style={{ color: "var(--danger-color)", fontWeight: "500" }}>{metricsQuery.data.executiveSummary.bottleneckAgentText}</span></>
               )}
