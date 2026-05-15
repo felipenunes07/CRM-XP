@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   buildTrendRangeAnalysisResponse,
+  normalizeDashboardTrendDays,
   normalizeTrendRangeSelection,
   pickTrendRangeWorstStatus,
 } from "./dashboardService.js";
 
 describe("dashboardService trend range helpers", () => {
+  it("caps dashboard trend windows to the supported maximum", () => {
+    expect(normalizeDashboardTrendDays(1231)).toBe(730);
+    expect(normalizeDashboardTrendDays(365)).toBe(365);
+    expect(normalizeDashboardTrendDays(0)).toBe(1);
+  });
+
   it("normalizes the dragged range order before querying", () => {
     expect(normalizeTrendRangeSelection("2026-03-20", "2026-01-10")).toEqual({
       startDate: "2026-01-10",

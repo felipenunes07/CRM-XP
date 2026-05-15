@@ -25,8 +25,7 @@ import type { CustomerFilters } from "./customerService.js";
 import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2023;
+const DASHBOARD_TREND_MAX_DAYS = 730;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
@@ -63,10 +62,8 @@ export interface TrendRangeAnalysisMonthlyRow {
   actual_pieces: number;
 }
 
-function getDashboardTrendMaxDays(referenceDate = new Date()) {
-  const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
-  const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
+export function normalizeDashboardTrendDays(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
+  return Math.max(1, Math.min(DASHBOARD_TREND_MAX_DAYS, Math.floor(days)));
 }
 
 export function normalizeTrendRangeSelection(startDate: string, endDate: string): TrendRangeSelection {
@@ -577,7 +574,7 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
 }
 
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
-  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
+  const validatedDays = normalizeDashboardTrendDays(days);
   const freshnessResult = await pool.query<{
     today: string;
     latest_trend_day: string | null;
@@ -637,7 +634,7 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
  */
 async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   // Validate days parameter
-  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
+  const validatedDays = normalizeDashboardTrendDays(days);
 
   let result = await pool.query(
     `

@@ -1,14 +1,23 @@
-import { EventsMetrics } from "@olist-crm/shared";
-import { AlertTriangle, MessageSquare, TrendingUp, Clock, Ghost } from "lucide-react";
+import type { EventsMetrics } from "@olist-crm/shared";
+import type { ElementType } from "react";
+import {
+  AlertTriangle,
+  CircleHelp,
+  Clock,
+  FilterX,
+  Inbox,
+  Target,
+  TrendingUp,
+  UsersRound,
+} from "lucide-react";
 
 interface MetricCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  icon: React.ElementType;
+  icon: ElementType;
   trend?: {
     value: number;
-    label: string;
     positive?: boolean;
   };
   color?: string;
@@ -40,32 +49,56 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
   if (!metrics) return null;
 
   const { summary, operationalEfficiency } = metrics;
+  const executive = metrics.executiveSummary;
+  const actionableEvents = summary.actionRequiredEvents ?? summary.unresolvedEvents;
+  const sentiment = summary.averageSentiment ?? 0;
 
   return (
     <div className="wa-metrics-grid">
       <MetricCard
-        title="Total de Eventos"
-        value={summary.totalEvents}
-        subtitle={`${summary.totalEvents - summary.unresolvedEvents} resolvidos`}
-        icon={MessageSquare}
+        title="Acao Necessaria"
+        value={actionableEvents}
+        subtitle="Pendencias reais no periodo"
+        icon={Inbox}
         color="#3b82f6"
       />
       <MetricCard
-        title="Alertas Críticos"
+        title="Alertas Criticos"
         value={(summary.bySeverity?.CRITICAL || 0) + (summary.bySeverity?.HIGH || 0)}
-        subtitle="Risco alto detectado"
+        subtitle="Risco alto ou escalacao"
         icon={AlertTriangle}
         color="#ef4444"
       />
       <MetricCard
-        title="Sentimento Médio"
-        value={(summary.averageSentiment ?? 0).toFixed(1)}
-        subtitle={(summary.averageSentiment ?? 0) > 0.3 ? "Predominantemente positivo" : (summary.averageSentiment ?? 0) < -0.3 ? "Atenção necessária" : "Neutro"}
+        title="Oportunidades"
+        value={summary.opportunitiesCount ?? executive?.opportunitiesCount ?? 0}
+        subtitle={`${executive?.unansweredOpportunitiesCount ?? 0} sem resposta ha mais de 2h`}
+        icon={Target}
+        color="#2563eb"
+      />
+      <MetricCard
+        title="Duvidas"
+        value={summary.questionCount ?? executive?.questionCount ?? 0}
+        subtitle="Perguntas que pedem retorno"
+        icon={CircleHelp}
+        color="#7c3aed"
+      />
+      <MetricCard
+        title="Ruido Filtrado"
+        value={summary.filteredNoiseCount ?? executive?.filteredNoiseCount ?? 0}
+        subtitle="Saudacoes, respostas curtas e listas"
+        icon={FilterX}
+        color="#64748b"
+      />
+      <MetricCard
+        title="Sentimento Medio"
+        value={sentiment.toFixed(1)}
+        subtitle={sentiment > 0.3 ? "Predominantemente positivo" : sentiment < -0.3 ? "Atencao necessaria" : "Neutro"}
         icon={TrendingUp}
         color="#10b981"
       />
       <MetricCard
-        title="Resolução Média"
+        title="Resolucao Media"
         value={`${(operationalEfficiency.averageResolutionTimeHours ?? 0).toFixed(1)}h`}
         subtitle="Tempo de encerramento"
         icon={Clock}
@@ -74,8 +107,8 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
       <MetricCard
         title="Gargalos"
         value={operationalEfficiency.bottleneckAgents?.length ?? 0}
-        subtitle="Agentes com pendências"
-        icon={Ghost}
+        subtitle="Agentes com fila acionavel"
+        icon={UsersRound}
         color="#f59e0b"
       />
     </div>

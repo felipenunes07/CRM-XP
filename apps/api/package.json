@@ -14,6 +14,7 @@
     "create:user": "tsx src/scripts/createUser.ts",
     "import:history": "tsx src/scripts/importHistory.ts",
     "import:supabase:2026": "tsx src/scripts/importSupabase2026.ts",
+    "events:reclassify": "tsx src/scripts/reclassifyMessageEvents.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },
