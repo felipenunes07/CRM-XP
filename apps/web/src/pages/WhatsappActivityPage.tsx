@@ -37,6 +37,9 @@ const EMPTY_SUMMARY = {
   receivedUniqueMessages: 0,
   receivedUniqueMessagesPrivate: 0,
   receivedUniqueMessagesGroup: 0,
+  sentUniqueMessages: 0,
+  sentUniqueMessagesPrivate: 0,
+  sentUniqueMessagesGroup: 0,
   responseCount: 0,
   averageFirstResponseSeconds: null as number | null,
 };
