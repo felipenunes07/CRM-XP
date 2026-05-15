@@ -1904,7 +1904,11 @@ export type EventType =
   | "COMPLAINT"
   | "PRAISE"
   | "QUESTION"
-  | "ESCALATION";
+  | "ESCALATION"
+  | "GREETING"
+  | "NEUTRAL"
+  | "CHURN_RISK"
+  | "SALES_OPPORTUNITY";
 
 export type EventSeverity = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
 
@@ -1990,11 +1994,20 @@ export interface TopEvent {
   lastOccurrence: string;
 }
 
+export interface EventsExecutiveSummary {
+  complaintsCount: number;
+  vipComplaintsCount: number;
+  opportunitiesCount: number;
+  unansweredOpportunitiesCount: number;
+  bottleneckAgentText: string | null;
+}
+
 export interface EventsMetrics {
   summary: EventsSummary;
   operationalEfficiency: OperationalEfficiency;
   sentimentAnalysis: SentimentTrend;
   topEvents: TopEvent[];
+  executiveSummary?: EventsExecutiveSummary;
 }
 
 // ── Filters ────────────────────────────────────────────────

@@ -101,6 +101,33 @@ export function EventsPage() {
       </header>
 
       <div className="wa-events-content">
+        {metricsQuery.data?.executiveSummary && (
+          <div className="wa-executive-summary-banner" style={{
+            background: "linear-gradient(to right, rgba(41, 86, 215, 0.1), rgba(41, 86, 215, 0.05))",
+            borderLeft: "4px solid var(--primary)",
+            padding: "16px 20px",
+            borderRadius: "8px",
+            marginBottom: "24px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: "600", color: "var(--primary)" }}>
+              <LayoutDashboard size={20} />
+              <span>Resumo Executivo para Gestão</span>
+            </div>
+            <p style={{ margin: 0, fontSize: "14px", lineHeight: "1.5", color: "var(--text-color)" }}>
+              Hoje tivemos <strong>{metricsQuery.data.executiveSummary.complaintsCount}</strong> reclamações, 
+              sendo <strong>{metricsQuery.data.executiveSummary.vipComplaintsCount}</strong> de clientes de alto valor. 
+              Temos <strong>{metricsQuery.data.executiveSummary.opportunitiesCount}</strong> oportunidades comerciais identificadas, 
+              com <strong>{metricsQuery.data.executiveSummary.unansweredOpportunitiesCount}</strong> sem resposta há mais de 2h.
+              {metricsQuery.data.executiveSummary.bottleneckAgentText && (
+                <> <span style={{ color: "var(--danger-color)", fontWeight: "500" }}>{metricsQuery.data.executiveSummary.bottleneckAgentText}</span></>
+              )}
+            </p>
+          </div>
+        )}
+
         <section className="wa-section metrics">
           <EventsSummaryPanel metrics={metricsQuery.data || null} />
         </section>

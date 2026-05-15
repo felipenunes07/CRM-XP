@@ -80,11 +80,43 @@ async function main() {
     );
   }
 
+  // 5. Sentiment Aggregation
+  if (env.WORKER_SENTIMENT_AGGREGATION_ENABLED) {
+    logger.info("scheduled sentiment aggregation enabled", { intervalHours: env.WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS });
+    intervals.push(
+      setInterval(
+        () => {
+          logger.info("starting scheduled sentiment aggregation");
+          aggregateAllDealsSentiment().catch((error) => {
+            logger.error("failed scheduled sentiment aggregation", { error: String(error) });
+          });
+        },
+        env.WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS * 60 * 60 * 1000,
+      )
+    );
+  }
+
+  // 6. Database Cleanup (Daily)
+  intervals.push(
+    setInterval(
+      () => {
+        logger.info("starting daily database cleanup");
+        import("./modules/events/eventsService.js")
+          .then((m) => m.purgeOldEventsData())
+          .catch((error) => {
+            logger.error("failed daily database cleanup", { error: String(error) });
+          });
+      },
+      24 * 60 * 60 * 1000,
+    )
+  );
+
   logger.info("worker started", {
     olistSyncEnabled: env.WORKER_OLIST_SYNC_ENABLED,
     geographicSyncEnabled: env.WORKER_GEOGRAPHIC_SYNC_ENABLED,
     whatsappSyncEnabled: env.WORKER_WHATSAPP_SYNC_ENABLED,
     creditSyncEnabled: env.WORKER_CREDIT_SYNC_ENABLED,
+    sentimentAggregationEnabled: env.WORKER_SENTIMENT_AGGREGATION_ENABLED,
   });
 
   const shutdown = async () => {
