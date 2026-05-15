@@ -547,10 +547,12 @@ export const api = {
     },
     getEventsMetrics(token, query = {}) {
         const search = new URLSearchParams();
-        if (query.from)
-            search.set("dateFrom", query.from);
-        if (query.to)
-            search.set("dateTo", query.to);
+        if (query.dateFrom)
+            search.set("dateFrom", query.dateFrom);
+        if (query.dateTo)
+            search.set("dateTo", query.dateTo);
+        if (query.isGroup !== undefined)
+            search.set("isGroup", String(query.isGroup));
         return request(`/api/events/metrics?${search.toString()}`, {}, token);
     },
     listEvents(token, filters, pagination) {

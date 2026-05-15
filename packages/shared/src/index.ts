@@ -2020,6 +2020,7 @@ export interface EventsFilters {
   dateTo?: string;
   agentId?: string;
   search?: string;
+  isGroup?: boolean;
 }
 
 // ── API Responses ──────────────────────────────────────────

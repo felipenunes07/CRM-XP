@@ -786,10 +786,11 @@ export const api = {
       method: "POST",
     }, token);
   },
-  getEventsMetrics(token: string, query: { from?: string; to?: string } = {}) {
+  getEventsMetrics(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
     const search = new URLSearchParams();
-    if (query.from) search.set("dateFrom", query.from);
-    if (query.to) search.set("dateTo", query.to);
+    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
+    if (query.dateTo) search.set("dateTo", query.dateTo);
+    if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
     return request<EventsMetrics>(`/api/events/metrics?${search.toString()}`, {}, token);
   },
   listEvents(token: string, filters: any, pagination: { page: number; pageSize: number }) {
