@@ -51,7 +51,10 @@ describe("acquisitionService helpers", () => {
       ],
       null,
       null,
-      { amount: 0, items: 0, orders: 0, performance: [] }
+      { amount: 0, items: 0, orders: 0, performance: [] },
+      new Map(),
+      new Map(),
+      []
     );
 
     expect(metrics.summary).toMatchObject({
@@ -99,7 +102,10 @@ describe("acquisitionService helpers", () => {
       [{ month: "2026-02", spend: 700, currency: "BRL" }],
       null,
       null,
-      { amount: 0, items: 0, orders: 0, performance: [] }
+      { amount: 0, items: 0, orders: 0, performance: [] },
+      new Map(),
+      new Map(),
+      []
     );
 
     expect(metrics.monthlySeries.slice(0, 3)).toEqual([

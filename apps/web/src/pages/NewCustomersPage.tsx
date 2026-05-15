@@ -195,6 +195,12 @@ function DailyTooltip({
         <strong style={{ color: "#2956d7", fontSize: "1.2rem" }}>{formatNumber(payload[0]?.value ?? 0)}</strong>
         <span style={{ color: "#64748b" }}>clientes na primeira compra</span>
       </div>
+      {payload[1] && (
+        <div className="chart-tooltip-count" style={{ marginTop: "0.35rem" }}>
+          <strong style={{ color: "#8b5cf6", fontSize: "1.2rem" }}>{formatNumber(payload[1]?.value ?? 0)}</strong>
+          <span style={{ color: "#64748b" }}>grupos criados</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -233,6 +239,21 @@ function MonthlyTooltip({
           FONTE: {source === 'api' ? 'META ADS (API)' : 'PLANILHA (FALLBACK)'}
         </div>
       )}
+    </div>
+  );
+}
+
+function ConversionTooltip({ active, payload, label }: any) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="chart-tooltip" style={{ backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(139, 92, 246, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }}>
+      <strong style={{ color: "#0f172a" }}>{formatMonthLabel(label)}</strong>
+      <div className="chart-tooltip-count" style={{ marginTop: "0.5rem" }}>
+        <strong style={{ color: "#8b5cf6", fontSize: "1.2rem" }}>
+          {payload[0]?.value ? (payload[0].value * 100).toFixed(1) : "0"}%
+        </strong>
+        <span style={{ color: "#64748b" }}>de conversão</span>
+      </div>
     </div>
   );
 }
@@ -374,6 +395,7 @@ export function NewCustomersPage() {
 
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [showUnconverted, setShowUnconverted] = useState(false);
   const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
 
   const activeMonth = selectedMonth ?? currentMonthKey;
@@ -428,10 +450,14 @@ export function NewCustomersPage() {
       cac: currentMonthData?.cac ?? null,
       prevCac: previousMonthData?.cac ?? null,
       isRealTime: activeMonth === currentMonthKey,
+      monthlyChurnRate: data.summary.monthlyChurnRate,
       ltvCacRatio: data.summary.ltvCacRatio,
       estimatedLtv: data.summary.estimatedLtv,
       estimatedLifespanMonths: data.summary.estimatedLifespanMonths,
-      monthlyChurnRate: data.summary.monthlyChurnRate
+      groupsCreated: currentMonthData?.groupsCreated ?? 0,
+      prevGroupsCreated: previousMonthData?.groupsCreated ?? 0,
+      convertedGroups: currentMonthData?.convertedGroups ?? 0,
+      prevConvertedGroups: previousMonthData?.convertedGroups ?? 0
     };
   }, [acquisitionQuery.data, activeMonth, currentMonthKey]);
 
@@ -447,10 +473,12 @@ export function NewCustomersPage() {
     return Array.from({ length: daysInMonth }).map((_, i) => {
       const day = String(i + 1).padStart(2, '0');
       const dateStr = `${activeMonth}-${day}`;
-      const count = data.recentCustomers.filter(c => c.firstOrderDate === dateStr).length;
+      const dayData = data.dailySeries.find(d => d.date === dateStr);
       return {
         date: dateStr,
-        newCustomers: count
+        newCustomers: dayData?.newCustomers ?? 0,
+        groupsCreated: dayData?.groupsCreated ?? 0,
+        convertedGroups: dayData?.convertedGroups ?? 0
       };
     });
   }, [acquisitionQuery.data, activeMonth]);
@@ -653,19 +681,47 @@ export function NewCustomersPage() {
           <div className="metric-value" style={{ color: "#10b981" }}>{formatCurrency(metrics.estimatedLtv ?? 0)}</div>
           <p className="metric-helper">Expectativa de receita por cliente</p>
         </div>
+
+        <div className="premium-card" style={{ borderTop: "4px solid #8b5cf6" }}>
+          <div className="metric-label">Grupos Criados</div>
+          <div className="metric-value" style={{ color: "#8b5cf6" }}>{formatNumber(metrics.groupsCreated)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {renderTrend(metrics.groupsCreated, metrics.prevGroupsCreated)}
+            vs {formatNumber(metrics.prevGroupsCreated)} mês anterior
+          </p>
+        </div>
+
+        <div className="premium-card" style={{ borderTop: "4px solid #6366f1" }}>
+          <div className="metric-label">Grupos Convertidos</div>
+          <div className="metric-value" style={{ color: "#6366f1" }}>{formatNumber(metrics.convertedGroups)}</div>
+          <p className="metric-helper" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+            {metrics.groupsCreated > 0 ? ((metrics.convertedGroups / metrics.groupsCreated) * 100).toFixed(1) : 0}% de conv.
+            {renderTrend(metrics.convertedGroups, metrics.prevConvertedGroups)}
+          </p>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "1.5rem" }}>
         <section className="premium-panel">
           <div style={{ marginBottom: "1.5rem" }}>
             <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>Clientes novos por dia</h3>
-            <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
-              Distribuição diária de aquisições em {formatMonthLabel(activeMonth)}.
+            <div style={{ display: "flex", gap: "1rem", marginTop: "0.6rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b" }}>
+                <div style={{ width: "12px", height: "4px", background: "#3b82f6", borderRadius: "2px" }}></div>
+                <strong>Clientes Novos:</strong> Data da 1ª compra
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b" }}>
+                <div style={{ width: "12px", height: "2px", borderTop: "2px dotted #6366f1" }}></div>
+                <strong>Grupos Convertidos:</strong> Data de criação do grupo
+              </div>
+            </div>
+            <p className="metric-helper" style={{ marginTop: "0.8rem" }}>
+              Distribuição diária de aquisições em {formatMonthLabel(activeMonth)}. Note que um cliente pode comprar em uma data diferente da abertura do grupo.
             </p>
           </div>
           <div style={{ width: "100%", height: "260px" }}>
             <ResponsiveContainer>
-              <LineChart data={derivedDailySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <ComposedChart data={derivedDailySeries} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorNew" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -682,7 +738,27 @@ export function NewCustomersPage() {
                   dy={10}
                 />
                 <YAxis allowDecimals={false} tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} tickLine={false} axisLine={false} dx={-10} />
-                <Tooltip content={<DailyTooltip />} cursor={{ stroke: "rgba(59, 130, 246, 0.1)", strokeWidth: 32 }} />
+                <Tooltip content={<DailyTooltip />} cursor={{ fill: "rgba(59, 130, 246, 0.05)" }} />
+                
+                <Bar
+                  dataKey="groupsCreated"
+                  fill="#8b5cf6"
+                  opacity={0.15}
+                  radius={[4, 4, 0, 0]}
+                  name="Grupos Criados"
+                  barSize={32}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="convertedGroups"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  strokeDasharray="3 3"
+                  dot={{ r: 3, strokeWidth: 2, fill: "#ffffff", stroke: "#6366f1" }}
+                  activeDot={{ r: 5, strokeWidth: 2, fill: "#ffffff", stroke: "#4f46e5" }}
+                  name="Grupos Convertidos"
+                />
                 <Line
                   type="monotone"
                   dataKey="newCustomers"
@@ -690,8 +766,9 @@ export function NewCustomersPage() {
                   strokeWidth={4}
                   dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#3b82f6" }}
                   activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#2563eb" }}
+                  name="Clientes Novos"
                 />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
 
@@ -743,77 +820,135 @@ export function NewCustomersPage() {
 
         <section className="premium-panel">
           <div style={{ marginBottom: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>
-                Clientes novos — {formatMonthLabel(activeMonth)}
-              </h3>
-              {selectedMonth && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h3 style={{ fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }}>
+                  {showUnconverted ? "Grupos não convertidos" : "Clientes novos"} — {formatMonthLabel(activeMonth || currentMonthKey)}
+                </h3>
+                {selectedMonth && (
+                  <button
+                    onClick={() => setSelectedMonth(null)}
+                    style={{
+                      background: "rgba(41,86,215,0.08)",
+                      border: "1px solid rgba(41,86,215,0.2)",
+                      borderRadius: "8px",
+                      padding: "0.2rem 0.6rem",
+                      fontSize: "0.75rem",
+                      fontWeight: 600,
+                      color: "var(--accent)",
+                      cursor: "pointer",
+                      marginTop: "0.5rem"
+                    }}
+                  >
+                    ✕ Limpar filtro
+                  </button>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "0.4rem" }}>
                 <button
-                  onClick={() => setSelectedMonth(null)}
+                  onClick={() => setShowUnconverted(false)}
                   style={{
-                    background: "rgba(41,86,215,0.08)",
-                    border: "1px solid rgba(41,86,215,0.2)",
+                    padding: "0.4rem 0.7rem",
                     borderRadius: "8px",
-                    padding: "0.35rem 0.75rem",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    color: "var(--accent)",
-                    cursor: "pointer",
-                    transition: "all 0.2s",
+                    border: "1px solid",
+                    borderColor: !showUnconverted ? "var(--accent)" : "#e2e8f0",
+                    background: !showUnconverted ? "rgba(41,86,215,0.08)" : "#ffffff",
+                    fontSize: "0.7rem",
+                    fontWeight: 700,
+                    color: !showUnconverted ? "var(--accent)" : "#64748b",
+                    cursor: "pointer"
                   }}
                 >
-                  ✕ Voltar ao mês atual
+                  CONVERTIDOS
                 </button>
-              )}
+                <button
+                  onClick={() => setShowUnconverted(true)}
+                  style={{
+                    padding: "0.4rem 0.7rem",
+                    borderRadius: "8px",
+                    border: "1px solid",
+                    borderColor: showUnconverted ? "#8b5cf6" : "#e2e8f0",
+                    background: showUnconverted ? "rgba(139, 92, 246, 0.08)" : "#ffffff",
+                    fontSize: "0.7rem",
+                    fontWeight: 700,
+                    color: showUnconverted ? "#8b5cf6" : "#64748b",
+                    cursor: "pointer"
+                  }}
+                >
+                  NÃO CONV.
+                </button>
+              </div>
             </div>
-            <p className="metric-helper" style={{ marginTop: "0.4rem" }}>
-              {selectedMonth
-                ? `Mostrando ${filteredCustomers.length} clientes adquiridos em ${formatMonthLabel(selectedMonth)}. Clique em outra barra do gráfico para trocar.`
-                : `${filteredCustomers.length} clientes neste mês. Clique em uma barra do histórico para ver outro mês.`
+            <p className="metric-helper" style={{ marginTop: "0.8rem" }}>
+              {showUnconverted 
+                ? `Exibindo grupos abertos que ainda não resultaram em venda.`
+                : selectedMonth
+                  ? `Mostrando ${filteredCustomers.length} clientes adquiridos em ${formatMonthLabel(selectedMonth)}.`
+                  : `${filteredCustomers.length} clientes neste mês.`
               }
             </p>
           </div>
 
           {filteredCustomers.length ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem", maxHeight: "600px", overflowY: "auto" }}>
-              {filteredCustomers.map((customer) => (
-                <article
-                  key={customer.customerId}
-                  className="customer-row"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) auto",
-                    gap: "0.75rem",
-                    padding: "1rem 1.25rem",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <strong style={{ display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }}>{customer.displayName}</strong>
-                    <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem" }}>
-                      {customer.customerCode || "Sem codigo"} &bull; 1ª compra em {formatDate(customer.firstOrderDate)}
-                    </span>
-                    <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", fontWeight: 500 }}>
-                      <span style={{ color: "#3b82f6" }}>{customer.firstAttendant ? `Atend: ${customer.firstAttendant}` : "Sem atendente"}</span> &bull;{" "}
-                      {formatCurrency(customer.firstOrderAmount)}
-                      <span style={{ marginLeft: "0.5rem", padding: "0.1rem 0.4rem", background: "#f1f5f9", borderRadius: "4px", fontSize: "0.75rem" }}>
-                        {customer.firstItemCount} peças
+              {!showUnconverted ? (
+                filteredCustomers.map((customer) => (
+                  <article
+                    key={customer.customerId}
+                    className="customer-row"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      gap: "0.75rem",
+                      padding: "1rem 1.25rem",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }}>{customer.displayName}</strong>
+                      <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem" }}>
+                        {customer.customerCode || "Sem codigo"} &bull; 1ª compra em {formatDate(customer.firstOrderDate)}
                       </span>
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <Link
-                      to={`/clientes/${customer.customerId}`}
-                      className="premium-btn"
+                      <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", fontWeight: 500 }}>
+                        <span style={{ color: "#3b82f6" }}>{customer.firstAttendant ? `Atend: ${customer.firstAttendant}` : "Sem atendente"}</span> &bull;{" "}
+                        {formatCurrency(customer.firstOrderAmount)}
+                        <span style={{ marginLeft: "0.5rem", padding: "0.1rem 0.4rem", background: "#f1f5f9", borderRadius: "4px", fontSize: "0.75rem" }}>
+                          {customer.firstItemCount} peças
+                        </span>
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <Link
+                        to={`/clientes/${customer.customerId}`}
+                        className="premium-btn"
+                      >
+                        Abrir cliente
+                      </Link>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                data.unconvertedGroups
+                  .filter(g => g.date.startsWith(activeMonth || currentMonthKey))
+                  .map((group, idx) => (
+                    <article
+                      key={idx}
+                      className="customer-row"
+                      style={{
+                        padding: "1rem 1.25rem",
+                        borderLeft: "4px solid #8b5cf6"
+                      }}
                     >
-                      Abrir cliente
-                    </Link>
-                  </div>
-                </article>
-              ))}
+                      <strong style={{ display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }}>{group.name}</strong>
+                      <span style={{ display: "block", color: "#64748b", fontSize: "0.82rem" }}>
+                        Criado em {formatDate(group.date)} &bull; Aguardando primeira compra
+                      </span>
+                    </article>
+                  ))
+              )}
             </div>
           ) : (
             <div className="empty-state" style={{ padding: "3rem 1rem", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }}>
-              Nenhum cliente novo em {formatMonthLabel(activeMonth)}.
+              {showUnconverted ? `Nenhum grupo não convertido em ${formatMonthLabel(activeMonth || currentMonthKey)}.` : `Nenhum cliente novo em ${formatMonthLabel(activeMonth || currentMonthKey)}.`}
             </div>
           )}
         </section>
@@ -959,6 +1094,13 @@ export function NewCustomersPage() {
           </p>
         </div>
 
+        <div style={{ marginBottom: "1.5rem", marginTop: "3rem", paddingTop: "2rem", borderTop: "1px solid #f1f5f9" }}>
+          <h4 style={{ margin: 0, fontSize: "1.15rem", color: "#0f172a", fontWeight: 700 }}>Taxa de Conversão Mensal</h4>
+          <p className="metric-helper" style={{ marginTop: "0.3rem" }}>
+            Percentual de grupos que resultaram em venda mês a mês.
+          </p>
+        </div>
+
         <div style={{ width: "100%", height: "240px", marginBottom: "2rem" }}>
           <ResponsiveContainer>
             <LineChart
@@ -1002,6 +1144,62 @@ export function NewCustomersPage() {
                 dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#d97706" }}
                 activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#b45309" }}
                 connectNulls={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div style={{ marginBottom: "1.5rem", marginTop: "3rem", paddingTop: "2rem", borderTop: "1px solid #f1f5f9" }}>
+          <h4 style={{ margin: 0, fontSize: "1.15rem", color: "#0f172a", fontWeight: 700 }}>Taxa de Conversão Mensal</h4>
+          <p className="metric-helper" style={{ marginTop: "0.3rem" }}>
+            Percentual de grupos que resultaram em venda mês a mês.
+          </p>
+        </div>
+
+        <div style={{ width: "100%", height: "240px", marginBottom: "2rem" }}>
+          <ResponsiveContainer>
+            <LineChart
+              syncId="acquisition-history"
+              syncMethod="value"
+              data={data.monthlySeries}
+              margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid stroke="#f1f5f9" vertical={false} strokeDasharray="4 4" />
+              <XAxis
+                dataKey="month"
+                ticks={monthlyTicks}
+                tickFormatter={formatMonthLabel}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+                tickLine={false}
+                axisLine={false}
+                interval={0}
+                dy={10}
+              />
+              <YAxis yAxisId="spacer" tick={false} tickLine={false} axisLine={false} width={48} />
+              <YAxis
+                yAxisId="rate"
+                orientation="right"
+                tickFormatter={(value: number) => `${(value * 100).toFixed(0)}%`}
+                tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }}
+                tickLine={false}
+                axisLine={false}
+                width={90}
+                dx={10}
+                domain={[0, 1]}
+              />
+              <Tooltip
+                content={<ConversionTooltip />}
+                cursor={{ stroke: "rgba(139, 92, 246, 0.1)", strokeWidth: 32 }}
+              />
+              <Line
+                yAxisId="rate"
+                type="monotone"
+                dataKey="conversionRate"
+                stroke="#8b5cf6"
+                strokeWidth={4}
+                dot={{ r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#8b5cf6" }}
+                activeDot={{ r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#7c3aed" }}
+                connectNulls={true}
               />
             </LineChart>
           </ResponsiveContainer>
