@@ -534,8 +534,14 @@ export async function createEventFromMessage(
       deal_id, message_id, event_type, severity, label,
       content, metadata, detected_at
     ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    ON CONFLICT (message_id, deal_id) DO NOTHING
     RETURNING *
   `, [dealId, message.id, eventType, severity, label, message.content, metadata]);
+
+  // If no row was inserted, it means it was a duplicate webhook from another instance
+  if (result.rows.length === 0) {
+    return null;
+  }
 
   const event = mapEventRow(result.rows[0]);
   event.conversationContext = conversationContext;
