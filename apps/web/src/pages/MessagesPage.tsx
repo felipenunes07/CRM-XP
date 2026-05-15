@@ -396,11 +396,11 @@ export function MessagesPage() {
       // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
       await queryClient.cancelQueries({ queryKey: ["whatsapp-monitor-conversations"] });
 
-      // Snapshot the previous value
-      const previousConversations = queryClient.getQueryData(["whatsapp-monitor-conversations"]);
+      // Snapshot the previous values
+      const previousQueries = queryClient.getQueriesData({ queryKey: ["whatsapp-monitor-conversations"] });
 
-      // Optimistically update to the new value
-      queryClient.setQueryData(["whatsapp-monitor-conversations"], (old: any) => {
+      // Optimistically update to the new value in all matching conversation queries
+      queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old: any) => {
         if (!old || !old.conversations) return old;
         return {
           ...old,
@@ -410,11 +410,13 @@ export function MessagesPage() {
         };
       });
 
-      return { previousConversations };
+      return { previousQueries };
     },
     onError: (err, variables, context: any) => {
-      if (context?.previousConversations) {
-        queryClient.setQueryData(["whatsapp-monitor-conversations"], context.previousConversations);
+      if (context?.previousQueries) {
+        context.previousQueries.forEach(([queryKey, data]: any) => {
+          queryClient.setQueryData(queryKey, data);
+        });
       }
     },
     onSuccess: (updated) => {
@@ -511,19 +513,28 @@ export function MessagesPage() {
     });
   }, [lastMessageId, messages.length, selectedConversationId]);
 
+  const lastReadHandledIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!selectedConversation?.isUnread || readStateMutation.isPending) {
+      // If it becomes read from the server, we can allow marking it read again if it ever becomes unread
+      if (selectedConversation && !selectedConversation.isUnread) {
+        lastReadHandledIdRef.current = null;
+      }
       return;
     }
 
+    // Prevent redundant calls for the same "unread session" of this conversation
+    if (lastReadHandledIdRef.current === selectedConversation.id) {
+      return;
+    }
+
+    lastReadHandledIdRef.current = selectedConversation.id;
     readStateMutation.mutate({ id: selectedConversation.id, unread: false });
   }, [readStateMutation.isPending, selectedConversation?.id, selectedConversation?.isUnread]);
 
   function openConversation(conversation: WhatsappMonitorConversation) {
     setSelectedConversationId(conversation.id);
-    if (conversation.isUnread) {
-      readStateMutation.mutate({ id: conversation.id, unread: false });
-    }
   }
 
   function handleSendReply(event: FormEvent<HTMLFormElement>) {
