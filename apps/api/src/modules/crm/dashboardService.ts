@@ -658,25 +658,16 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
     result = await pool.query(
       `
         SELECT
-          m.day::text AS date,
-          m.total_customers,
-          m.active_count,
-          m.attention_count,
-          m.inactive_count,
-          m.new_count,
-          COALESCE(s.daily_items_sold, 0)::int AS daily_items_sold
-        FROM dashboard_daily_metrics m
-        LEFT JOIN (
-          SELECT 
-            o.order_date::date as day, 
-            COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
-          FROM orders o
-          LEFT JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.order_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-          GROUP BY o.order_date::date
-        ) s ON s.day = m.day
-        WHERE m.day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-        ORDER BY m.day
+          day::text AS date,
+          total_customers,
+          active_count,
+          attention_count,
+          inactive_count,
+          new_count,
+          daily_items_sold
+        FROM dashboard_daily_metrics
+        WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
+        ORDER BY day
       `,
       [validatedDays],
     );
