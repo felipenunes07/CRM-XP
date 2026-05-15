@@ -490,7 +490,11 @@ function isAllowedCorsOrigin(origin?: string | null) {
     return true;
   }
 
-  if (webOrigins.includes(origin) || origin.endsWith(".trycloudflare.com")) {
+  if (
+    webOrigins.includes(origin) ||
+    origin === "http://localhost:5174" ||
+    origin.endsWith(".trycloudflare.com")
+  ) {
     return true;
   }
 

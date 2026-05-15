@@ -1775,6 +1775,9 @@ export interface WhatsappAgentActivityDailyPoint {
   receivedUniqueMessages: number;
   receivedUniqueMessagesPrivate: number;
   receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   averageFirstResponseSeconds: number | null;
 }
 
@@ -1800,6 +1803,9 @@ export interface WhatsappAgentActivitySummary {
   receivedUniqueMessages: number;
   receivedUniqueMessagesPrivate: number;
   receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   activeHours: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
@@ -1826,6 +1832,9 @@ export interface WhatsappAgentActivityCell {
   receivedUniqueMessages: number;
   receivedUniqueMessagesPrivate: number;
   receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
   conversations: WhatsappAgentActivityConversation[];
@@ -1856,6 +1865,9 @@ export interface WhatsappAgentActivityReport {
     receivedUniqueMessages: number;
     receivedUniqueMessagesPrivate: number;
     receivedUniqueMessagesGroup: number;
+    sentUniqueMessages: number;
+    sentUniqueMessagesPrivate: number;
+    sentUniqueMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
@@ -1876,6 +1888,9 @@ export interface WhatsappAgentActivityReport {
     receivedUniqueMessages: number;
     receivedUniqueMessagesPrivate: number;
     receivedUniqueMessagesGroup: number;
+    sentUniqueMessages: number;
+    sentUniqueMessagesPrivate: number;
+    sentUniqueMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
