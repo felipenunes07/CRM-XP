@@ -545,4 +545,36 @@ export const api = {
             method: "POST",
         }, token);
     },
+    getEventsMetrics(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.from)
+            search.set("dateFrom", query.from);
+        if (query.to)
+            search.set("dateTo", query.to);
+        return request(`/api/events/metrics?${search.toString()}`, {}, token);
+    },
+    listEvents(token, filters, pagination) {
+        const search = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined && value !== "")
+                search.set(key, String(value));
+        });
+        search.set("page", String(pagination.page));
+        search.set("pageSize", String(pagination.pageSize));
+        return request(`/api/events?${search.toString()}`, {}, token);
+    },
+    resolveEvent(token, id, input) {
+        return request(`/api/events/${id}/resolve`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getDailySentiments(token, query) {
+        const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const to = query.to || new Date().toISOString().split('T')[0];
+        const search = new URLSearchParams();
+        search.set("dateFrom", from);
+        search.set("dateTo", to);
+        return request(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
+    },
 };

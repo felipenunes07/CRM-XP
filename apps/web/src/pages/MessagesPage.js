@@ -1,5 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, FileImage, Menu, MoreVertical, Paperclip, Plus, Search, Send, ShieldCheck, Smile, Sparkles, Users, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
@@ -118,11 +119,13 @@ function detectMediaType(file) {
 export function MessagesPage() {
     const { token } = useAuth();
     const queryClient = useQueryClient();
+    const [searchParams] = useSearchParams();
+    const urlDealId = searchParams.get("dealId");
     const [activeAgentId, setActiveAgentId] = useState("all");
     const [agentSearch, setAgentSearch] = useState("");
     const [conversationSearch, setConversationSearch] = useState("");
     const [groupFilter, setGroupFilter] = useState("all");
-    const [selectedConversationId, setSelectedConversationId] = useState(null);
+    const [selectedConversationId, setSelectedConversationId] = useState(urlDealId);
     const [chatMenuOpen, setChatMenuOpen] = useState(false);
     const [replyText, setReplyText] = useState("");
     const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);

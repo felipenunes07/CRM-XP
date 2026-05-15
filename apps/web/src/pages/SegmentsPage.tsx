@@ -23,7 +23,7 @@ function summarizeSegment(segment: SavedSegment) {
 
   if (segment.definition.status?.length) {
     const status = segment.definition.status[0];
-    parts.push(status === "ACTIVE" ? "Ativos" : status === "ATTENTION" ? "Atencao" : "Inativos");
+    parts.push(status === "ACTIVE" ? "Ativos" : status === "ATTENTION" ? "Atencao" : status === "NEW" ? "Novos" : "Inativos");
   }
 
   if (segment.definition.minDaysInactive !== undefined) {
@@ -174,13 +174,14 @@ export function SegmentsPage() {
                 onChange={(event) =>
                   setDefinition((current) => ({
                     ...current,
-                    status: event.target.value ? [event.target.value as "ACTIVE" | "ATTENTION" | "INACTIVE"] : undefined,
+                    status: event.target.value ? [event.target.value as "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW"] : undefined,
                   }))
                 }
               >
                 <option value="">Todos</option>
                 <option value="ACTIVE">Ativos</option>
                 <option value="ATTENTION">Atencao</option>
+                <option value="NEW">Novos</option>
                 <option value="INACTIVE">Inativos</option>
               </select>
             </label>
