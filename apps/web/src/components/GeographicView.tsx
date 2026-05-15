@@ -104,6 +104,10 @@ function formatCustomerStatus(status: GeographicCustomerStat["status"], tx: Retu
     return tx("Atencao", "Attention");
   }
 
+  if (status === "NEW") {
+    return tx("Novo", "New");
+  }
+
   return tx("Inativo", "Inactive");
 }
 
@@ -114,6 +118,10 @@ function customerStatusEmoji(status: GeographicCustomerStat["status"]) {
 
   if (status === "ATTENTION") {
     return "🟡";
+  }
+
+  if (status === "NEW") {
+    return "🔵";
   }
 
   return "🔴";

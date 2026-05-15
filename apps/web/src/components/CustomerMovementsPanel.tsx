@@ -48,7 +48,7 @@ export function CustomerMovementsPanel({ initialDays = 7 }: CustomerMovementsPan
              (m.fromStatus === "ATTENTION" && m.toStatus === "INACTIVE") ||
              (m.fromStatus === "ACTIVE" && m.toStatus === "INACTIVE");
     } else {
-      return (m.toStatus === "ACTIVE" && (m.fromStatus === "ATTENTION" || m.fromStatus === "INACTIVE" || (m.fromStatus as any) === "NEW"));
+      return (m.toStatus === "ACTIVE" && (m.fromStatus === "ATTENTION" || m.fromStatus === "INACTIVE" || m.fromStatus === "NEW"));
     }
   });
 
@@ -60,7 +60,7 @@ export function CustomerMovementsPanel({ initialDays = 7 }: CustomerMovementsPan
         return <span className="badge-attention">{tx("Atenção", "Attention")}</span>;
       case "INACTIVE":
         return <span className="badge-inactive">{tx("Inativo", "Inactive")}</span>;
-      case "NEW" as any:
+      case "NEW":
         return <span className="badge-new">{tx("Novo", "New")}</span>;
       default:
         return <span>{status}</span>;
