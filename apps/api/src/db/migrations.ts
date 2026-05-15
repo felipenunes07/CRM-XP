@@ -1132,6 +1132,7 @@ export const migrations = [
   ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
   ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
   `,
+  `
   -- Ensure classifier v2 event types are applied after already-recorded migrations
   ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
   ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
