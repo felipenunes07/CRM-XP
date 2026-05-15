@@ -223,11 +223,17 @@ export interface AcquisitionSummary {
   todayOrdersCount: number;
   todaySalesPerformance: SalesPerformanceEntry[];
   monthlyChurnRate?: number | null;
+  currentMonthGroupsCreated: number;
+  previousMonthGroupsCreated: number;
+  currentMonthConvertedGroups?: number;
+  previousMonthConvertedGroups?: number;
 }
 
 export interface AcquisitionDailyPoint {
   date: string;
   newCustomers: number;
+  groupsCreated: number;
+  convertedGroups?: number;
 }
 
 export interface AcquisitionMonthlyPoint {
@@ -236,6 +242,9 @@ export interface AcquisitionMonthlyPoint {
   spend: number;
   cac: number | null;
   spendSource?: "api" | "fallback";
+  groupsCreated: number;
+  convertedGroups?: number;
+  conversionRate: number | null;
 }
 
 export interface NewCustomerListItem {
@@ -248,11 +257,17 @@ export interface NewCustomerListItem {
   firstAttendant: string | null;
 }
 
+export interface UnconvertedGroup {
+  name: string;
+  date: string;
+}
+
 export interface AcquisitionMetrics {
   summary: AcquisitionSummary;
   dailySeries: AcquisitionDailyPoint[];
   monthlySeries: AcquisitionMonthlyPoint[];
   recentCustomers: NewCustomerListItem[];
+  unconvertedGroups: UnconvertedGroup[];
 }
 
 export interface PortfolioTrendPoint {
