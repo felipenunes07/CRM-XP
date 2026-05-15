@@ -118,18 +118,75 @@ function evolutionTimestampToIso(value: number | string | null | undefined) {
   return new Date(timestampMs).toISOString();
 }
 
+function unwrapEvolutionMessage(msg: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!msg) return null;
+
+  // Handle common wrappers in Baileys/Evolution API
+  if (msg.ephemeralMessage && typeof msg.ephemeralMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.ephemeralMessage as any).message));
+  }
+  if (msg.viewOnceMessage && typeof msg.viewOnceMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessage as any).message));
+  }
+  if (msg.viewOnceMessageV2 && typeof msg.viewOnceMessageV2 === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessageV2 as any).message));
+  }
+  if (msg.viewOnceMessageV2Extension && typeof msg.viewOnceMessageV2Extension === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessageV2Extension as any).message));
+  }
+  if (msg.documentWithCaptionMessage && typeof msg.documentWithCaptionMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.documentWithCaptionMessage as any).message));
+  }
+  if (msg.editedMessage && typeof msg.editedMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.editedMessage as any).message?.protocolMessage?.editedMessage));
+  }
+
+  return msg;
+}
+
 export function extractEvolutionMessageText(message: EvolutionMessageLike): string | null {
   const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
 
-  return (
-    extractNestedString(rawMessage, ["conversation"]) ??
-    extractNestedString(rawMessage, ["extendedTextMessage", "text"]) ??
-    extractNestedString(rawMessage, ["imageMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["videoMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["documentMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["documentMessage", "fileName"]) ??
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const text = (
+    extractNestedString(unwrapped, ["conversation"]) ??
+    extractNestedString(unwrapped, ["extendedTextMessage", "text"]) ??
+    extractNestedString(unwrapped, ["imageMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["videoMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["documentMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["documentMessage", "fileName"]) ??
+    extractNestedString(unwrapped, ["buttonsMessage", "contentText"]) ??
+    extractNestedString(unwrapped, ["buttonsMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["templateMessage", "hydratedTemplate", "hydratedContentText"]) ??
+    extractNestedString(unwrapped, ["templateMessage", "hydratedFourRowTemplate", "hydratedContentText"]) ??
+    extractNestedString(unwrapped, ["listMessage", "description"]) ??
+    extractNestedString(unwrapped, ["listMessage", "footerText"]) ??
     null
   );
+
+  if (text) {
+    return text;
+  }
+
+  // Placeholder for media without text/caption
+  if (unwrapped.imageMessage) return "[Imagem]";
+  if (unwrapped.videoMessage) return "[Vídeo]";
+  if (unwrapped.audioMessage) return "[Áudio]";
+  if (unwrapped.stickerMessage) return "[Sticker]";
+  if (unwrapped.documentMessage) return "[Documento]";
+  if (unwrapped.contactMessage || unwrapped.contactsArrayMessage) return "[Contato]";
+  if (unwrapped.locationMessage || unwrapped.liveLocationMessage) return "[Localização]";
+  if (unwrapped.pollCreationMessage || unwrapped.pollCreationMessageV2 || unwrapped.pollCreationMessageV3) return "[Enquete]";
+  if (unwrapped.reactionMessage) return null; // Reactions are usually ignored in main feed
+
+  return null;
 }
 
 export function extractEvolutionMessageContext(
@@ -140,11 +197,11 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const fromMe = Boolean(key.fromMe);
+  const fromMe = Boolean(key.fromMe === true || rawMessage.fromMe === true || rawMessage.isOutbound === true);
   const senderJid =
     readString(key.participant) ??
     pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
-    (isGroup || fromMe ? null : remoteJid);
+    (isGroup ? null : (fromMe ? null : remoteJid));
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);
