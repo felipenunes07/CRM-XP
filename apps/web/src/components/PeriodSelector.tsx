@@ -1,8 +1,8 @@
 import { useUiLanguage } from "../i18n";
 
 interface PeriodSelectorProps {
-  value: "90d" | "6m" | "1y" | "max";
-  onChange: (period: "90d" | "6m" | "1y" | "max") => void;
+  value: "90d" | "6m" | "1y" | "2y" | "max";
+  onChange: (period: "90d" | "6m" | "1y" | "2y" | "max") => void;
   disabled?: boolean;
 }
 
@@ -12,7 +12,8 @@ export function PeriodSelector({ value, onChange, disabled }: PeriodSelectorProp
     { value: "90d" as const, label: tx("90 dias", "90天") },
     { value: "6m" as const, label: tx("6 meses", "6个月") },
     { value: "1y" as const, label: tx("1 ano", "1年") },
-    { value: "max" as const, label: tx("Periodo Maximo", "最长周期") },
+    { value: "2y" as const, label: tx("2 anos", "2年") },
+    { value: "max" as const, label: tx("Todo o Período", "最长周期") },
   ];
 
   return (

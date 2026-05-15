@@ -261,6 +261,7 @@ export interface PortfolioTrendPoint {
   activeCount: number;
   attentionCount: number;
   inactiveCount: number;
+  newCount: number;
   trafficSpend?: number;
   dailyItemsSold?: number;
 }
