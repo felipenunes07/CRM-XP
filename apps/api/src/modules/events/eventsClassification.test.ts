@@ -22,6 +22,7 @@ describe("message event classification", () => {
     expect(detectEventType("chegou reposicao desses modelos iPhone", noRisk)).toBe("SALES_OPPORTUNITY");
     expect(detectEventType("A caixa fechada da iPhone 11 fica por quanto cada?", noRisk)).toBe("SALES_OPPORTUNITY");
     expect(detectEventType("Tem catalogo de pecas atacado", noRisk)).toBe("SALES_OPPORTUNITY");
+    expect(detectEventType("Bom dia linda, como estas? iPhone 11 ta tendo quais? 13c nada ne?", noRisk)).toBe("SALES_OPPORTUNITY");
   });
 
   it("keeps greetings and casual warmth out of risk queues", () => {

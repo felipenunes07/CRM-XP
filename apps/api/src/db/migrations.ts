@@ -1138,7 +1138,8 @@ export const migrations = [
   ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
   `,
   `
-  -- Add new_count column to dashboard_daily_metrics
+  -- Add new_count and daily_items_sold columns to dashboard_daily_metrics
   ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS new_count INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS daily_items_sold INTEGER NOT NULL DEFAULT 0;
   `,
 ];

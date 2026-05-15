@@ -201,22 +201,33 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         SELECT
           td.day,
           o.customer_id,
-          COUNT(*)::int AS order_count,
+          COUNT(DISTINCT o.id)::int AS order_count,
           MAX(o.order_date::date) AS last_order_day
         FROM target_days td
         JOIN orders o ON o.order_date::date <= td.day
         GROUP BY td.day, o.customer_id
+      ),
+      daily_items AS (
+        SELECT
+          td.day,
+          COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
+        FROM target_days td
+        LEFT JOIN orders o ON o.order_date::date = td.day
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        GROUP BY td.day
       )
       SELECT
-        day::text as day,
+        stats.day::text as day,
         COUNT(*)::int as total_customers,
-        COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day <= 30)::int as active_count,
-        COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day >= 90)::int as inactive_count,
-        COUNT(*) FILTER (WHERE order_count = 1)::int as new_count
-      FROM daily_customer_stats
-      GROUP BY day
-      ORDER BY day
+        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day <= 30)::int as active_count,
+        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
+        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day >= 90)::int as inactive_count,
+        COUNT(*) FILTER (WHERE order_count = 1)::int as new_count,
+        di.daily_items_sold
+      FROM daily_customer_stats stats
+      JOIN daily_items di ON di.day = stats.day
+      GROUP BY stats.day, di.daily_items_sold
+      ORDER BY stats.day
     `,
     [days],
   );
@@ -226,8 +237,8 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   let paramIndex = 1;
 
   for (const row of result.rows) {
-    values.push(row.day, row.total_customers, row.active_count, row.attention_count, row.inactive_count, row.new_count);
-    placeholders.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, NOW())`);
+    values.push(row.day, row.total_customers, row.active_count, row.attention_count, row.inactive_count, row.new_count, row.daily_items_sold);
+    placeholders.push(`($${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, $${paramIndex++}, NOW())`);
   }
 
   if (placeholders.length > 0) {
@@ -240,6 +251,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
           attention_count,
           inactive_count,
           new_count,
+          daily_items_sold,
           updated_at
         )
         VALUES ${placeholders.join(",")}
@@ -250,6 +262,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
           attention_count = EXCLUDED.attention_count,
           inactive_count = EXCLUDED.inactive_count,
           new_count = EXCLUDED.new_count,
+          daily_items_sold = EXCLUDED.daily_items_sold,
           updated_at = NOW()
       `,
       values,
@@ -260,25 +273,32 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   // trend point always matches the dashboard cards (same data source).
   await pool.query(`
     INSERT INTO dashboard_daily_metrics (
-      day, total_customers, active_count, attention_count, inactive_count, new_count, updated_at
+      day, total_customers, active_count, attention_count, inactive_count, new_count, daily_items_sold, updated_at
     )
     SELECT
-      (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
+      (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date as day,
       COUNT(*)::int,
       COUNT(*) FILTER (WHERE status = 'ACTIVE')::int,
       COUNT(*) FILTER (WHERE status = 'ATTENTION')::int,
       COUNT(*) FILTER (WHERE status = 'INACTIVE')::int,
       COUNT(*) FILTER (WHERE status = 'NEW')::int,
+      (
+        SELECT COALESCE(SUM(oi.quantity), 0)::int
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+      ),
       NOW()
     FROM customer_snapshot
     ON CONFLICT (day) DO UPDATE
     SET
-      total_customers = EXCLUDED.total_customers,
-      active_count    = EXCLUDED.active_count,
-      attention_count = EXCLUDED.attention_count,
-      inactive_count  = EXCLUDED.inactive_count,
-      new_count       = EXCLUDED.new_count,
-      updated_at      = NOW()
+      total_customers  = EXCLUDED.total_customers,
+      active_count     = EXCLUDED.active_count,
+      attention_count  = EXCLUDED.attention_count,
+      inactive_count   = EXCLUDED.inactive_count,
+      new_count        = EXCLUDED.new_count,
+      daily_items_sold = EXCLUDED.daily_items_sold,
+      updated_at       = NOW()
   `);
 
   logger.info("dashboard daily metrics refreshed", { days, count: result.rows.length });
