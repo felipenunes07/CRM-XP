@@ -183,6 +183,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     attention_count: number;
     inactive_count: number;
     new_count: number;
+    daily_items_sold: number;
   }>(
     `
       WITH day_series AS (
