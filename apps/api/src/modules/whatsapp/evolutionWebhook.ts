@@ -195,13 +195,17 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     const instanceName = context.instanceName ?? "";
     const instanceDetails = await getWhatsappInstanceDetails(instanceName);
     const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
-    const activityType = context.fromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
-    const actorUserId = context.fromMe ? instanceDetails?.assignedUserId ?? null : null;
-    const actorName = context.fromMe
+    
+    // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
+    const isFromMe = Boolean(context.fromMe || (instanceOwnerJid && context.senderJid === instanceOwnerJid));
+    
+    const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
+    const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
+    const actorName = isFromMe
       ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
       : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
-    const activitySenderJid = context.fromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
-    const activitySenderName = context.fromMe
+    const activitySenderJid = isFromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
+    const activitySenderName = isFromMe
       ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
       : senderName;
     const metadata = buildActivityMetadata({
@@ -215,8 +219,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       chatDisplayName,
       chatProfilePictureUrl,
       instanceId: instanceDetails?.id ?? null,
-      capturedFromWhatsapp: context.fromMe,
-      outboundSource: context.fromMe ? "whatsapp_device" : null,
+      capturedFromWhatsapp: isFromMe,
+      outboundSource: isFromMe ? "whatsapp_device" : null,
     });
 
     logger.info("evolution webhook incoming message", {
@@ -255,7 +259,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
-        context.fromMe,
+        isFromMe,
         context.createdAt,
       ],
     );
@@ -332,7 +336,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           remoteJid: String(remoteJid),
           isGroup: context.isGroup,
           chatDisplayName,
-          senderName: context.fromMe ? null : activitySenderName,
+          senderName: isFromMe ? null : activitySenderName,
         });
         const autoMetadata = { ...metadata, autoCreated: true };
 
