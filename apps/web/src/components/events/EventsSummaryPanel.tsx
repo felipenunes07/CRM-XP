@@ -59,14 +59,14 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
       />
       <MetricCard
         title="Sentimento Médio"
-        value={(summary.averageSentiment ?? 0).toFixed(1)}
-        subtitle={(summary.averageSentiment ?? 0) > 0.3 ? "Predominantemente positivo" : (summary.averageSentiment ?? 0) < -0.3 ? "Atenção necessária" : "Neutro"}
+        value={Number(summary.averageSentiment ?? 0).toFixed(1)}
+        subtitle={Number(summary.averageSentiment ?? 0) > 0.3 ? "Predominantemente positivo" : Number(summary.averageSentiment ?? 0) < -0.3 ? "Atenção necessária" : "Neutro"}
         icon={TrendingUp}
         color="#10b981"
       />
       <MetricCard
         title="Resolução Média"
-        value={`${(operationalEfficiency.averageResolutionTimeHours ?? 0).toFixed(1)}h`}
+        value={`${Number(operationalEfficiency.averageResolutionTimeHours ?? 0).toFixed(1)}h`}
         subtitle="Tempo de encerramento"
         icon={Clock}
         color="#8b5cf6"

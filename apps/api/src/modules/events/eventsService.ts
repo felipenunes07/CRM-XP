@@ -1184,9 +1184,9 @@ export async function getEventsMetrics(
   // Operational Efficiency
   const efficiencyResult = await pool.query(`
     SELECT
-      AVG(response_time_minutes) as avg_response_time,
-      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY response_time_minutes) as median_response_time,
-      AVG(EXTRACT(EPOCH FROM (resolved_at - detected_at)) / 3600) as avg_resolution_hours
+      AVG(response_time_minutes)::float as avg_response_time,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY response_time_minutes)::float as median_response_time,
+      AVG(EXTRACT(EPOCH FROM (resolved_at - detected_at)) / 3600)::float as avg_resolution_hours
     FROM (
       SELECT
         me.id,
