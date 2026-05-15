@@ -60,6 +60,7 @@ interface PortfolioRow {
   activeCount: number;
   attentionCount: number;
   inactiveCount: number;
+  newCount: number;
 }
 
 interface TrendRow {
@@ -85,6 +86,7 @@ const EMPTY_PORTFOLIO: AttendantPortfolioSnapshot = {
     ACTIVE: 0,
     ATTENTION: 0,
     INACTIVE: 0,
+    NEW: 0,
   },
 };
 
@@ -347,7 +349,8 @@ async function getPortfolioRows(attendants: readonly string[]): Promise<Portfoli
         COUNT(*)::int AS total_customers,
         COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_count,
         COUNT(*) FILTER (WHERE status = 'ATTENTION')::int AS attention_count,
-        COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count
+        COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count,
+        COUNT(*) FILTER (WHERE status = 'NEW')::int AS new_count
       FROM customer_snapshot
       WHERE COALESCE(NULLIF(last_attendant, ''), 'Sem atendente') = ANY($1::text[])
       GROUP BY COALESCE(NULLIF(last_attendant, ''), 'Sem atendente')
@@ -361,6 +364,7 @@ async function getPortfolioRows(attendants: readonly string[]): Promise<Portfoli
     activeCount: Number(row.active_count ?? 0),
     attentionCount: Number(row.attention_count ?? 0),
     inactiveCount: Number(row.inactive_count ?? 0),
+    newCount: Number(row.new_count ?? 0),
   }));
 }
 
@@ -576,6 +580,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
           ACTIVE: row.activeCount,
           ATTENTION: row.attentionCount,
           INACTIVE: row.inactiveCount,
+          NEW: row.newCount,
         },
       } satisfies AttendantPortfolioSnapshot,
     ]),

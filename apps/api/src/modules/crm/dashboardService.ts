@@ -2,6 +2,7 @@ import type {
   AgendaItem,
   AgendaResponse,
   DashboardMetrics,
+  CustomerMovementsResponse,
   HistoricalReactivationEntry,
   InsightTag,
   ItemsSoldTrendPoint,
@@ -646,6 +647,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
         m.active_count,
         m.attention_count,
         m.inactive_count,
+        m.new_count,
         COALESCE(s.daily_items_sold, 0)::int AS daily_items_sold
       FROM dashboard_daily_metrics m
       LEFT JOIN (
@@ -673,6 +675,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
           m.active_count,
           m.attention_count,
           m.inactive_count,
+          m.new_count,
           COALESCE(s.daily_items_sold, 0)::int AS daily_items_sold
         FROM dashboard_daily_metrics m
         LEFT JOIN (
@@ -710,6 +713,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
       activeCount: Number(row.active_count ?? 0),
       attentionCount: Number(row.attention_count ?? 0),
       inactiveCount: Number(row.inactive_count ?? 0),
+      newCount: Number(row.new_count ?? 0),
       trafficSpend: spendMap.get(monthKey) ?? 0,
       dailyItemsSold: Number(row.daily_items_sold ?? 0),
     };
@@ -1270,6 +1274,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
             COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_count,
             COUNT(*) FILTER (WHERE status = 'ATTENTION')::int AS attention_count,
             COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count,
+            COUNT(*) FILTER (WHERE status = 'NEW')::int AS new_count,
             AVG(avg_ticket)::numeric(14,2) AS average_ticket,
             AVG(avg_days_between_orders)::numeric(14,2) AS average_frequency_days
           FROM customer_snapshot
@@ -1362,6 +1367,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
   const snapshotActive = Number(row?.active_count ?? 0);
   const snapshotAttention = Number(row?.attention_count ?? 0);
   const snapshotInactive = Number(row?.inactive_count ?? 0);
+  const snapshotNew = Number(row?.new_count ?? 0);
 
   const currentYearDate = new Date();
   const currentMonthData = globalItemsSoldTrend.find(i => i.year === currentYearDate.getFullYear() && i.month === currentYearDate.getMonth() + 1);
@@ -1380,6 +1386,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
               activeCount: snapshotActive,
               attentionCount: snapshotAttention,
               inactiveCount: snapshotInactive,
+              newCount: snapshotNew,
             }
           : point,
       )
@@ -1391,6 +1398,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       ACTIVE: snapshotActive,
       ATTENTION: snapshotAttention,
       INACTIVE: snapshotInactive,
+      NEW: snapshotNew,
     },
     inactivityBuckets: buckets.rows.map((bucket) => ({
       label: String(bucket.label),

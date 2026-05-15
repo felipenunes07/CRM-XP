@@ -81,6 +81,9 @@ function formatCustomerStatus(status, tx) {
     if (status === "ATTENTION") {
         return tx("Atencao", "Attention");
     }
+    if (status === "NEW") {
+        return tx("Novo", "New");
+    }
     return tx("Inativo", "Inactive");
 }
 function customerStatusEmoji(status) {
@@ -89,6 +92,9 @@ function customerStatusEmoji(status) {
     }
     if (status === "ATTENTION") {
         return "🟡";
+    }
+    if (status === "NEW") {
+        return "🔵";
     }
     return "🔴";
 }

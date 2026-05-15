@@ -106,6 +106,7 @@ describe("attendantService helpers", () => {
           ACTIVE: 0,
           ATTENTION: 0,
           INACTIVE: 0,
+          NEW: 0,
         },
       },
       monthlyTrend: [],

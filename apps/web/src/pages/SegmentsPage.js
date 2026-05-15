@@ -19,7 +19,7 @@ function summarizeSegment(segment) {
     const parts = [];
     if (segment.definition.status?.length) {
         const status = segment.definition.status[0];
-        parts.push(status === "ACTIVE" ? "Ativos" : status === "ATTENTION" ? "Atencao" : "Inativos");
+        parts.push(status === "ACTIVE" ? "Ativos" : status === "ATTENTION" ? "Atencao" : status === "NEW" ? "Novos" : "Inativos");
     }
     if (segment.definition.minDaysInactive !== undefined) {
         parts.push(`${segment.definition.minDaysInactive}+ dias`);
@@ -125,7 +125,7 @@ export function SegmentsPage() {
                                                 }, placeholder: "Ex: Reativacao premium do mes" })] }), _jsxs("label", { className: "segment-filter-half", children: ["Status", _jsxs("select", { value: definition.status?.[0] ?? "", onChange: (event) => setDefinition((current) => ({
                                                     ...current,
                                                     status: event.target.value ? [event.target.value] : undefined,
-                                                })), children: [_jsx("option", { value: "", children: "Todos" }), _jsx("option", { value: "ACTIVE", children: "Ativos" }), _jsx("option", { value: "ATTENTION", children: "Atencao" }), _jsx("option", { value: "INACTIVE", children: "Inativos" })] })] }), _jsxs("div", { className: "segment-filter-half", children: [_jsx("label", { children: tx("Categoria do cliente", "Customer category") }), _jsx("div", { className: "customers-view-switcher", role: "tablist", children: [
+                                                })), children: [_jsx("option", { value: "", children: "Todos" }), _jsx("option", { value: "ACTIVE", children: "Ativos" }), _jsx("option", { value: "ATTENTION", children: "Atencao" }), _jsx("option", { value: "NEW", children: "Novos" }), _jsx("option", { value: "INACTIVE", children: "Inativos" })] })] }), _jsxs("div", { className: "segment-filter-half", children: [_jsx("label", { children: tx("Categoria do cliente", "Customer category") }), _jsx("div", { className: "customers-view-switcher", role: "tablist", children: [
                                                     { value: undefined, label: tx("Todas", "All") },
                                                     { value: "CL", label: "CL" },
                                                     { value: "KH", label: "KH" },
