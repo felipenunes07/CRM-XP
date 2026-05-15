@@ -392,6 +392,31 @@ export function MessagesPage() {
   const readStateMutation = useMutation({
     mutationFn: ({ id, unread }: { id: string; unread: boolean }) =>
       api.setWhatsappMonitorReadState(token!, id, { unread }),
+    onMutate: async ({ id, unread }) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+
+      // Snapshot the previous value
+      const previousConversations = queryClient.getQueryData(["whatsapp-monitor-conversations"]);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(["whatsapp-monitor-conversations"], (old: any) => {
+        if (!old || !old.conversations) return old;
+        return {
+          ...old,
+          conversations: old.conversations.map((c: any) => 
+            c.id === id ? { ...c, isUnread: unread, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c
+          )
+        };
+      });
+
+      return { previousConversations };
+    },
+    onError: (err, variables, context: any) => {
+      if (context?.previousConversations) {
+        queryClient.setQueryData(["whatsapp-monitor-conversations"], context.previousConversations);
+      }
+    },
     onSuccess: (updated) => {
       queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
