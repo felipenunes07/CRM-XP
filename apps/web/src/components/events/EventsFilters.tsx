@@ -9,6 +9,7 @@ interface EventsFiltersProps {
     dateFrom?: string;
     dateTo?: string;
     search?: string;
+    isGroup?: boolean;
   };
   onChange: (filters: any) => void;
 }
@@ -41,29 +42,30 @@ export function EventsFilters({ filters, onChange }: EventsFiltersProps) {
       <div className="wa-filter-group">
         <label className="wa-filter-select">
           <select 
-            value={filters.severity || ""} 
-            onChange={(e) => onChange({ ...filters, severity: e.target.value || undefined })}
+            value={filters.eventType || ""} 
+            onChange={(e) => onChange({ ...filters, eventType: e.target.value || undefined })}
           >
-            <option value="">Severidade: Todas</option>
-            <option value="CRITICAL">Crítico / Urgente</option>
-            <option value="HIGH">Alta</option>
-            <option value="MODERATE">Moderada</option>
-            <option value="LOW">Baixa</option>
+            <option value="">Tipo: Todos</option>
+            <option value="RISK">Risco / Alerta</option>
+            <option value="CHURN_RISK">Risco de Churn</option>
+            <option value="SALES_OPPORTUNITY">Oportunidade Comercial</option>
+            <option value="COMPLAINT">Reclamação</option>
+            <option value="NEGATIVE_FEEDBACK">Feedback Negativo</option>
+            <option value="PRAISE">Elogio</option>
+            <option value="POSITIVE_FEEDBACK">Feedback Positivo</option>
+            <option value="ESCALATION">Escalação</option>
           </select>
           <ChevronDown size={16} />
         </label>
 
         <label className="wa-filter-select">
           <select 
-            value={filters.eventType || ""} 
-            onChange={(e) => onChange({ ...filters, eventType: e.target.value || undefined })}
+            value={filters.isGroup !== undefined ? String(filters.isGroup) : ""} 
+            onChange={(e) => onChange({ ...filters, isGroup: e.target.value === "" ? undefined : e.target.value === "true" })}
           >
-            <option value="">Tipo: Todos</option>
-            <option value="RISK">Risco</option>
-            <option value="COMPLAINT">Reclamação</option>
-            <option value="PRAISE">Elogio</option>
-            <option value="QUESTION">Dúvida</option>
-            <option value="ESCALATION">Escalação</option>
+            <option value="">Origem: Todas</option>
+            <option value="false">Privado</option>
+            <option value="true">Grupos</option>
           </select>
           <ChevronDown size={16} />
         </label>

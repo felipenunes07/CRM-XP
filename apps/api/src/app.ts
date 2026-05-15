@@ -1656,17 +1656,15 @@ export function createApp() {
     dateTo: z.string().optional(),
     agentId: z.string().optional(),
     search: z.string().optional(),
+    isGroup: z.enum(["true", "false"]).optional().transform(v => v ? v === "true" : undefined),
     page: z.coerce.number().int().min(1).optional(),
     pageSize: z.coerce.number().int().min(1).max(100).optional(),
   });
 
   app.get("/api/events/metrics", async (request, response, next) => {
     try {
-      const { dateFrom, dateTo } = request.query;
-      const metrics = await getEventsMetrics(request.user!, {
-        from: dateFrom as string,
-        to: dateTo as string,
-      });
+      const query = eventsFiltersSchema.parse(request.query);
+      const metrics = await getEventsMetrics(request.user!, query);
       response.json(metrics);
     } catch (error) {
       next(error);
