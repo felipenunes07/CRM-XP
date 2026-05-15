@@ -34,7 +34,7 @@ import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 import { isTrendRangeVisible, resolveTrendRangeSelection } from "./dashboardPage.helpers";
 
-type TrendPeriod = '90d' | '6m' | '1y' | 'max';
+type TrendPeriod = '90d' | '6m' | '1y' | '2y' | 'max';
 
 interface PeriodOption {
   value: TrendPeriod;
@@ -46,7 +46,8 @@ const periodOptions: PeriodOption[] = [
   { value: '90d', label: '90 dias', days: 90 },
   { value: '6m', label: '6 meses', days: 180 },
   { value: '1y', label: '1 ano', days: 365 },
-  { value: 'max', label: 'Período Máximo', days: 730 },
+  { value: '2y', label: '2 anos', days: 730 },
+  { value: 'max', label: 'Todo o Período', days: 3650 },
 ];
 
 const resolvedPeriodOptions = periodOptions;

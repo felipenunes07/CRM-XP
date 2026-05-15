@@ -1,12 +1,14 @@
-import type { DailySentiment } from "@olist-crm/shared";
+import { DailySentiment } from "@olist-crm/shared";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
 } from "recharts";
 
 interface SentimentTrendChartProps {
@@ -26,8 +28,8 @@ export function SentimentTrendChart({ data }: SentimentTrendChartProps) {
   return (
     <div className="wa-chart-container">
       <div className="wa-chart-header">
-        <strong>Evolucao do Sentimento</strong>
-        <p>Media diaria depois de separar ruido operacional dos sinais reais.</p>
+        <strong>Evolução do Sentimento</strong>
+        <p>Análise temporal da satisfação do cliente baseada em mensagens</p>
       </div>
       <div className="wa-chart-body" style={{ height: 300 }}>
         <ResponsiveContainer width="100%" height="100%">
