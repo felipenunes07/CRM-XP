@@ -304,6 +304,7 @@ export function MessagesPage() {
   const [activeAgentId, setActiveAgentId] = useState<string>("all");
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
+  const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
@@ -315,12 +316,19 @@ export function MessagesPage() {
   const lastScrolledConversationRef = useRef<string | null>(null);
   const profileRefreshRequestedRef = useRef(false);
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedConversationSearch(conversationSearch);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [conversationSearch]);
+
   const conversationsQuery = useQuery({
-    queryKey: ["whatsapp-monitor-conversations", activeAgentId, conversationSearch],
+    queryKey: ["whatsapp-monitor-conversations", activeAgentId, debouncedConversationSearch],
     queryFn: () =>
       api.whatsappMonitorConversations(token!, {
         instanceId: activeAgentId === "all" ? undefined : activeAgentId,
-        search: conversationSearch || undefined,
+        search: debouncedConversationSearch || undefined,
       }),
     enabled: Boolean(token),
     refetchInterval: CONVERSATION_REFRESH_MS,
@@ -329,6 +337,7 @@ export function MessagesPage() {
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
     staleTime: 1000,
+    placeholderData: (previousData) => previousData,
   });
 
   const agents = conversationsQuery.data?.agents ?? [];
