@@ -15,20 +15,21 @@ export function EventsPage() {
     const queryClient = useQueryClient();
     const [filters, setFilters] = useState({
         page: 1,
-        pageSize: 20
+        pageSize: 20,
+        isGroup: false
     });
     const [dateRange, setDateRange] = useState({
         from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         to: new Date().toISOString().split('T')[0]
     });
     const metricsQuery = useQuery({
-        queryKey: ["events-metrics", dateRange],
-        queryFn: () => api.getEventsMetrics(token, dateRange),
+        queryKey: ["events-metrics", dateRange, filters.isGroup],
+        queryFn: () => api.getEventsMetrics(token, { dateFrom: dateRange.from, dateTo: dateRange.to, isGroup: filters.isGroup }),
         enabled: Boolean(token)
     });
     const eventsQuery = useQuery({
-        queryKey: ["events-list", filters],
-        queryFn: () => api.listEvents(token, filters, { page: filters.page, pageSize: filters.pageSize }),
+        queryKey: ["events-list", filters, dateRange],
+        queryFn: () => api.listEvents(token, { ...filters, dateFrom: dateRange.from, dateTo: dateRange.to }, { page: filters.page, pageSize: filters.pageSize }),
         enabled: Boolean(token)
     });
     const sentimentQuery = useQuery({

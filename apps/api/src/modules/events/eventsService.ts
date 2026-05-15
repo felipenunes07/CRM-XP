@@ -476,9 +476,9 @@ export async function createEventFromMessage(
   const eventType = detectEventType(message.content, message.risk);
   const sentimentScore = calculateSentimentScore(message.content);
 
-  // ── Filter 3: Skip greetings and neutral messages — they are noise ──
-  if (eventType === "GREETING" || eventType === "NEUTRAL") {
-    // Still update sentiment (greetings = slightly positive)
+  // ── Filter 3: Skip greetings, neutral messages, and generic questions — they are noise ──
+  if (eventType === "GREETING" || eventType === "NEUTRAL" || eventType === "QUESTION") {
+    // Still update sentiment (greetings = slightly positive, others neutral)
     updateDailySentimentFromDeal(dealId, sentimentScore).catch(err => {
       logger.warn("Failed to update daily sentiment", { dealId, error: err.message });
     });
@@ -636,6 +636,10 @@ export async function listEvents(
   if (filters.search) {
     params.push(`%${filters.search}%`);
     conditions.push(`me.content ILIKE $${params.length}`);
+  }
+
+  if (filters.isGroup !== undefined) {
+    conditions.push(`(me.metadata->>'isGroup')::boolean = ${filters.isGroup ? 'true' : 'false'}`);
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -800,11 +804,11 @@ export function calculateSentimentTrend(daily: DailySentiment[]): SentimentTrend
 
 export async function getEventsMetrics(
   user: JwtUser,
-  dateRange?: { from: string; to: string }
+  filters?: EventsFilters
 ): Promise<EventsMetrics> {
-  const from = dateRange?.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const from = filters?.dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   // Extend dateTo to end of day to include all events on the last day
-  let to = dateRange?.to || new Date().toISOString();
+  let to = filters?.dateTo || new Date().toISOString();
   if (to.length === 10) {
     to = `${to}T23:59:59.999Z`;
   } else if (!to.includes("T")) {
@@ -816,6 +820,10 @@ export async function getEventsMetrics(
   if (user.role === "SELLER") {
     params.push(user.id, user.name);
     accessFilter = `AND (d.assigned_to = $3 OR d.assigned_to_name = $4)`;
+  }
+  
+  if (filters?.isGroup !== undefined) {
+    accessFilter += ` AND (me.metadata->>'isGroup')::boolean = ${filters.isGroup ? 'true' : 'false'}`;
   }
 
   // Summary

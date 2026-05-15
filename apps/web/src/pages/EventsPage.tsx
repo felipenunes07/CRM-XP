@@ -26,7 +26,8 @@ export function EventsPage() {
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<Record<string, any>>({
     page: 1,
-    pageSize: 20
+    pageSize: 20,
+    isGroup: false
   });
 
   const [dateRange, setDateRange] = useState({
@@ -35,14 +36,14 @@ export function EventsPage() {
   });
 
   const metricsQuery = useQuery({
-    queryKey: ["events-metrics", dateRange],
-    queryFn: () => api.getEventsMetrics(token!, dateRange),
+    queryKey: ["events-metrics", dateRange, filters.isGroup],
+    queryFn: () => api.getEventsMetrics(token!, { dateFrom: dateRange.from, dateTo: dateRange.to, isGroup: filters.isGroup }),
     enabled: Boolean(token)
   });
 
   const eventsQuery = useQuery({
-    queryKey: ["events-list", filters],
-    queryFn: () => api.listEvents(token!, filters, { page: filters.page, pageSize: filters.pageSize }),
+    queryKey: ["events-list", filters, dateRange],
+    queryFn: () => api.listEvents(token!, { ...filters, dateFrom: dateRange.from, dateTo: dateRange.to }, { page: filters.page, pageSize: filters.pageSize }),
     enabled: Boolean(token)
   });
 

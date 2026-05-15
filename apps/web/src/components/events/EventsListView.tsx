@@ -57,17 +57,16 @@ export function EventsListView({ events, onResolve, onViewConversation }: Events
 
   return (
     <div className="wa-events-list">
-      <div className="wa-list-header">
+      <div className="wa-list-header" style={{ gridTemplateColumns: '1.5fr 1fr 1fr 1fr 0.5fr' }}>
         <div>Evento</div>
         <div>Cliente / Agente</div>
-        <div>Severidade</div>
         <div>Data/Hora</div>
         <div>Status</div>
         <div>Ações</div>
       </div>
-      <div className="wa-list-body">
+      <div className="wa-list-body" style={{ '--event-columns': '1.5fr 1fr 1fr 1fr 0.5fr' } as any}>
         {events.map((event) => (
-          <div key={event.id} className="wa-event-row">
+          <div key={event.id} className="wa-event-row" style={{ gridTemplateColumns: 'var(--event-columns)' }}>
             <div>
               <div className="wa-event-type-badge">
                 {EVENT_TYPE_LABELS[event.eventType] || event.eventType}
@@ -80,14 +79,14 @@ export function EventsListView({ events, onResolve, onViewConversation }: Events
                 <span>{event.conversationContext?.agentName || "Sem agente"}</span>
               </div>
             </div>
-            <div>
-              <span className={`wa-severity-chip ${event.severity.toLowerCase()}`}>
-                <AlertTriangle size={12} />
-                {SEVERITY_LABELS[event.severity]}
-              </span>
-            </div>
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <span className="wa-date-text">{formatDateTime(event.detectedAt)}</span>
+              {event.severity === "CRITICAL" && (
+                <span className="wa-severity-chip critical" style={{ alignSelf: "flex-start", marginTop: "4px" }}>
+                  <AlertTriangle size={12} />
+                  Urgente
+                </span>
+              )}
             </div>
             <div>
               {event.resolvedAt ? (
