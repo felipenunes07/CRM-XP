@@ -151,6 +151,16 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     const context = extractEvolutionMessageContext(msg, payload.instance);
     const { remoteJid, messageId, text, fromMe } = context;
 
+    if (!remoteJid || !messageId) {
+      logger.info("evolution webhook skipped message: missing remoteJid or messageId", {
+        instance,
+        remoteJid,
+        messageId,
+        fromMe,
+      });
+      continue;
+    }
+
     logger.info("evolution webhook processing message", {
       instance,
       remoteJid,
@@ -195,8 +205,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
       : senderName;
     const metadata = buildActivityMetadata({
-      remoteJid,
-      messageId,
+      remoteJid: String(remoteJid),
+      messageId: String(messageId),
       instanceName,
       isGroup: context.isGroup,
       senderJid: activitySenderJid,
@@ -277,7 +287,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
       // Messaging Intelligence: Detect and create event
       const monitorMessage: WhatsappMonitorMessage = {
-        id: messageId,
+        id: String(messageId),
         dealId,
         direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
         senderName: activitySenderName,
@@ -319,7 +329,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       if (stageMatch.rows[0]) {
         const stageId = stageMatch.rows[0].id;
         const dealTitle = conversationTitle({
-          remoteJid,
+          remoteJid: String(remoteJid),
           isGroup: context.isGroup,
           chatDisplayName,
           senderName: context.fromMe ? null : activitySenderName,
@@ -358,7 +368,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
         // Messaging Intelligence: Detect and create event for new deal
         const monitorMessage: WhatsappMonitorMessage = {
-          id: messageId,
+          id: String(messageId),
           dealId,
           direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
           senderName: activitySenderName,
