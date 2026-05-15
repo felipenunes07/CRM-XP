@@ -215,6 +215,7 @@ export const migrations = [
     active_count INTEGER NOT NULL DEFAULT 0,
     attention_count INTEGER NOT NULL DEFAULT 0,
     inactive_count INTEGER NOT NULL DEFAULT 0,
+    new_count INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
@@ -1131,9 +1132,12 @@ export const migrations = [
   ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
   ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
   `,
-  `
   -- Ensure classifier v2 event types are applied after already-recorded migrations
   ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
   ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
+  `,
+  `
+  -- Add new_count column to dashboard_daily_metrics
+  ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS new_count INTEGER NOT NULL DEFAULT 0;
   `,
 ];
