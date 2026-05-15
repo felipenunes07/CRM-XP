@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { z } from "zod";
-import type { CustomerStatus } from "@olist-crm/shared";
+import type { CustomerStatus, EventType, EventSeverity } from "@olist-crm/shared";
 import { env, webOrigins } from "./lib/env.js";
 import { HttpError } from "./lib/httpError.js";
 import { logger } from "./lib/logger.js";
@@ -1649,9 +1649,9 @@ export function createApp() {
   });
 
   const eventsFiltersSchema = z.object({
-    eventType: z.string().optional(),
-    severity: z.string().optional(),
-    resolved: z.enum(["true", "false"]).optional(),
+    eventType: z.string().optional().transform(v => v ? v.split(",") as EventType[] : undefined),
+    severity: z.string().optional().transform(v => v ? v.split(",") as EventSeverity[] : undefined),
+    resolved: z.enum(["true", "false"]).optional().transform(v => v ? v === "true" : undefined),
     dateFrom: z.string().optional(),
     dateTo: z.string().optional(),
     agentId: z.string().optional(),
@@ -1674,12 +1674,7 @@ export function createApp() {
   app.get("/api/events", async (request, response, next) => {
     try {
       const query = eventsFiltersSchema.parse(request.query);
-      const filters = {
-        ...query,
-        eventType: query.eventType ? (query.eventType.split(",") as any) : undefined,
-        severity: query.severity ? (query.severity.split(",") as any) : undefined,
-        resolved: query.resolved === "true" ? true : query.resolved === "false" ? false : undefined,
-      };
+      const filters = query;
 
       const result = await listEvents(request.user!, filters, {
         page: query.page || 1,
