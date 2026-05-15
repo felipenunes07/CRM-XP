@@ -145,9 +145,10 @@ export function formatPercent(value: number | null | undefined) {
   }).format(safeValue * 100)}%`;
 }
 
-export function statusLabel(status: "ACTIVE" | "ATTENTION" | "INACTIVE") {
+export function statusLabel(status: "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW") {
   if (status === "ACTIVE") return localizedLabel("Ativo", "活跃");
   if (status === "ATTENTION") return localizedLabel("Atencao", "关注");
+  if (status === "NEW") return localizedLabel("Novo", "新客户");
   return localizedLabel("Inativo", "沉默");
 }
 

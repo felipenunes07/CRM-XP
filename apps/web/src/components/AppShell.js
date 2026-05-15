@@ -52,6 +52,7 @@ const sidebarMenu = [
         icon: MessageSquareText,
         children: [
             { to: "/mensagens", labelPt: "Mensagens" },
+            { to: "/eventos", labelPt: "Inteligencia / Eventos" },
             { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
             { to: "/disparador", labelPt: "Disparador" },
         ],

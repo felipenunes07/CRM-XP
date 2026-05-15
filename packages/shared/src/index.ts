@@ -264,6 +264,20 @@ export interface PortfolioTrendPoint {
   trafficSpend?: number;
   dailyItemsSold?: number;
 }
+  
+export interface CustomerMovement {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  fromStatus: CustomerStatus;
+  toStatus: CustomerStatus;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number;
+}
+
+export interface CustomerMovementsResponse {
+  movements: CustomerMovement[];
+}
 
 export type TrendRangeCustomerStatus = Extract<CustomerStatus, "ATTENTION" | "INACTIVE">;
 

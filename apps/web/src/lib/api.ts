@@ -808,12 +808,11 @@ export const api = {
     }, token);
   },
   getDailySentiments(token: string, query: { from?: string; to?: string }) {
-    const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const to = query.to || new Date().toISOString().split('T')[0];
-    const search = new URLSearchParams({
-      dateFrom: from,
-      dateTo: to,
-    });
+    const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] as string;
+    const to = query.to || new Date().toISOString().split('T')[0] as string;
+    const search = new URLSearchParams();
+    search.set("dateFrom", from);
+    search.set("dateTo", to);
     return request<DailySentiment[]>(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
   },
 };
