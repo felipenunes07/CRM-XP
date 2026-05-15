@@ -149,14 +149,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
   for (const msg of messages) {
     const context = extractEvolutionMessageContext(msg, payload.instance);
-    const remoteJid = context.remoteJid;
-    const messageId = context.messageId ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const text = context.text;
+    const { remoteJid, messageId, text, fromMe } = context;
 
-    if (!remoteJid) {
-      logger.warn("evolution webhook skipped message: missing remoteJid", { instance, messageId });
-      continue;
-    }
+    logger.info("evolution webhook processing message", {
+      instance,
+      remoteJid,
+      messageId,
+      fromMe,
+      hasText: !!text,
+    });
 
     if (!isMonitorableWhatsappJid(remoteJid)) {
       logger.info("evolution webhook skipped message: non-chat broadcast jid", {
