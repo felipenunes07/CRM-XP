@@ -197,35 +197,24 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         WHERE day NOT IN (SELECT day FROM dashboard_daily_metrics)
            OR day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1
       ),
-      customer_stats_at_day AS (
+      daily_customer_stats AS (
         SELECT
           td.day,
-          c.id AS customer_id,
-          (
-            SELECT COUNT(*)::int
-            FROM orders o
-            WHERE o.customer_id = c.id AND o.order_date <= td.day
-          ) AS order_count,
-          (
-            SELECT MAX(o.order_date::date)
-            FROM orders o
-            WHERE o.customer_id = c.id AND o.order_date <= td.day
-          ) AS last_order_day
+          o.customer_id,
+          COUNT(*)::int AS order_count,
+          MAX(o.order_date::date) AS last_order_day
         FROM target_days td
-        CROSS JOIN customers c
-        WHERE EXISTS (
-          SELECT 1 FROM orders o2 
-          WHERE o2.customer_id = c.id AND o2.order_date <= td.day
-        )
+        JOIN orders o ON o.order_date::date <= td.day
+        GROUP BY td.day, o.customer_id
       )
       SELECT
         day::text as day,
-        COUNT(customer_id)::int as total_customers,
+        COUNT(*)::int as total_customers,
         COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day <= 30)::int as active_count,
         COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(*) FILTER (WHERE order_count > 1 AND (last_order_day IS NULL OR day - last_order_day >= 90))::int as inactive_count,
+        COUNT(*) FILTER (WHERE order_count > 1 AND day - last_order_day >= 90)::int as inactive_count,
         COUNT(*) FILTER (WHERE order_count = 1)::int as new_count
-      FROM customer_stats_at_day
+      FROM daily_customer_stats
       GROUP BY day
       ORDER BY day
     `,
@@ -271,7 +260,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   // trend point always matches the dashboard cards (same data source).
   await pool.query(`
     INSERT INTO dashboard_daily_metrics (
-      day, total_customers, active_count, attention_count, inactive_count, updated_at
+      day, total_customers, active_count, attention_count, inactive_count, new_count, updated_at
     )
     SELECT
       (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
