@@ -16,126 +16,288 @@ import {
   WhatsappMonitorMessage,
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
+
+// Common greetings and casual/neutral messages in Portuguese
+const GREETING_PATTERNS = [
+  "oi", "oii", "oiii", "ola", "olaa", "hey", "ei", "eai", "e ai",
+  "bom dia", "boa tarde", "boa noite", "bomdia", "boatarde", "boanoite",
+  "bomndiaaa", "bomdiaaa", "bondia",
+  "fala", "salve", "opa", "eae",
+];
+
+const NEUTRAL_CASUAL_PATTERNS = [
+  "tudo bem", "tudo bom", "tudo certo", "tudo tranquilo", "td bem", "tdbem",
+  "estou bem", "to bem", "tou bem",
+  "e tu", "e voce", "e vc",
+  "sim", "nao", "ok", "blz", "beleza", "tranquilo",
+  "certo", "entendi", "entendido", "ta", "ta bom",
+  "ate mais", "ate logo", "tchau", "flw", "falou", "vlw",
+  "kk", "kkk", "kkkk", "haha", "rsrs", "hehe",
+];
+
+/**
+ * Internal company group JIDs that should be completely ignored by the
+ * intelligence system. These are operational groups (trocas, conferência,
+ * correios, etc.) whose messages are NOT customer interactions.
+ */
+const INTERNAL_GROUP_BLOCKLIST = new Set([
+  "120363045047058306@g.us",  // XP-Trocas Recebida
+  "120363029236155900@g.us",  // XP-Conferencia
+  "120363179964808614@g.us",  // XP-Correios
+  "120363044132316737@g.us",  // XP-Saida de caixas
+  "120363228554629988@g.us",  // XP-Fechar Caixas
+  "120363239228364452@g.us",  // XP Técnicos
+  "120363031213889254@g.us",  // XP união faz açúcar
+  "120363048463637470@g.us",  // Romario Taxista
+  "120363024604307554@g.us",  // INT 强大团队 XP BRASIL
+  "120363025402961504@g.us",  // XP - Mídias e posts
+  "120363388324650509@g.us",  // XP Equipe de Soluções
+  "120363284675472016@g.us",  // XP-Trocas Entregue
+  "120363219631231709@g.us",  // XP-NF PARA COBRAR CLIENTE
+  "120363024388010129@g.us",  // XP-comprovante
+  "120363278542101022@g.us",  // Motorista César
+  "120363302011320268@g.us",  // XP-Meninos
+  "120363335551619512@g.us",  // PP
+  "120363024580077621@g.us",  // Leandro Rei Celular
+  "120363422564243122@g.us",  // Extratos
+  "120363404782149909@g.us",  // XP Conferência 2
+  "120363422753753190@g.us",  // Link orçamento facil
+]);
+
+/**
+ * Checks if a remoteJid belongs to an internal company group
+ * that should be completely ignored by message intelligence.
+ */
+export function isInternalGroup(remoteJid: string | null | undefined): boolean {
+  if (!remoteJid) return false;
+  return INTERNAL_GROUP_BLOCKLIST.has(remoteJid);
+}
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 
 /**
- * Detects event type based on content and risk assessment
+ * Checks if a message is a simple greeting or casual short message
+ */
+function isGreetingOrCasual(normalized: string): boolean {
+  const words = normalized.split(/\s+/).filter(Boolean);
+  // Very short messages (1-4 words) that are greetings/casual
+  if (words.length <= 4) {
+    for (const pattern of GREETING_PATTERNS) {
+      if (normalized.startsWith(pattern) || normalized === pattern) return true;
+    }
+    for (const pattern of NEUTRAL_CASUAL_PATTERNS) {
+      if (normalized.includes(pattern) || normalized === pattern) return true;
+    }
+  }
+  // Exact matches for single-word casual messages
+  if (words.length <= 2) {
+    const joined = words.join("");
+    // Repeated letters like "oiii", "bomndiaaa" etc.
+    const stripped = joined.replace(/(.)\1{2,}/g, "$1$1");
+    for (const pattern of GREETING_PATTERNS) {
+      const strippedPattern = pattern.replace(/(.)\1{2,}/g, "$1$1");
+      if (stripped === strippedPattern || stripped.startsWith(strippedPattern)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Detects event type based on content and risk assessment.
+ * Messages that are casual greetings or neutral are classified accordingly
+ * instead of defaulting to NEGATIVE_FEEDBACK.
  */
 export function detectEventType(
   content: string,
   risk: WhatsappMessageRisk | null
 ): EventType {
-  const normalized = content.toLowerCase().trim();
+  const normalized = content.toLowerCase().trim()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-  // Priority 1: High risks
+  // Priority 0: Skip risk-based classification for very short casual messages
+  // to avoid false positives on greetings
+  const isCasual = isGreetingOrCasual(normalized);
+
+  // Priority 1: High risks (but not for casual messages unless risk is CRITICAL)
   if (risk && (risk.severity === "HIGH" || risk.severity === ("CRITICAL" as any))) {
-    if (
-      normalized.includes("urgente") ||
-      normalized.includes("imediato") ||
-      normalized.includes("gerente") ||
-      normalized.includes("supervisor")
-    ) {
-      return "ESCALATION";
+    if (!isCasual || risk.severity === ("CRITICAL" as any)) {
+      if (
+        normalized.includes("urgente") ||
+        normalized.includes("imediato") ||
+        normalized.includes("gerente") ||
+        normalized.includes("supervisor")
+      ) {
+        return "ESCALATION";
+      }
+      return "RISK";
     }
-    return "RISK";
   }
 
-  // Priority 2: Explicit complaints
+  // Priority 2: Churn Risks (Comparing with competitors, explicit intent to stop buying, complaining about price)
+  if (
+    normalized.includes("concorrente") ||
+    normalized.includes("outro fornecedor") ||
+    normalized.includes("ta caro") ||
+    normalized.includes("muito caro") ||
+    normalized.includes("achei mais barato") ||
+    normalized.includes("achado mais barato") ||
+    normalized.includes("cobriu o preco") ||
+    normalized.includes("vou parar de comprar") ||
+    normalized.includes("nao vou comprar mais") ||
+    normalized.includes("comprar em outro lugar")
+  ) {
+    return "CHURN_RISK";
+  }
+
+  // Priority 3: Greetings and casual messages → skip event creation
+  if (isCasual) {
+    return "GREETING";
+  }
+
+  // Priority 3: Explicit complaints
   if (
     normalized.includes("reclamacao") ||
     normalized.includes("insatisfeito") ||
     normalized.includes("pessimo") ||
     normalized.includes("horrivel") ||
-    normalized.includes("cancelar")
+    normalized.includes("cancelar") ||
+    normalized.includes("absurdo") ||
+    normalized.includes("ridiculo")
   ) {
     return "COMPLAINT";
   }
 
-  // Priority 3: Explicit praise
+  // Priority 4: Explicit praise
   if (
     normalized.includes("excelente") ||
     normalized.includes("perfeito") ||
     normalized.includes("otimo") ||
     normalized.includes("parabens") ||
-    normalized.includes("adorei")
+    normalized.includes("adorei") ||
+    normalized.includes("maravilhoso") ||
+    normalized.includes("incrivel")
   ) {
     return "PRAISE";
   }
 
-  // Priority 4: Positive feedback
+  // Priority 5: Positive feedback (longer meaningful messages)
   if (
     normalized.includes("obrigado") ||
+    normalized.includes("obrigada") ||
     normalized.includes("agradeco") ||
     normalized.includes("satisfeito") ||
-    normalized.includes("bom") ||
-    normalized.includes("legal")
+    normalized.includes("gostei") ||
+    normalized.includes("amei") ||
+    normalized.includes("show") ||
+    normalized.includes("top")
   ) {
     return "POSITIVE_FEEDBACK";
   }
 
-  // Priority 5: Negative feedback
+  // Priority 6: Negative feedback (explicit problem indicators)
   if (
     normalized.includes("problema") ||
     normalized.includes("erro") ||
     normalized.includes("nao funciona") ||
+    normalized.includes("nao funcionou") ||
     normalized.includes("demora") ||
-    normalized.includes("ruim")
+    normalized.includes("ruim") ||
+    normalized.includes("decepcionado") ||
+    normalized.includes("frustrado") ||
+    normalized.includes("chateado")
   ) {
     return "NEGATIVE_FEEDBACK";
   }
 
-  // Priority 6: Questions
+  // Priority 7: Sales Opportunity (Looking for products, prices, catalogs)
+  if (
+    normalized.includes("tem iphone") ||
+    normalized.includes("tem samsung") ||
+    normalized.includes("tem xiaomi") ||
+    normalized.includes("tem o modelo") ||
+    normalized.includes("quanto custa") ||
+    normalized.includes("quanto fica") ||
+    normalized.includes("qual o preco") ||
+    normalized.includes("qual o valor") ||
+    normalized.includes("manda tabela") ||
+    normalized.includes("manda a tabela") ||
+    normalized.includes("catalogo") ||
+    normalized.includes("orcamento") ||
+    normalized.includes("pecas")
+  ) {
+    return "SALES_OPPORTUNITY";
+  }
+
+  // Priority 8: Questions (only if message has meaningful content)
   if (
     normalized.includes("?") ||
-    normalized.includes("como") ||
+    normalized.includes("como faco") ||
     normalized.includes("quando") ||
-    normalized.includes("onde") ||
+    normalized.includes("onde fica") ||
     normalized.includes("por que") ||
-    normalized.includes("qual")
+    normalized.includes("tem como")
   ) {
     return "QUESTION";
   }
 
-  // Default: Risk if exists, else negative feedback (to be safe)
+  // Priority 9: Risk from detection if exists
   if (risk) {
     return "RISK";
   }
-  return "NEGATIVE_FEEDBACK";
+
+  // Default: NEUTRAL — do NOT create noise events for unclassified messages
+  return "NEUTRAL";
 }
 
 /**
  * Calculates sentiment score between -1.0 and 1.0
  */
 export function calculateSentimentScore(content: string): number {
-  const normalized = content.toLowerCase().trim();
+  const normalized = content.toLowerCase().trim()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const words = normalized.split(/\s+/);
 
   const positiveWords = [
-    "obrigado", "excelente", "otimo", "perfeito", "adorei",
-    "maravilhoso", "satisfeito", "feliz", "bom", "legal",
-    "parabens", "agradeco", "show", "top", "incrivel"
+    "obrigado", "obrigada", "excelente", "otimo", "perfeito", "adorei",
+    "maravilhoso", "satisfeito", "feliz", "legal",
+    "parabens", "agradeco", "show", "top", "incrivel",
+    "gostei", "amei", "sensacional"
   ];
 
   const negativeWords = [
     "pessimo", "horrivel", "ruim", "problema", "erro",
     "insatisfeito", "reclamacao", "cancelar", "demora", "lento",
-    "nao funciona", "decepcionado", "frustrado", "raiva", "chateado"
+    "decepcionado", "frustrado", "raiva", "chateado",
+    "absurdo", "ridiculo"
+  ];
+
+  // Greetings are slightly positive (friendly tone)
+  const greetingWords = [
+    "oi", "ola", "eai", "fala", "salve", "opa"
   ];
 
   let positiveCount = 0;
   let negativeCount = 0;
+  let greetingCount = 0;
 
   for (const word of words) {
     if (positiveWords.includes(word)) positiveCount++;
     if (negativeWords.includes(word)) negativeCount++;
+    if (greetingWords.includes(word)) greetingCount++;
   }
+
+  // Check multi-word patterns
+  if (normalized.includes("nao funciona") || normalized.includes("nao funcionou")) negativeCount++;
+  if (normalized.includes("bom dia") || normalized.includes("boa tarde") || normalized.includes("boa noite")) greetingCount++;
+  if (normalized.includes("tudo bem") || normalized.includes("tudo bom") || normalized.includes("tudo certo")) greetingCount++;
 
   const totalSentimentWords = positiveCount + negativeCount;
 
   if (totalSentimentWords === 0) {
+    // Greetings get a slightly positive score instead of flat 0
+    if (greetingCount > 0) return 0.15;
     return 0.0;
   }
 
@@ -149,10 +311,16 @@ export function determineSeverityFromType(eventType: EventType): EventSeverity {
     case "ESCALATION":
     case "RISK":
       return "HIGH";
+    case "CHURN_RISK":
+      return "HIGH";
     case "COMPLAINT":
     case "NEGATIVE_FEEDBACK":
       return "MODERATE";
+    case "SALES_OPPORTUNITY":
+      return "MODERATE";
     case "QUESTION":
+    case "POSITIVE_FEEDBACK":
+    case "PRAISE":
       return "LOW";
     default:
       return "LOW";
@@ -168,6 +336,10 @@ export function generateLabelFromType(eventType: EventType): string {
     case "POSITIVE_FEEDBACK": return "Feedback Positivo";
     case "NEGATIVE_FEEDBACK": return "Feedback Negativo";
     case "QUESTION": return "Duvida do Cliente";
+    case "CHURN_RISK": return "Risco de Churn";
+    case "SALES_OPPORTUNITY": return "Oportunidade Comercial";
+    case "GREETING": return "Saudacao";
+    case "NEUTRAL": return "Mensagem Neutra";
     default: return "Evento de Mensagem";
   }
 }
@@ -235,9 +407,29 @@ async function fetchConversationContext(dealId: string): Promise<ConversationCon
 export async function createEventFromMessage(
   message: WhatsappMonitorMessage,
   dealId: string
-): Promise<MessageEvent> {
+): Promise<MessageEvent | null> {
+  // ── Filter 1: Ignore internal company groups ──
+  if (isInternalGroup(message.remoteJid)) {
+    return null;
+  }
+
+  // ── Filter 2: Only analyze INBOUND messages (from customers) ──
+  // Outbound messages are from agents — analyzing them pollutes sentiment data
+  if (message.direction === "OUTBOUND") {
+    return null;
+  }
+
   const eventType = detectEventType(message.content, message.risk);
   const sentimentScore = calculateSentimentScore(message.content);
+
+  // ── Filter 3: Skip greetings and neutral messages — they are noise ──
+  if (eventType === "GREETING" || eventType === "NEUTRAL") {
+    // Still update sentiment (greetings = slightly positive)
+    updateDailySentimentFromDeal(dealId, sentimentScore).catch(err => {
+      logger.warn("Failed to update daily sentiment", { dealId, error: err.message });
+    });
+    return null;
+  }
 
   let severity = determineSeverityFromType(eventType);
   let label = generateLabelFromType(eventType);
@@ -249,6 +441,28 @@ export async function createEventFromMessage(
 
   const conversationContext = await fetchConversationContext(dealId);
 
+  // ── Escalation 1: VIP Customers ──
+  // Check if the customer has high value or high frequency
+  const vipCheckResult = await pool.query(`
+    SELECT cs.total_spent, cs.total_orders, cs.value_score 
+    FROM deals d
+    JOIN customer_snapshot cs ON d.customer_id = cs.customer_id
+    WHERE d.id = $1
+  `, [dealId]);
+
+  let isVip = false;
+  if (vipCheckResult.rows[0]) {
+    const { total_spent, total_orders, value_score } = vipCheckResult.rows[0];
+    if (Number(total_spent) > 5000 || Number(total_orders) > 10 || Number(value_score) > 80) {
+      isVip = true;
+    }
+  }
+
+  if (isVip && (eventType === "COMPLAINT" || eventType === "NEGATIVE_FEEDBACK" || eventType === "CHURN_RISK")) {
+    severity = "CRITICAL";
+    label = `[VIP] ${label}`;
+  }
+
   const metadata = {
     ...message.metadata,
     direction: message.direction,
@@ -257,7 +471,8 @@ export async function createEventFromMessage(
     remoteJid: message.remoteJid,
     isGroup: message.isGroup,
     sentimentScore,
-    originalRisk: message.risk
+    originalRisk: message.risk,
+    isVip
   };
 
   const result = await pool.query(`
@@ -347,7 +562,9 @@ export async function listEvents(
   }
 
   if (filters.dateTo) {
-    params.push(filters.dateTo);
+    let dateTo = filters.dateTo;
+    if (dateTo.length === 10) dateTo = `${dateTo}T23:59:59.999Z`;
+    params.push(dateTo);
     conditions.push(`me.detected_at <= $${params.length}`);
   }
 
@@ -526,7 +743,13 @@ export async function getEventsMetrics(
   dateRange?: { from: string; to: string }
 ): Promise<EventsMetrics> {
   const from = dateRange?.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const to = dateRange?.to || new Date().toISOString();
+  // Extend dateTo to end of day to include all events on the last day
+  let to = dateRange?.to || new Date().toISOString();
+  if (to.length === 10) {
+    to = `${to}T23:59:59.999Z`;
+  } else if (!to.includes("T")) {
+    to = `${to}T23:59:59.999Z`;
+  }
 
   const params: any[] = [from, to];
   let accessFilter = "";
@@ -552,6 +775,8 @@ export async function getEventsMetrics(
       COUNT(*) FILTER (WHERE severity = 'HIGH')::int as high_count,
       COUNT(*) FILTER (WHERE severity = 'MODERATE')::int as moderate_count,
       COUNT(*) FILTER (WHERE severity = 'LOW')::int as low_count,
+      COUNT(*) FILTER (WHERE (event_type = 'COMPLAINT' OR event_type = 'NEGATIVE_FEEDBACK') AND label LIKE '[VIP]%')::int as vip_complaints_count,
+      COUNT(*) FILTER (WHERE event_type = 'SALES_OPPORTUNITY')::int as opportunities_count,
       AVG((me.metadata->>'sentimentScore')::float) as avg_sentiment
     FROM message_events me
     JOIN deals d ON d.id = me.deal_id
@@ -637,6 +862,36 @@ export async function getEventsMetrics(
 
   const dailySentiments = await getDailySentiments(user, { from, to });
 
+  // Unanswered opportunities for > 2 hours
+  const unansweredOpportunitiesResult = await pool.query(`
+    SELECT COUNT(*)::int as count
+    FROM message_events me
+    JOIN deals d ON d.id = me.deal_id
+    LEFT JOIN LATERAL (
+      SELECT created_at
+      FROM deal_activities
+      WHERE deal_id = me.deal_id
+        AND created_at > me.detected_at
+        AND activity_type = 'WHATSAPP_SENT'
+      ORDER BY created_at ASC
+      LIMIT 1
+    ) first_response ON true
+    WHERE me.detected_at BETWEEN $1 AND $2
+    AND me.event_type = 'SALES_OPPORTUNITY'
+    AND first_response.created_at IS NULL
+    AND me.detected_at < NOW() - INTERVAL '2 hours'
+    ${accessFilter}
+  `, params);
+
+  let bottleneckAgentText: string | null = null;
+  if (bottlenecksResult.rows.length > 0 && summaryData.unresolved_events > 0) {
+    const topAgent = bottlenecksResult.rows[0];
+    const percentage = Math.round((topAgent.unresolved_count / summaryData.unresolved_events) * 100);
+    if (percentage > 25) {
+      bottleneckAgentText = `A atendente ${topAgent.agent_name || "Sem nome"} concentrou ${percentage}% dos eventos pendentes.`;
+    }
+  }
+
   return {
     summary: {
       totalEvents: summaryData.total_events,
@@ -676,7 +931,14 @@ export async function getEventsMetrics(
       count: row.count,
       severity: row.severity as EventSeverity,
       lastOccurrence: row.last_occurrence.toISOString()
-    }))
+    })),
+    executiveSummary: {
+      complaintsCount: summaryData.complaints_count,
+      vipComplaintsCount: summaryData.vip_complaints_count || 0,
+      opportunitiesCount: summaryData.opportunities_count || 0,
+      unansweredOpportunitiesCount: unansweredOpportunitiesResult.rows[0]?.count || 0,
+      bottleneckAgentText
+    }
   };
 }
 
@@ -721,5 +983,68 @@ export async function aggregateAllDealsSentiment() {
     logger.info("finished batch sentiment aggregation", { total: processed });
   } catch (error: any) {
     logger.error("failed batch sentiment aggregation", { error: error.message });
+  }
+}
+
+/**
+ * Purge old data to prevent database bloat.
+ * 
+ * Retention policy:
+ * - whatsapp_incoming_messages: 30 days
+ * - message_events (resolved): 90 days  
+ * - message_events (unresolved, LOW severity): 60 days
+ * - event_resolutions: 90 days
+ * - event_sentiments: 180 days
+ */
+export async function purgeOldEventsData() {
+  logger.info("starting events data purge");
+  const results: Record<string, number> = {};
+
+  try {
+    // 1. Old incoming messages (raw webhook data) — 30 days
+    const incomingResult = await pool.query(`
+      DELETE FROM whatsapp_incoming_messages
+      WHERE created_at < NOW() - INTERVAL '30 days'
+    `);
+    results.incomingMessages = incomingResult.rowCount ?? 0;
+
+    // 2. Old resolved events — 90 days
+    const resolvedResult = await pool.query(`
+      DELETE FROM message_events
+      WHERE resolved_at IS NOT NULL
+        AND resolved_at < NOW() - INTERVAL '90 days'
+    `);
+    results.resolvedEvents = resolvedResult.rowCount ?? 0;
+
+    // 3. Old unresolved LOW-severity events — 60 days (stale noise)
+    const staleResult = await pool.query(`
+      DELETE FROM message_events
+      WHERE resolved_at IS NULL
+        AND severity = 'LOW'
+        AND detected_at < NOW() - INTERVAL '60 days'
+    `);
+    results.staleLowEvents = staleResult.rowCount ?? 0;
+
+    // 4. Old event resolutions audit trail — 90 days
+    const resolutionsResult = await pool.query(`
+      DELETE FROM event_resolutions
+      WHERE resolved_at < NOW() - INTERVAL '90 days'
+    `);
+    results.resolutions = resolutionsResult.rowCount ?? 0;
+
+    // 5. Old sentiment aggregation data — 180 days
+    const sentimentsResult = await pool.query(`
+      DELETE FROM event_sentiments
+      WHERE date < CURRENT_DATE - INTERVAL '180 days'
+    `);
+    results.sentiments = sentimentsResult.rowCount ?? 0;
+
+    const totalPurged = Object.values(results).reduce((a, b) => a + b, 0);
+    logger.info("finished events data purge", { totalPurged, ...results });
+
+    return results;
+  } catch (error: any) {
+    logger.error("failed events data purge", { error: error.message });
+    throw error;
   }
 }

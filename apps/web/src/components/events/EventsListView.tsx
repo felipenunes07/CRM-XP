@@ -23,6 +23,10 @@ const EVENT_TYPE_LABELS: Record<EventType, string> = {
   NEGATIVE_FEEDBACK: "Feedback Negativo",
   QUESTION: "Dúvida",
   ESCALATION: "Escalação",
+  GREETING: "Saudação",
+  NEUTRAL: "Mensagem Neutra",
+  CHURN_RISK: "Risco de Churn",
+  SALES_OPPORTUNITY: "Oportunidade Comercial",
 };
 
 const SEVERITY_LABELS: Record<EventSeverity, string> = {
