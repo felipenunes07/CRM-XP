@@ -1,5 +1,6 @@
 import type { AcquisitionMetrics, NewCustomerListItem } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { getMetaAdsMonthlySpend, type MetaAdsMonthlySpendPoint } from "./metaAdsService.js";
 
@@ -66,7 +67,10 @@ export function buildAcquisitionMetrics(
   spendPoints: MetaAdsMonthlySpendPoint[],
   ltvRow: { avg_lifespan_months: number | null; churn_rate: number | null } | null,
   globalStats: { avg_ticket: number; avg_freq_days: number } | null,
-  todayMetrics: { amount: number; items: number; orders: number; performance: any[] }
+  todayMetrics: { amount: number; items: number; orders: number; performance: any[] },
+  groupsCreatedByDay: Map<string, number>,
+  convertedGroupsByDay: Map<string, number>,
+  unconvertedGroupsList: Array<{ name: string; date: string }>
 ): AcquisitionMetrics {
   const safeWindow = Math.max(1, Math.floor(dailyWindowDays));
   const today = parseDateOnly(referenceDate);
@@ -75,7 +79,17 @@ export function buildAcquisitionMetrics(
   const previousMonth = addMonths(currentMonth, -1);
   const firstHistoryMonth = getFirstHistoryMonth(rows, currentMonth);
   const firstSpendMonth = getFirstSpendMonth(spendPoints, currentMonth);
-  const seriesStartMonth = firstSpendMonth < firstHistoryMonth ? firstSpendMonth : firstHistoryMonth;
+  
+  // Find first month with group data
+  let firstGroupMonth = currentMonth;
+  for (const date of groupsCreatedByDay.keys()) {
+    const month = startOfMonth(parseDateOnly(date));
+    if (month < firstGroupMonth) firstGroupMonth = month;
+  }
+
+  let seriesStartMonth = firstHistoryMonth;
+  if (firstSpendMonth < seriesStartMonth) seriesStartMonth = firstSpendMonth;
+  if (firstGroupMonth < seriesStartMonth) seriesStartMonth = firstGroupMonth;
 
   const byDay = new Map<string, number>();
   const byMonth = new Map<string, number>();
@@ -83,6 +97,18 @@ export function buildAcquisitionMetrics(
   const piecesByMonth = new Map<string, number>();
   const amountByMonth = new Map<string, number>();
   const spendByMonthSource = new Map<string, "api" | "fallback">();
+  const groupsByMonth = new Map<string, number>();
+  const convertedByMonth = new Map<string, number>();
+
+  for (const [date, count] of groupsCreatedByDay.entries()) {
+    const monthKey = date.slice(0, 7);
+    groupsByMonth.set(monthKey, (groupsByMonth.get(monthKey) ?? 0) + count);
+  }
+
+  for (const [date, count] of convertedGroupsByDay.entries()) {
+    const monthKey = date.slice(0, 7);
+    convertedByMonth.set(monthKey, (convertedByMonth.get(monthKey) ?? 0) + count);
+  }
 
   for (const row of rows) {
     byDay.set(row.firstOrderDate, (byDay.get(row.firstOrderDate) ?? 0) + 1);
@@ -104,6 +130,8 @@ export function buildAcquisitionMetrics(
     return {
       date,
       newCustomers: byDay.get(date) ?? 0,
+      groupsCreated: groupsCreatedByDay.get(date) ?? 0,
+      convertedGroups: convertedGroupsByDay.get(date) ?? 0,
     };
   });
 
@@ -119,6 +147,11 @@ export function buildAcquisitionMetrics(
       spend,
       cac: newCustomers > 0 ? spend / newCustomers : null,
       spendSource: spendByMonthSource.get(month),
+      groupsCreated: groupsByMonth.get(month) ?? 0,
+      convertedGroups: convertedByMonth.get(month) ?? 0,
+      conversionRate: (groupsByMonth.get(month) ?? 0) > 0 
+        ? (convertedByMonth.get(month) ?? 0) / (groupsByMonth.get(month) ?? 1)
+        : null,
     });
     cursor = addMonths(cursor, 1);
   }
@@ -176,16 +209,21 @@ export function buildAcquisitionMetrics(
       todayItemsSold: todayMetrics.items,
       todayOrdersCount: todayMetrics.orders,
       todaySalesPerformance: todayMetrics.performance,
+      currentMonthGroupsCreated: groupsByMonth.get(currentMonthKey) ?? 0,
+      previousMonthGroupsCreated: groupsByMonth.get(previousMonthKey) ?? 0,
+      currentMonthConvertedGroups: convertedByMonth.get(currentMonthKey) ?? 0,
+      previousMonthConvertedGroups: convertedByMonth.get(previousMonthKey) ?? 0,
       ...calculateLtvFields(currentMonthEntry?.cac, previousMonthEntry?.cac, ltvRow, globalStats),
     },
     dailySeries,
     monthlySeries,
     recentCustomers,
+    unconvertedGroups: unconvertedGroupsList,
   };
 }
 
 export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WINDOW_DAYS): Promise<AcquisitionMetrics> {
-  const [todayResult, rowsResult, todaySalesResult, todayPerformanceResult] = await Promise.all([
+  const [todayResult, rowsResult, todaySalesResult, todayPerformanceResult, groupsCreatedHistoryResult] = await Promise.all([
     pool.query<{ today: string }>("SELECT CURRENT_DATE::text AS today"),
     pool.query<{
       customerId: string;
@@ -296,8 +334,15 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
       GROUP BY so.attendant
       ORDER BY total_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
       LIMIT 10
-    `)
+    `),
+    getWhatsAppGroupsCreatedHistory()
   ]);
+
+  const { 
+    createdByDay: groupsCreatedByDay, 
+    convertedByDay: convertedGroupsByDay,
+    unconvertedList: unconvertedGroupsList
+  } = groupsCreatedHistoryResult;
 
   const today = todayResult.rows[0]?.today ?? new Date().toISOString().slice(0, 10);
   const rows = rowsResult.rows.map((row) => ({
@@ -370,8 +415,70 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
         totalRevenue: Number(row.total_revenue ?? 0),
         totalItems: Number(row.total_items ?? 0),
       }))
-    }
+    },
+    groupsCreatedByDay,
+    convertedGroupsByDay,
+    unconvertedGroupsList
   );
+}
+
+async function getWhatsAppGroupsCreatedHistory(): Promise<{ 
+  createdByDay: Map<string, number>; 
+  convertedByDay: Map<string, number>;
+  unconvertedList: Array<{ name: string; date: string }>;
+}> {
+  const createdByDay = new Map<string, number>();
+  const convertedByDay = new Map<string, number>();
+  const unconvertedList: Array<{ name: string; date: string }> = [];
+  const csvUrl = env.WHATSAPP_GROUPS_SHEET_CSV_URL;
+  if (!csvUrl) return { createdByDay, convertedByDay, unconvertedList };
+
+  try {
+    const response = await fetch(csvUrl);
+    if (!response.ok) return { createdByDay, convertedByDay, unconvertedList };
+
+    const csvText = await response.text();
+    const lines = csvText.split(/\r?\n/);
+    if (lines.length < 2) return { createdByDay, convertedByDay, unconvertedList };
+
+    const headers = lines[0]!.split(",").map(h => h.trim().toLowerCase());
+    const nameIndex = headers.findIndex(h => h === "name" || h === "nome");
+    const dateIndex = headers.findIndex(h => h === "data criao" || h === "data criacao" || h.includes("data"));
+    
+    if (dateIndex === -1) return { createdByDay, convertedByDay, unconvertedList };
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i]!.trim();
+      if (!line) continue;
+
+      const cols = line.split(",");
+      const sourceName = nameIndex !== -1 ? cols[nameIndex]?.trim() ?? "" : "";
+      const dateStr = cols[dateIndex]?.trim();
+      if (!dateStr) continue;
+
+      // Format: DD/MM/YYYY
+      const match = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (match) {
+        const isoDate = `${match[3]}-${match[2]}-${match[1]}`;
+        createdByDay.set(isoDate, (createdByDay.get(isoDate) ?? 0) + 1);
+
+        // Check for conversion (CL, KH, LJ prefixes)
+        const isConverted = /^(CL|KH|LJ)\d+/i.test(sourceName);
+        if (isConverted) {
+          convertedByDay.set(isoDate, (convertedByDay.get(isoDate) ?? 0) + 1);
+        } else {
+          unconvertedList.push({ name: sourceName, date: isoDate });
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn("Failed to fetch whatsapp groups history for dashboard", { error });
+  }
+
+  // Sort and limit unconverted list to recent ones
+  unconvertedList.sort((a, b) => b.date.localeCompare(a.date));
+
+  return { createdByDay, convertedByDay, unconvertedList };
 }
 
 function calculateLtvFields(
