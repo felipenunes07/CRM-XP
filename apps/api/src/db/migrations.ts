@@ -1080,12 +1080,11 @@ export const migrations = [
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at TIMESTAMPTZ,
     resolution_note TEXT,
-    resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION')),
     CHECK (severity IN ('LOW', 'MODERATE', 'HIGH', 'CRITICAL'))
   );
+
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL'));
 
   CREATE INDEX IF NOT EXISTS idx_message_events_deal_id ON message_events(deal_id);
   CREATE INDEX IF NOT EXISTS idx_message_events_event_type ON message_events(event_type);
