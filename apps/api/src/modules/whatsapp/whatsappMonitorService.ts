@@ -1548,6 +1548,11 @@ export async function getWhatsappAgentActivityReport(
     }))
     .sort((left, right) => right.sentMessages - left.sentMessages || left.agentName.localeCompare(right.agentName));
 
+  const engagedConversations = Array.from(summaryAccumulator.conversations.values())
+    .filter((c) => c.sentMessages > 0 && c.receivedMessages > 0);
+  const engagedPrivates = new Set(engagedConversations.filter((c) => c.kind === "private").map((c) => c.remoteJid));
+  const engagedGroups = new Set(engagedConversations.filter((c) => c.kind !== "private").map((c) => c.remoteJid));
+
   return {
     period: {
       startDate: reportDays[0]?.date ?? pivotDate,
@@ -1571,12 +1576,16 @@ export async function getWhatsappAgentActivityReport(
     dailySeries: reportDays.map((day) => {
       const accumulator = dailyAccumulators.get(day.date) ?? createActivityReportAccumulator();
       const counts = publicActivityCounters(accumulator);
+      const dayJids = Array.from(accumulator.conversations.keys());
+      const dayAttendedPrivates = dayJids.filter((jid) => engagedPrivates.has(jid)).length;
+      const dayAttendedGroups = dayJids.filter((jid) => engagedGroups.has(jid)).length;
+
       return {
         date: day.date,
         label: day.label,
-        attendedConversations: counts.attendedConversations,
-        attendedGroups: counts.attendedGroups,
-        attendedPrivates: counts.attendedPrivates,
+        attendedConversations: dayAttendedPrivates + dayAttendedGroups,
+        attendedGroups: dayAttendedGroups,
+        attendedPrivates: dayAttendedPrivates,
         sentMessages: counts.sentMessages,
         sentMessagesPrivate: counts.sentMessagesPrivate,
         sentMessagesGroup: counts.sentMessagesGroup,
@@ -1592,14 +1601,24 @@ export async function getWhatsappAgentActivityReport(
         averageFirstResponseSeconds: counts.averageFirstResponseSeconds,
       };
     }),
-    hourlyCells: Array.from(cells.values()).map((cell) => ({
-      agentId: cell.agentId,
-      agentName: cell.agentName,
-      date: cell.date,
-      hour: cell.hour,
-      ...publicActivityCounters(cell.accumulator),
-      conversations: publicActivityConversations(cell.accumulator),
-    })),
+    hourlyCells: Array.from(cells.values()).map((cell) => {
+      const counts = publicActivityCounters(cell.accumulator);
+      const cellJids = Array.from(cell.accumulator.conversations.keys());
+      const cellAttendedPrivates = cellJids.filter((jid) => engagedPrivates.has(jid)).length;
+      const cellAttendedGroups = cellJids.filter((jid) => engagedGroups.has(jid)).length;
+
+      return {
+        agentId: cell.agentId,
+        agentName: cell.agentName,
+        date: cell.date,
+        hour: cell.hour,
+        ...counts,
+        attendedConversations: cellAttendedPrivates + cellAttendedGroups,
+        attendedPrivates: cellAttendedPrivates,
+        attendedGroups: cellAttendedGroups,
+        conversations: publicActivityConversations(cell.accumulator),
+      };
+    }),
   };
 }
 
