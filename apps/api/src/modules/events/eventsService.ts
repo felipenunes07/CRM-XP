@@ -72,6 +72,55 @@ export function isInternalGroup(remoteJid: string | null | undefined): boolean {
   if (!remoteJid) return false;
   return INTERNAL_GROUP_BLOCKLIST.has(remoteJid);
 }
+
+/**
+ * Internal company numbers and system accounts that should not be evaluated as customers.
+ * If these senders send an inbound message (e.g. answering in a group or from another instance),
+ * it should be ignored by the Intelligence system to avoid treating our own agents as complaining customers.
+ */
+const INTERNAL_SENDER_BLOCKLIST = new Set([
+  "5511911279702@s.whatsapp.net", // Felipe
+  "5511915863088@s.whatsapp.net", // Quedma
+  "5511916263525@s.whatsapp.net", // Camila
+  "5511930890128@s.whatsapp.net", // Site
+  "5511944538074@s.whatsapp.net", // Lucas
+  "5511944705416@s.whatsapp.net", // Thais
+  "5511947879036@s.whatsapp.net", // Lili
+  "5511951392256@s.whatsapp.net", // Tamires
+  "5511971086782@s.whatsapp.net", // Iza
+  "5511975501901@s.whatsapp.net", // Ragnar
+  "5511996435466@s.whatsapp.net", // Suelen
+  "5511998595698@s.whatsapp.net", // Amanda
+  "5511914898986@s.whatsapp.net", // Zhao
+  "5511978398236@s.whatsapp.net", // Ronaldo
+  "5511964218475@s.whatsapp.net", // Rafael
+  "5511976001044@s.whatsapp.net", // contabackupxp
+  "5511915103835@s.whatsapp.net", // Conferência
+  "5511958326930@s.whatsapp.net", // Motoboy Lucas
+  "5511959502231@s.whatsapp.net",
+  "93755076042876@lid",
+  "269603754213443@lid",
+  "226362308726972@lid",
+  "214997741375562:74@lid",
+  "3960597401743@lid",
+  "214997741375562:78@lid",
+  "32624739369122@lid",
+  "128441684885669@lid"
+]);
+
+const INTERNAL_SENDER_NAMES = new Set([
+  "XP - TAMIRES",
+  "XP - Iza",
+  "Lili Brasil",
+  "XP - Camila",
+  "Ragnar Lothbrok"
+]);
+
+export function isInternalSender(senderJid: string | null | undefined, senderName: string | null | undefined): boolean {
+  if (senderJid && INTERNAL_SENDER_BLOCKLIST.has(senderJid)) return true;
+  if (senderName && INTERNAL_SENDER_NAMES.has(senderName)) return true;
+  return false;
+}
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { HttpError } from "../../lib/httpError.js";
@@ -416,6 +465,11 @@ export async function createEventFromMessage(
   // ── Filter 2: Only analyze INBOUND messages (from customers) ──
   // Outbound messages are from agents — analyzing them pollutes sentiment data
   if (message.direction === "OUTBOUND") {
+    return null;
+  }
+
+  // ── Filter 2.5: Ignore internal senders (attendants replying from own WhatsApp) ──
+  if (isInternalSender(message.senderJid, message.senderName)) {
     return null;
   }
 
