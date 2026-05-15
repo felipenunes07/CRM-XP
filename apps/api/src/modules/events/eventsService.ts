@@ -17,22 +17,92 @@ import {
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
 
-// Common greetings and casual/neutral messages in Portuguese
-const GREETING_PATTERNS = [
-  "oi", "oii", "oiii", "ola", "olaa", "hey", "ei", "eai", "e ai",
-  "bom dia", "boa tarde", "boa noite", "bomdia", "boatarde", "boanoite",
-  "bomndiaaa", "bomdiaaa", "bondia",
-  "fala", "salve", "opa", "eae",
+type MessageClassificationCategory =
+  | "risk"
+  | "opportunity"
+  | "complaint"
+  | "feedback"
+  | "question"
+  | "noise";
+
+export interface MessageEventClassification {
+  eventType: EventType;
+  severity: EventSeverity;
+  label: string;
+  sentimentScore: number;
+  confidence: number;
+  reason: string;
+  category: MessageClassificationCategory;
+  actionRequired: boolean;
+  shouldCreateEvent: boolean;
+  evidence: string[];
+}
+
+interface ClassificationText {
+  original: string;
+  normalized: string;
+  compact: string;
+  tokens: string[];
+  tokenSet: Set<string>;
+}
+
+const GREETING_START_PHRASES = [
+  "bom dia", "boa tarde", "boa noite", "oi", "ola", "opa", "e ai", "eai",
+  "fala", "salve",
 ];
 
-const NEUTRAL_CASUAL_PATTERNS = [
-  "tudo bem", "tudo bom", "tudo certo", "tudo tranquilo", "td bem", "tdbem",
-  "estou bem", "to bem", "tou bem",
-  "e tu", "e voce", "e vc",
-  "sim", "nao", "ok", "blz", "beleza", "tranquilo",
-  "certo", "entendi", "entendido", "ta", "ta bom",
+const ROUTINE_NEUTRAL_PHRASES = [
+  "tudo bem", "tudo bom", "tudo certo", "tudo tranquilo", "td bem",
+  "estou bem", "to bem", "tou bem", "e tu", "e voce", "e vc",
+  "sim", "nao", "ok", "blz", "beleza", "tranquilo", "certo",
+  "entendi", "entendido", "ta bom", "pode deixar", "tem sim",
   "ate mais", "ate logo", "tchau", "flw", "falou", "vlw",
-  "kk", "kkk", "kkkk", "haha", "rsrs", "hehe",
+  "kk", "kkk", "kkkk", "haha", "rs", "rsrs", "hehe",
+];
+
+const ROUTINE_SALES_PITCH_PATTERNS = [
+  /\bprecos?\s+top\s+pra\s+(vc|voce)\b/u,
+  /\bconsigo\s+fazer\s+por\s+(r\$\s*)?\d/u,
+  /\ba\s+caixa\s+vem\s+\d+/u,
+];
+
+const PRODUCT_TOKENS = new Set([
+  "iphone", "iphones", "ip", "samsung", "xiaomi", "motorola", "tela", "telas",
+  "peca", "pecas", "bateria", "display", "lcd", "modelo", "modelos",
+]);
+
+const COMMERCIAL_TOKENS = new Set([
+  "frete", "valor", "preco", "precos", "atacado", "catalogo", "orcamento",
+  "tabela", "reposicao", "caixa", "fechada", "modelo", "modelos", "pecas",
+  "disponivel", "disponibilidade", "estoque", "chegou", "chegaram",
+]);
+
+const CHURN_PHRASES = [
+  "outro fornecedor", "achei mais barato", "achado mais barato",
+  "cobriu o preco", "vou parar de comprar", "nao vou comprar mais",
+  "comprar em outro lugar", "na concorrencia",
+];
+
+const COMPLAINT_PHRASES = [
+  "reclamacao", "insatisfeito", "pessimo", "horrivel", "cancelar",
+  "absurdo", "ridiculo", "veio errado", "veio com defeito", "produto errado",
+  "nao chegou", "nao recebi", "atrasou", "defeito", "quebrado",
+  "sem retorno", "sem resposta",
+];
+
+const NEGATIVE_FEEDBACK_PHRASES = [
+  "problema", "erro", "nao funciona", "nao funcionou", "demora", "ruim",
+  "decepcionado", "frustrado", "chateado", "lento",
+];
+
+const PRAISE_PHRASES = [
+  "show de bola", "excelente", "perfeito", "otimo", "parabens",
+  "adorei", "maravilhoso", "incrivel", "sensacional",
+];
+
+const POSITIVE_FEEDBACK_PHRASES = [
+  "obrigado", "obrigada", "agradeco", "satisfeito", "gostei", "amei",
+  "muito bom", "ficou bom", "top",
 ];
 
 /**
@@ -129,28 +199,310 @@ import type { JwtUser } from "../platform/authService.js";
 /**
  * Checks if a message is a simple greeting or casual short message
  */
-function isGreetingOrCasual(normalized: string): boolean {
-  const words = normalized.split(/\s+/).filter(Boolean);
-  // Very short messages (1-4 words) that are greetings/casual
-  if (words.length <= 4) {
-    for (const pattern of GREETING_PATTERNS) {
-      if (normalized.startsWith(pattern) || normalized === pattern) return true;
-    }
-    for (const pattern of NEUTRAL_CASUAL_PATTERNS) {
-      if (normalized.includes(pattern) || normalized === pattern) return true;
-    }
-  }
-  // Exact matches for single-word casual messages
-  if (words.length <= 2) {
-    const joined = words.join("");
-    // Repeated letters like "oiii", "bomndiaaa" etc.
-    const stripped = joined.replace(/(.)\1{2,}/g, "$1$1");
-    for (const pattern of GREETING_PATTERNS) {
-      const strippedPattern = pattern.replace(/(.)\1{2,}/g, "$1$1");
-      if (stripped === strippedPattern || stripped.startsWith(strippedPattern)) return true;
-    }
+function collapseRepeatedLetters(value: string) {
+  return value.replace(/([a-z])\1+/gu, "$1");
+}
+
+function normalizeMessageText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildClassificationText(content: string): ClassificationText {
+  const normalized = normalizeMessageText(content);
+  const compact = collapseRepeatedLetters(normalized);
+  const tokens = compact.match(/[a-z0-9]+/gu) ?? [];
+
+  return {
+    original: content,
+    normalized,
+    compact,
+    tokens,
+    tokenSet: new Set(tokens),
+  };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasPhraseIn(text: string, phrase: string) {
+  const normalizedPhrase = collapseRepeatedLetters(normalizeMessageText(phrase));
+  const pattern = normalizedPhrase.split(/\s+/).map(escapeRegExp).join("\\s+");
+  return new RegExp(`(?:^|\\b)${pattern}(?:\\b|$)`, "u").test(text);
+}
+
+function hasPhrase(ctx: ClassificationText, phrase: string) {
+  return hasPhraseIn(ctx.compact, phrase) || hasPhraseIn(ctx.normalized, phrase);
+}
+
+function hasAnyPhrase(ctx: ClassificationText, phrases: string[]) {
+  return phrases.some((phrase) => hasPhrase(ctx, phrase));
+}
+
+function hasToken(ctx: ClassificationText, token: string) {
+  return ctx.tokenSet.has(collapseRepeatedLetters(normalizeMessageText(token)));
+}
+
+function hasAnyToken(ctx: ClassificationText, tokens: Iterable<string>) {
+  for (const token of tokens) {
+    if (hasToken(ctx, token)) return true;
   }
   return false;
+}
+
+function countMatches(value: string, pattern: RegExp) {
+  return value.match(pattern)?.length ?? 0;
+}
+
+function isPriceList(ctx: ClassificationText) {
+  const priceCount = countMatches(ctx.normalized, /r\$\s*\d+|\b\d+,\d{2}\b/gu);
+  const separatorCount = countMatches(ctx.original, /\|/gu);
+  const productCount = countMatches(ctx.compact, /\b(ip|iphone|samsung|xiaomi)[-\s]?\d{1,2}/gu);
+
+  return priceCount >= 3 || (priceCount >= 2 && (separatorCount >= 2 || productCount >= 2)) || (ctx.original.length > 350 && priceCount >= 2);
+}
+
+function isRoutineSalesPitch(ctx: ClassificationText) {
+  return ROUTINE_SALES_PITCH_PATTERNS.some((pattern) => pattern.test(ctx.compact));
+}
+
+function isGreetingMessage(ctx: ClassificationText) {
+  const tokenCount = ctx.tokens.length;
+  if (tokenCount === 0) return false;
+
+  if (
+    tokenCount <= 8 &&
+    GREETING_START_PHRASES.some((phrase) => ctx.compact === phrase || ctx.compact.startsWith(`${phrase} `))
+  ) {
+    return true;
+  }
+
+  return tokenCount <= 4 && ["oi", "ola", "opa", "eai", "ei", "fala", "salve"].includes(ctx.tokens[0] ?? "");
+}
+
+function isRoutineNeutralMessage(ctx: ClassificationText) {
+  if (isPriceList(ctx) || isRoutineSalesPitch(ctx)) {
+    return true;
+  }
+
+  if (ctx.tokens.length <= 4 && hasAnyPhrase(ctx, ROUTINE_NEUTRAL_PHRASES)) {
+    return true;
+  }
+
+  if (ctx.tokens.length <= 3 && ctx.tokens.every((token) => ["sim", "nao", "ok", "rs", "kk", "kkk"].includes(token))) {
+    return true;
+  }
+
+  return false;
+}
+
+function hasCommercialIntent(ctx: ClassificationText) {
+  if (hasToken(ctx, "frete") && (/\b\d{5,8}\b/u.test(ctx.compact) || hasPhrase(ctx, "pra"))) {
+    return true;
+  }
+
+  if (hasAnyPhrase(ctx, ["quanto custa", "quanto fica", "qual o preco", "qual o valor", "por quanto", "caixa fechada", "por atacado"])) {
+    return true;
+  }
+
+  if (hasAnyToken(ctx, ["catalogo", "orcamento", "tabela", "atacado"])) {
+    return true;
+  }
+
+  if ((hasToken(ctx, "valor") || hasToken(ctx, "preco") || hasToken(ctx, "precos")) && hasAnyToken(ctx, COMMERCIAL_TOKENS)) {
+    return true;
+  }
+
+  if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS)) {
+    return true;
+  }
+
+  if (hasToken(ctx, "tem") && hasAnyToken(ctx, PRODUCT_TOKENS)) {
+    return true;
+  }
+
+  return false;
+}
+
+function isEscalation(ctx: ClassificationText) {
+  return hasAnyPhrase(ctx, ["urgente", "imediato", "gerente", "supervisor", "procon", "processo"]);
+}
+
+function categoryFromEventType(eventType: EventType): MessageClassificationCategory {
+  switch (eventType) {
+    case "RISK":
+    case "ESCALATION":
+      return "risk";
+    case "SALES_OPPORTUNITY":
+      return "opportunity";
+    case "COMPLAINT":
+    case "NEGATIVE_FEEDBACK":
+    case "CHURN_RISK":
+      return "complaint";
+    case "PRAISE":
+    case "POSITIVE_FEEDBACK":
+      return "feedback";
+    case "QUESTION":
+      return "question";
+    default:
+      return "noise";
+  }
+}
+
+function buildClassification(
+  eventType: EventType,
+  ctx: ClassificationText,
+  input: Partial<Omit<MessageEventClassification, "eventType" | "severity" | "label" | "sentimentScore" | "shouldCreateEvent">>
+): MessageEventClassification {
+  const category = input.category ?? categoryFromEventType(eventType);
+  const actionRequired = input.actionRequired ?? ["risk", "opportunity", "complaint", "question"].includes(category);
+
+  return {
+    eventType,
+    severity: determineSeverityFromType(eventType),
+    label: generateLabelFromType(eventType),
+    sentimentScore: calculateSentimentScore(ctx.original),
+    confidence: input.confidence ?? 0.75,
+    reason: input.reason ?? "Classificacao por contexto da mensagem.",
+    category,
+    actionRequired,
+    shouldCreateEvent: eventType !== "GREETING" && eventType !== "NEUTRAL",
+    evidence: input.evidence ?? [],
+  };
+}
+
+export function classifyMessageContent(
+  content: string,
+  risk: WhatsappMessageRisk | null
+): MessageEventClassification {
+  const ctx = buildClassificationText(content);
+
+  if (!ctx.compact) {
+    return buildClassification("NEUTRAL", ctx, {
+      confidence: 0.99,
+      reason: "Mensagem vazia ou sem texto util.",
+      evidence: ["empty_content"],
+    });
+  }
+
+  if (risk?.severity === "HIGH") {
+    return {
+      ...buildClassification(isEscalation(ctx) ? "ESCALATION" : "RISK", ctx, {
+        category: "risk",
+        confidence: 0.96,
+        reason: risk.label || "Mensagem contem dado sensivel ou risco alto.",
+        evidence: [risk.keyword],
+      }),
+      severity: risk.severity as EventSeverity,
+      label: risk.label || generateLabelFromType("RISK"),
+    };
+  }
+
+  if (hasAnyPhrase(ctx, COMPLAINT_PHRASES)) {
+    return buildClassification("COMPLAINT", ctx, {
+      category: "complaint",
+      confidence: 0.92,
+      reason: "Cliente demonstrou reclamacao ou insatisfacao explicita.",
+      evidence: COMPLAINT_PHRASES.filter((phrase) => hasPhrase(ctx, phrase)).slice(0, 3),
+    });
+  }
+
+  if (hasToken(ctx, "concorrente") || hasAnyPhrase(ctx, CHURN_PHRASES) || hasAnyPhrase(ctx, ["ta caro", "muito caro"])) {
+    return buildClassification("CHURN_RISK", ctx, {
+      category: "complaint",
+      confidence: 0.9,
+      reason: "Mensagem indica comparacao com concorrente, preco ou risco de perda.",
+      evidence: ["churn_or_price_objection"],
+    });
+  }
+
+  if (hasAnyPhrase(ctx, NEGATIVE_FEEDBACK_PHRASES)) {
+    return buildClassification("NEGATIVE_FEEDBACK", ctx, {
+      category: "complaint",
+      confidence: 0.86,
+      reason: "Mensagem contem indicador explicito de problema no atendimento ou pedido.",
+      evidence: NEGATIVE_FEEDBACK_PHRASES.filter((phrase) => hasPhrase(ctx, phrase)).slice(0, 3),
+    });
+  }
+
+  if (isGreetingMessage(ctx)) {
+    return buildClassification("GREETING", ctx, {
+      confidence: 0.95,
+      reason: "Saudacao ou abertura de conversa sem acao operacional.",
+      evidence: ["greeting"],
+    });
+  }
+
+  if (isRoutineNeutralMessage(ctx)) {
+    return buildClassification("NEUTRAL", ctx, {
+      confidence: 0.9,
+      reason: "Mensagem rotineira, resposta curta ou lista comercial sem pedido do cliente.",
+      evidence: ["routine_or_price_list"],
+    });
+  }
+
+  if (hasCommercialIntent(ctx)) {
+    return buildClassification("SALES_OPPORTUNITY", ctx, {
+      category: "opportunity",
+      confidence: 0.88,
+      reason: "Mensagem pede preco, frete, disponibilidade, catalogo ou condicao comercial.",
+      evidence: ctx.tokens.filter((token) => COMMERCIAL_TOKENS.has(token)).slice(0, 5),
+    });
+  }
+
+  if (hasAnyPhrase(ctx, PRAISE_PHRASES)) {
+    return buildClassification("PRAISE", ctx, {
+      category: "feedback",
+      actionRequired: false,
+      confidence: 0.88,
+      reason: "Cliente enviou elogio ou aprovacao clara.",
+      evidence: PRAISE_PHRASES.filter((phrase) => hasPhrase(ctx, phrase)).slice(0, 3),
+    });
+  }
+
+  if (!isRoutineSalesPitch(ctx) && hasAnyPhrase(ctx, POSITIVE_FEEDBACK_PHRASES)) {
+    return buildClassification("POSITIVE_FEEDBACK", ctx, {
+      category: "feedback",
+      actionRequired: false,
+      confidence: 0.8,
+      reason: "Mensagem contem feedback positivo do cliente.",
+      evidence: POSITIVE_FEEDBACK_PHRASES.filter((phrase) => hasPhrase(ctx, phrase)).slice(0, 3),
+    });
+  }
+
+  if (ctx.normalized.includes("?") || hasAnyPhrase(ctx, ["como faco", "quando", "onde fica", "por que", "tem como", "prazo", "rastreio", "pedido"])) {
+    return buildClassification("QUESTION", ctx, {
+      category: "question",
+      confidence: 0.78,
+      reason: "Pergunta do cliente que pode exigir resposta do atendimento.",
+      evidence: ["question"],
+    });
+  }
+
+  if (risk) {
+    return {
+      ...buildClassification("RISK", ctx, {
+        category: "risk",
+        confidence: 0.78,
+        reason: risk.label || "Mensagem contem sinal de risco operacional.",
+        evidence: [risk.keyword],
+      }),
+      severity: risk.severity as EventSeverity,
+      label: risk.label || generateLabelFromType("RISK"),
+    };
+  }
+
+  return buildClassification("NEUTRAL", ctx, {
+    confidence: 0.82,
+    reason: "Mensagem sem pedido, risco, reclamacao ou oportunidade clara.",
+    evidence: ["no_actionable_signal"],
+  });
 }
 
 /**
@@ -162,197 +514,41 @@ export function detectEventType(
   content: string,
   risk: WhatsappMessageRisk | null
 ): EventType {
-  const normalized = content.toLowerCase().trim()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-  // Priority 0: Skip risk-based classification for very short casual messages
-  // to avoid false positives on greetings
-  const isCasual = isGreetingOrCasual(normalized);
-
-  // Priority 1: High risks (but not for casual messages unless risk is CRITICAL)
-  if (risk && (risk.severity === "HIGH" || risk.severity === ("CRITICAL" as any))) {
-    if (!isCasual || risk.severity === ("CRITICAL" as any)) {
-      if (
-        normalized.includes("urgente") ||
-        normalized.includes("imediato") ||
-        normalized.includes("gerente") ||
-        normalized.includes("supervisor")
-      ) {
-        return "ESCALATION";
-      }
-      return "RISK";
-    }
-  }
-
-  // Priority 2: Churn Risks (Comparing with competitors, explicit intent to stop buying, complaining about price)
-  if (
-    normalized.includes("concorrente") ||
-    normalized.includes("outro fornecedor") ||
-    normalized.includes("ta caro") ||
-    normalized.includes("muito caro") ||
-    normalized.includes("achei mais barato") ||
-    normalized.includes("achado mais barato") ||
-    normalized.includes("cobriu o preco") ||
-    normalized.includes("vou parar de comprar") ||
-    normalized.includes("nao vou comprar mais") ||
-    normalized.includes("comprar em outro lugar")
-  ) {
-    return "CHURN_RISK";
-  }
-
-  // Priority 3: Greetings and casual messages → skip event creation
-  if (isCasual) {
-    return "GREETING";
-  }
-
-  // Priority 3: Explicit complaints
-  if (
-    normalized.includes("reclamacao") ||
-    normalized.includes("insatisfeito") ||
-    normalized.includes("pessimo") ||
-    normalized.includes("horrivel") ||
-    normalized.includes("cancelar") ||
-    normalized.includes("absurdo") ||
-    normalized.includes("ridiculo")
-  ) {
-    return "COMPLAINT";
-  }
-
-  // Priority 4: Explicit praise
-  if (
-    normalized.includes("excelente") ||
-    normalized.includes("perfeito") ||
-    normalized.includes("otimo") ||
-    normalized.includes("parabens") ||
-    normalized.includes("adorei") ||
-    normalized.includes("maravilhoso") ||
-    normalized.includes("incrivel")
-  ) {
-    return "PRAISE";
-  }
-
-  // Priority 5: Positive feedback (longer meaningful messages)
-  if (
-    normalized.includes("obrigado") ||
-    normalized.includes("obrigada") ||
-    normalized.includes("agradeco") ||
-    normalized.includes("satisfeito") ||
-    normalized.includes("gostei") ||
-    normalized.includes("amei") ||
-    normalized.includes("show") ||
-    normalized.includes("top")
-  ) {
-    return "POSITIVE_FEEDBACK";
-  }
-
-  // Priority 6: Negative feedback (explicit problem indicators)
-  if (
-    normalized.includes("problema") ||
-    normalized.includes("erro") ||
-    normalized.includes("nao funciona") ||
-    normalized.includes("nao funcionou") ||
-    normalized.includes("demora") ||
-    normalized.includes("ruim") ||
-    normalized.includes("decepcionado") ||
-    normalized.includes("frustrado") ||
-    normalized.includes("chateado")
-  ) {
-    return "NEGATIVE_FEEDBACK";
-  }
-
-  // Priority 7: Sales Opportunity (Looking for products, prices, catalogs)
-  if (
-    normalized.includes("tem iphone") ||
-    normalized.includes("tem samsung") ||
-    normalized.includes("tem xiaomi") ||
-    normalized.includes("tem o modelo") ||
-    normalized.includes("quanto custa") ||
-    normalized.includes("quanto fica") ||
-    normalized.includes("qual o preco") ||
-    normalized.includes("qual o valor") ||
-    normalized.includes("manda tabela") ||
-    normalized.includes("manda a tabela") ||
-    normalized.includes("catalogo") ||
-    normalized.includes("orcamento") ||
-    normalized.includes("pecas")
-  ) {
-    return "SALES_OPPORTUNITY";
-  }
-
-  // Priority 8: Questions (only if message has meaningful content)
-  if (
-    normalized.includes("?") ||
-    normalized.includes("como faco") ||
-    normalized.includes("quando") ||
-    normalized.includes("onde fica") ||
-    normalized.includes("por que") ||
-    normalized.includes("tem como")
-  ) {
-    return "QUESTION";
-  }
-
-  // Priority 9: Risk from detection if exists
-  if (risk) {
-    return "RISK";
-  }
-
-  // Default: NEUTRAL — do NOT create noise events for unclassified messages
-  return "NEUTRAL";
+  return classifyMessageContent(content, risk).eventType;
 }
 
 /**
  * Calculates sentiment score between -1.0 and 1.0
  */
 export function calculateSentimentScore(content: string): number {
-  const normalized = content.toLowerCase().trim()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const words = normalized.split(/\s+/);
+  const ctx = buildClassificationText(content);
 
-  const positiveWords = [
-    "obrigado", "obrigada", "excelente", "otimo", "perfeito", "adorei",
-    "maravilhoso", "satisfeito", "feliz", "legal",
-    "parabens", "agradeco", "show", "top", "incrivel",
-    "gostei", "amei", "sensacional"
-  ];
-
-  const negativeWords = [
-    "pessimo", "horrivel", "ruim", "problema", "erro",
-    "insatisfeito", "reclamacao", "cancelar", "demora", "lento",
-    "decepcionado", "frustrado", "raiva", "chateado",
-    "absurdo", "ridiculo"
-  ];
-
-  // Greetings are slightly positive (friendly tone)
-  const greetingWords = [
-    "oi", "ola", "eai", "fala", "salve", "opa"
-  ];
-
-  let positiveCount = 0;
-  let negativeCount = 0;
-  let greetingCount = 0;
-
-  for (const word of words) {
-    if (positiveWords.includes(word)) positiveCount++;
-    if (negativeWords.includes(word)) negativeCount++;
-    if (greetingWords.includes(word)) greetingCount++;
+  if (isPriceList(ctx) || isRoutineSalesPitch(ctx)) {
+    return 0;
   }
 
-  // Check multi-word patterns
-  if (normalized.includes("nao funciona") || normalized.includes("nao funcionou")) negativeCount++;
-  if (normalized.includes("bom dia") || normalized.includes("boa tarde") || normalized.includes("boa noite")) greetingCount++;
-  if (normalized.includes("tudo bem") || normalized.includes("tudo bom") || normalized.includes("tudo certo")) greetingCount++;
+  let positiveSignals = 0;
+  let negativeSignals = 0;
 
-  const totalSentimentWords = positiveCount + negativeCount;
-
-  if (totalSentimentWords === 0) {
-    // Greetings get a slightly positive score instead of flat 0
-    if (greetingCount > 0) return 0.15;
-    return 0.0;
+  for (const phrase of POSITIVE_FEEDBACK_PHRASES) {
+    if (hasPhrase(ctx, phrase)) positiveSignals++;
+  }
+  for (const phrase of PRAISE_PHRASES) {
+    if (hasPhrase(ctx, phrase)) positiveSignals++;
+  }
+  for (const phrase of NEGATIVE_FEEDBACK_PHRASES) {
+    if (hasPhrase(ctx, phrase)) negativeSignals++;
+  }
+  for (const phrase of COMPLAINT_PHRASES) {
+    if (hasPhrase(ctx, phrase)) negativeSignals++;
   }
 
-  const rawScore = (positiveCount - negativeCount) / totalSentimentWords;
-  // Smoothing
-  return rawScore * 0.8;
+  const totalSentimentSignals = positiveSignals + negativeSignals;
+  if (totalSentimentSignals === 0) {
+    return isGreetingMessage(ctx) ? 0.15 : 0;
+  }
+
+  return ((positiveSignals - negativeSignals) / totalSentimentSignals) * 0.8;
 }
 
 export function determineSeverityFromType(eventType: EventType): EventSeverity {
@@ -473,11 +669,12 @@ export async function createEventFromMessage(
     return null;
   }
 
-  const eventType = detectEventType(message.content, message.risk);
-  const sentimentScore = calculateSentimentScore(message.content);
+  const classification = classifyMessageContent(message.content, message.risk);
+  const eventType = classification.eventType;
+  const sentimentScore = classification.sentimentScore;
 
   // ── Filter 3: Skip greetings, neutral messages, and generic questions — they are noise ──
-  if (eventType === "GREETING" || eventType === "NEUTRAL" || eventType === "QUESTION") {
+  if (!classification.shouldCreateEvent) {
     // Still update sentiment (greetings = slightly positive, others neutral)
     updateDailySentimentFromDeal(dealId, sentimentScore).catch(err => {
       logger.warn("Failed to update daily sentiment", { dealId, error: err.message });
@@ -485,10 +682,10 @@ export async function createEventFromMessage(
     return null;
   }
 
-  let severity = determineSeverityFromType(eventType);
-  let label = generateLabelFromType(eventType);
+  let severity = classification.severity;
+  let label = classification.label;
 
-  if (message.risk) {
+  if (message.risk && (eventType === "RISK" || eventType === "ESCALATION")) {
     severity = message.risk.severity as EventSeverity;
     label = message.risk.label || label;
   }
@@ -525,6 +722,13 @@ export async function createEventFromMessage(
     remoteJid: message.remoteJid,
     isGroup: message.isGroup,
     sentimentScore,
+    classifierVersion: "2026-05-15-v2",
+    classificationReason: classification.reason,
+    classificationConfidence: classification.confidence,
+    classificationCategory: classification.category,
+    classificationEvidence: classification.evidence,
+    actionRequired: classification.actionRequired,
+    shouldCreateEvent: classification.shouldCreateEvent,
     originalRisk: message.risk,
     isVip
   };
@@ -605,6 +809,8 @@ export async function listEvents(
   if (filters.eventType && filters.eventType.length > 0) {
     params.push(filters.eventType);
     conditions.push(`me.event_type = ANY($${params.length})`);
+  } else {
+    conditions.push(`me.event_type NOT IN ('GREETING', 'NEUTRAL')`);
   }
 
   if (filters.severity && filters.severity.length > 0) {
@@ -816,10 +1022,10 @@ export async function getEventsMetrics(
   }
 
   const params: any[] = [from, to];
-  let accessFilter = "";
+  let accessFilter = "AND me.event_type NOT IN ('GREETING', 'NEUTRAL')";
   if (user.role === "SELLER") {
     params.push(user.id, user.name);
-    accessFilter = `AND (d.assigned_to = $3 OR d.assigned_to_name = $4)`;
+    accessFilter += ` AND (d.assigned_to = $3 OR d.assigned_to_name = $4)`;
   }
   
   if (filters?.isGroup !== undefined) {
@@ -831,7 +1037,7 @@ export async function getEventsMetrics(
     SELECT
       COUNT(*)::int as total_events,
       COUNT(*) FILTER (WHERE resolved_at IS NULL)::int as unresolved_events,
-      COUNT(*) FILTER (WHERE event_type = 'RISK')::int as risk_events,
+      COUNT(*) FILTER (WHERE event_type IN ('RISK', 'ESCALATION', 'CHURN_RISK'))::int as risk_events,
       COUNT(*) FILTER (WHERE event_type = 'POSITIVE_FEEDBACK')::int as positive_feedbacks,
       COUNT(*) FILTER (WHERE event_type = 'NEGATIVE_FEEDBACK')::int as negative_feedbacks,
       COUNT(*) FILTER (WHERE event_type = 'COMPLAINT')::int as complaints_count,
@@ -845,6 +1051,14 @@ export async function getEventsMetrics(
       COUNT(*) FILTER (WHERE severity = 'LOW')::int as low_count,
       COUNT(*) FILTER (WHERE (event_type = 'COMPLAINT' OR event_type = 'NEGATIVE_FEEDBACK') AND label LIKE '[VIP]%')::int as vip_complaints_count,
       COUNT(*) FILTER (WHERE event_type = 'SALES_OPPORTUNITY')::int as opportunities_count,
+      COUNT(*) FILTER (WHERE event_type = 'QUESTION')::int as question_count,
+      COUNT(*) FILTER (
+        WHERE resolved_at IS NULL
+        AND COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+      )::int as action_required_events,
+      COUNT(*) FILTER (
+        WHERE COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION')) = false
+      )::int as informational_events,
       AVG((me.metadata->>'sentimentScore')::float) as avg_sentiment
     FROM message_events me
     JOIN deals d ON d.id = me.deal_id
@@ -889,7 +1103,10 @@ export async function getEventsMetrics(
     SELECT
       d.assigned_to as agent_id,
       d.assigned_to_name as agent_name,
-      COUNT(*) FILTER (WHERE me.resolved_at IS NULL)::int as unresolved_count,
+      COUNT(*) FILTER (
+        WHERE me.resolved_at IS NULL
+        AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+      )::int as unresolved_count,
       AVG(EXTRACT(EPOCH FROM (first_response.created_at - me.detected_at)) / 60) as avg_response_minutes,
       COUNT(DISTINCT me.deal_id)::int as conversation_count
     FROM message_events me
@@ -906,7 +1123,10 @@ export async function getEventsMetrics(
     WHERE me.detected_at BETWEEN $1 AND $2
     ${accessFilter}
     GROUP BY d.assigned_to, d.assigned_to_name
-    HAVING COUNT(*) FILTER (WHERE me.resolved_at IS NULL) > 0
+    HAVING COUNT(*) FILTER (
+      WHERE me.resolved_at IS NULL
+      AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+    ) > 0
     ORDER BY unresolved_count DESC
     LIMIT 5
   `, params);
@@ -929,6 +1149,7 @@ export async function getEventsMetrics(
   `, params);
 
   const dailySentiments = await getDailySentiments(user, { from, to });
+  const filteredNoiseCount = dailySentiments.reduce((total, item) => total + item.neutralCount, 0);
 
   // Unanswered opportunities for > 2 hours
   const unansweredOpportunitiesResult = await pool.query(`
@@ -952,9 +1173,9 @@ export async function getEventsMetrics(
   `, params);
 
   let bottleneckAgentText: string | null = null;
-  if (bottlenecksResult.rows.length > 0 && summaryData.unresolved_events > 0) {
+  if (bottlenecksResult.rows.length > 0 && summaryData.action_required_events > 0) {
     const topAgent = bottlenecksResult.rows[0];
-    const percentage = Math.round((topAgent.unresolved_count / summaryData.unresolved_events) * 100);
+    const percentage = Math.round((topAgent.unresolved_count / summaryData.action_required_events) * 100);
     if (percentage > 25) {
       bottleneckAgentText = `A atendente ${topAgent.agent_name || "Sem nome"} concentrou ${percentage}% dos eventos pendentes.`;
     }
@@ -968,6 +1189,11 @@ export async function getEventsMetrics(
       positiveFeedbacks: summaryData.positive_feedbacks,
       negativeFeedbacks: summaryData.negative_feedbacks,
       complaintsCount: summaryData.complaints_count,
+      opportunitiesCount: summaryData.opportunities_count || 0,
+      questionCount: summaryData.question_count || 0,
+      actionRequiredEvents: summaryData.action_required_events || 0,
+      informationalEvents: summaryData.informational_events || 0,
+      filteredNoiseCount,
       resolutionRate: summaryData.resolution_rate,
       bySeverity: {
         CRITICAL: summaryData.critical_count || 0,
@@ -1004,6 +1230,10 @@ export async function getEventsMetrics(
       complaintsCount: summaryData.complaints_count,
       vipComplaintsCount: summaryData.vip_complaints_count || 0,
       opportunitiesCount: summaryData.opportunities_count || 0,
+      questionCount: summaryData.question_count || 0,
+      actionRequiredEvents: summaryData.action_required_events || 0,
+      informationalEvents: summaryData.informational_events || 0,
+      filteredNoiseCount,
       unansweredOpportunitiesCount: unansweredOpportunitiesResult.rows[0]?.count || 0,
       bottleneckAgentText
     }

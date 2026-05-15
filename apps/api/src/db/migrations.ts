@@ -1084,7 +1084,7 @@ export const migrations = [
   );
 
   ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
-  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL'));
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
 
   CREATE INDEX IF NOT EXISTS idx_message_events_deal_id ON message_events(deal_id);
   CREATE INDEX IF NOT EXISTS idx_message_events_event_type ON message_events(event_type);
@@ -1125,5 +1125,15 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_event_resolutions_event_id ON event_resolutions(event_id);
   CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_by ON event_resolutions(resolved_by);
   CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_at ON event_resolutions(resolved_at DESC);
+  `,
+  `
+  -- Message event classifier v2 event types for existing databases
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
+  `,
+  `
+  -- Ensure classifier v2 event types are applied after already-recorded migrations
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
   `,
 ];

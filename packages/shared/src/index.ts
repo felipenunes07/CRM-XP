@@ -1963,6 +1963,11 @@ export interface EventsSummary {
   positiveFeedbacks: number;
   negativeFeedbacks: number;
   complaintsCount: number;
+  opportunitiesCount: number;
+  questionCount: number;
+  actionRequiredEvents: number;
+  informationalEvents: number;
+  filteredNoiseCount: number;
   resolutionRate: number;
   bySeverity: Record<string, number>;
   averageSentiment: number;
@@ -1998,6 +2003,10 @@ export interface EventsExecutiveSummary {
   complaintsCount: number;
   vipComplaintsCount: number;
   opportunitiesCount: number;
+  questionCount: number;
+  actionRequiredEvents: number;
+  informationalEvents: number;
+  filteredNoiseCount: number;
   unansweredOpportunitiesCount: number;
   bottleneckAgentText: string | null;
 }
