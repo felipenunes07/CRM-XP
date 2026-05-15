@@ -716,7 +716,9 @@ async function syncConversationReadStateWithEvolution(dealId: string, unread: bo
       return;
     }
 
-    await markWhatsappMessagesAsRead(context.evolution, keys);
+    // We no longer sync "read" state to Evolution to prevent marking as read on WhatsApp Web
+    // as requested by the user.
+    // await markWhatsappMessagesAsRead(context.evolution, keys);
   } catch (error) {
     logger.warn("whatsapp monitor failed to sync read state with Evolution", {
       dealId,
