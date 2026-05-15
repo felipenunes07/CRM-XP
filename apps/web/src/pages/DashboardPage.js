@@ -14,20 +14,13 @@ import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 import { isTrendRangeVisible, resolveTrendRangeSelection } from "./dashboardPage.helpers";
-const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2023;
-function getDashboardTrendMaxDays(referenceDate = new Date()) {
-    const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
-    const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-    return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
-}
 const periodOptions = [
     { value: '90d', label: '90 dias', days: 90 },
     { value: '6m', label: '6 meses', days: 180 },
     { value: '1y', label: '1 ano', days: 365 },
     { value: 'max', label: 'Período Máximo', days: 730 },
 ];
-const resolvedPeriodOptions = periodOptions.map((option) => option.value === "max" ? { ...option, days: getDashboardTrendMaxDays() } : option);
+const resolvedPeriodOptions = periodOptions;
 const bucketFilters = {
     "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
     "15-30": { minDaysInactive: 15, maxDaysInactive: 30 },
@@ -361,7 +354,7 @@ export function DashboardPage() {
     const { tx } = useUiLanguage();
     const [selectedPeriod, setSelectedPeriod] = useState("max");
     const [selectedPrefix, setSelectedPrefix] = useState(undefined);
-    const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
+    const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? 730;
     const dashboardQuery = useQuery({
         queryKey: ["dashboard", trendDays, selectedPrefix],
         queryFn: () => api.dashboard(token, trendDays, selectedPrefix),
