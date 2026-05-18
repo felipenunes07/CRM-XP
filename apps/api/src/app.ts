@@ -1508,6 +1508,10 @@ export function createApp() {
   const whatsappMonitorQuerySchema = z.object({
     instanceId: z.string().uuid().optional(),
     search: z.string().optional(),
+    contactName: z.string().optional(),
+    contactPhone: z.string().optional(),
+    period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
+    status: z.enum(["unread", "risk"]).optional(),
   });
 
   const whatsappMonitorReadStateSchema = z.object({
