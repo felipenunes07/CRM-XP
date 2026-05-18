@@ -440,6 +440,18 @@ export const api = {
         if (query.search) {
             search.set("search", query.search);
         }
+        if (query.contactName) {
+            search.set("contactName", query.contactName);
+        }
+        if (query.contactPhone) {
+            search.set("contactPhone", query.contactPhone);
+        }
+        if (query.period) {
+            search.set("period", query.period);
+        }
+        if (query.status) {
+            search.set("status", query.status);
+        }
         return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     whatsappMonitorConversation(token, id) {

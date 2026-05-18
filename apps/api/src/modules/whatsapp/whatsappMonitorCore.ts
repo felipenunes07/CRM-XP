@@ -11,9 +11,10 @@ const PRESSURE_KEYWORDS = ["urgente", "processo", "reclamacao", "procon", "cance
 
 interface EvolutionMessageKeyLike {
   remoteJid?: string;
-  fromMe?: boolean;
+  fromMe?: boolean | number | string;
   id?: string;
   participant?: string;
+  participantPn?: string;
 }
 
 export interface EvolutionMessageLike {
@@ -21,8 +22,10 @@ export interface EvolutionMessageLike {
   message?: Record<string, unknown>;
   pushName?: string;
   participant?: string;
+  participantPn?: string;
   sender?: string;
   senderJid?: string;
+  senderPn?: string;
   participantJid?: string;
   participantName?: string;
   messageTimestamp?: number | string;
@@ -36,6 +39,17 @@ export interface EvolutionMessageLike {
   groupSubject?: string;
   subject?: string;
   name?: string;
+  fromMe?: boolean | number | string;
+  isOutbound?: boolean | number | string;
+}
+
+export interface EvolutionMessageMedia {
+  mediaType: "image" | "video" | "audio" | "document" | "sticker";
+  mediaUrl: string | null;
+  mediaBase64: string | null;
+  mimeType: string | null;
+  fileName: string | null;
+  caption: string | null;
 }
 
 export interface EvolutionMessageContext {
@@ -74,6 +88,28 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLocaleLowerCase("pt-BR");
+    if (["true", "1", "yes", "sim"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "nao", "não"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function pickString(source: Record<string, unknown> | null | undefined, keys: string[]): string | null {
@@ -175,6 +211,17 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
     return text;
   }
 
+  const media = extractEvolutionMessageMedia(message);
+  if (media) {
+    if (media.caption) return media.caption;
+    if (media.fileName) return media.fileName;
+    if (media.mediaType === "image") return "[Imagem]";
+    if (media.mediaType === "video") return "[Vídeo]";
+    if (media.mediaType === "audio") return "[Áudio]";
+    if (media.mediaType === "sticker") return "[Sticker]";
+    return "[Documento]";
+  }
+
   // Placeholder for media without text/caption
   if (unwrapped.imageMessage) return "[Imagem]";
   if (unwrapped.videoMessage) return "[Vídeo]";
@@ -189,6 +236,46 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
   return null;
 }
 
+export function extractEvolutionMessageMedia(message: EvolutionMessageLike): EvolutionMessageMedia | null {
+  const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
+
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const mediaEntries: Array<[string, EvolutionMessageMedia["mediaType"]]> = [
+    ["imageMessage", "image"],
+    ["videoMessage", "video"],
+    ["audioMessage", "audio"],
+    ["documentMessage", "document"],
+    ["stickerMessage", "sticker"],
+  ];
+
+  for (const [messageKey, mediaType] of mediaEntries) {
+    const mediaMessage = asRecord(unwrapped[messageKey]);
+    if (!mediaMessage) {
+      continue;
+    }
+
+    return {
+      mediaType,
+      mediaUrl: pickString(mediaMessage, ["url", "mediaUrl"]),
+      mediaBase64:
+        pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
+        pickString(mediaMessage, ["base64", "mediaBase64"]),
+      mimeType: pickString(mediaMessage, ["mimetype", "mimeType"]),
+      fileName: pickString(mediaMessage, ["fileName", "filename"]),
+      caption: pickString(mediaMessage, ["caption"]),
+    };
+  }
+
+  return null;
+}
+
 export function extractEvolutionMessageContext(
   message: EvolutionMessageLike,
   instanceName?: string | null,
@@ -197,8 +284,12 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const fromMe = Boolean(key.fromMe === true || rawMessage.fromMe === true || rawMessage.isOutbound === true);
+  const fromMe = Boolean(readBoolean(key.fromMe) || readBoolean(rawMessage.fromMe) || readBoolean(rawMessage.isOutbound));
+  const participantPhoneJid =
+    readString(key.participantPn) ??
+    pickString(rawMessage, ["participantPn", "senderPn"]);
   const senderJid =
+    participantPhoneJid ??
     readString(key.participant) ??
     pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
     (isGroup ? null : (fromMe ? null : remoteJid));

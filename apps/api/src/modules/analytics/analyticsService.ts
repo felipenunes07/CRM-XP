@@ -202,7 +202,6 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         SELECT
           td.day,
           o.customer_id,
-          COUNT(DISTINCT o.id)::int AS order_count,
           MAX(o.order_date::date) AS last_order_day
         FROM target_days td
         JOIN orders o ON o.order_date::date <= td.day
@@ -220,10 +219,10 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
       SELECT
         stats.day::text as day,
         COUNT(*)::int as total_customers,
-        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day <= 30)::int as active_count,
-        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(*) FILTER (WHERE order_count > 1 AND stats.day - last_order_day >= 90)::int as inactive_count,
-        COUNT(*) FILTER (WHERE order_count = 1)::int as new_count,
+        COUNT(*) FILTER (WHERE stats.day - last_order_day <= 30)::int as active_count,
+        COUNT(*) FILTER (WHERE stats.day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
+        COUNT(*) FILTER (WHERE stats.day - last_order_day >= 90)::int as inactive_count,
+        0::int as new_count,
         di.daily_items_sold
       FROM daily_customer_stats stats
       JOIN daily_items di ON di.day = stats.day
@@ -282,7 +281,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
       COUNT(*) FILTER (WHERE status = 'ACTIVE')::int,
       COUNT(*) FILTER (WHERE status = 'ATTENTION')::int,
       COUNT(*) FILTER (WHERE status = 'INACTIVE')::int,
-      COUNT(*) FILTER (WHERE status = 'NEW')::int,
+      0::int,
       (
         SELECT COALESCE(SUM(oi.quantity), 0)::int
         FROM orders o

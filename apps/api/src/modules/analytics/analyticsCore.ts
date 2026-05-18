@@ -100,13 +100,11 @@ export function computeCustomerSnapshot(input: {
   const purchaseFrequency90d = input.orderDates.filter((date) => daysBetween(now, date) <= 90).length;
   const frequencyDropRatio = computeFrequencyDrop(input.orderDates, now);
   const status =
-    totalOrders === 1
-      ? "NEW"
-      : daysSinceLastPurchase !== null && daysSinceLastPurchase <= 30
-        ? "ACTIVE"
-        : daysSinceLastPurchase !== null && daysSinceLastPurchase <= 89
-          ? "ATTENTION"
-          : "INACTIVE";
+    daysSinceLastPurchase !== null && daysSinceLastPurchase <= 30
+      ? "ACTIVE"
+      : daysSinceLastPurchase !== null && daysSinceLastPurchase <= 89
+        ? "ATTENTION"
+        : "INACTIVE";
 
   const valueRecency = daysSinceLastPurchase === null ? 0 : clampScore(100 - daysSinceLastPurchase * 0.556);
   const valueFrequency = clampScore((totalOrders / Math.max(1, input.maxOrders)) * 100);

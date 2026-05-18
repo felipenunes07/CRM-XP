@@ -25,6 +25,7 @@ import {
 import {
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionMessageMedia,
   formatWhatsappJidPhone,
   getEvolutionMessageKey,
   mapWhatsappActivityToMessage,
@@ -35,6 +36,10 @@ import { createEventFromMessage } from "../events/eventsService.js";
 interface ConversationFilters {
   instanceId?: string;
   search?: string;
+  contactName?: string;
+  contactPhone?: string;
+  period?: "today" | "yesterday" | "7d" | "30d";
+  status?: "unread" | "risk";
 }
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
@@ -184,7 +189,13 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
 }
 
 function mapActivityRow(row: Record<string, unknown>): DealActivity {
-  const metadata = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, unknown>) : {};
+  const baseMetadata = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, unknown>) : {};
+  const incomingPayload = asRecord(row.incoming_raw_payload);
+  const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
+  const metadata: Record<string, unknown> = {
+    ...baseMetadata,
+    ...(incomingMedia ? incomingMedia : {}),
+  };
   const participantName = optionalString(row.participant_display_name);
   const participantProfilePictureUrl = optionalString(row.participant_profile_picture_url);
 
@@ -334,6 +345,42 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
   `;
 }
 
+function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]>) {
+  const today = `timezone('${ACTIVITY_REPORT_TIMEZONE}', NOW())::date`;
+  const rangeStart =
+    period === "today"
+      ? today
+      : period === "yesterday"
+        ? `${today} - INTERVAL '1 day'`
+        : period === "7d"
+          ? `${today} - INTERVAL '6 days'`
+          : `${today} - INTERVAL '29 days'`;
+  const rangeEnd = period === "yesterday" ? today : `${today} + INTERVAL '1 day'`;
+
+  return `
+    activity_stats.last_message_at >= ((${rangeStart}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+    AND activity_stats.last_message_at < ((${rangeEnd}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+  `;
+}
+
+function unreadConversationSql() {
+  return `
+    (
+      COALESCE(conversation_reads.force_unread, false)
+      OR EXISTS (
+        SELECT 1
+        FROM deal_activities unread_activity
+        WHERE unread_activity.deal_id = d.id
+          AND unread_activity.activity_type = 'WHATSAPP_RECEIVED'
+          AND (
+            conversation_reads.last_read_at IS NULL
+            OR unread_activity.created_at > conversation_reads.last_read_at
+          )
+      )
+    )
+  `;
+}
+
 export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<WhatsappMonitorAgent[]> {
   const params: unknown[] = [];
   const where: string[] = [];
@@ -476,6 +523,48 @@ export async function listWhatsappMonitorConversations(
     `);
   }
 
+  if (filters.contactName?.trim()) {
+    params.push(`%${filters.contactName.trim().toLocaleLowerCase("pt-BR")}%`);
+    where.push(`
+      (
+        lower(d.title) LIKE $${params.length}
+        OR lower(COALESCE(d.customer_display_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(chat_profile.display_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(latest_whatsapp.metadata ->> 'chatDisplayName', '')) LIKE $${params.length}
+      )
+    `);
+  }
+
+  if (filters.contactPhone?.trim()) {
+    const phoneDigits = filters.contactPhone.replace(/\D/g, "");
+    if (phoneDigits) {
+      params.push(`%${phoneDigits}%`);
+      where.push(`
+        regexp_replace(COALESCE(d.whatsapp_jid, ''), '\\D', '', 'g') LIKE $${params.length}
+      `);
+    }
+  }
+
+  if (filters.period) {
+    where.push(conversationPeriodSql(filters.period));
+  }
+
+  if (filters.status === "unread") {
+    where.push(unreadConversationSql());
+  }
+
+  if (filters.status === "risk") {
+    where.push(`
+      EXISTS (
+        SELECT 1
+        FROM deal_activities risk_activity
+        WHERE risk_activity.deal_id = d.id
+          AND risk_activity.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+          AND ${riskSql("risk_activity")}
+      )
+    `);
+  }
+
   params.push(user.id);
   const userIdParamIndex = params.length;
 
@@ -545,8 +634,11 @@ export async function getWhatsappMonitorConversation(
     SELECT
       da.*,
       participant_profile.display_name AS participant_display_name,
-      participant_profile.profile_picture_url AS participant_profile_picture_url
+      participant_profile.profile_picture_url AS participant_profile_picture_url,
+      incoming_message.raw_payload AS incoming_raw_payload
     FROM deal_activities da
+    LEFT JOIN whatsapp_incoming_messages incoming_message
+      ON incoming_message.message_id = da.metadata ->> 'messageId'
     LEFT JOIN LATERAL (
       SELECT wpp.display_name, wpp.profile_picture_url
       FROM whatsapp_participant_profiles wpp
@@ -602,6 +694,7 @@ export async function getWhatsappMonitorConversation(
       const content = String(row.message_text ?? "");
       const metadata =
         row.raw_payload && typeof row.raw_payload === "object" ? (row.raw_payload as Record<string, unknown>) : {};
+      const media = extractEvolutionMessageMedia(metadata as any);
 
       return {
         id: String(row.id),
@@ -614,7 +707,10 @@ export async function getWhatsappMonitorConversation(
         createdAt: isoDate(row.created_at),
         remoteJid: String(row.remote_jid),
         isGroup: conversation.isGroup,
-        metadata,
+        metadata: {
+          ...metadata,
+          ...(media ? media : {}),
+        },
         risk: detectWhatsappMessageRisk(content),
       };
     });

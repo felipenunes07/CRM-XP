@@ -3,6 +3,8 @@ import {
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
   extractEvolutionMessageContext,
+  extractEvolutionMessageMedia,
+  extractEvolutionMessageText,
   formatEvolutionSendTextTarget,
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
@@ -102,6 +104,67 @@ describe("whatsappMonitorCore", () => {
       fromMe: true,
       senderJid: null,
     });
+  });
+
+  it("normalizes Evolution string fromMe flags and participant phone JIDs", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "120363371542185615@g.us",
+          fromMe: "true",
+          id: "msg-out-group-1",
+          participant: "278971715473575@lid",
+          participantPn: "5511959502231@s.whatsapp.net",
+        } as any,
+        message: { conversation: "Resposta enviada pelo WhatsApp Web" },
+      },
+      "comercial",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "120363371542185615@g.us",
+      fromMe: true,
+      senderJid: "5511959502231@s.whatsapp.net",
+    });
+  });
+
+  it("extracts Evolution media metadata for image and audio messages", () => {
+    const imageMessage = {
+      message: {
+        base64: "abc123",
+        imageMessage: {
+          url: "https://media.example/image.jpg",
+          mimetype: "image/jpeg",
+          caption: "Foto do produto",
+          fileName: "produto.jpg",
+        },
+      },
+    };
+    const audioMessage = {
+      message: {
+        base64: "zzz999",
+        audioMessage: {
+          url: "https://media.example/audio.ogg",
+          mimetype: "audio/ogg",
+        },
+      },
+    };
+
+    expect(extractEvolutionMessageMedia(imageMessage)).toMatchObject({
+      mediaType: "image",
+      mediaUrl: "https://media.example/image.jpg",
+      mediaBase64: "abc123",
+      mimeType: "image/jpeg",
+      caption: "Foto do produto",
+      fileName: "produto.jpg",
+    });
+    expect(extractEvolutionMessageMedia(audioMessage)).toMatchObject({
+      mediaType: "audio",
+      mediaUrl: "https://media.example/audio.ogg",
+      mediaBase64: "zzz999",
+      mimeType: "audio/ogg",
+    });
+    expect(extractEvolutionMessageText(audioMessage)).toBe("[Áudio]");
   });
 
   it("keeps group sender metadata when mapping stored activities to chat messages", () => {

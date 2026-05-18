@@ -3,9 +3,11 @@ import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
+  extractEvolutionMessageMedia,
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
+  type EvolutionMessageMedia,
   type EvolutionMessageLike,
 } from "./whatsappMonitorCore.js";
 import { detectWhatsappMessageRisk } from "./whatsappMonitorCore.js";
@@ -78,6 +80,7 @@ function buildActivityMetadata(input: {
   capturedFromWhatsapp?: boolean;
   outboundSource?: string | null;
   autoCreated?: boolean;
+  media?: EvolutionMessageMedia | null;
 }) {
   return {
     remoteJid: input.remoteJid,
@@ -93,6 +96,7 @@ function buildActivityMetadata(input: {
     ...(input.capturedFromWhatsapp ? { capturedFromWhatsapp: true } : {}),
     ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
     ...(input.autoCreated ? { autoCreated: true } : {}),
+    ...(input.media ? input.media : {}),
   };
 }
 
@@ -107,6 +111,7 @@ async function insertDealActivity(input: {
 }) {
   await pool.query(
     `
+    WITH inserted AS (
     INSERT INTO deal_activities (deal_id, activity_type, actor_user_id, actor_name, content, metadata, created_at)
     SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
     WHERE NOT EXISTS (
@@ -115,6 +120,19 @@ async function insertDealActivity(input: {
       WHERE metadata ->> 'messageId' = $8
         AND deal_id = $1
     )
+    RETURNING id
+    )
+    UPDATE deal_activities
+    SET
+      activity_type = $2,
+      actor_user_id = $3,
+      actor_name = $4,
+      content = $5,
+      metadata = COALESCE(metadata, '{}'::jsonb) || $6::jsonb,
+      created_at = $7
+    WHERE deal_id = $1
+      AND metadata ->> 'messageId' = $8
+      AND NOT EXISTS (SELECT 1 FROM inserted)
     `,
     [
       input.dealId,
@@ -188,6 +206,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     }
 
     const enriched = await resolveWhatsappMessageMetadata(context);
+    const media = extractEvolutionMessageMedia(msg);
     const senderName = enriched.senderName ?? context.senderName;
     const chatDisplayName = enriched.chatDisplayName ?? context.chatDisplayName;
     const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
@@ -221,6 +240,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       instanceId: instanceDetails?.id ?? null,
       capturedFromWhatsapp: isFromMe,
       outboundSource: isFromMe ? "whatsapp_device" : null,
+      media,
     });
 
     logger.info("evolution webhook incoming message", {
@@ -231,6 +251,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       chatDisplayName,
       hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
       textPreview: text.slice(0, 80),
+      mediaType: media?.mediaType ?? null,
       messageId,
       fromMe: context.fromMe,
       actorUserId,
@@ -245,7 +266,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         from_me, created_at
       )
       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
-      ON CONFLICT (message_id) DO NOTHING
+      ON CONFLICT (message_id) DO UPDATE SET
+        sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_incoming_messages.sender_name),
+        raw_payload = EXCLUDED.raw_payload,
+        participant_jid = COALESCE(EXCLUDED.participant_jid, whatsapp_incoming_messages.participant_jid),
+        participant_name = COALESCE(EXCLUDED.participant_name, whatsapp_incoming_messages.participant_name),
+        sender_profile_picture_url = COALESCE(EXCLUDED.sender_profile_picture_url, whatsapp_incoming_messages.sender_profile_picture_url),
+        chat_display_name = COALESCE(EXCLUDED.chat_display_name, whatsapp_incoming_messages.chat_display_name),
+        chat_profile_picture_url = COALESCE(EXCLUDED.chat_profile_picture_url, whatsapp_incoming_messages.chat_profile_picture_url),
+        from_me = whatsapp_incoming_messages.from_me OR EXCLUDED.from_me
       `,
       [
         remoteJid,

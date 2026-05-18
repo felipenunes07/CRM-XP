@@ -11042,6 +11042,7 @@ textarea {
 }
 
 .wa-filter-button,
+.wa-filter-field,
 .wa-filter-select,
 .wa-secondary-action,
 .wa-add-user {
@@ -11058,6 +11059,35 @@ textarea {
   font-weight: 500;
   cursor: pointer;
   transition: 160ms ease;
+}
+
+.wa-filter-field {
+  justify-content: flex-start;
+  min-width: 12rem;
+  padding: 0 0.85rem;
+}
+
+.wa-filter-field.phone {
+  min-width: 13rem;
+}
+
+.wa-filter-field svg {
+  flex-shrink: 0;
+  color: var(--wa-muted);
+}
+
+.wa-filter-field input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.wa-filter-field input::placeholder {
+  color: var(--wa-muted);
 }
 
 .wa-filter-select {
@@ -11087,11 +11117,18 @@ textarea {
 }
 
 .wa-filter-button:hover,
+.wa-filter-field:focus-within,
+.wa-filter-field:hover,
 .wa-filter-select:hover,
 .wa-filter-select:focus-within,
 .wa-secondary-action:hover {
   border-color: rgba(0, 168, 132, 0.42);
   color: var(--wa-green-dark);
+}
+
+.wa-filter-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .wa-monitor-shell {
@@ -11739,6 +11776,24 @@ textarea {
   font-size: 0.78rem;
 }
 
+.wa-media-image,
+.wa-media-video {
+  display: block;
+  width: min(22rem, 68vw);
+  max-height: 18rem;
+  margin-top: 0.35rem;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(31, 44, 51, 0.08);
+}
+
+.wa-media-audio {
+  display: block;
+  width: min(21rem, 68vw);
+  max-width: 100%;
+  margin-top: 0.35rem;
+}
+
 .wa-empty-chat {
   height: 100%;
   min-height: 18rem;
@@ -12124,6 +12179,35 @@ textarea {
 .whatsapp-monitor-page .wa-filter-strip {
   flex-shrink: 0;
   margin-bottom: 0.5rem;
+}
+
+.whatsapp-monitor-page .wa-filter-field,
+.whatsapp-monitor-page .wa-filter-select,
+.whatsapp-monitor-page .wa-filter-button {
+  border-radius: 8px;
+}
+
+.whatsapp-monitor-page .wa-filter-select {
+  padding: 0;
+  border: 1px solid var(--wa-line);
+  background: #ffffff;
+}
+
+.whatsapp-monitor-page .wa-filter-select select {
+  min-width: 10.6rem;
+  min-height: 2.65rem;
+  border: 0;
+  border-radius: inherit;
+  padding: 0.68rem 2.55rem 0.68rem 1rem;
+  background: transparent;
+  color: var(--wa-text);
+  font: inherit;
+  font-weight: 500;
+}
+
+.whatsapp-monitor-page .wa-filter-select svg {
+  right: 0.85rem;
+  color: var(--wa-muted);
 }
 
 .whatsapp-monitor-page .wa-monitor-shell {
