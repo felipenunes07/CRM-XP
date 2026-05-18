@@ -617,6 +617,58 @@ export function getEvolutionMessageKey(message: WhatsappMonitorMessage) {
   };
 }
 
+function whatsappMessageProviderId(message: WhatsappMonitorMessage) {
+  const providerId =
+    typeof message.metadata.messageId === "string"
+      ? message.metadata.messageId
+      : typeof message.metadata.providerMessageId === "string"
+        ? message.metadata.providerMessageId
+        : null;
+
+  return providerId?.trim() || null;
+}
+
+function whatsappMessageSortTime(message: WhatsappMonitorMessage) {
+  const time = new Date(message.createdAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function mergeWhatsappMonitorMessages(
+  primaryMessages: WhatsappMonitorMessage[],
+  fallbackMessages: WhatsappMonitorMessage[],
+) {
+  const merged: WhatsappMonitorMessage[] = [];
+  const seenProviderIds = new Set<string>();
+
+  for (const message of primaryMessages) {
+    const providerId = whatsappMessageProviderId(message);
+    if (providerId) {
+      seenProviderIds.add(providerId);
+    }
+    merged.push(message);
+  }
+
+  for (const message of fallbackMessages) {
+    const providerId = whatsappMessageProviderId(message);
+    if (providerId && seenProviderIds.has(providerId)) {
+      continue;
+    }
+    if (providerId) {
+      seenProviderIds.add(providerId);
+    }
+    merged.push(message);
+  }
+
+  return merged.sort((left, right) => {
+    const byTime = whatsappMessageSortTime(left) - whatsappMessageSortTime(right);
+    if (byTime !== 0) {
+      return byTime;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function median(values: number[]) {
   const finiteValues = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
   if (!finiteValues.length) {
@@ -633,7 +685,24 @@ export function median(values: number[]) {
   return (left + right) / 2;
 }
 
-export function whatsappActivityDirection(activityType: DealActivity["activityType"]): WhatsappMonitorMessageDirection {
+function readMetadataBoolean(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (key in metadata) {
+      return readBoolean(metadata[key]);
+    }
+  }
+
+  return false;
+}
+
+export function whatsappActivityDirection(
+  activityType: DealActivity["activityType"],
+  metadata: Record<string, unknown> = {},
+): WhatsappMonitorMessageDirection {
+  if (readMetadataBoolean(metadata, ["fromMe", "isOutbound", "capturedFromWhatsapp", "sentFromMonitor"])) {
+    return "OUTBOUND";
+  }
+
   if (activityType === "WHATSAPP_RECEIVED") {
     return "INBOUND";
   }
@@ -660,7 +729,7 @@ export function mapWhatsappActivityToMessage(activity: DealActivity): WhatsappMo
   return {
     id: activity.id,
     dealId: activity.dealId,
-    direction: whatsappActivityDirection(activity.activityType),
+    direction: whatsappActivityDirection(activity.activityType, activity.metadata),
     senderName,
     senderJid,
     senderProfilePictureUrl,
