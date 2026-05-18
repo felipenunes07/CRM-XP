@@ -575,6 +575,23 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
 
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   const validatedDays = normalizeDashboardTrendDays(days);
+
+  // Auto-healing: Check for any legacy 'NEW' status rows in dashboard_daily_metrics in production
+  try {
+    const legacyCheck = await pool.query<{ count: number }>(
+      "SELECT COUNT(*)::int as count FROM dashboard_daily_metrics WHERE new_count > 0"
+    );
+    if (Number(legacyCheck.rows[0]?.count ?? 0) > 0) {
+      logger.info("dashboard metrics: detected legacy 'NEW' status rows. Clearing and rebuilding metrics history...");
+      await pool.query("DELETE FROM dashboard_daily_metrics");
+      await refreshAllSnapshots();
+      await refreshDashboardDailyMetrics(validatedDays);
+      logger.info("dashboard metrics: auto-healing completed successfully.");
+    }
+  } catch (err) {
+    logger.warn("dashboard metrics: failed to check/auto-heal legacy daily metrics", { error: String(err) });
+  }
+
   const freshnessResult = await pool.query<{
     today: string;
     latest_trend_day: string | null;
