@@ -13,19 +13,22 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileAudio,
   FileImage,
+  FileText,
+  FileVideo,
   Grid3X3,
   List,
   Menu,
   MoreVertical,
   Paperclip,
-  Plus,
   Search,
   Send,
   ShieldCheck,
   Smile,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -112,6 +115,75 @@ function attachmentName(message: WhatsappMonitorMessage) {
 }
 
 type GroupFilter = "all" | "groups" | "contacts";
+type PeriodFilter = "all" | "today" | "yesterday" | "7d" | "30d";
+type StatusFilter = "all" | "unread" | "risk";
+
+function metadataString(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function mediaLabel(mediaType: string | null) {
+  if (mediaType === "image") return "Imagem recebida";
+  if (mediaType === "audio") return "Audio recebido";
+  if (mediaType === "video") return "Video recebido";
+  if (mediaType === "document") return "Documento recebido";
+  return "Arquivo recebido";
+}
+
+function defaultMimeType(mediaType: string | null) {
+  if (mediaType === "image") return "image/jpeg";
+  if (mediaType === "audio") return "audio/ogg";
+  if (mediaType === "video") return "video/mp4";
+  return "application/octet-stream";
+}
+
+function buildMediaSrc(mediaType: string | null, mimeType: string | null, mediaUrl: string | null, mediaBase64: string | null) {
+  if (mediaUrl) {
+    return mediaUrl;
+  }
+
+  if (!mediaBase64) {
+    return null;
+  }
+
+  if (mediaBase64.startsWith("data:")) {
+    return mediaBase64;
+  }
+
+  return `data:${mimeType ?? defaultMimeType(mediaType)};base64,${mediaBase64}`;
+}
+
+function messageMedia(message: WhatsappMonitorMessage) {
+  const mediaType = metadataString(message.metadata, ["mediaType", "mediatype"]);
+  if (!mediaType) {
+    return null;
+  }
+
+  const mimeType = metadataString(message.metadata, ["mimeType", "mimetype"]);
+  const mediaUrl = metadataString(message.metadata, ["mediaUrl", "url"]);
+  const mediaBase64 = metadataString(message.metadata, ["mediaBase64", "base64", "media"]);
+  const fileName = metadataString(message.metadata, ["fileName", "filename", "mediaName"]);
+
+  return {
+    mediaType,
+    mimeType,
+    mediaUrl,
+    mediaBase64,
+    fileName,
+    src: buildMediaSrc(mediaType, mimeType, mediaUrl, mediaBase64),
+  };
+}
+
+function isMediaPlaceholder(content: string) {
+  return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
+}
 
 const CONVERSATION_REFRESH_MS = 3000;
 const CHAT_REFRESH_MS = 2000;
@@ -227,9 +299,13 @@ function ConversationRow({
 }
 
 function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMessage; showSender: boolean }) {
-  const fileName = attachmentName(message);
+  const media = messageMedia(message);
+  const fileName = media?.fileName ?? attachmentName(message);
   const direction = message.direction.toLocaleLowerCase("pt-BR");
   const senderLabel = message.senderName || message.senderJid || "Participante";
+  const showText = Boolean(message.content.trim()) && !(media && isMediaPlaceholder(message.content));
+  const hasVisualMedia = Boolean(media?.src && ["image", "audio", "video"].includes(media.mediaType));
+  const AttachmentIcon = media?.mediaType === "audio" ? FileAudio : media?.mediaType === "video" ? FileVideo : media?.mediaType === "document" ? FileText : FileImage;
 
   return (
     <div className={`wa-message-row ${direction} ${showSender ? "with-sender" : ""}`}>
@@ -239,13 +315,22 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
       <div className="wa-message-stack">
         {showSender ? <span className="wa-message-sender">{senderLabel}</span> : null}
         <div className={`wa-bubble ${direction} ${message.risk ? "has-risk" : ""}`}>
-          <p>{message.content}</p>
-          {fileName ? (
+          {showText ? <p>{message.content}</p> : null}
+          {media?.mediaType === "image" && media.src ? (
+            <img className="wa-media-image" src={media.src} alt={fileName ?? "Imagem recebida"} loading="lazy" />
+          ) : null}
+          {media?.mediaType === "audio" && media.src ? (
+            <audio className="wa-media-audio" controls preload="metadata" src={media.src} />
+          ) : null}
+          {media?.mediaType === "video" && media.src ? (
+            <video className="wa-media-video" controls preload="metadata" src={media.src} />
+          ) : null}
+          {(fileName || media) && !hasVisualMedia ? (
             <div className="wa-attachment">
-              <FileImage size={18} />
+              <AttachmentIcon size={18} />
               <div>
-                <strong>{fileName}</strong>
-                <span>Arquivo enviado</span>
+                <strong>{fileName ?? mediaLabel(media?.mediaType ?? null)}</strong>
+                <span>{mediaLabel(media?.mediaType ?? null)}</span>
               </div>
             </div>
           ) : null}
@@ -305,6 +390,12 @@ export function MessagesPage() {
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
+  const [contactNameFilter, setContactNameFilter] = useState("");
+  const [contactPhoneFilter, setContactPhoneFilter] = useState("");
+  const [debouncedContactNameFilter, setDebouncedContactNameFilter] = useState("");
+  const [debouncedContactPhoneFilter, setDebouncedContactPhoneFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
@@ -323,12 +414,32 @@ export function MessagesPage() {
     return () => clearTimeout(handler);
   }, [conversationSearch]);
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedContactNameFilter(contactNameFilter);
+      setDebouncedContactPhoneFilter(contactPhoneFilter);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [contactNameFilter, contactPhoneFilter]);
+
   const conversationsQuery = useQuery({
-    queryKey: ["whatsapp-monitor-conversations", activeAgentId, debouncedConversationSearch],
+    queryKey: [
+      "whatsapp-monitor-conversations",
+      activeAgentId,
+      debouncedConversationSearch,
+      debouncedContactNameFilter,
+      debouncedContactPhoneFilter,
+      periodFilter,
+      statusFilter,
+    ],
     queryFn: () =>
       api.whatsappMonitorConversations(token!, {
         instanceId: activeAgentId === "all" ? undefined : activeAgentId,
         search: debouncedConversationSearch || undefined,
+        contactName: debouncedContactNameFilter || undefined,
+        contactPhone: debouncedContactPhoneFilter || undefined,
+        period: periodFilter === "all" ? undefined : periodFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
       }),
     enabled: Boolean(token),
     refetchInterval: CONVERSATION_REFRESH_MS,
@@ -501,6 +612,12 @@ export function MessagesPage() {
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
+  const hasTopFilters =
+    Boolean(contactNameFilter.trim()) ||
+    Boolean(contactPhoneFilter.trim()) ||
+    periodFilter !== "all" ||
+    groupFilter !== "all" ||
+    statusFilter !== "all";
 
   useEffect(() => {
     const element = chatBodyRef.current;
@@ -590,12 +707,35 @@ export function MessagesPage() {
   return (
     <div className="whatsapp-monitor-page">
       <div className="wa-filter-strip">
-        {["Nome do contato", "Telefone do contato", "Periodo"].map((label) => (
-          <button key={label} type="button" className="wa-filter-button">
-            {label}
-            <ChevronDown size={18} />
-          </button>
-        ))}
+        <label className="wa-filter-field">
+          <Search size={16} />
+          <input
+            value={contactNameFilter}
+            onChange={(event) => setContactNameFilter(event.target.value)}
+            placeholder="Nome do contato"
+          />
+        </label>
+        <label className="wa-filter-field phone">
+          <input
+            value={contactPhoneFilter}
+            onChange={(event) => setContactPhoneFilter(event.target.value)}
+            placeholder="Telefone do contato"
+          />
+        </label>
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar periodo"
+            value={periodFilter}
+            onChange={(event) => setPeriodFilter(event.target.value as PeriodFilter)}
+          >
+            <option value="all">Periodo: todos</option>
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="7d">Ultimos 7 dias</option>
+            <option value="30d">Ultimos 30 dias</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
         <label className="wa-filter-select">
           <select
             aria-label="Filtrar grupos"
@@ -608,13 +748,32 @@ export function MessagesPage() {
           </select>
           <ChevronDown size={18} aria-hidden="true" />
         </label>
-        <button type="button" className="wa-filter-button">
-          Status
-          <ChevronDown size={18} />
-        </button>
-        <button type="button" className="wa-filter-button">
-          <Plus size={18} />
-          Filtros
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          >
+            <option value="all">Status: todos</option>
+            <option value="unread">Nao lidas</option>
+            <option value="risk">Com alerta</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
+        <button
+          type="button"
+          className="wa-filter-button"
+          disabled={!hasTopFilters}
+          onClick={() => {
+            setContactNameFilter("");
+            setContactPhoneFilter("");
+            setPeriodFilter("all");
+            setGroupFilter("all");
+            setStatusFilter("all");
+          }}
+        >
+          <X size={18} />
+          Limpar
         </button>
       </div>
 
