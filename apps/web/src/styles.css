@@ -11776,6 +11776,40 @@ textarea {
   font-size: 0.78rem;
 }
 
+.wa-contact-card {
+  margin-top: 0.35rem;
+  padding: 0.68rem 0.72rem;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: min(18rem, 64vw);
+  background: rgba(31, 44, 51, 0.08);
+}
+
+.wa-contact-card svg {
+  flex-shrink: 0;
+  color: var(--wa-green-dark);
+}
+
+.wa-contact-card div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.wa-contact-card strong,
+.wa-contact-card span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wa-contact-card span {
+  color: var(--wa-muted);
+  font-size: 0.78rem;
+}
+
 .wa-media-image,
 .wa-media-video {
   display: block;

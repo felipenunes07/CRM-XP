@@ -13,6 +13,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Contact,
   FileAudio,
   FileImage,
   FileText,
@@ -129,6 +130,11 @@ function metadataString(metadata: Record<string, unknown>, keys: string[]) {
   return null;
 }
 
+function metadataRecord(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
 function mediaLabel(mediaType: string | null) {
   if (mediaType === "image") return "Imagem recebida";
   if (mediaType === "audio") return "Audio recebido";
@@ -145,12 +151,8 @@ function defaultMimeType(mediaType: string | null) {
 }
 
 function buildMediaSrc(mediaType: string | null, mimeType: string | null, mediaUrl: string | null, mediaBase64: string | null) {
-  if (mediaUrl) {
-    return mediaUrl;
-  }
-
   if (!mediaBase64) {
-    return null;
+    return mediaUrl;
   }
 
   if (mediaBase64.startsWith("data:")) {
@@ -181,7 +183,27 @@ function messageMedia(message: WhatsappMonitorMessage) {
   };
 }
 
+function messageContact(message: WhatsappMonitorMessage) {
+  const contact = metadataRecord(message.metadata, "contact");
+  if (!contact) {
+    return null;
+  }
+
+  const displayName = metadataString(contact, ["displayName", "fullName", "name"]);
+  const phoneNumber = metadataString(contact, ["phoneNumber", "phone", "waid", "jid"]);
+
+  if (!displayName && !phoneNumber) {
+    return null;
+  }
+
+  return { displayName, phoneNumber };
+}
+
 function isMediaPlaceholder(content: string) {
+  if (/^\[Contato\]$/i.test(content.trim())) {
+    return true;
+  }
+
   return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
 
@@ -300,10 +322,11 @@ function ConversationRow({
 
 function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMessage; showSender: boolean }) {
   const media = messageMedia(message);
+  const contact = messageContact(message);
   const fileName = media?.fileName ?? attachmentName(message);
   const direction = message.direction.toLocaleLowerCase("pt-BR");
   const senderLabel = message.senderName || message.senderJid || "Participante";
-  const showText = Boolean(message.content.trim()) && !(media && isMediaPlaceholder(message.content));
+  const showText = Boolean(message.content.trim()) && !((media || contact) && isMediaPlaceholder(message.content));
   const hasVisualMedia = Boolean(media?.src && ["image", "audio", "video"].includes(media.mediaType));
   const AttachmentIcon = media?.mediaType === "audio" ? FileAudio : media?.mediaType === "video" ? FileVideo : media?.mediaType === "document" ? FileText : FileImage;
 
@@ -316,6 +339,15 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
         {showSender ? <span className="wa-message-sender">{senderLabel}</span> : null}
         <div className={`wa-bubble ${direction} ${message.risk ? "has-risk" : ""}`}>
           {showText ? <p>{message.content}</p> : null}
+          {contact ? (
+            <div className="wa-contact-card">
+              <Contact size={19} />
+              <div>
+                <strong>{contact.displayName ?? "Contato recebido"}</strong>
+                {contact.phoneNumber ? <span>{contact.phoneNumber}</span> : null}
+              </div>
+            </div>
+          ) : null}
           {media?.mediaType === "image" && media.src ? (
             <img className="wa-media-image" src={media.src} alt={fileName ?? "Imagem recebida"} loading="lazy" />
           ) : null}
@@ -325,7 +357,16 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
           {media?.mediaType === "video" && media.src ? (
             <video className="wa-media-video" controls preload="metadata" src={media.src} />
           ) : null}
-          {(fileName || media) && !hasVisualMedia ? (
+          {(fileName || media) && !hasVisualMedia && media?.src ? (
+            <a className="wa-attachment" href={media.src} download={fileName ?? mediaLabel(media.mediaType)}>
+              <AttachmentIcon size={18} />
+              <div>
+                <strong>{fileName ?? mediaLabel(media.mediaType)}</strong>
+                <span>{mediaLabel(media.mediaType)}</span>
+              </div>
+            </a>
+          ) : null}
+          {(fileName || media) && !hasVisualMedia && !media?.src ? (
             <div className="wa-attachment">
               <AttachmentIcon size={18} />
               <div>

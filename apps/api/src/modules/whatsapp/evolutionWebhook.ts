@@ -3,10 +3,12 @@ import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
+  extractEvolutionMessageContact,
   extractEvolutionMessageMedia,
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
+  type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
 } from "./whatsappMonitorCore.js";
@@ -81,6 +83,7 @@ function buildActivityMetadata(input: {
   outboundSource?: string | null;
   autoCreated?: boolean;
   media?: EvolutionMessageMedia | null;
+  contact?: EvolutionMessageContact | null;
 }) {
   return {
     remoteJid: input.remoteJid,
@@ -97,6 +100,7 @@ function buildActivityMetadata(input: {
     ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
     ...(input.autoCreated ? { autoCreated: true } : {}),
     ...(input.media ? input.media : {}),
+    ...(input.contact ? { contact: input.contact } : {}),
   };
 }
 
@@ -207,6 +211,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
     const enriched = await resolveWhatsappMessageMetadata(context);
     const media = extractEvolutionMessageMedia(msg);
+    const contact = extractEvolutionMessageContact(msg);
     const senderName = enriched.senderName ?? context.senderName;
     const chatDisplayName = enriched.chatDisplayName ?? context.chatDisplayName;
     const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
@@ -241,6 +246,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       capturedFromWhatsapp: isFromMe,
       outboundSource: isFromMe ? "whatsapp_device" : null,
       media,
+      contact,
     });
 
     logger.info("evolution webhook incoming message", {
