@@ -23,8 +23,10 @@ import {
   type EvolutionMessageKey,
 } from "./evolutionService.js";
 import {
+  chooseWhatsappConversationContactName,
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionMessageContact,
   extractEvolutionMessageMedia,
   formatWhatsappJidPhone,
   getEvolutionMessageKey,
@@ -117,10 +119,7 @@ function riskSql(alias: string) {
       OR lower(COALESCE(${alias}.content, '')) LIKE '%puta%'
       OR lower(COALESCE(${alias}.content, '')) LIKE '%fdp%'
       OR lower(COALESCE(${alias}.content, '')) LIKE '%senha%'
-      OR lower(COALESCE(${alias}.content, '')) LIKE '%pix%'
-      OR lower(COALESCE(${alias}.content, '')) LIKE '%cpf%'
-      OR lower(COALESCE(${alias}.content, '')) LIKE '%cnpj%'
-      OR lower(COALESCE(${alias}.content, '')) LIKE '%cartao%'
+      OR lower(COALESCE(${alias}.content, '')) LIKE '%cartao de credito%'
       OR lower(COALESCE(${alias}.content, '')) LIKE '%token%'
       OR lower(COALESCE(${alias}.content, '')) LIKE '%urgente%'
       OR lower(COALESCE(${alias}.content, '')) LIKE '%processo%'
@@ -156,10 +155,20 @@ function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
 function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConversation {
   const remoteJid = row.whatsapp_jid ? String(row.whatsapp_jid) : null;
   const lastMessage = row.last_message_content ? String(row.last_message_content) : null;
-  const title = String(row.title ?? row.customer_display_name ?? "Conversa sem nome");
-  const contactName =
-    optionalString(row.chat_display_name) ??
-    (row.customer_display_name ? String(row.customer_display_name) : title);
+  const rawTitle = optionalString(row.title) ?? optionalString(row.customer_display_name);
+  const title = rawTitle ?? "Conversa sem nome";
+  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+  const contactName = chooseWhatsappConversationContactName({
+    remoteJid,
+    isGroup,
+    chatDisplayName: optionalString(row.chat_display_name),
+    customerDisplayName: optionalString(row.customer_display_name),
+    title: rawTitle,
+    agentName: optionalString(row.agent_name),
+    assignedUserName: optionalString(row.assigned_to_name),
+    instanceName: optionalString(row.instance_name),
+    instanceLabel: optionalString(row.instance_display_label),
+  });
   const markedUnread = Boolean(row.marked_unread);
   const unreadState = computeWhatsappUnreadState(Number(row.unread_after_read ?? 0), markedUnread);
 
@@ -170,7 +179,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
     contactName,
     contactPhone: formatWhatsappJidPhone(remoteJid),
     remoteJid,
-    isGroup: Boolean(remoteJid?.endsWith("@g.us")),
+    isGroup,
     profilePictureUrl: optionalString(row.profile_picture_url),
     whatsappInstanceId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
     instanceName: row.instance_name ? String(row.instance_name) : null,
@@ -192,9 +201,11 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const baseMetadata = row.metadata && typeof row.metadata === "object" ? (row.metadata as Record<string, unknown>) : {};
   const incomingPayload = asRecord(row.incoming_raw_payload);
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
+  const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
+    ...(incomingContact ? { contact: incomingContact } : {}),
   };
   const participantName = optionalString(row.participant_display_name);
   const participantProfilePictureUrl = optionalString(row.participant_profile_picture_url);
@@ -289,6 +300,22 @@ function conversationProfileJoinSql() {
         wcp.updated_at DESC
       LIMIT 1
     ) chat_profile ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        wim.chat_display_name,
+        wim.chat_profile_picture_url,
+        wim.sender_name,
+        wim.participant_name,
+        wim.sender_profile_picture_url
+      FROM whatsapp_incoming_messages wim
+      WHERE wim.remote_jid = d.whatsapp_jid
+        AND (
+          wim.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          OR COALESCE(wim.instance_name, '') = ''
+        )
+      ORDER BY wim.created_at DESC, wim.id DESC
+      LIMIT 1
+    ) incoming_profile ON true
   `;
 }
 
@@ -297,7 +324,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     WITH latest_whatsapp AS (
       SELECT
         da.*,
-        ROW_NUMBER() OVER (PARTITION BY da.deal_id ORDER BY da.created_at DESC) AS rn
+        ROW_NUMBER() OVER (PARTITION BY da.deal_id ORDER BY da.created_at DESC, da.id DESC) AS rn
       FROM deal_activities da
       WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
     ),
@@ -314,9 +341,21 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       d.*,
       ps.name AS stage_name,
       COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance') AS instance_name,
+      COALESCE(wi.display_label, latest_whatsapp.metadata ->> 'instance') AS instance_display_label,
       COALESCE(wi.display_label, d.assigned_to_name, latest_whatsapp.actor_name) AS agent_name,
-      COALESCE(chat_profile.display_name, latest_whatsapp.metadata ->> 'chatDisplayName') AS chat_display_name,
-      COALESCE(chat_profile.profile_picture_url, latest_whatsapp.metadata ->> 'chatProfilePictureUrl') AS profile_picture_url,
+      COALESCE(
+        chat_profile.display_name,
+        latest_whatsapp.metadata ->> 'chatDisplayName',
+        incoming_profile.chat_display_name,
+        incoming_profile.sender_name,
+        incoming_profile.participant_name
+      ) AS chat_display_name,
+      COALESCE(
+        chat_profile.profile_picture_url,
+        latest_whatsapp.metadata ->> 'chatProfilePictureUrl',
+        incoming_profile.chat_profile_picture_url,
+        incoming_profile.sender_profile_picture_url
+      ) AS profile_picture_url,
       latest_whatsapp.content AS last_message_content,
       COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) AS last_message_at,
       COALESCE(activity_stats.event_count, 0)::int AS event_count,
@@ -426,9 +465,8 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
             AND (
               lower(da.content) LIKE '%porra%'
               OR lower(da.content) LIKE '%senha%'
-              OR lower(da.content) LIKE '%pix%'
-              OR lower(da.content) LIKE '%cpf%'
-              OR lower(da.content) LIKE '%cartao%'
+              OR lower(da.content) LIKE '%cartao de credito%'
+              OR lower(da.content) LIKE '%token%'
               OR lower(da.content) LIKE '%procon%'
             )
         )::int AS risk_count,
@@ -513,6 +551,9 @@ export async function listWhatsappMonitorConversations(
         lower(d.title) LIKE $${params.length}
         OR lower(COALESCE(d.customer_display_name, '')) LIKE $${params.length}
         OR lower(COALESCE(d.whatsapp_jid, '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.chat_display_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.sender_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.participant_name, '')) LIKE $${params.length}
         OR EXISTS (
           SELECT 1
           FROM whatsapp_chat_profiles wcpf
@@ -531,6 +572,9 @@ export async function listWhatsappMonitorConversations(
         OR lower(COALESCE(d.customer_display_name, '')) LIKE $${params.length}
         OR lower(COALESCE(chat_profile.display_name, '')) LIKE $${params.length}
         OR lower(COALESCE(latest_whatsapp.metadata ->> 'chatDisplayName', '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.chat_display_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.sender_name, '')) LIKE $${params.length}
+        OR lower(COALESCE(incoming_profile.participant_name, '')) LIKE $${params.length}
       )
     `);
   }
@@ -574,7 +618,7 @@ export async function listWhatsappMonitorConversations(
       `
       ${conversationBaseSelectSql(userIdParamIndex)}
       WHERE ${where.join(" AND ")}
-      ORDER BY COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) DESC
+      ORDER BY COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) DESC, d.id DESC
       LIMIT 200
       `,
       params,
@@ -654,7 +698,7 @@ export async function getWhatsappMonitorConversation(
     ) participant_profile ON true
     WHERE da.deal_id = $1
       AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-    ORDER BY da.created_at ASC
+    ORDER BY da.created_at ASC, incoming_message.created_at ASC NULLS LAST, da.id ASC
     LIMIT 300
     `,
     [dealId],
@@ -684,7 +728,7 @@ export async function getWhatsappMonitorConversation(
         LIMIT 1
       ) participant_profile ON true
       WHERE wim.remote_jid = $1
-      ORDER BY wim.created_at ASC
+      ORDER BY wim.created_at ASC, wim.id ASC
       LIMIT 300
       `,
       [conversation.remoteJid],
@@ -695,6 +739,7 @@ export async function getWhatsappMonitorConversation(
       const metadata =
         row.raw_payload && typeof row.raw_payload === "object" ? (row.raw_payload as Record<string, unknown>) : {};
       const media = extractEvolutionMessageMedia(metadata as any);
+      const contact = extractEvolutionMessageContact(metadata as any);
 
       return {
         id: String(row.id),
@@ -710,6 +755,7 @@ export async function getWhatsappMonitorConversation(
         metadata: {
           ...metadata,
           ...(media ? media : {}),
+          ...(contact ? { contact } : {}),
         },
         risk: detectWhatsappMessageRisk(content),
       };
@@ -731,7 +777,7 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
       WHERE da.deal_id = $1
         AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
         AND da.metadata ->> 'instance' IS NOT NULL
-      ORDER BY da.created_at DESC
+      ORDER BY da.created_at DESC, da.id DESC
       LIMIT 1
     )
     SELECT
@@ -983,6 +1029,7 @@ export async function sendWhatsappMonitorMediaReply(
         senderName: user.name,
         sentFromMonitor: true,
         mediaType: input.mediaType,
+        mediaBase64: input.mediaBase64,
         fileName: input.fileName,
       }),
       createdAt,
@@ -1008,6 +1055,7 @@ export async function sendWhatsappMonitorMediaReply(
       instance: context.evolution.instanceName,
       sentFromMonitor: true,
       mediaType: input.mediaType,
+      mediaBase64: input.mediaBase64,
       fileName: input.fileName,
     },
     risk: detectWhatsappMessageRisk(input.caption || ""),
@@ -1462,7 +1510,7 @@ export async function getWhatsappAgentActivityReport(
       LIMIT 1
     ) wi ON true
     WHERE ${where.join("\n      AND ")}
-    ORDER BY da.created_at ASC
+    ORDER BY da.created_at ASC, da.id ASC
     `,
     params,
   );

@@ -6,7 +6,7 @@ import type {
 } from "@olist-crm/shared";
 
 const OFFENSIVE_KEYWORDS = ["porra", "caralho", "merda", "puta", "fdp"];
-const SENSITIVE_KEYWORDS = ["senha", "pix", "cpf", "cnpj", "cartao", "cartao de credito", "token"];
+const SENSITIVE_KEYWORDS = ["senha", "token", "cartao de credito"];
 const PRESSURE_KEYWORDS = ["urgente", "processo", "reclamacao", "procon", "cancelar"];
 
 interface EvolutionMessageKeyLike {
@@ -50,6 +50,12 @@ export interface EvolutionMessageMedia {
   mimeType: string | null;
   fileName: string | null;
   caption: string | null;
+}
+
+export interface EvolutionMessageContact {
+  displayName: string | null;
+  phoneNumber: string | null;
+  vcard: string | null;
 }
 
 export interface EvolutionMessageContext {
@@ -276,6 +282,74 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
   return null;
 }
 
+function extractVcardPhone(vcard: string | null) {
+  if (!vcard) {
+    return null;
+  }
+
+  const waid = vcard.match(/waid=(\d+)/i)?.[1];
+  if (waid) {
+    return waid;
+  }
+
+  return vcard.match(/TEL[^:\r\n]*:([^\r\n]+)/i)?.[1]?.trim() ?? null;
+}
+
+function extractContactFromRecord(contact: Record<string, unknown> | null): EvolutionMessageContact | null {
+  if (!contact) {
+    return null;
+  }
+
+  const vcard = pickString(contact, ["vcard", "vCard"]);
+  const displayName =
+    pickString(contact, ["displayName", "fullName", "name"]) ??
+    vcard?.match(/^FN:([^\r\n]+)/im)?.[1]?.trim() ??
+    null;
+  const phoneNumber =
+    pickString(contact, ["phoneNumber", "phone", "waid", "jid"]) ??
+    extractVcardPhone(vcard);
+
+  if (!displayName && !phoneNumber && !vcard) {
+    return null;
+  }
+
+  return {
+    displayName,
+    phoneNumber,
+    vcard,
+  };
+}
+
+export function extractEvolutionMessageContact(message: EvolutionMessageLike): EvolutionMessageContact | null {
+  const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
+
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const singleContact = extractContactFromRecord(asRecord(unwrapped.contactMessage));
+  if (singleContact) {
+    return singleContact;
+  }
+
+  const contactsArrayMessage = asRecord(unwrapped.contactsArrayMessage);
+  const contacts = contactsArrayMessage?.contacts;
+  if (Array.isArray(contacts)) {
+    for (const contact of contacts) {
+      const extracted = extractContactFromRecord(asRecord(contact));
+      if (extracted) {
+        return extracted;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function extractEvolutionMessageContext(
   message: EvolutionMessageLike,
   instanceName?: string | null,
@@ -405,6 +479,87 @@ export function isWhatsappFallbackDisplayName(name: string | null | undefined, r
 
   const formattedPhone = normalizeText(formatWhatsappJidPhone(remoteJid));
   return normalized === formattedPhone || normalized === digits;
+}
+
+function normalizedLabel(value: string | null | undefined) {
+  return normalizeText(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function looksLikeAgentOwnedPrivateName(
+  candidate: string,
+  input: {
+    agentName?: string | null;
+    assignedUserName?: string | null;
+    instanceName?: string | null;
+    instanceLabel?: string | null;
+  },
+) {
+  const normalizedCandidate = normalizedLabel(candidate);
+  if (!normalizedCandidate) {
+    return false;
+  }
+
+  const blockedLabels = [
+    input.agentName,
+    input.assignedUserName,
+    input.instanceName,
+    input.instanceLabel,
+  ]
+    .map(normalizedLabel)
+    .filter(Boolean);
+
+  if (blockedLabels.includes(normalizedCandidate)) {
+    return true;
+  }
+
+  if (/^xp(\s|-|$)/.test(normalizedCandidate)) {
+    return true;
+  }
+
+  return blockedLabels.some((label) => {
+    const firstName = label.split(" ")[0] ?? "";
+    return firstName.length >= 3 && normalizedCandidate === `xp ${firstName}`;
+  });
+}
+
+export function chooseWhatsappConversationContactName(input: {
+  remoteJid: string | null;
+  isGroup?: boolean;
+  chatDisplayName?: string | null;
+  customerDisplayName?: string | null;
+  title?: string | null;
+  agentName?: string | null;
+  assignedUserName?: string | null;
+  instanceName?: string | null;
+  instanceLabel?: string | null;
+}) {
+  const remoteJid = input.remoteJid;
+  const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
+  const candidates = [input.chatDisplayName, input.customerDisplayName, input.title]
+    .map((candidate) => readString(candidate))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (remoteJid && isWhatsappFallbackDisplayName(candidate, remoteJid)) {
+      continue;
+    }
+
+    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  for (const candidate of candidates) {
+    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return formatWhatsappJidPhone(remoteJid);
 }
 
 export function detectWhatsappMessageRisk(content: string | null | undefined): WhatsappMessageRisk | null {

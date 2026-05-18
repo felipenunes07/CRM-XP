@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseWhatsappConversationContactName,
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionMessageContact,
   extractEvolutionMessageContext,
   extractEvolutionMessageMedia,
   extractEvolutionMessageText,
@@ -53,6 +55,19 @@ describe("whatsappMonitorCore", () => {
     expect(message.senderName).toBe("Amanda Carvalho");
     expect(message.risk?.label).toBe("Dado sensivel");
     expect(message.remoteJid).toBe("5511998765432@s.whatsapp.net");
+  });
+
+  it("does not flag company payment details as sensitive risk", () => {
+    expect(detectWhatsappMessageRisk("No momento so Pix")).toBeNull();
+    expect(
+      detectWhatsappMessageRisk(
+        "CNPJ 61.964.978/0001-68\nBradesco 237\nPix: 11976266666\nAgencia 0294 Conta Corrente 21655-0",
+      ),
+    ).toBeNull();
+    expect(detectWhatsappMessageRisk("Nao envie sua senha ou token")).toMatchObject({
+      label: "Dado sensivel",
+      severity: "HIGH",
+    });
   });
 
   it("extracts group participant identity and chat metadata from Evolution messages", () => {
@@ -167,6 +182,24 @@ describe("whatsappMonitorCore", () => {
     expect(extractEvolutionMessageText(audioMessage)).toBe("[Áudio]");
   });
 
+  it("extracts shared contact details from Evolution contact messages", () => {
+    const vcard = "BEGIN:VCARD\nFN:Cliente Mora Tec\nTEL;type=CELL;waid=5511999998888:+55 11 99999-8888\nEND:VCARD";
+    const contactMessage = {
+      message: {
+        contactMessage: {
+          displayName: "Cliente Mora Tec",
+          vcard,
+        },
+      },
+    };
+
+    expect(extractEvolutionMessageContact(contactMessage)).toEqual({
+      displayName: "Cliente Mora Tec",
+      phoneNumber: "5511999998888",
+      vcard,
+    });
+  });
+
   it("keeps group sender metadata when mapping stored activities to chat messages", () => {
     const message = mapWhatsappActivityToMessage({
       id: "activity-2",
@@ -203,6 +236,30 @@ describe("whatsappMonitorCore", () => {
     expect(isWhatsappFallbackDisplayName("[GRUPO] 12036337", "120363371542185615@g.us")).toBe(true);
     expect(isWhatsappFallbackDisplayName("Grupo Enterprise Comercial", "120363371542185615@g.us")).toBe(false);
     expect(isWhatsappFallbackDisplayName("+55 (11) 99876-5432", "5511998765432@s.whatsapp.net")).toBe(true);
+  });
+
+  it("uses the phone when a private chat name looks like the assigned seller", () => {
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "5511998595698@s.whatsapp.net",
+        isGroup: false,
+        chatDisplayName: "XP AMANDA",
+        customerDisplayName: "XP AMANDA",
+        title: "XP AMANDA",
+        agentName: "XP AMANDA",
+        assignedUserName: "Amanda",
+        instanceLabel: "XP AMANDA",
+      }),
+    ).toBe("+55 (11) 99859-5698");
+
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "120363371542185615@g.us",
+        isGroup: true,
+        chatDisplayName: "CL1246 - JAMARC / XP EXPOR TELAS",
+        agentName: "XP AMANDA",
+      }),
+    ).toBe("CL1246 - JAMARC / XP EXPOR TELAS");
   });
 
   it("formats the Evolution send target without losing group JIDs", () => {
