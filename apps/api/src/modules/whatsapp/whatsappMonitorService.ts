@@ -27,11 +27,13 @@ import {
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
   extractEvolutionMessageContact,
+  extractEvolutionMessageContext,
   extractEvolutionMessageMedia,
   formatWhatsappJidPhone,
   getEvolutionMessageKey,
   mapWhatsappActivityToMessage,
   median,
+  mergeWhatsappMonitorMessages,
 } from "./whatsappMonitorCore.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 
@@ -202,10 +204,19 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingPayload = asRecord(row.incoming_raw_payload);
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
+  const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
+  const incomingFromMe = Boolean(row.incoming_from_me) || Boolean(incomingContext?.fromMe);
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
+    ...(incomingFromMe
+      ? {
+        fromMe: true,
+        capturedFromWhatsapp: true,
+        outboundSource: baseMetadata.outboundSource ?? "whatsapp_device",
+      }
+      : {}),
   };
   const participantName = optionalString(row.participant_display_name);
   const participantProfilePictureUrl = optionalString(row.participant_profile_picture_url);
@@ -679,8 +690,12 @@ export async function getWhatsappMonitorConversation(
       da.*,
       participant_profile.display_name AS participant_display_name,
       participant_profile.profile_picture_url AS participant_profile_picture_url,
-      incoming_message.raw_payload AS incoming_raw_payload
+      incoming_message.raw_payload AS incoming_raw_payload,
+      incoming_message.from_me AS incoming_from_me,
+      COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name
     FROM deal_activities da
+    LEFT JOIN deals activity_deal ON activity_deal.id = da.deal_id
+    LEFT JOIN whatsapp_instances wi ON wi.id = activity_deal.whatsapp_instance_id
     LEFT JOIN whatsapp_incoming_messages incoming_message
       ON incoming_message.message_id = da.metadata ->> 'messageId'
     LEFT JOIN LATERAL (
@@ -704,9 +719,10 @@ export async function getWhatsappMonitorConversation(
     [dealId],
   );
 
-  let messages = activitiesResult.rows.map((row) => mapWhatsappActivityToMessage(mapActivityRow(row)));
+  const activityMessages = activitiesResult.rows.map((row) => mapWhatsappActivityToMessage(mapActivityRow(row)));
+  let messages = activityMessages;
 
-  if (!messages.length && conversation.remoteJid) {
+  if (conversation.remoteJid) {
     const incomingResult = await pool.query(
       `
       SELECT
@@ -734,17 +750,20 @@ export async function getWhatsappMonitorConversation(
       [conversation.remoteJid],
     );
 
-    messages = incomingResult.rows.map((row): WhatsappMonitorMessage => {
+    const capturedMessages = incomingResult.rows.map((row): WhatsappMonitorMessage => {
       const content = String(row.message_text ?? "");
       const metadata =
         row.raw_payload && typeof row.raw_payload === "object" ? (row.raw_payload as Record<string, unknown>) : {};
       const media = extractEvolutionMessageMedia(metadata as any);
       const contact = extractEvolutionMessageContact(metadata as any);
+      const incomingContext = extractEvolutionMessageContext(metadata as any, optionalString(row.instance_name));
+      const messageId = optionalString(row.message_id) ?? optionalString(incomingContext.messageId) ?? String(row.id);
+      const fromMe = Boolean(row.from_me) || incomingContext.fromMe;
 
       return {
         id: String(row.id),
         dealId,
-        direction: row.from_me ? "OUTBOUND" : "INBOUND",
+        direction: fromMe ? "OUTBOUND" : "INBOUND",
         senderName: row.sender_display_name ? String(row.sender_display_name) : conversation.contactName,
         senderJid: row.participant_jid ? String(row.participant_jid) : null,
         senderProfilePictureUrl: row.participant_profile_picture_url ? String(row.participant_profile_picture_url) : null,
@@ -754,12 +773,16 @@ export async function getWhatsappMonitorConversation(
         isGroup: conversation.isGroup,
         metadata: {
           ...metadata,
+          messageId,
+          ...(fromMe ? { fromMe: true, capturedFromWhatsapp: true, outboundSource: "whatsapp_device" } : {}),
           ...(media ? media : {}),
           ...(contact ? { contact } : {}),
         },
         risk: detectWhatsappMessageRisk(content),
       };
     });
+
+    messages = mergeWhatsappMonitorMessages(activityMessages, capturedMessages);
   }
 
   return {

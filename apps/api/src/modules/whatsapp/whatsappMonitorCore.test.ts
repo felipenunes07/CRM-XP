@@ -15,6 +15,7 @@ import {
   isWhatsappFallbackDisplayName,
   mapWhatsappActivityToMessage,
   median,
+  mergeWhatsappMonitorMessages,
 } from "./whatsappMonitorCore.js";
 
 describe("whatsappMonitorCore", () => {
@@ -55,6 +56,24 @@ describe("whatsappMonitorCore", () => {
     expect(message.senderName).toBe("Amanda Carvalho");
     expect(message.risk?.label).toBe("Dado sensivel");
     expect(message.remoteJid).toBe("5511998765432@s.whatsapp.net");
+  });
+
+  it("treats device-captured fromMe activities as outbound even if they were stored as received", () => {
+    const message = mapWhatsappActivityToMessage({
+      id: "activity-device-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_RECEIVED",
+      actorName: "Amanda Carvalho",
+      content: "Mensagem respondida pelo celular",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        fromMe: "true",
+        capturedFromWhatsapp: true,
+      },
+      createdAt: "2026-05-18T16:52:00.000Z",
+    });
+
+    expect(message.direction).toBe("OUTBOUND");
   });
 
   it("does not flag company payment details as sensitive risk", () => {
@@ -292,6 +311,48 @@ describe("whatsappMonitorCore", () => {
       fromMe: false,
       id: "BAE594145F4C59B4",
     });
+  });
+
+  it("merges raw captured messages with deal activities without duplicating provider ids", () => {
+    const activityMessage = mapWhatsappActivityToMessage({
+      id: "activity-out-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_SENT",
+      actorName: "Amanda",
+      content: "posso refazer essa lista e mandar pra vc ?",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "out-1",
+      },
+      createdAt: "2026-05-18T17:20:00.000Z",
+    });
+    const duplicateCapturedMessage = {
+      ...activityMessage,
+      id: "incoming-copy-out-1",
+      metadata: {
+        ...activityMessage.metadata,
+        messageId: "out-1",
+      },
+    };
+    const missingCustomerQuestion = mapWhatsappActivityToMessage({
+      id: "incoming-in-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_RECEIVED",
+      actorName: "Cliente",
+      content: "Tem esse modelo?",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "in-1",
+      },
+      createdAt: "2026-05-18T17:19:00.000Z",
+    });
+
+    const merged = mergeWhatsappMonitorMessages(
+      [activityMessage],
+      [duplicateCapturedMessage, missingCustomerQuestion],
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["incoming-in-1", "activity-out-1"]);
   });
 
   it("computes median values for response-time indicators", () => {
