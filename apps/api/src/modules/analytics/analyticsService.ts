@@ -94,20 +94,38 @@ async function rebuildOrders(customerCodes: string[]) {
 
   const orderGroups = await pool.query(
     `
+      WITH preferred_sources AS (
+        SELECT 
+          order_number, 
+          customer_code,
+          source_system,
+          ROW_NUMBER() OVER (
+            PARTITION BY order_number, customer_code 
+            ORDER BY (CASE WHEN source_system = 'supabase_2026' THEN 1 ELSE 2 END) ASC
+          ) as rn
+        FROM sales_raw
+        WHERE customer_code = ANY($1)
+          AND LOWER(COALESCE(order_status, '')) != 'cancelado'
+      )
       SELECT
-        source_system,
-        external_order_id,
-        order_number,
-        customer_code,
-        sale_date,
-        COALESCE(MAX(order_status), 'VALID') AS order_status,
-        COALESCE(MAX(attendant_name), '') AS last_attendant,
-        SUM(line_total)::numeric(14,2) AS total_amount,
+        sr.source_system,
+        sr.external_order_id,
+        sr.order_number,
+        sr.customer_code,
+        sr.sale_date,
+        COALESCE(MAX(sr.order_status), 'VALID') AS order_status,
+        COALESCE(MAX(sr.attendant_name), '') AS last_attendant,
+        SUM(sr.line_total)::numeric(14,2) AS total_amount,
         COUNT(*)::int AS item_count
-      FROM sales_raw
-      WHERE customer_code = ANY($1)
-      GROUP BY source_system, external_order_id, order_number, customer_code, sale_date
-      ORDER BY sale_date DESC
+      FROM sales_raw sr
+      JOIN preferred_sources ps 
+        ON sr.order_number = ps.order_number 
+        AND sr.customer_code = ps.customer_code 
+        AND sr.source_system = ps.source_system
+      WHERE ps.rn = 1
+        AND LOWER(COALESCE(sr.order_status, '')) != 'cancelado'
+      GROUP BY sr.source_system, sr.external_order_id, sr.order_number, sr.customer_code, sr.sale_date
+      ORDER BY sr.sale_date DESC
     `,
     [customerCodes],
   );
@@ -197,16 +215,26 @@ async function rebuildOrders(customerCodes: string[]) {
         INSERT INTO order_items (
           order_id, sale_raw_id, sku, item_description, quantity, unit_price, line_total, attendant_name
         )
+        WITH ranked_items AS (
+          SELECT 
+            sr.id, sr.sku, sr.item_description, sr.quantity, sr.unit_price, sr.line_total, sr.attendant_name,
+            o.id as order_uuid,
+            ROW_NUMBER() OVER (
+              PARTITION BY o.id, sr.fingerprint
+              ORDER BY (CASE WHEN sr.source_system = 'supabase_2026' THEN 1 ELSE 2 END) ASC
+            ) as item_rn
+          FROM sales_raw sr
+          JOIN (
+            SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::date[]) 
+            AS t(id, source_system, order_number, customer_code, sale_date)
+          ) o ON sr.order_number = o.order_number 
+             AND sr.customer_code = o.customer_code 
+             AND sr.sale_date = o.sale_date
+        )
         SELECT 
-          o.id, sr.id, sr.sku, sr.item_description, sr.quantity, sr.unit_price, sr.line_total, sr.attendant_name
-        FROM sales_raw sr
-        JOIN (
-          SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::date[]) 
-          AS t(id, source_system, order_number, customer_code, sale_date)
-        ) o ON sr.source_system = o.source_system 
-           AND sr.order_number = o.order_number 
-           AND sr.customer_code = o.customer_code 
-           AND sr.sale_date = o.sale_date
+          order_uuid, id, sku, item_description, quantity, unit_price, line_total, attendant_name
+        FROM ranked_items
+        WHERE item_rn = 1
       `,
       [ids, sourceSystems, orderNumbers, customerCodes, saleDates]
     );
