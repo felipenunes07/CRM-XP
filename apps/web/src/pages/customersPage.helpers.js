@@ -1,0 +1,112 @@
+export function createInitialCustomersPageState() {
+    return {
+        activeView: "portfolio",
+        portfolioFilters: {
+            search: "",
+            status: "",
+            sortBy: "priority",
+            label: "",
+            excludeLabel: "",
+            ambassadorOnly: "",
+        },
+        creditFilters: {
+            search: "",
+            riskLevel: "",
+            operationalState: "",
+            onlyWithCredit: "",
+            onlyUnusedCredit: "",
+            onlyOverdue: "",
+        },
+        creditKpiFilter: "",
+    };
+}
+export function customersPageReducer(state, action) {
+    if (action.type === "setView") {
+        if (state.activeView === action.view) {
+            return state;
+        }
+        return {
+            ...state,
+            activeView: action.view,
+        };
+    }
+    if (action.type === "updateCreditFilter") {
+        if (state.creditFilters[action.key] === action.value) {
+            return state;
+        }
+        return {
+            ...state,
+            creditFilters: {
+                ...state.creditFilters,
+                [action.key]: action.value,
+            },
+        };
+    }
+    if (action.type === "setCreditKpiFilter") {
+        return {
+            ...state,
+            creditKpiFilter: state.creditKpiFilter === action.value ? "" : action.value,
+        };
+    }
+    if (action.type === "clearCreditFilters") {
+        return {
+            ...state,
+            creditKpiFilter: "",
+            creditFilters: {
+                search: "",
+                riskLevel: "",
+                operationalState: "",
+                onlyWithCredit: "",
+                onlyUnusedCredit: "",
+                onlyOverdue: "",
+            },
+        };
+    }
+    if (action.type === "setCreditInsight") {
+        // 1. Reset everything to initial credit state
+        const cleanState = {
+            ...state,
+            creditKpiFilter: "",
+            creditFilters: {
+                search: "",
+                riskLevel: "",
+                operationalState: "",
+                onlyWithCredit: "",
+                onlyUnusedCredit: "",
+                onlyOverdue: "",
+            },
+        };
+        // 2. Apply the chosen insight
+        if (action.insight === "over_credit") {
+            cleanState.creditKpiFilter = "over_credit";
+        }
+        else if (action.insight === "unused_credit") {
+            cleanState.creditKpiFilter = "unused_credit";
+        }
+        else if (action.insight === "overdue") {
+            cleanState.creditFilters.onlyOverdue = "true";
+        }
+        return cleanState;
+    }
+    if (state.portfolioFilters[action.key] !== action.value) {
+        return {
+            ...state,
+            portfolioFilters: {
+                ...state.portfolioFilters,
+                [action.key]: action.value,
+            },
+        };
+    }
+    return state;
+}
+export function buildCustomersQueryParams(filters) {
+    return {
+        search: filters.search,
+        status: filters.status,
+        sortBy: filters.sortBy,
+        labels: filters.label,
+        excludeLabels: filters.excludeLabel,
+        isAmbassador: filters.ambassadorOnly === "true" ? true : undefined,
+        limit: 120,
+    };
+}

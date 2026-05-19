@@ -1,4 +1,5 @@
 import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
 import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
 
 export interface EvolutionInstanceConfig {
@@ -127,6 +128,26 @@ export async function configureInstanceSettings(instance: {
     readStatus: false,
     syncFullHistory: false,
   });
+}
+
+export async function deleteEvolutionInstance(instance: {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}) {
+  try {
+    return await requestEvolution(
+      instance.evolutionBaseUrl,
+      instance.evolutionApiKey,
+      `/instance/delete/${encodeURIComponent(instance.instanceName)}`,
+      "DELETE"
+    );
+  } catch (error) {
+    logger.warn("Failed to delete instance from Evolution API, it might not exist", {
+      instanceName: instance.instanceName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function requestEvolution(baseUrl: string, apiKey: string, path: string, method: string, body?: any) {
