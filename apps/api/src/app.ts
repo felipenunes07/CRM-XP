@@ -74,6 +74,7 @@ import {
   getGeographicStats,
   getGeographicSalesStats,
   getCitiesByState,
+  getGeographicModelSales,
 } from "./modules/crm/geographicService.js";
 import {
   claimProspectLead,
@@ -1075,6 +1076,17 @@ export function createApp() {
   app.get("/api/geographic/sales", async (_request, response, next) => {
     try {
       response.json(await getGeographicSalesStats());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/geographic/model-sales", async (request, response, next) => {
+    try {
+      const state = request.query.state ? String(request.query.state) : undefined;
+      const city = request.query.city ? String(request.query.city) : undefined;
+      const year = request.query.year ? Number(request.query.year) : undefined;
+      response.json(await getGeographicModelSales({ state, city, year }));
     } catch (error) {
       next(error);
     }
