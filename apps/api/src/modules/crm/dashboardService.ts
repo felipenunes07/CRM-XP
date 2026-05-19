@@ -1641,3 +1641,15 @@ export async function getCustomerMovements(days: number = 7): Promise<CustomerMo
     movements,
   };
 }
+
+export async function clearDashboardCache() {
+  try {
+    const keys = await redis.keys("dashboard_metrics:*");
+    if (keys.length > 0) {
+      await redis.del(...keys);
+      logger.info("dashboard metrics: cleared cache keys", { count: keys.length });
+    }
+  } catch (error) {
+    logger.warn("failed to clear dashboard metrics cache", { error: String(error) });
+  }
+}
