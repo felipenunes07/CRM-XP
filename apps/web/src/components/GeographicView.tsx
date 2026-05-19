@@ -160,7 +160,7 @@ export function GeographicView() {
   const [search, setSearch] = useState("");
   const [hoveredState, setHoveredState] = useState("");
   const [mapMode, setMapMode] = useState<"volume" | "health">("volume");
-  const [detailView, setDetailView] = useState<"customers" | "cities">("cities");
+  const [detailView, setDetailView] = useState<"customers" | "cities" | "models">("cities");
 
   const geographicQuery = useQuery({
     queryKey: ["geographic-sales-overview"],
@@ -251,6 +251,13 @@ export function GeographicView() {
     [geographicData.cityStats, selectedCityKey],
   );
 
+  const modelsQuery = useQuery({
+    queryKey: ["geographic-model-sales", selectedState, selectedCity?.city],
+    queryFn: () => api.getGeographicModelSales(token!, { state: selectedState || undefined, city: selectedCity?.city || undefined, year: 2026 }),
+    enabled: Boolean(token) && detailView === "models",
+  });
+
+
   const filteredCities = useMemo(
     () =>
       geographicData.cityStats.filter((item) => {
@@ -312,20 +319,99 @@ export function GeographicView() {
   function handleStateToggle(state: string) {
     setSelectedCityKey("");
     setSelectedState((current) => (current === state ? "" : state));
-    setDetailView("cities");
+    if (detailView !== "models") {
+      setDetailView("cities");
+    }
   }
 
   function handleCitySelect(city: GeographicCityStat) {
     setSelectedState(city.state);
     setSelectedCityKey(cityKey(city));
-    setDetailView("customers");
+    if (detailView !== "models") {
+      setDetailView("customers");
+    }
   }
+
+  const [isExporting, setIsExporting] = useState(false);
+  const [limitToTop100, setLimitToTop100] = useState(true);
 
   function clearFilters() {
     setSelectedState("");
     setSelectedCityKey("");
     setSearch("");
     setDetailView("cities");
+  }
+
+  async function handleExportModelSales() {
+    if (!token) return;
+    setIsExporting(true);
+    try {
+      const options = {
+        state: selectedState || undefined,
+        city: selectedCity?.city || undefined,
+        year: 2026,
+      };
+
+      const res = await api.getGeographicModelSales(token, options);
+      
+      if (!res.data || res.data.length === 0) {
+        alert(tx("Nenhum dado de vendas encontrado para esta região em 2026.", "No sales data found for this region in 2026."));
+        return;
+      }
+
+      if (res.isFallback) {
+        alert(
+          tx(
+            `A cidade ${selectedCity?.city} não teve vendas registradas em 2026. Exportando dados do ${res.regionName} no lugar.`,
+            `The city ${selectedCity?.city} had no sales recorded in 2026. Exporting data for ${res.regionName} instead.`
+          )
+        );
+      }
+
+      // Generate CSV content
+      const headers = [
+        tx("Modelo", "Model"),
+        tx("Quantidade Vendida em 2026", "Quantity Sold in 2026"),
+      ];
+      
+      const allData = res.data || [];
+      const exportData = limitToTop100 ? allData.slice(0, 100) : allData;
+
+      const csvLines = [
+        headers.join(";"),
+        ...exportData.map((item) =>
+          [
+            item.model,
+            item.quantitySold,
+          ].join(";")
+        ),
+      ];
+
+      // Add a UTF-8 BOM so Excel opens it with correct encoding (e.g. for Portuguese accents)
+      const csvContent = "\uFEFF" + csvLines.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      
+      // Clean filename
+      const cleanRegionName = res.regionName
+        .replace(/[^a-zA-Z0-9]/g, "_")
+        .replace(/__+/g, "_");
+      
+      const limitLabel = limitToTop100 ? "_Top100" : "_Todos";
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Vendas_Modelos_2026_${cleanRegionName}${limitLabel}.csv`);
+      link.style.visibility = "hidden";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+    } catch (error) {
+      console.error("Erro ao exportar vendas por modelo:", error);
+      alert(tx("Falha ao exportar os dados para excel.", "Failed to export data to excel."));
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   if (geographicQuery.isLoading) {
@@ -798,26 +884,38 @@ export function GeographicView() {
                 >
                   {tx("Clientes", "Customers")}
                 </button>
+                <button 
+                  type="button" 
+                  className="ghost-button small"
+                  style={detailView === "models" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }}
+                  onClick={() => setDetailView("models")}
+                >
+                  {tx("Modelos", "Models")}
+                </button>
               </div>
             </div>
             
             <div className="region-side-totals" style={{ marginTop: 0 }}>
               {detailView === "cities" ? (
                 <span>{formatNumber(filteredCities.length)} {tx("cidades", "cities")}</span>
-              ) : (
+              ) : detailView === "customers" ? (
                 <span>{formatNumber(filteredCustomers.length)} {tx("clientes", "customers")}</span>
+              ) : (
+                <span>{formatNumber(modelsQuery.data?.data?.length ?? 0)} {tx("modelos", "models")}</span>
               )}
             </div>
           </div>
 
-          <label className="region-search">
-            <span>{tx("Buscar cliente ou localidade", "Search customer or location")}</span>
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={tx("Digite cliente, cidade ou UF", "Type customer, city or state")}
-            />
-          </label>
+          {detailView !== "models" && (
+            <label className="region-search">
+              <span>{tx("Buscar cliente ou localidade", "Search customer or location")}</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder={tx("Digite cliente, cidade ou UF", "Type customer, city or state")}
+              />
+            </label>
+          )}
 
           <div className="region-selection-bar">
             <strong>
@@ -833,6 +931,95 @@ export function GeographicView() {
                 : `${formatNumber(filteredCustomers.length)} ${tx("clientes exibidos", "customers shown")}`}
             </span>
           </div>
+
+          {detailView === "models" && (
+            <div className="region-export-section" style={{
+              margin: "0 0 16px 0",
+              padding: "16px",
+              background: "var(--surface-sunken)",
+              borderRadius: "12px",
+              border: "1px solid var(--border-subtle)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+              transition: "all 0.2s ease"
+            }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <span style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", fontWeight: 600 }}>
+                  {tx("Exportar Inteligência de Modelos", "Export Model Intelligence")}
+                </span>
+                <p style={{ fontSize: "13px", margin: 0, color: "var(--text)" }}>
+                  {tx("Planilha ordenada pelos modelos mais vendidos no ano de 2026.", "Spreadsheet sorted by the best-selling models in 2026.")}
+                </p>
+              </div>
+              
+              <button
+                type="button"
+                disabled={isExporting}
+                onClick={handleExportModelSales}
+                className="accent-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  padding: "10px 16px",
+                  background: isExporting ? "var(--surface-disabled)" : "#107c41",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "8px",
+                  cursor: isExporting ? "not-allowed" : "pointer",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  boxShadow: "0 2px 4px rgba(16, 124, 65, 0.15)",
+                  width: "100%"
+                }}
+                onMouseEnter={(e) => {
+                  if (!isExporting) {
+                    e.currentTarget.style.background = "#158a4a";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(16, 124, 65, 0.25)";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isExporting) {
+                    e.currentTarget.style.background = "#107c41";
+                    e.currentTarget.style.boxShadow = "0 2px 4px rgba(16, 124, 65, 0.15)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }
+                }}
+              >
+                {isExporting ? (
+                  <>
+                    <span className="spinner-small" style={{
+                      width: "16px",
+                      height: "16px",
+                      border: "2px solid rgba(255,255,255,0.3)",
+                      borderTopColor: "white",
+                      borderRadius: "50%",
+                      animation: "spin 0.8s linear infinite"
+                    }} />
+                    {tx("Carregando...", "Exporting...")}
+                  </>
+                ) : (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition: "transform 0.2s ease" }}>
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    {selectedCity
+                      ? tx(`Exportar ${selectedCity.city} (2026)`, `Export ${selectedCity.city} (2026)`)
+                      : selectedState
+                        ? tx(`Exportar ${selectedState} (2026)`, `Export ${selectedState} (2026)`)
+                        : tx("Exportar Brasil (2026)", "Export Brazil (2026)")
+                    }
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
           <div className="region-table-shell">
             <table className="region-ranking-table">
@@ -901,7 +1088,7 @@ export function GeographicView() {
                     )}
                   </tbody>
                 </>
-              ) : (
+              ) : detailView === "customers" ? (
                 <>
                   <thead>
                     <tr>
@@ -950,6 +1137,74 @@ export function GeographicView() {
                       <tr>
                         <td colSpan={4} className="region-table-empty">
                           {tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </>
+              ) : (
+                <>
+                  <thead>
+                    <tr>
+                      <th style={{ width: "60px" }}>{tx("Pos.", "Pos.")}</th>
+                      <th>{tx("Modelo", "Model")}</th>
+                      <th>{tx("Qtd. Vendida", "Qty. Sold")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelsQuery.isLoading ? (
+                      <tr>
+                        <td colSpan={3} className="region-table-empty">
+                          <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
+                            <span className="spinner-small" style={{
+                              width: "20px",
+                              height: "20px",
+                              border: "2px solid rgba(0,0,0,0.1)",
+                              borderTopColor: "var(--accent)",
+                              borderRadius: "50%",
+                              animation: "spin 0.8s linear infinite"
+                            }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ) : modelsQuery.data?.data && modelsQuery.data.data.length > 0 ? (
+                      modelsQuery.data.data.map((row, index) => (
+                        <tr key={`${row.model}-${index}`}>
+                          <td>
+                            <div className="region-table-number align-left">
+                              <strong style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: "24px",
+                                height: "24px",
+                                borderRadius: "12px",
+                                background: index === 0 ? "#ffd700" : index === 1 ? "#c0c0c0" : index === 2 ? "#cd7f32" : "var(--surface-sunken)",
+                                color: index < 3 ? "#000000" : "var(--text-muted)",
+                                fontSize: "11px",
+                                fontWeight: "bold"
+                              }}>
+                                {index + 1}
+                              </strong>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-meta">
+                              <strong>{row.model}</strong>
+                              <span>{modelsQuery.data.regionName}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="region-table-number align-left">
+                              <strong>{formatNumber(row.quantitySold)}</strong>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={3} className="region-table-empty">
+                          {tx("Nenhum dado de modelo para esta região em 2026.", "No model data for this region in 2026.")}
                         </td>
                       </tr>
                     )}
