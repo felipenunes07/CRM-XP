@@ -70,7 +70,8 @@ export function buildAcquisitionMetrics(
   todayMetrics: { amount: number; items: number; orders: number; performance: any[] },
   groupsCreatedByDay: Map<string, number>,
   convertedGroupsByDay: Map<string, number>,
-  unconvertedGroupsList: Array<{ name: string; date: string }>
+  unconvertedGroupsList: Array<{ name: string; date: string }>,
+  allGroupsList: Array<{ name: string; date: string; isConverted: boolean }>
 ): AcquisitionMetrics {
   const safeWindow = Math.max(1, Math.floor(dailyWindowDays));
   const today = parseDateOnly(referenceDate);
@@ -125,15 +126,19 @@ export function buildAcquisitionMetrics(
     }
   }
 
-  const dailySeries = Array.from({ length: safeWindow }, (_, index) => {
-    const date = formatDateOnly(addDays(today, -(safeWindow - index - 1)));
-    return {
+  const dailySeries: Array<{ date: string; newCustomers: number; groupsCreated: number; convertedGroups: number }> = [];
+  let dayCursor = new Date(seriesStartMonth);
+  const todayStr = formatDateOnly(today);
+  while (formatDateOnly(dayCursor) <= todayStr) {
+    const date = formatDateOnly(dayCursor);
+    dailySeries.push({
       date,
       newCustomers: byDay.get(date) ?? 0,
       groupsCreated: groupsCreatedByDay.get(date) ?? 0,
       convertedGroups: convertedGroupsByDay.get(date) ?? 0,
-    };
-  });
+    });
+    dayCursor = addDays(dayCursor, 1);
+  }
 
   const monthlySeries: AcquisitionMetrics["monthlySeries"] = [];
   let cursor = seriesStartMonth;
@@ -219,6 +224,7 @@ export function buildAcquisitionMetrics(
     monthlySeries,
     recentCustomers,
     unconvertedGroups: unconvertedGroupsList,
+    allGroups: allGroupsList,
   };
 }
 
@@ -341,7 +347,8 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
   const { 
     createdByDay: groupsCreatedByDay, 
     convertedByDay: convertedGroupsByDay,
-    unconvertedList: unconvertedGroupsList
+    unconvertedList: unconvertedGroupsList,
+    allList: allGroupsList
   } = groupsCreatedHistoryResult;
 
   const today = todayResult.rows[0]?.today ?? new Date().toISOString().slice(0, 10);
@@ -418,7 +425,8 @@ export async function getAcquisitionMetrics(dailyWindowDays = DEFAULT_DAILY_WIND
     },
     groupsCreatedByDay,
     convertedGroupsByDay,
-    unconvertedGroupsList
+    unconvertedGroupsList,
+    allGroupsList
   );
 }
 
@@ -426,26 +434,28 @@ async function getWhatsAppGroupsCreatedHistory(): Promise<{
   createdByDay: Map<string, number>; 
   convertedByDay: Map<string, number>;
   unconvertedList: Array<{ name: string; date: string }>;
+  allList: Array<{ name: string; date: string; isConverted: boolean }>;
 }> {
   const createdByDay = new Map<string, number>();
   const convertedByDay = new Map<string, number>();
   const unconvertedList: Array<{ name: string; date: string }> = [];
+  const allList: Array<{ name: string; date: string; isConverted: boolean }> = [];
   const csvUrl = env.WHATSAPP_GROUPS_SHEET_CSV_URL;
-  if (!csvUrl) return { createdByDay, convertedByDay, unconvertedList };
+  if (!csvUrl) return { createdByDay, convertedByDay, unconvertedList, allList };
 
   try {
     const response = await fetch(csvUrl);
-    if (!response.ok) return { createdByDay, convertedByDay, unconvertedList };
+    if (!response.ok) return { createdByDay, convertedByDay, unconvertedList, allList };
 
     const csvText = await response.text();
     const lines = csvText.split(/\r?\n/);
-    if (lines.length < 2) return { createdByDay, convertedByDay, unconvertedList };
+    if (lines.length < 2) return { createdByDay, convertedByDay, unconvertedList, allList };
 
     const headers = lines[0]!.split(",").map(h => h.trim().toLowerCase());
     const nameIndex = headers.findIndex(h => h === "name" || h === "nome");
     const dateIndex = headers.findIndex(h => h === "data criao" || h === "data criacao" || h.includes("data"));
     
-    if (dateIndex === -1) return { createdByDay, convertedByDay, unconvertedList };
+    if (dateIndex === -1) return { createdByDay, convertedByDay, unconvertedList, allList };
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i]!.trim();
@@ -464,6 +474,7 @@ async function getWhatsAppGroupsCreatedHistory(): Promise<{
 
         // Check for conversion (CL, KH, LJ prefixes)
         const isConverted = /^(CL|KH|LJ)\d+/i.test(sourceName);
+        allList.push({ name: sourceName, date: isoDate, isConverted });
         if (isConverted) {
           convertedByDay.set(isoDate, (convertedByDay.get(isoDate) ?? 0) + 1);
         } else {
@@ -475,10 +486,11 @@ async function getWhatsAppGroupsCreatedHistory(): Promise<{
     logger.warn("Failed to fetch whatsapp groups history for dashboard", { error });
   }
 
-  // Sort and limit unconverted list to recent ones
+  // Sort lists
   unconvertedList.sort((a, b) => b.date.localeCompare(a.date));
+  allList.sort((a, b) => b.date.localeCompare(a.date));
 
-  return { createdByDay, convertedByDay, unconvertedList };
+  return { createdByDay, convertedByDay, unconvertedList, allList };
 }
 
 function calculateLtvFields(

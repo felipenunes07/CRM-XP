@@ -54,6 +54,7 @@ describe("acquisitionService helpers", () => {
       { amount: 0, items: 0, orders: 0, performance: [] },
       new Map(),
       new Map(),
+      [],
       []
     );
 
@@ -105,6 +106,7 @@ describe("acquisitionService helpers", () => {
       { amount: 0, items: 0, orders: 0, performance: [] },
       new Map(),
       new Map(),
+      [],
       []
     );
 

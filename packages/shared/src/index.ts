@@ -268,6 +268,7 @@ export interface AcquisitionMetrics {
   monthlySeries: AcquisitionMonthlyPoint[];
   recentCustomers: NewCustomerListItem[];
   unconvertedGroups: UnconvertedGroup[];
+  allGroups?: Array<{ name: string; date: string; isConverted: boolean }>;
 }
 
 export interface PortfolioTrendPoint {
