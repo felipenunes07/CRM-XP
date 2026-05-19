@@ -304,9 +304,9 @@ async function getHistoricalAttendantByCustomerCode(customerCode: string) {
   return normalizeAttendantName(result.rows[0]?.attendant);
 }
 
-async function insertOlistRows(rows: NormalizedSaleRow[]) {
+async function insertOlistRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: number; insertedCustomerCodes: string[] }> {
   if (!rows.length) {
-    return 0;
+    return { rowCount: 0, insertedCustomerCodes: [] };
   }
 
   const arrays = {
@@ -331,7 +331,7 @@ async function insertOlistRows(rows: NormalizedSaleRow[]) {
     rawPayload: rows.map((row) => JSON.stringify(row.rawPayload)),
   };
 
-  const result = await pool.query(
+  const result = await pool.query<{ customer_code: string }>(
     `
       INSERT INTO sales_raw (
         source_system, source_file_id, import_run_id, external_order_id, external_customer_id,
@@ -346,6 +346,7 @@ async function insertOlistRows(rows: NormalizedSaleRow[]) {
         $14::text[], $15::text[], $16::text[], $17::timestamptz[], $18::text[], $19::jsonb[]
       )
       ON CONFLICT (fingerprint) DO NOTHING
+      RETURNING customer_code
     `,
     [
       arrays.sourceSystem,
@@ -370,7 +371,11 @@ async function insertOlistRows(rows: NormalizedSaleRow[]) {
     ],
   );
 
-  return result.rowCount ?? 0;
+  const insertedCustomerCodes = result.rows.map((row) => row.customer_code).filter(Boolean);
+  return {
+    rowCount: result.rowCount ?? 0,
+    insertedCustomerCodes,
+  };
 }
 
 function toNormalizedSaleRows(order: OlistOrder, attendantName: string | null): NormalizedSaleRow[] {
@@ -495,9 +500,10 @@ export async function syncOlistIncremental() {
 
         const rows = toNormalizedSaleRows(order, attendantName);
         recordsSeen += rows.length;
-        recordsInserted += await insertOlistRows(rows);
-        for (const row of rows) {
-          impactedCustomerCodes.add(row.customerCode);
+        const { rowCount: rowsInserted, insertedCustomerCodes } = await insertOlistRows(rows);
+        recordsInserted += rowsInserted;
+        for (const code of insertedCustomerCodes) {
+          impactedCustomerCodes.add(code);
         }
       }
       page += 1;

@@ -3,6 +3,8 @@ import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 import { syncOlistIncremental } from "../ingestion/olistSyncService.js";
 import { importSupabase2026 } from "../ingestion/supabaseImporter.js";
+import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
+import { clearDashboardCache } from "../crm/dashboardService.js";
 
 const DAILY_SYNC_KEY = "primary_daily_sync_date";
 const HOURLY_SYNC_KEY = "primary_hourly_sync_timestamp";
@@ -58,6 +60,8 @@ async function runPrimarySyncInternal(reason: string) {
     const local = getLocalParts();
     await setCursor(DAILY_SYNC_KEY, local.dateKey);
     await setCursor(HOURLY_SYNC_KEY, new Date().toISOString());
+    await refreshDashboardDailyMetrics();
+    await clearDashboardCache();
     logger.info("primary sync completed", { reason, source: "supabase_2026", result });
     return {
       source: "supabase_2026",
@@ -70,6 +74,8 @@ async function runPrimarySyncInternal(reason: string) {
     const local = getLocalParts();
     await setCursor(DAILY_SYNC_KEY, local.dateKey);
     await setCursor(HOURLY_SYNC_KEY, new Date().toISOString());
+    await refreshDashboardDailyMetrics();
+    await clearDashboardCache();
     logger.info("primary sync completed", { reason, source: "olist_v2", result });
     return {
       source: "olist_v2",
