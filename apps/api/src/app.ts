@@ -1758,7 +1758,7 @@ export function createApp() {
     }
   });
 
-  app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
       await deleteWhatsappInstance(String(request.params.id));
       response.status(204).send();
