@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  MessageTemplate,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
   WhatsappMonitorMessage,
@@ -441,6 +442,41 @@ export function MessagesPage() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [activeTemplateIndex, setActiveTemplateIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const templatesQuery = useQuery({
+    queryKey: ["message-templates"],
+    queryFn: () => api.messageTemplates(token!),
+    enabled: Boolean(token),
+  });
+
+  const templates = templatesQuery.data ?? [];
+  const showShortcuts = replyText.startsWith("/");
+  const shortcutSearch = showShortcuts ? replyText.slice(1).toLowerCase() : "";
+
+  const filteredTemplates = useMemo(() => {
+    if (!showShortcuts) return [];
+    if (!shortcutSearch) return templates;
+    return templates.filter(
+      (t) =>
+        t.title.toLowerCase().includes(shortcutSearch) ||
+        t.content.toLowerCase().includes(shortcutSearch) ||
+        (t.category && t.category.toLowerCase().includes(shortcutSearch))
+    );
+  }, [showShortcuts, shortcutSearch, templates]);
+
+  useEffect(() => {
+    setActiveTemplateIndex(0);
+  }, [filteredTemplates.length]);
+
+  const selectTemplate = (content: string) => {
+    setReplyText(content);
+    setActiveTemplateIndex(0);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
@@ -967,6 +1003,31 @@ export function MessagesPage() {
               </div>
 
               <form className="wa-reply-composer" onSubmit={handleSendReply}>
+                {showShortcuts && filteredTemplates.length > 0 ? (
+                  <div className="wa-shortcuts-dropdown">
+                    <div className="wa-shortcuts-header">
+                      <span>Respostas Rápidas</span>
+                      <small>Use as setas ↑↓ e Enter para selecionar</small>
+                    </div>
+                    <div className="wa-shortcuts-list">
+                      {filteredTemplates.map((template, index) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          className={`wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`}
+                          onClick={() => selectTemplate(template.content)}
+                          onMouseEnter={() => setActiveTemplateIndex(index)}
+                        >
+                          <div className="wa-shortcut-info">
+                            <span className="wa-shortcut-trigger">/{template.title.toLowerCase().replace(/\s+/g, "")}</span>
+                            <span className="wa-shortcut-title">{template.title}</span>
+                          </div>
+                          <span className="wa-shortcut-preview">{template.content}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="wa-reply-bar">
                   <input
                     type="file"
@@ -1010,15 +1071,34 @@ export function MessagesPage() {
                     ) : null}
                   </div>
                   <textarea
+                    ref={textareaRef}
                     value={replyText}
                     onChange={(event) => setReplyText(event.target.value)}
                     onKeyDown={(event) => {
+                      if (showShortcuts && filteredTemplates.length > 0) {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setActiveTemplateIndex((prev) => (prev + 1) % filteredTemplates.length);
+                        } else if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setActiveTemplateIndex((prev) => (prev - 1 + filteredTemplates.length) % filteredTemplates.length);
+                        } else if (event.key === "Enter") {
+                          event.preventDefault();
+                          const template = filteredTemplates[activeTemplateIndex];
+                          if (template) {
+                            selectTemplate(template.content);
+                          }
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          setReplyText("");
+                        }
+                      } else
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
                         event.currentTarget.form?.requestSubmit();
                       }
                     }}
-                    placeholder="Responder pelo WhatsApp"
+                    placeholder="Responder pelo WhatsApp (digite / para atalhos)"
                     rows={1}
                   />
                   <button
