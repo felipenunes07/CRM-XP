@@ -11,7 +11,7 @@ import type {
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
-import { configureInstanceSettings, configureInstanceWebhook } from "../whatsapp/evolutionService.js";
+import { configureInstanceSettings, configureInstanceWebhook, deleteEvolutionInstance } from "../whatsapp/evolutionService.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 
@@ -577,7 +577,60 @@ export async function configureWhatsappInstance(id: string): Promise<void> {
 }
 
 export async function deleteWhatsappInstance(id: string): Promise<void> {
-  await pool.query("DELETE FROM whatsapp_instances WHERE id = $1", [id]);
+  const result = await pool.query(
+    "SELECT instance_name, evolution_base_url, evolution_api_key FROM whatsapp_instances WHERE id = $1",
+    [id],
+  );
+  
+  const row = result.rows[0];
+  if (row) {
+    const instanceName = String(row.instance_name);
+    const evolutionBaseUrl = String(row.evolution_base_url);
+    const evolutionApiKey = String(row.evolution_api_key);
+    
+    logger.info("Deleting WhatsApp connection", { id, instanceName });
+    
+    // 1. Delete the instance from Evolution API to stop webhooks
+    await deleteEvolutionInstance({
+      instanceName,
+      evolutionBaseUrl,
+      evolutionApiKey,
+    });
+    
+    // 2. Delete the database row from whatsapp_instances
+    await pool.query("DELETE FROM whatsapp_instances WHERE id = $1", [id]);
+    
+    // 3. Clean up associated incoming messages
+    await pool.query("DELETE FROM whatsapp_incoming_messages WHERE LOWER(instance_name) = LOWER($1)", [instanceName]);
+    
+    // 4. Clean up associated chat profiles and participant profiles
+    await pool.query("DELETE FROM whatsapp_chat_profiles WHERE LOWER(instance_name) = LOWER($1)", [instanceName]);
+    await pool.query("DELETE FROM whatsapp_participant_profiles WHERE LOWER(instance_name) = LOWER($1)", [instanceName]);
+    
+    // 5. Clean up associated deal activities
+    await pool.query(
+      `
+      DELETE FROM deal_activities 
+      WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND LOWER(metadata ->> 'instance') = LOWER($1)
+      `,
+      [instanceName],
+    );
+    
+    // 6. Clean up empty auto-created pipeline deals that now have no activities
+    await pool.query(
+      `
+      DELETE FROM deals 
+      WHERE whatsapp_instance_id IS NULL 
+        AND whatsapp_jid IS NOT NULL 
+        AND NOT EXISTS (
+          SELECT 1 FROM deal_activities WHERE deal_id = deals.id
+        )
+      `
+    );
+    
+    logger.info("WhatsApp connection and all associated chats, messages, and profiles successfully removed", { instanceName });
+  }
 }
 
 export async function getInstanceConfig(instanceId: string) {
