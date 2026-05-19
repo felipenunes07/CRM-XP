@@ -129,9 +129,9 @@ function normalizeWorkbookRows(
   });
 }
 
-async function insertRawRows(rows: NormalizedSaleRow[]) {
+async function insertRawRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: number; insertedCustomerCodes: string[] }> {
   if (!rows.length) {
-    return 0;
+    return { rowCount: 0, insertedCustomerCodes: [] };
   }
 
   const arrays = {
@@ -156,7 +156,7 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
     rawPayload: rows.map((row) => JSON.stringify(row.rawPayload)),
   };
 
-  const result = await pool.query(
+  const result = await pool.query<{ customer_code: string }>(
     `
       INSERT INTO sales_raw (
         source_system,
@@ -202,6 +202,7 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
         $19::jsonb[]
       )
       ON CONFLICT (fingerprint) DO NOTHING
+      RETURNING customer_code
     `,
     [
       arrays.sourceSystem,
@@ -226,7 +227,11 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
     ],
   );
 
-  return result.rowCount ?? 0;
+  const insertedCustomerCodes = result.rows.map((row) => row.customer_code).filter(Boolean);
+  return {
+    rowCount: result.rowCount ?? 0,
+    insertedCustomerCodes,
+  };
 }
 
 export async function importHistoryFile(filePath: string) {
@@ -276,11 +281,11 @@ export async function importHistoryFile(filePath: string) {
     for (let index = 0; index < rows.length; index += 1000) {
       const chunk = rows.slice(index, index + 1000);
       const normalized = normalizeWorkbookRows(chunk, sourceFileId, importRunId);
-      const inserted = await insertRawRows(normalized);
+      const { rowCount: inserted, insertedCustomerCodes } = await insertRawRows(normalized);
       rowsSeen += normalized.length;
       rowsInserted += inserted;
-      for (const row of normalized) {
-        impactedCustomerCodes.add(row.customerCode);
+      for (const code of insertedCustomerCodes) {
+        impactedCustomerCodes.add(code);
       }
     }
 

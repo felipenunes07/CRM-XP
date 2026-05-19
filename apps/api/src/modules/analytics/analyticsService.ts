@@ -112,46 +112,104 @@ async function rebuildOrders(customerCodes: string[]) {
     [customerCodes],
   );
 
+  if (!orderGroups.rows.length) {
+    return;
+  }
+
   const customerMapResult = await pool.query("SELECT id, customer_code FROM customers WHERE customer_code = ANY($1)", [customerCodes]);
   const customerMap = new Map(customerMapResult.rows.map(r => [r.customer_code, r.id]));
 
-  for (let i = 0; i < orderGroups.rows.length; i += 500) {
-    const chunk = orderGroups.rows.slice(i, i + 500);
-    
-    for (const group of chunk) {
-      const customerId = customerMap.get(group.customer_code);
-      if (!customerId) continue;
+  const arrays = {
+    sourceSystem: [] as string[],
+    externalOrderId: [] as (string | null)[],
+    orderNumber: [] as string[],
+    customerId: [] as string[],
+    customerCode: [] as string[],
+    orderDate: [] as string[],
+    totalAmount: [] as number[],
+    status: [] as string[],
+    itemCount: [] as number[],
+    lastAttendant: [] as (string | null)[],
+  };
 
-      const inserted = await pool.query(
-        `
-          INSERT INTO orders (
-            source_system, external_order_id, order_number, customer_id, customer_code,
-            order_date, total_amount, status, item_count, last_attendant
-          )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-          RETURNING id
-        `,
-        [
-          group.source_system, group.external_order_id, group.order_number, customerId, group.customer_code,
-          group.sale_date, group.total_amount, group.order_status, group.item_count, group.last_attendant || null,
-        ],
-      );
+  for (const group of orderGroups.rows) {
+    const customerId = customerMap.get(group.customer_code);
+    if (!customerId) continue;
 
-      const orderId = inserted.rows[0]?.id;
-      if (orderId) {
-        await pool.query(
-          `
-            INSERT INTO order_items (
-              order_id, sale_raw_id, sku, item_description, quantity, unit_price, line_total, attendant_name
-            )
-            SELECT $1, id, sku, item_description, quantity, unit_price, line_total, attendant_name
-            FROM sales_raw
-            WHERE source_system = $2 AND order_number = $3 AND customer_code = $4 AND sale_date = $5
-          `,
-          [orderId, group.source_system, group.order_number, group.customer_code, group.sale_date],
-        );
-      }
-    }
+    arrays.sourceSystem.push(group.source_system);
+    arrays.externalOrderId.push(group.external_order_id || null);
+    arrays.orderNumber.push(group.order_number);
+    arrays.customerId.push(customerId);
+    arrays.customerCode.push(group.customer_code);
+    arrays.orderDate.push(group.sale_date);
+    arrays.totalAmount.push(Number(group.total_amount));
+    arrays.status.push(group.order_status);
+    arrays.itemCount.push(group.item_count);
+    arrays.lastAttendant.push(group.last_attendant || null);
+  }
+
+  if (!arrays.customerId.length) {
+    return;
+  }
+
+  const inserted = await pool.query<{
+    id: string;
+    source_system: string;
+    order_number: string;
+    customer_code: string;
+    order_date: string;
+  }>(
+    `
+      INSERT INTO orders (
+        source_system, external_order_id, order_number, customer_id, customer_code,
+        order_date, total_amount, status, item_count, last_attendant
+      )
+      SELECT *
+      FROM UNNEST(
+        $1::text[], $2::text[], $3::text[], $4::uuid[], $5::text[],
+        $6::date[], $7::numeric[], $8::text[], $9::int[], $10::text[]
+      )
+      RETURNING id, source_system, order_number, customer_code, order_date::text
+    `,
+    [
+      arrays.sourceSystem,
+      arrays.externalOrderId,
+      arrays.orderNumber,
+      arrays.customerId,
+      arrays.customerCode,
+      arrays.orderDate,
+      arrays.totalAmount,
+      arrays.status,
+      arrays.itemCount,
+      arrays.lastAttendant,
+    ]
+  );
+
+  if (inserted.rows.length > 0) {
+    const ids = inserted.rows.map((row) => row.id);
+    const sourceSystems = inserted.rows.map((row) => row.source_system);
+    const orderNumbers = inserted.rows.map((row) => row.order_number);
+    const customerCodes = inserted.rows.map((row) => row.customer_code);
+    const saleDates = inserted.rows.map((row) => row.order_date);
+
+    await pool.query(
+      `
+        INSERT INTO order_items (
+          order_id, sale_raw_id, sku, item_description, quantity, unit_price, line_total, attendant_name
+        )
+        SELECT 
+          o.id, sr.id, sr.sku, sr.item_description, sr.quantity, sr.unit_price, sr.line_total, sr.attendant_name
+        FROM sales_raw sr
+        JOIN (
+          SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::date[]) 
+          AS t(id, source_system, order_number, customer_code, sale_date)
+        ) o ON sr.source_system = o.source_system 
+           AND sr.order_number = o.order_number 
+           AND sr.customer_code = o.customer_code 
+           AND sr.sale_date = o.sale_date
+      `,
+      [ids, sourceSystems, orderNumbers, customerCodes, saleDates]
+    );
   }
 }
 

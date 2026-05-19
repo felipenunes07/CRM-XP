@@ -41,14 +41,25 @@ class MemoryRedis {
     return this.store.get(key) ?? null;
   }
 
-  async del(key: string) {
-    const existing = this.timeouts.get(key);
-    if (existing) {
-      clearTimeout(existing);
-      this.timeouts.delete(key);
+  async keys(pattern: string) {
+    const regex = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+    return Array.from(this.store.keys()).filter((key) => regex.test(key));
+  }
+
+  async del(...keys: string[]) {
+    let deletedCount = 0;
+    for (const key of keys) {
+      const existing = this.timeouts.get(key);
+      if (existing) {
+        clearTimeout(existing);
+        this.timeouts.delete(key);
+      }
+      if (this.store.has(key)) {
+        this.store.delete(key);
+        deletedCount++;
+      }
     }
-    this.store.delete(key);
-    return 1;
+    return deletedCount;
   }
 
   async quit() {
