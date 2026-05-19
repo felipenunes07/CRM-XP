@@ -259,6 +259,8 @@ export async function importSupabase2026() {
     ssl: {
       rejectUnauthorized: false,
     },
+    connectionTimeoutMillis: 15000, // 15 segundos para conectar
+    statement_timeout: 45000,       // 45 segundos de timeout de query
   });
 
   let importRunId = "";
