@@ -192,6 +192,20 @@ export const api = {
   getGeographicSalesStats(token: string) {
     return request<GeographicSalesResponse>("/api/geographic/sales", {}, token);
   },
+  getGeographicModelSales(token: string, options: { state?: string; city?: string; year?: number }) {
+    const params = new URLSearchParams();
+    if (options.state) params.set("state", options.state);
+    if (options.city) params.set("city", options.city);
+    if (options.year) params.set("year", String(options.year));
+    return request<{
+      regionName: string;
+      state: string | null;
+      city: string | null;
+      year: number;
+      isFallback: boolean;
+      data: Array<{ model: string; quantitySold: number; totalRevenue: number }>;
+    }>(`/api/geographic/model-sales?${params.toString()}`, {}, token);
+  },
   customerCreditOverview(token: string) {
     return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token);
   },
