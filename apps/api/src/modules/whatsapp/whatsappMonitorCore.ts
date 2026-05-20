@@ -189,7 +189,9 @@ function unwrapEvolutionMessage(msg: Record<string, unknown> | null | undefined)
 export function extractEvolutionMessageText(message: EvolutionMessageLike): string | null {
   const rawMessage = asRecord(message.message);
   if (!rawMessage) {
-    return null;
+    // Some Evolution API payloads (especially fromMe) carry text at the top level
+    const fallback = pickString(message as Record<string, unknown>, ["body", "text", "caption", "content"]);
+    return fallback;
   }
 
   const unwrapped = unwrapEvolutionMessage(rawMessage);

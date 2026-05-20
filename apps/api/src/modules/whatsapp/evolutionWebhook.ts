@@ -200,13 +200,31 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       continue;
     }
 
-    if (!text) {
-      logger.info("evolution webhook skipped message: no text content (likely media without caption)", {
-        instance,
-        remoteJid,
-        messageId,
-      });
-      continue;
+    // Try to resolve content for messages without extracted text (e.g., media-only messages)
+    let messageContent = text;
+    if (!messageContent) {
+      const msgMedia = extractEvolutionMessageMedia(msg);
+      const msgContact = extractEvolutionMessageContact(msg);
+      messageContent = msgMedia
+        ? (msgMedia.caption || msgMedia.fileName || (
+            msgMedia.mediaType === "image" ? "[Imagem]" :
+            msgMedia.mediaType === "video" ? "[Vídeo]" :
+            msgMedia.mediaType === "audio" ? "[Áudio]" :
+            msgMedia.mediaType === "sticker" ? "[Sticker]" :
+            "[Documento]"
+          ))
+        : msgContact
+          ? "[Contato]"
+          : null;
+
+      if (!messageContent) {
+        logger.info("evolution webhook skipped message: no text and no media content", {
+          instance,
+          remoteJid,
+          messageId,
+        });
+        continue;
+      }
     }
 
     const enriched = await resolveWhatsappMessageMetadata(context);
@@ -256,7 +274,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       senderJid: activitySenderJid,
       chatDisplayName,
       hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
-      textPreview: text.slice(0, 80),
+      textPreview: messageContent.slice(0, 80),
       mediaType: media?.mediaType ?? null,
       messageId,
       fromMe: context.fromMe,
@@ -285,7 +303,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       [
         remoteJid,
         senderName,
-        text,
+        messageContent,
         messageId,
         instanceName,
         JSON.stringify(msg),
@@ -319,7 +337,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         activityType,
         actorUserId,
         actorName,
-        content: text,
+        content: messageContent,
         metadata,
         createdAt: context.createdAt,
       });
@@ -332,12 +350,12 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderName: activitySenderName,
         senderJid: activitySenderJid,
         senderProfilePictureUrl,
-        content: text,
+        content: messageContent,
         createdAt: context.createdAt,
         remoteJid,
         isGroup: context.isGroup,
         metadata,
-        risk: detectWhatsappMessageRisk(text),
+        risk: detectWhatsappMessageRisk(messageContent),
       };
 
       createEventFromMessage(monitorMessage, dealId).catch((err) => {
@@ -400,7 +418,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           activityType,
           actorUserId,
           actorName,
-          content: text,
+          content: messageContent,
           metadata: autoMetadata,
           createdAt: context.createdAt,
         });
@@ -413,12 +431,12 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           senderName: activitySenderName,
           senderJid: activitySenderJid,
           senderProfilePictureUrl,
-          content: text,
+          content: messageContent,
           createdAt: context.createdAt,
           remoteJid,
           isGroup: context.isGroup,
           metadata: autoMetadata,
-          risk: detectWhatsappMessageRisk(text),
+          risk: detectWhatsappMessageRisk(messageContent),
         };
 
         createEventFromMessage(monitorMessage, dealId).catch((err) => {
