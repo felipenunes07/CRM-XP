@@ -187,6 +187,11 @@ export function GeographicView() {
         };
     }, [geographicData.stateStats]);
     const selectedCity = useMemo(() => geographicData.cityStats.find((item) => cityKey(item) === selectedCityKey) ?? null, [geographicData.cityStats, selectedCityKey]);
+    const modelsQuery = useQuery({
+        queryKey: ["geographic-model-sales", selectedState, selectedCity?.city],
+        queryFn: () => api.getGeographicModelSales(token, { state: selectedState || undefined, city: selectedCity?.city || undefined, year: 2026 }),
+        enabled: Boolean(token) && detailView === "models",
+    });
     const filteredCities = useMemo(() => geographicData.cityStats.filter((item) => {
         if (selectedState && item.state !== selectedState) {
             return false;
@@ -232,18 +237,81 @@ export function GeographicView() {
     function handleStateToggle(state) {
         setSelectedCityKey("");
         setSelectedState((current) => (current === state ? "" : state));
-        setDetailView("cities");
+        if (detailView !== "models") {
+            setDetailView("cities");
+        }
     }
     function handleCitySelect(city) {
         setSelectedState(city.state);
         setSelectedCityKey(cityKey(city));
-        setDetailView("customers");
+        if (detailView !== "models") {
+            setDetailView("customers");
+        }
     }
+    const [isExporting, setIsExporting] = useState(false);
+    const [limitToTop100, setLimitToTop100] = useState(true);
     function clearFilters() {
         setSelectedState("");
         setSelectedCityKey("");
         setSearch("");
         setDetailView("cities");
+    }
+    async function handleExportModelSales() {
+        if (!token)
+            return;
+        setIsExporting(true);
+        try {
+            const options = {
+                state: selectedState || undefined,
+                city: selectedCity?.city || undefined,
+                year: 2026,
+            };
+            const res = await api.getGeographicModelSales(token, options);
+            if (!res.data || res.data.length === 0) {
+                alert(tx("Nenhum dado de vendas encontrado para esta região em 2026.", "No sales data found for this region in 2026."));
+                return;
+            }
+            if (res.isFallback) {
+                alert(tx(`A cidade ${selectedCity?.city} não teve vendas registradas em 2026. Exportando dados do ${res.regionName} no lugar.`, `The city ${selectedCity?.city} had no sales recorded in 2026. Exporting data for ${res.regionName} instead.`));
+            }
+            // Generate CSV content
+            const headers = [
+                tx("Modelo", "Model"),
+                tx("Quantidade Vendida em 2026", "Quantity Sold in 2026"),
+            ];
+            const allData = res.data || [];
+            const exportData = limitToTop100 ? allData.slice(0, 100) : allData;
+            const csvLines = [
+                headers.join(";"),
+                ...exportData.map((item) => [
+                    item.model,
+                    item.quantitySold,
+                ].join(";")),
+            ];
+            // Add a UTF-8 BOM so Excel opens it with correct encoding (e.g. for Portuguese accents)
+            const csvContent = "\uFEFF" + csvLines.join("\n");
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            // Clean filename
+            const cleanRegionName = res.regionName
+                .replace(/[^a-zA-Z0-9]/g, "_")
+                .replace(/__+/g, "_");
+            const limitLabel = limitToTop100 ? "_Top100" : "_Todos";
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Vendas_Modelos_2026_${cleanRegionName}${limitLabel}.csv`);
+            link.style.visibility = "hidden";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        catch (error) {
+            console.error("Erro ao exportar vendas por modelo:", error);
+            alert(tx("Falha ao exportar os dados para excel.", "Failed to export data to excel."));
+        }
+        finally {
+            setIsExporting(false);
+        }
     }
     if (geographicQuery.isLoading) {
         return _jsx("div", { className: "page-loading", children: tx("Carregando mapa geografico...", "Loading geographic map...") });
@@ -360,13 +428,62 @@ export function GeographicView() {
                                                             ? tx("Detalhamento da cidade", "City detail")
                                                             : selectedState
                                                                 ? `${tx("Detalhamento de", "Detail of")} ${selectedState}`
-                                                                : tx("Detalhamento por regiao", "Regional detail") })] }), _jsxs("div", { className: "view-toggle", style: { display: "flex", background: "var(--surface-sunken)", padding: "4px", borderRadius: "8px", gap: "4px" }, children: [_jsx("button", { type: "button", className: "ghost-button small", style: detailView === "cities" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }, onClick: () => setDetailView("cities"), children: tx("Cidades", "Cities") }), _jsx("button", { type: "button", className: "ghost-button small", style: detailView === "customers" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }, onClick: () => setDetailView("customers"), children: tx("Clientes", "Customers") })] })] }), _jsx("div", { className: "region-side-totals", style: { marginTop: 0 }, children: detailView === "cities" ? (_jsxs("span", { children: [formatNumber(filteredCities.length), " ", tx("cidades", "cities")] })) : (_jsxs("span", { children: [formatNumber(filteredCustomers.length), " ", tx("clientes", "customers")] })) })] }), _jsxs("label", { className: "region-search", children: [_jsx("span", { children: tx("Buscar cliente ou localidade", "Search customer or location") }), _jsx("input", { value: search, onChange: (event) => setSearch(event.target.value), placeholder: tx("Digite cliente, cidade ou UF", "Type customer, city or state") })] }), _jsxs("div", { className: "region-selection-bar", children: [_jsx("strong", { children: selectedCity
+                                                                : tx("Detalhamento por regiao", "Regional detail") })] }), _jsxs("div", { className: "view-toggle", style: { display: "flex", background: "var(--surface-sunken)", padding: "4px", borderRadius: "8px", gap: "4px" }, children: [_jsx("button", { type: "button", className: "ghost-button small", style: detailView === "cities" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }, onClick: () => setDetailView("cities"), children: tx("Cidades", "Cities") }), _jsx("button", { type: "button", className: "ghost-button small", style: detailView === "customers" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }, onClick: () => setDetailView("customers"), children: tx("Clientes", "Customers") }), _jsx("button", { type: "button", className: "ghost-button small", style: detailView === "models" ? { background: "var(--accent)", color: "white", borderColor: "transparent" } : { background: "transparent", color: "var(--text-muted)", borderColor: "transparent" }, onClick: () => setDetailView("models"), children: tx("Modelos", "Models") })] })] }), _jsx("div", { className: "region-side-totals", style: { marginTop: 0 }, children: detailView === "cities" ? (_jsxs("span", { children: [formatNumber(filteredCities.length), " ", tx("cidades", "cities")] })) : detailView === "customers" ? (_jsxs("span", { children: [formatNumber(filteredCustomers.length), " ", tx("clientes", "customers")] })) : (_jsxs("span", { children: [formatNumber(modelsQuery.data?.data?.length ?? 0), " ", tx("modelos", "models")] })) })] }), detailView !== "models" && (_jsxs("label", { className: "region-search", children: [_jsx("span", { children: tx("Buscar cliente ou localidade", "Search customer or location") }), _jsx("input", { value: search, onChange: (event) => setSearch(event.target.value), placeholder: tx("Digite cliente, cidade ou UF", "Type customer, city or state") })] })), _jsxs("div", { className: "region-selection-bar", children: [_jsx("strong", { children: selectedCity
                                             ? `${selectedCity.city} / ${selectedCity.state}`
                                             : selectedState
                                                 ? `${selectedState} - ${BRAZIL_STATE_LABEL_BY_UF[selectedState] ?? selectedState}`
                                                 : tx("Brasil inteiro", "Whole Brazil") }), _jsx("span", { children: selectedCity
                                             ? `${formatNumber(selectedCity.customerCount)} ${tx("clientes", "customers")} - ${formatNumber(selectedCity.totalPieces)} ${tx("pecas", "pieces")}`
-                                            : `${formatNumber(filteredCustomers.length)} ${tx("clientes exibidos", "customers shown")}` })] }), _jsx("div", { className: "region-table-shell", children: _jsxs("table", { className: "region-ranking-table", children: [detailView === "cities" ? (_jsxs(_Fragment, { children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: tx("Cidade", "City") }), _jsx("th", { children: tx("Clientes", "Customers") }), _jsx("th", { children: tx("Receita", "Revenue") }), _jsx("th", { children: tx("Pecas", "Pieces") })] }) }), _jsx("tbody", { children: filteredCities.length ? (filteredCities.map((row) => (_jsxs("tr", { style: { cursor: "pointer" }, onClick: () => handleCitySelect(row), children: [_jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.city }), _jsx("span", { children: row.state })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number align-left", children: [_jsx("strong", { children: formatNumber(row.customerCount) }), _jsxs("div", { style: {
+                                            : `${formatNumber(filteredCustomers.length)} ${tx("clientes exibidos", "customers shown")}` })] }), detailView === "models" && (_jsxs("div", { className: "region-export-section", style: {
+                                    margin: "0 0 16px 0",
+                                    padding: "16px",
+                                    background: "var(--surface-sunken)",
+                                    borderRadius: "12px",
+                                    border: "1px solid var(--border-subtle)",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "12px",
+                                    transition: "all 0.2s ease"
+                                }, children: [_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "2px" }, children: [_jsx("span", { style: { fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)", fontWeight: 600 }, children: tx("Exportar Inteligência de Modelos", "Export Model Intelligence") }), _jsx("p", { style: { fontSize: "13px", margin: 0, color: "var(--text)" }, children: tx("Planilha ordenada pelos modelos mais vendidos no ano de 2026.", "Spreadsheet sorted by the best-selling models in 2026.") })] }), _jsx("button", { type: "button", disabled: isExporting, onClick: handleExportModelSales, className: "accent-button", style: {
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            gap: "8px",
+                                            padding: "10px 16px",
+                                            background: isExporting ? "var(--surface-disabled)" : "#107c41",
+                                            color: "white",
+                                            border: "none",
+                                            borderRadius: "8px",
+                                            cursor: isExporting ? "not-allowed" : "pointer",
+                                            fontWeight: 600,
+                                            fontSize: "14px",
+                                            transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                                            boxShadow: "0 2px 4px rgba(16, 124, 65, 0.15)",
+                                            width: "100%"
+                                        }, onMouseEnter: (e) => {
+                                            if (!isExporting) {
+                                                e.currentTarget.style.background = "#158a4a";
+                                                e.currentTarget.style.boxShadow = "0 4px 12px rgba(16, 124, 65, 0.25)";
+                                                e.currentTarget.style.transform = "translateY(-1px)";
+                                            }
+                                        }, onMouseLeave: (e) => {
+                                            if (!isExporting) {
+                                                e.currentTarget.style.background = "#107c41";
+                                                e.currentTarget.style.boxShadow = "0 2px 4px rgba(16, 124, 65, 0.15)";
+                                                e.currentTarget.style.transform = "translateY(0)";
+                                            }
+                                        }, children: isExporting ? (_jsxs(_Fragment, { children: [_jsx("span", { className: "spinner-small", style: {
+                                                        width: "16px",
+                                                        height: "16px",
+                                                        border: "2px solid rgba(255,255,255,0.3)",
+                                                        borderTopColor: "white",
+                                                        borderRadius: "50%",
+                                                        animation: "spin 0.8s linear infinite"
+                                                    } }), tx("Carregando...", "Exporting...")] })) : (_jsxs(_Fragment, { children: [_jsxs("svg", { width: "18", height: "18", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", style: { transition: "transform 0.2s ease" }, children: [_jsx("path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" }), _jsx("polyline", { points: "7 10 12 15 17 10" }), _jsx("line", { x1: "12", y1: "15", x2: "12", y2: "3" })] }), selectedCity
+                                                    ? tx(`Exportar ${selectedCity.city} (2026)`, `Export ${selectedCity.city} (2026)`)
+                                                    : selectedState
+                                                        ? tx(`Exportar ${selectedState} (2026)`, `Export ${selectedState} (2026)`)
+                                                        : tx("Exportar Brasil (2026)", "Export Brazil (2026)")] })) })] })), _jsx("div", { className: "region-table-shell", children: _jsxs("table", { className: "region-ranking-table", children: [detailView === "cities" ? (_jsxs(_Fragment, { children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: tx("Cidade", "City") }), _jsx("th", { children: tx("Clientes", "Customers") }), _jsx("th", { children: tx("Receita", "Revenue") }), _jsx("th", { children: tx("Pecas", "Pieces") })] }) }), _jsx("tbody", { children: filteredCities.length ? (filteredCities.map((row) => (_jsxs("tr", { style: { cursor: "pointer" }, onClick: () => handleCitySelect(row), children: [_jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.city }), _jsx("span", { children: row.state })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number align-left", children: [_jsx("strong", { children: formatNumber(row.customerCount) }), _jsxs("div", { style: {
                                                                                 display: 'flex',
                                                                                 height: '4px',
                                                                                 width: '100%',
@@ -375,5 +492,23 @@ export function GeographicView() {
                                                                                 borderRadius: '2px',
                                                                                 overflow: 'hidden',
                                                                                 marginTop: '8px'
-                                                                            }, children: [_jsx("div", { style: { width: `${row.activeRate}%`, background: 'var(--semantic-positive)' }, title: `Ativos: ${formatPercent(row.activeRate)}` }), _jsx("div", { style: { width: `${row.attentionRate}%`, background: 'var(--semantic-attention)' }, title: `Atenção: ${formatPercent(row.attentionRate)}` }), _jsx("div", { style: { width: `${row.inactiveRate}%`, background: 'var(--semantic-negative)' }, title: `Inativos: ${formatPercent(row.inactiveRate)}` })] })] }) }), _jsx("td", { children: _jsx("div", { className: "region-table-number", children: _jsx("strong", { children: formatCurrency(row.totalRevenue) }) }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number", children: [_jsx("strong", { children: formatNumber(row.totalPieces) }), _jsxs("span", { children: [formatNumber(row.orderCount), " ", tx("pedidos", "orders")] })] }) })] }, cityKey(row))))) : (_jsx("tr", { children: _jsx("td", { colSpan: 4, className: "region-table-empty", children: tx("Nenhuma cidade bateu com esse filtro.", "No city matched this filter.") }) })) })] })) : (_jsxs(_Fragment, { children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: tx("Cliente", "Customer") }), _jsx("th", { children: tx("Dias sem compra", "Days since purchase") }), _jsx("th", { children: tx("Cidade", "City") }), _jsx("th", { children: tx("Pecas", "Pieces") })] }) }), _jsx("tbody", { children: tableRows.length ? (tableRows.map((row) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.displayName }), _jsx("span", { children: `${row.customerCode || tx("Sem codigo", "No code")} - ${formatCustomerStatus(row.status, tx)}` })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number align-left", children: [_jsxs("strong", { className: "region-days-badge", children: [_jsx("span", { className: "region-days-emoji", "aria-hidden": "true", children: customerStatusEmoji(row.status) }), _jsx("span", { children: formatDaysSincePurchase(row.daysSinceLastPurchase, tx) })] }), _jsx("span", { children: tx("Ultima compra", "Last purchase") })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.city }), _jsx("span", { children: `${row.state} - ${formatCurrency(row.totalRevenue)}` })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number", children: [_jsx("strong", { children: formatNumber(row.totalPieces) }), _jsxs("span", { children: [formatNumber(row.orderCount), " ", tx("pedidos", "orders")] })] }) })] }, `${row.customerId}-${row.state}-${row.city}`)))) : (_jsx("tr", { children: _jsx("td", { colSpan: 4, className: "region-table-empty", children: tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.") }) })) })] })), "            "] }) }), _jsxs("div", { className: "region-filter-grid", children: [_jsxs("div", { className: "region-filter-box", children: [_jsxs("div", { className: "region-filter-header", children: [_jsx("h4", { children: tx("Estado", "State") }), _jsx("span", { children: formatNumber(allStates.length) })] }), _jsxs("div", { className: "region-filter-list", children: [_jsxs("button", { type: "button", className: `region-filter-option${selectedState === "" ? " active" : ""}`, onClick: clearFilters, children: [_jsx("i", {}), _jsx("strong", { children: tx("Todos", "All") }), _jsx("span", { children: formatNumber(geographicData.summary.totalCustomers) })] }), allStates.map((state) => (_jsxs("button", { type: "button", className: `region-filter-option${selectedState === state.uf ? " active" : ""}${state.stat.totalPieces <= 0 ? " muted" : ""}`, onClick: () => handleStateToggle(state.uf), children: [_jsx("i", {}), _jsx("strong", { children: `${state.uf} - ${state.label}` }), _jsx("span", { children: formatNumber(state.stat.customerCount) })] }, state.uf)))] })] }), _jsxs("div", { className: "region-filter-box", children: [_jsxs("div", { className: "region-filter-header", children: [_jsx("h4", { children: tx("Cidade", "City") }), _jsx("span", { children: formatNumber(cityFilterRows.length) })] }), _jsxs("div", { className: "region-filter-list", children: [_jsxs("button", { type: "button", className: `region-filter-option${selectedCityKey === "" ? " active" : ""}`, onClick: () => setSelectedCityKey(""), children: [_jsx("i", {}), _jsx("strong", { children: tx("Todas", "All") }), _jsx("span", { children: formatNumber(filteredCustomers.length) })] }), cityFilterRows.map((city) => (_jsxs("button", { type: "button", className: `region-filter-option city${selectedCityKey === cityKey(city) ? " active" : ""}`, onClick: () => handleCitySelect(city), children: [_jsx("i", {}), _jsx("strong", { children: city.city }), _jsx("span", { children: `${city.state} - ${formatNumber(city.customerCount)}` })] }, cityKey(city))))] })] })] })] })] })] }));
+                                                                            }, children: [_jsx("div", { style: { width: `${row.activeRate}%`, background: 'var(--semantic-positive)' }, title: `Ativos: ${formatPercent(row.activeRate)}` }), _jsx("div", { style: { width: `${row.attentionRate}%`, background: 'var(--semantic-attention)' }, title: `Atenção: ${formatPercent(row.attentionRate)}` }), _jsx("div", { style: { width: `${row.inactiveRate}%`, background: 'var(--semantic-negative)' }, title: `Inativos: ${formatPercent(row.inactiveRate)}` })] })] }) }), _jsx("td", { children: _jsx("div", { className: "region-table-number", children: _jsx("strong", { children: formatCurrency(row.totalRevenue) }) }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number", children: [_jsx("strong", { children: formatNumber(row.totalPieces) }), _jsxs("span", { children: [formatNumber(row.orderCount), " ", tx("pedidos", "orders")] })] }) })] }, cityKey(row))))) : (_jsx("tr", { children: _jsx("td", { colSpan: 4, className: "region-table-empty", children: tx("Nenhuma cidade bateu com esse filtro.", "No city matched this filter.") }) })) })] })) : detailView === "customers" ? (_jsxs(_Fragment, { children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { children: tx("Cliente", "Customer") }), _jsx("th", { children: tx("Dias sem compra", "Days since purchase") }), _jsx("th", { children: tx("Cidade", "City") }), _jsx("th", { children: tx("Pecas", "Pieces") })] }) }), _jsx("tbody", { children: tableRows.length ? (tableRows.map((row) => (_jsxs("tr", { children: [_jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.displayName }), _jsx("span", { children: `${row.customerCode || tx("Sem codigo", "No code")} - ${formatCustomerStatus(row.status, tx)}` })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number align-left", children: [_jsxs("strong", { className: "region-days-badge", children: [_jsx("span", { className: "region-days-emoji", "aria-hidden": "true", children: customerStatusEmoji(row.status) }), _jsx("span", { children: formatDaysSincePurchase(row.daysSinceLastPurchase, tx) })] }), _jsx("span", { children: tx("Ultima compra", "Last purchase") })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.city }), _jsx("span", { children: `${row.state} - ${formatCurrency(row.totalRevenue)}` })] }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-number", children: [_jsx("strong", { children: formatNumber(row.totalPieces) }), _jsxs("span", { children: [formatNumber(row.orderCount), " ", tx("pedidos", "orders")] })] }) })] }, `${row.customerId}-${row.state}-${row.city}`)))) : (_jsx("tr", { children: _jsx("td", { colSpan: 4, className: "region-table-empty", children: tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.") }) })) })] })) : (_jsxs(_Fragment, { children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: { width: "60px" }, children: tx("Pos.", "Pos.") }), _jsx("th", { children: tx("Modelo", "Model") }), _jsx("th", { children: tx("Qtd. Vendida", "Qty. Sold") })] }) }), _jsx("tbody", { children: modelsQuery.isLoading ? (_jsx("tr", { children: _jsx("td", { colSpan: 3, className: "region-table-empty", children: _jsx("div", { style: { display: "flex", justifyContent: "center", padding: "16px 0" }, children: _jsx("span", { className: "spinner-small", style: {
+                                                                        width: "20px",
+                                                                        height: "20px",
+                                                                        border: "2px solid rgba(0,0,0,0.1)",
+                                                                        borderTopColor: "var(--accent)",
+                                                                        borderRadius: "50%",
+                                                                        animation: "spin 0.8s linear infinite"
+                                                                    } }) }) }) })) : modelsQuery.data?.data && modelsQuery.data.data.length > 0 ? (modelsQuery.data.data.map((row, index) => (_jsxs("tr", { children: [_jsx("td", { children: _jsx("div", { className: "region-table-number align-left", children: _jsx("strong", { style: {
+                                                                            display: "inline-flex",
+                                                                            alignItems: "center",
+                                                                            justifyContent: "center",
+                                                                            width: "24px",
+                                                                            height: "24px",
+                                                                            borderRadius: "12px",
+                                                                            background: index === 0 ? "#ffd700" : index === 1 ? "#c0c0c0" : index === 2 ? "#cd7f32" : "var(--surface-sunken)",
+                                                                            color: index < 3 ? "#000000" : "var(--text-muted)",
+                                                                            fontSize: "11px",
+                                                                            fontWeight: "bold"
+                                                                        }, children: index + 1 }) }) }), _jsx("td", { children: _jsxs("div", { className: "region-table-meta", children: [_jsx("strong", { children: row.model }), _jsx("span", { children: modelsQuery.data.regionName })] }) }), _jsx("td", { children: _jsx("div", { className: "region-table-number align-left", children: _jsx("strong", { children: formatNumber(row.quantitySold) }) }) })] }, `${row.model}-${index}`)))) : (_jsx("tr", { children: _jsx("td", { colSpan: 3, className: "region-table-empty", children: tx("Nenhum dado de modelo para esta região em 2026.", "No model data for this region in 2026.") }) })) })] })), "            "] }) }), _jsxs("div", { className: "region-filter-grid", children: [_jsxs("div", { className: "region-filter-box", children: [_jsxs("div", { className: "region-filter-header", children: [_jsx("h4", { children: tx("Estado", "State") }), _jsx("span", { children: formatNumber(allStates.length) })] }), _jsxs("div", { className: "region-filter-list", children: [_jsxs("button", { type: "button", className: `region-filter-option${selectedState === "" ? " active" : ""}`, onClick: clearFilters, children: [_jsx("i", {}), _jsx("strong", { children: tx("Todos", "All") }), _jsx("span", { children: formatNumber(geographicData.summary.totalCustomers) })] }), allStates.map((state) => (_jsxs("button", { type: "button", className: `region-filter-option${selectedState === state.uf ? " active" : ""}${state.stat.totalPieces <= 0 ? " muted" : ""}`, onClick: () => handleStateToggle(state.uf), children: [_jsx("i", {}), _jsx("strong", { children: `${state.uf} - ${state.label}` }), _jsx("span", { children: formatNumber(state.stat.customerCount) })] }, state.uf)))] })] }), _jsxs("div", { className: "region-filter-box", children: [_jsxs("div", { className: "region-filter-header", children: [_jsx("h4", { children: tx("Cidade", "City") }), _jsx("span", { children: formatNumber(cityFilterRows.length) })] }), _jsxs("div", { className: "region-filter-list", children: [_jsxs("button", { type: "button", className: `region-filter-option${selectedCityKey === "" ? " active" : ""}`, onClick: () => setSelectedCityKey(""), children: [_jsx("i", {}), _jsx("strong", { children: tx("Todas", "All") }), _jsx("span", { children: formatNumber(filteredCustomers.length) })] }), cityFilterRows.map((city) => (_jsxs("button", { type: "button", className: `region-filter-option city${selectedCityKey === cityKey(city) ? " active" : ""}`, onClick: () => handleCitySelect(city), children: [_jsx("i", {}), _jsx("strong", { children: city.city }), _jsx("span", { children: `${city.state} - ${formatNumber(city.customerCount)}` })] }, cityKey(city))))] })] })] })] })] })] }));
 }
