@@ -1,7 +1,9 @@
 import pg from 'pg';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const pool = new pg.Pool({
-  connectionString: 'postgresql://postgres:9630Jinren@localhost:5432/olist_crm?sslmode=disable'
+  connectionString: process.env.DATABASE_URL
 });
 
 async function main() {

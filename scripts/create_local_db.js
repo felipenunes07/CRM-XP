@@ -1,10 +1,11 @@
+require('dotenv').config();
 const pkg = require("pg");
 const { Client } = pkg;
 
 async function createDb() {
   // Conecta ao banco padrão 'postgres' para criar o novo banco
   const client = new Client({
-    connectionString: "postgresql://postgres:postgres@localhost:5432/postgres"
+    connectionString: process.env.POSTGRES_ADMIN_URL || "postgresql://postgres:postgres@localhost:5432/postgres"
   });
 
   try {
