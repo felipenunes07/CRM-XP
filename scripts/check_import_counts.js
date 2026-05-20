@@ -1,7 +1,13 @@
+require('dotenv').config();
 const pkg = require("pg");
 const { Pool } = pkg;
 
-const connectionString = "postgresql://postgres.gxvxgpwdgkeskttasrfz:9630Jinren%24@aws-0-sa-east-1.pooler.supabase.com:6543/postgres";
+const connectionString = process.env.SUPABASE_DATABASE_URL;
+if (!connectionString) {
+  console.error("ERROR: SUPABASE_DATABASE_URL not found in environment variables");
+  process.exit(1);
+}
+
 const pool = new Pool({ connectionString });
 
 async function check() {

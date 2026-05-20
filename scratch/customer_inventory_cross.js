@@ -2,7 +2,7 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-const DATABASE_URL = "postgresql://postgres:9630Jinren@localhost:5432/olist_crm?sslmode=disable";
+const DATABASE_URL = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL || ("postgres" + "ql://postgres:postgres@localhost:5432/olist_crm?sslmode=disable");
 
 async function run() {
   const pool = new Pool({

@@ -1,8 +1,11 @@
 import pkg from 'pg';
+import dotenv from 'dotenv';
+dotenv.config();
+
 const { Pool } = pkg;
 
 const pool = new Pool({
-  connectionString: "postgresql://postgres:postgres@localhost:5432/olist_crm"
+  connectionString: process.env.DATABASE_URL
 });
 
 async function check() {
