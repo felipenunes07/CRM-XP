@@ -523,95 +523,80 @@ export function NovidadesPage() {
           {/* Suggestions List Container */}
           <div className="roadmap-list">
             {filteredSuggestions.length > 0 ? (
-              <div className="roadmap-grid">
+              <div className="roadmap-list-container">
                 {filteredSuggestions.map((item) => {
                   const hasVoted = item.votedBy.includes("me");
                   return (
                     <div 
                       key={item.id} 
-                      className={`roadmap-card ${item.status === "completed" ? "completed" : ""}`}
+                      className={`roadmap-list-row ${item.status === "completed" ? "completed" : ""}`}
                     >
-                      {/* Urgency Pill & Type tag */}
-                      <div className="roadmap-card-header">
-                        <span className={`changelog-tag ${item.type}`}>
-                          {item.type === "feature" && <Sparkles size={11} />}
-                          {item.type === "improvement" && <Wrench size={11} />}
-                          {item.type === "bugfix" && <ShieldAlert size={11} />}
+                      {/* Left: Vote Counter / Upvote Button */}
+                      <div className="row-vote-col">
+                        <button
+                          type="button"
+                          className={`row-vote-btn ${hasVoted ? "voted" : ""}`}
+                          onClick={() => handleUpvote(item.id)}
+                          title={hasVoted ? "Remover voto útil" : "Votar como útil"}
+                        >
+                          <ThumbsUp size={12} />
+                          <span>{item.votes}</span>
+                        </button>
+                      </div>
+
+                      {/* Middle Left: Type tag */}
+                      <div className="row-type-col">
+                        <span className={`changelog-tag compact ${item.type}`}>
+                          {item.type === "feature" && <Sparkles size={10} />}
+                          {item.type === "improvement" && <Wrench size={10} />}
+                          {item.type === "bugfix" && <ShieldAlert size={10} />}
                           {item.type === "feature" && tx("Feature", "新功能")}
                           {item.type === "improvement" && tx("Melhoria", "改进")}
                           {item.type === "bugfix" && tx("Bug", "问题")}
                         </span>
+                      </div>
 
-                        <div className="header-badges">
-                          {/* Urgency Indicator */}
-                          <span className={`urgency-badge ${item.urgency}`}>
+                      {/* Middle Right: Title, Description and Info */}
+                      <div className="row-info-col">
+                        <div className="row-title-row">
+                          <h4>{item.title}</h4>
+                          <span className={`urgency-badge compact ${item.urgency}`}>
                             {item.urgency === "high" && "🔴 Alta"}
                             {item.urgency === "medium" && "🟡 Média"}
                             {item.urgency === "low" && "🔵 Baixa"}
                           </span>
-
-                          {/* Status Badge */}
-                          <span className={`status-badge ${item.status}`}>
-                            {item.status === "completed" ? (
-                              <>
-                                <CheckCircle2 size={12} />
-                                <span>Concluído</span>
-                              </>
-                            ) : (
-                              <>
-                                <AlertCircle size={12} />
-                                <span>Pendente</span>
-                              </>
-                            )}
+                          <span className={`status-badge compact ${item.status}`}>
+                            {item.status === "completed" ? tx("Concluída", "已完成") : tx("Pendente", "待处理")}
                           </span>
                         </div>
-                      </div>
-
-                      {/* Main Title & Body */}
-                      <div className="roadmap-card-body">
-                        <h3>{item.title}</h3>
                         <p>{item.description}</p>
-                        <small className="card-date">
-                          Criado em: {formatDate(item.createdAt)}
-                        </small>
+                        <span className="row-date">
+                          {tx("Registrado em", "提交于")}: {formatDate(item.createdAt)}
+                        </span>
                       </div>
 
-                      {/* Card Footer Actions */}
-                      <div className="roadmap-card-footer">
-                        {/* Vote Button */}
+                      {/* Right: Actions Column */}
+                      <div className="row-actions-col">
                         <button
                           type="button"
-                          className={`vote-btn ${hasVoted ? "voted" : ""}`}
-                          onClick={() => handleUpvote(item.id)}
-                          title={hasVoted ? "Remover voto útil" : "Marcar como útil / votar"}
+                          className={`toggle-status-btn compact ${item.status === "completed" ? "undo" : ""}`}
+                          onClick={() => handleToggleStatus(item.id)}
+                          title={item.status === "completed" ? "Reabrir sugestão" : "Marcar como concluída"}
                         >
-                          <ThumbsUp size={14} />
-                          <span>{item.votes} {item.votes === 1 ? "Útil" : "Úteis"}</span>
+                          {item.status === "completed" ? <RotateCcw size={12} /> : <Check size={12} />}
+                          <span>
+                            {item.status === "completed" ? tx("Reabrir", "重新开启") : tx("Concluir", "完成")}
+                          </span>
                         </button>
-
-                        {/* Interactive Admin Controls (Mark Completed & Remove) */}
-                        <div className="admin-actions">
-                          <button
-                            type="button"
-                            className={`toggle-status-btn ${item.status === "completed" ? "undo" : ""}`}
-                            onClick={() => handleToggleStatus(item.id)}
-                            title={item.status === "completed" ? "Marcar como pendente" : "Marcar como concluído"}
-                          >
-                            {item.status === "completed" ? <RotateCcw size={14} /> : <Check size={14} />}
-                            <span>
-                              {item.status === "completed" ? tx("Refazer", "重新开启") : tx("Concluir", "完成")}
-                            </span>
-                          </button>
-                          
-                          <button
-                            type="button"
-                            className="delete-sug-btn"
-                            onClick={() => handleDeleteSuggestion(item.id)}
-                            title="Remover do quadro"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        
+                        <button
+                          type="button"
+                          className="delete-sug-btn compact"
+                          onClick={() => handleDeleteSuggestion(item.id)}
+                          title="Remover do quadro"
+                        >
+                          <Trash2 size={12} />
+                        </button>
                       </div>
                     </div>
                   );
