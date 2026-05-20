@@ -7,7 +7,7 @@ async function test() {
     const result = await configureInstanceWebhook({
       instanceName: "exportelas", 
       evolutionBaseUrl: "https://exportelas-evolution.f0dgeg.easypanel.host",
-      evolutionApiKey: "SUA_CHAVE_ANTIGA_DA_EVOLUTION_API", 
+      evolutionApiKey: process.env.EVOLUTION_API_KEY || "", 
     });
     console.log("Success:", JSON.stringify(result, null, 2));
   } catch (err: any) {

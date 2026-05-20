@@ -31,8 +31,8 @@ if (-not (Test-Path "secrets_to_clean.txt")) {
     Write-Host "Por favor, crie o arquivo 'secrets_to_clean.txt' e insira os segredos expostos"
     Write-Host "(um por linha) antes de prosseguir."
     Write-Host "Exemplo:"
-    Write-Host "  SUA_SENHA_ANTIGA_DO_SUPABASE"
-    Write-Host "  SUA_CHAVE_ANTIGA_DO_GOOGLE_MAPS"
+    Write-Host "  <SUA_SENHA_ANTIGA_DO_SUPABASE>"
+    Write-Host "  <SUA_CHAVE_ANTIGA_DO_GOOGLE_MAPS>"
     exit 1
 }
 

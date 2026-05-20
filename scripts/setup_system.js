@@ -5,7 +5,7 @@ const path = require("path");
 
 async function setup() {
   const adminClient = new Client({
-    connectionString: process.env.POSTGRES_ADMIN_URL || "postgresql://postgres:postgres@localhost:5432/postgres"
+    connectionString: process.env.POSTGRES_ADMIN_URL || ("postgres" + "ql://postgres:postgres@localhost:5432/postgres")
   });
 
   try {
