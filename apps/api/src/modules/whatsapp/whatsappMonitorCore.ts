@@ -743,3 +743,41 @@ export function mapWhatsappActivityToMessage(activity: DealActivity): WhatsappMo
     risk: detectWhatsappMessageRisk(content),
   };
 }
+
+/**
+ * Compares two WhatsApp JIDs or phone numbers, handling Brazilian 9th-digit variations robustly.
+ */
+export function areWhatsappJidsEqual(
+  jidA: string | null | undefined,
+  jidB: string | null | undefined,
+): boolean {
+  if (!jidA || !jidB) {
+    return false;
+  }
+
+  const cleanA = jidA.trim().toLowerCase();
+  const cleanB = jidB.trim().toLowerCase();
+
+  if (cleanA === cleanB) {
+    return true;
+  }
+
+  // Extract pure digits
+  const digitsA = (cleanA.split("@")[0] || "").replace(/\D/g, "");
+  const digitsB = (cleanB.split("@")[0] || "").replace(/\D/g, "");
+
+  if (!digitsA || !digitsB) {
+    return cleanA === cleanB;
+  }
+
+  // Brazilian number matching: country code 55
+  if (digitsA.startsWith("55") && digitsB.startsWith("55") && digitsA.length >= 10 && digitsB.length >= 10) {
+    const dddA = digitsA.substring(2, 4);
+    const dddB = digitsB.substring(2, 4);
+    const last8A = digitsA.slice(-8);
+    const last8B = digitsB.slice(-8);
+    return dddA === dddB && last8A === last8B;
+  }
+
+  return digitsA === digitsB;
+}

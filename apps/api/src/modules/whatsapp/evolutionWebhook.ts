@@ -8,6 +8,7 @@ import {
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
+  areWhatsappJidsEqual,
   type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
@@ -170,248 +171,178 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
   });
 
   for (const msg of messages) {
-    const context = extractEvolutionMessageContext(msg, payload.instance);
-    const { remoteJid, messageId, text, fromMe } = context;
+    try {
+      const context = extractEvolutionMessageContext(msg, payload.instance);
+      const { remoteJid, messageId, text, fromMe } = context;
 
-    if (!remoteJid || !messageId) {
-      logger.info("evolution webhook skipped message: missing remoteJid or messageId", {
+      if (!remoteJid || !messageId) {
+        logger.info("evolution webhook skipped message: missing remoteJid or messageId", {
+          instance,
+          remoteJid,
+          messageId,
+          fromMe,
+        });
+        continue;
+      }
+
+      logger.info("evolution webhook processing message", {
         instance,
         remoteJid,
         messageId,
         fromMe,
+        hasText: !!text,
       });
-      continue;
-    }
 
-    logger.info("evolution webhook processing message", {
-      instance,
-      remoteJid,
-      messageId,
-      fromMe,
-      hasText: !!text,
-    });
-
-    if (!isMonitorableWhatsappJid(remoteJid)) {
-      logger.info("evolution webhook skipped message: non-chat broadcast jid", {
-        instance,
-        remoteJid,
-        messageId,
-      });
-      continue;
-    }
-
-    // Try to resolve content for messages without extracted text (e.g., media-only messages)
-    let messageContent = text;
-    if (!messageContent) {
-      const msgMedia = extractEvolutionMessageMedia(msg);
-      const msgContact = extractEvolutionMessageContact(msg);
-      messageContent = msgMedia
-        ? (msgMedia.caption || msgMedia.fileName || (
-            msgMedia.mediaType === "image" ? "[Imagem]" :
-            msgMedia.mediaType === "video" ? "[Vídeo]" :
-            msgMedia.mediaType === "audio" ? "[Áudio]" :
-            msgMedia.mediaType === "sticker" ? "[Sticker]" :
-            "[Documento]"
-          ))
-        : msgContact
-          ? "[Contato]"
-          : null;
-
-      if (!messageContent) {
-        logger.info("evolution webhook skipped message: no text and no media content", {
+      if (!isMonitorableWhatsappJid(remoteJid)) {
+        logger.info("evolution webhook skipped message: non-chat broadcast jid", {
           instance,
           remoteJid,
           messageId,
         });
         continue;
       }
-    }
 
-    const enriched = await resolveWhatsappMessageMetadata(context);
-    const media = extractEvolutionMessageMedia(msg);
-    const contact = extractEvolutionMessageContact(msg);
-    const senderName = enriched.senderName ?? context.senderName;
-    const chatDisplayName = enriched.chatDisplayName ?? context.chatDisplayName;
-    const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
-    const senderProfilePictureUrl = enriched.senderProfilePictureUrl ?? context.senderProfilePictureUrl;
-    const instanceName = context.instanceName ?? "";
-    const instanceDetails = await getWhatsappInstanceDetails(instanceName);
-    const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
-    
-    // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
-    const isFromMe = Boolean(context.fromMe || (instanceOwnerJid && context.senderJid === instanceOwnerJid));
-    
-    const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
-    const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
-    const actorName = isFromMe
-      ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
-      : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
-    const activitySenderJid = isFromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
-    const activitySenderName = isFromMe
-      ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
-      : senderName;
-    const metadata = buildActivityMetadata({
-      remoteJid: String(remoteJid),
-      messageId: String(messageId),
-      instanceName,
-      isGroup: context.isGroup,
-      senderJid: activitySenderJid,
-      senderName: activitySenderName,
-      senderProfilePictureUrl,
-      chatDisplayName,
-      chatProfilePictureUrl,
-      instanceId: instanceDetails?.id ?? null,
-      capturedFromWhatsapp: isFromMe,
-      outboundSource: isFromMe ? "whatsapp_device" : null,
-      media,
-      contact,
-    });
+      // Try to resolve content for messages without extracted text (e.g., media-only messages)
+      let messageContent = text;
+      if (!messageContent) {
+        const msgMedia = extractEvolutionMessageMedia(msg);
+        const msgContact = extractEvolutionMessageContact(msg);
+        messageContent = msgMedia
+          ? (msgMedia.caption || msgMedia.fileName || (
+              msgMedia.mediaType === "image" ? "[Imagem]" :
+              msgMedia.mediaType === "video" ? "[Vídeo]" :
+              msgMedia.mediaType === "audio" ? "[Áudio]" :
+              msgMedia.mediaType === "sticker" ? "[Sticker]" :
+              "[Documento]"
+            ))
+          : msgContact
+            ? "[Contato]"
+            : null;
 
-    logger.info("evolution webhook incoming message", {
-      remoteJid,
-      isGroup: context.isGroup,
-      senderName: activitySenderName,
-      senderJid: activitySenderJid,
-      chatDisplayName,
-      hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
-      textPreview: messageContent.slice(0, 80),
-      mediaType: media?.mediaType ?? null,
-      messageId,
-      fromMe: context.fromMe,
-      actorUserId,
-    });
+        if (!messageContent) {
+          logger.info("evolution webhook skipped message: no text and no media content", {
+            instance,
+            remoteJid,
+            messageId,
+          });
+          continue;
+        }
+      }
 
-    await pool.query(
-      `
-      INSERT INTO whatsapp_incoming_messages (
-        remote_jid, sender_name, message_text, message_id,
-        instance_name, raw_payload, participant_jid, participant_name,
-        sender_profile_picture_url, chat_display_name, chat_profile_picture_url,
-        from_me, created_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
-      ON CONFLICT (message_id) DO UPDATE SET
-        sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_incoming_messages.sender_name),
-        raw_payload = EXCLUDED.raw_payload,
-        participant_jid = COALESCE(EXCLUDED.participant_jid, whatsapp_incoming_messages.participant_jid),
-        participant_name = COALESCE(EXCLUDED.participant_name, whatsapp_incoming_messages.participant_name),
-        sender_profile_picture_url = COALESCE(EXCLUDED.sender_profile_picture_url, whatsapp_incoming_messages.sender_profile_picture_url),
-        chat_display_name = COALESCE(EXCLUDED.chat_display_name, whatsapp_incoming_messages.chat_display_name),
-        chat_profile_picture_url = COALESCE(EXCLUDED.chat_profile_picture_url, whatsapp_incoming_messages.chat_profile_picture_url),
-        from_me = whatsapp_incoming_messages.from_me OR EXCLUDED.from_me
-      `,
-      [
-        remoteJid,
-        senderName,
-        messageContent,
-        messageId,
+      const enriched = await resolveWhatsappMessageMetadata(context);
+      const media = extractEvolutionMessageMedia(msg);
+      const contact = extractEvolutionMessageContact(msg);
+      const senderName = enriched.senderName ?? context.senderName;
+      const chatDisplayName = enriched.chatDisplayName ?? context.chatDisplayName;
+      const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
+      const senderProfilePictureUrl = enriched.senderProfilePictureUrl ?? context.senderProfilePictureUrl;
+      const instanceName = context.instanceName ?? "";
+      const instanceDetails = await getWhatsappInstanceDetails(instanceName);
+      const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
+      
+      // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
+      const isFromMe = Boolean(context.fromMe || (instanceOwnerJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid)));
+      
+      const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
+      const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
+      const actorName = isFromMe
+        ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
+        : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
+      const activitySenderJid = isFromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
+      const activitySenderName = isFromMe
+        ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
+        : senderName;
+      const metadata = buildActivityMetadata({
+        remoteJid: String(remoteJid),
+        messageId: String(messageId),
         instanceName,
-        JSON.stringify(msg),
-        activitySenderJid,
-        activitySenderName,
+        isGroup: context.isGroup,
+        senderJid: activitySenderJid,
+        senderName: activitySenderName,
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
-        isFromMe,
-        context.createdAt,
-      ],
-    );
-
-    const dealMatch = await pool.query(
-      `
-      SELECT d.id, d.whatsapp_instance_id FROM deals d
-      JOIN pipeline_stages ps ON ps.id = d.stage_id
-      WHERE d.whatsapp_jid = $1
-        AND ps.is_won = false AND ps.is_lost = false
-      ORDER BY d.last_activity_at DESC
-      LIMIT 1
-      `,
-      [remoteJid],
-    );
-
-    if (dealMatch.rows[0]) {
-      const dealId = String(dealMatch.rows[0].id);
-
-      await insertDealActivity({
-        dealId,
-        activityType,
-        actorUserId,
-        actorName,
-        content: messageContent,
-        metadata,
-        createdAt: context.createdAt,
+        instanceId: instanceDetails?.id ?? null,
+        capturedFromWhatsapp: isFromMe,
+        outboundSource: isFromMe ? "whatsapp_device" : null,
+        media,
+        contact,
       });
 
-      // Messaging Intelligence: Detect and create event
-      const monitorMessage: WhatsappMonitorMessage = {
-        id: String(messageId),
-        dealId,
-        direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
-        senderName: activitySenderName,
-        senderJid: activitySenderJid,
-        senderProfilePictureUrl,
-        content: messageContent,
-        createdAt: context.createdAt,
+      logger.info("evolution webhook incoming message", {
         remoteJid,
         isGroup: context.isGroup,
-        metadata,
-        risk: detectWhatsappMessageRisk(messageContent),
-      };
-
-      createEventFromMessage(monitorMessage, dealId).catch((err) => {
-        logger.warn("failed to create message event from webhook", {
-          dealId,
-          messageId,
-          error: err.message,
-        });
+        senderName: activitySenderName,
+        senderJid: activitySenderJid,
+        chatDisplayName,
+        hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
+        textPreview: messageContent.slice(0, 80),
+        mediaType: media?.mediaType ?? null,
+        messageId,
+        fromMe: context.fromMe,
+        actorUserId,
       });
 
-      // Backfill whatsapp_instance_id if missing on the deal
-      if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
-        if (instanceDetails) {
-          await pool.query(
-            "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
-            [instanceDetails.id, dealId],
-          );
-          logger.info("evolution webhook backfilled instance on deal", { dealId, instanceId: instanceDetails.id });
-        } else {
-          await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
-        }
-      } else {
-        await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
-      }
-      logger.info("evolution webhook linked message to deal", { dealId, remoteJid });
-    } else {
-      const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
-      if (stageMatch.rows[0]) {
-        const stageId = stageMatch.rows[0].id;
-        const dealTitle = conversationTitle({
-          remoteJid: String(remoteJid),
-          isGroup: context.isGroup,
+      await pool.query(
+        `
+        INSERT INTO whatsapp_incoming_messages (
+          remote_jid, sender_name, message_text, message_id,
+          instance_name, raw_payload, participant_jid, participant_name,
+          sender_profile_picture_url, chat_display_name, chat_profile_picture_url,
+          from_me, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (message_id) DO UPDATE SET
+          sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_incoming_messages.sender_name),
+          raw_payload = EXCLUDED.raw_payload,
+          participant_jid = COALESCE(EXCLUDED.participant_jid, whatsapp_incoming_messages.participant_jid),
+          participant_name = COALESCE(EXCLUDED.participant_name, whatsapp_incoming_messages.participant_name),
+          sender_profile_picture_url = COALESCE(EXCLUDED.sender_profile_picture_url, whatsapp_incoming_messages.sender_profile_picture_url),
+          chat_display_name = COALESCE(EXCLUDED.chat_display_name, whatsapp_incoming_messages.chat_display_name),
+          chat_profile_picture_url = COALESCE(EXCLUDED.chat_profile_picture_url, whatsapp_incoming_messages.chat_profile_picture_url),
+          from_me = whatsapp_incoming_messages.from_me OR EXCLUDED.from_me
+        `,
+        [
+          remoteJid,
+          senderName,
+          messageContent,
+          messageId,
+          instanceName,
+          JSON.stringify(msg),
+          activitySenderJid,
+          activitySenderName,
+          senderProfilePictureUrl,
           chatDisplayName,
-          senderName: isFromMe ? null : activitySenderName,
-        });
-        const autoMetadata = { ...metadata, autoCreated: true };
+          chatProfilePictureUrl,
+          isFromMe,
+          context.createdAt,
+        ],
+      );
 
-        const newDeal = await pool.query(
-          `
-          INSERT INTO deals (
-            title, customer_display_name, stage_id, whatsapp_instance_id,
-            whatsapp_jid, expected_value, priority, last_activity_at,
-            assigned_to, assigned_to_name
+      const dealMatch = await pool.query(
+        `
+        SELECT d.id, d.whatsapp_instance_id FROM deals d
+        JOIN pipeline_stages ps ON ps.id = d.stage_id
+        WHERE ps.is_won = false AND ps.is_lost = false
+          AND (
+            d.whatsapp_jid = $1
+            OR (
+              $1 NOT LIKE '%@g.us'
+              AND d.whatsapp_jid NOT LIKE '%@g.us'
+              AND regexp_replace(d.whatsapp_jid, '\\D', '', 'g') LIKE '55%'
+              AND regexp_replace($1, '\\D', '', 'g') LIKE '55%'
+              AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) = substring(regexp_replace($1, '\\D', '', 'g') from 3 for 2)
+              AND right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8) = right(regexp_replace($1, '\\D', '', 'g'), 8)
+            )
           )
-          VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', $6, $7, $8)
-          RETURNING id
-          `,
-          [
-            dealTitle, dealTitle, stageId, 
-            instanceDetails?.id ?? null, 
-            remoteJid, context.createdAt,
-            instanceDetails?.assignedUserId ?? null,
-            instanceDetails?.assignedUserName ?? null
-          ],
-        );
-        const dealId = newDeal.rows[0].id;
+        ORDER BY d.last_activity_at DESC
+        LIMIT 1
+        `,
+        [remoteJid],
+      );
+
+      if (dealMatch.rows[0]) {
+        const dealId = String(dealMatch.rows[0].id);
 
         await insertDealActivity({
           dealId,
@@ -419,11 +350,11 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           actorUserId,
           actorName,
           content: messageContent,
-          metadata: autoMetadata,
+          metadata,
           createdAt: context.createdAt,
         });
 
-        // Messaging Intelligence: Detect and create event for new deal
+        // Messaging Intelligence: Detect and create event
         const monitorMessage: WhatsappMonitorMessage = {
           id: String(messageId),
           dealId,
@@ -435,22 +366,112 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           createdAt: context.createdAt,
           remoteJid,
           isGroup: context.isGroup,
-          metadata: autoMetadata,
+          metadata,
           risk: detectWhatsappMessageRisk(messageContent),
         };
 
         createEventFromMessage(monitorMessage, dealId).catch((err) => {
-          logger.warn("failed to create message event for new deal from webhook", {
+          logger.warn("failed to create message event from webhook", {
             dealId,
             messageId,
             error: err.message,
           });
         });
-        logger.info("evolution webhook auto-created deal", { dealId, remoteJid });
-      }
-    }
 
-    processedCount++;
+        // Backfill whatsapp_instance_id if missing on the deal
+        if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
+          if (instanceDetails) {
+            await pool.query(
+              "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
+              [instanceDetails.id, dealId],
+            );
+            logger.info("evolution webhook backfilled instance on deal", { dealId, instanceId: instanceDetails.id });
+          } else {
+            await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+          }
+        } else {
+          await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+        }
+        logger.info("evolution webhook linked message to deal", { dealId, remoteJid });
+      } else {
+        const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
+        if (stageMatch.rows[0]) {
+          const stageId = stageMatch.rows[0].id;
+          const dealTitle = conversationTitle({
+            remoteJid: String(remoteJid),
+            isGroup: context.isGroup,
+            chatDisplayName,
+            senderName: isFromMe ? null : activitySenderName,
+          });
+          const autoMetadata = { ...metadata, autoCreated: true };
+
+          const newDeal = await pool.query(
+            `
+            INSERT INTO deals (
+              title, customer_display_name, stage_id, whatsapp_instance_id,
+              whatsapp_jid, expected_value, priority, last_activity_at,
+              assigned_to, assigned_to_name
+            )
+            VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', $6, $7, $8)
+            RETURNING id
+            `,
+            [
+              dealTitle, dealTitle, stageId, 
+              instanceDetails?.id ?? null, 
+              remoteJid, context.createdAt,
+              instanceDetails?.assignedUserId ?? null,
+              instanceDetails?.assignedUserName ?? null
+            ],
+          );
+          const dealId = newDeal.rows[0].id;
+
+          await insertDealActivity({
+            dealId,
+            activityType,
+            actorUserId,
+            actorName,
+            content: messageContent,
+            metadata: autoMetadata,
+            createdAt: context.createdAt,
+          });
+
+          // Messaging Intelligence: Detect and create event for new deal
+          const monitorMessage: WhatsappMonitorMessage = {
+            id: String(messageId),
+            dealId,
+            direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+            senderName: activitySenderName,
+            senderJid: activitySenderJid,
+            senderProfilePictureUrl,
+            content: messageContent,
+            createdAt: context.createdAt,
+            remoteJid,
+            isGroup: context.isGroup,
+            metadata: autoMetadata,
+            risk: detectWhatsappMessageRisk(messageContent),
+          };
+
+          createEventFromMessage(monitorMessage, dealId).catch((err) => {
+            logger.warn("failed to create message event for new deal from webhook", {
+              dealId,
+              messageId,
+              error: err.message,
+            });
+          });
+          logger.info("evolution webhook auto-created deal", { dealId, remoteJid });
+        }
+      }
+
+      processedCount++;
+    } catch (err: any) {
+      logger.error("Error processing single evolution webhook message", {
+        messageId: msg?.key?.id || "unknown",
+        instance,
+        error: err.message || err,
+        stack: err.stack,
+      });
+      // Continue loop instead of throwing and crashing the entire webhook payload batch
+    }
   }
 
   return { processed: true, processedCount };
