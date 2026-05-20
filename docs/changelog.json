@@ -17,31 +17,36 @@
     ]
   },
   {
-    "date": "2026-05-15",
+    "date": "2026-05-18",
     "version": "1.0.8",
-    "title": "Otimizações de Kanban & Filtros Avançados",
+    "title": "Relatório de Métricas do WhatsApp",
     "changes": [
       {
-        "type": "improvement",
-        "title": "Filtros Rápidos no Pipeline",
-        "description": "Melhorias significativas no tempo de resposta e filtros do funil de vendas (Pipeline) para agilizar a consulta de contatos em aberto."
+        "type": "feature",
+        "title": "Página WhatsappActivityPage",
+        "description": "Implementação do painel avançado para visualizar e reportar métricas detalhadas de conversas, fluxos e interações ativas do WhatsApp."
       },
       {
-        "type": "bugfix",
-        "title": "Correção de Movimentação de Cards",
-        "description": "Corrigido um bug onde o arrastar e soltar (drag and drop) de cards congelava em telas de menor resolução."
+        "type": "improvement",
+        "title": "Estrutura do Cliente da API do CRM",
+        "description": "Otimização das conexões internas de rede e do módulo de API cliente no frontend para consultas mais eficientes ao backend."
       }
     ]
   },
   {
-    "date": "2026-05-08",
-    "version": "1.0.5",
-    "title": "Lançamento da Tela de Metas Integradas",
+    "date": "2026-05-12",
+    "version": "1.0.4",
+    "title": "Dashboard de Vendas Geográficas & Segurança",
     "changes": [
       {
         "type": "feature",
-        "title": "Painel Dinâmico de Metas",
-        "description": "Nova tela de gerenciamento de objetivos comerciais por atendente, com barras de progresso interativas e cálculo automático de comissões estimadas."
+        "title": "Dashboard Geográfico Interativo",
+        "description": "Lançamento do mapa de vendas com estatísticas regionais, facilitando a identificação da distribuição física dos contatos e clientes."
+      },
+      {
+        "type": "improvement",
+        "title": "Migração para Variáveis de Ambiente",
+        "description": "Correção de segurança crucial removendo credenciais estáticas de banco de dados e padronizando a autenticação via variáveis de ambiente (.env)."
       }
     ]
   }
