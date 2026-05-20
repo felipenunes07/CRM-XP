@@ -13,3 +13,6 @@ apps/api/dist/
 .runtime/
 
 .vercel
+
+# Segredos locais e scripts de limpeza
+secrets_to_clean.txt

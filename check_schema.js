@@ -1,5 +1,6 @@
+require('dotenv').config();
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: 'postgresql://postgres:9630Jinren@localhost:5432/olist_crm?sslmode=disable' });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 pool.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'customers'")
   .then(res => {
     console.log('--- CUSTOMERS ---');

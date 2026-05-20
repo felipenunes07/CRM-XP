@@ -1,8 +1,10 @@
 
 import pg from "pg";
 import fs from "node:fs/promises";
+import dotenv from "dotenv";
+dotenv.config();
 
-const DATABASE_URL = "postgresql://postgres:9630Jinren@localhost:5432/olist_crm?sslmode=disable";
+const DATABASE_URL = process.env.DATABASE_URL;
 
 async function check() {
   const pool = new pg.Pool({ connectionString: DATABASE_URL });

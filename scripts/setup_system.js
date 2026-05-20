@@ -5,7 +5,7 @@ const path = require("path");
 
 async function setup() {
   const adminClient = new Client({
-    connectionString: "postgresql://postgres:9630Jinren@localhost:5432/postgres"
+    connectionString: process.env.POSTGRES_ADMIN_URL || "postgresql://postgres:postgres@localhost:5432/postgres"
   });
 
   try {
@@ -26,7 +26,7 @@ async function setup() {
 
     // 2. Conectar no novo banco para aplicar roles e migrations
     const client = new Client({
-      connectionString: "postgresql://postgres:9630Jinren@localhost:5432/olist_crm"
+      connectionString: process.env.DATABASE_URL
     });
     await client.connect();
 

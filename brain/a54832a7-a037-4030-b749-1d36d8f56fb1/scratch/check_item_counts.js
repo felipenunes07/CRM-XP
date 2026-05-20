@@ -1,6 +1,7 @@
 
+require('dotenv').config();
 const { Pool } = require('pg');
-const pool = new Pool({ connectionString: 'postgresql://postgres:9630Jinren@localhost:5432/olist_crm' });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 async function compareItemCounts() {
   try {
