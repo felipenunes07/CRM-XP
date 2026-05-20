@@ -7,11 +7,15 @@ const AppShell = lazy(async () => ({ default: (await import("./components/AppShe
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
 const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
+const CustomerFinancialPage = lazy(async () => ({
+    default: (await import("./pages/CustomerFinancialPage")).CustomerFinancialPage,
+}));
 const AmbassadorsPage = lazy(async () => ({ default: (await import("./pages/AmbassadorsPage")).AmbassadorsPage }));
 const InventoryPage = lazy(async () => ({ default: (await import("./pages/InventoryPage")).InventoryPage }));
 const CustomerDetailPage = lazy(async () => ({
     default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
+const AutomationsPage = lazy(async () => ({ default: (await import("./pages/AutomationsPage")).AutomationsPage }));
 const SegmentsPage = lazy(async () => ({ default: (await import("./pages/SegmentsPage")).SegmentsPage }));
 const AgendaPage = lazy(async () => ({ default: (await import("./pages/AgendaPage")).AgendaPage }));
 const NewCustomersPage = lazy(async () => ({ default: (await import("./pages/NewCustomersPage")).NewCustomersPage }));
@@ -19,12 +23,14 @@ const ReactivationPage = lazy(async () => ({ default: (await import("./pages/Rea
 const IdeaBoardPage = lazy(async () => ({ default: (await import("./pages/IdeaBoardPage")).IdeaBoardPage }));
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
 const WhatsappActivityPage = lazy(async () => ({ default: (await import("./pages/WhatsappActivityPage")).WhatsappActivityPage }));
+const MovementsPage = lazy(async () => ({ default: (await import("./pages/MovementsPage")).MovementsPage }));
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const PipelinePage = lazy(async () => ({ default: (await import("./pages/PipelinePage")).PipelinePage }));
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
+const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 function RouteLoadingFallback() {
     const { tx } = useUiLanguage();
@@ -52,5 +58,5 @@ function PublicLoginRoute() {
 }
 export default function App() {
     const { tx } = useUiLanguage();
-    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: tx("Carregando tela...", "正在加载页面...") }), children: _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: _jsx(PublicLoginRoute, {}) }), _jsxs(Route, { element: _jsx(ProtectedShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/pipeline", element: _jsx(PipelinePage, {}) }), _jsx(Route, { path: "/atendentes", element: _jsx(AttendantsPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/estoque", element: _jsx(InventoryPage, {}) }), _jsx(Route, { path: "/embaixadores", element: _jsx(AmbassadorsPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/clientes-novos", element: _jsx(NewCustomersPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/ideias-votacao", element: _jsx(IdeaBoardPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/atividade-whatsapp", element: _jsx(WhatsappActivityPage, {}) }), _jsx(Route, { path: "/disparador", element: _jsx(DisparadorPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) }), _jsx(Route, { path: "/prospeccao", element: _jsx(ProspectingPage, {}) }), _jsx(Route, { path: "/metas", element: _jsx(MetasPage, {}) }), _jsx(Route, { path: "/usuarios", element: _jsx(WhatsappConfigPage, {}) }), _jsx(Route, { path: "/config/whatsapp", element: _jsx(WhatsappConfigPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/login", replace: true }) })] }) }));
+    return (_jsx(Suspense, { fallback: _jsx("div", { className: "page-loading fullscreen", children: tx("Carregando tela...", "正在加载页面...") }), children: _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: _jsx(PublicLoginRoute, {}) }), _jsxs(Route, { element: _jsx(ProtectedShell, {}), children: [_jsx(Route, { path: "/", element: _jsx(DashboardPage, {}) }), _jsx(Route, { path: "/pipeline", element: _jsx(PipelinePage, {}) }), _jsx(Route, { path: "/atendentes", element: _jsx(AttendantsPage, {}) }), _jsx(Route, { path: "/clientes", element: _jsx(CustomersPage, {}) }), _jsx(Route, { path: "/estoque", element: _jsx(InventoryPage, {}) }), _jsx(Route, { path: "/embaixadores", element: _jsx(AmbassadorsPage, {}) }), _jsx(Route, { path: "/clientes/:id", element: _jsx(CustomerDetailPage, {}) }), _jsx(Route, { path: "/automacoes", element: _jsx(AutomationsPage, {}) }), _jsx(Route, { path: "/segmentos", element: _jsx(SegmentsPage, {}) }), _jsx(Route, { path: "/agenda", element: _jsx(AgendaPage, {}) }), _jsx(Route, { path: "/clientes-novos", element: _jsx(NewCustomersPage, {}) }), _jsx(Route, { path: "/reativacao", element: _jsx(ReactivationPage, {}) }), _jsx(Route, { path: "/ideias-votacao", element: _jsx(IdeaBoardPage, {}) }), _jsx(Route, { path: "/mensagens", element: _jsx(MessagesPage, {}) }), _jsx(Route, { path: "/atividade-whatsapp", element: _jsx(WhatsappActivityPage, {}) }), _jsx(Route, { path: "/movimentacao", element: _jsx(MovementsPage, {}) }), _jsx(Route, { path: "/disparador", element: _jsx(DisparadorPage, {}) }), _jsx(Route, { path: "/rotulos", element: _jsx(LabelsPage, {}) }), _jsx(Route, { path: "/prospeccao", element: _jsx(ProspectingPage, {}) }), _jsx(Route, { path: "/metas", element: _jsx(MetasPage, {}) }), _jsx(Route, { path: "/eventos", element: _jsx(EventsPage, {}) }), _jsx(Route, { path: "/usuarios", element: _jsx(WhatsappConfigPage, {}) }), _jsx(Route, { path: "/config/whatsapp", element: _jsx(WhatsappConfigPage, {}) })] }), _jsx(Route, { path: "*", element: _jsx(Navigate, { to: "/login", replace: true }) })] }) }));
 }

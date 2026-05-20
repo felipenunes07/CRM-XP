@@ -3,11 +3,13 @@ import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import {
   formatCurrency,
+  calculateDaysSince,
   formatDate,
   formatDateTime,
   formatDaysSince,
@@ -85,15 +87,19 @@ export function CustomerDetailPage() {
     queryFn: () => api.customerLabels(token!),
     enabled: Boolean(token),
   });
-  const creditDetailQuery = useQuery({
-    queryKey: ["customer-credit-detail", id],
-    queryFn: () => api.customerCreditDetail(token!, id!),
-    enabled: Boolean(token && id),
-  });
+  // const creditDetailQuery = useQuery({
+  //   queryKey: ["customer-credit-detail", id],
+  //   queryFn: () => api.customerCreditDetail(token!, id!),
+  //   enabled: Boolean(token && id),
+  // });
 
   const customer = detailQuery.data ?? null;
-  const creditRow = creditDetailQuery.data?.row ?? null;
-  const creditSnapshot = creditDetailQuery.data?.snapshot ?? null;
+  const creditRow = null; // creditDetailQuery.data?.row ?? null;
+  const creditSnapshot = null; // creditDetailQuery.data?.snapshot ?? null;
+  const creditOrders = []; // creditDetailQuery.data?.orders ?? [];
+  const creditPayments = []; // creditDetailQuery.data?.payments ?? [];
+  const creditDaysSinceLastPayment = 0;
+    // creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -274,7 +280,7 @@ export function CustomerDetailPage() {
         </div>
       </section>
 
-      <section className="panel customer-credit-detail-panel">
+      {/* <section className="panel customer-credit-detail-panel">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Credito & Pagamento</p>
@@ -344,7 +350,7 @@ export function CustomerDetailPage() {
               </div>
               <div>
                 <span>Dias sem pagar</span>
-                <strong>{formatDaysSince(creditRow.daysSinceLastPayment)}</strong>
+                <strong>{formatDaysSince(creditDaysSinceLastPayment)}</strong>
               </div>
             </div>
 
@@ -367,6 +373,8 @@ export function CustomerDetailPage() {
                 )}
               </div>
             </div>
+
+            <CustomerCreditLedgerSections orders={creditOrders} payments={creditPayments} />
           </div>
         ) : (
           <div className="empty-state">
@@ -374,7 +382,7 @@ export function CustomerDetailPage() {
             do dia.
           </div>
         )}
-      </section>
+      </section> */}
 
       <section className="grid-two">
         <article className="panel">

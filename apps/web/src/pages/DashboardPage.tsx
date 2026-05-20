@@ -34,9 +34,7 @@ import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 import { isTrendRangeVisible, resolveTrendRangeSelection } from "./dashboardPage.helpers";
 
-type TrendPeriod = '90d' | '6m' | '1y' | 'max';
-const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2023;
+type TrendPeriod = '90d' | '6m' | '1y' | '2y' | 'max';
 
 interface PeriodOption {
   value: TrendPeriod;
@@ -44,22 +42,15 @@ interface PeriodOption {
   days: number;
 }
 
-function getDashboardTrendMaxDays(referenceDate = new Date()) {
-  const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
-  const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
-}
-
 const periodOptions: PeriodOption[] = [
   { value: '90d', label: '90 dias', days: 90 },
   { value: '6m', label: '6 meses', days: 180 },
   { value: '1y', label: '1 ano', days: 365 },
-  { value: 'max', label: 'Período Máximo', days: 730 },
+  { value: '2y', label: '2 anos', days: 730 },
+  { value: 'max', label: 'Todo o Período', days: 3650 },
 ];
 
-const resolvedPeriodOptions = periodOptions.map((option) =>
-  option.value === "max" ? { ...option, days: getDashboardTrendMaxDays() } : option,
-);
+const resolvedPeriodOptions = periodOptions;
 
 const bucketFilters = {
   "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
@@ -743,19 +734,35 @@ export function DashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("max");
   const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
 
-  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? getDashboardTrendMaxDays();
+  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? 730;
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", trendDays, selectedPrefix],
     queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
     enabled: Boolean(token),
+    refetchInterval: 15 * 60 * 1000, // Atualiza a cada 15 minutos para refletir sincronizações automáticas
+    refetchOnWindowFocus: true,
   });
 
   const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState<"comparative" | "continuous">("comparative");
   const [selectedSaleMonth, setSelectedSaleMonth] = useState<string | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(() => {
+    // Inicializar verificando se há sincronização em andamento
+    const syncInProgress = localStorage.getItem('dashboard_sync_in_progress');
+    if (syncInProgress) {
+      const syncStartTime = parseInt(syncInProgress, 10);
+      const elapsed = Date.now() - syncStartTime;
+      // Se passou menos de 10 minutos, considera que ainda está sincronizando
+      if (elapsed < 10 * 60 * 1000) {
+        return true;
+      }
+      // Se passou mais de 10 minutos, limpar o flag
+      localStorage.removeItem('dashboard_sync_in_progress');
+    }
+    return false;
+  });
   const [rankingPeriod, setRankingPeriod] = useState<"month" | "today">("month");
   const [trendDisplayMode, setTrendDisplayMode] = useState<TrendDisplayMode>("count");
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeSelection | null>(null);
@@ -895,6 +902,53 @@ export function DashboardPage() {
       setUserAnnotations(annotationsQuery.data);
     }
   }, [annotationsQuery.data]);
+
+  // Monitorar se a sincronização terminou
+  useEffect(() => {
+    if (!isSyncing) return;
+    
+    const syncInProgress = localStorage.getItem('dashboard_sync_in_progress');
+    if (!syncInProgress) return;
+    
+    const syncStartTime = parseInt(syncInProgress, 10);
+    
+    // Verificar periodicamente se a sincronização terminou
+    const checkInterval = setInterval(async () => {
+      // É necessário fazer o refetch para pegar o lastSyncAt atualizado do banco
+      const result = await dashboardQuery.refetch();
+      const currentLastSync = result.data?.lastSyncAt;
+
+      if (currentLastSync) {
+        const lastSyncTime = new Date(currentLastSync).getTime();
+        // Se a data de última sincronização for posterior ao momento que iniciamos, terminou!
+        if (lastSyncTime > syncStartTime) {
+          setIsSyncing(false);
+          localStorage.removeItem('dashboard_sync_in_progress');
+          clearInterval(checkInterval);
+          
+          // Atualizar as outras queries também
+          agendaQuery.refetch();
+          if (selectedBucket) {
+            filteredCustomersQuery.refetch();
+          } else if (!selectedSaleMonth) {
+            priorityCustomersQuery.refetch();
+          }
+        }
+      }
+    }, 10000); // Verifica a cada 10 segundos enquanto sincroniza
+    
+    // Limpar após 12 minutos no máximo (margem de segurança)
+    const timeout = setTimeout(() => {
+      setIsSyncing(false);
+      localStorage.removeItem('dashboard_sync_in_progress');
+      clearInterval(checkInterval);
+    }, 12 * 60 * 1000);
+    
+    return () => {
+      clearInterval(checkInterval);
+      clearTimeout(timeout);
+    };
+  }, [isSyncing, token, selectedBucket, selectedSaleMonth]);
 
   useEffect(() => {
     if (!isTrendFullScreen) {
@@ -1166,10 +1220,38 @@ export function DashboardPage() {
   async function handleSync() {
     try {
       setIsSyncing(true);
+      
+      // Salvar timestamp no localStorage para persistir entre reloads
+      const syncStartTime = Date.now();
+      localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
+      
+      // Executar a sincronização
       await api.syncData(token!, "direct");
-      window.location.reload();
+      
+      // Aguardar 3 segundos para garantir que o banco foi atualizado
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      // Primeira atualização dos dados
+      await dashboardQuery.refetch();
+      
+      // Aguardar mais 2 segundos e fazer uma segunda atualização
+      // para garantir que pegou o lastSyncAt atualizado
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await dashboardQuery.refetch();
+      
+      // Atualizar outras queries
+      await agendaQuery.refetch();
+      if (selectedBucket) {
+        await filteredCustomersQuery.refetch();
+      } else if (!selectedSaleMonth) {
+        await priorityCustomersQuery.refetch();
+      }
+      
+      // Remover flag de sincronização em andamento
+      localStorage.removeItem('dashboard_sync_in_progress');
     } catch (err) {
       alert(tx("Falha na sincronizacao: ", "同步失败：") + String(err));
+      localStorage.removeItem('dashboard_sync_in_progress');
     } finally {
       setIsSyncing(false);
     }
@@ -1252,10 +1334,57 @@ export function DashboardPage() {
               <Link className="premium-button primary" to="/agenda">
                 {tx("Abrir agenda do dia", "打开今日日程")}
               </Link>
-              <button className="premium-button ghost" type="button" disabled={isSyncing} onClick={handleSync}>
-                {isSyncing ? tx("Sincronizando...", "同步中...") : tx("Sincronizar Agora", "立即同步")}
+              <button 
+                className="premium-button ghost" 
+                type="button" 
+                disabled={isSyncing} 
+                onClick={handleSync}
+                style={isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}}
+              >
+                {isSyncing ? (
+                  <>
+                    {tx("Sincronizando...", "同步中...")}
+                    <span style={{ 
+                      position: 'absolute', 
+                      right: '0.85rem', 
+                      top: '50%', 
+                      transform: 'translateY(-50%)',
+                      display: 'inline-block',
+                      width: '18px',
+                      height: '18px',
+                      border: '2.5px solid rgba(41, 86, 215, 0.15)',
+                      borderTopColor: '#2956d7',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                  </>
+                ) : tx("Sincronizar Agora", "立即同步")}
               </button>
             </div>
+            {isSyncing && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.85rem 1.15rem',
+                backgroundColor: '#ffffff',
+                borderRadius: '12px',
+                border: '1px solid rgba(41, 86, 215, 0.25)',
+                fontSize: '0.9rem',
+                color: '#1e293b',
+                boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.4rem',
+                animation: 'fadeIn 0.3s ease-out'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🔄</span>
+                  <strong style={{ color: '#2956d7', fontWeight: 700 }}>{tx("Sincronização manual em andamento", "手动同步进行中")}</strong>
+                </div>
+                <p style={{ margin: 0, color: '#475569', fontSize: '0.85rem', lineHeight: '1.5' }}>
+                  {tx("Processando dados do Supabase. Isso pode levar de 2 a 5 minutos. Não é necessário atualizar a página, os dados aparecerão automaticamente.", "正在处理 Supabase 数据。这可能需要 2 到 5 分钟。无需刷新页面，数据将自动出现。")}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="hero-premium-stats">
@@ -1267,8 +1396,23 @@ export function DashboardPage() {
               </div>
               <div className="premium-stat-info">
                 <span>{tx("Ultima sincronizacao", "最近同步")}</span>
-                <strong>
-                  {metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString(getFormattingLocale()) : tx("Pendente...", "待处理...")}
+                <strong style={isSyncing ? { color: '#2956d7', display: 'flex', alignItems: 'center', gap: '0.5rem' } : {}}>
+                  {isSyncing ? (
+                    <>
+                      {tx("Sincronizando agora...", "正在同步...")}
+                      <span style={{ 
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        border: '2px solid rgba(41, 86, 215, 0.3)',
+                        borderTopColor: '#2956d7',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                    </>
+                  ) : (
+                    metrics.lastSyncAt ? new Date(metrics.lastSyncAt).toLocaleString(getFormattingLocale()) : tx("Pendente...", "待处理...")
+                  )}
                 </strong>
               </div>
             </div>

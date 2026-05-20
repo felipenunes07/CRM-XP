@@ -154,7 +154,12 @@ export function WhatsappConfigPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.deleteWhatsappInstance(token!, id),
     onSuccess: () => {
+      alert("Usuário monitorado removido com sucesso!");
       void queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+      void queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+    },
+    onError: (error: any) => {
+      alert(`Erro ao remover usuário monitorado: ${error.message || error}`);
     },
   });
 

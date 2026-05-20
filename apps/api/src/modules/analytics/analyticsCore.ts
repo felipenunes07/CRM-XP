@@ -36,7 +36,7 @@ export function computeFrequencyDrop(orderDates: Date[], now = new Date()) {
 }
 
 export function deriveInsights(input: {
-  status: "ACTIVE" | "ATTENTION" | "INACTIVE";
+  status: "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW";
   totalSpent: number;
   avgGap: number | null;
   lastPurchaseAt: Date | null;

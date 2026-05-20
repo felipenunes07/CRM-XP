@@ -3,11 +3,18 @@ import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
+  extractEvolutionMessageContact,
+  extractEvolutionMessageMedia,
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
+  type EvolutionMessageContact,
+  type EvolutionMessageMedia,
   type EvolutionMessageLike,
 } from "./whatsappMonitorCore.js";
+import { detectWhatsappMessageRisk } from "./whatsappMonitorCore.js";
+import { createEventFromMessage } from "../events/eventsService.js";
+import { WhatsappMonitorMessage } from "@olist-crm/shared";
 
 /**
  * Handles MESSAGES_UPSERT events from Evolution API webhook.
@@ -75,6 +82,8 @@ function buildActivityMetadata(input: {
   capturedFromWhatsapp?: boolean;
   outboundSource?: string | null;
   autoCreated?: boolean;
+  media?: EvolutionMessageMedia | null;
+  contact?: EvolutionMessageContact | null;
 }) {
   return {
     remoteJid: input.remoteJid,
@@ -90,6 +99,8 @@ function buildActivityMetadata(input: {
     ...(input.capturedFromWhatsapp ? { capturedFromWhatsapp: true } : {}),
     ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
     ...(input.autoCreated ? { autoCreated: true } : {}),
+    ...(input.media ? input.media : {}),
+    ...(input.contact ? { contact: input.contact } : {}),
   };
 }
 
@@ -104,6 +115,7 @@ async function insertDealActivity(input: {
 }) {
   await pool.query(
     `
+    WITH inserted AS (
     INSERT INTO deal_activities (deal_id, activity_type, actor_user_id, actor_name, content, metadata, created_at)
     SELECT $1, $2, $3, $4, $5, $6::jsonb, $7
     WHERE NOT EXISTS (
@@ -112,6 +124,19 @@ async function insertDealActivity(input: {
       WHERE metadata ->> 'messageId' = $8
         AND deal_id = $1
     )
+    RETURNING id
+    )
+    UPDATE deal_activities
+    SET
+      activity_type = $2,
+      actor_user_id = $3,
+      actor_name = $4,
+      content = $5,
+      metadata = COALESCE(metadata, '{}'::jsonb) || $6::jsonb,
+      created_at = $7
+    WHERE deal_id = $1
+      AND metadata ->> 'messageId' = $8
+      AND NOT EXISTS (SELECT 1 FROM inserted)
     `,
     [
       input.dealId,
@@ -146,14 +171,25 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
   for (const msg of messages) {
     const context = extractEvolutionMessageContext(msg, payload.instance);
-    const remoteJid = context.remoteJid;
-    const messageId = context.messageId ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const text = context.text;
+    const { remoteJid, messageId, text, fromMe } = context;
 
-    if (!remoteJid) {
-      logger.warn("evolution webhook skipped message: missing remoteJid", { instance, messageId });
+    if (!remoteJid || !messageId) {
+      logger.info("evolution webhook skipped message: missing remoteJid or messageId", {
+        instance,
+        remoteJid,
+        messageId,
+        fromMe,
+      });
       continue;
     }
+
+    logger.info("evolution webhook processing message", {
+      instance,
+      remoteJid,
+      messageId,
+      fromMe,
+      hasText: !!text,
+    });
 
     if (!isMonitorableWhatsappJid(remoteJid)) {
       logger.info("evolution webhook skipped message: non-chat broadcast jid", {
@@ -174,6 +210,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     }
 
     const enriched = await resolveWhatsappMessageMetadata(context);
+    const media = extractEvolutionMessageMedia(msg);
+    const contact = extractEvolutionMessageContact(msg);
     const senderName = enriched.senderName ?? context.senderName;
     const chatDisplayName = enriched.chatDisplayName ?? context.chatDisplayName;
     const chatProfilePictureUrl = enriched.chatProfilePictureUrl ?? context.chatProfilePictureUrl;
@@ -181,18 +219,22 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     const instanceName = context.instanceName ?? "";
     const instanceDetails = await getWhatsappInstanceDetails(instanceName);
     const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
-    const activityType = context.fromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
-    const actorUserId = context.fromMe ? instanceDetails?.assignedUserId ?? null : null;
-    const actorName = context.fromMe
+    
+    // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
+    const isFromMe = Boolean(context.fromMe || (instanceOwnerJid && context.senderJid === instanceOwnerJid));
+    
+    const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
+    const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
+    const actorName = isFromMe
       ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
       : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
-    const activitySenderJid = context.fromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
-    const activitySenderName = context.fromMe
+    const activitySenderJid = isFromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
+    const activitySenderName = isFromMe
       ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
       : senderName;
     const metadata = buildActivityMetadata({
-      remoteJid,
-      messageId,
+      remoteJid: String(remoteJid),
+      messageId: String(messageId),
       instanceName,
       isGroup: context.isGroup,
       senderJid: activitySenderJid,
@@ -201,8 +243,10 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       chatDisplayName,
       chatProfilePictureUrl,
       instanceId: instanceDetails?.id ?? null,
-      capturedFromWhatsapp: context.fromMe,
-      outboundSource: context.fromMe ? "whatsapp_device" : null,
+      capturedFromWhatsapp: isFromMe,
+      outboundSource: isFromMe ? "whatsapp_device" : null,
+      media,
+      contact,
     });
 
     logger.info("evolution webhook incoming message", {
@@ -213,6 +257,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       chatDisplayName,
       hasSenderProfilePictureUrl: Boolean(senderProfilePictureUrl),
       textPreview: text.slice(0, 80),
+      mediaType: media?.mediaType ?? null,
       messageId,
       fromMe: context.fromMe,
       actorUserId,
@@ -227,7 +272,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         from_me, created_at
       )
       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13)
-      ON CONFLICT (message_id) DO NOTHING
+      ON CONFLICT (message_id) DO UPDATE SET
+        sender_name = COALESCE(EXCLUDED.sender_name, whatsapp_incoming_messages.sender_name),
+        raw_payload = EXCLUDED.raw_payload,
+        participant_jid = COALESCE(EXCLUDED.participant_jid, whatsapp_incoming_messages.participant_jid),
+        participant_name = COALESCE(EXCLUDED.participant_name, whatsapp_incoming_messages.participant_name),
+        sender_profile_picture_url = COALESCE(EXCLUDED.sender_profile_picture_url, whatsapp_incoming_messages.sender_profile_picture_url),
+        chat_display_name = COALESCE(EXCLUDED.chat_display_name, whatsapp_incoming_messages.chat_display_name),
+        chat_profile_picture_url = COALESCE(EXCLUDED.chat_profile_picture_url, whatsapp_incoming_messages.chat_profile_picture_url),
+        from_me = whatsapp_incoming_messages.from_me OR EXCLUDED.from_me
       `,
       [
         remoteJid,
@@ -241,7 +294,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
-        context.fromMe,
+        isFromMe,
         context.createdAt,
       ],
     );
@@ -271,6 +324,30 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         createdAt: context.createdAt,
       });
 
+      // Messaging Intelligence: Detect and create event
+      const monitorMessage: WhatsappMonitorMessage = {
+        id: String(messageId),
+        dealId,
+        direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+        senderName: activitySenderName,
+        senderJid: activitySenderJid,
+        senderProfilePictureUrl,
+        content: text,
+        createdAt: context.createdAt,
+        remoteJid,
+        isGroup: context.isGroup,
+        metadata,
+        risk: detectWhatsappMessageRisk(text),
+      };
+
+      createEventFromMessage(monitorMessage, dealId).catch((err) => {
+        logger.warn("failed to create message event from webhook", {
+          dealId,
+          messageId,
+          error: err.message,
+        });
+      });
+
       // Backfill whatsapp_instance_id if missing on the deal
       if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
         if (instanceDetails) {
@@ -291,10 +368,10 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       if (stageMatch.rows[0]) {
         const stageId = stageMatch.rows[0].id;
         const dealTitle = conversationTitle({
-          remoteJid,
+          remoteJid: String(remoteJid),
           isGroup: context.isGroup,
           chatDisplayName,
-          senderName: context.fromMe ? null : activitySenderName,
+          senderName: isFromMe ? null : activitySenderName,
         });
         const autoMetadata = { ...metadata, autoCreated: true };
 
@@ -326,6 +403,30 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           content: text,
           metadata: autoMetadata,
           createdAt: context.createdAt,
+        });
+
+        // Messaging Intelligence: Detect and create event for new deal
+        const monitorMessage: WhatsappMonitorMessage = {
+          id: String(messageId),
+          dealId,
+          direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+          senderName: activitySenderName,
+          senderJid: activitySenderJid,
+          senderProfilePictureUrl,
+          content: text,
+          createdAt: context.createdAt,
+          remoteJid,
+          isGroup: context.isGroup,
+          metadata: autoMetadata,
+          risk: detectWhatsappMessageRisk(text),
+        };
+
+        createEventFromMessage(monitorMessage, dealId).catch((err) => {
+          logger.warn("failed to create message event for new deal from webhook", {
+            dealId,
+            messageId,
+            error: err.message,
+          });
         });
         logger.info("evolution webhook auto-created deal", { dealId, remoteJid });
       }

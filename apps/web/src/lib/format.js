@@ -121,6 +121,8 @@ export function statusLabel(status) {
         return localizedLabel("Ativo", "活跃");
     if (status === "ATTENTION")
         return localizedLabel("Atencao", "关注");
+    if (status === "NEW")
+        return localizedLabel("Novo", "新客户");
     return localizedLabel("Inativo", "沉默");
 }
 export function calculateDaysSince(dateString) {

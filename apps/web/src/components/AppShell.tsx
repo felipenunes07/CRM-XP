@@ -17,6 +17,7 @@ import {
   Star,
   Tags,
   TrendingUp,
+  ShieldAlert,
   Trophy,
   UserCog,
   UserPlus,
@@ -33,8 +34,10 @@ export const appShellLinks = [
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
   { to: "/clientes", icon: Users, labelPt: "Clientes" },
+// { to: "/clientes/financeiro", icon: Users, labelPt: "Financeiro" },
   { to: "/estoque", icon: Boxes, labelPt: "Estoque" },
   { to: "/embaixadores", icon: Star, labelPt: "Embaixadores" },
+  { to: "/automacoes", icon: Hexagon, labelPt: "Automacoes", adminOnly: true },
   { to: "/segmentos", icon: BarChart3, labelPt: "Segmentos" },
   { to: "/agenda", icon: ClipboardList, labelPt: "Agenda" },
   { to: "/clientes-novos", icon: UserPlus, labelPt: "Clientes novos" },
@@ -80,6 +83,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: Users,
     children: [
       { to: "/clientes", labelPt: "Todos os Clientes" },
+// { to: "/clientes/financeiro", labelPt: "Financeiro" },
       { to: "/clientes-novos", labelPt: "Clientes Novos" },
       { to: "/reativacao", labelPt: "Reativação" },
       { to: "/embaixadores", labelPt: "Embaixadores" },
@@ -90,6 +94,8 @@ const sidebarMenu: SidebarEntry[] = [
     icon: MessageSquareText,
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
+      { to: "/eventos", labelPt: "Inteligencia / Eventos" },
+      { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
     ],
   },
@@ -98,6 +104,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: BarChart3,
     children: [
       { to: "/atividade-whatsapp", labelPt: "Relatorios WhatsApp" },
+      { to: "/movimentacao", labelPt: "Movimentação da Base" },
       { to: "/estoque", labelPt: "Estoque" },
       { to: "/segmentos", labelPt: "Segmentos" },
       { to: "/rotulos", labelPt: "Rótulos" },
@@ -119,12 +126,15 @@ const sidebarMenu: SidebarEntry[] = [
 function SidebarGroupItem({
   group,
   tx,
+  isAdminLike,
 }: {
   group: SidebarGroup;
   tx: (pt: string, fallback: string) => string;
+  isAdminLike: boolean;
 }) {
   const location = useLocation();
-  const childPaths = group.children.map((c) => c.to);
+  const visibleChildren = group.children.filter((child) => !child.adminOnly || isAdminLike);
+  const childPaths = visibleChildren.map((c) => c.to);
   const isChildActive = childPaths.some(
     (p) => location.pathname === p || location.pathname.startsWith(p + "/")
   );
@@ -151,11 +161,11 @@ function SidebarGroupItem({
       </button>
       {open && (
         <ul className="cw-group-children">
-          {group.children.map((child) => (
+          {visibleChildren.map((child) => (
             <li key={child.to} className="cw-child-item">
               <NavLink
                 to={child.to}
-                end={child.to === "/"}
+                end={child.to === "/" || child.to === "/clientes"}
                 className={({ isActive }) =>
                   `cw-child-link ${isActive ? "active" : ""}`
                 }
@@ -234,13 +244,14 @@ export function AppShell() {
               .map((entry) => {
                 if (isGroup(entry)) {
                   return (
-                    <SidebarGroupItem
-                      key={entry.labelPt}
-                      group={entry}
-                      tx={tx}
-                    />
-                  );
-                }
+            <SidebarGroupItem
+              key={entry.labelPt}
+              group={entry}
+              tx={tx}
+              isAdminLike={isAdminLike}
+            />
+          );
+        }
                 const Icon = entry.icon!;
                 return (
                   <li key={entry.to} className="cw-item">

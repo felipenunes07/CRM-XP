@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseWhatsappConversationContactName,
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionMessageContact,
   extractEvolutionMessageContext,
+  extractEvolutionMessageMedia,
+  extractEvolutionMessageText,
   formatEvolutionSendTextTarget,
   formatWhatsappPhoneJid,
   formatWhatsappJidPhone,
@@ -11,6 +15,7 @@ import {
   isWhatsappFallbackDisplayName,
   mapWhatsappActivityToMessage,
   median,
+  mergeWhatsappMonitorMessages,
 } from "./whatsappMonitorCore.js";
 
 describe("whatsappMonitorCore", () => {
@@ -51,6 +56,37 @@ describe("whatsappMonitorCore", () => {
     expect(message.senderName).toBe("Amanda Carvalho");
     expect(message.risk?.label).toBe("Dado sensivel");
     expect(message.remoteJid).toBe("5511998765432@s.whatsapp.net");
+  });
+
+  it("treats device-captured fromMe activities as outbound even if they were stored as received", () => {
+    const message = mapWhatsappActivityToMessage({
+      id: "activity-device-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_RECEIVED",
+      actorName: "Amanda Carvalho",
+      content: "Mensagem respondida pelo celular",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        fromMe: "true",
+        capturedFromWhatsapp: true,
+      },
+      createdAt: "2026-05-18T16:52:00.000Z",
+    });
+
+    expect(message.direction).toBe("OUTBOUND");
+  });
+
+  it("does not flag company payment details as sensitive risk", () => {
+    expect(detectWhatsappMessageRisk("No momento so Pix")).toBeNull();
+    expect(
+      detectWhatsappMessageRisk(
+        "CNPJ 61.964.978/0001-68\nBradesco 237\nPix: 11976266666\nAgencia 0294 Conta Corrente 21655-0",
+      ),
+    ).toBeNull();
+    expect(detectWhatsappMessageRisk("Nao envie sua senha ou token")).toMatchObject({
+      label: "Dado sensivel",
+      severity: "HIGH",
+    });
   });
 
   it("extracts group participant identity and chat metadata from Evolution messages", () => {
@@ -104,6 +140,85 @@ describe("whatsappMonitorCore", () => {
     });
   });
 
+  it("normalizes Evolution string fromMe flags and participant phone JIDs", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "120363371542185615@g.us",
+          fromMe: "true",
+          id: "msg-out-group-1",
+          participant: "278971715473575@lid",
+          participantPn: "5511959502231@s.whatsapp.net",
+        } as any,
+        message: { conversation: "Resposta enviada pelo WhatsApp Web" },
+      },
+      "comercial",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "120363371542185615@g.us",
+      fromMe: true,
+      senderJid: "5511959502231@s.whatsapp.net",
+    });
+  });
+
+  it("extracts Evolution media metadata for image and audio messages", () => {
+    const imageMessage = {
+      message: {
+        base64: "abc123",
+        imageMessage: {
+          url: "https://media.example/image.jpg",
+          mimetype: "image/jpeg",
+          caption: "Foto do produto",
+          fileName: "produto.jpg",
+        },
+      },
+    };
+    const audioMessage = {
+      message: {
+        base64: "zzz999",
+        audioMessage: {
+          url: "https://media.example/audio.ogg",
+          mimetype: "audio/ogg",
+        },
+      },
+    };
+
+    expect(extractEvolutionMessageMedia(imageMessage)).toMatchObject({
+      mediaType: "image",
+      mediaUrl: "https://media.example/image.jpg",
+      mediaBase64: "abc123",
+      mimeType: "image/jpeg",
+      caption: "Foto do produto",
+      fileName: "produto.jpg",
+    });
+    expect(extractEvolutionMessageMedia(audioMessage)).toMatchObject({
+      mediaType: "audio",
+      mediaUrl: "https://media.example/audio.ogg",
+      mediaBase64: "zzz999",
+      mimeType: "audio/ogg",
+    });
+    expect(extractEvolutionMessageText(audioMessage)).toBe("[Áudio]");
+  });
+
+  it("extracts shared contact details from Evolution contact messages", () => {
+    const vcard = "BEGIN:VCARD\nFN:Cliente Mora Tec\nTEL;type=CELL;waid=5511999998888:+55 11 99999-8888\nEND:VCARD";
+    const contactMessage = {
+      message: {
+        contactMessage: {
+          displayName: "Cliente Mora Tec",
+          vcard,
+        },
+      },
+    };
+
+    expect(extractEvolutionMessageContact(contactMessage)).toEqual({
+      displayName: "Cliente Mora Tec",
+      phoneNumber: "5511999998888",
+      vcard,
+    });
+  });
+
   it("keeps group sender metadata when mapping stored activities to chat messages", () => {
     const message = mapWhatsappActivityToMessage({
       id: "activity-2",
@@ -142,6 +257,30 @@ describe("whatsappMonitorCore", () => {
     expect(isWhatsappFallbackDisplayName("+55 (11) 99876-5432", "5511998765432@s.whatsapp.net")).toBe(true);
   });
 
+  it("uses the phone when a private chat name looks like the assigned seller", () => {
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "5511998595698@s.whatsapp.net",
+        isGroup: false,
+        chatDisplayName: "XP AMANDA",
+        customerDisplayName: "XP AMANDA",
+        title: "XP AMANDA",
+        agentName: "XP AMANDA",
+        assignedUserName: "Amanda",
+        instanceLabel: "XP AMANDA",
+      }),
+    ).toBe("+55 (11) 99859-5698");
+
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "120363371542185615@g.us",
+        isGroup: true,
+        chatDisplayName: "CL1246 - JAMARC / XP EXPOR TELAS",
+        agentName: "XP AMANDA",
+      }),
+    ).toBe("CL1246 - JAMARC / XP EXPOR TELAS");
+  });
+
   it("formats the Evolution send target without losing group JIDs", () => {
     expect(formatEvolutionSendTextTarget("5511998765432@s.whatsapp.net")).toBe("5511998765432");
     expect(formatEvolutionSendTextTarget("120363371542185615@g.us")).toBe("120363371542185615@g.us");
@@ -172,6 +311,48 @@ describe("whatsappMonitorCore", () => {
       fromMe: false,
       id: "BAE594145F4C59B4",
     });
+  });
+
+  it("merges raw captured messages with deal activities without duplicating provider ids", () => {
+    const activityMessage = mapWhatsappActivityToMessage({
+      id: "activity-out-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_SENT",
+      actorName: "Amanda",
+      content: "posso refazer essa lista e mandar pra vc ?",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "out-1",
+      },
+      createdAt: "2026-05-18T17:20:00.000Z",
+    });
+    const duplicateCapturedMessage = {
+      ...activityMessage,
+      id: "incoming-copy-out-1",
+      metadata: {
+        ...activityMessage.metadata,
+        messageId: "out-1",
+      },
+    };
+    const missingCustomerQuestion = mapWhatsappActivityToMessage({
+      id: "incoming-in-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_RECEIVED",
+      actorName: "Cliente",
+      content: "Tem esse modelo?",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "in-1",
+      },
+      createdAt: "2026-05-18T17:19:00.000Z",
+    });
+
+    const merged = mergeWhatsappMonitorMessages(
+      [activityMessage],
+      [duplicateCapturedMessage, missingCustomerQuestion],
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["incoming-in-1", "activity-out-1"]);
   });
 
   it("computes median values for response-time indicators", () => {

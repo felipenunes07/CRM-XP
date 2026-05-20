@@ -175,9 +175,9 @@ function normalizeSupabaseRows(
   });
 }
 
-async function insertRawRows(rows: NormalizedSaleRow[]) {
+async function insertRawRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: number; insertedCustomerCodes: string[] }> {
   if (!rows.length) {
-    return 0;
+    return { rowCount: 0, insertedCustomerCodes: [] };
   }
 
   const arrays = {
@@ -202,7 +202,7 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
     rawPayload: rows.map((row) => JSON.stringify(row.rawPayload)),
   };
 
-  const result = await pool.query(
+  const result = await pool.query<{ customer_code: string }>(
     `
       INSERT INTO sales_raw (
         source_system, source_file_id, import_run_id, external_order_id, external_customer_id,
@@ -217,6 +217,7 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
         $14::text[], $15::text[], $16::text[], $17::timestamptz[], $18::text[], $19::jsonb[]
       )
       ON CONFLICT (fingerprint) DO NOTHING
+      RETURNING customer_code
     `,
     [
       arrays.sourceSystem,
@@ -241,7 +242,11 @@ async function insertRawRows(rows: NormalizedSaleRow[]) {
     ],
   );
 
-  return result.rowCount ?? 0;
+  const insertedCustomerCodes = result.rows.map((row) => row.customer_code).filter(Boolean);
+  return {
+    rowCount: result.rowCount ?? 0,
+    insertedCustomerCodes,
+  };
 }
 
 export async function importSupabase2026() {
@@ -254,6 +259,8 @@ export async function importSupabase2026() {
     ssl: {
       rejectUnauthorized: false,
     },
+    connectionTimeoutMillis: 15000, // 15 segundos para conectar
+    statement_timeout: 45000,       // 45 segundos de timeout de query
   });
 
   let importRunId = "";
@@ -297,10 +304,12 @@ export async function importSupabase2026() {
 
     const result = await remotePool.query(query, params);
     const normalized = normalizeSupabaseRows(result.rows, resolved, sourceFileId, importRunId);
-    const rowsInserted = await insertRawRows(normalized);
-    const impactedCustomerCodes = Array.from(new Set(normalized.map((row) => row.customerCode)));
+    const { rowCount: rowsInserted, insertedCustomerCodes } = await insertRawRows(normalized);
+    const impactedCustomerCodes = Array.from(new Set(insertedCustomerCodes));
 
-    await rebuildReadModels(impactedCustomerCodes);
+    if (impactedCustomerCodes.length > 0) {
+      await rebuildReadModels(impactedCustomerCodes);
+    }
     await pool.query(
       `
         UPDATE import_runs

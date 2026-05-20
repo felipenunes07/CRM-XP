@@ -4,8 +4,9 @@
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|js|css|json|woff2?|ttf|otf)).*)",
       "destination": "/"
     }
   ]
+
 }

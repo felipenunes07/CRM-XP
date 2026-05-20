@@ -30,6 +30,8 @@ import type {
   InventorySnapshotMeta,
   InventoryStaleResponse,
   MessageTemplate,
+  MessageAutomation,
+  MessageAutomationRun,
   MonthlyTarget,
   PipelineSummary,
   ProspectContactAttemptResult,
@@ -43,6 +45,7 @@ import type {
   SegmentDefinition,
   SegmentResult,
   TrendRangeAnalysisResponse,
+  CustomerMovementsResponse,
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
   WhatsappGroup,
@@ -54,6 +57,9 @@ import type {
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
   WhatsappMonitorMetrics,
+  EventsMetrics,
+  MessageEvent,
+  DailySentiment,
 } from "@olist-crm/shared";
 
 export interface ChartAnnotation {
@@ -121,6 +127,12 @@ export const api = {
     });
     return request<TrendRangeAnalysisResponse>(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
   },
+  customerMovements(token: string, days: number = 7) {
+    const search = new URLSearchParams({
+      days: String(days),
+    });
+    return request<CustomerMovementsResponse>(`/api/dashboard/movements?${search.toString()}`, {}, token);
+  },
   getMonthlyTargets(token: string, year?: number) {
     const search = new URLSearchParams();
     if (year) search.set("year", String(year));
@@ -179,6 +191,20 @@ export const api = {
   },
   getGeographicSalesStats(token: string) {
     return request<GeographicSalesResponse>("/api/geographic/sales", {}, token);
+  },
+  getGeographicModelSales(token: string, options: { state?: string; city?: string; year?: number }) {
+    const params = new URLSearchParams();
+    if (options.state) params.set("state", options.state);
+    if (options.city) params.set("city", options.city);
+    if (options.year) params.set("year", String(options.year));
+    return request<{
+      regionName: string;
+      state: string | null;
+      city: string | null;
+      year: number;
+      isFallback: boolean;
+      data: Array<{ model: string; quantitySold: number; totalRevenue: number }>;
+    }>(`/api/geographic/model-sales?${params.toString()}`, {}, token);
   },
   customerCreditOverview(token: string) {
     return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token);
@@ -301,6 +327,94 @@ export const api = {
   deleteSavedSegment(token: string, id: string) {
     return request<void>(`/api/segments/saved/${id}`, {
       method: "DELETE",
+    }, token);
+  },
+  automations(token: string) {
+    return request<MessageAutomation[]>("/api/automations", {}, token);
+  },
+  createAutomation(
+    token: string,
+    input: {
+      name: string;
+      status: "ACTIVE" | "PAUSED";
+      channel: "WHATSAPP_GROUP";
+      sendMode?: "AUTOMATIC" | "APPROVAL";
+      triggerMode?: "SCHEDULED" | "ON_STAGE_ENTRY";
+      savedSegmentId?: string | null;
+      segmentDefinition: SegmentDefinition;
+      flowDefinition?: Record<string, unknown>;
+      whatsappInstanceId?: string | null;
+      templateId?: string | null;
+      messageText: string;
+      schedule: {
+        frequency: "DAILY" | "WEEKLY";
+        weekdays?: number[];
+        time: string;
+        timezone: string;
+      };
+      overrideRecentBlock?: boolean;
+      minDelaySeconds?: number;
+      maxDelaySeconds?: number;
+    },
+  ) {
+    return request<MessageAutomation>("/api/automations", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  updateAutomation(
+    token: string,
+    id: string,
+    input: {
+      name: string;
+      status: "ACTIVE" | "PAUSED";
+      channel: "WHATSAPP_GROUP";
+      sendMode?: "AUTOMATIC" | "APPROVAL";
+      triggerMode?: "SCHEDULED" | "ON_STAGE_ENTRY";
+      savedSegmentId?: string | null;
+      segmentDefinition: SegmentDefinition;
+      flowDefinition?: Record<string, unknown>;
+      whatsappInstanceId?: string | null;
+      templateId?: string | null;
+      messageText: string;
+      schedule: {
+        frequency: "DAILY" | "WEEKLY";
+        weekdays?: number[];
+        time: string;
+        timezone: string;
+      };
+      overrideRecentBlock?: boolean;
+      minDelaySeconds?: number;
+      maxDelaySeconds?: number;
+    },
+  ) {
+    return request<MessageAutomation>(`/api/automations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteAutomation(token: string, id: string) {
+    return request<void>(`/api/automations/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
+  runAutomationNow(token: string, id: string, sendMode?: "AUTOMATIC" | "APPROVAL") {
+    return request<MessageAutomationRun>(`/api/automations/${id}/run-now`, {
+      method: "POST",
+      body: JSON.stringify(sendMode ? { sendMode } : {}),
+    }, token);
+  },
+  automationRuns(token: string, limit = 100) {
+    return request<MessageAutomationRun[]>(`/api/automations/runs?limit=${limit}`, {}, token);
+  },
+  approveAutomationRun(token: string, id: string) {
+    return request<MessageAutomationRun>(`/api/automations/runs/${id}/approve`, {
+      method: "POST",
+    }, token);
+  },
+  rejectAutomationRun(token: string, id: string) {
+    return request<MessageAutomationRun>(`/api/automations/runs/${id}/reject`, {
+      method: "POST",
     }, token);
   },
   messageTemplates(token: string) {
@@ -511,7 +625,14 @@ export const api = {
 
   whatsappMonitorConversations(
     token: string,
-    query: { instanceId?: string; search?: string } = {},
+    query: {
+      instanceId?: string;
+      search?: string;
+      contactName?: string;
+      contactPhone?: string;
+      period?: "today" | "yesterday" | "7d" | "30d";
+      status?: "unread" | "risk";
+    } = {},
   ) {
     const search = new URLSearchParams();
     if (query.instanceId) {
@@ -519,6 +640,18 @@ export const api = {
     }
     if (query.search) {
       search.set("search", query.search);
+    }
+    if (query.contactName) {
+      search.set("contactName", query.contactName);
+    }
+    if (query.contactPhone) {
+      search.set("contactPhone", query.contactPhone);
+    }
+    if (query.period) {
+      search.set("period", query.period);
+    }
+    if (query.status) {
+      search.set("status", query.status);
     }
     return request<WhatsappMonitorConversationsResponse>(
       `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,
@@ -561,6 +694,25 @@ export const api = {
   sendWhatsappMonitorReply(token: string, id: string, input: { messageText: string }) {
     return request<WhatsappMonitorConversationDetail>(
       `/api/whatsapp-monitor/conversations/${id}/replies`,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+      token,
+    );
+  },
+  sendWhatsappMonitorMediaReply(
+    token: string,
+    id: string,
+    input: {
+      mediaBase64: string;
+      mediaType: "image" | "video" | "audio" | "document";
+      fileName?: string;
+      caption?: string;
+    },
+  ) {
+    return request<WhatsappMonitorConversationDetail>(
+      `/api/whatsapp-monitor/conversations/${id}/media-replies`,
       {
         method: "POST",
         body: JSON.stringify(input),
@@ -666,5 +818,35 @@ export const api = {
     return request<void>(`/api/whatsapp-instances/${id}/configure`, {
       method: "POST",
     }, token);
+  },
+  getEventsMetrics(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
+    const search = new URLSearchParams();
+    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
+    if (query.dateTo) search.set("dateTo", query.dateTo);
+    if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
+    return request<EventsMetrics>(`/api/events/metrics?${search.toString()}`, {}, token);
+  },
+  listEvents(token: string, filters: any, pagination: { page: number; pageSize: number }) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    search.set("page", String(pagination.page));
+    search.set("pageSize", String(pagination.pageSize));
+    return request<{ events: MessageEvent[]; total: number }>(`/api/events?${search.toString()}`, {}, token);
+  },
+  resolveEvent(token: string, id: string, input: { resolutionNote: string }) {
+    return request<MessageEvent>(`/api/events/${id}/resolve`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  getDailySentiments(token: string, query: { from?: string; to?: string }) {
+    const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] as string;
+    const to = query.to || new Date().toISOString().split('T')[0] as string;
+    const search = new URLSearchParams();
+    search.set("dateFrom", from);
+    search.set("dateTo", to);
+    return request<DailySentiment[]>(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
   },
 };
