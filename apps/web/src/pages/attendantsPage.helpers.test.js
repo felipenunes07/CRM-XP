@@ -38,6 +38,7 @@ function createAttendant(attendant, revenue, trendRevenue) {
                 ACTIVE: 4,
                 ATTENTION: 3,
                 INACTIVE: 3,
+                NEW: 0,
             },
         },
         monthlyTrend: trendRevenue.map((value, index) => ({
@@ -72,17 +73,17 @@ describe("attendantsPage helpers", () => {
             {
                 ...attendants[0],
                 currentPeriod: { ...attendants[0].currentPeriod, orders: 12, uniqueCustomers: 6 },
-                portfolio: { totalCustomers: 20, statusCounts: { ACTIVE: 16, ATTENTION: 2, INACTIVE: 2 } },
+                portfolio: { totalCustomers: 20, statusCounts: { ACTIVE: 16, ATTENTION: 2, INACTIVE: 2, NEW: 0 } },
             },
             {
                 ...attendants[1],
                 currentPeriod: { ...attendants[1].currentPeriod, orders: 9, uniqueCustomers: 3 },
-                portfolio: { totalCustomers: 18, statusCounts: { ACTIVE: 9, ATTENTION: 4, INACTIVE: 5 } },
+                portfolio: { totalCustomers: 18, statusCounts: { ACTIVE: 9, ATTENTION: 4, INACTIVE: 5, NEW: 0 } },
             },
             {
                 ...attendants[2],
                 currentPeriod: { ...attendants[2].currentPeriod, orders: 6, uniqueCustomers: 6 },
-                portfolio: { totalCustomers: 10, statusCounts: { ACTIVE: 8, ATTENTION: 1, INACTIVE: 1 } },
+                portfolio: { totalCustomers: 10, statusCounts: { ACTIVE: 8, ATTENTION: 1, INACTIVE: 1, NEW: 0 } },
             },
         ];
         expect(sortAttendantsForBoard(rankingSample, "recurrence").map((item) => item.attendant)).toEqual([

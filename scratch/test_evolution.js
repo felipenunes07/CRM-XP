@@ -1,7 +1,7 @@
 
 async function testSettings() {
   const baseUrl = "https://exportelas-evolution.f0dgeg.easypanel.host";
-  const apiKey = "***REMOVED***";
+  const apiKey = "SUA_CHAVE_ANTIGA_DA_EVOLUTION_API";
 
   // Settings expects the fields directly (no wrapper)
   console.log("=== Test: settings/set WITHOUT wrapper ===");

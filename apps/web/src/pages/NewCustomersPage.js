@@ -170,7 +170,9 @@ function DailyTooltip({ active, payload, label, }) {
     if (!active || !payload?.length || !label) {
         return null;
     }
-    return (_jsxs("div", { className: "chart-tooltip", style: { backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }, children: [_jsx("strong", { style: { color: "#0f172a" }, children: formatDate(label) }), _jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.5rem" }, children: [_jsx("strong", { style: { color: "#2956d7", fontSize: "1.2rem" }, children: formatNumber(payload[0]?.value ?? 0) }), _jsx("span", { style: { color: "#64748b" }, children: "clientes na primeira compra" })] })] }));
+    const groupsCreatedObj = payload.find(p => p.dataKey === "groupsCreated");
+    const newCustomersObj = payload.find(p => p.dataKey === "newCustomers");
+    return (_jsxs("div", { className: "chart-tooltip", style: { backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }, children: [_jsx("strong", { style: { color: "#0f172a" }, children: formatDate(label) }), newCustomersObj && (_jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.5rem" }, children: [_jsx("strong", { style: { color: "#3b82f6", fontSize: "1.2rem" }, children: formatNumber(newCustomersObj.value ?? 0) }), _jsx("span", { style: { color: "#64748b" }, children: " clientes novos" })] })), groupsCreatedObj && (_jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.35rem" }, children: [_jsx("strong", { style: { color: "#8b5cf6", fontSize: "1.2rem" }, children: formatNumber(groupsCreatedObj.value ?? 0) }), _jsx("span", { style: { color: "#64748b" }, children: " grupos criados" })] }))] }));
 }
 function MonthlyTooltip({ active, payload, label, }) {
     if (!active || !payload?.length || !label) {
@@ -181,6 +183,11 @@ function MonthlyTooltip({ active, payload, label, }) {
     const spend = dataPoint?.spend ?? 0;
     const source = dataPoint?.spendSource;
     return (_jsxs("div", { className: "chart-tooltip", style: { backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(41, 86, 215, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }, children: [_jsx("strong", { style: { color: "#0f172a" }, children: formatMonthLabel(label) }), _jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.5rem" }, children: [_jsx("strong", { style: { color: "#2f9d67", fontSize: "1.1rem" }, children: formatNumber(newCustomers) }), _jsx("span", { style: { color: "#64748b" }, children: "clientes novos no mes" })] }), _jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.35rem" }, children: [_jsx("strong", { style: { color: "#2956d7", fontSize: "1.1rem" }, children: formatCurrency(spend) }), _jsx("span", { style: { color: "#64748b" }, children: "gasto em anuncios" })] }), source && (_jsxs("div", { style: { marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid #f1f5f9", fontSize: "0.7rem", fontWeight: 800, color: source === 'api' ? '#10b981' : '#64748b', textAlign: "center", letterSpacing: "0.05em" }, children: ["FONTE: ", source === 'api' ? 'META ADS (API)' : 'PLANILHA (FALLBACK)'] }))] }));
+}
+function ConversionTooltip({ active, payload, label }) {
+    if (!active || !payload || !payload.length)
+        return null;
+    return (_jsxs("div", { className: "chart-tooltip", style: { backdropFilter: "blur(8px)", background: "rgba(255,255,255,0.9)", border: "1px solid rgba(139, 92, 246, 0.2)", borderRadius: "12px", boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)" }, children: [_jsx("strong", { style: { color: "#0f172a" }, children: formatMonthLabel(label) }), _jsxs("div", { className: "chart-tooltip-count", style: { marginTop: "0.5rem" }, children: [_jsxs("strong", { style: { color: "#8b5cf6", fontSize: "1.2rem" }, children: [payload[0]?.value ? (payload[0].value * 100).toFixed(1) : "0", "%"] }), _jsx("span", { style: { color: "#64748b" }, children: "de convers\u00E3o" })] })] }));
 }
 function HistoryTooltip({ active, payload, label, }) {
     if (!active || !payload?.length || !label) {
@@ -247,6 +254,8 @@ export function NewCustomersPage() {
     });
     const currentMonthKey = new Date().toISOString().slice(0, 7);
     const [selectedMonth, setSelectedMonth] = useState(null);
+    const [selectedDay, setSelectedDay] = useState(null);
+    const [showUnconverted, setShowUnconverted] = useState(false);
     const [expandedMonth, setExpandedMonth] = useState(null);
     const activeMonth = selectedMonth ?? currentMonthKey;
     const derivedSummary = useMemo(() => {
@@ -295,10 +304,14 @@ export function NewCustomersPage() {
             cac: currentMonthData?.cac ?? null,
             prevCac: previousMonthData?.cac ?? null,
             isRealTime: activeMonth === currentMonthKey,
+            monthlyChurnRate: data.summary.monthlyChurnRate,
             ltvCacRatio: data.summary.ltvCacRatio,
             estimatedLtv: data.summary.estimatedLtv,
             estimatedLifespanMonths: data.summary.estimatedLifespanMonths,
-            monthlyChurnRate: data.summary.monthlyChurnRate
+            groupsCreated: currentMonthData?.groupsCreated ?? 0,
+            prevGroupsCreated: previousMonthData?.groupsCreated ?? 0,
+            convertedGroups: currentMonthData?.convertedGroups ?? 0,
+            prevConvertedGroups: previousMonthData?.convertedGroups ?? 0
         };
     }, [acquisitionQuery.data, activeMonth, currentMonthKey]);
     const derivedDailySeries = useMemo(() => {
@@ -312,10 +325,12 @@ export function NewCustomersPage() {
         return Array.from({ length: daysInMonth }).map((_, i) => {
             const day = String(i + 1).padStart(2, '0');
             const dateStr = `${activeMonth}-${day}`;
-            const count = data.recentCustomers.filter(c => c.firstOrderDate === dateStr).length;
+            const dayData = data.dailySeries.find(d => d.date === dateStr);
             return {
                 date: dateStr,
-                newCustomers: count
+                newCustomers: dayData?.newCustomers ?? 0,
+                groupsCreated: dayData?.groupsCreated ?? 0,
+                convertedGroups: dayData?.convertedGroups ?? 0
             };
         });
     }, [acquisitionQuery.data, activeMonth]);
@@ -329,6 +344,24 @@ export function NewCustomersPage() {
             return TARGET_ATTENDANTS.some(target => attendant.includes(target.toLowerCase()));
         });
     }, [acquisitionQuery.data, activeMonth]);
+    const monthlyAllGroups = useMemo(() => {
+        if (!acquisitionQuery.data?.allGroups)
+            return [];
+        return acquisitionQuery.data.allGroups.filter(g => {
+            if (selectedDay)
+                return g.date === selectedDay;
+            return g.date.startsWith(activeMonth || currentMonthKey);
+        });
+    }, [acquisitionQuery.data?.allGroups, activeMonth, currentMonthKey, selectedDay]);
+    const monthlyUnconvertedGroups = useMemo(() => {
+        if (!acquisitionQuery.data?.unconvertedGroups)
+            return [];
+        return acquisitionQuery.data.unconvertedGroups.filter(g => {
+            if (selectedDay)
+                return g.date === selectedDay;
+            return g.date.startsWith(activeMonth || currentMonthKey);
+        });
+    }, [acquisitionQuery.data?.unconvertedGroups, activeMonth, currentMonthKey, selectedDay]);
     const attendantBreakdown = useMemo(() => {
         const counts = {};
         for (const c of filteredCustomers) {
@@ -374,9 +407,13 @@ export function NewCustomersPage() {
     function handleBarClick(barData) {
         if (barData?.month) {
             setSelectedMonth(barData.month);
+            setSelectedDay(null);
         }
     }
-    return (_jsxs("div", { className: "page-stack", children: [_jsx("style", { children: styles }), _jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", style: { margin: 0, marginBottom: "0.3rem", color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em" }, children: "M\u00C9TRICAS DE AQUISI\u00C7\u00C3O" }), _jsx("h2", { className: "premium-header-title", children: "Clientes Novos" })] }), _jsxs("div", { style: { display: "flex", gap: "1rem", alignItems: "center" }, children: [_jsx("label", { style: { fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }, children: "M\u00EAs de Visualiza\u00E7\u00E3o:" }), _jsx("select", { value: activeMonth, onChange: (e) => setSelectedMonth(e.target.value), style: {
+    return (_jsxs("div", { className: "page-stack", children: [_jsx("style", { children: styles }), _jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }, children: [_jsxs("div", { children: [_jsx("p", { className: "eyebrow", style: { margin: 0, marginBottom: "0.3rem", color: "var(--accent)", fontWeight: 700, letterSpacing: "0.1em" }, children: "M\u00C9TRICAS DE AQUISI\u00C7\u00C3O" }), _jsx("h2", { className: "premium-header-title", children: "Clientes Novos" })] }), _jsxs("div", { style: { display: "flex", gap: "1rem", alignItems: "center" }, children: [_jsx("label", { style: { fontSize: "0.85rem", fontWeight: 600, color: "#64748b" }, children: "M\u00EAs de Visualiza\u00E7\u00E3o:" }), _jsx("select", { value: activeMonth, onChange: (e) => {
+                                    setSelectedMonth(e.target.value);
+                                    setSelectedDay(null);
+                                }, style: {
                                     padding: "0.6rem 1rem",
                                     borderRadius: "12px",
                                     border: "1px solid #e2e8f0",
@@ -387,7 +424,7 @@ export function NewCustomersPage() {
                                     boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
                                     cursor: "pointer",
                                     outline: "none"
-                                }, children: data.monthlySeries.slice().reverse().map(m => (_jsx("option", { value: m.month, children: formatMonthLabel(m.month) }, m.month))) })] })] }), _jsxs("div", { className: "premium-grid", children: [_jsxs("div", { className: "premium-card", style: { borderTop: "4px solid var(--accent)" }, children: [_jsx("div", { className: "metric-label", children: "Novos no M\u00EAs" }), _jsx("div", { className: "metric-value", children: formatNumber(metrics.count) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.count, metrics.prevCount), "vs ", formatNumber(metrics.prevCount), " m\u00EAs anterior"] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Faturamento Novos" }), _jsx("div", { className: "metric-value", style: { color: "var(--accent)" }, children: formatCurrency(metrics.amount) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderCurrencyTrend(metrics.amount, metrics.prevAmount), "vs ", formatCurrency(metrics.prevAmount)] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Ticket M\u00E9dio" }), _jsx("div", { className: "metric-value", children: formatCurrency(metrics.avgTicket) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderCurrencyTrend(metrics.avgTicket, metrics.prevAvgTicket), "vs ", formatCurrency(metrics.prevAvgTicket)] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Total de Pe\u00E7as" }), _jsxs("div", { className: "metric-value", children: [formatNumber(metrics.pieces), " ", _jsx("span", { style: { fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }, children: "itens" })] }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.pieces, metrics.prevPieces), "vs ", formatNumber(metrics.prevPieces), " m\u00EAs anterior"] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "M\u00E9dia de Pe\u00E7as" }), _jsxs("div", { className: "metric-value", children: [formatNumber(metrics.avgPieces), " ", _jsx("span", { style: { fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }, children: "/ cliente" })] }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.avgPieces, metrics.prevAvgPieces), "vs ", formatNumber(metrics.prevAvgPieces)] })] }), _jsxs("div", { className: "premium-card", children: [_jsxs("div", { className: "metric-label", style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [_jsx("span", { children: "Gasto no M\u00EAs" }), metrics.spendSource && (_jsx("span", { style: {
+                                }, children: data.monthlySeries.slice().reverse().map(m => (_jsx("option", { value: m.month, children: formatMonthLabel(m.month) }, m.month))) })] })] }), _jsxs("div", { className: "premium-grid", children: [_jsxs("div", { className: "premium-card", style: { borderTop: "4px solid var(--accent)" }, children: [_jsx("div", { className: "metric-label", children: "Novos no M\u00EAs" }), _jsx("div", { className: "metric-value", children: formatNumber(metrics.count) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.count, metrics.prevCount), "vs ", formatNumber(metrics.prevCount), " m\u00EAs anterior"] })] }), _jsxs("div", { className: "premium-card", style: { borderTop: "4px solid #8b5cf6" }, children: [_jsx("div", { className: "metric-label", children: "Grupos Criados" }), _jsx("div", { className: "metric-value", style: { color: "#8b5cf6" }, children: formatNumber(metrics.groupsCreated) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.groupsCreated, metrics.prevGroupsCreated), "vs ", formatNumber(metrics.prevGroupsCreated), " m\u00EAs anterior"] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Faturamento Novos" }), _jsx("div", { className: "metric-value", style: { color: "var(--accent)" }, children: formatCurrency(metrics.amount) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderCurrencyTrend(metrics.amount, metrics.prevAmount), "vs ", formatCurrency(metrics.prevAmount)] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Ticket M\u00E9dio" }), _jsx("div", { className: "metric-value", children: formatCurrency(metrics.avgTicket) }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderCurrencyTrend(metrics.avgTicket, metrics.prevAvgTicket), "vs ", formatCurrency(metrics.prevAvgTicket)] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "Total de Pe\u00E7as" }), _jsxs("div", { className: "metric-value", children: [formatNumber(metrics.pieces), " ", _jsx("span", { style: { fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }, children: "itens" })] }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.pieces, metrics.prevPieces), "vs ", formatNumber(metrics.prevPieces), " m\u00EAs anterior"] })] }), _jsxs("div", { className: "premium-card", children: [_jsx("div", { className: "metric-label", children: "M\u00E9dia de Pe\u00E7as" }), _jsxs("div", { className: "metric-value", children: [formatNumber(metrics.avgPieces), " ", _jsx("span", { style: { fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }, children: "/ cliente" })] }), _jsxs("p", { className: "metric-helper", style: { display: "flex", alignItems: "center", gap: "0.35rem" }, children: [renderTrend(metrics.avgPieces, metrics.prevAvgPieces), "vs ", formatNumber(metrics.prevAvgPieces)] })] }), _jsxs("div", { className: "premium-card", children: [_jsxs("div", { className: "metric-label", style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [_jsx("span", { children: "Gasto no M\u00EAs" }), metrics.spendSource && (_jsx("span", { style: {
                                             fontSize: "0.6rem",
                                             padding: "0.15rem 0.4rem",
                                             borderRadius: "6px",
@@ -403,7 +440,12 @@ export function NewCustomersPage() {
                                             color: metrics.spendSource === 'api' ? "#d97706" : "#64748b",
                                             fontWeight: 800,
                                             letterSpacing: "0.025em"
-                                        }, children: metrics.spendSource === 'api' ? "API" : "PLANILHA" }))] }), _jsx("div", { className: "metric-value", style: { color: "#d97706" }, children: formatCac(metrics.cac) }), _jsxs("p", { className: "metric-helper", children: ["Mes anterior: ", formatCac(metrics.prevCac)] })] }), _jsxs("div", { className: "premium-card", style: { borderTop: "4px solid #10b981" }, children: [_jsx("div", { className: "metric-label", children: "LTV (Valor Vital\u00EDcio)" }), _jsx("div", { className: "metric-value", style: { color: "#10b981" }, children: formatCurrency(metrics.estimatedLtv ?? 0) }), _jsx("p", { className: "metric-helper", children: "Expectativa de receita por cliente" })] })] }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "1.5rem" }, children: [_jsxs("section", { className: "premium-panel", children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: "Clientes novos por dia" }), _jsxs("p", { className: "metric-helper", style: { marginTop: "0.4rem" }, children: ["Distribui\u00E7\u00E3o di\u00E1ria de aquisi\u00E7\u00F5es em ", formatMonthLabel(activeMonth), "."] })] }), _jsx("div", { style: { width: "100%", height: "260px" }, children: _jsx(ResponsiveContainer, { children: _jsxs(LineChart, { data: derivedDailySeries, margin: { top: 8, right: 12, left: 0, bottom: 0 }, children: [_jsx("defs", { children: _jsxs("linearGradient", { id: "colorNew", x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "5%", stopColor: "#3b82f6", stopOpacity: 0.3 }), _jsx("stop", { offset: "95%", stopColor: "#3b82f6", stopOpacity: 0 })] }) }), _jsx(CartesianGrid, { stroke: "#f1f5f9", vertical: false, strokeDasharray: "4 4" }), _jsx(XAxis, { dataKey: "date", tickFormatter: formatShortDate, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, dy: 10 }), _jsx(YAxis, { allowDecimals: false, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, dx: -10 }), _jsx(Tooltip, { content: _jsx(DailyTooltip, {}), cursor: { stroke: "rgba(59, 130, 246, 0.1)", strokeWidth: 32 } }), _jsx(Line, { type: "monotone", dataKey: "newCustomers", stroke: "#3b82f6", strokeWidth: 4, dot: { r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#3b82f6" }, activeDot: { r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#2563eb" } })] }) }) }), attendantBreakdown.length > 0 && (_jsxs("div", { style: { marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }, children: [_jsx("h4", { style: { fontSize: "0.9rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }, children: "Aquisi\u00E7\u00F5es por Vendedora" }), _jsxs("span", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" }, children: [filteredCustomers.length, " total"] })] }), _jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.75rem" }, children: attendantBreakdown.map((item, idx) => (_jsxs("div", { style: {
+                                        }, children: metrics.spendSource === 'api' ? "API" : "PLANILHA" }))] }), _jsx("div", { className: "metric-value", style: { color: "#d97706" }, children: formatCac(metrics.cac) }), _jsxs("p", { className: "metric-helper", children: ["Mes anterior: ", formatCac(metrics.prevCac)] })] }), _jsxs("div", { className: "premium-card", style: { borderTop: "4px solid #10b981" }, children: [_jsx("div", { className: "metric-label", children: "LTV (Valor Vital\u00EDcio)" }), _jsx("div", { className: "metric-value", style: { color: "#10b981" }, children: formatCurrency(metrics.estimatedLtv ?? 0) }), _jsx("p", { className: "metric-helper", children: "Expectativa de receita por cliente" })] })] }), _jsxs("div", { style: { display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: "1.5rem" }, children: [_jsxs("section", { className: "premium-panel", children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: "Clientes novos por dia" }), _jsxs("div", { style: { display: "flex", gap: "1rem", marginTop: "0.6rem", flexWrap: "wrap" }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b" }, children: [_jsx("div", { style: { width: "12px", height: "4px", background: "#3b82f6", borderRadius: "2px" } }), _jsx("strong", { children: "Clientes Novos:" }), " Primeira compra faturada no ERP"] }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b" }, children: [_jsx("div", { style: { width: "12px", height: "12px", background: "rgba(139, 92, 246, 0.15)", borderRadius: "2px" } }), _jsx("strong", { children: "Grupos Criados:" }), " Grupos criados no WhatsApp"] })] }), _jsxs("p", { className: "metric-helper", style: { marginTop: "0.8rem" }, children: ["Comparativo di\u00E1rio entre novos grupos criados e clientes novos adquiridos em ", formatMonthLabel(activeMonth), "."] })] }), _jsx("div", { style: { width: "100%", height: "260px" }, children: _jsx(ResponsiveContainer, { children: _jsxs(ComposedChart, { data: derivedDailySeries, margin: { top: 8, right: 12, left: 0, bottom: 0 }, onClick: (state) => {
+                                            if (state?.activeLabel) {
+                                                const clickedDay = state.activeLabel;
+                                                setSelectedDay(prev => prev === clickedDay ? null : clickedDay);
+                                            }
+                                        }, style: { cursor: "pointer" }, children: [_jsx("defs", { children: _jsxs("linearGradient", { id: "colorNew", x1: "0", y1: "0", x2: "0", y2: "1", children: [_jsx("stop", { offset: "5%", stopColor: "#3b82f6", stopOpacity: 0.3 }), _jsx("stop", { offset: "95%", stopColor: "#3b82f6", stopOpacity: 0 })] }) }), _jsx(CartesianGrid, { stroke: "#f1f5f9", vertical: false, strokeDasharray: "4 4" }), _jsx(XAxis, { dataKey: "date", tickFormatter: formatShortDate, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, dy: 10 }), _jsx(YAxis, { allowDecimals: false, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, dx: -10 }), _jsx(Tooltip, { content: _jsx(DailyTooltip, {}), cursor: { fill: "rgba(59, 130, 246, 0.05)" } }), _jsx(Bar, { dataKey: "groupsCreated", fill: "#8b5cf6", opacity: 0.15, radius: [4, 4, 0, 0], name: "Grupos Criados", barSize: 32 }), _jsx(Line, { type: "monotone", dataKey: "newCustomers", stroke: "#3b82f6", strokeWidth: 4, dot: { r: 4, strokeWidth: 2, fill: "#ffffff", stroke: "#3b82f6" }, activeDot: { r: 7, strokeWidth: 3, fill: "#ffffff", stroke: "#2563eb" }, name: "Clientes Novos" })] }) }) }), attendantBreakdown.length > 0 && (_jsxs("div", { style: { marginTop: "2rem", borderTop: "1px solid #f1f5f9", paddingTop: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }, children: [_jsx("h4", { style: { fontSize: "0.9rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }, children: "Aquisi\u00E7\u00F5es por Vendedora" }), _jsxs("span", { style: { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8" }, children: [filteredCustomers.length, " total"] })] }), _jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: "0.75rem" }, children: attendantBreakdown.map((item, idx) => (_jsxs("div", { style: {
                                                 background: idx === 0 ? "rgba(59, 130, 246, 0.06)" : "#ffffff",
                                                 border: idx === 0 ? "1px solid rgba(59, 130, 246, 0.2)" : "1px solid #e2e8f0",
                                                 borderRadius: "14px",
@@ -419,24 +461,77 @@ export function NewCustomersPage() {
                                                         fontSize: "0.8rem",
                                                         fontWeight: 700,
                                                         color: idx === 0 ? "#ffffff" : "#475569"
-                                                    }, children: item.count })] }, item.name))) })] }))] }), _jsxs("section", { className: "premium-panel", children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [_jsxs("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: ["Clientes novos \u2014 ", formatMonthLabel(activeMonth)] }), selectedMonth && (_jsx("button", { onClick: () => setSelectedMonth(null), style: {
-                                                    background: "rgba(41,86,215,0.08)",
-                                                    border: "1px solid rgba(41,86,215,0.2)",
-                                                    borderRadius: "8px",
-                                                    padding: "0.35rem 0.75rem",
-                                                    fontSize: "0.8rem",
-                                                    fontWeight: 600,
-                                                    color: "var(--accent)",
-                                                    cursor: "pointer",
-                                                    transition: "all 0.2s",
-                                                }, children: "\u2715 Voltar ao m\u00EAs atual" }))] }), _jsx("p", { className: "metric-helper", style: { marginTop: "0.4rem" }, children: selectedMonth
-                                            ? `Mostrando ${filteredCustomers.length} clientes adquiridos em ${formatMonthLabel(selectedMonth)}. Clique em outra barra do gráfico para trocar.`
-                                            : `${filteredCustomers.length} clientes neste mês. Clique em uma barra do histórico para ver outro mês.` })] }), filteredCustomers.length ? (_jsx("div", { style: { display: "flex", flexDirection: "column", gap: "0.85rem", maxHeight: "600px", overflowY: "auto" }, children: filteredCustomers.map((customer) => (_jsxs("article", { className: "customer-row", style: {
-                                        display: "grid",
-                                        gridTemplateColumns: "minmax(0, 1fr) auto",
-                                        gap: "0.75rem",
+                                                    }, children: item.count })] }, item.name))) })] }))] }), _jsxs("section", { className: "premium-panel", children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start" }, children: [_jsxs("div", { children: [_jsxs("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: [showUnconverted ? "Grupos não convertidos" : "Grupos criados", " \u2014 ", selectedDay ? formatDate(selectedDay) : formatMonthLabel(activeMonth || currentMonthKey)] }), _jsxs("div", { style: { display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.5rem" }, children: [selectedMonth && (_jsx("button", { onClick: () => {
+                                                                    setSelectedMonth(null);
+                                                                    setSelectedDay(null);
+                                                                }, style: {
+                                                                    background: "rgba(41,86,215,0.08)",
+                                                                    border: "1px solid rgba(41,86,215,0.2)",
+                                                                    borderRadius: "8px",
+                                                                    padding: "0.2rem 0.6rem",
+                                                                    fontSize: "0.75rem",
+                                                                    fontWeight: 600,
+                                                                    color: "var(--accent)",
+                                                                    cursor: "pointer"
+                                                                }, children: "\u2715 Limpar Filtro de M\u00EAs" })), selectedDay && (_jsxs("button", { onClick: () => setSelectedDay(null), style: {
+                                                                    background: "rgba(239, 68, 68, 0.08)",
+                                                                    border: "1px solid rgba(239, 68, 68, 0.2)",
+                                                                    borderRadius: "8px",
+                                                                    padding: "0.2rem 0.6rem",
+                                                                    fontSize: "0.75rem",
+                                                                    fontWeight: 600,
+                                                                    color: "#ef4444",
+                                                                    cursor: "pointer"
+                                                                }, children: ["\u2715 Limpar Filtro de Dia (", formatShortDate(selectedDay), ")"] }))] })] }), _jsxs("div", { style: { display: "flex", gap: "0.4rem" }, children: [_jsx("button", { onClick: () => setShowUnconverted(false), style: {
+                                                            padding: "0.4rem 0.7rem",
+                                                            borderRadius: "8px",
+                                                            border: "1px solid",
+                                                            borderColor: !showUnconverted ? "#8b5cf6" : "#e2e8f0",
+                                                            background: !showUnconverted ? "rgba(139, 92, 246, 0.08)" : "#ffffff",
+                                                            fontSize: "0.7rem",
+                                                            fontWeight: 700,
+                                                            color: !showUnconverted ? "#8b5cf6" : "#64748b",
+                                                            cursor: "pointer"
+                                                        }, children: "GRUPOS CRIADOS" }), _jsx("button", { onClick: () => setShowUnconverted(true), style: {
+                                                            padding: "0.4rem 0.7rem",
+                                                            borderRadius: "8px",
+                                                            border: "1px solid",
+                                                            borderColor: showUnconverted ? "#ef4444" : "#e2e8f0",
+                                                            background: showUnconverted ? "rgba(239, 68, 68, 0.08)" : "#ffffff",
+                                                            fontSize: "0.7rem",
+                                                            fontWeight: 700,
+                                                            color: showUnconverted ? "#ef4444" : "#64748b",
+                                                            cursor: "pointer"
+                                                        }, children: "GRUPOS N\u00C3O CONV." })] })] }), _jsx("p", { className: "metric-helper", style: { marginTop: "0.8rem" }, children: showUnconverted
+                                            ? selectedDay
+                                                ? `Exibindo ${monthlyUnconvertedGroups.length} grupos abertos no WhatsApp criados especificamente no dia ${formatDate(selectedDay)} que ainda não resultaram em venda.`
+                                                : `Exibindo ${monthlyUnconvertedGroups.length} grupos abertos no WhatsApp criados em ${formatMonthLabel(activeMonth || currentMonthKey)} que ainda não resultaram em venda.`
+                                            : selectedDay
+                                                ? `Exibindo ${monthlyAllGroups.length} grupos criados no WhatsApp especificamente no dia ${formatDate(selectedDay)}.`
+                                                : `Exibindo ${monthlyAllGroups.length} grupos criados no WhatsApp em ${formatMonthLabel(activeMonth || currentMonthKey)}.` })] }), (showUnconverted ? monthlyUnconvertedGroups : monthlyAllGroups).length ? (_jsx("div", { style: { display: "flex", flexDirection: "column", gap: "0.85rem", maxHeight: "600px", overflowY: "auto" }, children: !showUnconverted ? (monthlyAllGroups.map((group, idx) => (_jsxs("article", { className: "customer-row", style: {
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
                                         padding: "1rem 1.25rem",
-                                    }, children: [_jsxs("div", { style: { minWidth: 0 }, children: [_jsx("strong", { style: { display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }, children: customer.displayName }), _jsxs("span", { style: { display: "block", color: "#64748b", fontSize: "0.82rem" }, children: [customer.customerCode || "Sem codigo", " \u2022 1\u00AA compra em ", formatDate(customer.firstOrderDate)] }), _jsxs("span", { style: { display: "block", color: "#64748b", fontSize: "0.82rem", marginTop: "0.35rem", fontWeight: 500 }, children: [_jsx("span", { style: { color: "#3b82f6" }, children: customer.firstAttendant ? `Atend: ${customer.firstAttendant}` : "Sem atendente" }), " \u2022", " ", formatCurrency(customer.firstOrderAmount), _jsxs("span", { style: { marginLeft: "0.5rem", padding: "0.1rem 0.4rem", background: "#f1f5f9", borderRadius: "4px", fontSize: "0.75rem" }, children: [customer.firstItemCount, " pe\u00E7as"] })] })] }), _jsx("div", { style: { display: "flex", alignItems: "center" }, children: _jsx(Link, { to: `/clientes/${customer.customerId}`, className: "premium-btn", children: "Abrir cliente" }) })] }, customer.customerId))) })) : (_jsxs("div", { className: "empty-state", style: { padding: "3rem 1rem", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }, children: ["Nenhum cliente novo em ", formatMonthLabel(activeMonth), "."] }))] })] }), _jsxs("section", { className: "premium-panel", style: { marginTop: "1.5rem" }, children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: "Hist\u00F3rico mensal" }), _jsx("p", { className: "metric-helper", style: { marginTop: "0.4rem" }, children: "Evolucao da aquisicao desde o primeiro mes com pedidos no CRM." })] }), _jsx("div", { style: { width: "100%", height: "280px", marginBottom: "2rem" }, children: _jsx(ResponsiveContainer, { children: _jsxs(ComposedChart, { syncId: "acquisition-history", syncMethod: "value", data: data.monthlySeries, margin: { top: 8, right: 12, left: 0, bottom: 0 }, children: [_jsx(CartesianGrid, { stroke: "#f1f5f9", vertical: false, strokeDasharray: "4 4" }), _jsx(XAxis, { dataKey: "month", ticks: monthlyTicks, tickFormatter: formatMonthLabel, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, interval: 0, dy: 10 }), _jsx(YAxis, { yAxisId: "customers", allowDecimals: false, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, width: 48, dx: -10 }), _jsx(YAxis, { yAxisId: "spend", orientation: "right", tickFormatter: (value) => formatCurrency(value), tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, width: 90, dx: 10 }), _jsx(Tooltip, { content: _jsx(MonthlyTooltip, {}), cursor: { fill: "rgba(59, 130, 246, 0.05)" } }), _jsx(Bar, { yAxisId: "customers", dataKey: "newCustomers", fill: "#10b981", radius: [6, 6, 0, 0], maxBarSize: 50, cursor: "pointer", onClick: (_, index) => {
+                                        borderLeft: group.isConverted ? "4px solid #10b981" : "4px solid #8b5cf6"
+                                    }, children: [_jsxs("div", { style: { minWidth: 0 }, children: [_jsx("strong", { style: { display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }, children: group.name }), _jsxs("span", { style: { display: "block", color: "#64748b", fontSize: "0.82rem" }, children: ["Criado em ", formatDate(group.date), " \u2022 ", group.isConverted ? "Convertido em venda" : "Aguardando primeira compra"] })] }), _jsx("div", { children: _jsx("span", { style: {
+                                                    fontSize: "0.7rem",
+                                                    padding: "0.25rem 0.6rem",
+                                                    borderRadius: "999px",
+                                                    fontWeight: 700,
+                                                    background: group.isConverted ? "rgba(16, 185, 129, 0.1)" : "rgba(139, 92, 246, 0.1)",
+                                                    color: group.isConverted ? "#10b981" : "#8b5cf6",
+                                                    border: group.isConverted ? "1px solid rgba(16, 185, 129, 0.2)" : "1px solid rgba(139, 92, 246, 0.2)"
+                                                }, children: group.isConverted ? "CONVERTIDO" : "NÃO CONVERTIDO" }) })] }, idx)))) : (monthlyUnconvertedGroups.map((group, idx) => (_jsxs("article", { className: "customer-row", style: {
+                                        padding: "1rem 1.25rem",
+                                        borderLeft: "4px solid #ef4444"
+                                    }, children: [_jsx("strong", { style: { display: "block", marginBottom: "0.3rem", color: "#1e293b", fontSize: "0.95rem" }, children: group.name }), _jsxs("span", { style: { display: "block", color: "#64748b", fontSize: "0.82rem" }, children: ["Criado em ", formatDate(group.date), " \u2022 Aguardando primeira compra"] })] }, idx)))) })) : (_jsx("div", { className: "empty-state", style: { padding: "3rem 1rem", background: "#f8fafc", borderRadius: "16px", border: "1px dashed #cbd5e1" }, children: showUnconverted
+                                    ? selectedDay
+                                        ? `Nenhum grupo não convertido criado no dia ${formatDate(selectedDay)}.`
+                                        : `Nenhum grupo não convertido em ${formatMonthLabel(activeMonth || currentMonthKey)}.`
+                                    : selectedDay
+                                        ? `Nenhum grupo criado no dia ${formatDate(selectedDay)}.`
+                                        : `Nenhum grupo criado em ${formatMonthLabel(activeMonth || currentMonthKey)}.` }))] })] }), _jsxs("section", { className: "premium-panel", style: { marginTop: "1.5rem" }, children: [_jsxs("div", { style: { marginBottom: "1.5rem" }, children: [_jsx("h3", { style: { fontSize: "1.25rem", margin: 0, color: "#0f172a", fontWeight: 700 }, children: "Hist\u00F3rico mensal" }), _jsx("p", { className: "metric-helper", style: { marginTop: "0.4rem" }, children: "Evolucao da aquisicao desde o primeiro mes com pedidos no CRM." })] }), _jsx("div", { style: { width: "100%", height: "280px", marginBottom: "2rem" }, children: _jsx(ResponsiveContainer, { children: _jsxs(ComposedChart, { syncId: "acquisition-history", syncMethod: "value", data: data.monthlySeries, margin: { top: 8, right: 12, left: 0, bottom: 0 }, children: [_jsx(CartesianGrid, { stroke: "#f1f5f9", vertical: false, strokeDasharray: "4 4" }), _jsx(XAxis, { dataKey: "month", ticks: monthlyTicks, tickFormatter: formatMonthLabel, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, interval: 0, dy: 10 }), _jsx(YAxis, { yAxisId: "customers", allowDecimals: false, tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, width: 48, dx: -10 }), _jsx(YAxis, { yAxisId: "spend", orientation: "right", tickFormatter: (value) => formatCurrency(value), tick: { fill: "#64748b", fontSize: 12, fontWeight: 500 }, tickLine: false, axisLine: false, width: 90, dx: 10 }), _jsx(Tooltip, { content: _jsx(MonthlyTooltip, {}), cursor: { fill: "rgba(59, 130, 246, 0.05)" } }), _jsx(Bar, { yAxisId: "customers", dataKey: "newCustomers", fill: "#10b981", radius: [6, 6, 0, 0], maxBarSize: 50, cursor: "pointer", onClick: (_, index) => {
                                             const entry = data.monthlySeries[index];
                                             if (entry)
                                                 handleBarClick(entry);

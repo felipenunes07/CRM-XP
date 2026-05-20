@@ -24,6 +24,14 @@ vi.mock("./modules/crm/customerCreditService.js", async () => {
   };
 });
 
+vi.mock("./modules/platform/authMiddleware.js", () => ({
+  requireAuth: (request: any, _response: unknown, next: () => void) => {
+    request.user = { id: "user-1", email: "admin@example.com", name: "Admin", role: "ADMIN" };
+    next();
+  },
+  requireRole: () => (_request: unknown, _response: unknown, next: () => void) => next(),
+}));
+
 import { createApp } from "./app.js";
 
 describe("customer credit routes", () => {
@@ -131,12 +139,45 @@ describe("customer credit routes", () => {
         hasNegativeCredit: false,
         hasDebtWithoutCredit: false,
       },
+      orders: [
+        {
+          id: "order-1",
+          customerId: "customer-1",
+          customerCode: "CL001",
+          customerDisplayName: "Loja 1",
+          sourceDisplayName: "Loja 1",
+          orderNumber: "37732",
+          orderDate: "2026-02-27",
+          totalAmount: 1635,
+          units: 15,
+          seller: "Thais",
+          doc: "EXPOR",
+          status: "OK",
+          lineCount: 2,
+        },
+      ],
+      payments: [
+        {
+          id: "payment-1",
+          customerId: "customer-1",
+          customerCode: "CL001",
+          customerDisplayName: "Loja 1",
+          sourceDisplayName: "Loja 1",
+          paymentNumber: "89205",
+          paymentDate: "2026-05-12",
+          amount: 7217,
+          paymentType: "TROCAS",
+          observation: "",
+        },
+      ],
     });
 
     const response = await request(createApp()).get("/api/customers/customer-1/credit");
 
     expect(response.status).toBe(200);
     expect(response.body.row.customerCode).toBe("CL001");
+    expect(response.body.orders[0].orderNumber).toBe("37732");
+    expect(response.body.payments[0].paymentType).toBe("TROCAS");
     expect(getCustomerCreditDetailMock).toHaveBeenCalledWith("customer-1");
   });
 });

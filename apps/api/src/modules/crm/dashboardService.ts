@@ -2,6 +2,7 @@ import type {
   AgendaItem,
   AgendaResponse,
   DashboardMetrics,
+  CustomerMovementsResponse,
   HistoricalReactivationEntry,
   InsightTag,
   ItemsSoldTrendPoint,
@@ -24,8 +25,7 @@ import type { CustomerFilters } from "./customerService.js";
 import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
-const DAY_MS = 24 * 60 * 60 * 1000;
-const DASHBOARD_TREND_START_YEAR = 2023;
+const DASHBOARD_TREND_MAX_DAYS = 3650;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
@@ -62,10 +62,8 @@ export interface TrendRangeAnalysisMonthlyRow {
   actual_pieces: number;
 }
 
-function getDashboardTrendMaxDays(referenceDate = new Date()) {
-  const startUtc = Date.UTC(DASHBOARD_TREND_START_YEAR, 0, 1);
-  const todayUtc = Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
-  return Math.max(1, Math.floor((todayUtc - startUtc) / DAY_MS) + 1);
+export function normalizeDashboardTrendDays(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
+  return Math.max(1, Math.min(DASHBOARD_TREND_MAX_DAYS, Math.floor(days)));
 }
 
 export function normalizeTrendRangeSelection(startDate: string, endDate: string): TrendRangeSelection {
@@ -423,7 +421,7 @@ async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[
         COALESCE(SUM(first_item_count), 0)::int AS total_items
       FROM ranked_orders
       WHERE order_rank = 1
-        AND date_trunc('month', order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
+        AND order_date >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
       GROUP BY attendant
       ORDER BY new_customers DESC, total_revenue DESC, attendant ASC
       LIMIT 10
@@ -576,13 +574,30 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
 }
 
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
-  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
+  const validatedDays = normalizeDashboardTrendDays(days);
+
+  // Auto-healing: Check for any legacy 'NEW' status rows in dashboard_daily_metrics in production
+  try {
+    const legacyCheck = await pool.query<{ count: number }>(
+      "SELECT COUNT(*)::int as count FROM dashboard_daily_metrics WHERE new_count > 0"
+    );
+    if (Number(legacyCheck.rows[0]?.count ?? 0) > 0) {
+      logger.info("dashboard metrics: detected legacy 'NEW' status rows. Clearing and rebuilding metrics history...");
+      await pool.query("DELETE FROM dashboard_daily_metrics");
+      await refreshAllSnapshots();
+      await refreshDashboardDailyMetrics(validatedDays);
+      logger.info("dashboard metrics: auto-healing completed successfully.");
+    }
+  } catch (err) {
+    logger.warn("dashboard metrics: failed to check/auto-heal legacy daily metrics", { error: String(err) });
+  }
+
   const freshnessResult = await pool.query<{
     today: string;
     latest_trend_day: string | null;
     trend_row_count: number;
     snapshot_row_count: number;
-    stale_snapshot_count: number;
+    last_snapshot_refresh: string | null;
   }>(
     `
       SELECT
@@ -594,11 +609,7 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
           WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ) AS trend_row_count,
         (SELECT COUNT(*)::int FROM customer_snapshot) AS snapshot_row_count,
-        (
-          SELECT COUNT(*)::int
-          FROM customer_snapshot
-          WHERE updated_at::date < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
-        ) AS stale_snapshot_count
+        (SELECT MAX(updated_at)::text FROM customer_snapshot) AS last_snapshot_refresh
     `,
     [validatedDays],
   );
@@ -608,8 +619,12 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   const latestTrendDay = freshness?.latest_trend_day ?? null;
   const trendRowCount = Number(freshness?.trend_row_count ?? 0);
   const snapshotRowCount = Number(freshness?.snapshot_row_count ?? 0);
-  const staleSnapshotCount = Number(freshness?.stale_snapshot_count ?? 0);
-  const snapshotIsStale = snapshotRowCount === 0 || staleSnapshotCount > 0;
+  
+  // Cache strategy: Only refresh snapshots if they are older than 12 hours
+  const lastRefresh = freshness?.last_snapshot_refresh ? new Date(freshness.last_snapshot_refresh) : null;
+  const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime() > 12 * 60 * 60 * 1000);
+  
+  const snapshotIsStale = snapshotRowCount === 0 || isStale;
   const trendNeedsRefresh = trendRowCount < validatedDays || !latestTrendDay || latestTrendDay < today;
 
   if (!snapshotIsStale && !trendNeedsRefresh) {
@@ -617,12 +632,12 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   }
 
   if (snapshotIsStale) {
+    logger.info("dashboard metrics: triggering heavy snapshot refresh (stale or empty)");
     await refreshAllSnapshots();
   }
 
-  if (!snapshotIsStale && trendNeedsRefresh) {
-    await refreshDashboardDailyMetrics(validatedDays);
-  } else if (snapshotIsStale && validatedDays > DASHBOARD_TREND_WINDOW_DAYS) {
+  if (trendNeedsRefresh) {
+    logger.info("dashboard metrics: refreshing daily trends", { days: validatedDays });
     await refreshDashboardDailyMetrics(validatedDays);
   }
 
@@ -636,29 +651,21 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
  */
 async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   // Validate days parameter
-  const validatedDays = Math.max(1, Math.min(getDashboardTrendMaxDays(), Math.floor(days)));
+  const validatedDays = normalizeDashboardTrendDays(days);
 
   let result = await pool.query(
     `
       SELECT
-        m.day::text AS date,
-        m.total_customers,
-        m.active_count,
-        m.attention_count,
-        m.inactive_count,
-        COALESCE(s.daily_items_sold, 0)::int AS daily_items_sold
-      FROM dashboard_daily_metrics m
-      LEFT JOIN (
-        SELECT 
-          o.order_date::date as day, 
-          COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.order_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-        GROUP BY o.order_date::date
-      ) s ON s.day = m.day
-      WHERE m.day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-      ORDER BY m.day
+        day::text AS date,
+        total_customers,
+        active_count,
+        attention_count,
+        inactive_count,
+        new_count,
+        daily_items_sold
+      FROM dashboard_daily_metrics
+      WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
+      ORDER BY day
     `,
     [validatedDays],
   );
@@ -668,24 +675,16 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
     result = await pool.query(
       `
         SELECT
-          m.day::text AS date,
-          m.total_customers,
-          m.active_count,
-          m.attention_count,
-          m.inactive_count,
-          COALESCE(s.daily_items_sold, 0)::int AS daily_items_sold
-        FROM dashboard_daily_metrics m
-        LEFT JOIN (
-          SELECT 
-            o.order_date::date as day, 
-            COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
-          FROM orders o
-          LEFT JOIN order_items oi ON oi.order_id = o.id
-          WHERE o.order_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-          GROUP BY o.order_date::date
-        ) s ON s.day = m.day
-        WHERE m.day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
-        ORDER BY m.day
+          day::text AS date,
+          total_customers,
+          active_count,
+          attention_count,
+          inactive_count,
+          new_count,
+          daily_items_sold
+        FROM dashboard_daily_metrics
+        WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
+        ORDER BY day
       `,
       [validatedDays],
     );
@@ -710,6 +709,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
       activeCount: Number(row.active_count ?? 0),
       attentionCount: Number(row.attention_count ?? 0),
       inactiveCount: Number(row.inactive_count ?? 0),
+      newCount: Number(row.new_count ?? 0),
       trafficSpend: spendMap.get(monthKey) ?? 0,
       dailyItemsSold: Number(row.daily_items_sold ?? 0),
     };
@@ -1270,6 +1270,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
             COUNT(*) FILTER (WHERE status = 'ACTIVE')::int AS active_count,
             COUNT(*) FILTER (WHERE status = 'ATTENTION')::int AS attention_count,
             COUNT(*) FILTER (WHERE status = 'INACTIVE')::int AS inactive_count,
+            COUNT(*) FILTER (WHERE status = 'NEW')::int AS new_count,
             AVG(avg_ticket)::numeric(14,2) AS average_ticket,
             AVG(avg_days_between_orders)::numeric(14,2) AS average_frequency_days
           FROM customer_snapshot
@@ -1362,6 +1363,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
   const snapshotActive = Number(row?.active_count ?? 0);
   const snapshotAttention = Number(row?.attention_count ?? 0);
   const snapshotInactive = Number(row?.inactive_count ?? 0);
+  const snapshotNew = Number(row?.new_count ?? 0);
 
   const currentYearDate = new Date();
   const currentMonthData = globalItemsSoldTrend.find(i => i.year === currentYearDate.getFullYear() && i.month === currentYearDate.getMonth() + 1);
@@ -1380,6 +1382,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
               activeCount: snapshotActive,
               attentionCount: snapshotAttention,
               inactiveCount: snapshotInactive,
+              newCount: snapshotNew,
             }
           : point,
       )
@@ -1391,6 +1394,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       ACTIVE: snapshotActive,
       ATTENTION: snapshotAttention,
       INACTIVE: snapshotInactive,
+      NEW: snapshotNew,
     },
     inactivityBuckets: buckets.rows.map((bucket) => ({
       label: String(bucket.label),
@@ -1550,4 +1554,102 @@ export async function getAgendaItems(limit = 25, offset = 0, filters: CustomerFi
     totalEligible,
     hasMore: safeOffset + items.length < totalEligible,
   };
+}
+
+export async function getCustomerMovements(days: number = 7): Promise<CustomerMovementsResponse> {
+  const validatedDays = Math.max(1, Math.min(365, Math.floor(days)));
+  
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int) AS t1,
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS t2
+      ),
+      last_orders AS (
+        SELECT
+          o.customer_id,
+          MAX(CASE WHEN o.order_date::date <= p.t1 THEN o.order_date::date END) as last_order_t1,
+          MAX(o.order_date::date) as last_order_t2
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.t2
+        GROUP BY o.customer_id
+      ),
+      customer_statuses AS (
+        SELECT
+          c.id as customer_id,
+          c.customer_code,
+          c.display_name,
+          lo.last_order_t2 as last_purchase_at,
+          CASE
+            WHEN lo.last_order_t1 IS NULL THEN 'NEW'
+            WHEN p.t1 - lo.last_order_t1 <= 30 THEN 'ACTIVE'
+            WHEN p.t1 - lo.last_order_t1 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t1,
+          CASE
+            WHEN lo.last_order_t2 IS NULL THEN 'INACTIVE'
+            WHEN p.t2 - lo.last_order_t2 <= 30 THEN 'ACTIVE'
+            WHEN p.t2 - lo.last_order_t2 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t2,
+          COALESCE(p.t2 - lo.last_order_t2, 999) AS days_since_last_purchase
+        FROM customers c
+        LEFT JOIN last_orders lo ON c.id = lo.customer_id
+        CROSS JOIN params p
+      )
+      SELECT 
+        customer_id,
+        customer_code,
+        display_name,
+        status_t1,
+        status_t2,
+        last_purchase_at::text as last_purchase_at,
+        days_since_last_purchase
+      FROM customer_statuses
+      WHERE status_t1 <> status_t2
+      ORDER BY 
+        CASE 
+          WHEN status_t1 = 'ACTIVE' AND status_t2 = 'ATTENTION' THEN 1
+          WHEN status_t1 = 'ATTENTION' AND status_t2 = 'INACTIVE' THEN 2
+          WHEN status_t2 = 'ACTIVE' THEN 3
+          ELSE 4
+        END,
+        days_since_last_purchase ASC
+    `,
+    [validatedDays],
+  );
+
+  const movements = result.rows.map((row) => ({
+    customerId: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name),
+    fromStatus: row.status_t1 as any,
+    toStatus: row.status_t2 as any,
+    lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
+    daysSinceLastPurchase: Number(row.days_since_last_purchase),
+  }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - validatedDays);
+
+  return {
+    startDate: startDate.toISOString().slice(0, 10),
+    endDate: today,
+    movements,
+  };
+}
+
+export async function clearDashboardCache() {
+  try {
+    const keys = await redis.keys("dashboard_metrics:*");
+    if (keys.length > 0) {
+      await redis.del(...keys);
+      logger.info("dashboard metrics: cleared cache keys", { count: keys.length });
+    }
+  } catch (error) {
+    logger.warn("failed to clear dashboard metrics cache", { error: String(error) });
+  }
 }

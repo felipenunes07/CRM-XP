@@ -1,4 +1,5 @@
 import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
 import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
 
 export interface EvolutionInstanceConfig {
@@ -49,6 +50,31 @@ export async function sendWhatsappInstanceTextMessage(
   });
 }
 
+export async function sendWhatsappInstanceMediaMessage(
+  instance: EvolutionInstanceConfig,
+  destinationJid: string,
+  mediaBase64: string,
+  mediaType: "image" | "video" | "audio" | "document",
+  fileName?: string,
+  caption?: string,
+) {
+  const payload: any = {
+    number: formatEvolutionSendTextTarget(destinationJid),
+    mediatype: mediaType,
+    media: mediaBase64,
+  };
+
+  if (caption) {
+    payload.caption = caption;
+  }
+
+  if (fileName) {
+    payload.fileName = fileName;
+  }
+
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+}
+
 export async function markWhatsappMessagesAsRead(instance: EvolutionInstanceConfig, readMessages: EvolutionMessageKey[]) {
   if (!readMessages.length) {
     return null;
@@ -83,7 +109,7 @@ export async function configureInstanceWebhook(instance: {
       enabled: true,
       url: webhookUrl,
       byEvents: false,
-      base64: false,
+      base64: true,
       events: ["MESSAGES_UPSERT"],
     },
   });
@@ -97,11 +123,31 @@ export async function configureInstanceSettings(instance: {
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/settings/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
     rejectCall: false,
     groupsIgnore: false,
-    alwaysOnline: true,
-    readMessages: true,
+    alwaysOnline: false,
+    readMessages: false,
     readStatus: false,
     syncFullHistory: false,
   });
+}
+
+export async function deleteEvolutionInstance(instance: {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}) {
+  try {
+    return await requestEvolution(
+      instance.evolutionBaseUrl,
+      instance.evolutionApiKey,
+      `/instance/delete/${encodeURIComponent(instance.instanceName)}`,
+      "DELETE"
+    );
+  } catch (error) {
+    logger.warn("Failed to delete instance from Evolution API, it might not exist", {
+      instanceName: instance.instanceName,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function requestEvolution(baseUrl: string, apiKey: string, path: string, method: string, body?: any) {

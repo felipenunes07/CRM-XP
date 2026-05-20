@@ -215,6 +215,7 @@ export const migrations = [
     active_count INTEGER NOT NULL DEFAULT 0,
     attention_count INTEGER NOT NULL DEFAULT 0,
     inactive_count INTEGER NOT NULL DEFAULT 0,
+    new_count INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
@@ -410,6 +411,8 @@ export const migrations = [
     template_title TEXT,
     saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
     saved_segment_name TEXT,
+    whatsapp_instance_id UUID,
+    whatsapp_instance_label TEXT,
     message_text TEXT NOT NULL,
     filters_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
     min_delay_seconds INTEGER NOT NULL DEFAULT 183,
@@ -427,6 +430,10 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_status ON whatsapp_campaigns(status);
   CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at ON whatsapp_campaigns(created_at DESC);
+
+  ALTER TABLE whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID,
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_label TEXT;
 
   CREATE TABLE IF NOT EXISTS whatsapp_campaign_recipients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -543,6 +550,61 @@ export const migrations = [
     ON customer_credit_snapshot_rows(risk_level);
   CREATE INDEX IF NOT EXISTS idx_customer_credit_snapshot_rows_operational_state
     ON customer_credit_snapshot_rows(operational_state);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_order_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_credit_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT NOT NULL,
+    source_display_name TEXT,
+    order_key TEXT NOT NULL,
+    order_number TEXT NOT NULL DEFAULT '',
+    order_date DATE,
+    total_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    units INTEGER NOT NULL DEFAULT 0,
+    seller TEXT,
+    doc TEXT,
+    status TEXT NOT NULL DEFAULT '',
+    line_count INTEGER NOT NULL DEFAULT 0,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_snapshot_id
+    ON customer_credit_order_entries(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_customer_id
+    ON customer_credit_order_entries(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_customer_code
+    ON customer_credit_order_entries(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_order_entries_order_date
+    ON customer_credit_order_entries(order_date DESC);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_payment_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_credit_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT NOT NULL,
+    source_display_name TEXT,
+    payment_key TEXT NOT NULL,
+    payment_number TEXT NOT NULL DEFAULT '',
+    payment_date DATE,
+    amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    payment_type TEXT NOT NULL DEFAULT '',
+    observation TEXT NOT NULL DEFAULT '',
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_snapshot_id
+    ON customer_credit_payment_entries(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_customer_id
+    ON customer_credit_payment_entries(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_customer_code
+    ON customer_credit_payment_entries(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payment_entries_payment_date
+    ON customer_credit_payment_entries(payment_date DESC);
   `,
   `
   CREATE TABLE IF NOT EXISTS idea_board_items (
@@ -909,5 +971,175 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_instances_instance_name
     ON whatsapp_instances(instance_name);
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS message_automations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'PAUSED')),
+    channel TEXT NOT NULL CHECK (channel = 'WHATSAPP_GROUP'),
+    send_mode TEXT NOT NULL DEFAULT 'APPROVAL',
+    trigger_mode TEXT NOT NULL DEFAULT 'SCHEDULED',
+    saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
+    saved_segment_name TEXT,
+    segment_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    flow_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL,
+    template_id UUID REFERENCES message_templates(id) ON DELETE SET NULL,
+    message_text TEXT NOT NULL DEFAULT '',
+    schedule_json JSONB NOT NULL DEFAULT '{"frequency":"DAILY","time":"09:00","timezone":"America/Sao_Paulo"}'::jsonb,
+    override_recent_block BOOLEAN NOT NULL DEFAULT FALSE,
+    min_delay_seconds INTEGER NOT NULL DEFAULT 183,
+    max_delay_seconds INTEGER NOT NULL DEFAULT 304,
+    next_run_at TIMESTAMPTZ,
+    last_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automations_status_next_run
+    ON message_automations(status, next_run_at);
+
+  ALTER TABLE message_automations
+    ADD COLUMN IF NOT EXISTS send_mode TEXT NOT NULL DEFAULT 'APPROVAL',
+    ADD COLUMN IF NOT EXISTS trigger_mode TEXT NOT NULL DEFAULT 'SCHEDULED',
+    ADD COLUMN IF NOT EXISTS flow_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL;
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automations DROP CONSTRAINT IF EXISTS message_automations_send_mode_check;
+    ALTER TABLE message_automations
+      ADD CONSTRAINT message_automations_send_mode_check CHECK (send_mode IN ('AUTOMATIC', 'APPROVAL'));
+  END $$;
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automations DROP CONSTRAINT IF EXISTS message_automations_trigger_mode_check;
+    ALTER TABLE message_automations
+      ADD CONSTRAINT message_automations_trigger_mode_check CHECK (trigger_mode IN ('SCHEDULED', 'ON_STAGE_ENTRY'));
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS message_automation_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    automation_id UUID NOT NULL REFERENCES message_automations(id) ON DELETE CASCADE,
+    scheduled_for TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    status TEXT NOT NULL CHECK (status IN ('PENDING_APPROVAL', 'ENQUEUED', 'APPROVED', 'REJECTED', 'NO_MATCH', 'FAILED')),
+    audience_snapshot JSONB NOT NULL DEFAULT '{"totalCustomerCount":0,"customerIds":[],"eligibleGroupIds":[],"blockedGroupIds":[],"unmappedCustomerIds":[]}'::jsonb,
+    mapped_group_count INTEGER NOT NULL DEFAULT 0,
+    unmapped_customer_count INTEGER NOT NULL DEFAULT 0,
+    blocked_recent_count INTEGER NOT NULL DEFAULT 0,
+    campaign_id UUID REFERENCES whatsapp_campaigns(id) ON DELETE SET NULL,
+    approved_at TIMESTAMPTZ,
+    approved_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    rejected_at TIMESTAMPTZ,
+    rejected_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    error_message TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automation_runs_status_scheduled_for
+    ON message_automation_runs(status, scheduled_for DESC);
+
+  DO $$
+  BEGIN
+    ALTER TABLE message_automation_runs DROP CONSTRAINT IF EXISTS message_automation_runs_status_check;
+    ALTER TABLE message_automation_runs
+      ADD CONSTRAINT message_automation_runs_status_check
+      CHECK (status IN ('PENDING_APPROVAL', 'ENQUEUED', 'APPROVED', 'REJECTED', 'NO_MATCH', 'FAILED'));
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS message_automation_customer_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    automation_id UUID NOT NULL REFERENCES message_automations(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    event_key TEXT NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_triggered_run_id UUID REFERENCES message_automation_runs(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (automation_id, customer_id, event_key)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_message_automation_customer_events_lookup
+    ON message_automation_customer_events(automation_id, event_key, customer_id);
+  `,
+  `
+  -- Messaging Intelligence Events
+  CREATE TABLE IF NOT EXISTS message_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id UUID NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+    message_id TEXT,
+    activity_id UUID REFERENCES deal_activities(id) ON DELETE SET NULL,
+    event_type VARCHAR(30) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    label VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    resolution_note TEXT,
+    CHECK (severity IN ('LOW', 'MODERATE', 'HIGH', 'CRITICAL'))
+  );
+
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
+
+  CREATE INDEX IF NOT EXISTS idx_message_events_deal_id ON message_events(deal_id);
+  CREATE INDEX IF NOT EXISTS idx_message_events_event_type ON message_events(event_type);
+  CREATE INDEX IF NOT EXISTS idx_message_events_severity ON message_events(severity);
+  CREATE INDEX IF NOT EXISTS idx_message_events_detected_at ON message_events(detected_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_message_events_resolved ON message_events(resolved_at) WHERE resolved_at IS NULL;
+  CREATE INDEX IF NOT EXISTS idx_message_events_activity_id ON message_events(activity_id);
+  `,
+  `
+  -- Event Sentiments (daily aggregation)
+  CREATE TABLE IF NOT EXISTS event_sentiments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date DATE NOT NULL,
+    whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+    positive_count INTEGER NOT NULL DEFAULT 0,
+    negative_count INTEGER NOT NULL DEFAULT 0,
+    neutral_count INTEGER NOT NULL DEFAULT 0,
+    average_score NUMERIC(4,3) NOT NULL DEFAULT 0,
+    total_messages INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(date, whatsapp_instance_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_sentiments_date ON event_sentiments(date DESC);
+  CREATE INDEX IF NOT EXISTS idx_event_sentiments_instance ON event_sentiments(whatsapp_instance_id);
+  `,
+  `
+  -- Event Resolutions (audit trail)
+  CREATE TABLE IF NOT EXISTS event_resolutions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_id UUID NOT NULL REFERENCES message_events(id) ON DELETE CASCADE,
+    resolved_by UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    resolution_note TEXT NOT NULL,
+    resolved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_event_id ON event_resolutions(event_id);
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_by ON event_resolutions(resolved_by);
+  CREATE INDEX IF NOT EXISTS idx_event_resolutions_resolved_at ON event_resolutions(resolved_at DESC);
+  `,
+  `
+  -- Message event classifier v2 event types for existing databases
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
+  `,
+  `
+  -- Ensure classifier v2 event types are applied after already-recorded migrations
+  ALTER TABLE message_events DROP CONSTRAINT IF EXISTS message_events_event_type_check;
+  ALTER TABLE message_events ADD CONSTRAINT message_events_event_type_check CHECK (event_type IN ('RISK', 'POSITIVE_FEEDBACK', 'NEGATIVE_FEEDBACK', 'COMPLAINT', 'PRAISE', 'QUESTION', 'ESCALATION', 'GREETING', 'NEUTRAL', 'CHURN_RISK', 'SALES_OPPORTUNITY'));
+  `,
+  `
+  -- Add new_count and daily_items_sold columns to dashboard_daily_metrics
+  ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS new_count INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS daily_items_sold INTEGER NOT NULL DEFAULT 0;
   `,
 ];

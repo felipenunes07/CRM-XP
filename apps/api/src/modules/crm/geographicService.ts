@@ -288,3 +288,87 @@ export async function getCitiesByState(state: string) {
 
   return result.rows.map((row) => mapCityStat(row));
 }
+
+function cleanModelName(model: string) {
+  let cleaned = model.toLowerCase().trim();
+  
+  // Remove SKU code prefixes like "12/31/00 - " or "1338-1 - "
+  cleaned = cleaned.replace(/^\d[\w/-]*\s+-\s+/, "");
+
+  return cleaned
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
+}
+
+export async function getGeographicModelSales(options: {
+  state?: string | null;
+  city?: string | null;
+  year?: number;
+}) {
+  const year = options.year ?? 2026;
+  const startDate = `${year}-01-01`;
+  const endDate = `${year}-12-31`;
+  const state = options.state ? options.state.trim().toUpperCase() : null;
+  const city = options.city ? options.city.trim() : null;
+
+  async function queryModelSales(qState: string | null, qCity: string | null) {
+    const result = await pool.query(
+      `
+        SELECT
+          COALESCE(isi.model, oi.item_description) AS model_name,
+          SUM(oi.quantity)::int AS quantity_sold,
+          SUM(oi.line_total)::numeric(14,2) AS total_revenue
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN inventory_snapshot_items isi ON isi.sku = oi.sku AND isi.snapshot_id = (
+          SELECT id FROM inventory_snapshots WHERE is_active = TRUE LIMIT 1
+        )
+        WHERE o.order_date >= $1 AND o.order_date <= $2
+          AND ($3::text IS NULL OR c.state = $3::text)
+          AND ($4::text IS NULL OR c.city = $4::text)
+        GROUP BY 1
+        ORDER BY quantity_sold DESC
+      `,
+      [startDate, endDate, qState, qCity]
+    );
+
+    return result.rows.map((row) => ({
+      model: cleanModelName(String(row.model_name ?? "")),
+      quantitySold: toNumber(row.quantity_sold),
+      totalRevenue: toNumber(row.total_revenue),
+    }));
+  }
+
+  let data = [];
+  let isFallback = false;
+  let regionName = "";
+
+  if (city && state) {
+    data = await queryModelSales(state, city);
+    regionName = `${city} (${state})`;
+    if (data.length === 0) {
+      data = await queryModelSales(state, null);
+      isFallback = true;
+      regionName = `Estado de ${state} (Sem vendas em ${city} em ${year})`;
+    }
+  } else if (state) {
+    data = await queryModelSales(state, null);
+    regionName = `Estado de ${state}`;
+  } else {
+    data = await queryModelSales(null, null);
+    regionName = "Brasil";
+  }
+
+  return {
+    regionName,
+    state,
+    city: isFallback ? null : city,
+    year,
+    isFallback,
+    data,
+  };
+}
+

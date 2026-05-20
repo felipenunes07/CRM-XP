@@ -1,7 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { z } from "zod";
-import type { CustomerStatus } from "@olist-crm/shared";
+import type { CustomerStatus, EventType, EventSeverity } from "@olist-crm/shared";
 import { env, webOrigins } from "./lib/env.js";
 import { HttpError } from "./lib/httpError.js";
 import { logger } from "./lib/logger.js";
@@ -37,13 +37,23 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
   listSavedSegments,
   updateSavedSegment,
 } from "./modules/crm/segmentService.js";
+import {
+  approveMessageAutomationRun,
+  createMessageAutomation,
+  deleteMessageAutomation,
+  listMessageAutomationRuns,
+  listMessageAutomations,
+  rejectMessageAutomationRun,
+  runMessageAutomationNow,
+  updateMessageAutomation,
+} from "./modules/crm/automationService.js";
 import {
   createMessageTemplate,
   deleteMessageTemplate,
@@ -64,6 +74,7 @@ import {
   getGeographicStats,
   getGeographicSalesStats,
   getCitiesByState,
+  getGeographicModelSales,
 } from "./modules/crm/geographicService.js";
 import {
   claimProspectLead,
@@ -82,6 +93,12 @@ import { listUsers, login } from "./modules/platform/authService.js";
 import { requireAuth, requireRole } from "./modules/platform/authMiddleware.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
+import {
+  getEventsMetrics,
+  listEvents,
+  resolveEvent,
+  getDailySentiments,
+} from "./modules/events/eventsService.js";
 import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
@@ -149,8 +166,12 @@ const customerQuerySchema = z.object({
 });
 
 const dashboardQuerySchema = z.object({
-  trendDays: z.coerce.number().int().min(1).max(5000).optional(),
+  trendDays: z.coerce.number().int().min(1).max(3650).optional(),
   customerPrefix: z.string().optional(),
+});
+
+const movementsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).optional(),
 });
 
 const trendRangeAnalysisQuerySchema = z.object({
@@ -271,6 +292,39 @@ const customerAmbassadorSchema = z.object({
 const savedSegmentSchema = z.object({
   name: z.string().min(1),
   definition: segmentSchema,
+});
+
+const automationScheduleSchema = z.object({
+  frequency: z.enum(["DAILY", "WEEKLY"]),
+  weekdays: z.array(z.number().int().min(0).max(6)).optional(),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "deve estar no formato HH:mm"),
+  timezone: z.string().min(1),
+});
+
+const automationSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(["ACTIVE", "PAUSED"]),
+  channel: z.literal("WHATSAPP_GROUP"),
+  sendMode: z.enum(["AUTOMATIC", "APPROVAL"]).optional(),
+  triggerMode: z.enum(["SCHEDULED", "ON_STAGE_ENTRY"]).optional(),
+  savedSegmentId: z.string().uuid().nullable().optional(),
+  segmentDefinition: segmentSchema,
+  flowDefinition: z.record(z.unknown()).optional(),
+  whatsappInstanceId: z.string().uuid().nullable().optional(),
+  templateId: z.string().uuid().nullable().optional(),
+  messageText: z.string().min(1),
+  schedule: automationScheduleSchema,
+  overrideRecentBlock: z.boolean().optional(),
+  minDelaySeconds: z.number().int().min(1).optional(),
+  maxDelaySeconds: z.number().int().min(1).optional(),
+});
+
+const automationRunsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const automationRunNowSchema = z.object({
+  sendMode: z.enum(["AUTOMATIC", "APPROVAL"]).optional(),
 });
 
 const optionalQueryBoolean = z.preprocess((value) => {
@@ -437,7 +491,11 @@ function isAllowedCorsOrigin(origin?: string | null) {
     return true;
   }
 
-  if (webOrigins.includes(origin) || origin.endsWith(".trycloudflare.com")) {
+  if (
+    webOrigins.includes(origin) ||
+    origin === "http://localhost:5174" ||
+    origin.endsWith(".trycloudflare.com")
+  ) {
     return true;
   }
 
@@ -582,6 +640,15 @@ export function createApp() {
     try {
       const query = dashboardQuerySchema.parse(request.query);
       response.json(await getDashboardMetrics(query.trendDays, query.customerPrefix));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/movements", async (request, response, next) => {
+    try {
+      const query = movementsQuerySchema.parse(request.query);
+      response.json(await getCustomerMovements(query.days));
     } catch (error) {
       next(error);
     }
@@ -734,6 +801,7 @@ export function createApp() {
     }
   });
 
+/*
   app.get("/api/customer-credit/overview", async (_request, response, next) => {
     try {
       response.json(await getCustomerCreditOverview());
@@ -741,7 +809,9 @@ export function createApp() {
       next(error);
     }
   });
+*/
 
+/*
   app.post("/api/customer-credit/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
       response.json(await refreshCustomerCreditOverview());
@@ -749,7 +819,9 @@ export function createApp() {
       next(error);
     }
   });
+*/
 
+/*
   app.get("/api/customer-credit/opportunities", async (_request, response, next) => {
     try {
       response.json(await getCustomerCreditOpportunities());
@@ -757,6 +829,7 @@ export function createApp() {
       next(error);
     }
   });
+*/
 
   app.get("/api/inventory/snapshot", async (_request, response, next) => {
     try {
@@ -850,6 +923,7 @@ export function createApp() {
     }
   });
 
+/*
   app.get("/api/customers/:id/credit", async (request, response, next) => {
     try {
       response.json(await getCustomerCreditDetail(request.params.id));
@@ -857,6 +931,7 @@ export function createApp() {
       next(error);
     }
   });
+*/
 
   app.get("/api/customers/:id/opportunity", async (request, response, next) => {
     try {
@@ -1006,9 +1081,94 @@ export function createApp() {
     }
   });
 
+  app.get("/api/geographic/model-sales", async (request, response, next) => {
+    try {
+      const state = request.query.state ? String(request.query.state) : undefined;
+      const city = request.query.city ? String(request.query.city) : undefined;
+      const year = request.query.year ? Number(request.query.year) : undefined;
+      response.json(await getGeographicModelSales({ state, city, year }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/geographic/cities/:state", async (request, response, next) => {
     try {
       response.json(await getCitiesByState(request.params.state));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/automations", async (_request, response, next) => {
+    try {
+      response.json(await listMessageAutomations());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.status(201).json(await createMessageAutomation(automationSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/automations/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const updated = await updateMessageAutomation(String(request.params.id), automationSchema.parse(request.body));
+      if (!updated) {
+        throw new HttpError(404, "Automacao nao encontrada");
+      }
+      response.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/automations/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const deleted = await deleteMessageAutomation(String(request.params.id));
+      if (!deleted) {
+        throw new HttpError(404, "Automacao nao encontrada");
+      }
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/:id/run-now", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = automationRunNowSchema.parse(request.body ?? {});
+      response.json(await runMessageAutomationNow(String(request.params.id), request.user!, payload.sendMode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/automations/runs", async (request, response, next) => {
+    try {
+      const query = automationRunsQuerySchema.parse(request.query);
+      response.json(await listMessageAutomationRuns(query.limit ?? 100));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/runs/:id/approve", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.json(await approveMessageAutomationRun(String(request.params.id), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/automations/runs/:id/reject", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      response.json(await rejectMessageAutomationRun(String(request.params.id), request.user!));
     } catch (error) {
       next(error);
     }
@@ -1360,6 +1520,10 @@ export function createApp() {
   const whatsappMonitorQuerySchema = z.object({
     instanceId: z.string().uuid().optional(),
     search: z.string().optional(),
+    contactName: z.string().optional(),
+    contactPhone: z.string().optional(),
+    period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
+    status: z.enum(["unread", "risk"]).optional(),
   });
 
   const whatsappMonitorReadStateSchema = z.object({
@@ -1481,9 +1645,88 @@ export function createApp() {
     }
   });
 
+  app.post("/api/whatsapp-monitor/conversations/:id/media-replies", async (request, response, next) => {
+    try {
+      const { sendWhatsappMonitorMediaReply } = await import("./modules/whatsapp/whatsappMonitorService.js");
+      response.status(201).json(await sendWhatsappMonitorMediaReply(String(request.params.id), request.user!, request.body));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/whatsapp-monitor/refresh-profiles", async (_request, response, next) => {
     try {
       response.json(await refreshMissingWhatsappMonitorProfiles());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Messaging Intelligence Events ──────────────────────────
+
+  const eventResolutionSchema = z.object({
+    resolutionNote: z.string().trim().min(1).max(5000),
+  });
+
+  const eventsFiltersSchema = z.object({
+    eventType: z.string().optional().transform(v => v ? v.split(",") as EventType[] : undefined),
+    severity: z.string().optional().transform(v => v ? v.split(",") as EventSeverity[] : undefined),
+    resolved: z.enum(["true", "false"]).optional().transform(v => v ? v === "true" : undefined),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    agentId: z.string().optional(),
+    search: z.string().optional(),
+    isGroup: z.enum(["true", "false"]).optional().transform(v => v ? v === "true" : undefined),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/events/metrics", async (request, response, next) => {
+    try {
+      const query = eventsFiltersSchema.parse(request.query);
+      const metrics = await getEventsMetrics(request.user!, query);
+      response.json(metrics);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events", async (request, response, next) => {
+    try {
+      const query = eventsFiltersSchema.parse(request.query);
+      const filters = query;
+
+      const result = await listEvents(request.user!, filters, {
+        page: query.page || 1,
+        pageSize: query.pageSize || 20,
+      });
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/events/:id/resolve", async (request, response, next) => {
+    try {
+      const payload = eventResolutionSchema.parse(request.body);
+      const event = await resolveEvent(request.params.id, request.user!, payload);
+      response.json(event);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/sentiments/daily", async (request, response, next) => {
+    try {
+      const { dateFrom, dateTo } = request.query;
+      if (!dateFrom || !dateTo) {
+        throw new HttpError(400, "dateFrom and dateTo are required");
+      }
+      const sentiments = await getDailySentiments(request.user!, {
+        from: dateFrom as string,
+        to: dateTo as string,
+      });
+      response.json(sentiments);
     } catch (error) {
       next(error);
     }
@@ -1527,7 +1770,7 @@ export function createApp() {
     }
   });
 
-  app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
       await deleteWhatsappInstance(String(request.params.id));
       response.status(204).send();

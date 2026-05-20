@@ -1,6 +1,6 @@
 export type SourceSystem = "history_xls" | "olist_v2" | "supabase_2026";
 
-export type CustomerStatus = "ACTIVE" | "ATTENTION" | "INACTIVE";
+export type CustomerStatus = "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW";
 export const AMBASSADOR_LABEL_NAME = "Embaixador";
 export const AMBASSADOR_LABEL_COLOR = "#d09a29";
 
@@ -223,11 +223,17 @@ export interface AcquisitionSummary {
   todayOrdersCount: number;
   todaySalesPerformance: SalesPerformanceEntry[];
   monthlyChurnRate?: number | null;
+  currentMonthGroupsCreated: number;
+  previousMonthGroupsCreated: number;
+  currentMonthConvertedGroups?: number;
+  previousMonthConvertedGroups?: number;
 }
 
 export interface AcquisitionDailyPoint {
   date: string;
   newCustomers: number;
+  groupsCreated: number;
+  convertedGroups?: number;
 }
 
 export interface AcquisitionMonthlyPoint {
@@ -236,6 +242,9 @@ export interface AcquisitionMonthlyPoint {
   spend: number;
   cac: number | null;
   spendSource?: "api" | "fallback";
+  groupsCreated: number;
+  convertedGroups?: number;
+  conversionRate: number | null;
 }
 
 export interface NewCustomerListItem {
@@ -248,11 +257,18 @@ export interface NewCustomerListItem {
   firstAttendant: string | null;
 }
 
+export interface UnconvertedGroup {
+  name: string;
+  date: string;
+}
+
 export interface AcquisitionMetrics {
   summary: AcquisitionSummary;
   dailySeries: AcquisitionDailyPoint[];
   monthlySeries: AcquisitionMonthlyPoint[];
   recentCustomers: NewCustomerListItem[];
+  unconvertedGroups: UnconvertedGroup[];
+  allGroups?: Array<{ name: string; date: string; isConverted: boolean }>;
 }
 
 export interface PortfolioTrendPoint {
@@ -261,8 +277,25 @@ export interface PortfolioTrendPoint {
   activeCount: number;
   attentionCount: number;
   inactiveCount: number;
+  newCount: number;
   trafficSpend?: number;
   dailyItemsSold?: number;
+}
+  
+export interface CustomerMovement {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  fromStatus: CustomerStatus;
+  toStatus: CustomerStatus;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number;
+}
+
+export interface CustomerMovementsResponse {
+  startDate: string;
+  endDate: string;
+  movements: CustomerMovement[];
 }
 
 export type TrendRangeCustomerStatus = Extract<CustomerStatus, "ATTENTION" | "INACTIVE">;
@@ -515,9 +548,40 @@ export interface CustomerCreditOverviewResponse {
   unmatchedRows: CustomerCreditRow[];
 }
 
+export interface CustomerCreditOrderEntry {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  orderNumber: string;
+  orderDate: string | null;
+  totalAmount: number;
+  units: number;
+  seller: string | null;
+  doc: string | null;
+  status: string;
+  lineCount: number;
+}
+
+export interface CustomerCreditPaymentEntry {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  paymentNumber: string;
+  paymentDate: string | null;
+  amount: number;
+  paymentType: string;
+  observation: string;
+}
+
 export interface CustomerCreditDetailResponse {
   snapshot: CustomerCreditSnapshotMeta | null;
   row: CustomerCreditRow | null;
+  orders: CustomerCreditOrderEntry[];
+  payments: CustomerCreditPaymentEntry[];
 }
 
 export interface InventorySnapshotMeta {
@@ -1038,6 +1102,8 @@ export interface SegmentDefinition {
   labels?: string[];
   excludeLabels?: string[];
   customerPrefix?: string;
+  state?: string;
+  city?: string;
 }
 
 export interface SegmentResult {
@@ -1077,6 +1143,83 @@ export interface SavedSegment {
   id: string;
   name: string;
   definition: SegmentDefinition;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageAutomationStatus = "ACTIVE" | "PAUSED";
+export type MessageAutomationChannel = "WHATSAPP_GROUP";
+export type MessageAutomationSendMode = "AUTOMATIC" | "APPROVAL";
+export type MessageAutomationTriggerMode = "SCHEDULED" | "ON_STAGE_ENTRY";
+export type MessageAutomationScheduleFrequency = "DAILY" | "WEEKLY";
+
+export interface MessageAutomationSchedule {
+  frequency: MessageAutomationScheduleFrequency;
+  weekdays?: number[];
+  time: string;
+  timezone: string;
+}
+
+export interface MessageAutomation {
+  id: string;
+  name: string;
+  status: MessageAutomationStatus;
+  channel: MessageAutomationChannel;
+  sendMode: MessageAutomationSendMode;
+  triggerMode: MessageAutomationTriggerMode;
+  savedSegmentId: string | null;
+  savedSegmentName: string | null;
+  segmentDefinition: SegmentDefinition;
+  flowDefinition: Record<string, unknown>;
+  whatsappInstanceId: string | null;
+  whatsappInstanceName: string | null;
+  whatsappInstanceLabel: string | null;
+  templateId: string | null;
+  templateTitle: string | null;
+  messageText: string;
+  schedule: MessageAutomationSchedule;
+  overrideRecentBlock: boolean;
+  minDelaySeconds: number;
+  maxDelaySeconds: number;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type MessageAutomationRunStatus =
+  | "PENDING_APPROVAL"
+  | "ENQUEUED"
+  | "APPROVED"
+  | "REJECTED"
+  | "NO_MATCH"
+  | "FAILED";
+
+export interface MessageAutomationRunAudienceSnapshot {
+  totalCustomerCount: number;
+  customerIds: string[];
+  eligibleGroupIds: string[];
+  blockedGroupIds: string[];
+  unmappedCustomerIds: string[];
+}
+
+export interface MessageAutomationRun {
+  id: string;
+  automationId: string;
+  automationName: string;
+  status: MessageAutomationRunStatus;
+  scheduledFor: string;
+  resolvedAt: string | null;
+  audienceSnapshot: MessageAutomationRunAudienceSnapshot;
+  mappedGroupCount: number;
+  unmappedCustomerCount: number;
+  blockedRecentCount: number;
+  campaignId: string | null;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  rejectedAt: string | null;
+  rejectedByUserId: string | null;
+  errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1640,7 +1783,17 @@ export interface WhatsappAgentActivityDailyPoint {
   attendedGroups: number;
   attendedPrivates: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
+  receivedUniqueMessages: number;
+  receivedUniqueMessagesPrivate: number;
+  receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   averageFirstResponseSeconds: number | null;
 }
 
@@ -1658,7 +1811,17 @@ export interface WhatsappAgentActivitySummary {
   internalGroups: number;
   otherGroups: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
+  receivedUniqueMessages: number;
+  receivedUniqueMessagesPrivate: number;
+  receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   activeHours: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
@@ -1677,7 +1840,17 @@ export interface WhatsappAgentActivityCell {
   internalGroups: number;
   otherGroups: number;
   sentMessages: number;
+  sentMessagesPrivate: number;
+  sentMessagesGroup: number;
   receivedMessages: number;
+  receivedMessagesPrivate: number;
+  receivedMessagesGroup: number;
+  receivedUniqueMessages: number;
+  receivedUniqueMessagesPrivate: number;
+  receivedUniqueMessagesGroup: number;
+  sentUniqueMessages: number;
+  sentUniqueMessagesPrivate: number;
+  sentUniqueMessagesGroup: number;
   responseCount: number;
   averageFirstResponseSeconds: number | null;
   conversations: WhatsappAgentActivityConversation[];
@@ -1700,7 +1873,17 @@ export interface WhatsappAgentActivityReport {
     internalGroups: number;
     otherGroups: number;
     sentMessages: number;
+    sentMessagesPrivate: number;
+    sentMessagesGroup: number;
     receivedMessages: number;
+    receivedMessagesPrivate: number;
+    receivedMessagesGroup: number;
+    receivedUniqueMessages: number;
+    receivedUniqueMessagesPrivate: number;
+    receivedUniqueMessagesGroup: number;
+    sentUniqueMessages: number;
+    sentUniqueMessagesPrivate: number;
+    sentUniqueMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
@@ -1713,7 +1896,17 @@ export interface WhatsappAgentActivityReport {
     internalGroups: number;
     otherGroups: number;
     sentMessages: number;
+    sentMessagesPrivate: number;
+    sentMessagesGroup: number;
     receivedMessages: number;
+    receivedMessagesPrivate: number;
+    receivedMessagesGroup: number;
+    receivedUniqueMessages: number;
+    receivedUniqueMessagesPrivate: number;
+    receivedUniqueMessagesGroup: number;
+    sentUniqueMessages: number;
+    sentUniqueMessagesPrivate: number;
+    sentUniqueMessagesGroup: number;
     activeAgents: number;
     responseCount: number;
     averageFirstResponseSeconds: number | null;
@@ -1732,4 +1925,154 @@ export interface WhatsappMonitorConversationsResponse {
 
 export interface WhatsappMonitorConversationDetail extends WhatsappMonitorConversation {
   messages: WhatsappMonitorMessage[];
+}
+
+// ── Event Types ─────────────────────────────────────────────
+
+export type EventType =
+  | "RISK"
+  | "POSITIVE_FEEDBACK"
+  | "NEGATIVE_FEEDBACK"
+  | "COMPLAINT"
+  | "PRAISE"
+  | "QUESTION"
+  | "ESCALATION"
+  | "GREETING"
+  | "NEUTRAL"
+  | "CHURN_RISK"
+  | "SALES_OPPORTUNITY";
+
+export type EventSeverity = "LOW" | "MODERATE" | "HIGH" | "CRITICAL";
+
+export interface ConversationContext {
+  contactName: string;
+  contactPhone: string;
+  agentName: string | null;
+  instanceName: string | null;
+  isGroup: boolean;
+}
+
+export interface MessageEvent {
+  id: string;
+  dealId: string;
+  messageId: string;
+  eventType: EventType;
+  severity: EventSeverity;
+  label: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  detectedAt: string;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
+  resolvedBy: string | null;
+  conversationContext: ConversationContext;
+}
+
+// ── Sentiment Analysis ─────────────────────────────────────
+
+export interface DailySentiment {
+  date: string;
+  positiveCount: number;
+  negativeCount: number;
+  neutralCount: number;
+  averageScore: number;
+  totalMessages: number;
+}
+
+export interface SentimentTrend {
+  daily: DailySentiment[];
+  weeklyAverage: number;
+  monthlyAverage: number;
+  trend: "IMPROVING" | "DECLINING" | "STABLE";
+}
+
+// ── Metrics ────────────────────────────────────────────────
+
+export interface EventsSummary {
+  totalEvents: number;
+  unresolvedEvents: number;
+  riskEvents: number;
+  positiveFeedbacks: number;
+  negativeFeedbacks: number;
+  complaintsCount: number;
+  opportunitiesCount: number;
+  questionCount: number;
+  actionRequiredEvents: number;
+  informationalEvents: number;
+  filteredNoiseCount: number;
+  resolutionRate: number;
+  bySeverity: Record<string, number>;
+  averageSentiment: number;
+}
+
+export interface BottleneckAgent {
+  agentId: string | null;
+  agentName: string;
+  unresolvedCount: number;
+  averageResponseMinutes: number | null;
+  conversationCount: number;
+}
+
+export interface OperationalEfficiency {
+  averageResponseTimeMinutes: number | null;
+  medianResponseTimeMinutes: number | null;
+  averageResolutionTimeHours: number | null;
+  messagesPerAgent: number | null;
+  peakHourStart: number | null;
+  peakHourEnd: number | null;
+  bottleneckAgents: BottleneckAgent[];
+}
+
+export interface TopEvent {
+  eventType: EventType;
+  label: string;
+  count: number;
+  severity: EventSeverity;
+  lastOccurrence: string;
+}
+
+export interface EventsExecutiveSummary {
+  complaintsCount: number;
+  vipComplaintsCount: number;
+  opportunitiesCount: number;
+  questionCount: number;
+  actionRequiredEvents: number;
+  informationalEvents: number;
+  filteredNoiseCount: number;
+  unansweredOpportunitiesCount: number;
+  bottleneckAgentText: string | null;
+}
+
+export interface EventsMetrics {
+  summary: EventsSummary;
+  operationalEfficiency: OperationalEfficiency;
+  sentimentAnalysis: SentimentTrend;
+  topEvents: TopEvent[];
+  executiveSummary?: EventsExecutiveSummary;
+}
+
+// ── Filters ────────────────────────────────────────────────
+
+export interface EventsFilters {
+  eventType?: EventType[];
+  severity?: EventSeverity[];
+  resolved?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  agentId?: string;
+  search?: string;
+  isGroup?: boolean;
+}
+
+// ── API Responses ──────────────────────────────────────────
+
+export interface EventsListResponse {
+  events: MessageEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface EventResolutionInput {
+  resolutionNote: string;
 }

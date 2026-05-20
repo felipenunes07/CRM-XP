@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  MessageTemplate,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
   WhatsappMonitorMessage,
@@ -12,19 +14,23 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Contact,
+  FileAudio,
   FileImage,
+  FileText,
+  FileVideo,
   Grid3X3,
   List,
   Menu,
   MoreVertical,
   Paperclip,
-  Plus,
   Search,
   Send,
   ShieldCheck,
   Smile,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -78,19 +84,31 @@ function suggestedReplyFromMessages(messages: WhatsappMonitorMessage[]) {
     return null;
   }
 
-  if (text.includes("prazo") || text.includes("entrega")) {
-    return "Claro. Vou conferir o prazo atualizado e ja te retorno com a previsao mais segura.";
+  if (text.includes("bom dia") || text.includes("boa tarde") || text.includes("boa noite") || text.includes("ola") || text.includes("oi")) {
+    return "Ola! Como posso te ajudar hoje?";
   }
 
-  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento")) {
-    return "Perfeito. Vou revisar as condicoes e te envio a melhor opcao dentro do que combinamos.";
+  if (text.includes("prazo") || text.includes("entrega") || text.includes("chegar")) {
+    return "Vou conferir o prazo de entrega e ja te retorno.";
   }
 
-  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento")) {
-    return "Recebi. Vou verificar o arquivo e te retorno com o proximo passo.";
+  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento") || text.includes("quanto")) {
+    return "Vou revisar os valores e te envio a melhor condicao.";
   }
 
-  return "Perfeito, obrigado pelo retorno. Vou verificar aqui e ja te respondo com a melhor orientacao.";
+  if (text.includes("pix") || text.includes("pagamento") || text.includes("boleto") || text.includes("pago")) {
+    return "Vou verificar o status do pagamento e ja te confirmo.";
+  }
+
+  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento") || text.includes("comprovante")) {
+    return "Recebi o documento. Vou analisar e te retorno.";
+  }
+
+  if (text.includes("obrigado") || text.includes("valeu") || text.includes("show") || text.includes("perfeito")) {
+    return "Disponha! Qualquer coisa estou por aqui.";
+  }
+
+  return "Obrigado pelo retorno. Vou verificar e ja te respondo.";
 }
 
 function attachmentName(message: WhatsappMonitorMessage) {
@@ -99,6 +117,96 @@ function attachmentName(message: WhatsappMonitorMessage) {
 }
 
 type GroupFilter = "all" | "groups" | "contacts";
+type PeriodFilter = "all" | "today" | "yesterday" | "7d" | "30d";
+type StatusFilter = "all" | "unread" | "risk";
+
+function metadataString(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = metadata[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function metadataRecord(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function mediaLabel(mediaType: string | null) {
+  if (mediaType === "image") return "Imagem recebida";
+  if (mediaType === "audio") return "Audio recebido";
+  if (mediaType === "video") return "Video recebido";
+  if (mediaType === "document") return "Documento recebido";
+  return "Arquivo recebido";
+}
+
+function defaultMimeType(mediaType: string | null) {
+  if (mediaType === "image") return "image/jpeg";
+  if (mediaType === "audio") return "audio/ogg";
+  if (mediaType === "video") return "video/mp4";
+  return "application/octet-stream";
+}
+
+function buildMediaSrc(mediaType: string | null, mimeType: string | null, mediaUrl: string | null, mediaBase64: string | null) {
+  if (!mediaBase64) {
+    return mediaUrl;
+  }
+
+  if (mediaBase64.startsWith("data:")) {
+    return mediaBase64;
+  }
+
+  return `data:${mimeType ?? defaultMimeType(mediaType)};base64,${mediaBase64}`;
+}
+
+function messageMedia(message: WhatsappMonitorMessage) {
+  const mediaType = metadataString(message.metadata, ["mediaType", "mediatype"]);
+  if (!mediaType) {
+    return null;
+  }
+
+  const mimeType = metadataString(message.metadata, ["mimeType", "mimetype"]);
+  const mediaUrl = metadataString(message.metadata, ["mediaUrl", "url"]);
+  const mediaBase64 = metadataString(message.metadata, ["mediaBase64", "base64", "media"]);
+  const fileName = metadataString(message.metadata, ["fileName", "filename", "mediaName"]);
+
+  return {
+    mediaType,
+    mimeType,
+    mediaUrl,
+    mediaBase64,
+    fileName,
+    src: buildMediaSrc(mediaType, mimeType, mediaUrl, mediaBase64),
+  };
+}
+
+function messageContact(message: WhatsappMonitorMessage) {
+  const contact = metadataRecord(message.metadata, "contact");
+  if (!contact) {
+    return null;
+  }
+
+  const displayName = metadataString(contact, ["displayName", "fullName", "name"]);
+  const phoneNumber = metadataString(contact, ["phoneNumber", "phone", "waid", "jid"]);
+
+  if (!displayName && !phoneNumber) {
+    return null;
+  }
+
+  return { displayName, phoneNumber };
+}
+
+function isMediaPlaceholder(content: string) {
+  if (/^\[Contato\]$/i.test(content.trim())) {
+    return true;
+  }
+
+  return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
+}
 
 const CONVERSATION_REFRESH_MS = 3000;
 const CHAT_REFRESH_MS = 2000;
@@ -214,9 +322,14 @@ function ConversationRow({
 }
 
 function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMessage; showSender: boolean }) {
-  const fileName = attachmentName(message);
+  const media = messageMedia(message);
+  const contact = messageContact(message);
+  const fileName = media?.fileName ?? attachmentName(message);
   const direction = message.direction.toLocaleLowerCase("pt-BR");
   const senderLabel = message.senderName || message.senderJid || "Participante";
+  const showText = Boolean(message.content.trim()) && !((media || contact) && isMediaPlaceholder(message.content));
+  const hasVisualMedia = Boolean(media?.src && ["image", "audio", "video"].includes(media.mediaType));
+  const AttachmentIcon = media?.mediaType === "audio" ? FileAudio : media?.mediaType === "video" ? FileVideo : media?.mediaType === "document" ? FileText : FileImage;
 
   return (
     <div className={`wa-message-row ${direction} ${showSender ? "with-sender" : ""}`}>
@@ -226,13 +339,40 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
       <div className="wa-message-stack">
         {showSender ? <span className="wa-message-sender">{senderLabel}</span> : null}
         <div className={`wa-bubble ${direction} ${message.risk ? "has-risk" : ""}`}>
-          <p>{message.content}</p>
-          {fileName ? (
-            <div className="wa-attachment">
-              <FileImage size={18} />
+          {showText ? <p>{message.content}</p> : null}
+          {contact ? (
+            <div className="wa-contact-card">
+              <Contact size={19} />
               <div>
-                <strong>{fileName}</strong>
-                <span>Arquivo enviado</span>
+                <strong>{contact.displayName ?? "Contato recebido"}</strong>
+                {contact.phoneNumber ? <span>{contact.phoneNumber}</span> : null}
+              </div>
+            </div>
+          ) : null}
+          {media?.mediaType === "image" && media.src ? (
+            <img className="wa-media-image" src={media.src} alt={fileName ?? "Imagem recebida"} loading="lazy" />
+          ) : null}
+          {media?.mediaType === "audio" && media.src ? (
+            <audio className="wa-media-audio" controls preload="metadata" src={media.src} />
+          ) : null}
+          {media?.mediaType === "video" && media.src ? (
+            <video className="wa-media-video" controls preload="metadata" src={media.src} />
+          ) : null}
+          {(fileName || media) && !hasVisualMedia && media?.src ? (
+            <a className="wa-attachment" href={media.src} download={fileName ?? mediaLabel(media.mediaType)}>
+              <AttachmentIcon size={18} />
+              <div>
+                <strong>{fileName ?? mediaLabel(media.mediaType)}</strong>
+                <span>{mediaLabel(media.mediaType)}</span>
+              </div>
+            </a>
+          ) : null}
+          {(fileName || media) && !hasVisualMedia && !media?.src ? (
+            <div className="wa-attachment">
+              <AttachmentIcon size={18} />
+              <div>
+                <strong>{fileName ?? mediaLabel(media?.mediaType ?? null)}</strong>
+                <span>{mediaLabel(media?.mediaType ?? null)}</span>
               </div>
             </div>
           ) : null}
@@ -259,27 +399,124 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
   );
 }
 
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result.split(",")[1] ?? "");
+      } else {
+        resolve("");
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function detectMediaType(file: File): "image" | "video" | "audio" | "document" {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "document";
+}
+
 export function MessagesPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlDealId = searchParams.get("dealId");
+
   const [activeAgentId, setActiveAgentId] = useState<string>("all");
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
+  const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
+  const [contactNameFilter, setContactNameFilter] = useState("");
+  const [contactPhoneFilter, setContactPhoneFilter] = useState("");
+  const [debouncedContactNameFilter, setDebouncedContactNameFilter] = useState("");
+  const [debouncedContactPhoneFilter, setDebouncedContactPhoneFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
+  const [activeTemplateIndex, setActiveTemplateIndex] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const templatesQuery = useQuery({
+    queryKey: ["message-templates"],
+    queryFn: () => api.messageTemplates(token!),
+    enabled: Boolean(token),
+  });
+
+  const templates = templatesQuery.data ?? [];
+  const showShortcuts = replyText.startsWith("/");
+  const shortcutSearch = showShortcuts ? replyText.slice(1).toLowerCase() : "";
+
+  const filteredTemplates = useMemo(() => {
+    if (!showShortcuts) return [];
+    if (!shortcutSearch) return templates;
+    return templates.filter(
+      (t) =>
+        t.title.toLowerCase().includes(shortcutSearch) ||
+        t.content.toLowerCase().includes(shortcutSearch) ||
+        (t.category && t.category.toLowerCase().includes(shortcutSearch))
+    );
+  }, [showShortcuts, shortcutSearch, templates]);
+
+  useEffect(() => {
+    setActiveTemplateIndex(0);
+  }, [filteredTemplates.length]);
+
+  const selectTemplate = (content: string) => {
+    setReplyText(content);
+    setActiveTemplateIndex(0);
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 0);
+  };
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastScrolledConversationRef = useRef<string | null>(null);
   const profileRefreshRequestedRef = useRef(false);
 
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedConversationSearch(conversationSearch);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [conversationSearch]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedContactNameFilter(contactNameFilter);
+      setDebouncedContactPhoneFilter(contactPhoneFilter);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [contactNameFilter, contactPhoneFilter]);
+
   const conversationsQuery = useQuery({
-    queryKey: ["whatsapp-monitor-conversations", activeAgentId, conversationSearch],
+    queryKey: [
+      "whatsapp-monitor-conversations",
+      activeAgentId,
+      debouncedConversationSearch,
+      debouncedContactNameFilter,
+      debouncedContactPhoneFilter,
+      periodFilter,
+      statusFilter,
+    ],
     queryFn: () =>
       api.whatsappMonitorConversations(token!, {
         instanceId: activeAgentId === "all" ? undefined : activeAgentId,
-        search: conversationSearch || undefined,
+        search: debouncedConversationSearch || undefined,
+        contactName: debouncedContactNameFilter || undefined,
+        contactPhone: debouncedContactPhoneFilter || undefined,
+        period: periodFilter === "all" ? undefined : periodFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
       }),
     enabled: Boolean(token),
     refetchInterval: CONVERSATION_REFRESH_MS,
@@ -288,6 +525,7 @@ export function MessagesPage() {
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
     staleTime: 1000,
+    placeholderData: (previousData) => previousData,
   });
 
   const agents = conversationsQuery.data?.agents ?? [];
@@ -351,6 +589,33 @@ export function MessagesPage() {
   const readStateMutation = useMutation({
     mutationFn: ({ id, unread }: { id: string; unread: boolean }) =>
       api.setWhatsappMonitorReadState(token!, id, { unread }),
+    onMutate: async ({ id, unread }) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+
+      // Snapshot the previous values
+      const previousQueries = queryClient.getQueriesData({ queryKey: ["whatsapp-monitor-conversations"] });
+
+      // Optimistically update to the new value in all matching conversation queries
+      queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old: any) => {
+        if (!old || !old.conversations) return old;
+        return {
+          ...old,
+          conversations: old.conversations.map((c: any) => 
+            c.id === id ? { ...c, isUnread: unread, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c
+          )
+        };
+      });
+
+      return { previousQueries };
+    },
+    onError: (err, variables, context: any) => {
+      if (context?.previousQueries) {
+        context.previousQueries.forEach(([queryKey, data]: any) => {
+          queryClient.setQueryData(queryKey, data);
+        });
+      }
+    },
     onSuccess: (updated) => {
       queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
@@ -362,6 +627,24 @@ export function MessagesPage() {
       api.sendWhatsappMonitorReply(token!, id, { messageText }),
     onSuccess: (updated) => {
       setReplyText("");
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+    },
+  });
+
+  const sendMediaMutation = useMutation({
+    mutationFn: ({
+      id,
+      mediaBase64,
+      mediaType,
+      fileName,
+    }: {
+      id: string;
+      mediaBase64: string;
+      mediaType: "image" | "video" | "audio" | "document";
+      fileName?: string;
+    }) => api.sendWhatsappMonitorMediaReply(token!, id, { mediaBase64, mediaType, fileName }),
+    onSuccess: (updated) => {
       queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
@@ -406,6 +689,12 @@ export function MessagesPage() {
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
+  const hasTopFilters =
+    Boolean(contactNameFilter.trim()) ||
+    Boolean(contactPhoneFilter.trim()) ||
+    periodFilter !== "all" ||
+    groupFilter !== "all" ||
+    statusFilter !== "all";
 
   useEffect(() => {
     const element = chatBodyRef.current;
@@ -427,19 +716,28 @@ export function MessagesPage() {
     });
   }, [lastMessageId, messages.length, selectedConversationId]);
 
+  const lastReadHandledIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!selectedConversation?.isUnread || readStateMutation.isPending) {
+      // If it becomes read from the server, we can allow marking it read again if it ever becomes unread
+      if (selectedConversation && !selectedConversation.isUnread) {
+        lastReadHandledIdRef.current = null;
+      }
       return;
     }
 
+    // Prevent redundant calls for the same "unread session" of this conversation
+    if (lastReadHandledIdRef.current === selectedConversation.id) {
+      return;
+    }
+
+    lastReadHandledIdRef.current = selectedConversation.id;
     readStateMutation.mutate({ id: selectedConversation.id, unread: false });
   }, [readStateMutation.isPending, selectedConversation?.id, selectedConversation?.isUnread]);
 
   function openConversation(conversation: WhatsappMonitorConversation) {
     setSelectedConversationId(conversation.id);
-    if (conversation.isUnread) {
-      readStateMutation.mutate({ id: conversation.id, unread: false });
-    }
   }
 
   function handleSendReply(event: FormEvent<HTMLFormElement>) {
@@ -452,6 +750,29 @@ export function MessagesPage() {
     sendReplyMutation.mutate({ id: currentConversation.id, messageText: text });
   }
 
+  async function handleFileSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !currentConversation || sendMediaMutation.isPending) {
+      return;
+    }
+
+    try {
+      const base64 = await readFileAsBase64(file);
+      sendMediaMutation.mutate({
+        id: currentConversation.id,
+        mediaBase64: base64,
+        mediaType: detectMediaType(file),
+        fileName: file.name,
+      });
+    } catch (error) {
+      console.error("Failed to read file", error);
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
+
   if (conversationsQuery.isLoading) {
     return <div className="page-loading">Carregando monitoramento de WhatsApp...</div>;
   }
@@ -463,12 +784,35 @@ export function MessagesPage() {
   return (
     <div className="whatsapp-monitor-page">
       <div className="wa-filter-strip">
-        {["Nome do contato", "Telefone do contato", "Periodo"].map((label) => (
-          <button key={label} type="button" className="wa-filter-button">
-            {label}
-            <ChevronDown size={18} />
-          </button>
-        ))}
+        <label className="wa-filter-field">
+          <Search size={16} />
+          <input
+            value={contactNameFilter}
+            onChange={(event) => setContactNameFilter(event.target.value)}
+            placeholder="Nome do contato"
+          />
+        </label>
+        <label className="wa-filter-field phone">
+          <input
+            value={contactPhoneFilter}
+            onChange={(event) => setContactPhoneFilter(event.target.value)}
+            placeholder="Telefone do contato"
+          />
+        </label>
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar periodo"
+            value={periodFilter}
+            onChange={(event) => setPeriodFilter(event.target.value as PeriodFilter)}
+          >
+            <option value="all">Periodo: todos</option>
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
+            <option value="7d">Ultimos 7 dias</option>
+            <option value="30d">Ultimos 30 dias</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
         <label className="wa-filter-select">
           <select
             aria-label="Filtrar grupos"
@@ -481,13 +825,32 @@ export function MessagesPage() {
           </select>
           <ChevronDown size={18} aria-hidden="true" />
         </label>
-        <button type="button" className="wa-filter-button">
-          Status
-          <ChevronDown size={18} />
-        </button>
-        <button type="button" className="wa-filter-button">
-          <Plus size={18} />
-          Filtros
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          >
+            <option value="all">Status: todos</option>
+            <option value="unread">Nao lidas</option>
+            <option value="risk">Com alerta</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
+        <button
+          type="button"
+          className="wa-filter-button"
+          disabled={!hasTopFilters}
+          onClick={() => {
+            setContactNameFilter("");
+            setContactPhoneFilter("");
+            setPeriodFilter("all");
+            setGroupFilter("all");
+            setStatusFilter("all");
+          }}
+        >
+          <X size={18} />
+          Limpar
         </button>
       </div>
 
@@ -640,42 +1003,102 @@ export function MessagesPage() {
               </div>
 
               <form className="wa-reply-composer" onSubmit={handleSendReply}>
-                <div className="wa-chat-footer-info">
-                  <div>
-                    <strong>Retencao em nuvem ativa</strong>
-                    <span>Ultima atividade: {formatDateTime(detail?.lastMessageAt ?? currentConversation.lastMessageAt)}</span>
-                  </div>
-                  <span className={`wa-risk-chip ${totalRisks ? "moderate" : "neutral"}`}>
-                    <ShieldCheck size={14} />
-                    {totalRisks} alertas no recorte
-                  </span>
-                </div>
-                {suggestedReply ? (
-                  <div className="wa-suggested-reply">
-                    <button type="button" onClick={() => setReplyText(suggestedReply)}>
-                      <Sparkles size={16} />
-                      Resposta sugerida
-                    </button>
-                    <span>{suggestedReply}</span>
+                {showShortcuts && filteredTemplates.length > 0 ? (
+                  <div className="wa-shortcuts-dropdown">
+                    <div className="wa-shortcuts-header">
+                      <span>Respostas Rápidas</span>
+                      <small>Use as setas ↑↓ e Enter para selecionar</small>
+                    </div>
+                    <div className="wa-shortcuts-list">
+                      {filteredTemplates.map((template, index) => (
+                        <button
+                          key={template.id}
+                          type="button"
+                          className={`wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`}
+                          onClick={() => selectTemplate(template.content)}
+                          onMouseEnter={() => setActiveTemplateIndex(index)}
+                        >
+                          <div className="wa-shortcut-info">
+                            <span className="wa-shortcut-trigger">/{template.title.toLowerCase().replace(/\s+/g, "")}</span>
+                            <span className="wa-shortcut-title">{template.title}</span>
+                          </div>
+                          <span className="wa-shortcut-preview">{template.content}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
                 <div className="wa-reply-bar">
-                  <button type="button" className="wa-icon-button" title="Anexar arquivo" disabled>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    style={{ display: "none" }}
+                    onChange={handleFileSelect}
+                  />
+                  <button
+                    type="button"
+                    className="wa-icon-button"
+                    title="Anexar arquivo"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendMediaMutation.isPending}
+                  >
                     <Paperclip size={20} />
                   </button>
-                  <button type="button" className="wa-icon-button" title="Emoji" disabled>
-                    <Smile size={20} />
-                  </button>
+                  <div className="wa-menu-anchor">
+                    <button
+                      type="button"
+                      className="wa-icon-button"
+                      title="Emoji"
+                      onClick={() => setEmojiPickerOpen(!emojiPickerOpen)}
+                    >
+                      <Smile size={20} />
+                    </button>
+                    {emojiPickerOpen ? (
+                      <div className="wa-emoji-picker">
+                        {commonEmojis.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              setReplyText((prev) => prev + emoji);
+                              setEmojiPickerOpen(false);
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <textarea
+                    ref={textareaRef}
                     value={replyText}
                     onChange={(event) => setReplyText(event.target.value)}
                     onKeyDown={(event) => {
+                      if (showShortcuts && filteredTemplates.length > 0) {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setActiveTemplateIndex((prev) => (prev + 1) % filteredTemplates.length);
+                        } else if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setActiveTemplateIndex((prev) => (prev - 1 + filteredTemplates.length) % filteredTemplates.length);
+                        } else if (event.key === "Enter") {
+                          event.preventDefault();
+                          const template = filteredTemplates[activeTemplateIndex];
+                          if (template) {
+                            selectTemplate(template.content);
+                          }
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          setReplyText("");
+                        }
+                      } else
                       if (event.key === "Enter" && !event.shiftKey) {
                         event.preventDefault();
                         event.currentTarget.form?.requestSubmit();
                       }
                     }}
-                    placeholder="Responder pelo WhatsApp"
+                    placeholder="Responder pelo WhatsApp (digite / para atalhos)"
                     rows={1}
                   />
                   <button

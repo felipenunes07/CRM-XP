@@ -91,9 +91,9 @@ choco install bfg-repo-cleaner
 git clone --mirror https://github.com/felipenunes07/CRM-XP.git
 
 # Criar arquivo com senhas a remover
-echo "***REMOVED***" > passwords.txt
-echo "***REMOVED***" >> passwords.txt
-echo "***REMOVED***" >> passwords.txt
+echo "SUA_SENHA_ANTIGA_DO_SUPABASE" > passwords.txt
+echo "SUA_CHAVE_ANTIGA_DO_GOOGLE_MAPS" >> passwords.txt
+echo "SUA_CHAVE_ANTIGA_DA_EVOLUTION_API" >> passwords.txt
 
 # Limpar histórico
 bfg --replace-text passwords.txt CRM-XP.git

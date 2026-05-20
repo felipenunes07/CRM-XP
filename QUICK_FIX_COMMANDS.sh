@@ -32,8 +32,8 @@ if [ ! -f "secrets_to_clean.txt" ]; then
     echo "Por favor, crie o arquivo 'secrets_to_clean.txt' e insira os segredos expostos"
     echo "(um por linha) antes de prosseguir."
     echo "Exemplo:"
-    echo "  ***REMOVED***"
-    echo "  ***REMOVED***"
+    echo "  SUA_SENHA_ANTIGA_DO_SUPABASE"
+    echo "  SUA_CHAVE_ANTIGA_DO_GOOGLE_MAPS"
     exit 1
 fi
 

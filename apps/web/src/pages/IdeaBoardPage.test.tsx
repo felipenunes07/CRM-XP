@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
+import { UiLanguageProvider } from "../i18n";
 import { IdeaBoardPageView } from "./IdeaBoardPageView";
 import {
   buildIdeaBoardLanes,
@@ -72,17 +73,37 @@ const referenceTime = new Date("2026-04-22T12:00:00.000Z");
 describe("IdeaBoard frontend", () => {
   it("renders the sidebar link and the ideas route outlet", () => {
     const markup = renderToStaticMarkup(
-      <MemoryRouter initialEntries={["/ideias-votacao"]}>
-        <Routes>
-          <Route element={<AppShell />}>
-            <Route path="/ideias-votacao" element={<div>Conteudo da aba</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>,
+      <UiLanguageProvider>
+        <MemoryRouter initialEntries={["/ideias-votacao"]}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/ideias-votacao" element={<div>Conteudo da aba</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </UiLanguageProvider>,
     );
 
-    expect(markup).toContain("Ideias/Votacao");
+    expect(markup).toContain("Ideias / Votação");
     expect(markup).toContain("Conteudo da aba");
+  });
+
+  it("renders the financial customer submenu item when the clientes route is active", () => {
+    const markup = renderToStaticMarkup(
+      <UiLanguageProvider>
+        <MemoryRouter initialEntries={["/clientes/financeiro"]}>
+          <Routes>
+            <Route element={<AppShell />}>
+              <Route path="/clientes/financeiro" element={<div>Tela financeira</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </UiLanguageProvider>,
+    );
+
+    expect(markup).toContain("Todos os Clientes");
+    expect(markup).toContain("Financeiro");
+    expect(markup).toContain("Tela financeira");
   });
 
   it("shows the canvas view, aggregate results and whatsapp notification button without exposing the current vote", () => {

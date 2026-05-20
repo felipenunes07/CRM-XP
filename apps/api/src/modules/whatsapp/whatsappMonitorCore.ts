@@ -6,14 +6,15 @@ import type {
 } from "@olist-crm/shared";
 
 const OFFENSIVE_KEYWORDS = ["porra", "caralho", "merda", "puta", "fdp"];
-const SENSITIVE_KEYWORDS = ["senha", "pix", "cpf", "cnpj", "cartao", "cartao de credito", "token"];
+const SENSITIVE_KEYWORDS = ["senha", "token", "cartao de credito"];
 const PRESSURE_KEYWORDS = ["urgente", "processo", "reclamacao", "procon", "cancelar"];
 
 interface EvolutionMessageKeyLike {
   remoteJid?: string;
-  fromMe?: boolean;
+  fromMe?: boolean | number | string;
   id?: string;
   participant?: string;
+  participantPn?: string;
 }
 
 export interface EvolutionMessageLike {
@@ -21,8 +22,10 @@ export interface EvolutionMessageLike {
   message?: Record<string, unknown>;
   pushName?: string;
   participant?: string;
+  participantPn?: string;
   sender?: string;
   senderJid?: string;
+  senderPn?: string;
   participantJid?: string;
   participantName?: string;
   messageTimestamp?: number | string;
@@ -36,6 +39,23 @@ export interface EvolutionMessageLike {
   groupSubject?: string;
   subject?: string;
   name?: string;
+  fromMe?: boolean | number | string;
+  isOutbound?: boolean | number | string;
+}
+
+export interface EvolutionMessageMedia {
+  mediaType: "image" | "video" | "audio" | "document" | "sticker";
+  mediaUrl: string | null;
+  mediaBase64: string | null;
+  mimeType: string | null;
+  fileName: string | null;
+  caption: string | null;
+}
+
+export interface EvolutionMessageContact {
+  displayName: string | null;
+  phoneNumber: string | null;
+  vcard: string | null;
 }
 
 export interface EvolutionMessageContext {
@@ -74,6 +94,28 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function readBoolean(value: unknown) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLocaleLowerCase("pt-BR");
+    if (["true", "1", "yes", "sim"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "nao", "não"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function pickString(source: Record<string, unknown> | null | undefined, keys: string[]): string | null {
@@ -118,18 +160,194 @@ function evolutionTimestampToIso(value: number | string | null | undefined) {
   return new Date(timestampMs).toISOString();
 }
 
+function unwrapEvolutionMessage(msg: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!msg) return null;
+
+  // Handle common wrappers in Baileys/Evolution API
+  if (msg.ephemeralMessage && typeof msg.ephemeralMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.ephemeralMessage as any).message));
+  }
+  if (msg.viewOnceMessage && typeof msg.viewOnceMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessage as any).message));
+  }
+  if (msg.viewOnceMessageV2 && typeof msg.viewOnceMessageV2 === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessageV2 as any).message));
+  }
+  if (msg.viewOnceMessageV2Extension && typeof msg.viewOnceMessageV2Extension === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.viewOnceMessageV2Extension as any).message));
+  }
+  if (msg.documentWithCaptionMessage && typeof msg.documentWithCaptionMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.documentWithCaptionMessage as any).message));
+  }
+  if (msg.editedMessage && typeof msg.editedMessage === "object") {
+    return unwrapEvolutionMessage(asRecord((msg.editedMessage as any).message?.protocolMessage?.editedMessage));
+  }
+
+  return msg;
+}
+
 export function extractEvolutionMessageText(message: EvolutionMessageLike): string | null {
   const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
 
-  return (
-    extractNestedString(rawMessage, ["conversation"]) ??
-    extractNestedString(rawMessage, ["extendedTextMessage", "text"]) ??
-    extractNestedString(rawMessage, ["imageMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["videoMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["documentMessage", "caption"]) ??
-    extractNestedString(rawMessage, ["documentMessage", "fileName"]) ??
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const text = (
+    extractNestedString(unwrapped, ["conversation"]) ??
+    extractNestedString(unwrapped, ["extendedTextMessage", "text"]) ??
+    extractNestedString(unwrapped, ["imageMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["videoMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["documentMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["documentMessage", "fileName"]) ??
+    extractNestedString(unwrapped, ["buttonsMessage", "contentText"]) ??
+    extractNestedString(unwrapped, ["buttonsMessage", "caption"]) ??
+    extractNestedString(unwrapped, ["templateMessage", "hydratedTemplate", "hydratedContentText"]) ??
+    extractNestedString(unwrapped, ["templateMessage", "hydratedFourRowTemplate", "hydratedContentText"]) ??
+    extractNestedString(unwrapped, ["listMessage", "description"]) ??
+    extractNestedString(unwrapped, ["listMessage", "footerText"]) ??
     null
   );
+
+  if (text) {
+    return text;
+  }
+
+  const media = extractEvolutionMessageMedia(message);
+  if (media) {
+    if (media.caption) return media.caption;
+    if (media.fileName) return media.fileName;
+    if (media.mediaType === "image") return "[Imagem]";
+    if (media.mediaType === "video") return "[Vídeo]";
+    if (media.mediaType === "audio") return "[Áudio]";
+    if (media.mediaType === "sticker") return "[Sticker]";
+    return "[Documento]";
+  }
+
+  // Placeholder for media without text/caption
+  if (unwrapped.imageMessage) return "[Imagem]";
+  if (unwrapped.videoMessage) return "[Vídeo]";
+  if (unwrapped.audioMessage) return "[Áudio]";
+  if (unwrapped.stickerMessage) return "[Sticker]";
+  if (unwrapped.documentMessage) return "[Documento]";
+  if (unwrapped.contactMessage || unwrapped.contactsArrayMessage) return "[Contato]";
+  if (unwrapped.locationMessage || unwrapped.liveLocationMessage) return "[Localização]";
+  if (unwrapped.pollCreationMessage || unwrapped.pollCreationMessageV2 || unwrapped.pollCreationMessageV3) return "[Enquete]";
+  if (unwrapped.reactionMessage) return null; // Reactions are usually ignored in main feed
+
+  return null;
+}
+
+export function extractEvolutionMessageMedia(message: EvolutionMessageLike): EvolutionMessageMedia | null {
+  const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
+
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const mediaEntries: Array<[string, EvolutionMessageMedia["mediaType"]]> = [
+    ["imageMessage", "image"],
+    ["videoMessage", "video"],
+    ["audioMessage", "audio"],
+    ["documentMessage", "document"],
+    ["stickerMessage", "sticker"],
+  ];
+
+  for (const [messageKey, mediaType] of mediaEntries) {
+    const mediaMessage = asRecord(unwrapped[messageKey]);
+    if (!mediaMessage) {
+      continue;
+    }
+
+    return {
+      mediaType,
+      mediaUrl: pickString(mediaMessage, ["url", "mediaUrl"]),
+      mediaBase64:
+        pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
+        pickString(mediaMessage, ["base64", "mediaBase64"]),
+      mimeType: pickString(mediaMessage, ["mimetype", "mimeType"]),
+      fileName: pickString(mediaMessage, ["fileName", "filename"]),
+      caption: pickString(mediaMessage, ["caption"]),
+    };
+  }
+
+  return null;
+}
+
+function extractVcardPhone(vcard: string | null) {
+  if (!vcard) {
+    return null;
+  }
+
+  const waid = vcard.match(/waid=(\d+)/i)?.[1];
+  if (waid) {
+    return waid;
+  }
+
+  return vcard.match(/TEL[^:\r\n]*:([^\r\n]+)/i)?.[1]?.trim() ?? null;
+}
+
+function extractContactFromRecord(contact: Record<string, unknown> | null): EvolutionMessageContact | null {
+  if (!contact) {
+    return null;
+  }
+
+  const vcard = pickString(contact, ["vcard", "vCard"]);
+  const displayName =
+    pickString(contact, ["displayName", "fullName", "name"]) ??
+    vcard?.match(/^FN:([^\r\n]+)/im)?.[1]?.trim() ??
+    null;
+  const phoneNumber =
+    pickString(contact, ["phoneNumber", "phone", "waid", "jid"]) ??
+    extractVcardPhone(vcard);
+
+  if (!displayName && !phoneNumber && !vcard) {
+    return null;
+  }
+
+  return {
+    displayName,
+    phoneNumber,
+    vcard,
+  };
+}
+
+export function extractEvolutionMessageContact(message: EvolutionMessageLike): EvolutionMessageContact | null {
+  const rawMessage = asRecord(message.message);
+  if (!rawMessage) {
+    return null;
+  }
+
+  const unwrapped = unwrapEvolutionMessage(rawMessage);
+  if (!unwrapped) {
+    return null;
+  }
+
+  const singleContact = extractContactFromRecord(asRecord(unwrapped.contactMessage));
+  if (singleContact) {
+    return singleContact;
+  }
+
+  const contactsArrayMessage = asRecord(unwrapped.contactsArrayMessage);
+  const contacts = contactsArrayMessage?.contacts;
+  if (Array.isArray(contacts)) {
+    for (const contact of contacts) {
+      const extracted = extractContactFromRecord(asRecord(contact));
+      if (extracted) {
+        return extracted;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function extractEvolutionMessageContext(
@@ -140,11 +358,15 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const fromMe = Boolean(key.fromMe);
+  const fromMe = Boolean(readBoolean(key.fromMe) || readBoolean(rawMessage.fromMe) || readBoolean(rawMessage.isOutbound));
+  const participantPhoneJid =
+    readString(key.participantPn) ??
+    pickString(rawMessage, ["participantPn", "senderPn"]);
   const senderJid =
+    participantPhoneJid ??
     readString(key.participant) ??
     pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
-    (isGroup || fromMe ? null : remoteJid);
+    (isGroup ? null : (fromMe ? null : remoteJid));
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);
@@ -259,6 +481,87 @@ export function isWhatsappFallbackDisplayName(name: string | null | undefined, r
   return normalized === formattedPhone || normalized === digits;
 }
 
+function normalizedLabel(value: string | null | undefined) {
+  return normalizeText(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function looksLikeAgentOwnedPrivateName(
+  candidate: string,
+  input: {
+    agentName?: string | null;
+    assignedUserName?: string | null;
+    instanceName?: string | null;
+    instanceLabel?: string | null;
+  },
+) {
+  const normalizedCandidate = normalizedLabel(candidate);
+  if (!normalizedCandidate) {
+    return false;
+  }
+
+  const blockedLabels = [
+    input.agentName,
+    input.assignedUserName,
+    input.instanceName,
+    input.instanceLabel,
+  ]
+    .map(normalizedLabel)
+    .filter(Boolean);
+
+  if (blockedLabels.includes(normalizedCandidate)) {
+    return true;
+  }
+
+  if (/^xp(\s|-|$)/.test(normalizedCandidate)) {
+    return true;
+  }
+
+  return blockedLabels.some((label) => {
+    const firstName = label.split(" ")[0] ?? "";
+    return firstName.length >= 3 && normalizedCandidate === `xp ${firstName}`;
+  });
+}
+
+export function chooseWhatsappConversationContactName(input: {
+  remoteJid: string | null;
+  isGroup?: boolean;
+  chatDisplayName?: string | null;
+  customerDisplayName?: string | null;
+  title?: string | null;
+  agentName?: string | null;
+  assignedUserName?: string | null;
+  instanceName?: string | null;
+  instanceLabel?: string | null;
+}) {
+  const remoteJid = input.remoteJid;
+  const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
+  const candidates = [input.chatDisplayName, input.customerDisplayName, input.title]
+    .map((candidate) => readString(candidate))
+    .filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (remoteJid && isWhatsappFallbackDisplayName(candidate, remoteJid)) {
+      continue;
+    }
+
+    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  for (const candidate of candidates) {
+    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+      continue;
+    }
+
+    return candidate;
+  }
+
+  return formatWhatsappJidPhone(remoteJid);
+}
+
 export function detectWhatsappMessageRisk(content: string | null | undefined): WhatsappMessageRisk | null {
   if (!content) {
     return null;
@@ -314,6 +617,58 @@ export function getEvolutionMessageKey(message: WhatsappMonitorMessage) {
   };
 }
 
+function whatsappMessageProviderId(message: WhatsappMonitorMessage) {
+  const providerId =
+    typeof message.metadata.messageId === "string"
+      ? message.metadata.messageId
+      : typeof message.metadata.providerMessageId === "string"
+        ? message.metadata.providerMessageId
+        : null;
+
+  return providerId?.trim() || null;
+}
+
+function whatsappMessageSortTime(message: WhatsappMonitorMessage) {
+  const time = new Date(message.createdAt).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function mergeWhatsappMonitorMessages(
+  primaryMessages: WhatsappMonitorMessage[],
+  fallbackMessages: WhatsappMonitorMessage[],
+) {
+  const merged: WhatsappMonitorMessage[] = [];
+  const seenProviderIds = new Set<string>();
+
+  for (const message of primaryMessages) {
+    const providerId = whatsappMessageProviderId(message);
+    if (providerId) {
+      seenProviderIds.add(providerId);
+    }
+    merged.push(message);
+  }
+
+  for (const message of fallbackMessages) {
+    const providerId = whatsappMessageProviderId(message);
+    if (providerId && seenProviderIds.has(providerId)) {
+      continue;
+    }
+    if (providerId) {
+      seenProviderIds.add(providerId);
+    }
+    merged.push(message);
+  }
+
+  return merged.sort((left, right) => {
+    const byTime = whatsappMessageSortTime(left) - whatsappMessageSortTime(right);
+    if (byTime !== 0) {
+      return byTime;
+    }
+
+    return left.id.localeCompare(right.id);
+  });
+}
+
 export function median(values: number[]) {
   const finiteValues = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
   if (!finiteValues.length) {
@@ -330,7 +685,24 @@ export function median(values: number[]) {
   return (left + right) / 2;
 }
 
-export function whatsappActivityDirection(activityType: DealActivity["activityType"]): WhatsappMonitorMessageDirection {
+function readMetadataBoolean(metadata: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (key in metadata) {
+      return readBoolean(metadata[key]);
+    }
+  }
+
+  return false;
+}
+
+export function whatsappActivityDirection(
+  activityType: DealActivity["activityType"],
+  metadata: Record<string, unknown> = {},
+): WhatsappMonitorMessageDirection {
+  if (readMetadataBoolean(metadata, ["fromMe", "isOutbound", "capturedFromWhatsapp", "sentFromMonitor"])) {
+    return "OUTBOUND";
+  }
+
   if (activityType === "WHATSAPP_RECEIVED") {
     return "INBOUND";
   }
@@ -357,7 +729,7 @@ export function mapWhatsappActivityToMessage(activity: DealActivity): WhatsappMo
   return {
     id: activity.id,
     dealId: activity.dealId,
-    direction: whatsappActivityDirection(activity.activityType),
+    direction: whatsappActivityDirection(activity.activityType, activity.metadata),
     senderName,
     senderJid,
     senderProfilePictureUrl,

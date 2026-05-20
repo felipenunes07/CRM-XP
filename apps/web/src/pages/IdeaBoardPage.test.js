@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "../components/AppShell";
+import { UiLanguageProvider } from "../i18n";
 import { IdeaBoardPageView } from "./IdeaBoardPageView";
 import { buildIdeaBoardLanes, buildIdeaCreatePayload, buildIdeaTimeline, getIdeaLaneId, getIdeaVoteDraft, } from "./ideaBoardPage.helpers";
 vi.mock("../hooks/useAuth", () => ({
@@ -63,9 +64,15 @@ const ideas = [
 const referenceTime = new Date("2026-04-22T12:00:00.000Z");
 describe("IdeaBoard frontend", () => {
     it("renders the sidebar link and the ideas route outlet", () => {
-        const markup = renderToStaticMarkup(_jsx(MemoryRouter, { initialEntries: ["/ideias-votacao"], children: _jsx(Routes, { children: _jsx(Route, { element: _jsx(AppShell, {}), children: _jsx(Route, { path: "/ideias-votacao", element: _jsx("div", { children: "Conteudo da aba" }) }) }) }) }));
-        expect(markup).toContain("Ideias/Votacao");
+        const markup = renderToStaticMarkup(_jsx(UiLanguageProvider, { children: _jsx(MemoryRouter, { initialEntries: ["/ideias-votacao"], children: _jsx(Routes, { children: _jsx(Route, { element: _jsx(AppShell, {}), children: _jsx(Route, { path: "/ideias-votacao", element: _jsx("div", { children: "Conteudo da aba" }) }) }) }) }) }));
+        expect(markup).toContain("Ideias / Votação");
         expect(markup).toContain("Conteudo da aba");
+    });
+    it("renders the financial customer submenu item when the clientes route is active", () => {
+        const markup = renderToStaticMarkup(_jsx(UiLanguageProvider, { children: _jsx(MemoryRouter, { initialEntries: ["/clientes/financeiro"], children: _jsx(Routes, { children: _jsx(Route, { element: _jsx(AppShell, {}), children: _jsx(Route, { path: "/clientes/financeiro", element: _jsx("div", { children: "Tela financeira" }) }) }) }) }) }));
+        expect(markup).toContain("Todos os Clientes");
+        expect(markup).toContain("Financeiro");
+        expect(markup).toContain("Tela financeira");
     });
     it("shows the canvas view, aggregate results and whatsapp notification button without exposing the current vote", () => {
         const markup = renderToStaticMarkup(_jsx(IdeaBoardPageView, { ideas: ideas, lanes: buildIdeaBoardLanes(ideas, referenceTime), timeline: buildIdeaTimeline(ideas, 4), activeLaneId: "ALL", selectedIdea: {

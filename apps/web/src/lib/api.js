@@ -49,6 +49,12 @@ export const api = {
         });
         return request(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
     },
+    customerMovements(token, days = 7) {
+        const search = new URLSearchParams({
+            days: String(days),
+        });
+        return request(`/api/dashboard/movements?${search.toString()}`, {}, token);
+    },
     getMonthlyTargets(token, year) {
         const search = new URLSearchParams();
         if (year)
@@ -225,6 +231,45 @@ export const api = {
             method: "DELETE",
         }, token);
     },
+    automations(token) {
+        return request("/api/automations", {}, token);
+    },
+    createAutomation(token, input) {
+        return request("/api/automations", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateAutomation(token, id, input) {
+        return request(`/api/automations/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteAutomation(token, id) {
+        return request(`/api/automations/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    runAutomationNow(token, id, sendMode) {
+        return request(`/api/automations/${id}/run-now`, {
+            method: "POST",
+            body: JSON.stringify(sendMode ? { sendMode } : {}),
+        }, token);
+    },
+    automationRuns(token, limit = 100) {
+        return request(`/api/automations/runs?limit=${limit}`, {}, token);
+    },
+    approveAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/approve`, {
+            method: "POST",
+        }, token);
+    },
+    rejectAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/reject`, {
+            method: "POST",
+        }, token);
+    },
     messageTemplates(token) {
         return request("/api/messages/templates", {}, token);
     },
@@ -395,6 +440,18 @@ export const api = {
         if (query.search) {
             search.set("search", query.search);
         }
+        if (query.contactName) {
+            search.set("contactName", query.contactName);
+        }
+        if (query.contactPhone) {
+            search.set("contactPhone", query.contactPhone);
+        }
+        if (query.period) {
+            search.set("period", query.period);
+        }
+        if (query.status) {
+            search.set("status", query.status);
+        }
         return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     whatsappMonitorConversation(token, id) {
@@ -418,6 +475,12 @@ export const api = {
     },
     sendWhatsappMonitorReply(token, id, input) {
         return request(`/api/whatsapp-monitor/conversations/${id}/replies`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    sendWhatsappMonitorMediaReply(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/media-replies`, {
             method: "POST",
             body: JSON.stringify(input),
         }, token);
@@ -493,5 +556,39 @@ export const api = {
         return request(`/api/whatsapp-instances/${id}/configure`, {
             method: "POST",
         }, token);
+    },
+    getEventsMetrics(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.dateFrom)
+            search.set("dateFrom", query.dateFrom);
+        if (query.dateTo)
+            search.set("dateTo", query.dateTo);
+        if (query.isGroup !== undefined)
+            search.set("isGroup", String(query.isGroup));
+        return request(`/api/events/metrics?${search.toString()}`, {}, token);
+    },
+    listEvents(token, filters, pagination) {
+        const search = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined && value !== "")
+                search.set(key, String(value));
+        });
+        search.set("page", String(pagination.page));
+        search.set("pageSize", String(pagination.pageSize));
+        return request(`/api/events?${search.toString()}`, {}, token);
+    },
+    resolveEvent(token, id, input) {
+        return request(`/api/events/${id}/resolve`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getDailySentiments(token, query) {
+        const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const to = query.to || new Date().toISOString().split('T')[0];
+        const search = new URLSearchParams();
+        search.set("dateFrom", from);
+        search.set("dateTo", to);
+        return request(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
     },
 };
