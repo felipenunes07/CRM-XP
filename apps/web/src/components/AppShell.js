@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, } from "lucide-react";
+import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 /* ── link structure for external tests ── */
@@ -25,6 +25,7 @@ export const appShellLinks = [
     { to: "/disparador", icon: RadioTower, labelPt: "Disparador" },
     { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
     { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
+    { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
     { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 function isGroup(entry) {
@@ -75,6 +76,7 @@ const sidebarMenu = [
             { to: "/agenda", labelPt: "Agenda" },
             { to: "/ideias-votacao", labelPt: "Ideias / Votação" },
             { to: "/prospeccao", labelPt: "Prospecção" },
+            { to: "/novidades", labelPt: "Changelog" },
         ],
     },
     { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },

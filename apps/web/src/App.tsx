@@ -32,6 +32,7 @@ const PipelinePage = lazy(async () => ({ default: (await import("./pages/Pipelin
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
 const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
+const NovidadesPage = lazy(async () => ({ default: (await import("./pages/NovidadesPage")).NovidadesPage }));
 
 function RouteLoadingFallback() {
   const { tx } = useUiLanguage();
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/eventos" element={<EventsPage />} />
           <Route path="/usuarios" element={<WhatsappConfigPage />} />
           <Route path="/config/whatsapp" element={<WhatsappConfigPage />} />
+          <Route path="/novidades" element={<NovidadesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

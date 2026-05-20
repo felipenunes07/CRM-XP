@@ -1,0 +1,48 @@
+[
+  {
+    "date": "2026-05-20",
+    "version": "1.1.0",
+    "title": "Central de Changelog & Otimizações no WhatsApp",
+    "changes": [
+      {
+        "type": "feature",
+        "title": "Changelog do Sistema",
+        "description": "Lançamento da central de Changelog integrada ao menu 'Mais' para permitir que toda a equipe acompanhe as novas funcionalidades, melhorias e correções feitas no CRM XP em tempo real."
+      },
+      {
+        "type": "improvement",
+        "title": "Visualização Limpa da Atividade do WhatsApp",
+        "description": "Reestruturação da aba de Conversas nos Relatórios do WhatsApp. A tabela lateral de lista de conversas foi removida para foco exclusivo nos gráficos estatísticos, que agora ocupam 100% da largura útil da tela em um grid elegante de 2 colunas."
+      }
+    ]
+  },
+  {
+    "date": "2026-05-15",
+    "version": "1.0.8",
+    "title": "Otimizações de Kanban & Filtros Avançados",
+    "changes": [
+      {
+        "type": "improvement",
+        "title": "Filtros Rápidos no Pipeline",
+        "description": "Melhorias significativas no tempo de resposta e filtros do funil de vendas (Pipeline) para agilizar a consulta de contatos em aberto."
+      },
+      {
+        "type": "bugfix",
+        "title": "Correção de Movimentação de Cards",
+        "description": "Corrigido um bug onde o arrastar e soltar (drag and drop) de cards congelava em telas de menor resolução."
+      }
+    ]
+  },
+  {
+    "date": "2026-05-08",
+    "version": "1.0.5",
+    "title": "Lançamento da Tela de Metas Integradas",
+    "changes": [
+      {
+        "type": "feature",
+        "title": "Painel Dinâmico de Metas",
+        "description": "Nova tela de gerenciamento de objetivos comerciais por atendente, com barras de progresso interativas e cálculo automático de comissões estimadas."
+      }
+    ]
+  }
+]

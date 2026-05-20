@@ -23,6 +23,7 @@ import {
   UserPlus,
   Users,
   Hexagon,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
@@ -48,6 +49,7 @@ export const appShellLinks = [
   { to: "/disparador", icon: RadioTower, labelPt: "Disparador" },
   { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
   { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
+  { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
   { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 
@@ -117,6 +119,7 @@ const sidebarMenu: SidebarEntry[] = [
       { to: "/agenda", labelPt: "Agenda" },
       { to: "/ideias-votacao", labelPt: "Ideias / Votação" },
       { to: "/prospeccao", labelPt: "Prospecção" },
+      { to: "/novidades", labelPt: "Changelog" },
     ],
   },
   { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
