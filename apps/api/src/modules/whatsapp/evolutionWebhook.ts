@@ -335,10 +335,22 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
               AND right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8) = right(regexp_replace($1, '\\D', '', 'g'), 8)
             )
           )
-        ORDER BY d.last_activity_at DESC
+          AND (
+            d.whatsapp_instance_id = $2::uuid
+            OR (
+              d.whatsapp_instance_id IS NULL
+              AND (
+                d.assigned_to = $3::uuid
+                OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($4)
+              )
+            )
+          )
+        ORDER BY
+          CASE WHEN d.whatsapp_instance_id = $2::uuid THEN 0 ELSE 1 END ASC,
+          d.last_activity_at DESC
         LIMIT 1
         `,
-        [remoteJid],
+        [remoteJid, instanceDetails?.id ?? null, instanceDetails?.assignedUserId ?? null, instanceDetails?.assignedUserName ?? ""],
       );
 
       if (dealMatch.rows[0]) {

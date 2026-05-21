@@ -763,10 +763,11 @@ export async function getWhatsappMonitorConversation(
         LIMIT 1
       ) participant_profile ON true
       WHERE wim.remote_jid = $1
+        AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
       ORDER BY wim.created_at ASC, wim.id ASC
       LIMIT 300
       `,
-      [conversation.remoteJid],
+      [conversation.remoteJid, conversation.instanceName || ""],
     );
 
     const capturedMessages = incomingResult.rows.map((row): WhatsappMonitorMessage => {

@@ -204,7 +204,12 @@ export function MessagesPage() {
     const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
     const urlDealId = searchParams.get("dealId");
-    const [activeAgentId, setActiveAgentId] = useState("all");
+    const [activeAgentId, setActiveAgentIdRaw] = useState("all");
+    // When switching agents, clear the selected conversation so no chat is pre-selected
+    const setActiveAgentId = (id) => {
+        setActiveAgentIdRaw(id);
+        setSelectedConversationId(null);
+    };
     const [agentSearch, setAgentSearch] = useState("");
     const [conversationSearch, setConversationSearch] = useState("");
     const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
@@ -317,17 +322,29 @@ export function MessagesPage() {
             setSelectedConversationId(null);
             return;
         }
+        // Only clear if the currently selected conversation is no longer in the list
+        // Do NOT auto-select the first conversation — the user should choose
         setSelectedConversationId((current) => {
             if (current && filteredConversations.some((conversation) => conversation.id === current)) {
                 return current;
             }
-            return filteredConversations[0]?.id ?? null;
+            return null;
         });
     }, [filteredConversations]);
     useEffect(() => {
         setChatMenuOpen(false);
     }, [selectedConversationId]);
     const selectedConversation = filteredConversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+    // When selectedConversationId changes, remove the old cached conversation detail
+    // so stale messages from a different chat are never shown
+    const prevSelectedConversationIdRef = useRef(null);
+    useEffect(() => {
+        const prev = prevSelectedConversationIdRef.current;
+        prevSelectedConversationIdRef.current = selectedConversationId;
+        if (prev && prev !== selectedConversationId) {
+            queryClient.removeQueries({ queryKey: ["whatsapp-monitor-conversation", prev] });
+        }
+    }, [selectedConversationId, queryClient]);
     const conversationDetailQuery = useQuery({
         queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
         queryFn: () => api.whatsappMonitorConversation(token, selectedConversationId),
@@ -409,9 +426,12 @@ export function MessagesPage() {
             refreshProfilesMutation.mutate();
         }
     }, [conversations, refreshProfilesMutation, token]);
+    // Only use detail data when it actually belongs to the selected conversation
+    // to prevent stale messages from a previous chat from appearing
     const detail = conversationDetailQuery.data;
-    const currentConversation = detail ?? selectedConversation;
-    const messages = detail?.messages ?? [];
+    const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
+    const currentConversation = detailMatchesSelection ? detail : selectedConversation;
+    const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
     const lastMessageId = messages.at(-1)?.id ?? null;
     const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
     const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
