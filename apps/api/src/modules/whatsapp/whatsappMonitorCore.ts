@@ -263,6 +263,9 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
     ["stickerMessage", "sticker"],
   ];
 
+  // The Evolution API may place base64/url at the root level of the payload (outside `message`)
+  const rootRecord = message as Record<string, unknown>;
+
   for (const [messageKey, mediaType] of mediaEntries) {
     const mediaMessage = asRecord(unwrapped[messageKey]);
     if (!mediaMessage) {
@@ -271,10 +274,13 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
 
     return {
       mediaType,
-      mediaUrl: pickString(mediaMessage, ["url", "mediaUrl"]),
+      mediaUrl:
+        pickString(mediaMessage, ["url", "mediaUrl"]) ??
+        pickString(rootRecord, ["mediaUrl", "url"]),
       mediaBase64:
         pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
-        pickString(mediaMessage, ["base64", "mediaBase64"]),
+        pickString(mediaMessage, ["base64", "mediaBase64"]) ??
+        pickString(rootRecord, ["base64", "mediaBase64", "media"]),
       mimeType: pickString(mediaMessage, ["mimetype", "mimeType"]),
       fileName: pickString(mediaMessage, ["fileName", "filename"]),
       caption: pickString(mediaMessage, ["caption"]),
@@ -534,6 +540,7 @@ export function chooseWhatsappConversationContactName(input: {
   assignedUserName?: string | null;
   instanceName?: string | null;
   instanceLabel?: string | null;
+  inboundSenderName?: string | null;
 }) {
   const remoteJid = input.remoteJid;
   const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
@@ -559,6 +566,12 @@ export function chooseWhatsappConversationContactName(input: {
     }
 
     return candidate;
+  }
+
+  // Fallback: use the sender name from inbound messages (the actual contact)
+  const inboundName = readString(input.inboundSenderName);
+  if (inboundName && !(remoteJid && isWhatsappFallbackDisplayName(inboundName, remoteJid))) {
+    return inboundName;
   }
 
   return formatWhatsappJidPhone(remoteJid);

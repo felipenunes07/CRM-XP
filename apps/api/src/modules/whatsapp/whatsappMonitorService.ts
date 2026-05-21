@@ -170,6 +170,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
     assignedUserName: optionalString(row.assigned_to_name),
     instanceName: optionalString(row.instance_name),
     instanceLabel: optionalString(row.instance_display_label),
+    inboundSenderName: optionalString(row.inbound_sender_name),
   });
   const markedUnread = Boolean(row.marked_unread);
   const unreadState = computeWhatsappUnreadState(Number(row.unread_after_read ?? 0), markedUnread);
@@ -327,6 +328,22 @@ function conversationProfileJoinSql() {
       ORDER BY wim.created_at DESC, wim.id DESC
       LIMIT 1
     ) incoming_profile ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        wim_inbound.sender_name AS inbound_sender_name,
+        COALESCE(wim_inbound.sender_profile_picture_url, wim_inbound.chat_profile_picture_url) AS inbound_sender_picture
+      FROM whatsapp_incoming_messages wim_inbound
+      WHERE wim_inbound.remote_jid = d.whatsapp_jid
+        AND wim_inbound.from_me = false
+        AND wim_inbound.sender_name IS NOT NULL
+        AND wim_inbound.sender_name <> ''
+        AND (
+          wim_inbound.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          OR COALESCE(wim_inbound.instance_name, '') = ''
+        )
+      ORDER BY wim_inbound.created_at DESC
+      LIMIT 1
+    ) incoming_inbound_profile ON true
   `;
 }
 
@@ -361,11 +378,13 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         incoming_profile.sender_name,
         incoming_profile.participant_name
       ) AS chat_display_name,
+      incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       COALESCE(
         chat_profile.profile_picture_url,
         latest_whatsapp.metadata ->> 'chatProfilePictureUrl',
         incoming_profile.chat_profile_picture_url,
-        incoming_profile.sender_profile_picture_url
+        incoming_profile.sender_profile_picture_url,
+        incoming_inbound_profile.inbound_sender_picture
       ) AS profile_picture_url,
       latest_whatsapp.content AS last_message_content,
       COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) AS last_message_at,
@@ -758,7 +777,8 @@ export async function getWhatsappMonitorConversation(
       const contact = extractEvolutionMessageContact(metadata as any);
       const incomingContext = extractEvolutionMessageContext(metadata as any, optionalString(row.instance_name));
       const messageId = optionalString(row.message_id) ?? optionalString(incomingContext.messageId) ?? String(row.id);
-      const fromMe = Boolean(row.from_me) || incomingContext.fromMe;
+      // Prioritize the saved from_me column (set at webhook time) over re-parsing the raw payload
+      const fromMe = Boolean(row.from_me);
 
       return {
         id: String(row.id),
