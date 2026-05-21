@@ -659,9 +659,24 @@ export async function listWhatsappMonitorConversations(
     listWhatsappMonitorAgents(user),
     pool.query(
       `
-      ${conversationBaseSelectSql(userIdParamIndex)}
-      WHERE ${where.join(" AND ")}
-      ORDER BY COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) DESC, d.id DESC
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON (
+          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
+          LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))
+        )
+          conversation_rows.*
+        FROM (
+          ${conversationBaseSelectSql(userIdParamIndex)}
+          WHERE ${where.join(" AND ")}
+        ) conversation_rows
+        ORDER BY
+          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
+          LOWER(COALESCE(conversation_rows.whatsapp_jid, '')),
+          COALESCE(conversation_rows.last_message_at, conversation_rows.last_activity_at, conversation_rows.created_at) DESC,
+          conversation_rows.id DESC
+      ) deduped_conversations
+      ORDER BY COALESCE(deduped_conversations.last_message_at, deduped_conversations.last_activity_at, deduped_conversations.created_at) DESC, deduped_conversations.id DESC
       LIMIT 200
       `,
       params,

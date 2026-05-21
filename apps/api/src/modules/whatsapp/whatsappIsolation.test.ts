@@ -21,7 +21,7 @@ vi.mock("../events/eventsService.js", () => ({
 }));
 
 import { handleEvolutionWebhook } from "./evolutionWebhook.js";
-import { getWhatsappMonitorConversation } from "./whatsappMonitorService.js";
+import { getWhatsappMonitorConversation, listWhatsappMonitorConversations } from "./whatsappMonitorService.js";
 
 describe("whatsapp conversation isolation", () => {
   beforeEach(() => {
@@ -237,5 +237,24 @@ describe("whatsapp conversation isolation", () => {
     expect(conversation.messages).toHaveLength(1);
     expect(conversation.messages[0]?.direction).toBe("INBOUND");
     expect(conversation.messages[0]?.senderJid).toBe("5511999998888@s.whatsapp.net");
+  });
+
+  it("deduplicates conversation list rows by instance and WhatsApp JID", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls[1];
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).toContain("DISTINCT ON");
+    expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
+    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))");
   });
 });
