@@ -97,6 +97,10 @@ function readString(value: unknown): string | null {
 }
 
 function readBoolean(value: unknown) {
+  return readOptionalBoolean(value) ?? false;
+}
+
+function readOptionalBoolean(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
   }
@@ -115,7 +119,7 @@ function readBoolean(value: unknown) {
     }
   }
 
-  return false;
+  return null;
 }
 
 function pickString(source: Record<string, unknown> | null | undefined, keys: string[]): string | null {
@@ -244,6 +248,12 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
   return null;
 }
 
+export function extractEvolutionFromMeFlag(message: EvolutionMessageLike): boolean | null {
+  const rawMessage = message as Record<string, unknown>;
+  const key = message.key ?? {};
+  return readOptionalBoolean(key.fromMe) ?? readOptionalBoolean(rawMessage.fromMe) ?? readOptionalBoolean(rawMessage.isOutbound);
+}
+
 export function extractEvolutionMessageMedia(message: EvolutionMessageLike): EvolutionMessageMedia | null {
   const rawMessage = asRecord(message.message);
   if (!rawMessage) {
@@ -366,15 +376,20 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const fromMe = Boolean(readBoolean(key.fromMe) || readBoolean(rawMessage.fromMe) || readBoolean(rawMessage.isOutbound));
+  const fromMe = extractEvolutionFromMeFlag(message) ?? false;
   const participantPhoneJid =
     readString(key.participantPn) ??
     pickString(rawMessage, ["participantPn", "senderPn"]);
-  const senderJid =
+  const participantJid =
     participantPhoneJid ??
     readString(key.participant) ??
-    pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
-    (isGroup ? null : (fromMe ? null : remoteJid));
+    pickString(rawMessage, ["participant", "participantJid"]);
+  const connectionSenderJid = pickString(rawMessage, ["senderJid", "sender"]);
+  const senderJid = isGroup
+    ? participantJid ?? connectionSenderJid
+    : fromMe
+      ? null
+      : remoteJid;
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);

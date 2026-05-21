@@ -140,6 +140,29 @@ describe("whatsappMonitorCore", () => {
     });
   });
 
+  it("ignores the connection sender field for inbound direct messages", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "5511998765432@s.whatsapp.net",
+          fromMe: false,
+          id: "msg-in-direct-1",
+        },
+        senderJid: "5511912345678@s.whatsapp.net",
+        pushName: "Cliente",
+        message: { conversation: "Oi, consegue ver pra mim?" },
+      },
+      "comercial",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      fromMe: false,
+      senderJid: "5511998765432@s.whatsapp.net",
+      senderName: "Cliente",
+    });
+  });
+
   it("normalizes Evolution string fromMe flags and participant phone JIDs", () => {
     const context = extractEvolutionMessageContext(
       {

@@ -26,6 +26,7 @@ import {
   chooseWhatsappConversationContactName,
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionFromMeFlag,
   extractEvolutionMessageContact,
   extractEvolutionMessageContext,
   extractEvolutionMessageMedia,
@@ -206,17 +207,23 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
-  const incomingFromMe = Boolean(row.incoming_from_me) || Boolean(incomingContext?.fromMe);
+  const incomingFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
-    ...(incomingFromMe
+    ...(incomingFromMe === true
       ? {
         fromMe: true,
         capturedFromWhatsapp: true,
         outboundSource: baseMetadata.outboundSource ?? "whatsapp_device",
       }
+      : incomingFromMe === false
+        ? {
+          fromMe: false,
+          isOutbound: false,
+          capturedFromWhatsapp: false,
+        }
       : {}),
   };
   const participantName = optionalString(row.participant_display_name);
@@ -225,12 +232,18 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   return {
     id: String(row.id),
     dealId: String(row.deal_id),
-    activityType: String(row.activity_type) as DealActivity["activityType"],
+    activityType:
+      incomingFromMe === null
+        ? (String(row.activity_type) as DealActivity["activityType"])
+        : incomingFromMe
+          ? "WHATSAPP_SENT"
+          : "WHATSAPP_RECEIVED",
     actorName: row.actor_name ? String(row.actor_name) : null,
     content: row.content ? String(row.content) : null,
     metadata: {
       ...metadata,
       senderName: metadata.senderName ?? participantName,
+      senderJid: metadata.senderJid ?? incomingContext?.senderJid,
       senderProfilePictureUrl: metadata.senderProfilePictureUrl ?? participantProfilePictureUrl,
     },
     createdAt: isoDate(row.created_at),
@@ -778,8 +791,8 @@ export async function getWhatsappMonitorConversation(
       const contact = extractEvolutionMessageContact(metadata as any);
       const incomingContext = extractEvolutionMessageContext(metadata as any, optionalString(row.instance_name));
       const messageId = optionalString(row.message_id) ?? optionalString(incomingContext.messageId) ?? String(row.id);
-      // Prioritize the saved from_me column (set at webhook time) over re-parsing the raw payload
-      const fromMe = Boolean(row.from_me);
+      // Prefer the raw provider flag so previously misclassified private messages render on the correct side.
+      const fromMe = extractEvolutionFromMeFlag(metadata as any) ?? Boolean(row.from_me);
 
       return {
         id: String(row.id),

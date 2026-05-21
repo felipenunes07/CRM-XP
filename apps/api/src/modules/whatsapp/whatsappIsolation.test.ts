@@ -121,4 +121,121 @@ describe("whatsapp conversation isolation", () => {
     expect(dealMatchQuery).toContain("d.assigned_to = $3::uuid");
     expect(dealMatchQuery).toContain("LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($4)");
   });
+
+  it("keeps private inbound messages from the customer on the inbound side when Evolution sender is the connection", async () => {
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-amanda",
+            display_label: "Amanda",
+            phone_number: "+55 11 91234-5678",
+            assigned_user_id: "user-amanda",
+            assigned_user_name: "Amanda",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "deal-1",
+            whatsapp_instance_id: "instance-amanda",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await handleEvolutionWebhook({
+      event: "MESSAGES_UPSERT",
+      instance: "amanda",
+      data: {
+        key: {
+          remoteJid: "5511999998888@s.whatsapp.net",
+          id: "msg-private-in-1",
+          fromMe: false,
+        },
+        senderJid: "5511912345678@s.whatsapp.net",
+        pushName: "Cliente",
+        message: {
+          conversation: "Oi",
+        },
+        messageTimestamp: 1779364800,
+      },
+    });
+
+    const incomingInsertParams = mocks.query.mock.calls[1]?.[1];
+    const activityInsertParams = mocks.query.mock.calls[3]?.[1];
+
+    expect(incomingInsertParams?.[11]).toBe(false);
+    expect(activityInsertParams?.[1]).toBe("WHATSAPP_RECEIVED");
+    expect(activityInsertParams?.[2]).toBeNull();
+  });
+
+  it("uses raw Evolution fromMe to render previously misclassified private activity direction", async () => {
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "deal-1",
+            title: "Cliente",
+            customer_display_name: "Cliente",
+            whatsapp_jid: "5511999998888@s.whatsapp.net",
+            instance_name: "amanda",
+            instance_display_label: "Amanda",
+            stage_name: "Contato Inicial",
+            last_message_at: "2026-05-21T12:00:00.000Z",
+            event_count: 1,
+            inbound_count: 0,
+            unread_after_read: 0,
+            marked_unread: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "activity-1",
+            deal_id: "deal-1",
+            activity_type: "WHATSAPP_SENT",
+            actor_name: "Amanda",
+            content: "Oi",
+            metadata: {
+              messageId: "msg-private-in-1",
+              remoteJid: "5511999998888@s.whatsapp.net",
+              fromMe: true,
+              capturedFromWhatsapp: true,
+            },
+            created_at: "2026-05-21T12:00:00.000Z",
+            incoming_from_me: true,
+            incoming_raw_payload: {
+              key: {
+                remoteJid: "5511999998888@s.whatsapp.net",
+                id: "msg-private-in-1",
+                fromMe: false,
+              },
+              senderJid: "5511912345678@s.whatsapp.net",
+              pushName: "Cliente",
+              message: {
+                conversation: "Oi",
+              },
+            },
+            participant_display_name: null,
+            participant_profile_picture_url: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const conversation = await getWhatsappMonitorConversation("deal-1", {
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    expect(conversation.messages).toHaveLength(1);
+    expect(conversation.messages[0]?.direction).toBe("INBOUND");
+    expect(conversation.messages[0]?.senderJid).toBe("5511999998888@s.whatsapp.net");
+  });
 });
