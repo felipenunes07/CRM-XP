@@ -798,13 +798,43 @@ export function areWhatsappJidsEqual(
     return cleanA === cleanB;
   }
 
+  if (digitsA === digitsB) {
+    return true;
+  }
+
   // Brazilian number matching: country code 55
-  if (digitsA.startsWith("55") && digitsB.startsWith("55") && digitsA.length >= 10 && digitsB.length >= 10) {
-    const dddA = digitsA.substring(2, 4);
-    const dddB = digitsB.substring(2, 4);
-    const last8A = digitsA.slice(-8);
-    const last8B = digitsB.slice(-8);
-    return dddA === dddB && last8A === last8B;
+  if (digitsA.startsWith("55") && digitsB.startsWith("55")) {
+    const lenA = digitsA.length;
+    const lenB = digitsB.length;
+
+    // Both must be valid phone numbers with DDD (at least 10 digits)
+    if (lenA >= 10 && lenB >= 10) {
+      const dddA = digitsA.substring(2, 4);
+      const dddB = digitsB.substring(2, 4);
+
+      if (dddA === dddB) {
+        // If they have the same length, they must be exactly equal
+        if (lenA === lenB) {
+          return digitsA === digitsB;
+        }
+
+        // Handle 9th digit variation (13 digits vs 12 digits)
+        const digits13 = lenA === 13 ? digitsA : lenB === 13 ? digitsB : null;
+        const digits12 = lenA === 12 ? digitsA : lenB === 12 ? digitsB : null;
+
+        if (digits13 && digits12) {
+          const isMobile13 = digits13.charAt(4) === "9";
+          const firstDigit8 = digits12.charAt(4);
+          const isMobile12 = ["6", "7", "8", "9"].includes(firstDigit8);
+
+          if (isMobile13 && isMobile12) {
+            const rest13 = digits13.substring(5);
+            const rest12 = digits12.substring(4);
+            return rest13 === rest12;
+          }
+        }
+      }
+    }
   }
 
   return digitsA === digitsB;
