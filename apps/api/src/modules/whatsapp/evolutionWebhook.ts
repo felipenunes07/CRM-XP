@@ -243,7 +243,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
       const isFromMe = Boolean(
         context.fromMe || 
-        (instanceOwnerJid && context.senderJid && !areWhatsappJidsEqual(context.senderJid, remoteJid) && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+        (instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
       );
       
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";

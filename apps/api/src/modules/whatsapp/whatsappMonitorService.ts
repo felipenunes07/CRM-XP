@@ -208,15 +208,19 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
   const incomingFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
+  // An activity is outbound if it was originally saved as WHATSAPP_SENT, or if the synced message is fromMe
+  const isSent = row.activity_type === "WHATSAPP_SENT" || incomingFromMe === true;
+
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
-    ...(incomingFromMe === true
+    ...(isSent
       ? {
         fromMe: true,
+        isOutbound: true,
         capturedFromWhatsapp: true,
-        outboundSource: baseMetadata.outboundSource ?? "whatsapp_device",
+        outboundSource: baseMetadata.outboundSource ?? (incomingFromMe === true ? "whatsapp_device" : "whatsapp_api"),
       }
       : incomingFromMe === false
         ? {
@@ -232,12 +236,7 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   return {
     id: String(row.id),
     dealId: String(row.deal_id),
-    activityType:
-      incomingFromMe === null
-        ? (String(row.activity_type) as DealActivity["activityType"])
-        : incomingFromMe
-          ? "WHATSAPP_SENT"
-          : "WHATSAPP_RECEIVED",
+    activityType: (isSent ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED") as DealActivity["activityType"],
     actorName: row.actor_name ? String(row.actor_name) : null,
     content: row.content ? String(row.content) : null,
     metadata: {

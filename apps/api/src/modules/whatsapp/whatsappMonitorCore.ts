@@ -385,10 +385,11 @@ export function extractEvolutionMessageContext(
     readString(key.participant) ??
     pickString(rawMessage, ["participant", "participantJid"]);
   const connectionSenderJid = pickString(rawMessage, ["senderJid", "sender"]);
-  const senderJid =
-    participantJid ??
-    connectionSenderJid ??
-    (fromMe ? null : remoteJid);
+  const senderJid = isGroup
+    ? participantJid ?? connectionSenderJid
+    : fromMe
+      ? null
+      : remoteJid;
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);

@@ -235,7 +235,7 @@ describe("whatsapp conversation isolation", () => {
     } as any);
 
     expect(conversation.messages).toHaveLength(1);
-    expect(conversation.messages[0]?.direction).toBe("INBOUND");
+    expect(conversation.messages[0]?.direction).toBe("OUTBOUND");
     expect(conversation.messages[0]?.senderJid).toBe("5511999998888@s.whatsapp.net");
   });
 
