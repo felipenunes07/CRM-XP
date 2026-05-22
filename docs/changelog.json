@@ -1,0 +1,53 @@
+[
+  {
+    "date": "2026-05-20",
+    "version": "1.1.0",
+    "title": "Central de Changelog & Otimizações no WhatsApp",
+    "changes": [
+      {
+        "type": "feature",
+        "title": "Changelog do Sistema",
+        "description": "Lançamento da central de Changelog integrada ao menu 'Mais' para permitir que toda a equipe acompanhe as novas funcionalidades, melhorias e correções feitas no CRM XP em tempo real."
+      },
+      {
+        "type": "improvement",
+        "title": "Visualização Limpa da Atividade do WhatsApp",
+        "description": "Reestruturação da aba de Conversas nos Relatórios do WhatsApp. A tabela lateral de lista de conversas foi removida para foco exclusivo nos gráficos estatísticos, que agora ocupam 100% da largura útil da tela em um grid elegante de 2 colunas."
+      }
+    ]
+  },
+  {
+    "date": "2026-05-18",
+    "version": "1.0.8",
+    "title": "Relatório de Métricas do WhatsApp",
+    "changes": [
+      {
+        "type": "feature",
+        "title": "Página WhatsappActivityPage",
+        "description": "Implementação do painel avançado para visualizar e reportar métricas detalhadas de conversas, fluxos e interações ativas do WhatsApp."
+      },
+      {
+        "type": "improvement",
+        "title": "Estrutura do Cliente da API do CRM",
+        "description": "Otimização das conexões internas de rede e do módulo de API cliente no frontend para consultas mais eficientes ao backend."
+      }
+    ]
+  },
+  {
+    "date": "2026-05-12",
+    "version": "1.0.4",
+    "title": "Dashboard de Vendas Geográficas & Segurança",
+    "changes": [
+      {
+        "type": "feature",
+        "title": "Dashboard Geográfico Interativo",
+        "description": "Lançamento do mapa de vendas com estatísticas regionais, facilitando a identificação da distribuição física dos contatos e clientes."
+      },
+      {
+        "type": "improvement",
+        "title": "Migração para Variáveis de Ambiente",
+        "description": "Correção de segurança crucial removendo credenciais estáticas de banco de dados e padronizando a autenticação via variáveis de ambiente (.env)."
+      }
+    ]
+  }
+]

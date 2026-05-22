@@ -940,57 +940,6 @@ export function WhatsappActivityPage() {
 
       {activeTab === "conversations" ? (
         <div className="activity-conversations-layout">
-          <aside className="activity-conversations-list-panel">
-            <div className="activity-panel-header">
-              <div>
-                <h2>Lista de conversas</h2>
-                <span>{visibleSummary.conversations.length} encontradas no periodo</span>
-              </div>
-            </div>
-            <div className="activity-search-box">
-              <Search size={18} />
-              <input 
-                type="text" 
-                placeholder="Pesquisar por nome ou JID..." 
-                value={conversationSearch}
-                onChange={(e) => setConversationSearch(e.target.value)}
-              />
-            </div>
-            <div className="activity-conversations-scroll">
-              <table className="activity-table mini">
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Tipo</th>
-                    <th>Enviadas</th>
-                    <th>Recebidas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleSummary.conversations
-                    .filter(c => {
-                      const search = conversationSearch.toLowerCase();
-                      const matchesSearch = c.name.toLowerCase().includes(search) || c.remoteJid.toLowerCase().includes(search);
-                      if (!matchesSearch) return false;
-                      
-                      if (typeFilter === "private") return c.kind === "private";
-                      if (typeFilter === "group") return c.kind !== "private";
-                      return true;
-                    })
-                    .slice(0, 100)
-                    .map((conv) => (
-                      <tr key={conv.remoteJid}>
-                        <td>{conv.name || conv.remoteJid}</td>
-                        <td><small>{conversationKindLabel(conv.kind)}</small></td>
-                        <td>{conv.sentMessages}</td>
-                        <td>{conv.receivedMessages}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </aside>
-
           <section className="activity-panel activity-chart-panel">
             <ActivityChart
               title="Conversas atendidas"

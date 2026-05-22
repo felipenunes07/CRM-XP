@@ -115,6 +115,16 @@ export const api = {
     getGeographicSalesStats(token) {
         return request("/api/geographic/sales", {}, token);
     },
+    getGeographicModelSales(token, options) {
+        const params = new URLSearchParams();
+        if (options.state)
+            params.set("state", options.state);
+        if (options.city)
+            params.set("city", options.city);
+        if (options.year)
+            params.set("year", String(options.year));
+        return request(`/api/geographic/model-sales?${params.toString()}`, {}, token);
+    },
     customerCreditOverview(token) {
         return request("/api/customer-credit/overview", {}, token);
     },

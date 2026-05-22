@@ -428,7 +428,13 @@ export function MessagesPage() {
   const [searchParams] = useSearchParams();
   const urlDealId = searchParams.get("dealId");
 
-  const [activeAgentId, setActiveAgentId] = useState<string>("all");
+  const [activeAgentId, setActiveAgentIdRaw] = useState<string>("all");
+
+  // When switching agents, clear the selected conversation so no chat is pre-selected
+  const setActiveAgentId = (id: string) => {
+    setActiveAgentIdRaw(id);
+    setSelectedConversationId(null);
+  };
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
@@ -531,17 +537,29 @@ export function MessagesPage() {
   const agents = conversationsQuery.data?.agents ?? [];
   const conversations = conversationsQuery.data?.conversations ?? [];
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
+
   const filteredConversations = useMemo(() => {
+    let result = conversations;
+
+    if (activeAgent) {
+      result = result.filter(
+        (conversation) =>
+          conversation.whatsappInstanceId === activeAgent.id ||
+          conversation.instanceName === activeAgent.instanceName ||
+          conversation.agentName === activeAgent.displayLabel
+      );
+    }
+
     if (groupFilter === "groups") {
-      return conversations.filter((conversation) => conversation.isGroup);
+      return result.filter((conversation) => conversation.isGroup);
     }
 
     if (groupFilter === "contacts") {
-      return conversations.filter((conversation) => !conversation.isGroup);
+      return result.filter((conversation) => !conversation.isGroup);
     }
 
-    return conversations;
-  }, [conversations, groupFilter]);
+    return result;
+  }, [conversations, groupFilter, activeAgent]);
 
   const visibleAgents = useMemo(() => {
     const normalized = agentSearch.trim().toLocaleLowerCase("pt-BR");
@@ -560,12 +578,14 @@ export function MessagesPage() {
       return;
     }
 
+    // Only clear if the currently selected conversation is no longer in the list
+    // Do NOT auto-select the first conversation — the user should choose
     setSelectedConversationId((current) => {
       if (current && filteredConversations.some((conversation) => conversation.id === current)) {
         return current;
       }
 
-      return filteredConversations[0]?.id ?? null;
+      return null;
     });
   }, [filteredConversations]);
 
@@ -574,6 +594,17 @@ export function MessagesPage() {
   }, [selectedConversationId]);
 
   const selectedConversation = filteredConversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  // When selectedConversationId changes, remove the old cached conversation detail
+  // so stale messages from a different chat are never shown
+  const prevSelectedConversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevSelectedConversationIdRef.current;
+    prevSelectedConversationIdRef.current = selectedConversationId;
+    if (prev && prev !== selectedConversationId) {
+      queryClient.removeQueries({ queryKey: ["whatsapp-monitor-conversation", prev] });
+    }
+  }, [selectedConversationId, queryClient]);
+
   const conversationDetailQuery = useQuery({
     queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
     queryFn: () => api.whatsappMonitorConversation(token!, selectedConversationId!),
@@ -683,9 +714,12 @@ export function MessagesPage() {
     }
   }, [conversations, refreshProfilesMutation, token]);
 
+  // Only use detail data when it actually belongs to the selected conversation
+  // to prevent stale messages from a previous chat from appearing
   const detail = conversationDetailQuery.data;
-  const currentConversation = detail ?? selectedConversation;
-  const messages = detail?.messages ?? [];
+  const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
+  const currentConversation = detailMatchesSelection ? detail : selectedConversation;
+  const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);

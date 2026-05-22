@@ -26,6 +26,7 @@ import {
   chooseWhatsappConversationContactName,
   computeWhatsappUnreadState,
   detectWhatsappMessageRisk,
+  extractEvolutionFromMeFlag,
   extractEvolutionMessageContact,
   extractEvolutionMessageContext,
   extractEvolutionMessageMedia,
@@ -170,6 +171,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
     assignedUserName: optionalString(row.assigned_to_name),
     instanceName: optionalString(row.instance_name),
     instanceLabel: optionalString(row.instance_display_label),
+    inboundSenderName: optionalString(row.inbound_sender_name),
   });
   const markedUnread = Boolean(row.marked_unread);
   const unreadState = computeWhatsappUnreadState(Number(row.unread_after_read ?? 0), markedUnread);
@@ -205,17 +207,23 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
-  const incomingFromMe = Boolean(row.incoming_from_me) || Boolean(incomingContext?.fromMe);
+  const incomingFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
-    ...(incomingFromMe
+    ...(incomingFromMe === true
       ? {
         fromMe: true,
         capturedFromWhatsapp: true,
         outboundSource: baseMetadata.outboundSource ?? "whatsapp_device",
       }
+      : incomingFromMe === false
+        ? {
+          fromMe: false,
+          isOutbound: false,
+          capturedFromWhatsapp: false,
+        }
       : {}),
   };
   const participantName = optionalString(row.participant_display_name);
@@ -224,12 +232,18 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   return {
     id: String(row.id),
     dealId: String(row.deal_id),
-    activityType: String(row.activity_type) as DealActivity["activityType"],
+    activityType:
+      incomingFromMe === null
+        ? (String(row.activity_type) as DealActivity["activityType"])
+        : incomingFromMe
+          ? "WHATSAPP_SENT"
+          : "WHATSAPP_RECEIVED",
     actorName: row.actor_name ? String(row.actor_name) : null,
     content: row.content ? String(row.content) : null,
     metadata: {
       ...metadata,
       senderName: metadata.senderName ?? participantName,
+      senderJid: metadata.senderJid ?? incomingContext?.senderJid,
       senderProfilePictureUrl: metadata.senderProfilePictureUrl ?? participantProfilePictureUrl,
     },
     createdAt: isoDate(row.created_at),
@@ -327,6 +341,22 @@ function conversationProfileJoinSql() {
       ORDER BY wim.created_at DESC, wim.id DESC
       LIMIT 1
     ) incoming_profile ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        wim_inbound.sender_name AS inbound_sender_name,
+        COALESCE(wim_inbound.sender_profile_picture_url, wim_inbound.chat_profile_picture_url) AS inbound_sender_picture
+      FROM whatsapp_incoming_messages wim_inbound
+      WHERE wim_inbound.remote_jid = d.whatsapp_jid
+        AND wim_inbound.from_me = false
+        AND wim_inbound.sender_name IS NOT NULL
+        AND wim_inbound.sender_name <> ''
+        AND (
+          wim_inbound.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          OR COALESCE(wim_inbound.instance_name, '') = ''
+        )
+      ORDER BY wim_inbound.created_at DESC
+      LIMIT 1
+    ) incoming_inbound_profile ON true
   `;
 }
 
@@ -361,11 +391,13 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         incoming_profile.sender_name,
         incoming_profile.participant_name
       ) AS chat_display_name,
+      incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       COALESCE(
         chat_profile.profile_picture_url,
         latest_whatsapp.metadata ->> 'chatProfilePictureUrl',
         incoming_profile.chat_profile_picture_url,
-        incoming_profile.sender_profile_picture_url
+        incoming_profile.sender_profile_picture_url,
+        incoming_inbound_profile.inbound_sender_picture
       ) AS profile_picture_url,
       latest_whatsapp.content AS last_message_content,
       COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) AS last_message_at,
@@ -627,9 +659,24 @@ export async function listWhatsappMonitorConversations(
     listWhatsappMonitorAgents(user),
     pool.query(
       `
-      ${conversationBaseSelectSql(userIdParamIndex)}
-      WHERE ${where.join(" AND ")}
-      ORDER BY COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) DESC, d.id DESC
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON (
+          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
+          LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))
+        )
+          conversation_rows.*
+        FROM (
+          ${conversationBaseSelectSql(userIdParamIndex)}
+          WHERE ${where.join(" AND ")}
+        ) conversation_rows
+        ORDER BY
+          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
+          LOWER(COALESCE(conversation_rows.whatsapp_jid, '')),
+          COALESCE(conversation_rows.last_message_at, conversation_rows.last_activity_at, conversation_rows.created_at) DESC,
+          conversation_rows.id DESC
+      ) deduped_conversations
+      ORDER BY COALESCE(deduped_conversations.last_message_at, deduped_conversations.last_activity_at, deduped_conversations.created_at) DESC, deduped_conversations.id DESC
       LIMIT 200
       `,
       params,
@@ -744,10 +791,11 @@ export async function getWhatsappMonitorConversation(
         LIMIT 1
       ) participant_profile ON true
       WHERE wim.remote_jid = $1
+        AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
       ORDER BY wim.created_at ASC, wim.id ASC
       LIMIT 300
       `,
-      [conversation.remoteJid],
+      [conversation.remoteJid, conversation.instanceName || ""],
     );
 
     const capturedMessages = incomingResult.rows.map((row): WhatsappMonitorMessage => {
@@ -758,7 +806,8 @@ export async function getWhatsappMonitorConversation(
       const contact = extractEvolutionMessageContact(metadata as any);
       const incomingContext = extractEvolutionMessageContext(metadata as any, optionalString(row.instance_name));
       const messageId = optionalString(row.message_id) ?? optionalString(incomingContext.messageId) ?? String(row.id);
-      const fromMe = Boolean(row.from_me) || incomingContext.fromMe;
+      // Prefer the raw provider flag so previously misclassified private messages render on the correct side.
+      const fromMe = extractEvolutionFromMeFlag(metadata as any) ?? Boolean(row.from_me);
 
       return {
         id: String(row.id),

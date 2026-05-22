@@ -97,6 +97,10 @@ function readString(value: unknown): string | null {
 }
 
 function readBoolean(value: unknown) {
+  return readOptionalBoolean(value) ?? false;
+}
+
+function readOptionalBoolean(value: unknown): boolean | null {
   if (typeof value === "boolean") {
     return value;
   }
@@ -115,7 +119,7 @@ function readBoolean(value: unknown) {
     }
   }
 
-  return false;
+  return null;
 }
 
 function pickString(source: Record<string, unknown> | null | undefined, keys: string[]): string | null {
@@ -189,7 +193,9 @@ function unwrapEvolutionMessage(msg: Record<string, unknown> | null | undefined)
 export function extractEvolutionMessageText(message: EvolutionMessageLike): string | null {
   const rawMessage = asRecord(message.message);
   if (!rawMessage) {
-    return null;
+    // Some Evolution API payloads (especially fromMe) carry text at the top level
+    const fallback = pickString(message as Record<string, unknown>, ["body", "text", "caption", "content"]);
+    return fallback;
   }
 
   const unwrapped = unwrapEvolutionMessage(rawMessage);
@@ -242,6 +248,12 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
   return null;
 }
 
+export function extractEvolutionFromMeFlag(message: EvolutionMessageLike): boolean | null {
+  const rawMessage = message as Record<string, unknown>;
+  const key = message.key ?? {};
+  return readOptionalBoolean(key.fromMe) ?? readOptionalBoolean(rawMessage.fromMe) ?? readOptionalBoolean(rawMessage.isOutbound);
+}
+
 export function extractEvolutionMessageMedia(message: EvolutionMessageLike): EvolutionMessageMedia | null {
   const rawMessage = asRecord(message.message);
   if (!rawMessage) {
@@ -261,6 +273,9 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
     ["stickerMessage", "sticker"],
   ];
 
+  // The Evolution API may place base64/url at the root level of the payload (outside `message`)
+  const rootRecord = message as Record<string, unknown>;
+
   for (const [messageKey, mediaType] of mediaEntries) {
     const mediaMessage = asRecord(unwrapped[messageKey]);
     if (!mediaMessage) {
@@ -269,10 +284,13 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
 
     return {
       mediaType,
-      mediaUrl: pickString(mediaMessage, ["url", "mediaUrl"]),
+      mediaUrl:
+        pickString(mediaMessage, ["url", "mediaUrl"]) ??
+        pickString(rootRecord, ["mediaUrl", "url"]),
       mediaBase64:
         pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
-        pickString(mediaMessage, ["base64", "mediaBase64"]),
+        pickString(mediaMessage, ["base64", "mediaBase64"]) ??
+        pickString(rootRecord, ["base64", "mediaBase64", "media"]),
       mimeType: pickString(mediaMessage, ["mimetype", "mimeType"]),
       fileName: pickString(mediaMessage, ["fileName", "filename"]),
       caption: pickString(mediaMessage, ["caption"]),
@@ -358,15 +376,20 @@ export function extractEvolutionMessageContext(
   const key = message.key ?? {};
   const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const fromMe = Boolean(readBoolean(key.fromMe) || readBoolean(rawMessage.fromMe) || readBoolean(rawMessage.isOutbound));
+  const fromMe = extractEvolutionFromMeFlag(message) ?? false;
   const participantPhoneJid =
     readString(key.participantPn) ??
     pickString(rawMessage, ["participantPn", "senderPn"]);
-  const senderJid =
+  const participantJid =
     participantPhoneJid ??
     readString(key.participant) ??
-    pickString(rawMessage, ["participant", "senderJid", "participantJid", "sender"]) ??
-    (isGroup ? null : (fromMe ? null : remoteJid));
+    pickString(rawMessage, ["participant", "participantJid"]);
+  const connectionSenderJid = pickString(rawMessage, ["senderJid", "sender"]);
+  const senderJid = isGroup
+    ? participantJid ?? connectionSenderJid
+    : fromMe
+      ? null
+      : remoteJid;
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);
@@ -532,6 +555,7 @@ export function chooseWhatsappConversationContactName(input: {
   assignedUserName?: string | null;
   instanceName?: string | null;
   instanceLabel?: string | null;
+  inboundSenderName?: string | null;
 }) {
   const remoteJid = input.remoteJid;
   const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
@@ -557,6 +581,12 @@ export function chooseWhatsappConversationContactName(input: {
     }
 
     return candidate;
+  }
+
+  // Fallback: use the sender name from inbound messages (the actual contact)
+  const inboundName = readString(input.inboundSenderName);
+  if (inboundName && !(remoteJid && isWhatsappFallbackDisplayName(inboundName, remoteJid))) {
+    return inboundName;
   }
 
   return formatWhatsappJidPhone(remoteJid);
@@ -741,4 +771,42 @@ export function mapWhatsappActivityToMessage(activity: DealActivity): WhatsappMo
     metadata: activity.metadata,
     risk: detectWhatsappMessageRisk(content),
   };
+}
+
+/**
+ * Compares two WhatsApp JIDs or phone numbers, handling Brazilian 9th-digit variations robustly.
+ */
+export function areWhatsappJidsEqual(
+  jidA: string | null | undefined,
+  jidB: string | null | undefined,
+): boolean {
+  if (!jidA || !jidB) {
+    return false;
+  }
+
+  const cleanA = jidA.trim().toLowerCase();
+  const cleanB = jidB.trim().toLowerCase();
+
+  if (cleanA === cleanB) {
+    return true;
+  }
+
+  // Extract pure digits
+  const digitsA = (cleanA.split("@")[0] || "").replace(/\D/g, "");
+  const digitsB = (cleanB.split("@")[0] || "").replace(/\D/g, "");
+
+  if (!digitsA || !digitsB) {
+    return cleanA === cleanB;
+  }
+
+  // Brazilian number matching: country code 55
+  if (digitsA.startsWith("55") && digitsB.startsWith("55") && digitsA.length >= 10 && digitsB.length >= 10) {
+    const dddA = digitsA.substring(2, 4);
+    const dddB = digitsB.substring(2, 4);
+    const last8A = digitsA.slice(-8);
+    const last8B = digitsB.slice(-8);
+    return dddA === dddB && last8A === last8B;
+  }
+
+  return digitsA === digitsB;
 }
