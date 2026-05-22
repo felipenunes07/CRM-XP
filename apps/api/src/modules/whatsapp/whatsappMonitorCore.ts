@@ -688,7 +688,8 @@ export function median(values: number[]) {
 function readMetadataBoolean(metadata: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     if (key in metadata) {
-      return readBoolean(metadata[key]);
+      const val = readBoolean(metadata[key]);
+      if (val) return true;
     }
   }
 

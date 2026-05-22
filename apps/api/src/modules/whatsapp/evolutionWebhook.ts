@@ -128,11 +128,11 @@ async function insertDealActivity(input: {
     )
     UPDATE deal_activities
     SET
-      activity_type = $2,
-      actor_user_id = $3,
-      actor_name = $4,
+      activity_type = CASE WHEN deal_activities.activity_type = 'WHATSAPP_SENT' THEN 'WHATSAPP_SENT' ELSE $2 END,
+      actor_user_id = COALESCE(deal_activities.actor_user_id, $3),
+      actor_name = COALESCE(deal_activities.actor_name, $4),
       content = $5,
-      metadata = COALESCE(metadata, '{}'::jsonb) || $6::jsonb,
+      metadata = COALESCE(deal_activities.metadata, '{}'::jsonb) || $6::jsonb,
       created_at = $7
     WHERE deal_id = $1
       AND metadata ->> 'messageId' = $8
