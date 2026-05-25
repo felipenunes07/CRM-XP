@@ -1380,7 +1380,7 @@ export function DisparadorPage() {
                               }
                             }
 
-                            const mappedSenderId = recipientSenderMapping[group.id] || "default";
+                            const mappedSenderId = recipientSenderMapping[group.id] || selectedSenderIds[0] || "default";
                             const activeSender = senders.find(s => s.id === mappedSenderId) || senders[0] || {
                               id: "default",
                               name: "Instância Padrão",

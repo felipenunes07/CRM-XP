@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import {
   BarChart3,
@@ -201,9 +201,9 @@ export function AppShell() {
       <aside className="cw-sidebar">
         {/* ── Header ── */}
         <section className="cw-header">
-          <div className="cw-premium-brand">
+          <Link to="/" className="cw-premium-brand">
             <img src="/xp-factory-logo.png" alt="XP CRM" className="cw-logo-image" />
-          </div>
+          </Link>
 
           <div className="sidebar-language-card">
             <span className="sidebar-language-label">Idioma</span>
