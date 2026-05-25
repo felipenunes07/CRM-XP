@@ -604,6 +604,7 @@ export const api = {
       name: string;
       templateId?: string | null;
       savedSegmentId?: string | null;
+      whatsappInstanceId?: string | null;
       messageText: string;
       filtersSnapshot?: Record<string, unknown>;
       groupIds: string[];

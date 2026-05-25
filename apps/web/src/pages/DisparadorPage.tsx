@@ -8,21 +8,23 @@ import type {
   WhatsappGroup,
   WhatsappGroupClassification,
   WhatsappGroupMappingStatus,
+  WhatsappMappingSummary,
 } from "@olist-crm/shared";
 import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 
-type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "PENDING_REVIEW";
+type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 
 const quickFilters: Array<{ value: QuickFilter; label: string; description: string }> = [
   { value: "ALL", label: "Todos", description: "Toda a base importada." },
-  { value: "WITH_ORDER", label: "Com pedido", description: "Grupos CL e KH." },
-  { value: "NO_ORDER_EXCEL", label: "Nunca comprou", description: "Grupos do Excel marcados como Cliente." },
+  { value: "WITH_ORDER", label: "Clientes", description: "Clientes com pedido." },
+  { value: "NO_ORDER_EXCEL", label: "Nunca comprou", description: "Nunca comprou." },
   { value: "OTHER", label: "Outros", description: "LJ, internos e demais grupos." },
-  { value: "PENDING_REVIEW", label: "Pendentes", description: "Sem mapeamento fechado." },
+  { value: "BLOQUEADOS", label: "Bloqueados", description: "Grupos sob bloqueio recente." },
+  { value: "ULTIMO_CONTATO", label: "Último contato", description: "Histórico de envio recente." },
 ];
 
 
@@ -43,8 +45,8 @@ function buildGroupsQueryParams(input: {
     params.classification = input.quickFilter;
   }
 
-  if (input.quickFilter === "PENDING_REVIEW") {
-    params.mappingStatus = "PENDING_REVIEW";
+  if (input.quickFilter === "BLOQUEADOS") {
+    params.onlyRecentlyBlocked = true;
   }
 
   return params;
@@ -159,18 +161,19 @@ function truncateText(value: string | null | undefined, maxLength = 96) {
 
 function quickFilterCount(
   filter: QuickFilter,
-  summary:
-    | {
-        totalGroups: number;
-        pendingReviewGroups: number;
-        classificationCounts: Record<WhatsappGroupClassification, number>;
-      }
-    | undefined,
+  summary: WhatsappMappingSummary | undefined,
+  loadedItems: WhatsappGroup[],
 ) {
   if (!summary) return "--";
   if (filter === "ALL") return formatNumber(summary.totalGroups);
-  if (filter === "PENDING_REVIEW") return formatNumber(summary.pendingReviewGroups);
-  return formatNumber(summary.classificationCounts[filter]);
+  if (filter === "WITH_ORDER") return formatNumber(summary.classificationCounts["WITH_ORDER"]);
+  if (filter === "NO_ORDER_EXCEL") return formatNumber(summary.classificationCounts["NO_ORDER_EXCEL"]);
+  if (filter === "OTHER") return formatNumber(summary.classificationCounts["OTHER"]);
+  if (filter === "BLOQUEADOS") return formatNumber(summary.recentlyBlockedGroups);
+  if (filter === "ULTIMO_CONTATO") {
+    return formatNumber(loadedItems.filter(g => g.lastContactAt !== null).length);
+  }
+  return "--";
 }
 
 export function DisparadorPage() {
@@ -189,6 +192,8 @@ export function DisparadorPage() {
   const [recentBlockFilter, setRecentBlockFilter] = useState<RecentBlockFilter>("AVAILABLE_ONLY");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [pastedClsText, setPastedClsText] = useState("");
+  const [showClPasteArea, setShowClPasteArea] = useState(false);
   const [campaignName, setCampaignName] = useState("");
   const [messageText, setMessageText] = useState("");
   const [overrideRecentBlock, setOverrideRecentBlock] = useState(false);
@@ -335,6 +340,7 @@ export function DisparadorPage() {
         name: campaignName.trim() || `Disparo ${new Date().toLocaleDateString("pt-BR")}`,
         templateId: selectedTemplateId || null,
         savedSegmentId: savedSegmentId || null,
+        whatsappInstanceId: selectedSenderIds[0] || null,
         messageText,
         filtersSnapshot: {
           quickFilter,
@@ -411,12 +417,22 @@ export function DisparadorPage() {
 
   const loadedGroups = groupsQuery.data?.items ?? [];
   const filteredGroups = useMemo(() => {
-    if (recentBlockFilter !== "AVAILABLE_ONLY") {
-      return loadedGroups;
+    let result = loadedGroups;
+
+    if (quickFilter === "ULTIMO_CONTATO") {
+      result = result.filter((group) => group.lastContactAt !== null);
     }
 
-    return loadedGroups.filter((group) => !group.isRecentlyBlocked);
-  }, [loadedGroups, recentBlockFilter]);
+    if (quickFilter !== "BLOQUEADOS") {
+      if (recentBlockFilter === "AVAILABLE_ONLY") {
+        return result.filter((group) => !group.isRecentlyBlocked);
+      } else if (recentBlockFilter === "BLOCKED_ONLY") {
+        return result.filter((group) => group.isRecentlyBlocked);
+      }
+    }
+
+    return result;
+  }, [loadedGroups, quickFilter, recentBlockFilter]);
   const selectedGroupCount = selectedGroupIds.length;
   const allVisibleSelected =
     filteredGroups.length > 0 && filteredGroups.every((group) => selectedGroupIds.includes(group.id));
@@ -494,6 +510,30 @@ export function DisparadorPage() {
 
       return [...new Set([...current, ...visibleIds])];
     });
+  }
+
+  function handleApplyPastedCls() {
+    const codes = pastedClsText
+      .split(/[\s,;\n]+/)
+      .map(c => c.trim().toUpperCase())
+      .filter(c => c.startsWith("CL"));
+    
+    if (codes.length === 0) {
+      alert("Nenhum código válido (iniciando com CL) foi inserido.");
+      return;
+    }
+
+    const matchingGroups = loadedGroups.filter(g => g.customerCode && codes.includes(g.customerCode.trim().toUpperCase()));
+    const matchingIds = matchingGroups.map(g => g.id);
+
+    if (matchingIds.length > 0) {
+      setSelectedGroupIds(current => [...new Set([...current, ...matchingIds])]);
+      alert(`${matchingIds.length} grupos mapeados para os códigos CL foram selecionados!`);
+      setShowClPasteArea(false);
+      setPastedClsText("");
+    } else {
+      alert("Nenhum grupo correspondente aos códigos CL inseridos foi encontrado.");
+    }
   }
 
 
@@ -658,23 +698,41 @@ export function DisparadorPage() {
                         </div>
                       </div>
                       
-                      <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "0.75rem", marginTop: "0.25rem" }}>
-                        <label style={{ display: "flex", gap: "8px", alignItems: "flex-start", cursor: "pointer" }}>
+                      <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "1rem", marginTop: "0.5rem" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: "12px",
+                            alignItems: "flex-start",
+                            background: overrideRecentBlock ? "rgba(239, 68, 68, 0.03)" : "transparent",
+                            border: overrideRecentBlock ? "1px solid rgba(239, 68, 68, 0.2)" : "1px solid transparent",
+                            padding: overrideRecentBlock ? "0.75rem 1rem" : "0.5rem 0",
+                            borderRadius: "10px",
+                            transition: "all 0.2s ease"
+                          }}
+                        >
                           <input
                             type="checkbox"
+                            id="overrideRecentBlock"
                             checked={overrideRecentBlock}
                             onChange={(event) => setOverrideRecentBlock(event.target.checked)}
-                            style={{ marginTop: "3px" }}
+                            style={{
+                              marginTop: "4px",
+                              width: "16px",
+                              height: "16px",
+                              accentColor: "#ef4444",
+                              cursor: "pointer"
+                            }}
                           />
-                          <div style={{ display: "flex", flexDirection: "column" }}>
-                            <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "#475569" }}>
+                          <label htmlFor="overrideRecentBlock" style={{ display: "flex", flexDirection: "column", gap: "2px", cursor: "pointer", flex: 1 }}>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 700, color: overrideRecentBlock ? "#ef4444" : "#334155", transition: "color 0.2s" }}>
                               Ignorar o bloqueio de proteção anti-spam de 7 dias
                             </span>
-                            <span style={{ fontSize: "0.72rem", color: "#64748b", marginTop: "2px" }}>
+                            <span style={{ fontSize: "0.75rem", color: overrideRecentBlock ? "#991b1b" : "#64748b", lineHeight: "1.4" }}>
                               Use com moderação. Forçar disparos recentes aumenta riscos de block.
                             </span>
-                          </div>
-                        </label>
+                          </label>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -764,95 +822,220 @@ export function DisparadorPage() {
               {/* STEP 3: DESTINATÁRIOS */}
               {currentStep === 3 && (
                 <article className="panel">
-                  <div className="panel-header">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--line)", paddingBottom: "1rem", marginBottom: "1rem" }}>
                     <div>
-                      <h3 style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <h3 style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0, fontSize: "1.15rem", fontWeight: 700 }}>
                         <Users size={18} style={{ color: "#10b981" }} />
-                        Selecionar destinatários
+                        Grupos para disparo
                       </h3>
-                      <p className="panel-subcopy">Mapeie as interações Remetente {"->"} Destinatário e acompanhe o nível de risco de bloqueio.</p>
+                      <p className="panel-subcopy" style={{ margin: "2px 0 0 0" }}>Filtre e marque os grupos que vão receber.</p>
+                    </div>
+                    
+                    {/* Top-Right Counters */}
+                    <div style={{ display: "flex", gap: "10px" }}>
+                      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "0.5rem 1rem", textAlign: "center", minWidth: "90px" }}>
+                        <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#64748b", textTransform: "uppercase" }}>Mostrados</span>
+                        <strong style={{ fontSize: "1.1rem", color: "#1e293b" }}>{formatNumber(filteredGroups.length)}</strong>
+                      </div>
+                      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "0.5rem 1rem", textAlign: "center", minWidth: "90px" }}>
+                        <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 600, color: "#1e40af", textTransform: "uppercase" }}>Selecionados</span>
+                        <strong style={{ fontSize: "1.1rem", color: "#1e40af" }}>{formatNumber(selectedGroupCount)}</strong>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Toolbar */}
-                  <div className="wp-recipients-toolbar" style={{ margin: "1rem 0" }}>
-                    <div className="wp-search-wrapper">
-                      <Search size={16} />
-                      <input
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="Pesquisar..."
-                        className="wp-search-input"
-                      />
-                    </div>
-
-                    <div className="wp-dropdown-container" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--muted)", whiteSpace: "nowrap" }}>Públicos Criados:</span>
+                  {/* Filter Toolbar (Row 1 of inputs exactly like screenshot) */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.25rem", margin: "1.25rem 0" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Público salvo</span>
                       <select
                         value={savedSegmentId}
                         onChange={(event) => setSavedSegmentId(event.target.value)}
-                        className="wp-btn-action"
-                        style={{ border: "1px solid var(--line)", background: "#fff", fontWeight: 600 }}
+                        className="wp-card-input"
+                        style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem", background: "#fff" }}
                       >
-                        <option value="">Todos os destinatários</option>
+                        <option value="">Todos os grupos</option>
                         {(savedSegmentsQuery.data ?? []).map((segment) => (
                           <option key={segment.id} value={segment.id}>
-                            👥 {segment.name}
+                            {segment.name}
                           </option>
                         ))}
                       </select>
                     </div>
 
-                    <button
-                      type="button"
-                      className={`wp-btn-action ${recentBlockFilter === "AVAILABLE_ONLY" ? "primary" : ""}`}
-                      onClick={() => setRecentBlockFilter("AVAILABLE_ONLY")}
-                    >
-                      Disponíveis
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Buscar</span>
+                      <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Nome do grupo, cliente ou código"
+                        className="wp-card-input"
+                        style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem" }}
+                      />
+                    </div>
 
-                    <button
-                      type="button"
-                      className={`wp-btn-action ${recentBlockFilter === "ALL" ? "primary" : ""}`}
-                      onClick={() => setRecentBlockFilter("ALL")}
-                    >
-                      Todos
-                    </button>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Bloqueio</span>
+                      <div className="z-tabs" style={{ margin: 0, borderBottom: "none", background: "#f1f5f9", padding: "0.25rem", borderRadius: "8px", display: "flex", gap: "4px" }}>
+                        <button
+                          type="button"
+                          className={`z-tab ${recentBlockFilter === "AVAILABLE_ONLY" ? "active" : ""}`}
+                          onClick={() => setRecentBlockFilter("AVAILABLE_ONLY")}
+                          style={{ flex: 1, padding: "0.4rem", fontSize: "0.82rem", borderRadius: "6px", borderBottom: "none", justifyContent: "center", background: recentBlockFilter === "AVAILABLE_ONLY" ? "#fff" : "transparent" }}
+                        >
+                          Disponíveis
+                        </button>
+                        <button
+                          type="button"
+                          className={`z-tab ${recentBlockFilter === "ALL" ? "active" : ""}`}
+                          onClick={() => setRecentBlockFilter("ALL")}
+                          style={{ flex: 1, padding: "0.4rem", fontSize: "0.82rem", borderRadius: "6px", borderBottom: "none", justifyContent: "center", background: recentBlockFilter === "ALL" ? "#fff" : "transparent" }}
+                        >
+                          Todos
+                        </button>
+                        <button
+                          type="button"
+                          className={`z-tab ${recentBlockFilter === "BLOCKED_ONLY" ? "active" : ""}`}
+                          onClick={() => setRecentBlockFilter("BLOCKED_ONLY")}
+                          style={{ flex: 1, padding: "0.4rem", fontSize: "0.82rem", borderRadius: "6px", borderBottom: "none", justifyContent: "center", background: recentBlockFilter === "BLOCKED_ONLY" ? "#fff" : "transparent" }}
+                        >
+                          Bloqueados
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
+                  {/* Tabs Row (Row 2 exactly like screenshot) */}
+                  <div className="z-tabs" style={{ marginBottom: "1rem", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    {quickFilters.map((filter) => {
+                      const count = quickFilterCount(filter.value, mappingSummaryQuery.data, loadedGroups);
+                      const isActive = quickFilter === filter.value;
+                      return (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          className={`z-tab ${isActive ? "active" : ""}`}
+                          onClick={() => setQuickFilter(filter.value)}
+                          style={{
+                            padding: "0.6rem 1rem",
+                            fontSize: "0.85rem",
+                            fontWeight: isActive ? 700 : 500,
+                            borderRadius: "8px",
+                            backgroundColor: isActive ? "#eff6ff" : "transparent",
+                            borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
+                            color: isActive ? "#1e40af" : "#64748b"
+                          }}
+                        >
+                          {filter.label}
+                          <span style={{ fontSize: "0.72rem", background: isActive ? "#bfdbfe" : "#f1f5f9", padding: "2px 6px", borderRadius: "999px", marginLeft: "6px", color: isActive ? "#1e40af" : "#64748b" }}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Actions Row */}
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", margin: "1rem 0", flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      className="wp-btn-action"
+                      className="z-btn-detail"
+                      onClick={toggleVisibleSelection}
+                      style={{ fontSize: "0.82rem", padding: "0.45rem 1rem" }}
+                    >
+                      Selecionar visíveis
+                    </button>
+                    <button
+                      type="button"
+                      className="z-btn-detail"
                       onClick={() => setSelectedGroupIds([])}
                       disabled={selectedGroupCount === 0}
+                      style={{ fontSize: "0.82rem", padding: "0.45rem 1rem", opacity: selectedGroupCount === 0 ? 0.5 : 1 }}
                     >
-                      Limpar
+                      Limpar seleção
+                    </button>
+
+                    <button
+                      type="button"
+                      className="z-btn-detail"
+                      onClick={() => setShowClPasteArea(!showClPasteArea)}
+                      style={{
+                        fontSize: "0.82rem",
+                        padding: "0.45rem 1rem",
+                        backgroundColor: showClPasteArea ? "#18181b" : "#ffffff",
+                        color: showClPasteArea ? "#ffffff" : "#18181b",
+                        borderColor: showClPasteArea ? "#18181b" : "#e4e4e7"
+                      }}
+                    >
+                      {showClPasteArea ? "✕ Fechar Importador CL" : "📋 Selecionar colando CLs"}
                     </button>
                   </div>
 
-                  {/* Groups table with custom styling */}
+                  {/* CL Paste Panel */}
+                  {showClPasteArea && (
+                    <div style={{ background: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "1.25rem", margin: "1rem 0", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <h4 style={{ margin: 0, fontSize: "0.88rem", fontWeight: 700, color: "#18181b" }}>
+                        Cole os códigos de clientes (ex: CL1002, CL1003)
+                      </h4>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#71717a" }}>
+                        Insira os códigos separados por vírgula, espaço ou quebra de linha. O sistema irá filtrar e selecionar automaticamente os grupos correspondentes.
+                      </p>
+                      <textarea
+                        rows={4}
+                        value={pastedClsText}
+                        onChange={(e) => setPastedClsText(e.target.value)}
+                        placeholder="CL1002, CL1003, CL1004..."
+                        className="wp-card-input"
+                        style={{ fontFamily: "monospace", fontSize: "0.85rem", background: "#fff" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleApplyPastedCls}
+                        style={{
+                          backgroundColor: "#10b981",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "8px",
+                          padding: "0.5rem 1rem",
+                          fontSize: "0.85rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          alignSelf: "flex-start"
+                        }}
+                      >
+                        Selecionar e Filtrar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Groups table with custom styling exactly like screenshot */}
                   {groupsQuery.isLoading ? <div className="page-loading">Carregando grupos destinatários...</div> : null}
 
                   {groupsQuery.data?.items.length ? (
-                    <div className="table-scroll" style={{ overflowX: "visible" }}>
-                      <table className="wp-mapped-table">
+                    <div className="table-scroll" style={{ overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }}>
+                      <table className="z-table">
                         <thead>
                           <tr>
-                            <th style={{ width: "40px" }}>
+                            <th style={{ width: "50px", padding: "1rem 1.5rem" }}>
                               <input
                                 type="checkbox"
                                 checked={allVisibleSelected}
                                 onChange={toggleVisibleSelection}
                               />
                             </th>
-                            <th>Remetentes</th>
-                            <th style={{ width: "30px", textAlign: "center" }}></th>
-                            <th>Destinatários</th>
-                            <th>Status (Spam Protection)</th>
+                            <th style={{ padding: "1rem 1.5rem" }}>REMETENTE (WHATSAPP CANAL)</th>
+                            <th style={{ padding: "1rem 0.5rem", width: "40px", textAlign: "center" }}></th>
+                            <th style={{ padding: "1rem 1.5rem" }}>DESTINATÁRIO (WHATSAPP & CRM)</th>
+                            <th style={{ padding: "1rem 1.5rem" }}>TIPO & CLASSIFICAÇÃO</th>
+                            <th style={{ padding: "1rem 1.5rem" }}>STATUS (SPAM RISK)</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredGroups.map((group) => {
-                            let riskClass: "low" | "attention" | "critical" = "low";
+                            const isSelected = selectedGroupIds.includes(group.id);
+
+                            // Risk configuration
+                            let riskClass = "low";
                             let riskLabel = "Baixo risco";
                             let riskTooltip = "Recomendada: essa interação não oferece riscos de bloqueio.";
 
@@ -869,66 +1052,119 @@ export function DisparadorPage() {
                               }
                             }
 
-                            const mappedSenderId = recipientSenderMapping[group.id] || "1";
-                            const activeSender = (senders.find(s => s.id === mappedSenderId) || senders[0])!;
+                            const mappedSenderId = recipientSenderMapping[group.id] || "default";
+                            const activeSender = senders.find(s => s.id === mappedSenderId) || senders[0] || {
+                              id: "default",
+                              name: "Instância Padrão",
+                              role: "WhatsApp",
+                              avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
+                              phone: ""
+                            };
 
                             return (
                               <tr
                                 key={group.id}
-                                className={`wp-mapped-tr ${selectedGroupIds.includes(group.id) ? "is-selected" : ""}`}
+                                style={{
+                                  borderBottom: "1px solid #e4e4e7",
+                                  backgroundColor: isSelected ? "rgba(59, 130, 246, 0.01)" : "transparent"
+                                }}
                               >
-                                <td>
+                                <td style={{ padding: "1.25rem 1.5rem" }}>
                                   <input
                                     type="checkbox"
-                                    checked={selectedGroupIds.includes(group.id)}
+                                    checked={isSelected}
                                     onChange={() => toggleGroupSelection(group.id)}
                                   />
                                 </td>
-                                
-                                <td>
-                                  <div className="wp-user-profile">
-                                    <img src={activeSender.avatarUrl} alt={activeSender.name} className="wp-avatar-sm" />
-                                    <div className="wp-profile-details">
-                                      <span className="wp-profile-name">{activeSender.name}</span>
-                                      <span className="wp-sender-role" style={{ fontSize: "0.68rem", padding: "0px 4px", marginTop: "1px", alignSelf: "flex-start" }}>
-                                        {activeSender.role}
+                                <td style={{ padding: "1.25rem 1.5rem" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                    <img
+                                      src={activeSender.avatarUrl}
+                                      alt={activeSender.name}
+                                      style={{ width: "36px", height: "36px", borderRadius: "50%", border: "1px solid rgba(0,0,0,0.06)", objectFit: "cover" }}
+                                    />
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1e293b" }}>
+                                        {activeSender.name}
+                                      </span>
+                                      <span style={{ fontSize: "0.7rem", color: "#64748b", fontWeight: 500 }}>
+                                        {activeSender.role} {activeSender.phone && `• ${activeSender.phone}`}
                                       </span>
                                       <select
-                                        value={activeSender.id}
+                                        value={mappedSenderId}
                                         onChange={(e) => changeGroupSender(group.id, e.target.value)}
                                         className="ghost-button"
-                                        style={{ padding: "2px 6px", fontSize: "0.75rem", border: "1px solid var(--line)", marginTop: "4px" }}
+                                        style={{ padding: "2px 6px", fontSize: "0.75rem", border: "1px solid var(--line)", marginTop: "4px", background: "#fff", cursor: "pointer", borderRadius: "6px", width: "fit-content" }}
                                       >
                                         {senders.filter(s => selectedSenderIds.includes(s.id)).map(s => (
-                                          <option key={s.id} value={s.id}>Mapear para {s.name}</option>
+                                          <option key={s.id} value={s.id}>
+                                            Mapear para {s.name}
+                                          </option>
                                         ))}
                                       </select>
                                     </div>
                                   </div>
                                 </td>
-
-                                <td>
-                                  <span className="wp-arrow-indicator">
-                                    <ArrowRight size={16} />
-                                  </span>
+                                <td style={{ padding: "1.25rem 0.5rem", textAlign: "center" }}>
+                                  <ArrowRight size={16} style={{ color: "#10b981" }} />
                                 </td>
-
-                                <td>
-                                  <div className="wp-user-profile">
-                                    <div className="wp-avatar-sm" style={{ background: "linear-gradient(135deg, #10b981, #059669)", color: "#fff", display: "grid", placeItems: "center", fontWeight: "bold", fontSize: "0.85rem" }}>
+                                <td style={{ padding: "1.25rem 1.5rem" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                    <div
+                                      style={{
+                                        width: "36px",
+                                        height: "36px",
+                                        borderRadius: "50%",
+                                        background: "linear-gradient(135deg, #10b981, #059669)",
+                                        color: "#fff",
+                                        display: "grid",
+                                        placeItems: "center",
+                                        fontWeight: "bold",
+                                        fontSize: "0.85rem"
+                                      }}
+                                    >
                                       {String(group.customerDisplayName || group.sourceName || "G").charAt(0).toUpperCase()}
                                     </div>
-                                    <div className="wp-profile-details">
-                                      <span className="wp-profile-name">{group.customerDisplayName || group.sourceName}</span>
-                                      <span className="wp-profile-sub">{classificationLabel(group.classification)} • <span className="wp-profile-phone">{group.jid.split("@")[0]}</span></span>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                      <strong style={{ fontSize: "0.9rem", color: "#18181b", fontWeight: 700 }}>
+                                        {group.sourceName}
+                                      </strong>
+                                      <span style={{ fontSize: "0.75rem", color: "#71717a", fontFamily: "monospace" }}>
+                                        {group.jid}
+                                      </span>
+                                      
+                                      <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "2px" }}>
+                                        <span style={{ fontSize: "0.78rem", color: "#475569", fontWeight: 600 }}>
+                                          👤 {group.customerDisplayName || "Sem cliente mapeado"}
+                                        </span>
+                                        {group.customerCode && (
+                                          <span style={{ fontSize: "0.72rem", background: "#f1f5f9", padding: "1px 6px", borderRadius: "4px", color: "#475569", fontWeight: 700 }}>
+                                            {group.customerCode}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
                                 </td>
-
-                                <td style={{ position: "relative" }}>
+                                <td style={{ padding: "1.25rem 1.5rem" }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                    <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
+                                      <span className="status-badge" style={{ fontSize: "0.72rem", background: "#f1f5f9", color: "#334155", fontWeight: 600, padding: "1px 6px", borderRadius: "4px" }}>
+                                        {classificationLabel(group.classification)}
+                                      </span>
+                                      <span className="status-badge" style={{ fontSize: "0.72rem", background: "#eff6ff", color: "#1e40af", fontWeight: 600, padding: "1px 6px", borderRadius: "4px" }}>
+                                        {mappingStatusLabel(group.mappingStatus)}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                                      Último contato: <strong>{group.lastContactAt ? formatDateTime(group.lastContactAt) : "Sem registro"}</strong>
+                                    </span>
+                                  </div>
+                                </td>
+                                <td style={{ padding: "1.25rem 1.5rem", position: "relative" }}>
                                   <span
                                     className={`wp-risk-badge ${riskClass}`}
-                                    style={{ cursor: "help" }}
+                                    style={{ cursor: "help", display: "inline-block" }}
                                     onMouseEnter={(e) => {
                                       setHoveredGroupId(group.id);
                                       setTooltipPosition({ x: e.clientX - 100, y: e.clientY - 65 });
@@ -937,7 +1173,6 @@ export function DisparadorPage() {
                                   >
                                     {riskLabel}
                                   </span>
-
                                   {hoveredGroupId === group.id && (
                                     <div
                                       className="wp-tooltip-box"
@@ -945,6 +1180,7 @@ export function DisparadorPage() {
                                         position: "fixed",
                                         left: `${tooltipPosition.x}px`,
                                         top: `${tooltipPosition.y}px`,
+                                        zIndex: 1000
                                       }}
                                     >
                                       {riskTooltip}
