@@ -13,7 +13,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
@@ -273,6 +273,16 @@ export function DisparadorPage() {
   const [carouselSlides, setCarouselSlides] = useState<CarouselSlide[]>([
     { text: "", image: "", buttons: [{ id: "btn1", text: "", type: "url" }] },
   ]);
+  const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
+
+  // Helper function to format file size
+  function formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  }
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
     if (!selectedSenderIds.length) return "EVOLUTION";
@@ -1669,27 +1679,215 @@ export function DisparadorPage() {
                                   style={{ marginTop: "4px" }}
                                 />
                               </label>
-                              <label style={{ fontSize: "0.82rem" }}>
-                                URL da imagem
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "#0f172a" }}>Imagem</span>
+                                  <span style={{ 
+                                    fontSize: "0.7rem", 
+                                    color: "#10b981", 
+                                    background: "#f0fdf4", 
+                                    padding: "2px 8px", 
+                                    borderRadius: "6px",
+                                    fontWeight: 600,
+                                    border: "1px solid #bbf7d0"
+                                  }}>
+                                    📐 Ideal: 800x600px (4:3)
+                                  </span>
+                                </div>
+                                
+                                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                                  <label style={{ flex: 1, cursor: "pointer" }}>
+                                    <input
+                                      type="file"
+                                      accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                                      style={{ display: "none" }}
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          // Validate file size (max 5MB)
+                                          const maxSize = 5 * 1024 * 1024; // 5MB
+                                          if (file.size > maxSize) {
+                                            alert(`Arquivo muito grande! Tamanho máximo: 5MB. Seu arquivo: ${formatFileSize(file.size)}`);
+                                            return;
+                                          }
+
+                                          // Validate file type
+                                          const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                                          if (!validTypes.includes(file.type)) {
+                                            alert('Tipo de arquivo inválido! Use: JPG, PNG, GIF ou WEBP');
+                                            return;
+                                          }
+
+                                          setUploadingSlideIndex(slideIdx);
+                                          const reader = new FileReader();
+                                          reader.onload = (event) => {
+                                            const updated = [...carouselSlides];
+                                            updated[slideIdx] = { ...slide, image: event.target?.result as string };
+                                            setCarouselSlides(updated);
+                                            setUploadingSlideIndex(null);
+                                          };
+                                          reader.onerror = () => {
+                                            alert('Erro ao carregar a imagem. Tente novamente.');
+                                            setUploadingSlideIndex(null);
+                                          };
+                                          reader.readAsDataURL(file);
+                                        }
+                                      }}
+                                    />
+                                    <div style={{ 
+                                      padding: "10px 14px", 
+                                      background: uploadingSlideIndex === slideIdx ? "#f0fdf4" : "#f8fafc", 
+                                      border: uploadingSlideIndex === slideIdx ? "2px solid #10b981" : "2px dashed #cbd5e1", 
+                                      borderRadius: "8px", 
+                                      textAlign: "center",
+                                      fontSize: "0.8rem",
+                                      fontWeight: 600,
+                                      color: uploadingSlideIndex === slideIdx ? "#10b981" : "#475569",
+                                      transition: "all 0.2s",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      gap: "6px"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (uploadingSlideIndex !== slideIdx) {
+                                        e.currentTarget.style.background = "#f1f5f9";
+                                        e.currentTarget.style.borderColor = "#94a3b8";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (uploadingSlideIndex !== slideIdx) {
+                                        e.currentTarget.style.background = "#f8fafc";
+                                        e.currentTarget.style.borderColor = "#cbd5e1";
+                                      }
+                                    }}
+                                    >
+                                      {uploadingSlideIndex === slideIdx ? (
+                                        <>
+                                          <LoaderCircle size={14} className="spin" />
+                                          Carregando...
+                                        </>
+                                      ) : (
+                                        <>
+                                          📁 Escolher do computador
+                                        </>
+                                      )}
+                                    </div>
+                                  </label>
+                                </div>
+
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+                                  <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: 600 }}>OU</span>
+                                  <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+                                </div>
+
                                 <input
                                   type="url"
-                                  value={slide.image}
+                                  value={slide.image.startsWith('data:') ? '' : slide.image}
                                   onChange={(e) => {
                                     const updated = [...carouselSlides];
                                     updated[slideIdx] = { ...slide, image: e.target.value };
                                     setCarouselSlides(updated);
                                   }}
                                   placeholder="https://exemplo.com/imagem.jpg"
-                                  style={{ marginTop: "4px" }}
+                                  style={{ fontSize: "0.82rem" }}
+                                  disabled={uploadingSlideIndex === slideIdx}
                                 />
-                              </label>
+                                
+                                <div style={{ 
+                                  fontSize: "0.7rem", 
+                                  color: "#64748b", 
+                                  background: "#f8fafc",
+                                  padding: "8px 10px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #e2e8f0",
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: "4px"
+                                }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                    <Info size={12} />
+                                    <strong>Dimensões recomendadas:</strong>
+                                  </div>
+                                  <div style={{ paddingLeft: "16px" }}>
+                                    • <strong>Ideal:</strong> 800x600px (proporção 4:3)<br/>
+                                    • <strong>Mínimo:</strong> 400x300px<br/>
+                                    • <strong>Máximo:</strong> 1920x1440px<br/>
+                                    • <strong>Tamanho:</strong> até 5MB
+                                  </div>
+                                </div>
+                                
+                                {slide.image && !slide.image.startsWith('data:') && (
+                                  <div style={{ fontSize: "0.7rem", color: "#64748b", display: "flex", alignItems: "center", gap: "4px" }}>
+                                    <Info size={12} />
+                                    URL externa
+                                  </div>
+                                )}
+                                
+                                {slide.image && slide.image.startsWith('data:') && (
+                                  <div style={{ fontSize: "0.7rem", color: "#10b981", display: "flex", alignItems: "center", gap: "4px", fontWeight: 600 }}>
+                                    <CheckCircle2 size={12} />
+                                    Imagem carregada ({formatFileSize(slide.image.length * 0.75)})
+                                  </div>
+                                )}
+                              </div>
+
                               {slide.image && (
-                                <img
-                                  src={slide.image}
-                                  alt={`Preview slide ${slideIdx + 1}`}
-                                  style={{ maxHeight: "120px", objectFit: "cover", borderRadius: "8px", border: "1px solid var(--line)" }}
-                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                                />
+                                <div style={{ position: "relative" }}>
+                                  <img
+                                    src={slide.image}
+                                    alt={`Preview slide ${slideIdx + 1}`}
+                                    style={{ 
+                                      width: "100%",
+                                      maxHeight: "200px", 
+                                      objectFit: "cover", 
+                                      borderRadius: "10px", 
+                                      border: "3px solid #10b981",
+                                      boxShadow: "0 4px 12px rgba(16, 185, 129, 0.2)"
+                                    }}
+                                    onError={(e) => { 
+                                      (e.target as HTMLImageElement).style.display = "none";
+                                      alert('Erro ao carregar a imagem. Verifique a URL ou tente fazer upload novamente.');
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = [...carouselSlides];
+                                      updated[slideIdx] = { ...slide, image: "" };
+                                      setCarouselSlides(updated);
+                                    }}
+                                    style={{
+                                      position: "absolute",
+                                      top: "10px",
+                                      right: "10px",
+                                      background: "rgba(239, 68, 68, 0.95)",
+                                      color: "#fff",
+                                      border: "none",
+                                      borderRadius: "8px",
+                                      padding: "6px 10px",
+                                      fontSize: "0.75rem",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                      transition: "all 0.2s"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = "rgba(220, 38, 38, 0.95)";
+                                      e.currentTarget.style.transform = "scale(1.05)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = "rgba(239, 68, 68, 0.95)";
+                                      e.currentTarget.style.transform = "scale(1)";
+                                    }}
+                                  >
+                                    <Trash2 size={12} /> Remover
+                                  </button>
+                                </div>
                               )}
                               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                                 <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Botões</span>
@@ -1742,86 +1940,347 @@ export function DisparadorPage() {
                       )}
 
                       {abTestActive ? (
-                        <div className="wp-ab-split">
-                          <div className="wp-ab-split-header">
-                            <span style={{ fontWeight: 600, color: "#10b981", display: "flex", alignItems: "center", gap: "4px" }}>
-                              <Sparkles size={14} />
+                        <div className="wp-ab-split" style={{
+                          background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                          border: "2px solid #10b981",
+                          borderRadius: "12px",
+                          padding: "1rem"
+                        }}>
+                          <div className="wp-ab-split-header" style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: "0.75rem"
+                          }}>
+                            <span style={{ fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem" }}>
+                              <Sparkles size={16} />
                               Mensagem Alternativa (Versão B)
                             </span>
                             <button
                               type="button"
                               className="ghost-button danger"
-                              style={{ padding: "4px 8px", fontSize: "0.75rem" }}
-                              onClick={() => setAbTestActive(false)}
+                              style={{ padding: "4px 10px", fontSize: "0.75rem" }}
+                              onClick={() => {
+                                setAbTestActive(false);
+                                setAbMessageText("");
+                              }}
                             >
-                              Remover B
+                              <X size={14} /> Desativar A/B
                             </button>
                           </div>
                           
-                          <label className="whatsapp-message-field" style={{ marginTop: "0.5rem" }}>
+                          <label className="whatsapp-message-field" style={{ marginTop: "0" }}>
+                            <span style={{ fontSize: "0.82rem", color: "#059669" }}>Texto da Versão B</span>
                             <textarea
                               rows={6}
                               value={abMessageText}
                               onChange={(e) => setAbMessageText(e.target.value)}
                               placeholder="Digite a variação de texto para o teste A/B..."
+                              style={{ borderColor: "#10b981" }}
                             />
                           </label>
+                          
+                          <div style={{
+                            marginTop: "0.75rem",
+                            padding: "0.75rem",
+                            background: "rgba(16, 185, 129, 0.1)",
+                            borderRadius: "8px",
+                            fontSize: "0.75rem",
+                            color: "#059669",
+                            display: "flex",
+                            alignItems: "start",
+                            gap: "8px"
+                          }}>
+                            <Info size={14} style={{ flexShrink: 0, marginTop: "2px" }} />
+                            <div>
+                              <strong>Teste A/B ativo:</strong> Metade dos destinatários receberá a Versão A e a outra metade receberá a Versão B. Isso ajuda a reduzir o risco de bloqueios por mensagens repetitivas.
+                            </div>
+                          </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setAbTestActive(true)}
+                          style={{
+                            width: "100%",
+                            padding: "1rem",
+                            background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                            border: "2px dashed #cbd5e1",
+                            borderRadius: "12px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "8px",
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                            color: "#475569",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)";
+                            e.currentTarget.style.borderColor = "#10b981";
+                            e.currentTarget.style.color = "#10b981";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)";
+                            e.currentTarget.style.borderColor = "#cbd5e1";
+                            e.currentTarget.style.color = "#475569";
+                          }}
+                        >
+                          <Sparkles size={18} />
+                          Ativar Teste A/B (Recomendado para evitar bloqueios)
+                        </button>
+                      )}
                     </div>
 
                     <div>
-                      <div className="wp-preview-device">
-                        <div className="wp-preview-screen">
-                          <div className="wp-preview-top-bar">
-                            <Smartphone size={14} />
-                            <span>Previa do Envio</span>
+                      <div className="wp-preview-device" style={{
+                        width: "280px",
+                        background: "#1f1f1f",
+                        borderRadius: "32px",
+                        padding: "12px",
+                        boxShadow: "0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)",
+                        position: "sticky",
+                        top: "20px"
+                      }}>
+                        <div className="wp-preview-screen" style={{
+                          background: "#e5ddd5",
+                          borderRadius: "20px",
+                          overflow: "hidden",
+                          height: "560px",
+                          display: "flex",
+                          flexDirection: "column"
+                        }}>
+                          <div className="wp-preview-top-bar" style={{
+                            background: "#075e54",
+                            color: "#fff",
+                            padding: "12px 16px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                          }}>
+                            <div style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "50%",
+                              background: "#25d366",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: "0.85rem",
+                              fontWeight: "bold"
+                            }}>
+                              {(user?.name || "C").charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: "0.9rem", fontWeight: 600 }}>Cliente</div>
+                              <div style={{ fontSize: "0.7rem", opacity: 0.8 }}>online</div>
+                            </div>
+                            <Smartphone size={16} />
                           </div>
-                          <div className="wp-preview-chat-area">
-                            {campaignMessageType === "CAROUSEL" && carouselSlides.some(s => s.image || s.text) ? (
-                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          
+                          <div className="wp-preview-chat-area" style={{
+                            flex: 1,
+                            padding: "16px",
+                            overflowY: "auto",
+                            backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"100\" height=\"100\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cpath d=\"M0 0h100v100H0z\" fill=\"%23e5ddd5\"/%3E%3Cpath d=\"M20 20l5 5-5 5m20-10l5 5-5 5\" stroke=\"%23d1c7b8\" stroke-width=\"0.5\" fill=\"none\" opacity=\"0.3\"/%3E%3C/svg%3E')",
+                            backgroundSize: "100px 100px"
+                          }}>
+                            {campaignMessageType === "TEXT" ? (
+                              <>
                                 {messageText && (
-                                  <div className="wp-preview-bubble">
+                                  <div className="wp-preview-bubble" style={{
+                                    background: "#d9fdd3",
+                                    padding: "8px 12px",
+                                    borderRadius: "8px",
+                                    maxWidth: "85%",
+                                    marginLeft: "auto",
+                                    marginBottom: "8px",
+                                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                    position: "relative",
+                                    fontSize: "0.85rem",
+                                    lineHeight: "1.4",
+                                    color: "#1a1a1a",
+                                    wordWrap: "break-word"
+                                  }}>
                                     {messageText}
-                                    <div className="wp-preview-bubble-meta">Apenas agora</div>
+                                    <div className="wp-preview-bubble-meta" style={{
+                                      fontSize: "0.65rem",
+                                      color: "#667781",
+                                      textAlign: "right",
+                                      marginTop: "4px",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "flex-end",
+                                      gap: "4px"
+                                    }}>
+                                      Agora <CheckCheck size={12} style={{ color: "#53bdeb" }} />
+                                    </div>
                                   </div>
                                 )}
-                                <div style={{ display: "flex", gap: "6px", overflowX: "auto", padding: "4px 0" }}>
-                                  {carouselSlides.map((slide, i) => (
-                                    <div key={i} style={{ minWidth: "160px", maxWidth: "180px", background: "#d9fdd3", borderRadius: "10px", overflow: "hidden", border: "1px solid #b5e5a3", flexShrink: 0 }}>
-                                      {slide.image && (
-                                        <img src={slide.image} alt="" style={{ width: "100%", height: "80px", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                                      )}
-                                      {slide.text && (
-                                        <div style={{ padding: "6px 8px", fontSize: "0.68rem", color: "#1a1a1a", lineHeight: 1.3 }}>{slide.text.slice(0, 60)}{slide.text.length > 60 ? "..." : ""}</div>
-                                      )}
-                                      {slide.buttons.filter(b => b.text).map((btn, bi) => (
-                                        <div key={bi} style={{ padding: "4px 8px", fontSize: "0.65rem", color: "#0066cc", textAlign: "center", borderTop: "1px solid #b5e5a3", fontWeight: 600 }}>{btn.text}</div>
-                                      ))}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                              </>
                             ) : (
                               <>
-                                <div className="wp-preview-bubble">
-                                  {messageText || "Escreva a mensagem na esquerda para visualizar a prévia aqui..."}
-                                  <div className="wp-preview-bubble-meta">Apenas agora</div>
-                                </div>
-
-                                {abTestActive && abMessageText && (
-                                  <div className="wp-preview-bubble ab-split">
-                                    {abMessageText}
-                                    <div className="wp-preview-bubble-meta">Split A/B</div>
+                                {messageText && (
+                                  <div className="wp-preview-bubble" style={{
+                                    background: "#d9fdd3",
+                                    padding: "8px 12px",
+                                    borderRadius: "8px",
+                                    maxWidth: "85%",
+                                    marginLeft: "auto",
+                                    marginBottom: "8px",
+                                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                    fontSize: "0.85rem",
+                                    lineHeight: "1.4",
+                                    color: "#1a1a1a"
+                                  }}>
+                                    {messageText}
+                                    <div className="wp-preview-bubble-meta" style={{
+                                      fontSize: "0.65rem",
+                                      color: "#667781",
+                                      textAlign: "right",
+                                      marginTop: "4px"
+                                    }}>
+                                      Agora
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {carouselSlides.some(s => s.image || s.text) && (
+                                  <div style={{ 
+                                    display: "flex", 
+                                    gap: "8px", 
+                                    overflowX: "auto", 
+                                    padding: "4px 0",
+                                    scrollbarWidth: "thin",
+                                    scrollbarColor: "#bbb #e5ddd5"
+                                  }}>
+                                    {carouselSlides.map((slide, i) => (
+                                      <div key={i} style={{ 
+                                        minWidth: "180px", 
+                                        maxWidth: "200px", 
+                                        background: "#fff", 
+                                        borderRadius: "12px", 
+                                        overflow: "hidden", 
+                                        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                                        flexShrink: 0,
+                                        border: "1px solid #e0e0e0"
+                                      }}>
+                                        {slide.image && (
+                                          <div style={{ 
+                                            position: "relative", 
+                                            width: "100%", 
+                                            height: "120px",
+                                            background: "#f0f0f0",
+                                            overflow: "hidden"
+                                          }}>
+                                            <img 
+                                              src={slide.image} 
+                                              alt="" 
+                                              style={{ 
+                                                width: "100%", 
+                                                height: "100%", 
+                                                objectFit: "cover",
+                                                objectPosition: "center"
+                                              }} 
+                                              onError={(e) => { 
+                                                (e.target as HTMLImageElement).style.display = "none"; 
+                                              }} 
+                                            />
+                                          </div>
+                                        )}
+                                        {slide.text && (
+                                          <div style={{ 
+                                            padding: "10px 12px", 
+                                            fontSize: "0.75rem", 
+                                            color: "#1a1a1a", 
+                                            lineHeight: 1.4,
+                                            minHeight: "60px",
+                                            maxHeight: "80px",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis"
+                                          }}>
+                                            {slide.text.slice(0, 80)}{slide.text.length > 80 ? "..." : ""}
+                                          </div>
+                                        )}
+                                        {slide.buttons.filter(b => b.text).map((btn, bi) => (
+                                          <div key={bi} style={{ 
+                                            padding: "8px 12px", 
+                                            fontSize: "0.75rem", 
+                                            color: "#0088cc", 
+                                            textAlign: "center", 
+                                            borderTop: "1px solid #e0e0e0", 
+                                            fontWeight: 600,
+                                            background: "#f8f9fa",
+                                            cursor: "pointer",
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis"
+                                          }}>
+                                            {btn.text}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                               </>
                             )}
+
+                            {abTestActive && abMessageText && (
+                              <div className="wp-preview-bubble ab-split" style={{
+                                background: "#dcf8c6",
+                                padding: "8px 12px",
+                                borderRadius: "8px",
+                                maxWidth: "85%",
+                                marginLeft: "auto",
+                                marginTop: "8px",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                fontSize: "0.85rem",
+                                lineHeight: "1.4",
+                                color: "#1a1a1a",
+                                border: "2px dashed #10b981"
+                              }}>
+                                {abMessageText}
+                                <div className="wp-preview-bubble-meta" style={{
+                                  fontSize: "0.65rem",
+                                  color: "#10b981",
+                                  textAlign: "right",
+                                  marginTop: "4px",
+                                  fontWeight: 600
+                                }}>
+                                  Variação B
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <div style={{
+                            background: "#f0f0f0",
+                            padding: "8px 12px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            borderTop: "1px solid #d0d0d0"
+                          }}>
+                            <Smile size={20} style={{ color: "#8696a0" }} />
+                            <div style={{
+                              flex: 1,
+                              background: "#fff",
+                              borderRadius: "20px",
+                              padding: "6px 12px",
+                              fontSize: "0.8rem",
+                              color: "#8696a0"
+                            }}>
+                              Mensagem
+                            </div>
+                            <Paperclip size={20} style={{ color: "#8696a0" }} />
                           </div>
                         </div>
                       </div>
-                      <p className="panel-subcopy" style={{ textAlign: "center", marginTop: "8px" }}>
-                        Simulador em tempo real de como a mensagem aparecerá para o usuário final.
+                      <p className="panel-subcopy" style={{ textAlign: "center", marginTop: "12px", fontSize: "0.75rem", color: "#64748b" }}>
+                        📱 Simulador em tempo real
                       </p>
                     </div>
                   </div>

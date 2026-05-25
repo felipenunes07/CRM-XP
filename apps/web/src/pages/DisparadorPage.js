@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, Plus, ArrowRight, Check, Trash2, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, ClipboardList, Save } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, Plus, ArrowRight, Check, Trash2, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, ClipboardList, Save } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
@@ -207,6 +207,16 @@ export function DisparadorPage() {
     const [carouselSlides, setCarouselSlides] = useState([
         { text: "", image: "", buttons: [{ id: "btn1", text: "", type: "url" }] },
     ]);
+    const [uploadingSlideIndex, setUploadingSlideIndex] = useState(null);
+    // Helper function to format file size
+    function formatFileSize(bytes) {
+        if (bytes === 0)
+            return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
     const selectedSenderProvider = useMemo(() => {
         if (!selectedSenderIds.length)
             return "EVOLUTION";
@@ -773,11 +783,101 @@ export function DisparadorPage() {
                                                                                         const updated = [...carouselSlides];
                                                                                         updated[slideIdx] = { ...slide, text: e.target.value };
                                                                                         setCarouselSlides(updated);
-                                                                                    }, placeholder: "Texto que aparece neste slide...", style: { marginTop: "4px" } })] }), _jsxs("label", { style: { fontSize: "0.82rem" }, children: ["URL da imagem", _jsx("input", { type: "url", value: slide.image, onChange: (e) => {
+                                                                                    }, placeholder: "Texto que aparece neste slide...", style: { marginTop: "4px" } })] }), _jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" }, children: [_jsx("span", { style: { fontSize: "0.82rem", fontWeight: 600, color: "#0f172a" }, children: "Imagem" }), _jsx("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" }, children: _jsxs("label", { style: { flex: 1, cursor: "pointer" }, children: [_jsx("input", { type: "file", accept: "image/jpeg,image/jpg,image/png,image/gif,image/webp", style: { display: "none" }, onChange: (e) => {
+                                                                                                    const file = e.target.files?.[0];
+                                                                                                    if (file) {
+                                                                                                        // Validate file size (max 5MB)
+                                                                                                        const maxSize = 5 * 1024 * 1024; // 5MB
+                                                                                                        if (file.size > maxSize) {
+                                                                                                            alert(`Arquivo muito grande! Tamanho máximo: 5MB. Seu arquivo: ${formatFileSize(file.size)}`);
+                                                                                                            return;
+                                                                                                        }
+                                                                                                        // Validate file type
+                                                                                                        const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                                                                                                        if (!validTypes.includes(file.type)) {
+                                                                                                            alert('Tipo de arquivo inválido! Use: JPG, PNG, GIF ou WEBP');
+                                                                                                            return;
+                                                                                                        }
+                                                                                                        setUploadingSlideIndex(slideIdx);
+                                                                                                        const reader = new FileReader();
+                                                                                                        reader.onload = (event) => {
+                                                                                                            const updated = [...carouselSlides];
+                                                                                                            updated[slideIdx] = { ...slide, image: event.target?.result };
+                                                                                                            setCarouselSlides(updated);
+                                                                                                            setUploadingSlideIndex(null);
+                                                                                                        };
+                                                                                                        reader.onerror = () => {
+                                                                                                            alert('Erro ao carregar a imagem. Tente novamente.');
+                                                                                                            setUploadingSlideIndex(null);
+                                                                                                        };
+                                                                                                        reader.readAsDataURL(file);
+                                                                                                    }
+                                                                                                } }), _jsx("div", { style: {
+                                                                                                    padding: "10px 14px",
+                                                                                                    background: uploadingSlideIndex === slideIdx ? "#f0fdf4" : "#f8fafc",
+                                                                                                    border: uploadingSlideIndex === slideIdx ? "2px solid #10b981" : "2px dashed #cbd5e1",
+                                                                                                    borderRadius: "8px",
+                                                                                                    textAlign: "center",
+                                                                                                    fontSize: "0.8rem",
+                                                                                                    fontWeight: 600,
+                                                                                                    color: uploadingSlideIndex === slideIdx ? "#10b981" : "#475569",
+                                                                                                    transition: "all 0.2s",
+                                                                                                    display: "flex",
+                                                                                                    alignItems: "center",
+                                                                                                    justifyContent: "center",
+                                                                                                    gap: "6px"
+                                                                                                }, onMouseEnter: (e) => {
+                                                                                                    if (uploadingSlideIndex !== slideIdx) {
+                                                                                                        e.currentTarget.style.background = "#f1f5f9";
+                                                                                                        e.currentTarget.style.borderColor = "#94a3b8";
+                                                                                                    }
+                                                                                                }, onMouseLeave: (e) => {
+                                                                                                    if (uploadingSlideIndex !== slideIdx) {
+                                                                                                        e.currentTarget.style.background = "#f8fafc";
+                                                                                                        e.currentTarget.style.borderColor = "#cbd5e1";
+                                                                                                    }
+                                                                                                }, children: uploadingSlideIndex === slideIdx ? (_jsxs(_Fragment, { children: [_jsx(LoaderCircle, { size: 14, className: "spin" }), "Carregando..."] })) : (_jsx(_Fragment, { children: "\uD83D\uDCC1 Escolher do computador" })) })] }) }), _jsxs("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [_jsx("div", { style: { flex: 1, height: "1px", background: "#e2e8f0" } }), _jsx("span", { style: { fontSize: "0.72rem", color: "#94a3b8", fontWeight: 600 }, children: "OU" }), _jsx("div", { style: { flex: 1, height: "1px", background: "#e2e8f0" } })] }), _jsx("input", { type: "url", value: slide.image.startsWith('data:') ? '' : slide.image, onChange: (e) => {
                                                                                         const updated = [...carouselSlides];
                                                                                         updated[slideIdx] = { ...slide, image: e.target.value };
                                                                                         setCarouselSlides(updated);
-                                                                                    }, placeholder: "https://exemplo.com/imagem.jpg", style: { marginTop: "4px" } })] }), slide.image && (_jsx("img", { src: slide.image, alt: `Preview slide ${slideIdx + 1}`, style: { maxHeight: "120px", objectFit: "cover", borderRadius: "8px", border: "1px solid var(--line)" }, onError: (e) => { e.target.style.display = "none"; } })), _jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" }, children: [_jsx("span", { style: { fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }, children: "Bot\u00F5es" }), slide.buttons.map((btn, btnIdx) => (_jsxs("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" }, children: [_jsx("input", { value: btn.text, onChange: (e) => {
+                                                                                    }, placeholder: "https://exemplo.com/imagem.jpg", style: { fontSize: "0.82rem" }, disabled: uploadingSlideIndex === slideIdx }), slide.image && !slide.image.startsWith('data:') && (_jsxs("div", { style: { fontSize: "0.7rem", color: "#64748b", display: "flex", alignItems: "center", gap: "4px" }, children: [_jsx(Info, { size: 12 }), "URL externa"] })), slide.image && slide.image.startsWith('data:') && (_jsxs("div", { style: { fontSize: "0.7rem", color: "#10b981", display: "flex", alignItems: "center", gap: "4px", fontWeight: 600 }, children: [_jsx(CheckCircle2, { size: 12 }), "Imagem carregada (", formatFileSize(slide.image.length * 0.75), ")"] }))] }), slide.image && (_jsxs("div", { style: { position: "relative" }, children: [_jsx("img", { src: slide.image, alt: `Preview slide ${slideIdx + 1}`, style: {
+                                                                                        width: "100%",
+                                                                                        maxHeight: "200px",
+                                                                                        objectFit: "cover",
+                                                                                        borderRadius: "10px",
+                                                                                        border: "3px solid #10b981",
+                                                                                        boxShadow: "0 4px 12px rgba(16, 185, 129, 0.2)"
+                                                                                    }, onError: (e) => {
+                                                                                        e.target.style.display = "none";
+                                                                                        alert('Erro ao carregar a imagem. Verifique a URL ou tente fazer upload novamente.');
+                                                                                    } }), _jsxs("button", { type: "button", onClick: () => {
+                                                                                        const updated = [...carouselSlides];
+                                                                                        updated[slideIdx] = { ...slide, image: "" };
+                                                                                        setCarouselSlides(updated);
+                                                                                    }, style: {
+                                                                                        position: "absolute",
+                                                                                        top: "10px",
+                                                                                        right: "10px",
+                                                                                        background: "rgba(239, 68, 68, 0.95)",
+                                                                                        color: "#fff",
+                                                                                        border: "none",
+                                                                                        borderRadius: "8px",
+                                                                                        padding: "6px 10px",
+                                                                                        fontSize: "0.75rem",
+                                                                                        fontWeight: 600,
+                                                                                        cursor: "pointer",
+                                                                                        display: "flex",
+                                                                                        alignItems: "center",
+                                                                                        gap: "4px",
+                                                                                        boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+                                                                                        transition: "all 0.2s"
+                                                                                    }, onMouseEnter: (e) => {
+                                                                                        e.currentTarget.style.background = "rgba(220, 38, 38, 0.95)";
+                                                                                        e.currentTarget.style.transform = "scale(1.05)";
+                                                                                    }, onMouseLeave: (e) => {
+                                                                                        e.currentTarget.style.background = "rgba(239, 68, 68, 0.95)";
+                                                                                        e.currentTarget.style.transform = "scale(1)";
+                                                                                    }, children: [_jsx(Trash2, { size: 12 }), " Remover"] })] })), _jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "0.5rem" }, children: [_jsx("span", { style: { fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }, children: "Bot\u00F5es" }), slide.buttons.map((btn, btnIdx) => (_jsxs("div", { style: { display: "flex", gap: "0.5rem", alignItems: "center" }, children: [_jsx("input", { value: btn.text, onChange: (e) => {
                                                                                                 const updated = [...carouselSlides];
                                                                                                 const updatedBtns = [...slide.buttons];
                                                                                                 updatedBtns[btnIdx] = { ...btn, text: e.target.value };
@@ -791,7 +891,201 @@ export function DisparadorPage() {
                                                                                         const updated = [...carouselSlides];
                                                                                         updated[slideIdx] = { ...slide, buttons: [...slide.buttons, { id: `btn${Date.now()}`, text: "", type: "url" }] };
                                                                                         setCarouselSlides(updated);
-                                                                                    }, children: "+ Bot\u00E3o" })] })] }, slideIdx)))] })), abTestActive ? (_jsxs("div", { className: "wp-ab-split", children: [_jsxs("div", { className: "wp-ab-split-header", children: [_jsxs("span", { style: { fontWeight: 600, color: "#10b981", display: "flex", alignItems: "center", gap: "4px" }, children: [_jsx(Sparkles, { size: 14 }), "Mensagem Alternativa (Vers\u00E3o B)"] }), _jsx("button", { type: "button", className: "ghost-button danger", style: { padding: "4px 8px", fontSize: "0.75rem" }, onClick: () => setAbTestActive(false), children: "Remover B" })] }), _jsx("label", { className: "whatsapp-message-field", style: { marginTop: "0.5rem" }, children: _jsx("textarea", { rows: 6, value: abMessageText, onChange: (e) => setAbMessageText(e.target.value), placeholder: "Digite a varia\u00E7\u00E3o de texto para o teste A/B..." }) })] })) : null] }), _jsxs("div", { children: [_jsx("div", { className: "wp-preview-device", children: _jsxs("div", { className: "wp-preview-screen", children: [_jsxs("div", { className: "wp-preview-top-bar", children: [_jsx(Smartphone, { size: 14 }), _jsx("span", { children: "Previa do Envio" })] }), _jsx("div", { className: "wp-preview-chat-area", children: campaignMessageType === "CAROUSEL" && carouselSlides.some(s => s.image || s.text) ? (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "8px" }, children: [messageText && (_jsxs("div", { className: "wp-preview-bubble", children: [messageText, _jsx("div", { className: "wp-preview-bubble-meta", children: "Apenas agora" })] })), _jsx("div", { style: { display: "flex", gap: "6px", overflowX: "auto", padding: "4px 0" }, children: carouselSlides.map((slide, i) => (_jsxs("div", { style: { minWidth: "160px", maxWidth: "180px", background: "#d9fdd3", borderRadius: "10px", overflow: "hidden", border: "1px solid #b5e5a3", flexShrink: 0 }, children: [slide.image && (_jsx("img", { src: slide.image, alt: "", style: { width: "100%", height: "80px", objectFit: "cover" }, onError: (e) => { e.target.style.display = "none"; } })), slide.text && (_jsxs("div", { style: { padding: "6px 8px", fontSize: "0.68rem", color: "#1a1a1a", lineHeight: 1.3 }, children: [slide.text.slice(0, 60), slide.text.length > 60 ? "..." : ""] })), slide.buttons.filter(b => b.text).map((btn, bi) => (_jsx("div", { style: { padding: "4px 8px", fontSize: "0.65rem", color: "#0066cc", textAlign: "center", borderTop: "1px solid #b5e5a3", fontWeight: 600 }, children: btn.text }, bi)))] }, i))) })] })) : (_jsxs(_Fragment, { children: [_jsxs("div", { className: "wp-preview-bubble", children: [messageText || "Escreva a mensagem na esquerda para visualizar a prévia aqui...", _jsx("div", { className: "wp-preview-bubble-meta", children: "Apenas agora" })] }), abTestActive && abMessageText && (_jsxs("div", { className: "wp-preview-bubble ab-split", children: [abMessageText, _jsx("div", { className: "wp-preview-bubble-meta", children: "Split A/B" })] }))] })) })] }) }), _jsx("p", { className: "panel-subcopy", style: { textAlign: "center", marginTop: "8px" }, children: "Simulador em tempo real de como a mensagem aparecer\u00E1 para o usu\u00E1rio final." })] })] })] })), currentStep === 5 && (_jsxs("article", { className: "panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("h3", { children: "Revis\u00E3o da Campanha" }), _jsx("p", { className: "panel-subcopy", children: "Tudo pronto! Verifique se as informa\u00E7\u00F5es est\u00E3o corretas antes de lan\u00E7ar." })] }) }), _jsxs("div", { className: "whatsapp-compose-summary", style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.25rem", marginTop: "1rem" }, children: [_jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Campanha" }), _jsx("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: campaignName || "Disparo Geral" })] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Destinat\u00E1rios" }), _jsxs("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: [formatNumber(selectedGroupCount), " grupos mapeados"] }), selectedSavedSegment && (_jsxs("span", { style: { display: "block", fontSize: "0.75rem", color: "var(--muted)", marginTop: "2px" }, children: ["Segmento: ", selectedSavedSegment.name] }))] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Mensagem Ativa" }), _jsx("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: abTestActive ? "Teste A/B (2 variações)" : "Variação única" })] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Anti-spam Cadence" }), _jsxs("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: [minDelaySeconds, "s a ", maxDelaySeconds, "s"] }), _jsx("span", { style: { display: "block", fontSize: "0.75rem", color: overrideRecentBlock ? "var(--danger)" : "var(--success)", fontWeight: 600, marginTop: "2px" }, children: overrideRecentBlock ? "⚠ Proteção 7-dias inativa" : "✓ Proteção 7-dias ativa" })] })] }), _jsxs("div", { style: { marginTop: "1.5rem" }, children: [_jsx("h4", { style: { margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700 }, children: "Canais de Disparo Selecionados (Remetentes Reais)" }), _jsx("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" }, children: senders.filter(s => selectedSenderIds.includes(s.id)).map(s => (_jsxs("div", { className: "wp-review-sender-pill", style: { display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-soft)", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--line)" }, children: [_jsx("img", { src: s.avatarUrl, alt: s.name, className: "wp-avatar-sm", style: { width: "20px", height: "20px", borderRadius: "50%" } }), _jsxs("span", { style: { fontSize: "0.85rem", fontWeight: 600 }, children: [s.name, " (", s.phone, ")"] }), _jsx("span", { className: "status-badge status-success", style: { fontSize: "0.6rem", padding: "0 4px" }, children: "Ativo" })] }, s.id))) })] }), _jsxs("div", { style: { marginTop: "1.5rem" }, children: [_jsx("h4", { style: { margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700 }, children: "Conte\u00FAdo das Mensagens" }), _jsxs("div", { style: { background: "#f8fafc", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.75rem", fontWeight: 600, color: "var(--accent)" }, children: [_jsx("span", { children: "VERS\u00C3O A (PRINCIPAL)" }), _jsxs("span", { children: [messageText.length, " caracteres"] })] }), _jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: "0.88rem", background: "#fff", border: "1px solid rgba(0,0,0,0.05)", padding: "10px 14px", borderRadius: "8px", color: "var(--text)" }, children: messageText || "Nenhuma mensagem definida." }), abTestActive && (_jsxs("div", { style: { marginTop: "1rem", paddingTop: "1rem", borderTop: "1px dashed var(--line)" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#10b981" }, children: [_jsx("span", { children: "VERS\u00C3O B (A/B SPLIT)" }), _jsxs("span", { children: [abMessageText.length, " caracteres"] })] }), _jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: "0.88rem", background: "#fff", border: "1px solid rgba(0,0,0,0.05)", padding: "10px 14px", borderRadius: "8px", color: "var(--text)" }, children: abMessageText || "Nenhuma variação definida." })] }))] })] }), _jsxs("div", { style: { marginTop: "1.5rem", background: "rgba(16, 185, 129, 0.03)", padding: "1.25rem 1.5rem", borderRadius: "16px", border: "1px solid rgba(16, 185, 129, 0.15)" }, children: [_jsxs("h4", { style: { margin: "0 0 8px 0", color: "#059669", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "6px" }, children: [_jsx(ShieldAlert, { size: 16 }), "Verifica\u00E7\u00F5es de Seguran\u00E7a do Disparador"] }), _jsxs("ul", { style: { margin: 0, paddingLeft: "20px", display: "grid", gap: "4px", fontSize: "0.82rem", color: "var(--muted)" }, children: [_jsx("li", { children: "Cad\u00EAncia de delay configurada de forma natural para imitar o comportamento de digita\u00E7\u00E3o de agentes." }), _jsx("li", { children: "Contatos sob alto risco de prote\u00E7\u00E3o bloqueados ou sinalizados para evitar bloqueios da conta da empresa." }), _jsx("li", { children: abTestActive ? "Distribuição A/B ativada! Mensagens divididas reduzem o risco de algoritmos do WhatsApp rastrearem padrões." : "Dica: Considere ativar o teste A/B no passo anterior para reduzir o risco de bloqueios por texto repetitivo." })] })] }), _jsx("div", { className: "whatsapp-wizard-nav", style: { justifyContent: "center", border: "none", marginTop: "1.5rem" }, children: _jsxs("button", { className: "primary-button", type: "button", onClick: () => createCampaignMutation.mutate(), disabled: createCampaignMutation.isPending || !isReadyToDispatch, style: { padding: "1rem 2.5rem", fontSize: "1rem" }, children: [createCampaignMutation.isPending ? _jsx(LoaderCircle, { size: 18, className: "spin" }) : _jsx(Send, { size: 18 }), dispatchButtonLabel] }) })] })), _jsxs("div", { className: "wp-wizard-nav", children: [_jsxs("button", { type: "button", className: "ghost-button", onClick: () => setCurrentStep(current => Math.max(1, current - 1)), disabled: currentStep === 1, children: [_jsx(ChevronLeft, { size: 16 }), "Voltar"] }), _jsxs("span", { children: ["Etapa ", currentStep, " de 5"] }), currentStep < 5 ? (_jsxs("button", { type: "button", className: "wp-btn-action primary", onClick: () => setCurrentStep(current => Math.min(5, current + 1)), children: ["Avan\u00E7ar", _jsx(ChevronRight, { size: 16 })] })) : (_jsx("span", {}))] })] }) })] })), activeTab === "HISTORY" && (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [_jsxs("div", { children: [_jsx("h2", { style: { fontSize: "1.75rem", fontWeight: 700, color: "#18181b", margin: 0 }, children: "Hist\u00F3rico de Campanhas" }), _jsx("p", { style: { fontSize: "0.9rem", color: "#71717a", margin: "0.25rem 0 0 0" }, children: "Acompanhe o desempenho e o status dos seus disparos." })] }), _jsxs("button", { type: "button", onClick: () => {
+                                                                                    }, children: "+ Bot\u00E3o" })] })] }, slideIdx)))] })), abTestActive ? (_jsxs("div", { className: "wp-ab-split", style: {
+                                                                background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                                                                border: "2px solid #10b981",
+                                                                borderRadius: "12px",
+                                                                padding: "1rem"
+                                                            }, children: [_jsxs("div", { className: "wp-ab-split-header", style: {
+                                                                        display: "flex",
+                                                                        justifyContent: "space-between",
+                                                                        alignItems: "center",
+                                                                        marginBottom: "0.75rem"
+                                                                    }, children: [_jsxs("span", { style: { fontWeight: 700, color: "#10b981", display: "flex", alignItems: "center", gap: "6px", fontSize: "0.9rem" }, children: [_jsx(Sparkles, { size: 16 }), "Mensagem Alternativa (Vers\u00E3o B)"] }), _jsxs("button", { type: "button", className: "ghost-button danger", style: { padding: "4px 10px", fontSize: "0.75rem" }, onClick: () => {
+                                                                                setAbTestActive(false);
+                                                                                setAbMessageText("");
+                                                                            }, children: [_jsx(X, { size: 14 }), " Desativar A/B"] })] }), _jsxs("label", { className: "whatsapp-message-field", style: { marginTop: "0" }, children: [_jsx("span", { style: { fontSize: "0.82rem", color: "#059669" }, children: "Texto da Vers\u00E3o B" }), _jsx("textarea", { rows: 6, value: abMessageText, onChange: (e) => setAbMessageText(e.target.value), placeholder: "Digite a varia\u00E7\u00E3o de texto para o teste A/B...", style: { borderColor: "#10b981" } })] }), _jsxs("div", { style: {
+                                                                        marginTop: "0.75rem",
+                                                                        padding: "0.75rem",
+                                                                        background: "rgba(16, 185, 129, 0.1)",
+                                                                        borderRadius: "8px",
+                                                                        fontSize: "0.75rem",
+                                                                        color: "#059669",
+                                                                        display: "flex",
+                                                                        alignItems: "start",
+                                                                        gap: "8px"
+                                                                    }, children: [_jsx(Info, { size: 14, style: { flexShrink: 0, marginTop: "2px" } }), _jsxs("div", { children: [_jsx("strong", { children: "Teste A/B ativo:" }), " Metade dos destinat\u00E1rios receber\u00E1 a Vers\u00E3o A e a outra metade receber\u00E1 a Vers\u00E3o B. Isso ajuda a reduzir o risco de bloqueios por mensagens repetitivas."] })] })] })) : (_jsxs("button", { type: "button", onClick: () => setAbTestActive(true), style: {
+                                                                width: "100%",
+                                                                padding: "1rem",
+                                                                background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+                                                                border: "2px dashed #cbd5e1",
+                                                                borderRadius: "12px",
+                                                                display: "flex",
+                                                                alignItems: "center",
+                                                                justifyContent: "center",
+                                                                gap: "8px",
+                                                                fontSize: "0.85rem",
+                                                                fontWeight: 600,
+                                                                color: "#475569",
+                                                                cursor: "pointer",
+                                                                transition: "all 0.2s"
+                                                            }, onMouseEnter: (e) => {
+                                                                e.currentTarget.style.background = "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)";
+                                                                e.currentTarget.style.borderColor = "#10b981";
+                                                                e.currentTarget.style.color = "#10b981";
+                                                            }, onMouseLeave: (e) => {
+                                                                e.currentTarget.style.background = "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)";
+                                                                e.currentTarget.style.borderColor = "#cbd5e1";
+                                                                e.currentTarget.style.color = "#475569";
+                                                            }, children: [_jsx(Sparkles, { size: 18 }), "Ativar Teste A/B (Recomendado para evitar bloqueios)"] }))] }), _jsxs("div", { children: [_jsx("div", { className: "wp-preview-device", style: {
+                                                                width: "280px",
+                                                                background: "#1f1f1f",
+                                                                borderRadius: "32px",
+                                                                padding: "12px",
+                                                                boxShadow: "0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1)",
+                                                                position: "sticky",
+                                                                top: "20px"
+                                                            }, children: _jsxs("div", { className: "wp-preview-screen", style: {
+                                                                    background: "#e5ddd5",
+                                                                    borderRadius: "20px",
+                                                                    overflow: "hidden",
+                                                                    height: "560px",
+                                                                    display: "flex",
+                                                                    flexDirection: "column"
+                                                                }, children: [_jsxs("div", { className: "wp-preview-top-bar", style: {
+                                                                            background: "#075e54",
+                                                                            color: "#fff",
+                                                                            padding: "12px 16px",
+                                                                            display: "flex",
+                                                                            alignItems: "center",
+                                                                            gap: "10px",
+                                                                            boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
+                                                                        }, children: [_jsx("div", { style: {
+                                                                                    width: "32px",
+                                                                                    height: "32px",
+                                                                                    borderRadius: "50%",
+                                                                                    background: "#25d366",
+                                                                                    display: "grid",
+                                                                                    placeItems: "center",
+                                                                                    fontSize: "0.85rem",
+                                                                                    fontWeight: "bold"
+                                                                                }, children: (user?.name || "C").charAt(0).toUpperCase() }), _jsxs("div", { style: { flex: 1 }, children: [_jsx("div", { style: { fontSize: "0.9rem", fontWeight: 600 }, children: "Cliente" }), _jsx("div", { style: { fontSize: "0.7rem", opacity: 0.8 }, children: "online" })] }), _jsx(Smartphone, { size: 16 })] }), _jsxs("div", { className: "wp-preview-chat-area", style: {
+                                                                            flex: 1,
+                                                                            padding: "16px",
+                                                                            overflowY: "auto",
+                                                                            backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"100\" height=\"100\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cpath d=\"M0 0h100v100H0z\" fill=\"%23e5ddd5\"/%3E%3Cpath d=\"M20 20l5 5-5 5m20-10l5 5-5 5\" stroke=\"%23d1c7b8\" stroke-width=\"0.5\" fill=\"none\" opacity=\"0.3\"/%3E%3C/svg%3E')",
+                                                                            backgroundSize: "100px 100px"
+                                                                        }, children: [campaignMessageType === "TEXT" ? (_jsx(_Fragment, { children: messageText && (_jsxs("div", { className: "wp-preview-bubble", style: {
+                                                                                        background: "#d9fdd3",
+                                                                                        padding: "8px 12px",
+                                                                                        borderRadius: "8px",
+                                                                                        maxWidth: "85%",
+                                                                                        marginLeft: "auto",
+                                                                                        marginBottom: "8px",
+                                                                                        boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                                                                        position: "relative",
+                                                                                        fontSize: "0.85rem",
+                                                                                        lineHeight: "1.4",
+                                                                                        color: "#1a1a1a",
+                                                                                        wordWrap: "break-word"
+                                                                                    }, children: [messageText, _jsxs("div", { className: "wp-preview-bubble-meta", style: {
+                                                                                                fontSize: "0.65rem",
+                                                                                                color: "#667781",
+                                                                                                textAlign: "right",
+                                                                                                marginTop: "4px",
+                                                                                                display: "flex",
+                                                                                                alignItems: "center",
+                                                                                                justifyContent: "flex-end",
+                                                                                                gap: "4px"
+                                                                                            }, children: ["Agora ", _jsx(CheckCheck, { size: 12, style: { color: "#53bdeb" } })] })] })) })) : (_jsxs(_Fragment, { children: [messageText && (_jsxs("div", { className: "wp-preview-bubble", style: {
+                                                                                            background: "#d9fdd3",
+                                                                                            padding: "8px 12px",
+                                                                                            borderRadius: "8px",
+                                                                                            maxWidth: "85%",
+                                                                                            marginLeft: "auto",
+                                                                                            marginBottom: "8px",
+                                                                                            boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                                                                            fontSize: "0.85rem",
+                                                                                            lineHeight: "1.4",
+                                                                                            color: "#1a1a1a"
+                                                                                        }, children: [messageText, _jsx("div", { className: "wp-preview-bubble-meta", style: {
+                                                                                                    fontSize: "0.65rem",
+                                                                                                    color: "#667781",
+                                                                                                    textAlign: "right",
+                                                                                                    marginTop: "4px"
+                                                                                                }, children: "Agora" })] })), carouselSlides.some(s => s.image || s.text) && (_jsx("div", { style: {
+                                                                                            display: "flex",
+                                                                                            gap: "8px",
+                                                                                            overflowX: "auto",
+                                                                                            padding: "4px 0",
+                                                                                            scrollbarWidth: "thin",
+                                                                                            scrollbarColor: "#bbb #e5ddd5"
+                                                                                        }, children: carouselSlides.map((slide, i) => (_jsxs("div", { style: {
+                                                                                                minWidth: "180px",
+                                                                                                maxWidth: "200px",
+                                                                                                background: "#fff",
+                                                                                                borderRadius: "12px",
+                                                                                                overflow: "hidden",
+                                                                                                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                                                                                                flexShrink: 0,
+                                                                                                border: "1px solid #e0e0e0"
+                                                                                            }, children: [slide.image && (_jsx("div", { style: { position: "relative", width: "100%", paddingTop: "56.25%", background: "#f0f0f0" }, children: _jsx("img", { src: slide.image, alt: "", style: {
+                                                                                                            position: "absolute",
+                                                                                                            top: 0,
+                                                                                                            left: 0,
+                                                                                                            width: "100%",
+                                                                                                            height: "100%",
+                                                                                                            objectFit: "cover"
+                                                                                                        }, onError: (e) => {
+                                                                                                            e.target.style.display = "none";
+                                                                                                        } }) })), slide.text && (_jsxs("div", { style: {
+                                                                                                        padding: "10px 12px",
+                                                                                                        fontSize: "0.75rem",
+                                                                                                        color: "#1a1a1a",
+                                                                                                        lineHeight: 1.4,
+                                                                                                        minHeight: "60px"
+                                                                                                    }, children: [slide.text.slice(0, 80), slide.text.length > 80 ? "..." : ""] })), slide.buttons.filter(b => b.text).map((btn, bi) => (_jsx("div", { style: {
+                                                                                                        padding: "8px 12px",
+                                                                                                        fontSize: "0.75rem",
+                                                                                                        color: "#0088cc",
+                                                                                                        textAlign: "center",
+                                                                                                        borderTop: "1px solid #e0e0e0",
+                                                                                                        fontWeight: 600,
+                                                                                                        background: "#f8f9fa",
+                                                                                                        cursor: "pointer"
+                                                                                                    }, children: btn.text }, bi)))] }, i))) }))] })), abTestActive && abMessageText && (_jsxs("div", { className: "wp-preview-bubble ab-split", style: {
+                                                                                    background: "#dcf8c6",
+                                                                                    padding: "8px 12px",
+                                                                                    borderRadius: "8px",
+                                                                                    maxWidth: "85%",
+                                                                                    marginLeft: "auto",
+                                                                                    marginTop: "8px",
+                                                                                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                                                                    fontSize: "0.85rem",
+                                                                                    lineHeight: "1.4",
+                                                                                    color: "#1a1a1a",
+                                                                                    border: "2px dashed #10b981"
+                                                                                }, children: [abMessageText, _jsx("div", { className: "wp-preview-bubble-meta", style: {
+                                                                                            fontSize: "0.65rem",
+                                                                                            color: "#10b981",
+                                                                                            textAlign: "right",
+                                                                                            marginTop: "4px",
+                                                                                            fontWeight: 600
+                                                                                        }, children: "Varia\u00E7\u00E3o B" })] }))] }), _jsxs("div", { style: {
+                                                                            background: "#f0f0f0",
+                                                                            padding: "8px 12px",
+                                                                            display: "flex",
+                                                                            alignItems: "center",
+                                                                            gap: "8px",
+                                                                            borderTop: "1px solid #d0d0d0"
+                                                                        }, children: [_jsx(Smile, { size: 20, style: { color: "#8696a0" } }), _jsx("div", { style: {
+                                                                                    flex: 1,
+                                                                                    background: "#fff",
+                                                                                    borderRadius: "20px",
+                                                                                    padding: "6px 12px",
+                                                                                    fontSize: "0.8rem",
+                                                                                    color: "#8696a0"
+                                                                                }, children: "Mensagem" }), _jsx(Paperclip, { size: 20, style: { color: "#8696a0" } })] })] }) }), _jsx("p", { className: "panel-subcopy", style: { textAlign: "center", marginTop: "12px", fontSize: "0.75rem", color: "#64748b" }, children: "\uD83D\uDCF1 Simulador em tempo real" })] })] })] })), currentStep === 5 && (_jsxs("article", { className: "panel", children: [_jsx("div", { className: "panel-header", children: _jsxs("div", { children: [_jsx("h3", { children: "Revis\u00E3o da Campanha" }), _jsx("p", { className: "panel-subcopy", children: "Tudo pronto! Verifique se as informa\u00E7\u00F5es est\u00E3o corretas antes de lan\u00E7ar." })] }) }), _jsxs("div", { className: "whatsapp-compose-summary", style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.25rem", marginTop: "1rem" }, children: [_jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Campanha" }), _jsx("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: campaignName || "Disparo Geral" })] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Destinat\u00E1rios" }), _jsxs("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: [formatNumber(selectedGroupCount), " grupos mapeados"] }), selectedSavedSegment && (_jsxs("span", { style: { display: "block", fontSize: "0.75rem", color: "var(--muted)", marginTop: "2px" }, children: ["Segmento: ", selectedSavedSegment.name] }))] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Mensagem Ativa" }), _jsx("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: abTestActive ? "Teste A/B (2 variações)" : "Variação única" })] }), _jsxs("div", { style: { background: "var(--bg-soft)", padding: "1rem", borderRadius: "12px", border: "1px solid var(--line)" }, children: [_jsx("span", { style: { display: "block", fontSize: "0.78rem", color: "var(--muted)", fontWeight: 600, textTransform: "uppercase", marginBottom: "4px" }, children: "Anti-spam Cadence" }), _jsxs("strong", { style: { fontSize: "1.05rem", color: "#0f172a" }, children: [minDelaySeconds, "s a ", maxDelaySeconds, "s"] }), _jsx("span", { style: { display: "block", fontSize: "0.75rem", color: overrideRecentBlock ? "var(--danger)" : "var(--success)", fontWeight: 600, marginTop: "2px" }, children: overrideRecentBlock ? "⚠ Proteção 7-dias inativa" : "✓ Proteção 7-dias ativa" })] })] }), _jsxs("div", { style: { marginTop: "1.5rem" }, children: [_jsx("h4", { style: { margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700 }, children: "Canais de Disparo Selecionados (Remetentes Reais)" }), _jsx("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" }, children: senders.filter(s => selectedSenderIds.includes(s.id)).map(s => (_jsxs("div", { className: "wp-review-sender-pill", style: { display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-soft)", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--line)" }, children: [_jsx("img", { src: s.avatarUrl, alt: s.name, className: "wp-avatar-sm", style: { width: "20px", height: "20px", borderRadius: "50%" } }), _jsxs("span", { style: { fontSize: "0.85rem", fontWeight: 600 }, children: [s.name, " (", s.phone, ")"] }), _jsx("span", { className: "status-badge status-success", style: { fontSize: "0.6rem", padding: "0 4px" }, children: "Ativo" })] }, s.id))) })] }), _jsxs("div", { style: { marginTop: "1.5rem" }, children: [_jsx("h4", { style: { margin: "0 0 8px 0", fontSize: "0.9rem", fontWeight: 700 }, children: "Conte\u00FAdo das Mensagens" }), _jsxs("div", { style: { background: "#f8fafc", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.75rem", fontWeight: 600, color: "var(--accent)" }, children: [_jsx("span", { children: "VERS\u00C3O A (PRINCIPAL)" }), _jsxs("span", { children: [messageText.length, " caracteres"] })] }), _jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: "0.88rem", background: "#fff", border: "1px solid rgba(0,0,0,0.05)", padding: "10px 14px", borderRadius: "8px", color: "var(--text)" }, children: messageText || "Nenhuma mensagem definida." }), abTestActive && (_jsxs("div", { style: { marginTop: "1rem", paddingTop: "1rem", borderTop: "1px dashed var(--line)" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.75rem", fontWeight: 600, color: "#10b981" }, children: [_jsx("span", { children: "VERS\u00C3O B (A/B SPLIT)" }), _jsxs("span", { children: [abMessageText.length, " caracteres"] })] }), _jsx("div", { style: { whiteSpace: "pre-wrap", fontSize: "0.88rem", background: "#fff", border: "1px solid rgba(0,0,0,0.05)", padding: "10px 14px", borderRadius: "8px", color: "var(--text)" }, children: abMessageText || "Nenhuma variação definida." })] }))] })] }), _jsxs("div", { style: { marginTop: "1.5rem", background: "rgba(16, 185, 129, 0.03)", padding: "1.25rem 1.5rem", borderRadius: "16px", border: "1px solid rgba(16, 185, 129, 0.15)" }, children: [_jsxs("h4", { style: { margin: "0 0 8px 0", color: "#059669", fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "6px" }, children: [_jsx(ShieldAlert, { size: 16 }), "Verifica\u00E7\u00F5es de Seguran\u00E7a do Disparador"] }), _jsxs("ul", { style: { margin: 0, paddingLeft: "20px", display: "grid", gap: "4px", fontSize: "0.82rem", color: "var(--muted)" }, children: [_jsx("li", { children: "Cad\u00EAncia de delay configurada de forma natural para imitar o comportamento de digita\u00E7\u00E3o de agentes." }), _jsx("li", { children: "Contatos sob alto risco de prote\u00E7\u00E3o bloqueados ou sinalizados para evitar bloqueios da conta da empresa." }), _jsx("li", { children: abTestActive ? "Distribuição A/B ativada! Mensagens divididas reduzem o risco de algoritmos do WhatsApp rastrearem padrões." : "Dica: Considere ativar o teste A/B no passo anterior para reduzir o risco de bloqueios por texto repetitivo." })] })] }), _jsx("div", { className: "whatsapp-wizard-nav", style: { justifyContent: "center", border: "none", marginTop: "1.5rem" }, children: _jsxs("button", { className: "primary-button", type: "button", onClick: () => createCampaignMutation.mutate(), disabled: createCampaignMutation.isPending || !isReadyToDispatch, style: { padding: "1rem 2.5rem", fontSize: "1rem" }, children: [createCampaignMutation.isPending ? _jsx(LoaderCircle, { size: 18, className: "spin" }) : _jsx(Send, { size: 18 }), dispatchButtonLabel] }) })] })), _jsxs("div", { className: "wp-wizard-nav", children: [_jsxs("button", { type: "button", className: "ghost-button", onClick: () => setCurrentStep(current => Math.max(1, current - 1)), disabled: currentStep === 1, children: [_jsx(ChevronLeft, { size: 16 }), "Voltar"] }), _jsxs("span", { children: ["Etapa ", currentStep, " de 5"] }), currentStep < 5 ? (_jsxs("button", { type: "button", className: "wp-btn-action primary", onClick: () => setCurrentStep(current => Math.min(5, current + 1)), children: ["Avan\u00E7ar", _jsx(ChevronRight, { size: 16 })] })) : (_jsx("span", {}))] })] }) })] })), activeTab === "HISTORY" && (_jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "1.5rem" }, children: [_jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" }, children: [_jsxs("div", { children: [_jsx("h2", { style: { fontSize: "1.75rem", fontWeight: 700, color: "#18181b", margin: 0 }, children: "Hist\u00F3rico de Campanhas" }), _jsx("p", { style: { fontSize: "0.9rem", color: "#71717a", margin: "0.25rem 0 0 0" }, children: "Acompanhe o desempenho e o status dos seus disparos." })] }), _jsxs("button", { type: "button", onClick: () => {
                                     setActiveTab("NEW_CAMPAIGN");
                                     setCurrentStep(1);
                                 }, style: {
