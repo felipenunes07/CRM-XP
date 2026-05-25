@@ -202,7 +202,7 @@ export function AgendaPage() {
               </label>
 
               <label style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>
-                Excluir rótulo
+                Ocultar com rótulo
                 <select 
                   value={excludeLabel} 
                   onChange={(event) => setExcludeLabel(event.target.value)}

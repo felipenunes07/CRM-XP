@@ -1438,6 +1438,7 @@ export interface WhatsappGroup {
   updatedAt: string;
   isRecentlyBlocked: boolean;
   recentBlockUntil: string | null;
+  sentCampaignsCount?: number;
 }
 
 export interface WhatsappGroupsResponse {
@@ -1467,6 +1468,8 @@ export interface WhatsappMappingSummary {
   lastImportedAt: string | null;
   classificationCounts: Record<WhatsappGroupClassification, number>;
   mappingCounts: Record<WhatsappGroupMappingStatus, number>;
+  attentionCount?: number;
+  inactiveCount?: number;
 }
 
 export interface WhatsappCampaignProgress {

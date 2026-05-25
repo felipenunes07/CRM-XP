@@ -308,7 +308,7 @@ export function CustomersPage() {
             </label>
 
             <label>
-              Excluir rotulo
+              Ocultar com rotulo
               <select
                 value={state.portfolioFilters.excludeLabel}
                 onChange={(event) =>

@@ -394,6 +394,7 @@ const whatsappGroupFiltersQuerySchema = z.object({
   onlyRecentlyBlocked: optionalQueryBoolean,
   limit: z.coerce.number().int().positive().max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  customerStatus: z.string().optional(),
 });
 
 const whatsappImportSchema = z.object({

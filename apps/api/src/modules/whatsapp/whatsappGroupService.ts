@@ -92,6 +92,7 @@ export interface WhatsappGroupFilters {
   onlyRecentlyBlocked?: boolean;
   limit?: number;
   offset?: number;
+  customerStatus?: string;
 }
 
 export interface UpdateWhatsappGroupMatchInput {
@@ -262,6 +263,7 @@ function mapWhatsappGroupRow(row: Record<string, unknown>): WhatsappGroup {
     updatedAt: new Date(String(row.updated_at)).toISOString(),
     isRecentlyBlocked: isBlocked,
     recentBlockUntil,
+    sentCampaignsCount: row.sent_campaigns_count !== undefined ? Number(row.sent_campaigns_count) : 0,
   };
 }
 
@@ -324,6 +326,10 @@ function buildGroupsWhere(filters: WhatsappGroupFilters, customerIds: string[]) 
     push((index) => `wg.customer_id = ANY($${index}::uuid[])`, customerIds);
   }
 
+  if (filters.customerStatus) {
+    push((index) => `cs.status = $${index}`, filters.customerStatus);
+  }
+
   if (filters.onlyRecentlyBlocked) {
     push(
       (index) => `wg.last_contact_at IS NOT NULL AND wg.last_contact_at > NOW() - make_interval(days => $${index}::int)`,
@@ -342,24 +348,27 @@ export async function getWhatsappMappingSummary(): Promise<WhatsappMappingSummar
     `
       SELECT
         COUNT(*)::int AS total_groups,
-        COUNT(*) FILTER (WHERE mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED'))::int AS mapped_groups,
-        COUNT(*) FILTER (WHERE mapping_status = 'PENDING_REVIEW')::int AS pending_review_groups,
-        COUNT(*) FILTER (WHERE mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_groups,
-        COUNT(*) FILTER (WHERE mapping_status = 'IGNORED')::int AS ignored_groups,
+        COUNT(*) FILTER (WHERE wg.mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED'))::int AS mapped_groups,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_groups,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_groups,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'IGNORED')::int AS ignored_groups,
         COUNT(*) FILTER (
-          WHERE last_contact_at IS NOT NULL
-            AND last_contact_at > NOW() - make_interval(days => $1::int)
+          WHERE wg.last_contact_at IS NOT NULL
+            AND wg.last_contact_at > NOW() - make_interval(days => $1::int)
         )::int AS recently_blocked_groups,
-        MAX(last_imported_at) AS last_imported_at,
-        COUNT(*) FILTER (WHERE classification = 'WITH_ORDER')::int AS with_order_count,
-        COUNT(*) FILTER (WHERE classification = 'NO_ORDER_EXCEL')::int AS no_order_excel_count,
-        COUNT(*) FILTER (WHERE classification = 'OTHER')::int AS other_count,
-        COUNT(*) FILTER (WHERE mapping_status = 'AUTO_MAPPED')::int AS auto_mapped_count,
-        COUNT(*) FILTER (WHERE mapping_status = 'MANUAL_MAPPED')::int AS manual_mapped_count,
-        COUNT(*) FILTER (WHERE mapping_status = 'PENDING_REVIEW')::int AS pending_review_count,
-        COUNT(*) FILTER (WHERE mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_count,
-        COUNT(*) FILTER (WHERE mapping_status = 'IGNORED')::int AS ignored_count
-      FROM whatsapp_groups
+        MAX(wg.last_imported_at) AS last_imported_at,
+        COUNT(*) FILTER (WHERE wg.classification = 'WITH_ORDER')::int AS with_order_count,
+        COUNT(*) FILTER (WHERE wg.classification = 'NO_ORDER_EXCEL')::int AS no_order_excel_count,
+        COUNT(*) FILTER (WHERE wg.classification = 'OTHER')::int AS other_count,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'AUTO_MAPPED')::int AS auto_mapped_count,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'MANUAL_MAPPED')::int AS manual_mapped_count,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_count,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_count,
+        COUNT(*) FILTER (WHERE wg.mapping_status = 'IGNORED')::int AS ignored_count,
+        COUNT(*) FILTER (WHERE cs.status = 'ATTENTION')::int AS attention_count,
+        COUNT(*) FILTER (WHERE cs.status = 'INACTIVE')::int AS inactive_count
+      FROM whatsapp_groups wg
+      LEFT JOIN customer_snapshot cs ON cs.customer_id = wg.customer_id
     `,
     [env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS],
   );
@@ -386,6 +395,8 @@ export async function getWhatsappMappingSummary(): Promise<WhatsappMappingSummar
       CONFIRMED_UNMATCHED: Number(row.confirmed_unmatched_count ?? 0),
       IGNORED: Number(row.ignored_count ?? 0),
     },
+    attentionCount: Number(row.attention_count ?? 0),
+    inactiveCount: Number(row.inactive_count ?? 0),
   };
 }
 
@@ -413,7 +424,12 @@ export async function listWhatsappGroups(filters: WhatsappGroupFilters = {}): Pr
           c.customer_code,
           COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS customer_display_name,
           cs.status AS customer_status,
-          COALESCE(cs.last_attendant, c.last_attendant) AS last_attendant
+          COALESCE(cs.last_attendant, c.last_attendant) AS last_attendant,
+          (
+            SELECT COUNT(*)::int
+            FROM whatsapp_campaign_recipients wcr
+            WHERE wcr.group_id = wg.id AND wcr.status = 'SENT'
+          ) AS sent_campaigns_count
         FROM whatsapp_groups wg
         LEFT JOIN customers c ON c.id = wg.customer_id
         LEFT JOIN customer_snapshot cs ON cs.customer_id = wg.customer_id

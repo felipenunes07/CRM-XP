@@ -15,13 +15,15 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 
-type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED";
+type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 
 const quickFilters: Array<{ value: QuickFilter; label: string; description: string }> = [
   { value: "ALL", label: "Todos", description: "Toda a base importada." },
   { value: "WITH_ORDER", label: "Clientes", description: "Clientes com pedido." },
   { value: "NO_ORDER_EXCEL", label: "Nunca comprou", description: "Nunca comprou." },
+  { value: "ATTENTION", label: "Atenção", description: "Clientes que necessitam de atenção." },
+  { value: "INACTIVE", label: "Inativos", description: "Clientes inativos." },
   { value: "OTHER", label: "Outros", description: "LJ, internos e demais grupos." },
   { value: "BLOQUEADOS", label: "Bloqueados", description: "Grupos sob bloqueio recente." },
   { value: "ULTIMO_CONTATO", label: "Último contato", description: "Histórico de envio recente." },
@@ -44,6 +46,10 @@ function buildGroupsQueryParams(input: {
 
   if (input.quickFilter === "WITH_ORDER" || input.quickFilter === "NO_ORDER_EXCEL" || input.quickFilter === "OTHER") {
     params.classification = input.quickFilter;
+  }
+
+  if (input.quickFilter === "ATTENTION" || input.quickFilter === "INACTIVE") {
+    params.customerStatus = input.quickFilter;
   }
 
   if (input.quickFilter === "BLOQUEADOS") {
@@ -168,6 +174,12 @@ function quickFilterCount(
 ) {
   if (filter === "SELECTED") return formatNumber(selectedCount ?? 0);
   if (!summary) return "--";
+  if (filter === "ATTENTION") {
+    return formatNumber(summary.attentionCount ?? 0);
+  }
+  if (filter === "INACTIVE") {
+    return formatNumber(summary.inactiveCount ?? 0);
+  }
   if (filter === "ALL") return formatNumber(summary.totalGroups);
   if (filter === "WITH_ORDER") return formatNumber(summary.classificationCounts["WITH_ORDER"]);
   if (filter === "NO_ORDER_EXCEL") return formatNumber(summary.classificationCounts["NO_ORDER_EXCEL"]);
@@ -191,6 +203,7 @@ export function DisparadorPage() {
 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
+  const [dispatchesFilter, setDispatchesFilter] = useState<"ALL" | "ZERO" | "SOME" | "FEW" | "MANY">("ALL");
   const [search, setSearch] = useState("");
   const [savedSegmentId, setSavedSegmentId] = useState("");
   const [recentBlockFilter, setRecentBlockFilter] = useState<RecentBlockFilter>("AVAILABLE_ONLY");
@@ -442,6 +455,20 @@ export function DisparadorPage() {
       result = result.filter((group) => selectedGroupIds.includes(group.id));
     } else if (quickFilter === "ULTIMO_CONTATO") {
       result = result.filter((group) => group.lastContactAt !== null);
+    } else if (quickFilter === "ATTENTION") {
+      result = result.filter((group) => group.customerStatus === "ATTENTION");
+    } else if (quickFilter === "INACTIVE") {
+      result = result.filter((group) => group.customerStatus === "INACTIVE");
+    }
+
+    if (dispatchesFilter === "ZERO") {
+      result = result.filter((group) => (group.sentCampaignsCount ?? 0) === 0);
+    } else if (dispatchesFilter === "SOME") {
+      result = result.filter((group) => (group.sentCampaignsCount ?? 0) >= 1);
+    } else if (dispatchesFilter === "FEW") {
+      result = result.filter((group) => (group.sentCampaignsCount ?? 0) >= 1 && (group.sentCampaignsCount ?? 0) <= 2);
+    } else if (dispatchesFilter === "MANY") {
+      result = result.filter((group) => (group.sentCampaignsCount ?? 0) >= 3);
     }
 
     if (quickFilter !== "BLOQUEADOS" && quickFilter !== "SELECTED") {
@@ -453,13 +480,13 @@ export function DisparadorPage() {
     }
 
     return result;
-  }, [loadedGroups, quickFilter, recentBlockFilter, selectedGroupIds]);
+  }, [loadedGroups, quickFilter, recentBlockFilter, selectedGroupIds, dispatchesFilter]);
   const selectedGroupCount = selectedGroupIds.length;
 
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [quickFilter, recentBlockFilter, savedSegmentId, search]);
+  }, [quickFilter, recentBlockFilter, savedSegmentId, search, dispatchesFilter]);
 
   const itemsPerPage = 50;
   const totalPages = Math.ceil(filteredGroups.length / itemsPerPage);
@@ -692,7 +719,7 @@ export function DisparadorPage() {
           </div>
 
           {/* ── WIZARD WORKSPACE ── */}
-          <div className={`wp-wizard-layout ${currentStep === 1 ? "full-width" : ""}`}>
+          <div className="wp-wizard-layout full-width">
             
             {/* LEFT COLUMN: ACTIVE STEP */}
             <div className="wp-wizard-main">
@@ -906,7 +933,7 @@ export function DisparadorPage() {
                   </div>
 
                   {/* Filter Toolbar (Row 1 of inputs exactly like screenshot) */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.25rem", margin: "1.25rem 0" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.25rem", margin: "1.25rem 0" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Público salvo</span>
                       <select
@@ -968,6 +995,22 @@ export function DisparadorPage() {
                           Bloqueados
                         </button>
                       </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Qtd. Disparos</span>
+                      <select
+                        value={dispatchesFilter}
+                        onChange={(e) => setDispatchesFilter(e.target.value as any)}
+                        className="wp-card-input"
+                        style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem", background: "#fff", cursor: "pointer" }}
+                      >
+                        <option value="ALL">Qualquer quantidade</option>
+                        <option value="ZERO">Sem disparos (Novo)</option>
+                        <option value="SOME">Com disparos (1 ou mais)</option>
+                        <option value="FEW">Poucos disparos (1 a 2)</option>
+                        <option value="MANY">Muitos disparos (3 ou mais)</option>
+                      </select>
                     </div>
                   </div>
 
@@ -1252,6 +1295,7 @@ export function DisparadorPage() {
                             <th style={{ padding: "1rem 0.5rem", width: "40px", textAlign: "center" }}></th>
                             <th style={{ padding: "1rem 1.5rem" }}>DESTINATÁRIO (WHATSAPP & CRM)</th>
                             <th style={{ padding: "1rem 1.5rem" }}>TIPO & CLASSIFICAÇÃO</th>
+                            <th style={{ padding: "1rem 1.5rem" }}>DISPAROS</th>
                             <th style={{ padding: "1rem 1.5rem" }}>STATUS (SPAM RISK)</th>
                           </tr>
                         </thead>
@@ -1385,6 +1429,11 @@ export function DisparadorPage() {
                                       Último contato: <strong>{group.lastContactAt ? formatDateTime(group.lastContactAt) : "Sem registro"}</strong>
                                     </span>
                                   </div>
+                                </td>
+                                <td style={{ padding: "1.25rem 1.5rem" }}>
+                                  <span style={{ fontSize: "0.82rem", background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "4px 8px", borderRadius: "6px", color: "#166534", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                    🚀 {group.sentCampaignsCount ?? 0} {group.sentCampaignsCount === 1 ? 'disparo' : 'disparos'}
+                                  </span>
                                 </td>
                                 <td style={{ padding: "1.25rem 1.5rem", position: "relative" }}>
                                   <span
@@ -1722,49 +1771,7 @@ export function DisparadorPage() {
 
             </div>
 
-            {/* RIGHT COLUMN: FLOATING STICKY SUMMARY CARD (LOOKS EXACTLY LIKE SCREENSHOT) */}
-            {currentStep > 1 && (
-              <div className="wp-float-side">
-                <div className="wp-float-card">
-                  
-                  <div className="wp-float-card-header">
-                    <span className="status-badge status-success" style={{ alignSelf: "flex-start", marginBottom: "8px" }}>Ativa</span>
-                    <h3 className="wp-float-card-title">{campaignName || "Campanha #01"}</h3>
-                    <p className="wp-float-card-subtitle">{formatNumber(selectedGroupCount)} disparos selecionados</p>
-                  </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <div className="cw-user-avatar" style={{ width: "24px", height: "24px", fontSize: "0.6rem" }}>
-                      {(user?.name || "L").charAt(0).toUpperCase()}
-                    </div>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>{user?.name || "Lucas Oliveira"}</span>
-                  </div>
-
-                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                    <span className="wp-sender-role" style={{ fontSize: "0.7rem" }}>Vendas</span>
-                    <span className="wp-sender-role" style={{ fontSize: "0.7rem" }}>MKT</span>
-                    <span className="wp-sender-role" style={{ fontSize: "0.7rem", background: "rgba(0, 0, 0, 0.04)" }}>+2</span>
-                  </div>
-
-                  <p className="panel-subcopy" style={{ margin: 0, fontSize: "0.75rem" }}>
-                    Criada em {new Date().toLocaleDateString("pt-BR")}
-                  </p>
-
-                  <div style={{ borderTop: "1px solid var(--line)", paddingTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    <button
-                      type="button"
-                      className="wp-btn-action"
-                      style={{ width: "100%", justifyContent: "center", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.25)", background: "rgba(16, 185, 129, 0.01)" }}
-                      onClick={() => setAbTestActive(true)}
-                    >
-                      <Sparkles size={14} />
-                      Adicionar A/B
-                    </button>
-                  </div>
-
-                </div>
-              </div>
-            )}
 
           </div>
         </>

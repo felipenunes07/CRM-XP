@@ -3,6 +3,7 @@ import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import { LoaderCircle, CheckCircle2 } from "lucide-react";
 import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
@@ -166,7 +167,9 @@ export function CustomerDetailPage() {
       return;
     }
 
-    setSelectedLabels((current) => [...current, labelName]);
+    const nextLabels = [...selectedLabels, labelName];
+    setSelectedLabels(nextLabels);
+    saveLabelsMutation.mutate({ labels: nextLabels });
     setLabelSearch("");
     setLabelMessage("");
   }
@@ -182,7 +185,9 @@ export function CustomerDetailPage() {
       return;
     }
 
-    setSelectedLabels((current) => [...current, cleaned]);
+    const nextLabels = [...selectedLabels, cleaned];
+    setSelectedLabels(nextLabels);
+    saveLabelsMutation.mutate({ labels: nextLabels });
     setNewLabel("");
     setLabelMessage("");
   }
@@ -192,7 +197,9 @@ export function CustomerDetailPage() {
       return;
     }
 
-    setSelectedLabels((current) => current.filter((item) => item !== labelName));
+    const nextLabels = selectedLabels.filter((item) => item !== labelName);
+    setSelectedLabels(nextLabels);
+    saveLabelsMutation.mutate({ labels: nextLabels });
     setLabelMessage("");
   }
 
@@ -464,7 +471,7 @@ export function CustomerDetailPage() {
           <div className="stack-list">
             <form className="label-block" onSubmit={handleSaveLabels}>
               <span className="label-block-title">Rotulos do cliente</span>
-              <p className="panel-subcopy">Adicione, remova e salve os rotulos sem misturar essa acao com as notas.</p>
+              <p className="panel-subcopy">Os rotulos sao salvos automaticamente ao serem alterados.</p>
 
               <div className="tag-row compact">
                 {selectedLabels.length ? (
@@ -522,12 +529,18 @@ export function CustomerDetailPage() {
                 </button>
               </div>
 
-              <div className="inline-actions">
-                <button type="submit" className="primary-button" disabled={saveLabelsMutation.isPending}>
-                  {saveLabelsMutation.isPending ? "Salvando..." : "Salvar rotulos"}
-                </button>
-                {saveLabelsMutation.isError ? <span className="inline-error">Nao foi possivel salvar os rotulos.</span> : null}
-                {labelMessage ? <span className="save-ok">{labelMessage}</span> : null}
+              <div className="inline-actions" style={{ minHeight: "36px", display: "flex", alignItems: "center" }}>
+                {saveLabelsMutation.isPending ? (
+                  <span className="muted-copy" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem" }}>
+                    <LoaderCircle className="spinner-small" size={16} style={{ animation: "spin 1s linear infinite" }} /> Salvando alteracoes...
+                  </span>
+                ) : saveLabelsMutation.isError ? (
+                  <span className="inline-error" style={{ fontSize: "0.85rem" }}>Nao foi possivel salvar os rotulos.</span>
+                ) : (
+                  <span className="save-ok" style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.85rem", color: "var(--semantic-positive)" }}>
+                    <CheckCircle2 size={16} /> Rótulos salvos automaticamente!
+                  </span>
+                )}
               </div>
             </form>
 

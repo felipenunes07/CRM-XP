@@ -277,7 +277,7 @@ export function SegmentsPage() {
             </label>
 
             <label className="segment-filter-half">
-              Excluir rotulo
+              Ocultar com rotulo
               <select
                 value={definition.excludeLabels?.[0] ?? ""}
                 onChange={(event) =>
