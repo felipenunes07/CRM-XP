@@ -1226,6 +1226,139 @@ export function createApp() {
     }
   });
 
+  app.post("/api/messages/test", async (request, response, next) => {
+    try {
+      const { messageText, messageType, carouselData, whatsappInstanceId } = request.body;
+      const testNumber = "5511911279702@s.whatsapp.net";
+      
+      logger.info("📱 Test message request received", { 
+        messageType, 
+        hasCarousel: !!carouselData, 
+        carouselSlides: carouselData?.length || 0,
+        instanceId: whatsappInstanceId,
+        messageLength: messageText?.length || 0
+      });
+
+      if (!messageText && messageType !== "CAROUSEL") {
+        throw new HttpError(400, "Mensagem de texto é obrigatória");
+      }
+
+      // Import services
+      const { sendUazapiCarouselMessage, sendUazapiTextMessage } = await import("./modules/whatsapp/uazapiService.js");
+      const { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } = await import("./modules/whatsapp/evolutionService.js");
+      
+      // Get WhatsApp instance if specified
+      let instanceConfig: any = null;
+      if (whatsappInstanceId) {
+        try {
+          const instanceResult = await pool.query(
+            `SELECT 
+              provider, 
+              instance_name AS evolution_instance_name, 
+              evolution_base_url, 
+              evolution_api_key, 
+              uazapi_base_url, 
+              uazapi_token,
+              display_label
+            FROM whatsapp_instances 
+            WHERE id = $1`,
+            [whatsappInstanceId]
+          );
+          
+          if (instanceResult.rows[0]) {
+            const row = instanceResult.rows[0];
+            logger.info("✅ Found WhatsApp instance", { 
+              provider: row.provider, 
+              label: row.display_label,
+              hasUazapiConfig: !!(row.uazapi_base_url && row.uazapi_token),
+              hasEvolutionConfig: !!(row.evolution_instance_name && row.evolution_base_url && row.evolution_api_key)
+            });
+            
+            if (row.provider === "UAZAPI" && row.uazapi_base_url && row.uazapi_token) {
+              instanceConfig = {
+                provider: "UAZAPI",
+                baseUrl: String(row.uazapi_base_url),
+                token: String(row.uazapi_token)
+              };
+            } else if (row.evolution_instance_name && row.evolution_base_url && row.evolution_api_key) {
+              instanceConfig = {
+                provider: "EVOLUTION",
+                instanceName: String(row.evolution_instance_name),
+                evolutionBaseUrl: String(row.evolution_base_url),
+                evolutionApiKey: String(row.evolution_api_key)
+              };
+            } else {
+              logger.warn("⚠️ Instance found but missing configuration");
+            }
+          } else {
+            logger.warn("⚠️ No active instance found with ID", { whatsappInstanceId });
+          }
+        } catch (dbError: any) {
+          logger.error("❌ Database error fetching instance, using default", { error: dbError.message });
+          // Don't throw, just use default Evolution
+        }
+      }
+
+      let result: any;
+      
+      // Validate carousel support
+      if (messageType === "CAROUSEL" && carouselData?.length) {
+        if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
+          throw new HttpError(400, "Carrossel só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
+        }
+      }
+      
+      // Send message based on provider and type
+      try {
+        if (instanceConfig?.provider === "UAZAPI" && messageType === "CAROUSEL" && carouselData?.length) {
+          logger.info("🎠 Sending carousel test via UazAPI", { slides: carouselData.length });
+          result = await sendUazapiCarouselMessage(
+            { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
+            testNumber,
+            carouselData
+          );
+        } else if (instanceConfig?.provider === "UAZAPI") {
+          logger.info("💬 Sending text test via UazAPI");
+          result = await sendUazapiTextMessage(
+            { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
+            testNumber,
+            messageText
+          );
+        } else if (instanceConfig?.provider === "EVOLUTION") {
+          logger.info("💬 Sending text test via Evolution instance");
+          result = await sendWhatsappInstanceTextMessage(
+            {
+              instanceName: instanceConfig.instanceName,
+              evolutionBaseUrl: instanceConfig.evolutionBaseUrl,
+              evolutionApiKey: instanceConfig.evolutionApiKey
+            },
+            testNumber,
+            messageText
+          );
+        } else {
+          logger.info("💬 Sending text test via default Evolution");
+          result = await sendWhatsappTextMessage(testNumber, messageText);
+        }
+      } catch (sendError: any) {
+        logger.error("❌ Error sending message", { 
+          error: sendError.message,
+          stack: sendError.stack,
+          responsePayload: sendError.responsePayload
+        });
+        throw new HttpError(500, `Erro ao enviar mensagem: ${sendError.message}`);
+      }
+
+      logger.info("✅ Test message sent successfully");
+      response.json({ success: true, result });
+    } catch (error: any) {
+      logger.error("❌ Test message endpoint error", { 
+        error: error.message,
+        stack: error.stack
+      });
+      next(error);
+    }
+  });
+
   app.get("/api/ideas", async (request, response, next) => {
     try {
       response.json(await listIdeas(request.user!));

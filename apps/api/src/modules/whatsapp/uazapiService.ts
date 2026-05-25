@@ -64,7 +64,7 @@ export async function sendUazapiCarouselMessage(
   });
 }
 
-async function requestUazapi(
+export async function requestUazapi(
   config: UazapiInstanceConfig,
   path: string,
   method: string,

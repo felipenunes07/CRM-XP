@@ -440,6 +440,12 @@ export const api = {
       method: "DELETE",
     }, token);
   },
+  sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; whatsappInstanceId?: string }) {
+    return request<{ success: boolean; result: any }>("/api/messages/test", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
   listIdeas(token: string) {
     return request<IdeaBoardItem[]>("/api/ideas", {}, token);
   },

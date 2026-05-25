@@ -457,6 +457,29 @@ export function DisparadorPage() {
     },
   });
 
+  const sendTestMessageMutation = useMutation({
+    mutationFn: () => {
+      const payload = {
+        messageText: messageText || "Mensagem de teste",
+        messageType: campaignMessageType,
+        carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
+        whatsappInstanceId: selectedSenderIds[0] || undefined
+      };
+      
+      console.log("Sending test message with payload:", payload);
+      return api.sendTestMessage(token!, payload);
+    },
+    onSuccess: (data) => {
+      console.log("Test message sent successfully:", data);
+      alert("✅ Mensagem de teste enviada com sucesso para +55 11 91127-9702!");
+    },
+    onError: (error: any) => {
+      console.error("Error sending test message:", error);
+      const errorMessage = error?.message || error?.toString() || "Erro desconhecido";
+      alert(`❌ Erro ao enviar teste: ${errorMessage}\n\nVerifique se a instância WhatsApp está ativa e configurada corretamente.`);
+    }
+  });
+
   useEffect(() => {
     if (!selectedTemplateId) return;
     const template = templatesQuery.data?.find((item) => item.id === selectedTemplateId);
@@ -1605,7 +1628,7 @@ export function DisparadorPage() {
                         </select>
                       </label>
 
-                      {selectedSenderProvider === "UAZAPI" && (
+                      {selectedSenderProvider === "UAZAPI" ? (
                         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
                           <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>Tipo de envio:</span>
                           <button
@@ -1624,6 +1647,23 @@ export function DisparadorPage() {
                           >
                             Carrossel
                           </button>
+                        </div>
+                      ) : (
+                        <div style={{ 
+                          padding: "0.75rem 1rem", 
+                          background: "#fef3c7", 
+                          border: "1px solid #fbbf24", 
+                          borderRadius: "8px",
+                          fontSize: "0.82rem",
+                          color: "#92400e",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px"
+                        }}>
+                          <Info size={16} />
+                          <div>
+                            <strong>Carrossel indisponível:</strong> Selecione uma instância UazAPI no passo "Remetentes" para usar carrosséis com imagens e botões.
+                          </div>
                         </div>
                       )}
 
@@ -2373,6 +2413,96 @@ export function DisparadorPage() {
                       <li>Contatos sob alto risco de proteção bloqueados ou sinalizados para evitar bloqueios da conta da empresa.</li>
                       <li>{abTestActive ? "Distribuição A/B ativada! Mensagens divididas reduzem o risco de algoritmos do WhatsApp rastrearem padrões." : "Dica: Considere ativar o teste A/B no passo anterior para reduzir o risco de bloqueios por texto repetitivo."}</li>
                     </ul>
+                  </div>
+
+                  {/* TEST MESSAGE SECTION */}
+                  <div style={{ 
+                    marginTop: "1.5rem", 
+                    background: "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)", 
+                    padding: "1.5rem", 
+                    borderRadius: "16px", 
+                    border: "2px solid #3b82f6",
+                    boxShadow: "0 4px 12px rgba(59, 130, 246, 0.15)"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "start", gap: "1rem" }}>
+                      <div style={{ flex: 1 }}>
+                        <h4 style={{ margin: "0 0 8px 0", color: "#1e40af", fontSize: "1rem", display: "flex", alignItems: "center", gap: "8px", fontWeight: 700 }}>
+                          <Smartphone size={18} />
+                          Enviar Mensagem de Teste
+                        </h4>
+                        <p style={{ margin: "0 0 12px 0", fontSize: "0.85rem", color: "#1e40af", lineHeight: 1.5 }}>
+                          Antes de disparar para todos os destinatários, envie uma mensagem de teste para verificar se está tudo correto.
+                        </p>
+                        <div style={{ 
+                          background: "rgba(255, 255, 255, 0.7)", 
+                          padding: "10px 14px", 
+                          borderRadius: "8px",
+                          fontSize: "0.82rem",
+                          color: "#1e40af",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          marginBottom: "12px"
+                        }}>
+                          <Info size={14} />
+                          <div>
+                            <strong>Número de teste:</strong> +55 11 91127-9702
+                            {campaignMessageType === "CAROUSEL" && (
+                              <div style={{ marginTop: "4px", fontSize: "0.75rem" }}>
+                                ⚠️ O carrossel será enviado com todas as imagens e botões configurados
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => sendTestMessageMutation.mutate()}
+                        disabled={sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL")}
+                        style={{
+                          padding: "1rem 1.5rem",
+                          background: sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL") ? "#94a3b8" : "#3b82f6",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "12px",
+                          fontSize: "0.9rem",
+                          fontWeight: 700,
+                          cursor: sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL") ? "not-allowed" : "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          boxShadow: "0 4px 12px rgba(59, 130, 246, 0.3)",
+                          transition: "all 0.2s",
+                          whiteSpace: "nowrap"
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!sendTestMessageMutation.isPending && (hasMessage || campaignMessageType === "CAROUSEL")) {
+                            e.currentTarget.style.background = "#2563eb";
+                            e.currentTarget.style.transform = "translateY(-2px)";
+                            e.currentTarget.style.boxShadow = "0 6px 16px rgba(59, 130, 246, 0.4)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!sendTestMessageMutation.isPending && (hasMessage || campaignMessageType === "CAROUSEL")) {
+                            e.currentTarget.style.background = "#3b82f6";
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
+                          }
+                        }}
+                      >
+                        {sendTestMessageMutation.isPending ? (
+                          <>
+                            <LoaderCircle size={18} className="spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <Send size={18} />
+                            Enviar Teste
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="whatsapp-wizard-nav" style={{ justifyContent: "center", border: "none", marginTop: "1.5rem" }}>

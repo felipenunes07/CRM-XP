@@ -482,6 +482,7 @@ export async function refreshWhatsappInstanceProfiles() {
     SELECT id, instance_name, phone_number, evolution_base_url, evolution_api_key
     FROM whatsapp_instances
     WHERE status = 'ACTIVE'
+      AND (provider = 'EVOLUTION' OR provider IS NULL)
     ORDER BY is_default DESC, display_label ASC
   `);
 

@@ -141,6 +141,7 @@ function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
     phoneNumber: row.phone_number ? String(row.phone_number) : null,
     status: String(row.status ?? "ACTIVE") as WhatsappMonitorAgent["status"],
     isDefault: Boolean(row.is_default),
+    provider: String(row.provider ?? "EVOLUTION") as WhatsappMonitorAgent["provider"],
     assignedUserId: row.assigned_user_id ? String(row.assigned_user_id) : null,
     assignedUserName: row.assigned_user_name ? String(row.assigned_user_name) : null,
     lastHealthStatus: row.last_health_status ? String(row.last_health_status) : null,
@@ -858,7 +859,10 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
       COALESCE(primary_instance.instance_name, activity_instance.instance_name) AS instance_name,
       COALESCE(primary_instance.display_label, activity_instance.display_label) AS display_label,
       COALESCE(primary_instance.evolution_base_url, activity_instance.evolution_base_url) AS evolution_base_url,
-      COALESCE(primary_instance.evolution_api_key, activity_instance.evolution_api_key) AS evolution_api_key
+      COALESCE(primary_instance.evolution_api_key, activity_instance.evolution_api_key) AS evolution_api_key,
+      COALESCE(primary_instance.provider, activity_instance.provider) AS provider,
+      COALESCE(primary_instance.uazapi_base_url, activity_instance.uazapi_base_url) AS uazapi_base_url,
+      COALESCE(primary_instance.uazapi_token, activity_instance.uazapi_token) AS uazapi_token
     FROM deals d
     LEFT JOIN whatsapp_instances primary_instance ON primary_instance.id = d.whatsapp_instance_id
     LEFT JOIN latest_instance ON true
@@ -880,18 +884,29 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
   const instanceName = optionalString(row.instance_name);
   const evolutionBaseUrl = optionalString(row.evolution_base_url);
   const evolutionApiKey = optionalString(row.evolution_api_key);
+  const provider = optionalString(row.provider) ?? "EVOLUTION";
+  const uazapiBaseUrl = optionalString(row.uazapi_base_url);
+  const uazapiToken = optionalString(row.uazapi_token);
 
   return {
     dealId: String(row.id),
     remoteJid,
     instanceId: row.instance_id ? String(row.instance_id) : null,
     instanceLabel: optionalString(row.display_label),
+    provider,
     evolution:
-      instanceName && evolutionBaseUrl && evolutionApiKey
+      provider === "EVOLUTION" && instanceName && evolutionBaseUrl && evolutionApiKey
         ? {
           instanceName,
           evolutionBaseUrl,
           evolutionApiKey,
+        }
+        : null,
+    uazapi:
+      provider === "UAZAPI" && uazapiBaseUrl && uazapiToken
+        ? {
+          baseUrl: uazapiBaseUrl,
+          token: uazapiToken,
         }
         : null,
   };
@@ -952,13 +967,26 @@ export async function sendWhatsappMonitorReply(
   }
 
   const context = await getWhatsappConversationEvolutionContext(dealId);
-  if (!context.remoteJid || !context.evolution) {
-    throw new HttpError(400, "Conversa sem instancia Evolution configurada.");
+  if (!context.remoteJid) {
+    throw new HttpError(400, "Conversa sem JID configurado.");
   }
 
-  const providerPayload = await sendWhatsappInstanceTextMessage(context.evolution, context.remoteJid, text);
-  const providerMessageId =
-    extractProviderMessageId(providerPayload) ?? `monitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let providerPayload: Record<string, unknown>;
+  let providerMessageId: string;
+
+  if (context.provider === "UAZAPI" && context.uazapi) {
+    const { sendUazapiTextMessage } = await import("./uazapiService.js");
+    providerPayload = await sendUazapiTextMessage(context.uazapi, context.remoteJid, text);
+    providerMessageId =
+      extractProviderMessageId(providerPayload) ?? `monitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  } else if (context.evolution) {
+    providerPayload = await sendWhatsappInstanceTextMessage(context.evolution, context.remoteJid, text);
+    providerMessageId =
+      extractProviderMessageId(providerPayload) ?? `monitor-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  } else {
+    throw new HttpError(400, "Conversa sem instância WhatsApp ativa configurada.");
+  }
+
   const createdAt = new Date().toISOString();
 
   await pool.query(
@@ -984,7 +1012,7 @@ export async function sendWhatsappMonitorReply(
         messageId: providerMessageId,
         providerMessageId,
         providerPayload,
-        instance: context.evolution.instanceName,
+        instance: context.instanceLabel || context.evolution?.instanceName || "WhatsApp",
         instanceId: context.instanceId,
         isGroup: context.remoteJid.endsWith("@g.us"),
         senderName: user.name,
@@ -1010,7 +1038,7 @@ export async function sendWhatsappMonitorReply(
     metadata: {
       remoteJid: context.remoteJid,
       messageId: providerMessageId,
-      instance: context.evolution.instanceName,
+      instance: context.instanceLabel || context.evolution?.instanceName || "WhatsApp",
       sentFromMonitor: true,
     },
     risk: detectWhatsappMessageRisk(text),
@@ -1054,21 +1082,45 @@ export async function sendWhatsappMonitorMediaReply(
   },
 ): Promise<WhatsappMonitorConversationDetail> {
   const context = await getWhatsappConversationEvolutionContext(dealId);
-  if (!context.remoteJid || !context.evolution) {
-    throw new HttpError(400, "Conversa sem instancia Evolution configurada.");
+  if (!context.remoteJid) {
+    throw new HttpError(400, "Conversa sem JID configurado.");
   }
 
-  const providerPayload = await sendWhatsappInstanceMediaMessage(
-    context.evolution,
-    context.remoteJid,
-    input.mediaBase64,
-    input.mediaType,
-    input.fileName,
-    input.caption,
-  );
+  let providerPayload: Record<string, unknown>;
+  let providerMessageId: string;
 
-  const providerMessageId =
-    extractProviderMessageId(providerPayload) ?? `monitor-media-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  if (context.provider === "UAZAPI" && context.uazapi) {
+    const { sendUazapiImageMessage } = await import("./uazapiService.js");
+    if (input.mediaType === "image") {
+      providerPayload = await sendUazapiImageMessage(context.uazapi, context.remoteJid, input.mediaBase64, input.caption);
+    } else {
+      const { requestUazapi } = await import("./uazapiService.js");
+      const [jidNum] = context.remoteJid.split("@");
+      const number = (jidNum ?? context.remoteJid).replace(/\D/g, "");
+      providerPayload = await requestUazapi(context.uazapi, "/send/file", "POST", {
+        number,
+        file: input.mediaBase64,
+        caption: input.caption ?? "",
+        filename: input.fileName ?? "file",
+      });
+    }
+    providerMessageId =
+      extractProviderMessageId(providerPayload) ?? `monitor-media-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  } else if (context.evolution) {
+    providerPayload = await sendWhatsappInstanceMediaMessage(
+      context.evolution,
+      context.remoteJid,
+      input.mediaBase64,
+      input.mediaType,
+      input.fileName,
+      input.caption,
+    );
+    providerMessageId =
+      extractProviderMessageId(providerPayload) ?? `monitor-media-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  } else {
+    throw new HttpError(400, "Conversa sem instância WhatsApp ativa configurada.");
+  }
+
   const createdAt = new Date().toISOString();
 
   await pool.query(
@@ -1094,7 +1146,7 @@ export async function sendWhatsappMonitorMediaReply(
         messageId: providerMessageId,
         providerMessageId,
         providerPayload,
-        instance: context.evolution.instanceName,
+        instance: context.instanceLabel || context.evolution?.instanceName || "WhatsApp",
         instanceId: context.instanceId,
         isGroup: context.remoteJid.endsWith("@g.us"),
         senderName: user.name,
@@ -1107,6 +1159,7 @@ export async function sendWhatsappMonitorMediaReply(
       providerMessageId,
     ],
   );
+
 
   // Messaging Intelligence: Detect and create event
   const monitorMessage: WhatsappMonitorMessage = {
@@ -1123,7 +1176,7 @@ export async function sendWhatsappMonitorMediaReply(
     metadata: {
       remoteJid: context.remoteJid,
       messageId: providerMessageId,
-      instance: context.evolution.instanceName,
+      instance: context.instanceLabel || context.evolution?.instanceName || "WhatsApp",
       sentFromMonitor: true,
       mediaType: input.mediaType,
       mediaBase64: input.mediaBase64,

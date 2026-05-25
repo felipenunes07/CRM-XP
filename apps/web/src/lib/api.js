@@ -300,6 +300,12 @@ export const api = {
             method: "DELETE",
         }, token);
     },
+    sendTestMessage(token, input) {
+        return request("/api/messages/test", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
     listIdeas(token) {
         return request("/api/ideas", {}, token);
     },
