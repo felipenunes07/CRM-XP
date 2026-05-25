@@ -15,7 +15,7 @@ import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
 
-type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO";
+type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 
 const quickFilters: Array<{ value: QuickFilter; label: string; description: string }> = [
@@ -25,6 +25,7 @@ const quickFilters: Array<{ value: QuickFilter; label: string; description: stri
   { value: "OTHER", label: "Outros", description: "LJ, internos e demais grupos." },
   { value: "BLOQUEADOS", label: "Bloqueados", description: "Grupos sob bloqueio recente." },
   { value: "ULTIMO_CONTATO", label: "Último contato", description: "Histórico de envio recente." },
+  { value: "SELECTED", label: "Selecionados", description: "Visualizar apenas contatos selecionados para envio." },
 ];
 
 
@@ -163,7 +164,9 @@ function quickFilterCount(
   filter: QuickFilter,
   summary: WhatsappMappingSummary | undefined,
   loadedItems: WhatsappGroup[],
+  selectedCount?: number,
 ) {
+  if (filter === "SELECTED") return formatNumber(selectedCount ?? 0);
   if (!summary) return "--";
   if (filter === "ALL") return formatNumber(summary.totalGroups);
   if (filter === "WITH_ORDER") return formatNumber(summary.classificationCounts["WITH_ORDER"]);
@@ -187,6 +190,7 @@ export function DisparadorPage() {
 
 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
   const [search, setSearch] = useState("");
   const [savedSegmentId, setSavedSegmentId] = useState("");
   const [recentBlockFilter, setRecentBlockFilter] = useState<RecentBlockFilter>("AVAILABLE_ONLY");
@@ -434,11 +438,13 @@ export function DisparadorPage() {
   const filteredGroups = useMemo(() => {
     let result = loadedGroups;
 
-    if (quickFilter === "ULTIMO_CONTATO") {
+    if (quickFilter === "SELECTED") {
+      result = result.filter((group) => selectedGroupIds.includes(group.id));
+    } else if (quickFilter === "ULTIMO_CONTATO") {
       result = result.filter((group) => group.lastContactAt !== null);
     }
 
-    if (quickFilter !== "BLOQUEADOS") {
+    if (quickFilter !== "BLOQUEADOS" && quickFilter !== "SELECTED") {
       if (recentBlockFilter === "AVAILABLE_ONLY") {
         return result.filter((group) => !group.isRecentlyBlocked);
       } else if (recentBlockFilter === "BLOCKED_ONLY") {
@@ -447,10 +453,22 @@ export function DisparadorPage() {
     }
 
     return result;
-  }, [loadedGroups, quickFilter, recentBlockFilter]);
+  }, [loadedGroups, quickFilter, recentBlockFilter, selectedGroupIds]);
   const selectedGroupCount = selectedGroupIds.length;
+
+  // Reset page to 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [quickFilter, recentBlockFilter, savedSegmentId, search]);
+
+  const itemsPerPage = 50;
+  const totalPages = Math.ceil(filteredGroups.length / itemsPerPage);
+  const paginatedGroups = useMemo(() => {
+    return filteredGroups.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  }, [filteredGroups, currentPage]);
+
   const allVisibleSelected =
-    filteredGroups.length > 0 && filteredGroups.every((group) => selectedGroupIds.includes(group.id));
+    paginatedGroups.length > 0 && paginatedGroups.every((group) => selectedGroupIds.includes(group.id));
 
   const selectedSavedSegment = savedSegmentsQuery.data?.find((segment) => segment.id === savedSegmentId) ?? null;
   const selectedTemplate = templatesQuery.data?.find((template) => template.id === selectedTemplateId) ?? null;
@@ -517,7 +535,7 @@ export function DisparadorPage() {
   }
 
   function toggleVisibleSelection() {
-    const visibleIds = filteredGroups.map((group) => group.id);
+    const visibleIds = paginatedGroups.map((group) => group.id);
     setSelectedGroupIds((current) => {
       if (allVisibleSelected) {
         return current.filter((groupId) => !visibleIds.includes(groupId));
@@ -543,11 +561,15 @@ export function DisparadorPage() {
 
     if (matchingIds.length > 0) {
       setSelectedGroupIds(current => [...new Set([...current, ...matchingIds])]);
-      alert(`${matchingIds.length} grupos mapeados para os códigos CL foram selecionados!`);
-      setShowClPasteArea(false);
-      setPastedClsText("");
+      
+      // Clear filters and redirect straight to SELECTED tab to show them
+      setSearch("");
+      setSavedSegmentId("");
+      setQuickFilter("SELECTED");
+      
+      alert(`${matchingIds.length} grupos mapeados para os códigos CL foram selecionados e exibidos na aba 'Selecionados'!`);
     } else {
-      alert("Nenhum grupo correspondente aos códigos CL inseridos foi encontrado.");
+      alert("Nenhum grupo correspondente aos códigos CL inseridos foi encontrado no filtro atual. Dica: Use a opção 'Criar & Salvar Novo Público' para salvar e filtrar todos os códigos CL da sua base de dados.");
     }
   }
 
@@ -889,7 +911,12 @@ export function DisparadorPage() {
                       <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Público salvo</span>
                       <select
                         value={savedSegmentId}
-                        onChange={(event) => setSavedSegmentId(event.target.value)}
+                        onChange={(event) => {
+                          setSavedSegmentId(event.target.value);
+                          if (quickFilter === "SELECTED") {
+                            setQuickFilter("ALL");
+                          }
+                        }}
                         className="wp-card-input"
                         style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem", background: "#fff" }}
                       >
@@ -947,7 +974,7 @@ export function DisparadorPage() {
                   {/* Tabs Row (Row 2 exactly like screenshot) */}
                   <div className="z-tabs" style={{ marginBottom: "1rem", display: "flex", gap: "10px", flexWrap: "wrap" }}>
                     {quickFilters.map((filter) => {
-                      const count = quickFilterCount(filter.value, mappingSummaryQuery.data, loadedGroups);
+                      const count = quickFilterCount(filter.value, mappingSummaryQuery.data, loadedGroups, selectedGroupIds.length);
                       const isActive = quickFilter === filter.value;
                       return (
                         <button
@@ -1008,7 +1035,12 @@ export function DisparadorPage() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSelectedGroupIds([])}
+                      onClick={() => {
+                        setSelectedGroupIds([]);
+                        if (quickFilter === "SELECTED") {
+                          setQuickFilter("ALL");
+                        }
+                      }}
                       disabled={selectedGroupCount === 0}
                       style={{
                         display: "flex",
@@ -1204,7 +1236,8 @@ export function DisparadorPage() {
                   {groupsQuery.isLoading ? <div className="page-loading">Carregando grupos destinatários...</div> : null}
 
                   {groupsQuery.data?.items.length ? (
-                    <div className="table-scroll" style={{ overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }}>
+                    <>
+                      <div className="table-scroll" style={{ overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }}>
                       <table className="z-table">
                         <thead>
                           <tr>
@@ -1223,7 +1256,7 @@ export function DisparadorPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredGroups.map((group) => {
+                          {paginatedGroups.map((group) => {
                             const isSelected = selectedGroupIds.includes(group.id);
 
                             // Risk configuration
@@ -1385,7 +1418,69 @@ export function DisparadorPage() {
                         </tbody>
                       </table>
                     </div>
-                  ) : (
+
+                    {/* Premium Client-Side Pagination Control Bar */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem", background: "#f8fafc", padding: "0.75rem 1.25rem", borderRadius: "12px", border: "1px solid #e4e4e7" }}>
+                      <span style={{ fontSize: "0.82rem", color: "#64748b", fontWeight: 500 }}>
+                        Mostrando <strong>{filteredGroups.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}-{Math.min(filteredGroups.length, currentPage * itemsPerPage)}</strong> de <strong>{formatNumber(filteredGroups.length)}</strong> destinatários
+                      </span>
+                      
+                      {totalPages > 1 && (
+                        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "0.4rem 0.8rem",
+                              fontSize: "0.82rem",
+                              fontWeight: 600,
+                              borderRadius: "6px",
+                              border: "1px solid #e4e4e7",
+                              backgroundColor: "#ffffff",
+                              color: currentPage === 1 ? "#a1a1aa" : "#3f3f46",
+                              cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                              transition: "all 0.2s"
+                            }}
+                          >
+                            <ChevronLeft size={16} />
+                            Anterior
+                          </button>
+                          
+                          <span style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 600, padding: "0 0.5rem" }}>
+                            Página {currentPage} de {totalPages}
+                          </span>
+                          
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage === totalPages}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              padding: "0.4rem 0.8rem",
+                              fontSize: "0.82rem",
+                              fontWeight: 600,
+                              borderRadius: "6px",
+                              border: "1px solid #e4e4e7",
+                              backgroundColor: "#ffffff",
+                              color: currentPage === totalPages ? "#a1a1aa" : "#3f3f46",
+                              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                              transition: "all 0.2s"
+                            }}
+                          >
+                            Próximo
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
                     <div className="empty-panel" style={{ padding: "3rem 1rem" }}>
                       <div className="empty-state">
                         Nenhum destinatário encontrado com os filtros atuais.

@@ -256,7 +256,7 @@ export function buildWhere(filters: FilterLike) {
   }
 
   if (filters.customerCodes?.length) {
-    push((index) => `s.customer_code = ANY($${index})`, filters.customerCodes);
+    push((index) => `UPPER(s.customer_code) = ANY($${index})`, filters.customerCodes.map(c => c.trim().toUpperCase()));
   }
 
   return { whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
