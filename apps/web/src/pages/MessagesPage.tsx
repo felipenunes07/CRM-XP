@@ -146,7 +146,7 @@ function mediaLabel(mediaType: string | null) {
 
 function defaultMimeType(mediaType: string | null) {
   if (mediaType === "image") return "image/jpeg";
-  if (mediaType === "audio") return "audio/ogg";
+  if (mediaType === "audio") return "audio/ogg; codecs=opus";
   if (mediaType === "video") return "video/mp4";
   return "application/octet-stream";
 }
@@ -156,11 +156,19 @@ function buildMediaSrc(mediaType: string | null, mimeType: string | null, mediaU
     return mediaUrl;
   }
 
-  if (mediaBase64.startsWith("data:")) {
-    return mediaBase64;
+  // Remove any whitespace, newlines, carriage returns, or tabs from the base64 string
+  const cleanBase64 = mediaBase64.replace(/\s/g, "");
+
+  if (cleanBase64.startsWith("data:")) {
+    return cleanBase64;
   }
 
-  return `data:${mimeType ?? defaultMimeType(mediaType)};base64,${mediaBase64}`;
+  let finalMimeType = mimeType ?? defaultMimeType(mediaType);
+  if (finalMimeType === "audio/ogg") {
+    finalMimeType = "audio/ogg; codecs=opus";
+  }
+
+  return `data:${finalMimeType};base64,${cleanBase64}`;
 }
 
 function messageMedia(message: WhatsappMonitorMessage) {

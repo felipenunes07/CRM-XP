@@ -282,15 +282,17 @@ export function extractEvolutionMessageMedia(message: EvolutionMessageLike): Evo
       continue;
     }
 
+    const rawBase64 =
+      pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
+      pickString(mediaMessage, ["base64", "mediaBase64"]) ??
+      pickString(rootRecord, ["base64", "mediaBase64", "media"]);
+
     return {
       mediaType,
       mediaUrl:
         pickString(mediaMessage, ["url", "mediaUrl"]) ??
         pickString(rootRecord, ["mediaUrl", "url"]),
-      mediaBase64:
-        pickString(unwrapped, ["base64", "mediaBase64", "media"]) ??
-        pickString(mediaMessage, ["base64", "mediaBase64"]) ??
-        pickString(rootRecord, ["base64", "mediaBase64", "media"]),
+      mediaBase64: rawBase64 ? rawBase64.replace(/\s/g, "") : null,
       mimeType: pickString(mediaMessage, ["mimetype", "mimeType"]),
       fileName: pickString(mediaMessage, ["fileName", "filename"]),
       caption: pickString(mediaMessage, ["caption"]),
