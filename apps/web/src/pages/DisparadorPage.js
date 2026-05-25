@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock3, LoaderCircle, Send, ShieldAlert, Plus, ArrowRight, Check, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, Plus, ArrowRight, Check, Trash2, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, ClipboardList, Save } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
@@ -146,6 +146,7 @@ export function DisparadorPage() {
     const [selectedGroupIds, setSelectedGroupIds] = useState([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState("");
     const [pastedClsText, setPastedClsText] = useState("");
+    const [newSegmentName, setNewSegmentName] = useState("");
     const [showClPasteArea, setShowClPasteArea] = useState(false);
     const [campaignName, setCampaignName] = useState("");
     const [messageText, setMessageText] = useState("");
@@ -250,6 +251,19 @@ export function DisparadorPage() {
         onSuccess: async () => {
             await invalidateWhatsappQueries();
         },
+    });
+    const createSavedSegmentMutation = useMutation({
+        mutationFn: (input) => api.createSavedSegment(token, input),
+        onSuccess: (savedSegment) => {
+            void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
+            setSavedSegmentId(savedSegment.id);
+            setShowClPasteArea(false);
+            setPastedClsText("");
+            setNewSegmentName("");
+        },
+        onError: (err) => {
+            alert(`Erro ao criar grupo: ${err.message || err}`);
+        }
     });
     const createCampaignMutation = useMutation({
         mutationFn: () => api.createWhatsappCampaign(token, {
@@ -423,6 +437,26 @@ export function DisparadorPage() {
             alert("Nenhum grupo correspondente aos códigos CL inseridos foi encontrado.");
         }
     }
+    function handleCreateSegmentFromPastedCls() {
+        const codes = pastedClsText
+            .split(/[\s,;\n]+/)
+            .map(c => c.trim().toUpperCase())
+            .filter(c => c.startsWith("CL"));
+        if (codes.length === 0) {
+            alert("Nenhum código válido (iniciando com CL) foi inserido.");
+            return;
+        }
+        if (!newSegmentName.trim()) {
+            alert("Por favor, digite um nome para o novo público salvo.");
+            return;
+        }
+        createSavedSegmentMutation.mutate({
+            name: newSegmentName.trim(),
+            definition: {
+                customerCodes: codes
+            }
+        });
+    }
     function changeGroupSender(groupId, senderId) {
         setRecipientSenderMapping(current => ({
             ...current,
@@ -463,23 +497,126 @@ export function DisparadorPage() {
                                                             borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
                                                             color: isActive ? "#1e40af" : "#64748b"
                                                         }, children: [filter.label, _jsx("span", { style: { fontSize: "0.72rem", background: isActive ? "#bfdbfe" : "#f1f5f9", padding: "2px 6px", borderRadius: "999px", marginLeft: "6px", color: isActive ? "#1e40af" : "#64748b" }, children: count })] }, filter.value));
-                                                }) }), _jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center", margin: "1rem 0", flexWrap: "wrap" }, children: [_jsx("button", { type: "button", className: "z-btn-detail", onClick: toggleVisibleSelection, style: { fontSize: "0.82rem", padding: "0.45rem 1rem" }, children: "Selecionar vis\u00EDveis" }), _jsx("button", { type: "button", className: "z-btn-detail", onClick: () => setSelectedGroupIds([]), disabled: selectedGroupCount === 0, style: { fontSize: "0.82rem", padding: "0.45rem 1rem", opacity: selectedGroupCount === 0 ? 0.5 : 1 }, children: "Limpar sele\u00E7\u00E3o" }), _jsx("button", { type: "button", className: "z-btn-detail", onClick: () => setShowClPasteArea(!showClPasteArea), style: {
-                                                            fontSize: "0.82rem",
-                                                            padding: "0.45rem 1rem",
-                                                            backgroundColor: showClPasteArea ? "#18181b" : "#ffffff",
-                                                            color: showClPasteArea ? "#ffffff" : "#18181b",
-                                                            borderColor: showClPasteArea ? "#18181b" : "#e4e4e7"
-                                                        }, children: showClPasteArea ? "✕ Fechar Importador CL" : "📋 Selecionar colando CLs" })] }), showClPasteArea && (_jsxs("div", { style: { background: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "1.25rem", margin: "1rem 0", display: "flex", flexDirection: "column", gap: "10px" }, children: [_jsx("h4", { style: { margin: 0, fontSize: "0.88rem", fontWeight: 700, color: "#18181b" }, children: "Cole os c\u00F3digos de clientes (ex: CL1002, CL1003)" }), _jsx("p", { style: { margin: 0, fontSize: "0.78rem", color: "#71717a" }, children: "Insira os c\u00F3digos separados por v\u00EDrgula, espa\u00E7o ou quebra de linha. O sistema ir\u00E1 filtrar e selecionar automaticamente os grupos correspondentes." }), _jsx("textarea", { rows: 4, value: pastedClsText, onChange: (e) => setPastedClsText(e.target.value), placeholder: "CL1002, CL1003, CL1004...", className: "wp-card-input", style: { fontFamily: "monospace", fontSize: "0.85rem", background: "#fff" } }), _jsx("button", { type: "button", onClick: handleApplyPastedCls, style: {
-                                                            backgroundColor: "#10b981",
-                                                            color: "#ffffff",
-                                                            border: "none",
+                                                }) }), _jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center", margin: "1.25rem 0", flexWrap: "wrap" }, children: [_jsxs("button", { type: "button", onClick: toggleVisibleSelection, style: {
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: "8px",
+                                                            border: "1px solid #e4e4e7",
                                                             borderRadius: "8px",
-                                                            padding: "0.5rem 1rem",
+                                                            padding: "0.625rem 1.25rem",
                                                             fontSize: "0.85rem",
                                                             fontWeight: 600,
+                                                            backgroundColor: "#ffffff",
+                                                            color: "#3f3f46",
                                                             cursor: "pointer",
-                                                            alignSelf: "flex-start"
-                                                        }, children: "Selecionar e Filtrar" })] })), groupsQuery.isLoading ? _jsx("div", { className: "page-loading", children: "Carregando grupos destinat\u00E1rios..." }) : null, groupsQuery.data?.items.length ? (_jsx("div", { className: "table-scroll", style: { overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }, children: _jsxs("table", { className: "z-table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: { width: "50px", padding: "1rem 1.5rem" }, children: _jsx("input", { type: "checkbox", checked: allVisibleSelected, onChange: toggleVisibleSelection }) }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "REMETENTE (WHATSAPP CANAL)" }), _jsx("th", { style: { padding: "1rem 0.5rem", width: "40px", textAlign: "center" } }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "DESTINAT\u00C1RIO (WHATSAPP & CRM)" }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "TIPO & CLASSIFICA\u00C7\u00C3O" }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "STATUS (SPAM RISK)" })] }) }), _jsx("tbody", { children: filteredGroups.map((group) => {
+                                                            transition: "all 0.2s ease",
+                                                            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                                                        }, onMouseEnter: (e) => {
+                                                            e.currentTarget.style.backgroundColor = "#f4f4f5";
+                                                            e.currentTarget.style.borderColor = "#d4d4d8";
+                                                        }, onMouseLeave: (e) => {
+                                                            e.currentTarget.style.backgroundColor = "#ffffff";
+                                                            e.currentTarget.style.borderColor = "#e4e4e7";
+                                                        }, children: [_jsx(CheckCircle2, { size: 16, style: { color: "#10b981" } }), "Selecionar vis\u00EDveis"] }), _jsxs("button", { type: "button", onClick: () => setSelectedGroupIds([]), disabled: selectedGroupCount === 0, style: {
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: "8px",
+                                                            border: "1px solid #e4e4e7",
+                                                            borderRadius: "8px",
+                                                            padding: "0.625rem 1.25rem",
+                                                            fontSize: "0.85rem",
+                                                            fontWeight: 600,
+                                                            backgroundColor: "#ffffff",
+                                                            color: selectedGroupCount === 0 ? "#a1a1aa" : "#ef4444",
+                                                            cursor: selectedGroupCount === 0 ? "not-allowed" : "pointer",
+                                                            opacity: selectedGroupCount === 0 ? 0.6 : 1,
+                                                            transition: "all 0.2s ease",
+                                                            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                                                        }, onMouseEnter: (e) => {
+                                                            if (selectedGroupCount > 0) {
+                                                                e.currentTarget.style.backgroundColor = "#fef2f2";
+                                                                e.currentTarget.style.borderColor = "#fca5a5";
+                                                            }
+                                                        }, onMouseLeave: (e) => {
+                                                            e.currentTarget.style.backgroundColor = "#ffffff";
+                                                            e.currentTarget.style.borderColor = "#e4e4e7";
+                                                        }, children: [_jsx(Trash2, { size: 16 }), "Limpar sele\u00E7\u00E3o"] }), _jsxs("button", { type: "button", onClick: () => setShowClPasteArea(!showClPasteArea), style: {
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: "8px",
+                                                            border: "1px solid",
+                                                            borderColor: showClPasteArea ? "#18181b" : "#e4e4e7",
+                                                            borderRadius: "8px",
+                                                            padding: "0.625rem 1.25rem",
+                                                            fontSize: "0.85rem",
+                                                            fontWeight: 600,
+                                                            backgroundColor: showClPasteArea ? "#18181b" : "#ffffff",
+                                                            color: showClPasteArea ? "#ffffff" : "#18181b",
+                                                            cursor: "pointer",
+                                                            transition: "all 0.2s ease",
+                                                            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                                                        }, onMouseEnter: (e) => {
+                                                            if (!showClPasteArea) {
+                                                                e.currentTarget.style.backgroundColor = "#f4f4f5";
+                                                                e.currentTarget.style.borderColor = "#d4d4d8";
+                                                            }
+                                                            else {
+                                                                e.currentTarget.style.backgroundColor = "#27272a";
+                                                            }
+                                                        }, onMouseLeave: (e) => {
+                                                            if (!showClPasteArea) {
+                                                                e.currentTarget.style.backgroundColor = "#ffffff";
+                                                                e.currentTarget.style.borderColor = "#e4e4e7";
+                                                            }
+                                                            else {
+                                                                e.currentTarget.style.backgroundColor = "#18181b";
+                                                            }
+                                                        }, children: [_jsx(ClipboardList, { size: 16, style: { color: showClPasteArea ? "#ffffff" : "#3b82f6" } }), showClPasteArea ? "✕ Fechar Importador CL" : "Importador de CLs"] })] }), showClPasteArea && (_jsxs("div", { style: {
+                                                    background: "#ffffff",
+                                                    border: "1px solid #e4e4e7",
+                                                    borderRadius: "16px",
+                                                    padding: "1.5rem",
+                                                    margin: "1.25rem 0",
+                                                    display: "flex",
+                                                    flexDirection: "column",
+                                                    gap: "1.25rem",
+                                                    boxShadow: "0 4px 12px rgba(0,0,0,0.03)"
+                                                }, children: [_jsxs("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [_jsx(ClipboardList, { size: 20, style: { color: "#3b82f6" } }), _jsx("h4", { style: { margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "#18181b" }, children: "Importar Destinat\u00E1rios via C\u00F3digos CL" })] }), _jsxs("p", { style: { margin: 0, fontSize: "0.82rem", color: "#71717a", lineHeight: "1.5" }, children: ["Cole os c\u00F3digos de clientes (ex: ", _jsx("code", { style: { background: "#f4f4f5", padding: "2px 6px", borderRadius: "4px", color: "#0f766e" }, children: "CL1002, CL1003, CL1004" }), ") abaixo. Voc\u00EA pode selecionar os grupos na tabela atual ou ", _jsx("strong", { children: "criar e salvar esse grupo de clientes" }), " no banco de dados."] }), _jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "6px" }, children: [_jsx("span", { style: { fontSize: "0.8rem", fontWeight: 700, color: "#475569" }, children: "Nome do P\u00FAblico Salvo (Opcional - Necess\u00E1rio para Salvar)" }), _jsx("input", { value: newSegmentName, onChange: (e) => setNewSegmentName(e.target.value), placeholder: "Ex: Clientes VIP Regi\u00E3o Sul, Campanha de Inverno...", className: "wp-card-input", style: { padding: "0.625rem 0.75rem", fontSize: "0.9rem" } })] }), _jsxs("div", { style: { display: "flex", flexDirection: "column", gap: "6px" }, children: [_jsx("span", { style: { fontSize: "0.8rem", fontWeight: 700, color: "#475569" }, children: "C\u00F3digos dos Clientes" }), _jsx("textarea", { rows: 4, value: pastedClsText, onChange: (e) => setPastedClsText(e.target.value), placeholder: "CL1002, CL1003, CL1004...", className: "wp-card-input", style: { fontFamily: "monospace", fontSize: "0.85rem", background: "#fff", resize: "vertical" } })] }), _jsxs("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "0.25rem" }, children: [_jsxs("button", { type: "button", onClick: handleApplyPastedCls, style: {
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    gap: "6px",
+                                                                    backgroundColor: "#3b82f6",
+                                                                    color: "#ffffff",
+                                                                    border: "none",
+                                                                    borderRadius: "8px",
+                                                                    padding: "0.625rem 1.25rem",
+                                                                    fontSize: "0.85rem",
+                                                                    fontWeight: 600,
+                                                                    cursor: "pointer",
+                                                                    transition: "background 0.2s"
+                                                                }, onMouseEnter: (e) => e.currentTarget.style.backgroundColor = "#2563eb", onMouseLeave: (e) => e.currentTarget.style.backgroundColor = "#3b82f6", children: [_jsx(CheckCircle2, { size: 16 }), "Selecionar na Tabela"] }), _jsx("button", { type: "button", onClick: handleCreateSegmentFromPastedCls, disabled: createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim(), style: {
+                                                                    display: "flex",
+                                                                    alignItems: "center",
+                                                                    gap: "6px",
+                                                                    backgroundColor: "#10b981",
+                                                                    color: "#ffffff",
+                                                                    border: "none",
+                                                                    borderRadius: "8px",
+                                                                    padding: "0.625rem 1.25rem",
+                                                                    fontSize: "0.85rem",
+                                                                    fontWeight: 600,
+                                                                    cursor: (createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim()) ? "not-allowed" : "pointer",
+                                                                    opacity: (createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim()) ? 0.6 : 1,
+                                                                    transition: "background 0.2s"
+                                                                }, onMouseEnter: (e) => {
+                                                                    if (!createSavedSegmentMutation.isPending && newSegmentName.trim() && pastedClsText.trim()) {
+                                                                        e.currentTarget.style.backgroundColor = "#059669";
+                                                                    }
+                                                                }, onMouseLeave: (e) => {
+                                                                    if (!createSavedSegmentMutation.isPending && newSegmentName.trim() && pastedClsText.trim()) {
+                                                                        e.currentTarget.style.backgroundColor = "#10b981";
+                                                                    }
+                                                                }, children: createSavedSegmentMutation.isPending ? (_jsxs(_Fragment, { children: [_jsx(LoaderCircle, { size: 16, className: "animate-spin" }), "Salvando p\u00FAblico..."] })) : (_jsxs(_Fragment, { children: [_jsx(Save, { size: 16 }), "Criar & Salvar Novo P\u00FAblico"] })) })] })] })), groupsQuery.isLoading ? _jsx("div", { className: "page-loading", children: "Carregando grupos destinat\u00E1rios..." }) : null, groupsQuery.data?.items.length ? (_jsx("div", { className: "table-scroll", style: { overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }, children: _jsxs("table", { className: "z-table", children: [_jsx("thead", { children: _jsxs("tr", { children: [_jsx("th", { style: { width: "50px", padding: "1rem 1.5rem" }, children: _jsx("input", { type: "checkbox", checked: allVisibleSelected, onChange: toggleVisibleSelection }) }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "REMETENTE (WHATSAPP CANAL)" }), _jsx("th", { style: { padding: "1rem 0.5rem", width: "40px", textAlign: "center" } }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "DESTINAT\u00C1RIO (WHATSAPP & CRM)" }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "TIPO & CLASSIFICA\u00C7\u00C3O" }), _jsx("th", { style: { padding: "1rem 1.5rem" }, children: "STATUS (SPAM RISK)" })] }) }), _jsx("tbody", { children: filteredGroups.map((group) => {
                                                                 const isSelected = selectedGroupIds.includes(group.id);
                                                                 // Risk configuration
                                                                 let riskClass = "low";

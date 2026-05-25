@@ -229,6 +229,7 @@ const segmentSchema = z.object({
   customerPrefix: z.string().optional(),
   state: z.string().optional(),
   city: z.string().optional(),
+  customerCodes: z.array(z.string()).optional(),
 });
 
 const messageSchema = z.object({

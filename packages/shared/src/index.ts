@@ -1104,6 +1104,7 @@ export interface SegmentDefinition {
   customerPrefix?: string;
   state?: string;
   city?: string;
+  customerCodes?: string[];
 }
 
 export interface SegmentResult {

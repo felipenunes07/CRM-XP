@@ -10,7 +10,7 @@ import type {
   WhatsappGroupMappingStatus,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatPercent } from "../lib/format";
@@ -193,6 +193,7 @@ export function DisparadorPage() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [pastedClsText, setPastedClsText] = useState("");
+  const [newSegmentName, setNewSegmentName] = useState("");
   const [showClPasteArea, setShowClPasteArea] = useState(false);
   const [campaignName, setCampaignName] = useState("");
   const [messageText, setMessageText] = useState("");
@@ -330,6 +331,20 @@ export function DisparadorPage() {
     onSuccess: async () => {
       await invalidateWhatsappQueries();
     },
+  });
+
+  const createSavedSegmentMutation = useMutation({
+    mutationFn: (input: { name: string; definition: any }) => api.createSavedSegment(token!, input),
+    onSuccess: (savedSegment) => {
+      void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
+      setSavedSegmentId(savedSegment.id);
+      setShowClPasteArea(false);
+      setPastedClsText("");
+      setNewSegmentName("");
+    },
+    onError: (err: any) => {
+      alert(`Erro ao criar grupo: ${err.message || err}`);
+    }
   });
 
 
@@ -534,6 +549,30 @@ export function DisparadorPage() {
     } else {
       alert("Nenhum grupo correspondente aos códigos CL inseridos foi encontrado.");
     }
+  }
+
+  function handleCreateSegmentFromPastedCls() {
+    const codes = pastedClsText
+      .split(/[\s,;\n]+/)
+      .map(c => c.trim().toUpperCase())
+      .filter(c => c.startsWith("CL"));
+    
+    if (codes.length === 0) {
+      alert("Nenhum código válido (iniciando com CL) foi inserido.");
+      return;
+    }
+
+    if (!newSegmentName.trim()) {
+      alert("Por favor, digite um nome para o novo público salvo.");
+      return;
+    }
+
+    createSavedSegmentMutation.mutate({
+      name: newSegmentName.trim(),
+      definition: {
+        customerCodes: codes
+      }
+    });
   }
 
 
@@ -936,75 +975,228 @@ export function DisparadorPage() {
                   </div>
 
                   {/* Actions Row */}
-                  <div style={{ display: "flex", gap: "10px", alignItems: "center", margin: "1rem 0", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: "10px", alignItems: "center", margin: "1.25rem 0", flexWrap: "wrap" }}>
                     <button
                       type="button"
-                      className="z-btn-detail"
                       onClick={toggleVisibleSelection}
-                      style={{ fontSize: "0.82rem", padding: "0.45rem 1rem" }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        border: "1px solid #e4e4e7",
+                        borderRadius: "8px",
+                        padding: "0.625rem 1.25rem",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        backgroundColor: "#ffffff",
+                        color: "#3f3f46",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "#f4f4f5";
+                        e.currentTarget.style.borderColor = "#d4d4d8";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "#ffffff";
+                        e.currentTarget.style.borderColor = "#e4e4e7";
+                      }}
                     >
+                      <CheckCircle2 size={16} style={{ color: "#10b981" }} />
                       Selecionar visíveis
                     </button>
                     <button
                       type="button"
-                      className="z-btn-detail"
                       onClick={() => setSelectedGroupIds([])}
                       disabled={selectedGroupCount === 0}
-                      style={{ fontSize: "0.82rem", padding: "0.45rem 1rem", opacity: selectedGroupCount === 0 ? 0.5 : 1 }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        border: "1px solid #e4e4e7",
+                        borderRadius: "8px",
+                        padding: "0.625rem 1.25rem",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        backgroundColor: "#ffffff",
+                        color: selectedGroupCount === 0 ? "#a1a1aa" : "#ef4444",
+                        cursor: selectedGroupCount === 0 ? "not-allowed" : "pointer",
+                        opacity: selectedGroupCount === 0 ? 0.6 : 1,
+                        transition: "all 0.2s ease",
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedGroupCount > 0) {
+                          e.currentTarget.style.backgroundColor = "#fef2f2";
+                          e.currentTarget.style.borderColor = "#fca5a5";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "#ffffff";
+                        e.currentTarget.style.borderColor = "#e4e4e7";
+                      }}
                     >
+                      <Trash2 size={16} />
                       Limpar seleção
                     </button>
 
                     <button
                       type="button"
-                      className="z-btn-detail"
                       onClick={() => setShowClPasteArea(!showClPasteArea)}
                       style={{
-                        fontSize: "0.82rem",
-                        padding: "0.45rem 1rem",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        border: "1px solid",
+                        borderColor: showClPasteArea ? "#18181b" : "#e4e4e7",
+                        borderRadius: "8px",
+                        padding: "0.625rem 1.25rem",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
                         backgroundColor: showClPasteArea ? "#18181b" : "#ffffff",
                         color: showClPasteArea ? "#ffffff" : "#18181b",
-                        borderColor: showClPasteArea ? "#18181b" : "#e4e4e7"
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)"
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!showClPasteArea) {
+                          e.currentTarget.style.backgroundColor = "#f4f4f5";
+                          e.currentTarget.style.borderColor = "#d4d4d8";
+                        } else {
+                          e.currentTarget.style.backgroundColor = "#27272a";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!showClPasteArea) {
+                          e.currentTarget.style.backgroundColor = "#ffffff";
+                          e.currentTarget.style.borderColor = "#e4e4e7";
+                        } else {
+                          e.currentTarget.style.backgroundColor = "#18181b";
+                        }
                       }}
                     >
-                      {showClPasteArea ? "✕ Fechar Importador CL" : "📋 Selecionar colando CLs"}
+                      <ClipboardList size={16} style={{ color: showClPasteArea ? "#ffffff" : "#3b82f6" }} />
+                      {showClPasteArea ? "✕ Fechar Importador CL" : "Importador de CLs"}
                     </button>
                   </div>
 
                   {/* CL Paste Panel */}
                   {showClPasteArea && (
-                    <div style={{ background: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "12px", padding: "1.25rem", margin: "1rem 0", display: "flex", flexDirection: "column", gap: "10px" }}>
-                      <h4 style={{ margin: 0, fontSize: "0.88rem", fontWeight: 700, color: "#18181b" }}>
-                        Cole os códigos de clientes (ex: CL1002, CL1003)
-                      </h4>
-                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#71717a" }}>
-                        Insira os códigos separados por vírgula, espaço ou quebra de linha. O sistema irá filtrar e selecionar automaticamente os grupos correspondentes.
+                    <div style={{
+                      background: "#ffffff",
+                      border: "1px solid #e4e4e7",
+                      borderRadius: "16px",
+                      padding: "1.5rem",
+                      margin: "1.25rem 0",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "1.25rem",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.03)"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <ClipboardList size={20} style={{ color: "#3b82f6" }} />
+                        <h4 style={{ margin: 0, fontSize: "0.95rem", fontWeight: 700, color: "#18181b" }}>
+                          Importar Destinatários via Códigos CL
+                        </h4>
+                      </div>
+                      
+                      <p style={{ margin: 0, fontSize: "0.82rem", color: "#71717a", lineHeight: "1.5" }}>
+                        Cole os códigos de clientes (ex: <code style={{ background: "#f4f4f5", padding: "2px 6px", borderRadius: "4px", color: "#0f766e" }}>CL1002, CL1003, CL1004</code>) abaixo. Você pode selecionar os grupos na tabela atual ou <strong>criar e salvar esse grupo de clientes</strong> no banco de dados.
                       </p>
-                      <textarea
-                        rows={4}
-                        value={pastedClsText}
-                        onChange={(e) => setPastedClsText(e.target.value)}
-                        placeholder="CL1002, CL1003, CL1004..."
-                        className="wp-card-input"
-                        style={{ fontFamily: "monospace", fontSize: "0.85rem", background: "#fff" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleApplyPastedCls}
-                        style={{
-                          backgroundColor: "#10b981",
-                          color: "#ffffff",
-                          border: "none",
-                          borderRadius: "8px",
-                          padding: "0.5rem 1rem",
-                          fontSize: "0.85rem",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                          alignSelf: "flex-start"
-                        }}
-                      >
-                        Selecionar e Filtrar
-                      </button>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569" }}>Nome do Público Salvo (Opcional - Necessário para Salvar)</span>
+                        <input
+                          value={newSegmentName}
+                          onChange={(e) => setNewSegmentName(e.target.value)}
+                          placeholder="Ex: Clientes VIP Região Sul, Campanha de Inverno..."
+                          className="wp-card-input"
+                          style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem" }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569" }}>Códigos dos Clientes</span>
+                        <textarea
+                          rows={4}
+                          value={pastedClsText}
+                          onChange={(e) => setPastedClsText(e.target.value)}
+                          placeholder="CL1002, CL1003, CL1004..."
+                          className="wp-card-input"
+                          style={{ fontFamily: "monospace", fontSize: "0.85rem", background: "#fff", resize: "vertical" }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap", marginTop: "0.25rem" }}>
+                        <button
+                          type="button"
+                          onClick={handleApplyPastedCls}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            backgroundColor: "#3b82f6",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "0.625rem 1.25rem",
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "background 0.2s"
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#2563eb"}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#3b82f6"}
+                        >
+                          <CheckCircle2 size={16} />
+                          Selecionar na Tabela
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleCreateSegmentFromPastedCls}
+                          disabled={createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim()}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            backgroundColor: "#10b981",
+                            color: "#ffffff",
+                            border: "none",
+                            borderRadius: "8px",
+                            padding: "0.625rem 1.25rem",
+                            fontSize: "0.85rem",
+                            fontWeight: 600,
+                            cursor: (createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim()) ? "not-allowed" : "pointer",
+                            opacity: (createSavedSegmentMutation.isPending || !newSegmentName.trim() || !pastedClsText.trim()) ? 0.6 : 1,
+                            transition: "background 0.2s"
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!createSavedSegmentMutation.isPending && newSegmentName.trim() && pastedClsText.trim()) {
+                              e.currentTarget.style.backgroundColor = "#059669";
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!createSavedSegmentMutation.isPending && newSegmentName.trim() && pastedClsText.trim()) {
+                              e.currentTarget.style.backgroundColor = "#10b981";
+                            }
+                          }}
+                        >
+                          {createSavedSegmentMutation.isPending ? (
+                            <>
+                              <LoaderCircle size={16} className="animate-spin" />
+                              Salvando público...
+                            </>
+                          ) : (
+                            <>
+                              <Save size={16} />
+                              Criar & Salvar Novo Público
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
 

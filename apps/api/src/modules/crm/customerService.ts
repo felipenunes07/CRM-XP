@@ -138,6 +138,7 @@ export interface CustomerFilters {
   customerPrefix?: string; // Example: "CL", "KH", "LJ"
   state?: string;
   city?: string;
+  customerCodes?: string[];
 }
 
 export function buildWhere(filters: FilterLike) {
@@ -252,6 +253,10 @@ export function buildWhere(filters: FilterLike) {
 
   if (filters.city) {
     push((index) => `s.city = $${index}`, filters.city);
+  }
+
+  if (filters.customerCodes?.length) {
+    push((index) => `s.customer_code = ANY($${index})`, filters.customerCodes);
   }
 
   return { whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
