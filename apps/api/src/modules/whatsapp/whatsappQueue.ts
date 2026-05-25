@@ -9,6 +9,7 @@ import {
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } from "./evolutionService.js";
+import { sendUazapiTextMessage, sendUazapiCarouselMessage } from "./uazapiService.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 const connection = queueEnabled
@@ -47,9 +48,23 @@ async function processRecipientDispatch(recipientId: string) {
   }
 
   try {
-    const payload = context.evolutionInstance
-      ? await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText)
-      : await sendWhatsappTextMessage(context.jid, context.messageText);
+    let payload: Record<string, unknown>;
+
+    if (context.uazapiInstance) {
+      // UazAPI provider
+      if (context.messageType === "CAROUSEL" && context.carouselData?.length) {
+        payload = await sendUazapiCarouselMessage(context.uazapiInstance, context.jid, context.carouselData);
+      } else {
+        payload = await sendUazapiTextMessage(context.uazapiInstance, context.jid, context.messageText);
+      }
+    } else if (context.evolutionInstance) {
+      // Evolution API provider
+      payload = await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText);
+    } else {
+      // Default Evolution fallback
+      payload = await sendWhatsappTextMessage(context.jid, context.messageText);
+    }
+
     await markRecipientSent(context, payload, extractProviderMessageId(payload), payload.status ? String(payload.status) : null);
     return { sent: true };
   } catch (error) {

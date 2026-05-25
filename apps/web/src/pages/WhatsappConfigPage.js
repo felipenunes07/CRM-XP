@@ -1,4 +1,4 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Copy, Grid3X3, List, MoreVertical, Plus, ShieldCheck, Trash2, Upload, UserRound, X, } from "lucide-react";
@@ -54,7 +54,7 @@ function UserCard({ instance, onDelete, onConfigure, deleting, configuring, }) {
         : `${instance.instanceName}@whats.ws`;
     return (_jsxs("article", { className: "wa-user-card", children: [_jsx("button", { type: "button", className: "wa-user-menu", title: "Mais opcoes", children: _jsx(MoreVertical, { size: 18 }) }), _jsxs("span", { className: "wa-user-photo", children: [instance.profilePictureUrl ? (_jsx("img", { src: instance.profilePictureUrl, alt: "", loading: "lazy", onError: (event) => {
                             event.currentTarget.style.display = "none";
-                        } })) : null, _jsx(UserRound, { size: 28 })] }), _jsx("h3", { children: instance.displayLabel }), _jsx("p", { children: email }), _jsx("span", { children: instance.phoneNumber || instance.instanceName }), _jsxs("div", { className: "wa-user-tags", children: [_jsx("span", { className: "wa-user-tag", children: "Comercial" }), _jsx("span", { className: `wa-user-status ${statusClass(instance.status)}`, children: statusLabel(instance.status) })] }), _jsxs("div", { className: "wa-user-foot", children: [_jsx("button", { type: "button", className: "wa-user-configure", onClick: onConfigure, disabled: configuring, title: "Configurar Webhook e Grupos automaticamente", children: configuring ? "..." : "Configurar Agora" }), _jsx("button", { type: "button", className: "wa-user-remove", onClick: onDelete, disabled: deleting, title: "Remover usuario", children: _jsx(Trash2, { size: 15 }) })] })] }));
+                        } })) : null, _jsx(UserRound, { size: 28 })] }), _jsx("h3", { children: instance.displayLabel }), _jsx("p", { children: email }), _jsx("span", { children: instance.phoneNumber || instance.instanceName }), _jsxs("div", { className: "wa-user-tags", children: [_jsx("span", { className: "wa-user-tag", children: "Comercial" }), _jsx("span", { className: "wa-user-tag provider", style: { background: instance.provider === "UAZAPI" ? "#dbeafe" : "#fef3c7", color: instance.provider === "UAZAPI" ? "#1e40af" : "#92400e" }, children: instance.provider === "UAZAPI" ? "UazAPI" : "Evolution" }), _jsx("span", { className: `wa-user-status ${statusClass(instance.status)}`, children: statusLabel(instance.status) })] }), _jsxs("div", { className: "wa-user-foot", children: [instance.provider === "EVOLUTION" ? (_jsx("button", { type: "button", className: "wa-user-configure", onClick: onConfigure, disabled: configuring, title: "Configurar Webhook e Grupos automaticamente", children: configuring ? "..." : "Configurar Agora" })) : (_jsx("button", { type: "button", className: "wa-user-configure", disabled: true, style: { opacity: 0.6, cursor: "not-allowed", backgroundColor: "#f1f5f9", color: "#64748b" }, title: "UazAPI n\u00E3o requer configura\u00E7\u00E3o de webhook manual", children: "UazAPI Ativo" })), _jsx("button", { type: "button", className: "wa-user-remove", onClick: onDelete, disabled: deleting, title: "Remover usuario", children: _jsx(Trash2, { size: 15 }) })] })] }));
 }
 export function WhatsappConfigPage() {
     const auth = useAuth();
@@ -136,31 +136,37 @@ export function WhatsappConfigPage() {
 function AddInstanceModal({ onClose }) {
     const auth = useAuth();
     const queryClient = useQueryClient();
+    const [provider, setProvider] = useState("EVOLUTION");
     const [instanceName, setInstanceName] = useState("");
     const [displayLabel, setDisplayLabel] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [evolutionBaseUrl, setEvolutionBaseUrl] = useState("");
     const [evolutionApiKey, setEvolutionApiKey] = useState("");
+    const [uazapiBaseUrl, setUazapiBaseUrl] = useState("");
+    const [uazapiToken, setUazapiToken] = useState("");
     const [isDefault, setIsDefault] = useState(false);
     const defaultsQuery = useQuery({
         queryKey: ["whatsapp-defaults"],
         queryFn: () => api.whatsappInstanceDefaults(auth.token),
-        enabled: Boolean(auth.token),
+        enabled: Boolean(auth.token && provider === "EVOLUTION"),
         staleTime: Infinity,
     });
     useEffect(() => {
-        if (defaultsQuery.data) {
+        if (defaultsQuery.data && provider === "EVOLUTION") {
             if (!evolutionBaseUrl)
                 setEvolutionBaseUrl(defaultsQuery.data.baseUrl);
         }
-    }, [defaultsQuery.data, evolutionBaseUrl]);
+    }, [defaultsQuery.data, evolutionBaseUrl, provider]);
     const createMutation = useMutation({
         mutationFn: () => api.createWhatsappInstance(auth.token, {
+            provider,
             instanceName,
             displayLabel,
             phoneNumber,
-            evolutionBaseUrl,
-            evolutionApiKey,
+            evolutionBaseUrl: provider === "EVOLUTION" ? evolutionBaseUrl : undefined,
+            evolutionApiKey: provider === "EVOLUTION" ? evolutionApiKey : undefined,
+            uazapiBaseUrl: provider === "UAZAPI" ? uazapiBaseUrl : undefined,
+            uazapiToken: provider === "UAZAPI" ? uazapiToken : undefined,
             isDefault,
         }),
         onSuccess: () => {
@@ -168,5 +174,18 @@ function AddInstanceModal({ onClose }) {
             onClose();
         },
     });
-    return (_jsx("div", { className: "modal-backdrop", onClick: onClose, children: _jsxs("div", { className: "modal-container pipeline-modal", onClick: (event) => event.stopPropagation(), children: [_jsxs("div", { className: "modal-header", children: [_jsx("h3", { children: "Conectar Evolution API" }), _jsx("button", { type: "button", className: "modal-close", onClick: onClose, children: _jsx(X, { size: 20 }) })] }), _jsxs("div", { className: "modal-body", children: [_jsxs("label", { children: ["Nome do usu\u00E1rio *", _jsx("input", { value: displayLabel, onChange: (event) => setDisplayLabel(event.target.value), placeholder: "Ex: Amanda Comercial" })] }), _jsxs("label", { children: ["Nome da inst\u00E2ncia *", _jsx("input", { value: instanceName, onChange: (event) => setInstanceName(event.target.value), placeholder: "Ex: comercial-amanda" })] }), _jsxs("label", { children: ["API Key *", _jsx("input", { type: "password", value: evolutionApiKey, onChange: (event) => setEvolutionApiKey(event.target.value), placeholder: "Cole a API Key" })] }), _jsxs("label", { children: ["URL Base da Evolution *", _jsx("input", { value: evolutionBaseUrl, onChange: (event) => setEvolutionBaseUrl(event.target.value), placeholder: "https://..." })] }), _jsxs("label", { children: ["Telefone", _jsx("input", { value: phoneNumber, onChange: (event) => setPhoneNumber(event.target.value), placeholder: "5511999999999" })] }), _jsxs("label", { className: "wa-checkbox-label", children: [_jsx("input", { type: "checkbox", checked: isDefault, onChange: (event) => setIsDefault(event.target.checked) }), "Definir como inst\u00E2ncia padr\u00E3o"] }), createMutation.isError ? _jsx("div", { className: "page-error", children: createMutation.error.message }) : null] }), _jsxs("div", { className: "modal-footer", children: [_jsx("button", { type: "button", className: "secondary-button", onClick: onClose, children: "Cancelar" }), _jsxs("button", { type: "button", className: "primary-button", disabled: !instanceName || !displayLabel || !evolutionBaseUrl || !evolutionApiKey || createMutation.isPending, onClick: () => createMutation.mutate(), children: [_jsx(Plus, { size: 16 }), createMutation.isPending ? "Salvando..." : "Salvar usuário"] })] })] }) }));
+    const isSubmitDisabled = !instanceName ||
+        !displayLabel ||
+        (provider === "EVOLUTION" && (!evolutionBaseUrl || !evolutionApiKey)) ||
+        (provider === "UAZAPI" && (!uazapiBaseUrl || !uazapiToken)) ||
+        createMutation.isPending;
+    return (_jsx("div", { className: "modal-backdrop", onClick: onClose, children: _jsxs("div", { className: "modal-container pipeline-modal", onClick: (event) => event.stopPropagation(), children: [_jsxs("div", { className: "modal-header", children: [_jsx("h3", { children: "Conectar Inst\u00E2ncia WhatsApp" }), _jsx("button", { type: "button", className: "modal-close", onClick: onClose, children: _jsx(X, { size: 20 }) })] }), _jsxs("div", { className: "modal-body", children: [_jsxs("label", { children: ["Provedor *", _jsxs("select", { value: provider, onChange: (event) => setProvider(event.target.value), style: {
+                                        width: "100%",
+                                        padding: "0.625rem 0.75rem",
+                                        borderRadius: "8px",
+                                        border: "1px solid #e2e8f0",
+                                        fontSize: "0.9rem",
+                                        background: "#fff",
+                                        marginTop: "4px"
+                                    }, children: [_jsx("option", { value: "EVOLUTION", children: "Evolution API" }), _jsx("option", { value: "UAZAPI", children: "UazAPI" })] })] }), _jsxs("label", { children: ["Nome do usu\u00E1rio *", _jsx("input", { value: displayLabel, onChange: (event) => setDisplayLabel(event.target.value), placeholder: "Ex: Amanda Comercial" })] }), _jsxs("label", { children: ["Nome da inst\u00E2ncia *", _jsx("input", { value: instanceName, onChange: (event) => setInstanceName(event.target.value), placeholder: "Ex: comercial-amanda" })] }), provider === "EVOLUTION" ? (_jsxs(_Fragment, { children: [_jsxs("label", { children: ["API Key *", _jsx("input", { type: "password", value: evolutionApiKey, onChange: (event) => setEvolutionApiKey(event.target.value), placeholder: "Cole a API Key" })] }), _jsxs("label", { children: ["URL Base da Evolution *", _jsx("input", { value: evolutionBaseUrl, onChange: (event) => setEvolutionBaseUrl(event.target.value), placeholder: "https://..." })] })] })) : (_jsxs(_Fragment, { children: [_jsxs("label", { children: ["Token da UazAPI *", _jsx("input", { type: "password", value: uazapiToken, onChange: (event) => setUazapiToken(event.target.value), placeholder: "Cole o token da UazAPI" })] }), _jsxs("label", { children: ["URL Base da UazAPI *", _jsx("input", { value: uazapiBaseUrl, onChange: (event) => setUazapiBaseUrl(event.target.value), placeholder: "https://..." })] })] })), _jsxs("label", { children: ["Telefone", _jsx("input", { value: phoneNumber, onChange: (event) => setPhoneNumber(event.target.value), placeholder: "5511999999999" })] }), _jsxs("label", { className: "wa-checkbox-label", children: [_jsx("input", { type: "checkbox", checked: isDefault, onChange: (event) => setIsDefault(event.target.checked) }), "Definir como inst\u00E2ncia padr\u00E3o"] }), createMutation.isError ? _jsx("div", { className: "page-error", children: createMutation.error.message }) : null] }), _jsxs("div", { className: "modal-footer", children: [_jsx("button", { type: "button", className: "secondary-button", onClick: onClose, children: "Cancelar" }), _jsxs("button", { type: "button", className: "primary-button", disabled: isSubmitDisabled, onClick: () => createMutation.mutate(), children: [_jsx(Plus, { size: 16 }), createMutation.isPending ? "Salvando..." : "Salvar usuário"] })] })] }) }));
 }

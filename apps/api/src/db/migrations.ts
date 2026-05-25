@@ -1142,4 +1142,16 @@ export const migrations = [
   ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS new_count INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE dashboard_daily_metrics ADD COLUMN IF NOT EXISTS daily_items_sold INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- UazAPI provider support: multi-provider WhatsApp instances
+  ALTER TABLE whatsapp_instances
+    ADD COLUMN IF NOT EXISTS provider VARCHAR(20) NOT NULL DEFAULT 'EVOLUTION',
+    ADD COLUMN IF NOT EXISTS uazapi_base_url TEXT,
+    ADD COLUMN IF NOT EXISTS uazapi_token TEXT;
+
+  -- Carousel message support for campaigns
+  ALTER TABLE whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) NOT NULL DEFAULT 'TEXT',
+    ADD COLUMN IF NOT EXISTS carousel_data JSONB;
+  `,
 ];

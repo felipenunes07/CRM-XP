@@ -408,11 +408,24 @@ const whatsappGroupMatchSchema = z.object({
   note: z.string().optional(),
 });
 
+const carouselSlideSchema = z.object({
+  text: z.string().min(1),
+  image: z.string().url(),
+  buttons: z.array(z.object({
+    id: z.string().min(1),
+    text: z.string().min(1),
+    type: z.string().min(1),
+  })).min(1),
+});
+
 const whatsappCampaignCreateSchema = z.object({
   name: z.string().min(1),
   templateId: z.string().uuid().nullable().optional(),
   savedSegmentId: z.string().uuid().nullable().optional(),
+  whatsappInstanceId: z.string().uuid().nullable().optional(),
   messageText: z.string().min(1),
+  messageType: z.enum(["TEXT", "CAROUSEL"]).optional(),
+  carouselData: z.array(carouselSlideSchema).nullable().optional(),
   filtersSnapshot: z.record(z.unknown()).optional(),
   groupIds: z.array(z.string().uuid()).min(1),
   overrideRecentBlock: z.boolean().optional(),
@@ -1369,8 +1382,11 @@ export function createApp() {
 
   app.post("/api/whatsapp-campaigns", async (request, response, next) => {
     try {
-      ensureEvolutionConfigured();
       const payload = whatsappCampaignCreateSchema.parse(request.body);
+      // Only enforce Evolution config when not using a specific instance
+      if (!payload.whatsappInstanceId) {
+        ensureEvolutionConfigured();
+      }
       const created = await createWhatsappCampaign(payload, request.user!);
       await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);
       const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0);
@@ -1509,11 +1525,14 @@ export function createApp() {
   });
 
   const instanceCreateSchema = z.object({
+    provider: z.enum(["EVOLUTION", "UAZAPI"]).optional().default("EVOLUTION"),
     instanceName: z.string().min(1),
     displayLabel: z.string().min(1),
     phoneNumber: z.string().optional(),
-    evolutionBaseUrl: z.string().url(),
-    evolutionApiKey: z.string().min(1),
+    evolutionBaseUrl: z.string().optional(),
+    evolutionApiKey: z.string().optional(),
+    uazapiBaseUrl: z.string().optional(),
+    uazapiToken: z.string().optional(),
     isDefault: z.boolean().optional(),
     assignedUserId: z.string().uuid().nullable().optional(),
     assignedUserName: z.string().nullable().optional(),

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  CarouselSlide,
   MessageTemplate,
   SavedSegment,
   WhatsappCampaignDetail,
+  WhatsappCampaignMessageType,
   WhatsappCampaignRecipient,
   WhatsappGroup,
   WhatsappGroupClassification,
   WhatsappGroupMappingStatus,
+  WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
 import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save } from "lucide-react";
@@ -241,6 +244,7 @@ export function DisparadorPage() {
     phone: string;
     avatarUrl: string;
     status?: string;
+    provider?: WhatsappInstanceProvider;
   }
 
   // Real Senders derived from the backend whatsappInstancesQuery
@@ -257,11 +261,31 @@ export function DisparadorPage() {
       role: instance.assignedUserName || "Conexão",
       phone: instance.phoneNumber || "Sem número",
       avatarUrl: instance.profilePictureUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
-      status: instance.status
+      status: instance.status,
+      provider: instance.provider ?? "EVOLUTION",
     }));
   }, [whatsappInstancesQuery.data]);
 
   const [selectedSenderIds, setSelectedSenderIds] = useState<string[]>([]);
+
+  // Carousel / UazAPI state
+  const [campaignMessageType, setCampaignMessageType] = useState<WhatsappCampaignMessageType>("TEXT");
+  const [carouselSlides, setCarouselSlides] = useState<CarouselSlide[]>([
+    { text: "", image: "", buttons: [{ id: "btn1", text: "", type: "url" }] },
+  ]);
+
+  const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
+    if (!selectedSenderIds.length) return "EVOLUTION";
+    const sender = senders.find(s => s.id === selectedSenderIds[0]);
+    return sender?.provider ?? "EVOLUTION";
+  }, [selectedSenderIds, senders]);
+
+  // Reset message type when provider changes
+  useEffect(() => {
+    if (selectedSenderProvider !== "UAZAPI") {
+      setCampaignMessageType("TEXT");
+    }
+  }, [selectedSenderProvider]);
 
   // Auto-select all active senders when loaded
   useEffect(() => {
@@ -374,6 +398,8 @@ export function DisparadorPage() {
         savedSegmentId: savedSegmentId || null,
         whatsappInstanceId: selectedSenderIds[0] || null,
         messageText,
+        messageType: campaignMessageType,
+        carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
         filtersSnapshot: {
           quickFilter,
           search,
@@ -1569,15 +1595,151 @@ export function DisparadorPage() {
                         </select>
                       </label>
 
+                      {selectedSenderProvider === "UAZAPI" && (
+                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                          <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>Tipo de envio:</span>
+                          <button
+                            type="button"
+                            className={`ghost-button${campaignMessageType === "TEXT" ? " active" : ""}`}
+                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "TEXT" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "TEXT" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                            onClick={() => setCampaignMessageType("TEXT")}
+                          >
+                            Texto
+                          </button>
+                          <button
+                            type="button"
+                            className={`ghost-button${campaignMessageType === "CAROUSEL" ? " active" : ""}`}
+                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "CAROUSEL" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "CAROUSEL" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                            onClick={() => setCampaignMessageType("CAROUSEL")}
+                          >
+                            Carrossel
+                          </button>
+                        </div>
+                      )}
+
                       <label className="whatsapp-message-field">
-                        <span>Texto da Mensagem (Versão A)</span>
+                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : " (Versão A)"}</span>
                         <textarea
-                          rows={8}
+                          rows={campaignMessageType === "CAROUSEL" ? 4 : 8}
                           value={messageText}
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
                         />
                       </label>
+
+                      {campaignMessageType === "CAROUSEL" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Slides do Carrossel</span>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              style={{ padding: "4px 10px", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "4px" }}
+                              onClick={() => setCarouselSlides(prev => [...prev, { text: "", image: "", buttons: [{ id: `btn${Date.now()}`, text: "", type: "url" }] }])}
+                            >
+                              <PlusCircle size={14} /> Adicionar Slide
+                            </button>
+                          </div>
+                          {carouselSlides.map((slide, slideIdx) => (
+                            <div key={slideIdx} style={{ padding: "1rem", background: "#fff", borderRadius: "10px", border: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                <span style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--accent)" }}>Slide {slideIdx + 1}</span>
+                                {carouselSlides.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="ghost-button danger"
+                                    style={{ padding: "2px 8px", fontSize: "0.72rem" }}
+                                    onClick={() => setCarouselSlides(prev => prev.filter((_, i) => i !== slideIdx))}
+                                  >
+                                    <Trash2 size={12} /> Remover
+                                  </button>
+                                )}
+                              </div>
+                              <label style={{ fontSize: "0.82rem" }}>
+                                Texto do slide
+                                <textarea
+                                  rows={2}
+                                  value={slide.text}
+                                  onChange={(e) => {
+                                    const updated = [...carouselSlides];
+                                    updated[slideIdx] = { ...slide, text: e.target.value };
+                                    setCarouselSlides(updated);
+                                  }}
+                                  placeholder="Texto que aparece neste slide..."
+                                  style={{ marginTop: "4px" }}
+                                />
+                              </label>
+                              <label style={{ fontSize: "0.82rem" }}>
+                                URL da imagem
+                                <input
+                                  type="url"
+                                  value={slide.image}
+                                  onChange={(e) => {
+                                    const updated = [...carouselSlides];
+                                    updated[slideIdx] = { ...slide, image: e.target.value };
+                                    setCarouselSlides(updated);
+                                  }}
+                                  placeholder="https://exemplo.com/imagem.jpg"
+                                  style={{ marginTop: "4px" }}
+                                />
+                              </label>
+                              {slide.image && (
+                                <img
+                                  src={slide.image}
+                                  alt={`Preview slide ${slideIdx + 1}`}
+                                  style={{ maxHeight: "120px", objectFit: "cover", borderRadius: "8px", border: "1px solid var(--line)" }}
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                />
+                              )}
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "0.78rem", fontWeight: 600, color: "var(--muted)" }}>Botões</span>
+                                {slide.buttons.map((btn, btnIdx) => (
+                                  <div key={btn.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                                    <input
+                                      value={btn.text}
+                                      onChange={(e) => {
+                                        const updated = [...carouselSlides];
+                                        const updatedBtns = [...slide.buttons];
+                                        updatedBtns[btnIdx] = { ...btn, text: e.target.value };
+                                        updated[slideIdx] = { ...slide, buttons: updatedBtns };
+                                        setCarouselSlides(updated);
+                                      }}
+                                      placeholder="Texto do botão"
+                                      style={{ flex: 1, fontSize: "0.82rem" }}
+                                    />
+                                    {slide.buttons.length > 1 && (
+                                      <button
+                                        type="button"
+                                        className="ghost-button danger"
+                                        style={{ padding: "2px 6px", fontSize: "0.7rem" }}
+                                        onClick={() => {
+                                          const updated = [...carouselSlides];
+                                          updated[slideIdx] = { ...slide, buttons: slide.buttons.filter((_, i) => i !== btnIdx) };
+                                          setCarouselSlides(updated);
+                                        }}
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button
+                                  type="button"
+                                  className="ghost-button"
+                                  style={{ padding: "3px 8px", fontSize: "0.72rem", alignSelf: "flex-start" }}
+                                  onClick={() => {
+                                    const updated = [...carouselSlides];
+                                    updated[slideIdx] = { ...slide, buttons: [...slide.buttons, { id: `btn${Date.now()}`, text: "", type: "url" }] };
+                                    setCarouselSlides(updated);
+                                  }}
+                                >
+                                  + Botão
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {abTestActive ? (
                         <div className="wp-ab-split">
@@ -1616,16 +1778,44 @@ export function DisparadorPage() {
                             <span>Previa do Envio</span>
                           </div>
                           <div className="wp-preview-chat-area">
-                            <div className="wp-preview-bubble">
-                              {messageText || "Escreva a mensagem na esquerda para visualizar a prévia aqui..."}
-                              <div className="wp-preview-bubble-meta">Apenas agora</div>
-                            </div>
-
-                            {abTestActive && abMessageText && (
-                              <div className="wp-preview-bubble ab-split">
-                                {abMessageText}
-                                <div className="wp-preview-bubble-meta">Split A/B</div>
+                            {campaignMessageType === "CAROUSEL" && carouselSlides.some(s => s.image || s.text) ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                {messageText && (
+                                  <div className="wp-preview-bubble">
+                                    {messageText}
+                                    <div className="wp-preview-bubble-meta">Apenas agora</div>
+                                  </div>
+                                )}
+                                <div style={{ display: "flex", gap: "6px", overflowX: "auto", padding: "4px 0" }}>
+                                  {carouselSlides.map((slide, i) => (
+                                    <div key={i} style={{ minWidth: "160px", maxWidth: "180px", background: "#d9fdd3", borderRadius: "10px", overflow: "hidden", border: "1px solid #b5e5a3", flexShrink: 0 }}>
+                                      {slide.image && (
+                                        <img src={slide.image} alt="" style={{ width: "100%", height: "80px", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                      )}
+                                      {slide.text && (
+                                        <div style={{ padding: "6px 8px", fontSize: "0.68rem", color: "#1a1a1a", lineHeight: 1.3 }}>{slide.text.slice(0, 60)}{slide.text.length > 60 ? "..." : ""}</div>
+                                      )}
+                                      {slide.buttons.filter(b => b.text).map((btn, bi) => (
+                                        <div key={bi} style={{ padding: "4px 8px", fontSize: "0.65rem", color: "#0066cc", textAlign: "center", borderTop: "1px solid #b5e5a3", fontWeight: 600 }}>{btn.text}</div>
+                                      ))}
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
+                            ) : (
+                              <>
+                                <div className="wp-preview-bubble">
+                                  {messageText || "Escreva a mensagem na esquerda para visualizar a prévia aqui..."}
+                                  <div className="wp-preview-bubble-meta">Apenas agora</div>
+                                </div>
+
+                                {abTestActive && abMessageText && (
+                                  <div className="wp-preview-bubble ab-split">
+                                    {abMessageText}
+                                    <div className="wp-preview-bubble-meta">Split A/B</div>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>

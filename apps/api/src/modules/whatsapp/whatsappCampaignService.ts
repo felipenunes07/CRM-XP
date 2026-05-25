@@ -1,7 +1,9 @@
 import type { PoolClient } from "pg";
 import type {
+  CarouselSlide,
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
+  WhatsappCampaignMessageType,
   WhatsappCampaignProgress,
   WhatsappCampaignRecipient,
   WhatsappCampaignRecipientStatus,
@@ -20,6 +22,8 @@ export interface CreateWhatsappCampaignInput {
   savedSegmentId?: string | null;
   whatsappInstanceId?: string | null;
   messageText: string;
+  messageType?: WhatsappCampaignMessageType;
+  carouselData?: CarouselSlide[] | null;
   filtersSnapshot?: Record<string, unknown>;
   groupIds: string[];
   overrideRecentBlock?: boolean;
@@ -58,6 +62,8 @@ interface DispatchRecipientContext {
   templateId: string | null;
   jid: string;
   messageText: string;
+  messageType: WhatsappCampaignMessageType;
+  carouselData: CarouselSlide[] | null;
   sourceName: string;
   sourceCode: string | null;
   createdByUserId: string;
@@ -66,6 +72,10 @@ interface DispatchRecipientContext {
     instanceName: string;
     evolutionBaseUrl: string;
     evolutionApiKey: string;
+  } | null;
+  uazapiInstance: {
+    baseUrl: string;
+    token: string;
   } | null;
 }
 
@@ -106,6 +116,8 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     savedSegmentId: row.saved_segment_id ? String(row.saved_segment_id) : null,
     savedSegmentName: row.saved_segment_name ? String(row.saved_segment_name) : null,
     messageText: String(row.message_text ?? ""),
+    messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
+    carouselData: row.carousel_data && Array.isArray(row.carousel_data) ? (row.carousel_data as CarouselSlide[]) : null,
     minDelaySeconds: Number(row.min_delay_seconds ?? 0),
     maxDelaySeconds: Number(row.max_delay_seconds ?? 0),
     overrideRecentBlock: Boolean(row.override_recent_block),
@@ -269,6 +281,9 @@ export async function createWhatsappCampaign(
   try {
     await campaignClient.query("BEGIN");
 
+    const messageType = input.messageType ?? "TEXT";
+    const carouselData = input.carouselData ?? null;
+
     const campaignInsert = await campaignClient.query(
       `
         INSERT INTO whatsapp_campaigns (
@@ -281,6 +296,8 @@ export async function createWhatsappCampaign(
           whatsapp_instance_id,
           whatsapp_instance_label,
           message_text,
+          message_type,
+          carousel_data,
           filters_snapshot,
           min_delay_seconds,
           max_delay_seconds,
@@ -288,7 +305,7 @@ export async function createWhatsappCampaign(
           created_by_user_id,
           created_by_name
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13, $14)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16)
         RETURNING id, created_at
       `,
       [
@@ -300,6 +317,8 @@ export async function createWhatsappCampaign(
         input.whatsappInstanceId ?? null,
         whatsappInstanceResult?.rows[0]?.display_label ? String(whatsappInstanceResult.rows[0].display_label) : null,
         trimmedMessage,
+        messageType,
+        carouselData ? JSON.stringify(carouselData) : null,
         JSON.stringify(input.filtersSnapshot ?? {}),
         minDelaySeconds,
         maxDelaySeconds,
@@ -524,13 +543,18 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           r.status AS recipient_status,
           wc.status AS campaign_status,
           wc.message_text,
+          wc.message_type,
+          wc.carousel_data,
           wc.template_id,
           wc.created_by_user_id,
           wc.created_by_name,
           wc.whatsapp_instance_id,
           wi.instance_name AS whatsapp_instance_name,
           wi.evolution_base_url AS whatsapp_evolution_base_url,
-          wi.evolution_api_key AS whatsapp_evolution_api_key
+          wi.evolution_api_key AS whatsapp_evolution_api_key,
+          wi.provider AS whatsapp_provider,
+          wi.uazapi_base_url AS whatsapp_uazapi_base_url,
+          wi.uazapi_token AS whatsapp_uazapi_token
         FROM whatsapp_campaign_recipients r
         JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
         LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id AND wi.status = 'ACTIVE'
@@ -594,6 +618,11 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
 
     await client.query("COMMIT");
 
+    const provider = String(row.whatsapp_provider ?? "EVOLUTION");
+    const rawCarousel = row.carousel_data;
+    const carouselData: CarouselSlide[] | null =
+      rawCarousel && Array.isArray(rawCarousel) ? (rawCarousel as CarouselSlide[]) : null;
+
     return {
       recipientId: String(row.id),
       campaignId: String(row.campaign_id),
@@ -602,16 +631,25 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       templateId: row.template_id ? String(row.template_id) : null,
       jid: String(row.jid),
       messageText: String(row.message_text),
+      messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
+      carouselData,
       sourceName: String(row.source_name ?? ""),
       sourceCode: row.source_code ? String(row.source_code) : null,
       createdByUserId: String(row.created_by_user_id ?? ""),
       createdByName: String(row.created_by_name ?? ""),
       evolutionInstance:
-        row.whatsapp_instance_id && row.whatsapp_instance_name && row.whatsapp_evolution_base_url && row.whatsapp_evolution_api_key
+        provider === "EVOLUTION" && row.whatsapp_instance_id && row.whatsapp_instance_name && row.whatsapp_evolution_base_url && row.whatsapp_evolution_api_key
           ? {
               instanceName: String(row.whatsapp_instance_name),
               evolutionBaseUrl: String(row.whatsapp_evolution_base_url),
               evolutionApiKey: String(row.whatsapp_evolution_api_key),
+            }
+          : null,
+      uazapiInstance:
+        provider === "UAZAPI" && row.whatsapp_instance_id && row.whatsapp_uazapi_base_url && row.whatsapp_uazapi_token
+          ? {
+              baseUrl: String(row.whatsapp_uazapi_base_url),
+              token: String(row.whatsapp_uazapi_token),
             }
           : null,
     };

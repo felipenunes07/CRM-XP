@@ -115,19 +115,34 @@ function UserCard({
 
       <div className="wa-user-tags">
         <span className="wa-user-tag">Comercial</span>
+        <span className="wa-user-tag provider" style={{ background: instance.provider === "UAZAPI" ? "#dbeafe" : "#fef3c7", color: instance.provider === "UAZAPI" ? "#1e40af" : "#92400e" }}>
+          {instance.provider === "UAZAPI" ? "UazAPI" : "Evolution"}
+        </span>
         <span className={`wa-user-status ${statusClass(instance.status)}`}>{statusLabel(instance.status)}</span>
       </div>
 
       <div className="wa-user-foot">
-        <button
-          type="button"
-          className="wa-user-configure"
-          onClick={onConfigure}
-          disabled={configuring}
-          title="Configurar Webhook e Grupos automaticamente"
-        >
-          {configuring ? "..." : "Configurar Agora"}
-        </button>
+        {instance.provider === "EVOLUTION" ? (
+          <button
+            type="button"
+            className="wa-user-configure"
+            onClick={onConfigure}
+            disabled={configuring}
+            title="Configurar Webhook e Grupos automaticamente"
+          >
+            {configuring ? "..." : "Configurar Agora"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="wa-user-configure"
+            disabled
+            style={{ opacity: 0.6, cursor: "not-allowed", backgroundColor: "#f1f5f9", color: "#64748b" }}
+            title="UazAPI não requer configuração de webhook manual"
+          >
+            UazAPI Ativo
+          </button>
+        )}
         <button type="button" className="wa-user-remove" onClick={onDelete} disabled={deleting} title="Remover usuario">
           <Trash2 size={15} />
         </button>
@@ -336,34 +351,40 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
   const auth = useAuth() as { token: string | null };
   const queryClient = useQueryClient();
 
+  const [provider, setProvider] = useState<"EVOLUTION" | "UAZAPI">("EVOLUTION");
   const [instanceName, setInstanceName] = useState("");
   const [displayLabel, setDisplayLabel] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [evolutionBaseUrl, setEvolutionBaseUrl] = useState("");
   const [evolutionApiKey, setEvolutionApiKey] = useState("");
+  const [uazapiBaseUrl, setUazapiBaseUrl] = useState("");
+  const [uazapiToken, setUazapiToken] = useState("");
   const [isDefault, setIsDefault] = useState(false);
 
   const defaultsQuery = useQuery({
     queryKey: ["whatsapp-defaults"],
     queryFn: () => api.whatsappInstanceDefaults(auth.token!),
-    enabled: Boolean(auth.token),
+    enabled: Boolean(auth.token && provider === "EVOLUTION"),
     staleTime: Infinity,
   });
 
   useEffect(() => {
-    if (defaultsQuery.data) {
+    if (defaultsQuery.data && provider === "EVOLUTION") {
       if (!evolutionBaseUrl) setEvolutionBaseUrl(defaultsQuery.data.baseUrl);
     }
-  }, [defaultsQuery.data, evolutionBaseUrl]);
+  }, [defaultsQuery.data, evolutionBaseUrl, provider]);
 
   const createMutation = useMutation({
     mutationFn: () =>
       api.createWhatsappInstance(auth.token!, {
+        provider,
         instanceName,
         displayLabel,
         phoneNumber,
-        evolutionBaseUrl,
-        evolutionApiKey,
+        evolutionBaseUrl: provider === "EVOLUTION" ? evolutionBaseUrl : undefined,
+        evolutionApiKey: provider === "EVOLUTION" ? evolutionApiKey : undefined,
+        uazapiBaseUrl: provider === "UAZAPI" ? uazapiBaseUrl : undefined,
+        uazapiToken: provider === "UAZAPI" ? uazapiToken : undefined,
         isDefault,
       }),
     onSuccess: () => {
@@ -372,17 +393,44 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
     },
   });
 
+  const isSubmitDisabled =
+    !instanceName ||
+    !displayLabel ||
+    (provider === "EVOLUTION" && (!evolutionBaseUrl || !evolutionApiKey)) ||
+    (provider === "UAZAPI" && (!uazapiBaseUrl || !uazapiToken)) ||
+    createMutation.isPending;
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-container pipeline-modal" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <h3>Conectar Evolution API</h3>
+          <h3>Conectar Instância WhatsApp</h3>
           <button type="button" className="modal-close" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
 
         <div className="modal-body">
+          <label>
+            Provedor *
+            <select
+              value={provider}
+              onChange={(event) => setProvider(event.target.value as "EVOLUTION" | "UAZAPI")}
+              style={{
+                width: "100%",
+                padding: "0.625rem 0.75rem",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                fontSize: "0.9rem",
+                background: "#fff",
+                marginTop: "4px"
+              }}
+            >
+              <option value="EVOLUTION">Evolution API</option>
+              <option value="UAZAPI">UazAPI</option>
+            </select>
+          </label>
+
           <label>
             Nome do usuário *
             <input value={displayLabel} onChange={(event) => setDisplayLabel(event.target.value)} placeholder="Ex: Amanda Comercial" />
@@ -393,15 +441,31 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
             <input value={instanceName} onChange={(event) => setInstanceName(event.target.value)} placeholder="Ex: comercial-amanda" />
           </label>
 
-          <label>
-            API Key *
-            <input type="password" value={evolutionApiKey} onChange={(event) => setEvolutionApiKey(event.target.value)} placeholder="Cole a API Key" />
-          </label>
+          {provider === "EVOLUTION" ? (
+            <>
+              <label>
+                API Key *
+                <input type="password" value={evolutionApiKey} onChange={(event) => setEvolutionApiKey(event.target.value)} placeholder="Cole a API Key" />
+              </label>
 
-          <label>
-            URL Base da Evolution *
-            <input value={evolutionBaseUrl} onChange={(event) => setEvolutionBaseUrl(event.target.value)} placeholder="https://..." />
-          </label>
+              <label>
+                URL Base da Evolution *
+                <input value={evolutionBaseUrl} onChange={(event) => setEvolutionBaseUrl(event.target.value)} placeholder="https://..." />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                Token da UazAPI *
+                <input type="password" value={uazapiToken} onChange={(event) => setUazapiToken(event.target.value)} placeholder="Cole o token da UazAPI" />
+              </label>
+
+              <label>
+                URL Base da UazAPI *
+                <input value={uazapiBaseUrl} onChange={(event) => setUazapiBaseUrl(event.target.value)} placeholder="https://..." />
+              </label>
+            </>
+          )}
 
           <label>
             Telefone
@@ -423,7 +487,7 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             className="primary-button"
-            disabled={!instanceName || !displayLabel || !evolutionBaseUrl || !evolutionApiKey || createMutation.isPending}
+            disabled={isSubmitDisabled}
             onClick={() => createMutation.mutate()}
           >
             <Plus size={16} />

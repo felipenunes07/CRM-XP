@@ -377,6 +377,7 @@ function mapInstanceRow(row: Record<string, unknown>): WhatsappInstanceItem {
     displayLabel: String(row.display_label),
     phoneNumber: row.phone_number ? String(row.phone_number) : null,
     profilePictureUrl: row.profile_picture_url ? String(row.profile_picture_url) : null,
+    provider: (String(row.provider ?? "EVOLUTION")) as WhatsappInstanceItem["provider"],
     status: String(row.status ?? "ACTIVE") as WhatsappInstanceItem["status"],
     isDefault: Boolean(row.is_default),
     assignedUserId: row.assigned_user_id ? String(row.assigned_user_id) : null,
@@ -491,11 +492,14 @@ async function syncEvolutionInstancesForSelection() {
 }
 
 export interface CreateInstanceInput {
+  provider?: "EVOLUTION" | "UAZAPI";
   instanceName: string;
   displayLabel: string;
   phoneNumber?: string;
-  evolutionBaseUrl: string;
-  evolutionApiKey: string;
+  evolutionBaseUrl?: string;
+  evolutionApiKey?: string;
+  uazapiBaseUrl?: string;
+  uazapiToken?: string;
   isDefault?: boolean;
   assignedUserId?: string | null;
   assignedUserName?: string | null;
@@ -506,21 +510,27 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
     await pool.query("UPDATE whatsapp_instances SET is_default = false WHERE is_default = true");
   }
 
+  const provider = input.provider ?? "EVOLUTION";
+
   const result = await pool.query(
     `
     INSERT INTO whatsapp_instances (
       instance_name, display_label, phone_number, evolution_base_url, evolution_api_key,
+      provider, uazapi_base_url, uazapi_token,
       is_default, assigned_user_id, assigned_user_name
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     RETURNING *
     `,
     [
       input.instanceName,
       input.displayLabel,
       input.phoneNumber ?? null,
-      input.evolutionBaseUrl,
-      input.evolutionApiKey,
+      input.evolutionBaseUrl ?? "",
+      input.evolutionApiKey ?? "",
+      provider,
+      input.uazapiBaseUrl ?? null,
+      input.uazapiToken ?? null,
       input.isDefault ?? false,
       input.assignedUserId ?? null,
       input.assignedUserName ?? null,
@@ -529,25 +539,27 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
 
   const instance = mapInstanceRow(result.rows[0]);
 
-  try {
-    logger.info("Automating Evolution API configuration for new instance", { instanceName: instance.instanceName });
-    await configureInstanceWebhook({
-      instanceName: instance.instanceName,
-      evolutionBaseUrl: input.evolutionBaseUrl,
-      evolutionApiKey: input.evolutionApiKey,
-    });
-    await configureInstanceSettings({
-      instanceName: instance.instanceName,
-      evolutionBaseUrl: input.evolutionBaseUrl,
-      evolutionApiKey: input.evolutionApiKey,
-    });
-    logger.info("Evolution API configuration completed", { instanceName: instance.instanceName });
-  } catch (error) {
-    logger.error("Failed to automate Evolution API configuration", {
-      instanceName: instance.instanceName,
-      error: String(error),
-    });
-    // We don't throw here to avoid failing the whole instance creation if the Evolution API is temporarily down
+  // Only configure Evolution API for EVOLUTION provider instances
+  if (provider === "EVOLUTION" && input.evolutionBaseUrl && input.evolutionApiKey) {
+    try {
+      logger.info("Automating Evolution API configuration for new instance", { instanceName: instance.instanceName });
+      await configureInstanceWebhook({
+        instanceName: instance.instanceName,
+        evolutionBaseUrl: input.evolutionBaseUrl,
+        evolutionApiKey: input.evolutionApiKey,
+      });
+      await configureInstanceSettings({
+        instanceName: instance.instanceName,
+        evolutionBaseUrl: input.evolutionBaseUrl,
+        evolutionApiKey: input.evolutionApiKey,
+      });
+      logger.info("Evolution API configuration completed", { instanceName: instance.instanceName });
+    } catch (error) {
+      logger.error("Failed to automate Evolution API configuration", {
+        instanceName: instance.instanceName,
+        error: String(error),
+      });
+    }
   }
 
   return instance;

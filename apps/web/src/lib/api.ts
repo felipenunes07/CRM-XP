@@ -3,6 +3,7 @@ import type {
   AmbassadorResponse,
   AgendaResponse,
   AttendantsResponse,
+  CarouselSlide,
   CustomerDetail,
   CustomerOpportunityDetail,
   CustomerOpportunityQueueResponse,
@@ -48,10 +49,12 @@ import type {
   CustomerMovementsResponse,
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
+  WhatsappCampaignMessageType,
   WhatsappGroup,
   WhatsappGroupsResponse,
   WhatsappImportSummary,
   WhatsappInstanceItem,
+  WhatsappInstanceProvider,
   WhatsappAgentActivityReport,
   WhatsappMappingSummary,
   WhatsappMonitorConversationDetail,
@@ -606,6 +609,8 @@ export const api = {
       savedSegmentId?: string | null;
       whatsappInstanceId?: string | null;
       messageText: string;
+      messageType?: WhatsappCampaignMessageType;
+      carouselData?: CarouselSlide[] | null;
       filtersSnapshot?: Record<string, unknown>;
       groupIds: string[];
       overrideRecentBlock?: boolean;
@@ -798,11 +803,14 @@ export const api = {
     return request<WhatsappInstanceItem[]>("/api/whatsapp-instances", {}, token);
   },
   createWhatsappInstance(token: string, input: {
+    provider?: WhatsappInstanceProvider;
     instanceName: string;
     displayLabel: string;
     phoneNumber?: string;
-    evolutionBaseUrl: string;
-    evolutionApiKey: string;
+    evolutionBaseUrl?: string;
+    evolutionApiKey?: string;
+    uazapiBaseUrl?: string;
+    uazapiToken?: string;
     isDefault?: boolean;
   }) {
     return request<WhatsappInstanceItem>("/api/whatsapp-instances", {

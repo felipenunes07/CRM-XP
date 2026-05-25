@@ -1409,6 +1409,15 @@ export type WhatsappGroupMappingStatus =
   | "IGNORED";
 export type WhatsappGroupMatchMethod = "CODE" | "NAME" | "MANUAL" | "CONFIRMED_NONE" | "IGNORED";
 export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type WhatsappCampaignMessageType = "TEXT" | "CAROUSEL";
+export type WhatsappInstanceProvider = "EVOLUTION" | "UAZAPI";
+
+export interface CarouselSlide {
+  text: string;
+  image: string;
+  buttons: { id: string; text: string; type: string }[];
+}
+
 export type WhatsappCampaignRecipientStatus =
   | "PENDING"
   | "BLOCKED_RECENT"
@@ -1522,6 +1531,8 @@ export interface WhatsappCampaignListItem {
   savedSegmentId: string | null;
   savedSegmentName: string | null;
   messageText: string;
+  messageType: WhatsappCampaignMessageType;
+  carouselData: CarouselSlide[] | null;
   minDelaySeconds: number;
   maxDelaySeconds: number;
   overrideRecentBlock: boolean;
@@ -1672,6 +1683,7 @@ export interface WhatsappInstanceItem {
   displayLabel: string;
   phoneNumber: string | null;
   profilePictureUrl: string | null;
+  provider: WhatsappInstanceProvider;
   status: "ACTIVE" | "PAUSED" | "DISCONNECTED";
   isDefault: boolean;
   assignedUserId: string | null;
