@@ -224,9 +224,8 @@ export function DisparadorPage() {
   const [attemptedAutoImport, setAttemptedAutoImport] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  // Step-by-step states
   const [activeTab, setActiveTab] = useState<"NEW_CAMPAIGN" | "HISTORY">("NEW_CAMPAIGN");
-  const [currentStep, setCurrentStep] = useState(3); // Start at step 3 to align with user's tab "Destinatários" or step 1
+  const [currentStep, setCurrentStep] = useState(1); // Start at step 1 (Criação)
   const [abTestActive, setAbTestActive] = useState(false);
   const [abMessageText, setAbMessageText] = useState("");
   const [selectedAbTemplateId, setSelectedAbTemplateId] = useState("");
