@@ -332,34 +332,30 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             OR (
               $1 NOT LIKE '%@g.us'
               AND d.whatsapp_jid NOT LIKE '%@g.us'
-              AND regexp_replace(d.whatsapp_jid, '\\D', '', 'g') LIKE '55%'
-              AND regexp_replace($1, '\\D', '', 'g') LIKE '55%'
-              AND length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 12
-              AND length(regexp_replace($1, '\\D', '', 'g')) >= 12
-              AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) = substring(regexp_replace($1, '\\D', '', 'g') from 3 for 2)
               AND (
                 regexp_replace(d.whatsapp_jid, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g')
                 OR (
-                  (
-                    (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND length(regexp_replace($1, '\\D', '', 'g')) = 12)
-                    OR
-                    (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 12 AND length(regexp_replace($1, '\\D', '', 'g')) = 13)
+                  length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 10
+                  AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
+                  AND (
+                    CASE
+                      WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                        substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                      WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                        substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                      ELSE
+                        right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 10)
+                    END
+                  ) = (
+                    CASE
+                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 13 AND substring(regexp_replace($1, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                        substring(regexp_replace($1, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
+                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 11 AND substring(regexp_replace($1, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                        substring(regexp_replace($1, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
+                      ELSE
+                        right(regexp_replace($1, '\\D', '', 'g'), 10)
+                    END
                   )
-                  AND substring(
-                    CASE 
-                      WHEN length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 THEN regexp_replace(d.whatsapp_jid, '\\D', '', 'g')
-                      ELSE regexp_replace($1, '\\D', '', 'g')
-                    END
-                    from 5 for 1
-                  ) = '9'
-                  AND substring(
-                    CASE 
-                      WHEN length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 12 THEN regexp_replace(d.whatsapp_jid, '\\D', '', 'g')
-                      ELSE regexp_replace($1, '\\D', '', 'g')
-                    END
-                    from 5 for 1
-                  ) IN ('6', '7', '8', '9')
-                  AND right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8) = right(regexp_replace($1, '\\D', '', 'g'), 8)
                 )
               )
             )
