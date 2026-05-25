@@ -51,8 +51,19 @@ function parseCsvRows(csvText: string): ParsedGroupRow[] {
 
   const headerLine = lines[0]!;
   const headers = headerLine.split(",").map((header) => header.trim().toLowerCase());
-  const nameIndex = headers.findIndex((header) => header === "name" || header === "nome");
-  const jidIndex = headers.findIndex((header) => header === "jid" || header === "whatsappjid");
+  const nameIndex = headers.findIndex(
+    (header) =>
+      header === "name" ||
+      header === "nome" ||
+      header.includes("name") ||
+      header.includes("nome")
+  );
+  const jidIndex = headers.findIndex(
+    (header) =>
+      header === "jid" ||
+      header === "whatsappjid" ||
+      header.includes("jid")
+  );
 
   if (nameIndex === -1 || jidIndex === -1) {
     return [];
@@ -120,7 +131,17 @@ function emptyMappingCounts() {
 }
 
 function readColumn(row: Record<string, unknown>, candidate: string) {
-  const matched = Object.entries(row).find(([key]) => key.trim().toLowerCase() === candidate.toLowerCase());
+  const matched = Object.entries(row).find(([key]) => {
+    const k = key.trim().toLowerCase();
+    const cand = candidate.toLowerCase();
+    if (cand === "jid" || cand === "whatsappjid") {
+      return k === "jid" || k === "whatsappjid" || k.includes("jid");
+    }
+    if (cand === "name" || cand === "nome") {
+      return k === "name" || k === "nome" || k.includes("name") || k.includes("nome");
+    }
+    return k === cand;
+  });
   return matched?.[1];
 }
 
