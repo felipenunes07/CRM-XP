@@ -1106,7 +1106,48 @@ export function DashboardPage() {
     setIsDraggingFsResize(true);
   };
 
-
+  useEffect(() => {
+    const metricsData = dashboardQuery.data;
+    if (!metricsData || isSyncing) return;
+    
+    // Validar se estamos em horário comercial local (Semana: 8h-18h, Sábado: 9h-13h)
+    const now = new Date();
+    const day = now.getDay(); // 0 = Domingo, 6 = Sábado
+    const hour = now.getHours();
+    
+    let isWorkingHours = false;
+    if (day === 0) {
+      isWorkingHours = false; // Domingo nunca sincroniza automaticamente
+    } else if (day === 6) {
+      isWorkingHours = hour >= 9 && hour < 13; // Sábado das 09:00 às 12:59:59
+    } else {
+      isWorkingHours = hour >= 8 && hour < 18; // Segunda a Sexta das 08:00 às 17:59:59
+    }
+    
+    if (!isWorkingHours) {
+      return; // Fora do expediente, não sincroniza automaticamente
+    }
+    
+    // Verificar se já existe uma sincronização manual ou automática em andamento no localStorage
+    const inProgress = localStorage.getItem('dashboard_sync_in_progress');
+    if (inProgress) {
+      // Se tiver mais de 5 minutos, podemos considerar que travou e limpar
+      const ageMs = Date.now() - Number(inProgress);
+      if (ageMs > 5 * 60 * 1000) {
+        localStorage.removeItem('dashboard_sync_in_progress');
+      } else {
+        return; // Sincronização em andamento recente, não faz nada
+      }
+    }
+    
+    const lastSync = metricsData.lastSyncAt ? new Date(metricsData.lastSyncAt).getTime() : 0;
+    const oneHour = 60 * 60 * 1000;
+    
+    if (Date.now() - lastSync > oneHour) {
+      console.log("Detectado dados desatualizados por mais de 1 hora no horário comercial. Iniciando auto-sync...");
+      void handleAutoSync();
+    }
+  }, [dashboardQuery.data?.lastSyncAt, isSyncing, token]);
 
   if (dashboardQuery.isLoading) {
     return <div className="page-loading">{tx("Carregando dashboard...", "正在加载仪表盘...")}</div>;
@@ -1214,8 +1255,31 @@ export function DashboardPage() {
 
   const currentYear = new Date().getFullYear();
   const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
-
-
+  async function handleAutoSync() {
+    try {
+      setIsSyncing(true);
+      const syncStartTime = Date.now();
+      localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
+      
+      await api.syncData(token!, "direct");
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      await dashboardQuery.refetch();
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      await dashboardQuery.refetch();
+      await agendaQuery.refetch();
+      if (selectedBucket) {
+        await filteredCustomersQuery.refetch();
+      } else if (!selectedSaleMonth) {
+        await priorityCustomersQuery.refetch();
+      }
+      localStorage.removeItem('dashboard_sync_in_progress');
+    } catch (err) {
+      console.warn("Falha na sincronizacao automatica: ", err);
+      localStorage.removeItem('dashboard_sync_in_progress');
+    } finally {
+      setIsSyncing(false);
+    }
+  }
 
   async function handleSync() {
     try {

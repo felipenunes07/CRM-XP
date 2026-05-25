@@ -11,8 +11,8 @@ const HOURLY_SYNC_KEY = "primary_hourly_sync_timestamp";
 const DAILY_SYNC_TIMEZONE = "America/Sao_Paulo";
 const SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
-const SYNC_WINDOW_START_HOUR = 8;  // 6 AM
-const SYNC_WINDOW_END_HOUR = 18;   // 10 PM
+const SYNC_WINDOW_START_HOUR = 8;  // 8 AM
+const SYNC_WINDOW_END_HOUR = 18;   // 6 PM
 
 let activeSync: Promise<unknown> | null = null;
 
@@ -105,16 +105,35 @@ export async function runPrimarySync(reason: string) {
 }
 
 async function shouldRunPeriodicSync() {
+  // 0. Check if weekend / determine window dynamic hours (America/Sao_Paulo)
+  const localDayOfWeek = new Date().toLocaleDateString("en-US", {
+    timeZone: DAILY_SYNC_TIMEZONE,
+    weekday: "short"
+  });
+
+  let startHour = 8;
+  let endHour = 18;
+
+  if (localDayOfWeek === "Sun") {
+    return false; // Domingo nunca sincroniza
+  } else if (localDayOfWeek === "Sat") {
+    startHour = 9;  // Sábado das 9h
+    endHour = 13;   // às 13h
+  } else {
+    startHour = 8;  // Segunda a Sexta das 8h
+    endHour = 18;   // às 18h
+  }
+
   const localNow = getLocalParts();
 
-  // 1. Check window (Optional, but helps save Supabase at night)
-  if (localNow.hour < SYNC_WINDOW_START_HOUR || localNow.hour > SYNC_WINDOW_END_HOUR) {
+  // 1. Check window (America/Sao_Paulo time)
+  if (localNow.hour < startHour || localNow.hour > endHour) {
     return false;
   }
 
-  // 2. Check if we already ran the daily sync (at 6 AM or first time today)
+  // 2. Check if we already ran the daily sync (first time today within startHour)
   const lastDailyRun = await getCursor(DAILY_SYNC_KEY);
-  if (lastDailyRun !== localNow.dateKey && localNow.hour >= SYNC_WINDOW_START_HOUR) {
+  if (lastDailyRun !== localNow.dateKey && localNow.hour >= startHour) {
     return true;
   }
 

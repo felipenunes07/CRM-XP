@@ -302,14 +302,20 @@ export function MessagesPage() {
     const conversations = conversationsQuery.data?.conversations ?? [];
     const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
     const filteredConversations = useMemo(() => {
+        let result = conversations;
+        if (activeAgent) {
+            result = result.filter((conversation) => conversation.whatsappInstanceId === activeAgent.id ||
+                conversation.instanceName === activeAgent.instanceName ||
+                conversation.agentName === activeAgent.displayLabel);
+        }
         if (groupFilter === "groups") {
-            return conversations.filter((conversation) => conversation.isGroup);
+            return result.filter((conversation) => conversation.isGroup);
         }
         if (groupFilter === "contacts") {
-            return conversations.filter((conversation) => !conversation.isGroup);
+            return result.filter((conversation) => !conversation.isGroup);
         }
-        return conversations;
-    }, [conversations, groupFilter]);
+        return result;
+    }, [conversations, groupFilter, activeAgent]);
     const visibleAgents = useMemo(() => {
         const normalized = agentSearch.trim().toLocaleLowerCase("pt-BR");
         if (!normalized) {
