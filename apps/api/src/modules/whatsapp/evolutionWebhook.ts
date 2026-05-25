@@ -25,7 +25,7 @@ import { WhatsappMonitorMessage } from "@olist-crm/shared";
 interface EvolutionWebhookPayload {
   event?: string;
   instance?: string;
-  data?: EvolutionMessageLike | EvolutionMessageLike[];
+  data?: EvolutionMessageLike | EvolutionMessageLike[] | Record<string, unknown>;
 }
 
 async function getWhatsappInstanceDetails(instanceName: string | null) {
@@ -152,21 +152,68 @@ async function insertDealActivity(input: {
   );
 }
 
+const ACCEPTED_EVENTS = new Set([
+  "messages.upsert",
+  "MESSAGES_UPSERT",
+  "send.message",
+  "SEND_MESSAGE",
+]);
+
+function normalizeWebhookMessages(payload: EvolutionWebhookPayload): EvolutionMessageLike[] {
+  const event = (payload.event ?? "").toUpperCase();
+  const data = payload.data;
+
+  if (!data) return [];
+
+  // SEND_MESSAGE payloads from Evolution API v2 may wrap the message differently:
+  // { event: "SEND_MESSAGE", data: { key: {...}, message: {...}, ... } }
+  // or { event: "SEND_MESSAGE", data: [{ key: {...}, message: {...}, ... }] }
+  if (event === "SEND_MESSAGE" && data && typeof data === "object" && !Array.isArray(data)) {
+    // Check if data itself looks like a single message (has key or message property)
+    const record = data as Record<string, unknown>;
+    if (record.key || record.message || record.remoteJid) {
+      return [record as EvolutionMessageLike];
+    }
+    // Maybe wrapped in a nested structure
+    if (record.data && typeof record.data === "object") {
+      const inner = record.data;
+      if (Array.isArray(inner)) {
+        return inner;
+      }
+      return [inner as EvolutionMessageLike];
+    }
+  }
+
+  if (Array.isArray(data)) return data as EvolutionMessageLike[];
+  return [data as EvolutionMessageLike];
+}
+
 export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
   const event = payload.event ?? "";
   const instance = payload.instance ?? "unknown";
 
-  if (event !== "messages.upsert" && event !== "MESSAGES_UPSERT") {
+  // Log ALL incoming webhook events for debugging (truncated payload)
+  const rawPayloadStr = JSON.stringify(payload);
+  logger.info("evolution webhook raw event received", {
+    event,
+    instance,
+    payloadSize: rawPayloadStr.length,
+    payloadPreview: rawPayloadStr.slice(0, 500),
+  });
+
+  if (!ACCEPTED_EVENTS.has(event)) {
     logger.info("evolution webhook ignored event", { event, instance });
     return { processed: false, event };
   }
 
-  const messages = Array.isArray(payload.data) ? payload.data : payload.data ? [payload.data] : [];
+  const isSendMessageEvent = event === "send.message" || event === "SEND_MESSAGE";
+  const messages = normalizeWebhookMessages(payload);
   let processedCount = 0;
 
   logger.info("evolution webhook processing messages", {
     instance,
     event,
+    isSendMessageEvent,
     count: messages.length,
   });
 
@@ -240,9 +287,10 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
       
-      // Fallback: if senderJid matches instance owner JID, it's definitely fromMe
+      // Fallback: if senderJid matches instance owner JID, or if this is a SEND_MESSAGE event, it's definitely fromMe
       const isFromMe = Boolean(
         context.fromMe || 
+        isSendMessageEvent ||
         (instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
       );
       
