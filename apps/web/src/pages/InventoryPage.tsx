@@ -837,6 +837,31 @@ export function InventoryPage() {
     [staleFilter, staleQuery.data?.items],
   );
 
+  const staleBucketValues = useMemo(() => {
+    const result = {
+      stale30_60: 0,
+      stale60_90: 0,
+      stale90_120: 0,
+      stale120plus: 0,
+    };
+    if (!staleQuery.data?.items) return result;
+
+    for (const item of staleQuery.data.items) {
+      const days = item.daysSinceLastSale;
+      const val = item.trappedValue ?? 0;
+      if (days !== null && days >= 30 && days < 60) {
+        result.stale30_60 += val;
+      } else if (days !== null && days >= 60 && days < 90) {
+        result.stale60_90 += val;
+      } else if (days !== null && days >= 90 && days < 120) {
+        result.stale90_120 += val;
+      } else if (days === null || days >= 120) {
+        result.stale120plus += val;
+      }
+    }
+    return result;
+  }, [staleQuery.data?.items]);
+
   const visibleModels = useMemo(() => {
     return (modelsQuery.data?.items ?? []).filter((item) => {
       if (deferredSearch) {
@@ -1314,7 +1339,19 @@ export function InventoryPage() {
                     <small className="inventory-summary-hint">Clique para filtrar</small>
                   )}
                 </div>
-                <strong>{formatNumber(card.count)}</strong>
+                <div style={{ marginTop: "0.4rem" }}>
+                  <strong style={{ fontSize: "1.55rem", display: "block", color: "#0f172a", marginBottom: "0.15rem" }}>
+                    {formatNumber(card.count)} SKUs
+                  </strong>
+                  <span style={{ fontSize: "0.95rem", color: "#475569", display: "block", fontWeight: 600 }}>
+                    {formatCurrency(
+                      card.value === "30_60" ? staleBucketValues.stale30_60 :
+                      card.value === "60_90" ? staleBucketValues.stale60_90 :
+                      card.value === "90_120" ? staleBucketValues.stale90_120 :
+                      staleBucketValues.stale120plus
+                    )} parados
+                  </span>
+                </div>
               </button>
             ))}
           </section>
