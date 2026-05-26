@@ -614,4 +614,10 @@ export const api = {
         search.set("topN", String(topN));
         return request(`/api/strategies/cross-sell?${search.toString()}`, {}, token);
     },
+    strategySlowMoving(token, minStock = 1, daysWithoutSales = 30) {
+        const search = new URLSearchParams();
+        search.set("minStock", String(minStock));
+        search.set("daysWithoutSales", String(daysWithoutSales));
+        return request(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
+    },
 };

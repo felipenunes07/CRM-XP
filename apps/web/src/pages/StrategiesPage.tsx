@@ -34,6 +34,8 @@ interface ProductItem {
   lastBoughtAt: string | null;
   stockQuantity: number | null;
   stockModel: string | null;
+  daysWithoutSales?: number;
+  lastSoldOverall?: string | null;
 }
 
 interface CustomerEntry {
@@ -58,7 +60,8 @@ interface CrossSellData {
   };
   customers: CustomerEntry[];
   minStock: number;
-  topN: number;
+  topN?: number;
+  daysWithoutSales?: number;
   generatedAt: string;
 }
 
@@ -126,16 +129,34 @@ function generateReactivationMessage(customer: CustomerEntry, products: ProductI
   return `Oi, ${firstName}! Tudo bem?\n\nReparei que já faz ${daysInactiveText} que você não faz um pedido com a gente.${productsListText}\n\nQue tal aproveitarmos para abastecer seu estoque? Bora fechar um novo pedido? 😊`;
 }
 
+function generateSlowMovingMessage(customer: CustomerEntry, products: ProductItem[]): string {
+  const firstName = customer.displayName.split(" ")[0] || customer.displayName;
+  
+  // Filter products that are actually in stock
+  const inStockProducts = products
+    .filter(p => p.stockQuantity !== null && p.stockQuantity > 0);
+    
+  let productsListText = "";
+  if (inStockProducts.length > 0) {
+    productsListText = "\n\nTenho alguns modelos em estoque que você comprou anteriormente e estão disponíveis para entrega imediata:\n" + 
+      inStockProducts.map(p => `• *${p.itemDescription}* (Média habitual de compra: ${Math.round(p.totalQuantityBought / (p.orderCount || 1))} un)`).join("\n");
+  }
+
+  return `Oi, ${firstName}! Tudo bem?\n\nEstou passando para te mostrar algumas excelentes oportunidades de reposição de modelos que você já trabalhou anteriormente conosco.${productsListText}\n\nConsegue receber um orçamento hoje para aproveitarmos essas peças em estoque? 😊`;
+}
+
 /* ── Customer Card Component ── */
 
-type ProductSortKey = "sku" | "itemDescription" | "totalQuantityBought" | "orderCount" | "avgQuantityPerOrder" | "lastBoughtAt" | "stockQuantity";
+type ProductSortKey = "sku" | "itemDescription" | "totalQuantityBought" | "orderCount" | "avgQuantityPerOrder" | "lastBoughtAt" | "daysWithoutSales" | "stockQuantity";
 
 function CustomerCard({
   customer,
   showStockFilter,
+  strategyMode,
 }: {
   customer: CustomerEntry;
   showStockFilter: boolean;
+  strategyMode: "reactivation" | "slowMoving";
 }) {
   const [expanded, setExpanded] = useState(false);
   const products = showStockFilter ? customer.productsWithStock : customer.productsAll;
@@ -155,8 +176,9 @@ function CustomerCard({
   };
 
   const handleCopyMessage = () => {
-    // Generate based on the current view's list of products
-    const msg = generateReactivationMessage(customer, products);
+    const msg = strategyMode === "reactivation"
+      ? generateReactivationMessage(customer, products)
+      : generateSlowMovingMessage(customer, products);
     navigator.clipboard.writeText(msg).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -166,8 +188,12 @@ function CustomerCard({
   const sortedProducts = useMemo(() => {
     const list = [...products];
     list.sort((a, b) => {
-      let valA = sortKey === "avgQuantityPerOrder" ? (a.totalQuantityBought / (a.orderCount || 1)) : a[sortKey];
-      let valB = sortKey === "avgQuantityPerOrder" ? (b.totalQuantityBought / (b.orderCount || 1)) : b[sortKey];
+      let valA = sortKey === "avgQuantityPerOrder" 
+        ? (a.totalQuantityBought / (a.orderCount || 1)) 
+        : a[sortKey];
+      let valB = sortKey === "avgQuantityPerOrder" 
+        ? (b.totalQuantityBought / (b.orderCount || 1)) 
+        : b[sortKey];
 
       // Handle nulls / undefined
       if (valA === null || valA === undefined) return sortOrder === "desc" ? 1 : -1;
@@ -235,15 +261,17 @@ function CustomerCard({
           {/* ── Activation Message Banner ── */}
           <div className="strat-message-banner">
             <div className="strat-message-banner-left">
-              <div className="strat-message-banner-icon">
+              <div className={`strat-message-banner-icon ${strategyMode === "slowMoving" ? "strat-giro-icon" : ""}`} style={strategyMode === "slowMoving" ? { color: "#06b6d4", backgroundColor: "rgba(6, 182, 212, 0.08)" } : undefined}>
                 <MessageSquareText size={18} />
               </div>
               <div className="strat-message-banner-text">
                 <strong className="strat-message-banner-title">
-                  Mensagem de Reativação WhatsApp
+                  {strategyMode === "reactivation" ? "Mensagem de Reativação WhatsApp" : "Oferta de Giro de Estoque (Modelos Parados)"}
                 </strong>
                 <p className="strat-message-banner-desc">
-                  Gere um texto personalizado com os modelos mais comprados por este cliente que estão em estoque no momento.
+                  {strategyMode === "reactivation"
+                    ? "Gere um texto personalizado com os modelos mais comprados por este cliente que estão em estoque no momento."
+                    : "Gere uma mensagem oferecendo reposição desses modelos favoritos do cliente que estão parados no nosso estoque."}
                 </p>
               </div>
             </div>
@@ -291,6 +319,11 @@ function CustomerCard({
                     <th className="strat-th-sortable" onClick={() => handleSort("lastBoughtAt")}>
                       Última Compra {renderSortIcon("lastBoughtAt")}
                     </th>
+                    {strategyMode === "slowMoving" && (
+                      <th className="strat-th-sortable" onClick={() => handleSort("daysWithoutSales")}>
+                        Giro Geral {renderSortIcon("daysWithoutSales")}
+                      </th>
+                    )}
                     <th className="strat-th-sortable strat-th-right" onClick={() => handleSort("stockQuantity")}>
                       Estoque Atual {renderSortIcon("stockQuantity")}
                     </th>
@@ -309,6 +342,11 @@ function CustomerCard({
                         {product.orderCount > 0 ? Math.round(product.totalQuantityBought / product.orderCount) : 0}
                       </td>
                       <td>{formatDate(product.lastBoughtAt)}</td>
+                      {strategyMode === "slowMoving" && (
+                        <td style={{ color: product.daysWithoutSales && product.daysWithoutSales >= 90 ? "#ef4444" : "#475569", fontWeight: 500 }}>
+                          {product.daysWithoutSales === 9999 ? "Nunca vendido" : `Há ${product.daysWithoutSales} dias`}
+                        </td>
+                      )}
                       <td className="strat-td-right">
                         <span className={`strat-stock-badge ${getStockBadgeClass(product.stockQuantity)}`}>
                           {product.stockQuantity !== null ? formatNumber(product.stockQuantity) : "N/A"}
@@ -330,27 +368,41 @@ function CustomerCard({
 
 export function StrategiesPage() {
   const { token } = useAuth();
+  const [strategyMode, setStrategyMode] = useState<"reactivation" | "slowMoving">("reactivation");
   const [data, setData] = useState<CrossSellData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Strategy 1 (Reactivation) States
   const [minStock, setMinStock] = useState(50);
   const [minStockInput, setMinStockInput] = useState("50");
+  const [limitProducts, setLimitProducts] = useState<"top50" | "all">("top50");
+  
+  // Strategy 2 (Slow Moving) States
+  const [minStockSlow, setMinStockSlow] = useState(1);
+  const [minStockSlowInput, setMinStockSlowInput] = useState("1");
+  const [daysWithoutSales, setDaysWithoutSales] = useState(30);
+
   const [showStockFilter, setShowStockFilter] = useState(true);
   const [activeTab, setActiveTab] = useState<CustomerStatus>("ACTIVE");
   const [searchTerm, setSearchTerm] = useState("");
   const [customerSortKey, setCustomerSortKey] = useState<"revenue" | "name" | "orders" | "matches">("revenue");
   const [customerSortOrder, setCustomerSortOrder] = useState<"asc" | "desc">("desc");
-  const [limitProducts, setLimitProducts] = useState<"top50" | "all">("top50");
 
   const fetchData = useCallback(
-    async (stockValue: number, limitValue: "top50" | "all") => {
+    async (mode: "reactivation" | "slowMoving", stockValue: number, extraValue: any) => {
       if (!token) return;
       setLoading(true);
       setError(null);
       try {
-        const topN = limitValue === "all" ? 2000 : 50;
-        const result = await api.strategyCrossSell(token, stockValue, topN);
-        setData(result);
+        if (mode === "reactivation") {
+          const topN = extraValue === "all" ? 5000 : 50;
+          const result = await api.strategyCrossSell(token, stockValue, topN);
+          setData(result as any);
+        } else {
+          const result = await api.strategySlowMoving(token, stockValue, extraValue);
+          setData(result as any);
+        }
       } catch (err: any) {
         setError(err.message || "Erro ao carregar dados");
       } finally {
@@ -361,14 +413,25 @@ export function StrategiesPage() {
   );
 
   useEffect(() => {
-    fetchData(minStock, limitProducts);
-  }, [fetchData, minStock, limitProducts]);
+    if (strategyMode === "reactivation") {
+      fetchData("reactivation", minStock, limitProducts);
+    } else {
+      fetchData("slowMoving", minStockSlow, daysWithoutSales);
+    }
+  }, [fetchData, strategyMode, minStock, limitProducts, minStockSlow, daysWithoutSales]);
 
   const handleRefresh = () => {
-    const parsed = parseInt(minStockInput, 10);
-    const safeValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 50;
-    setMinStock(safeValue);
-    setMinStockInput(String(safeValue));
+    if (strategyMode === "reactivation") {
+      const parsed = parseInt(minStockInput, 10);
+      const safeValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 50;
+      setMinStock(safeValue);
+      setMinStockInput(String(safeValue));
+    } else {
+      const parsed = parseInt(minStockSlowInput, 10);
+      const safeValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
+      setMinStockSlow(safeValue);
+      setMinStockSlowInput(String(safeValue));
+    }
   };
 
   const handleMinStockKeyDown = (e: React.KeyboardEvent) => {
@@ -451,12 +514,16 @@ export function StrategiesPage() {
       {/* ── Header ── */}
       <header className="strat-header">
         <div className="strat-header-left">
-          <div className="strat-header-icon">
+          <div className="strat-header-icon" style={strategyMode === "slowMoving" ? { background: "linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)", boxShadow: "0 4px 12px rgba(6, 182, 212, 0.15)" } : undefined}>
             <Crosshair size={24} />
           </div>
           <div>
             <h1 className="strat-title">Estratégias</h1>
-            <p className="strat-subtitle">Cruzamento de Dados — Produtos × Estoque</p>
+            <p className="strat-subtitle">
+              {strategyMode === "reactivation"
+                ? "Cruzamento de Dados — Produtos × Estoque"
+                : "Giro de Estoque — Venda de Modelos Parados"}
+            </p>
           </div>
         </div>
         {data && (
@@ -465,6 +532,34 @@ export function StrategiesPage() {
           </span>
         )}
       </header>
+
+      {/* ── Strategy Mode Switcher ── */}
+      <div className="strat-mode-switcher" style={{ display: "flex", gap: "0.2rem", background: "#f1f5f9", padding: "0.2rem", borderRadius: "10px", border: "1px solid #e2e8f0", width: "fit-content" }}>
+        <button
+          type="button"
+          className={`strat-toggle-btn ${strategyMode === "reactivation" ? "strat-toggle-active" : ""}`}
+          onClick={() => {
+            setStrategyMode("reactivation");
+            setData(null);
+          }}
+          style={{ height: "34px", padding: "0 1.25rem", borderRadius: "8px" }}
+        >
+          <Crosshair size={14} />
+          Reativação (Modelos Preferidos)
+        </button>
+        <button
+          type="button"
+          className={`strat-toggle-btn ${strategyMode === "slowMoving" ? "strat-toggle-active" : ""}`}
+          onClick={() => {
+            setStrategyMode("slowMoving");
+            setData(null);
+          }}
+          style={{ height: "34px", padding: "0 1.25rem", borderRadius: "8px" }}
+        >
+          <TrendingUp size={14} />
+          Giro de Estoque (Modelos Parados)
+        </button>
+      </div>
 
       {/* ── Controls ── */}
       <div className="strat-controls">
@@ -478,23 +573,48 @@ export function StrategiesPage() {
                 id="strat-min-stock"
                 type="number"
                 min={0}
-                value={minStockInput}
-                onChange={(e) => setMinStockInput(e.target.value)}
+                value={strategyMode === "reactivation" ? minStockInput : minStockSlowInput}
+                onChange={(e) => {
+                  if (strategyMode === "reactivation") {
+                    setMinStockInput(e.target.value);
+                  } else {
+                    setMinStockSlowInput(e.target.value);
+                  }
+                }}
                 onKeyDown={handleMinStockKeyDown}
                 className="strat-input"
-                placeholder="50"
+                placeholder={strategyMode === "reactivation" ? "50" : "1"}
               />
               <button
                 type="button"
                 className="strat-btn strat-btn-primary"
                 onClick={handleRefresh}
                 disabled={loading}
+                style={strategyMode === "slowMoving" ? { backgroundColor: "#06b6d4" } : undefined}
               >
                 <RefreshCw size={14} className={loading ? "strat-spin" : ""} />
                 Atualizar
               </button>
             </div>
           </div>
+
+          {strategyMode === "slowMoving" && (
+            <div className="strat-control-group">
+              <label className="strat-control-label">Sem vendas há</label>
+              <div className="strat-toggle-group">
+                {[30, 60, 90, 120].map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`strat-toggle-btn ${daysWithoutSales === d ? "strat-toggle-active" : ""}`}
+                    onClick={() => setDaysWithoutSales(d)}
+                  >
+                    {d === 120 ? "120+ dias" : `${d} dias`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="strat-control-group">
             <label className="strat-control-label">Modo de visualização</label>
@@ -505,7 +625,7 @@ export function StrategiesPage() {
                 onClick={() => setShowStockFilter(true)}
               >
                 <Package size={14} />
-                Com estoque (≥ {minStock})
+                Com estoque (≥ {strategyMode === "reactivation" ? minStock : minStockSlow})
               </button>
               <button
                 type="button"
@@ -518,25 +638,27 @@ export function StrategiesPage() {
             </div>
           </div>
 
-          <div className="strat-control-group">
-            <label className="strat-control-label">Quantidade de Produtos</label>
-            <div className="strat-toggle-group">
-              <button
-                type="button"
-                className={`strat-toggle-btn ${limitProducts === "top50" ? "strat-toggle-active" : ""}`}
-                onClick={() => setLimitProducts("top50")}
-              >
-                Top 50
-              </button>
-              <button
-                type="button"
-                className={`strat-toggle-btn ${limitProducts === "all" ? "strat-toggle-active" : ""}`}
-                onClick={() => setLimitProducts("all")}
-              >
-                Ver todos
-              </button>
+          {strategyMode === "reactivation" && (
+            <div className="strat-control-group">
+              <label className="strat-control-label">Quantidade de Produtos</label>
+              <div className="strat-toggle-group">
+                <button
+                  type="button"
+                  className={`strat-toggle-btn ${limitProducts === "top50" ? "strat-toggle-active" : ""}`}
+                  onClick={() => setLimitProducts("top50")}
+                >
+                  Top 50
+                </button>
+                <button
+                  type="button"
+                  className={`strat-toggle-btn ${limitProducts === "all" ? "strat-toggle-active" : ""}`}
+                  onClick={() => setLimitProducts("all")}
+                >
+                  Ver todos
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="strat-control-group">
             <label className="strat-control-label" htmlFor="strat-sort-customer">
@@ -619,12 +741,14 @@ export function StrategiesPage() {
           })}
 
           <div className="strat-summary-card strat-summary-matches">
-            <div className="strat-summary-icon" style={{ color: "#06b6d4", backgroundColor: "rgba(6, 182, 212, 0.08)" }}>
+            <div className="strat-summary-icon" style={strategyMode === "slowMoving" ? { color: "#06b6d4", backgroundColor: "rgba(6, 182, 212, 0.08)" } : { color: "#06b6d4", backgroundColor: "rgba(6, 182, 212, 0.08)" }}>
               <Crosshair size={20} />
             </div>
             <div className="strat-summary-content">
               <span className="strat-summary-value">{formatNumber(data.summary.totalProductMatches)}</span>
-              <span className="strat-summary-label">Cruzamentos c/ estoque</span>
+              <span className="strat-summary-label">
+                {strategyMode === "reactivation" ? "Cruzamentos c/ estoque" : "Modelos parados c/ comprador"}
+              </span>
             </div>
           </div>
         </div>
@@ -674,7 +798,7 @@ export function StrategiesPage() {
               {searchTerm
                 ? "Tente outro termo de busca"
                 : showStockFilter
-                  ? `Nenhum cliente ${getStatusConfig(activeTab).label.toLowerCase()} possui produtos com estoque ≥ ${minStock}`
+                  ? `Nenhum cliente ${getStatusConfig(activeTab).label.toLowerCase()} possui produtos correspondentes`
                   : `Nenhum cliente ${getStatusConfig(activeTab).label.toLowerCase()} encontrado`}
             </span>
           </div>
@@ -690,6 +814,7 @@ export function StrategiesPage() {
                 key={customer.customerId}
                 customer={customer}
                 showStockFilter={showStockFilter}
+                strategyMode={strategyMode}
               />
             ))}
           </div>

@@ -34,6 +34,7 @@ import {
 } from "./modules/crm/inventoryIntelligenceService.js";
 import { getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
 import { getCrossSellStrategy } from "./modules/crm/strategyCrossSellService.js";
+import { getSlowMovingStrategy } from "./modules/crm/strategySlowMovingService.js";
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
@@ -1943,6 +1944,18 @@ export function createApp() {
       const safeMinStock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 50;
       const safeTopN = Number.isFinite(topN) && topN > 0 && topN <= 5000 ? topN : 50;
       response.json(await getCrossSellStrategy(safeMinStock, safeTopN));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/strategies/slow-moving", async (request, response, next) => {
+    try {
+      const minStock = request.query.minStock ? parseInt(String(request.query.minStock), 10) : 1;
+      const daysWithoutSales = request.query.daysWithoutSales ? parseInt(String(request.query.daysWithoutSales), 10) : 30;
+      const safeMinStock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 1;
+      const safeDays = Number.isFinite(daysWithoutSales) && daysWithoutSales >= 0 ? daysWithoutSales : 30;
+      response.json(await getSlowMovingStrategy(safeMinStock, safeDays));
     } catch (error) {
       next(error);
     }

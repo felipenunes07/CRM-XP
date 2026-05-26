@@ -911,4 +911,53 @@ export const api = {
       generatedAt: string;
     }>(`/api/strategies/cross-sell?${search.toString()}`, {}, token);
   },
+
+  strategySlowMoving(token: string, minStock = 1, daysWithoutSales = 30) {
+    const search = new URLSearchParams();
+    search.set("minStock", String(minStock));
+    search.set("daysWithoutSales", String(daysWithoutSales));
+    return request<{
+      summary: {
+        totalCustomers: number;
+        activeCount: number;
+        attentionCount: number;
+        inactiveCount: number;
+        totalProductMatches: number;
+      };
+      customers: Array<{
+        customerId: string;
+        customerCode: string;
+        displayName: string;
+        status: "ACTIVE" | "ATTENTION" | "INACTIVE";
+        totalOrders: number;
+        totalSpent: number;
+        lastPurchaseAt: string | null;
+        productsWithStock: Array<{
+          sku: string | null;
+          itemDescription: string;
+          totalQuantityBought: number;
+          orderCount: number;
+          lastBoughtAt: string | null;
+          stockQuantity: number | null;
+          stockModel: string | null;
+          daysWithoutSales: number;
+          lastSoldOverall: string | null;
+        }>;
+        productsAll: Array<{
+          sku: string | null;
+          itemDescription: string;
+          totalQuantityBought: number;
+          orderCount: number;
+          lastBoughtAt: string | null;
+          stockQuantity: number | null;
+          stockModel: string | null;
+          daysWithoutSales: number;
+          lastSoldOverall: string | null;
+        }>;
+      }>;
+      minStock: number;
+      daysWithoutSales: number;
+      generatedAt: string;
+    }>(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
+  },
 };
