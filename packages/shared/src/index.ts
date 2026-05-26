@@ -1105,6 +1105,7 @@ export interface SegmentDefinition {
   state?: string;
   city?: string;
   customerCodes?: string[];
+  minTotalOrders?: number;
 }
 
 export interface SegmentResult {

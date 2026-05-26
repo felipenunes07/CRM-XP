@@ -960,4 +960,11 @@ export const api = {
       generatedAt: string;
     }>(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
   },
+  bulkAssignLabelToCustomers(token: string, customerIds: string[], labelName: string) {
+    return request<{ success: boolean }>("/api/customers/batch/labels", {
+      method: "POST",
+      body: JSON.stringify({ customerIds, labelName }),
+    }, token);
+  },
 };
+

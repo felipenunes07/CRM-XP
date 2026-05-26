@@ -174,7 +174,17 @@ function compareValues(left: number | string | null, right: number | string | nu
   return direction === "asc" ? leftNumber - rightNumber : rightNumber - leftNumber;
 }
 
-export function CustomerTable({ customers }: { customers: CustomerListItem[] }) {
+export function CustomerTable({
+  customers,
+  selectable = false,
+  selectedIds = [],
+  onSelectedIdsChange,
+}: {
+  customers: CustomerListItem[];
+  selectable?: boolean;
+  selectedIds?: string[];
+  onSelectedIdsChange?: (ids: string[]) => void;
+}) {
   const { tx } = useUiLanguage();
   const [sortState, setSortState] = useState<{ columnId: SortableColumnId; direction: SortDirection } | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(initialColumnWidths);
@@ -282,7 +292,29 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       .map((entry) => entry.customer);
   }, [customers, sortState]);
 
-  const tableWidth = localizedColumns.reduce((total, column) => total + (columnWidths[column.id] ?? column.width), 0);
+  const tableWidth = localizedColumns.reduce((total, column) => total + (columnWidths[column.id] ?? column.width), 0) + (selectable ? 50 : 0);
+
+  const allSelected = sortedCustomers.length > 0 && sortedCustomers.every((c) => selectedIds.includes(c.id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      // Unselect only the currently visible/filtered customers
+      const visibleIds = sortedCustomers.map((c) => c.id);
+      onSelectedIdsChange?.(selectedIds.filter((id) => !visibleIds.includes(id)));
+    } else {
+      // Union of currently selected and visible customers
+      const visibleIds = sortedCustomers.map((c) => c.id);
+      onSelectedIdsChange?.(Array.from(new Set([...selectedIds, ...visibleIds])));
+    }
+  }
+
+  function toggleSelectCustomer(customerId: string) {
+    if (selectedIds.includes(customerId)) {
+      onSelectedIdsChange?.(selectedIds.filter((id) => id !== customerId));
+    } else {
+      onSelectedIdsChange?.([...selectedIds, customerId]);
+    }
+  }
 
   function toggleSort(column: TableColumn) {
     const defaultDirection = column.defaultDirection;
@@ -334,12 +366,23 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
       <div className="table-scroll">
         <table className="data-table" style={{ minWidth: `${tableWidth}px` }}>
           <colgroup>
+            {selectable && <col style={{ width: "50px" }} />}
             {localizedColumns.map((column) => (
               <col key={column.id} style={{ width: `${columnWidths[column.id]}px` }} />
             ))}
           </colgroup>
           <thead>
             <tr>
+              {selectable && (
+                <th style={{ width: "50px", textAlign: "center", verticalAlign: "middle", padding: "0 10px" }}>
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: "pointer", transform: "scale(1.15)", accentColor: "var(--primary)" }}
+                  />
+                </th>
+              )}
               {localizedColumns.map((column) => {
                 const isSorted = Boolean(sortState && sortState.columnId === column.id);
                 const activeDirection = isSorted ? sortState?.direction : undefined;
@@ -375,59 +418,72 @@ export function CustomerTable({ customers }: { customers: CustomerListItem[] }) 
             </tr>
           </thead>
           <tbody>
-            {sortedCustomers.map((customer) => (
-              <tr key={customer.id}>
-                <td>
-                  <Link className="table-link" to={`/clientes/${customer.id}`}>
-                    <strong>{customer.displayName}</strong>
-                    <span>{customer.customerCode}</span>
-                    {customer.isAmbassador ? <small className="table-inline-badge">{AMBASSADOR_LABEL_NAME}</small> : null}
-                  </Link>
-                </td>
-                <td>
-                  <span className={`status-badge status-${customer.status.toLowerCase()}`}>{statusLabel(customer.status)}</span>
-                </td>
-                <td>{formatDate(customer.lastPurchaseAt)}</td>
-                <td>{formatDaysSince(customer.daysSinceLastPurchase)}</td>
-                <td>{customer.totalOrders}</td>
-                <td>
-                  {customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (
-                    locale === "zh-CN"
-                      ? `${Math.round(customer.avgDaysBetweenOrders)}天`
-                      : `${Math.round(customer.avgDaysBetweenOrders)} dias`
-                  ) : (
-                    <span className="muted-copy">-</span>
+            {sortedCustomers.map((customer) => {
+              const isSelected = selectedIds.includes(customer.id);
+              return (
+                <tr key={customer.id} className={isSelected ? "is-selected-row" : ""} style={isSelected ? { backgroundColor: "rgba(37, 99, 235, 0.05)" } : undefined}>
+                  {selectable && (
+                    <td style={{ textAlign: "center", verticalAlign: "middle", padding: "0 10px" }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectCustomer(customer.id)}
+                        style={{ cursor: "pointer", transform: "scale(1.15)", accentColor: "var(--primary)" }}
+                      />
+                    </td>
                   )}
-                </td>
-                <td>{formatCurrency(customer.avgTicket)}</td>
-                <td>{formatCurrency(customer.totalSpent)}</td>
-                <td>
-                  <div className="tag-row compact">
-                    {customer.labels.length ? (
-                      customer.labels.map((label) => (
-                        <span
-                          key={label.id}
-                          className="tag"
-                          style={{ background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }}
-                        >
-                          {label.name}
-                        </span>
-                      ))
+                  <td>
+                    <Link className="table-link" to={`/clientes/${customer.id}`}>
+                      <strong>{customer.displayName}</strong>
+                      <span>{customer.customerCode}</span>
+                      {customer.isAmbassador ? <small className="table-inline-badge">{AMBASSADOR_LABEL_NAME}</small> : null}
+                    </Link>
+                  </td>
+                  <td>
+                    <span className={`status-badge status-${customer.status.toLowerCase()}`}>{statusLabel(customer.status)}</span>
+                  </td>
+                  <td>{formatDate(customer.lastPurchaseAt)}</td>
+                  <td>{formatDaysSince(customer.daysSinceLastPurchase)}</td>
+                  <td>{customer.totalOrders}</td>
+                  <td>
+                    {customer.avgDaysBetweenOrders !== null && customer.avgDaysBetweenOrders !== undefined ? (
+                      locale === "zh-CN"
+                        ? `${Math.round(customer.avgDaysBetweenOrders)}天`
+                        : `${Math.round(customer.avgDaysBetweenOrders)} dias`
                     ) : (
-                      <span className="muted-copy">{tx("Sem rotulo", "无标签")}</span>
+                      <span className="muted-copy">-</span>
                     )}
-                  </div>
-                </td>
-                <td>{customer.priorityScore.toFixed(1)}</td>
-                <td>{customer.primaryInsight ?? tx("Sem alerta", "无提醒")}</td>
-                <td>
-                  <div className="location-cell">
-                    <span className="city-text">{customer.city || "-"}</span>
-                    {customer.state && <span className="state-badge">{customer.state}</span>}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td>{formatCurrency(customer.avgTicket)}</td>
+                  <td>{formatCurrency(customer.totalSpent)}</td>
+                  <td>
+                    <div className="tag-row compact">
+                      {customer.labels.length ? (
+                        customer.labels.map((label) => (
+                          <span
+                            key={label.id}
+                            className="tag"
+                            style={{ background: `${label.color}14`, color: label.color, borderColor: `${label.color}33` }}
+                          >
+                            {label.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="muted-copy">{tx("Sem rotulo", "无标签")}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td>{customer.priorityScore.toFixed(1)}</td>
+                  <td>{customer.primaryInsight ?? tx("Sem alerta", "无提醒")}</td>
+                  <td>
+                    <div className="location-cell">
+                      <span className="city-text">{customer.city || "-"}</span>
+                      {customer.state && <span className="state-badge">{customer.state}</span>}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

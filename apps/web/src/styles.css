@@ -17385,4 +17385,67 @@ body:has(.whatsapp-monitor-page) .main-content {
   }
 }
 
+/* ── Custom MultiSelect Styles ── */
+.multiselect-dropdown {
+  position: absolute !important;
+  top: 100% !important;
+  left: 0 !important;
+  right: 0 !important;
+  margin-top: 4px !important;
+  background: var(--panel-background, #fff) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
+  z-index: 50 !important;
+  max-height: 220px !important;
+  overflow-y: auto !important;
+  padding: 0.5rem !important;
+}
+
+.multiselect-option {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0.75rem !important;
+  padding: 0.6rem 0.75rem !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  font-size: 0.9rem !important;
+  transition: all 0.2s ease !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  color: var(--foreground) !important;
+  font-weight: 400 !important;
+  margin: 0 !important;
+}
+
+.multiselect-option:hover {
+  background: rgba(37, 99, 235, 0.05) !important;
+}
+
+.multiselect-option.is-checked {
+  background: rgba(37, 99, 235, 0.08) !important;
+  color: #2563eb !important;
+  font-weight: 600 !important;
+}
+
+.multiselect-option input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  appearance: checkbox !important;
+  -webkit-appearance: checkbox !important;
+  flex-shrink: 0 !important;
+  cursor: pointer !important;
+}
+
+
 

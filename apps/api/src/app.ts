@@ -16,6 +16,7 @@ import {
   previewSegment,
   updateCustomerAmbassador,
   updateCustomerLabels,
+  bulkAssignLabelToCustomers,
 } from "./modules/crm/customerService.js";
 import {
   getCustomerCreditDetail,
@@ -165,6 +166,7 @@ const customerQuerySchema = z.object({
   customerPrefix: z.string().optional(),
   state: z.string().optional(),
   city: z.string().optional(),
+  minTotalOrders: z.coerce.number().optional(),
 });
 
 const dashboardQuerySchema = z.object({
@@ -232,6 +234,7 @@ const segmentSchema = z.object({
   state: z.string().optional(),
   city: z.string().optional(),
   customerCodes: z.array(z.string()).optional(),
+  minTotalOrders: z.number().optional(),
 });
 
 const messageSchema = z.object({
@@ -973,6 +976,20 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.post("/api/customers/batch/labels", async (request, response, next) => {
+    try {
+      const { customerIds, labelName } = request.body;
+      if (!Array.isArray(customerIds) || !labelName) {
+        throw new HttpError(400, "customerIds (array) e labelName (string) são obrigatórios");
+      }
+      await bulkAssignLabelToCustomers(customerIds, labelName);
+      response.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
 
   app.get("/api/customer-labels", async (_request, response, next) => {
     try {
