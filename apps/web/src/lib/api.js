@@ -607,4 +607,11 @@ export const api = {
         search.set("dateTo", to);
         return request(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
     },
+    // ── Strategies ──────────────────────────────────────────────
+    strategyCrossSell(token, minStock = 50, topN = 50) {
+        const search = new URLSearchParams();
+        search.set("minStock", String(minStock));
+        search.set("topN", String(topN));
+        return request(`/api/strategies/cross-sell?${search.toString()}`, {}, token);
+    },
 };

@@ -5,6 +5,7 @@ import {
   Boxes,
   ChevronDown,
   ClipboardList,
+  Crosshair,
   Kanban,
   LayoutDashboard,
   Lightbulb,
@@ -50,6 +51,7 @@ export const appShellLinks = [
   { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
   { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
   { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
+  { to: "/estrategias", icon: Crosshair, labelPt: "Estratégias" },
   { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 
@@ -110,6 +112,13 @@ const sidebarMenu: SidebarEntry[] = [
       { to: "/estoque", labelPt: "Estoque" },
       { to: "/segmentos", labelPt: "Segmentos" },
       { to: "/rotulos", labelPt: "Rótulos" },
+    ],
+  },
+  {
+    labelPt: "Estratégias",
+    icon: Crosshair,
+    children: [
+      { to: "/estrategias", labelPt: "Cruzamento de Dados" },
     ],
   },
   {

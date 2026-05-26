@@ -864,4 +864,51 @@ export const api = {
     search.set("dateTo", to);
     return request<DailySentiment[]>(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
   },
+
+  // ── Strategies ──────────────────────────────────────────────
+
+  strategyCrossSell(token: string, minStock = 50, topN = 50) {
+    const search = new URLSearchParams();
+    search.set("minStock", String(minStock));
+    search.set("topN", String(topN));
+    return request<{
+      summary: {
+        totalCustomers: number;
+        activeCount: number;
+        attentionCount: number;
+        inactiveCount: number;
+        totalProductMatches: number;
+      };
+      customers: Array<{
+        customerId: string;
+        customerCode: string;
+        displayName: string;
+        status: "ACTIVE" | "ATTENTION" | "INACTIVE";
+        totalOrders: number;
+        totalSpent: number;
+        lastPurchaseAt: string | null;
+        productsWithStock: Array<{
+          sku: string | null;
+          itemDescription: string;
+          totalQuantityBought: number;
+          orderCount: number;
+          lastBoughtAt: string | null;
+          stockQuantity: number | null;
+          stockModel: string | null;
+        }>;
+        productsAll: Array<{
+          sku: string | null;
+          itemDescription: string;
+          totalQuantityBought: number;
+          orderCount: number;
+          lastBoughtAt: string | null;
+          stockQuantity: number | null;
+          stockModel: string | null;
+        }>;
+      }>;
+      minStock: number;
+      topN: number;
+      generatedAt: string;
+    }>(`/api/strategies/cross-sell?${search.toString()}`, {}, token);
+  },
 };

@@ -16626,3 +16626,763 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wp-card-btn-next:hover {
   background: #059669;
 }
+
+/* ══════════════════════════════════════════════════════════════
+   Estratégias — Cruzamento de Dados Page
+   ══════════════════════════════════════════════════════════════ */
+
+.strat-page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background-color: #f8fafc;
+}
+
+/* ── Header ── */
+.strat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.strat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.strat-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
+}
+
+.strat-title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.025em;
+}
+
+.strat-subtitle {
+  margin: 0.1rem 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.strat-generated-at {
+  font-size: 0.76rem;
+  color: #64748b;
+  background: #ffffff;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  font-weight: 500;
+}
+
+/* ── Controls Panel ── */
+.strat-controls {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+.strat-controls-row {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.strat-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.strat-control-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.strat-input-group {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.strat-input {
+  height: 38px;
+  padding: 0 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.88rem;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: #ffffff;
+  min-width: 80px;
+}
+
+.strat-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.strat-input[type="number"] {
+  width: 80px;
+}
+
+.strat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 38px;
+  padding: 0 1rem;
+  border-radius: 8px;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.strat-btn-primary {
+  background: #6366f1;
+  color: #ffffff;
+}
+
+.strat-btn-primary:hover {
+  background: #4f46e5;
+}
+
+.strat-btn-primary:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* Apple-style segmented pill controls */
+.strat-toggle-group {
+  display: flex;
+  gap: 0.2rem;
+  border-radius: 10px;
+  background: #f1f5f9;
+  padding: 0.2rem;
+  border: 1px solid #e2e8f0;
+  height: 38px;
+}
+
+.strat-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.85rem;
+  height: 100%;
+  border: none;
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 7px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.strat-toggle-btn:hover {
+  color: #0f172a;
+}
+
+.strat-toggle-active {
+  background: #ffffff;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.strat-search-group {
+  flex: 1;
+  min-width: 200px;
+}
+
+.strat-search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.strat-search-icon {
+  position: absolute;
+  left: 12px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.strat-search-input {
+  padding-left: 2.1rem !important;
+  width: 100%;
+}
+
+/* ── Summary Cards (Modern Tint Minimal Aesthetic) ── */
+.strat-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.strat-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.strat-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.strat-summary-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.strat-summary-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.strat-summary-value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.strat-summary-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 600;
+  margin-top: 0.15rem;
+}
+
+/* Dynamic status content styling */
+.strat-summary-card:nth-child(2) .strat-summary-value { color: #10b981; }
+.strat-summary-card:nth-child(3) .strat-summary-value { color: #f59e0b; }
+.strat-summary-card:nth-child(4) .strat-summary-value { color: #ef4444; }
+.strat-summary-card:nth-child(5) .strat-summary-value { color: #6366f1; }
+
+/* ── Apple-style segmented tabs ── */
+.strat-tabs {
+  display: inline-flex;
+  background: #f1f5f9;
+  padding: 0.2rem;
+  border-radius: 10px;
+  gap: 0.2rem;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 0.25rem;
+  width: auto;
+  align-self: flex-start;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.strat-tab {
+  border: none;
+  border-radius: 8px;
+  padding: 0.45rem 1.15rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.strat-tab:hover {
+  color: #0f172a;
+}
+
+.strat-tab-active {
+  background: #ffffff;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.strat-tab-count {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #e2e8f0;
+  color: #475569;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  transition: all 0.15s ease;
+}
+
+.strat-tab-active .strat-tab-count {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+/* ── Content Area ── */
+.strat-content {
+  min-height: 200px;
+}
+
+.strat-loading,
+.strat-error,
+.strat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 4rem 2rem;
+  text-align: center;
+  color: #64748b;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+.strat-error {
+  color: #ef4444;
+}
+
+.strat-empty strong {
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+@keyframes strat-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.strat-spin {
+  animation: strat-spin 1s linear infinite;
+}
+
+/* ── Customer List & Table styling ── */
+.strat-customers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.strat-list-info {
+  display: none; /* Removed for clean list layout */
+}
+
+/* ── Customer Card (Minimal & Modern) ── */
+.strat-customer-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
+}
+
+.strat-customer-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+}
+
+.strat-card-expanded {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.05);
+}
+
+.strat-customer-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.strat-customer-header:hover {
+  background: #f8fafc;
+}
+
+.strat-customer-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: #64748b;
+  min-width: 0;
+}
+
+.strat-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.strat-customer-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.strat-customer-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strat-customer-code {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.strat-customer-stats {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.strat-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.strat-stat-revenue {
+  background: #eff6ff;
+  color: #3b82f6;
+  font-weight: 700;
+}
+
+/* Expanded Products Body */
+.strat-customer-body {
+  padding: 0 1.25rem 1.25rem;
+  animation: strat-slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  background: #ffffff;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 1.25rem;
+}
+
+@keyframes strat-slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.strat-empty-products {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  color: #64748b;
+  font-size: 0.82rem;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px dashed #e2e8f0;
+}
+
+.strat-products-table-wrapper {
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  overflow-x: auto;
+  background: #ffffff;
+}
+
+.strat-products-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.strat-products-table thead {
+  background: #f8fafc;
+}
+
+.strat-products-table th {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.strat-th-right {
+  text-align: right !important;
+}
+
+.strat-products-table td {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+  vertical-align: middle;
+}
+
+.strat-products-table tr:last-child td {
+  border-bottom: none;
+}
+
+.strat-products-table tr:hover td {
+  background: #f8fafc;
+}
+
+.strat-td-right {
+  text-align: right;
+}
+
+.strat-sku-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.strat-desc-cell {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Stock Badge ── */
+.strat-stock-badge {
+  display: inline-flex;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.strat-stock-high {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.strat-stock-medium {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.strat-stock-low {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.strat-stock-out {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.strat-stock-none {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* ── Sortable Table Headers ── */
+.strat-th-sortable {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.strat-th-sortable:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+.strat-sort-icon-inactive {
+  opacity: 0.3;
+  transition: opacity 0.15s ease;
+}
+
+.strat-th-sortable:hover .strat-sort-icon-inactive {
+  opacity: 0.7;
+}
+
+.strat-sort-icon-active {
+  animation: strat-pop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes strat-pop {
+  from { transform: scale(0.7); }
+  to { transform: scale(1); }
+}
+
+/* ── WhatsApp Reactivation Banner (Premium Notice Box) ── */
+.strat-message-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  background: #f8fafc; /* Professional light slate bg */
+  border: 1px solid #e2e8f0; /* Crisp slate border */
+  border-radius: 12px;
+  padding: 0.85rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.02);
+}
+
+.strat-message-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.strat-message-banner-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.08); /* Premium WhatsApp green tint */
+  color: #059669; /* Emerald green */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.strat-message-banner-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.strat-message-banner-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a; /* Slate 900 for modern feel */
+}
+
+.strat-message-banner-desc {
+  font-size: 0.74rem;
+  color: #475569; /* Slate 600 for high-contrast professional text */
+  margin: 0.05rem 0 0;
+}
+
+.strat-btn-secondary {
+  background: #ffffff;
+  color: #334155;
+  border: 1px solid #d1d5db;
+  height: 34px;
+  font-size: 0.78rem;
+  padding: 0 0.85rem;
+  border-radius: 6px;
+}
+
+.strat-btn-secondary:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.strat-btn-success {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  height: 34px;
+  font-size: 0.78rem;
+  padding: 0 0.85rem;
+  border-radius: 6px;
+}
+
+.strat-btn-success:hover {
+  background: #d1fae5;
+}
+
+/* ── Responsive ── */
+@media (max-width: 1024px) {
+  .strat-controls-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .strat-summary-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .strat-customer-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .strat-customer-stats {
+    width: 100%;
+  }
+
+  .strat-desc-cell {
+    max-width: 160px;
+  }
+
+  .strat-tab {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.75rem;
+  }
+  
+  .strat-message-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+}
+
+

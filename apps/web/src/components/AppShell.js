@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BarChart3, Boxes, ChevronDown, ClipboardList, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
+import { BarChart3, Boxes, ChevronDown, ClipboardList, Crosshair, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useUiLanguage } from "../i18n";
 /* ── link structure for external tests ── */
@@ -26,6 +26,7 @@ export const appShellLinks = [
     { to: "/prospeccao", icon: SearchCheck, labelPt: "Prospeccao" },
     { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
     { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
+    { to: "/estrategias", icon: Crosshair, labelPt: "Estratégias" },
     { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
 ];
 function isGroup(entry) {
@@ -67,6 +68,13 @@ const sidebarMenu = [
             { to: "/estoque", labelPt: "Estoque" },
             { to: "/segmentos", labelPt: "Segmentos" },
             { to: "/rotulos", labelPt: "Rótulos" },
+        ],
+    },
+    {
+        labelPt: "Estratégias",
+        icon: Crosshair,
+        children: [
+            { to: "/estrategias", labelPt: "Cruzamento de Dados" },
         ],
     },
     {

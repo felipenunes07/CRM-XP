@@ -33,6 +33,7 @@ import {
   getInventoryStale,
 } from "./modules/crm/inventoryIntelligenceService.js";
 import { getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
+import { getCrossSellStrategy } from "./modules/crm/strategyCrossSellService.js";
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
@@ -1928,6 +1929,20 @@ export function createApp() {
     try {
       await deleteWhatsappInstance(String(request.params.id));
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Strategies ──────────────────────────────────────────────
+
+  app.get("/api/strategies/cross-sell", async (request, response, next) => {
+    try {
+      const minStock = request.query.minStock ? parseInt(String(request.query.minStock), 10) : 50;
+      const topN = request.query.topN ? parseInt(String(request.query.topN), 10) : 50;
+      const safeMinStock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 50;
+      const safeTopN = Number.isFinite(topN) && topN > 0 && topN <= 5000 ? topN : 50;
+      response.json(await getCrossSellStrategy(safeMinStock, safeTopN));
     } catch (error) {
       next(error);
     }

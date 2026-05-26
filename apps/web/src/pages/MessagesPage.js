@@ -97,7 +97,7 @@ function defaultMimeType(mediaType) {
     if (mediaType === "image")
         return "image/jpeg";
     if (mediaType === "audio")
-        return "audio/ogg";
+        return "audio/ogg; codecs=opus";
     if (mediaType === "video")
         return "video/mp4";
     return "application/octet-stream";
@@ -106,10 +106,16 @@ function buildMediaSrc(mediaType, mimeType, mediaUrl, mediaBase64) {
     if (!mediaBase64) {
         return mediaUrl;
     }
-    if (mediaBase64.startsWith("data:")) {
-        return mediaBase64;
+    // Remove any whitespace, newlines, carriage returns, or tabs from the base64 string
+    const cleanBase64 = mediaBase64.replace(/\s/g, "");
+    if (cleanBase64.startsWith("data:")) {
+        return cleanBase64;
     }
-    return `data:${mimeType ?? defaultMimeType(mediaType)};base64,${mediaBase64}`;
+    let finalMimeType = mimeType ?? defaultMimeType(mediaType);
+    if (finalMimeType === "audio/ogg") {
+        finalMimeType = "audio/ogg; codecs=opus";
+    }
+    return `data:${finalMimeType};base64,${cleanBase64}`;
 }
 function messageMedia(message) {
     const mediaType = metadataString(message.metadata, ["mediaType", "mediatype"]);

@@ -33,6 +33,7 @@ const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/W
 const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 const NovidadesPage = lazy(async () => ({ default: (await import("./pages/NovidadesPage")).NovidadesPage }));
+const StrategiesPage = lazy(async () => ({ default: (await import("./pages/StrategiesPage")).StrategiesPage }));
 
 function RouteLoadingFallback() {
   const { tx } = useUiLanguage();
@@ -101,6 +102,7 @@ export default function App() {
           <Route path="/usuarios" element={<WhatsappConfigPage />} />
           <Route path="/config/whatsapp" element={<WhatsappConfigPage />} />
           <Route path="/novidades" element={<NovidadesPage />} />
+          <Route path="/estrategias" element={<StrategiesPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
