@@ -1,16 +1,47 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Plus, RefreshCw, Save, ShieldCheck, UserX } from "lucide-react";
+import {
+  Ban,
+  CheckCircle2,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Mail,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserRound,
+  Users,
+  UserX,
+} from "lucide-react";
 import { useAuth, type AppRole } from "../hooks/useAuth";
 import { api, type AdminUser, type AdminUserInput, type PermissionDefinition, type UserPermissionOverride } from "../lib/api";
 
-const roleOptions: Array<{ value: AppRole; label: string }> = [
-  { value: "admin", label: "Admin" },
-  { value: "vendas", label: "Vendas" },
-  { value: "financeiro", label: "Financeiro" },
-  { value: "operacional", label: "Operacional" },
-  { value: "viewer", label: "Viewer" },
+const roleOptions: Array<{ value: AppRole; label: string; description: string }> = [
+  { value: "admin", label: "Admin", description: "Acesso total, painel admin e configuracoes." },
+  { value: "vendas", label: "Vendas", description: "Ferramentas comerciais, mensagens e relatorios." },
+  { value: "financeiro", label: "Financeiro", description: "Financeiro, comprovantes, metas e relatorios." },
+  { value: "operacional", label: "Operacional", description: "Rotina operacional, mensagens e integracoes." },
+  { value: "viewer", label: "Viewer", description: "Apenas leitura em areas permitidas." },
 ];
+
+const fallbackRole = roleOptions[roleOptions.length - 1]!;
+
+const groupLabels: Record<string, string> = {
+  admin: "Administracao",
+  automations: "Automacoes",
+  commercial: "Comercial",
+  dashboard: "Dashboard",
+  finance: "Financeiro",
+  integrations: "Integracoes",
+  messages: "Mensagens",
+  reports: "Relatorios",
+  settings: "Configuracoes",
+};
 
 function emptyDraft(): AdminUserInput {
   return {
@@ -58,12 +89,41 @@ function permissionGroups(permissions: PermissionDefinition[]) {
   }, {});
 }
 
+function initials(name: string, email: string) {
+  const source = name.trim() || email.split("@")[0] || "XP";
+  return source
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Nunca";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function roleLabel(role: AppRole) {
+  return roleOptions.find((option) => option.value === role)?.label ?? role;
+}
+
 export function AdminUsersPage() {
   const { token, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | "new">("new");
   const [draft, setDraft] = useState<AdminUserInput>(emptyDraft);
   const [resetLink, setResetLink] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const [passwordSaved, setPasswordSaved] = useState(false);
 
   const usersQuery = useQuery({
     queryKey: ["admin-users"],
@@ -81,9 +141,22 @@ export function AdminUsersPage() {
   const selectedUser = selectedId === "new" ? null : users.find((user) => user.id === selectedId) ?? null;
   const permissions = permissionsQuery.data ?? [];
   const groupedPermissions = useMemo(() => permissionGroups(permissions), [permissions]);
+  const selectedRole = roleOptions.find((role) => role.value === draft.role) ?? fallbackRole;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredUsers = users.filter((user) => {
+    const target = `${user.name} ${user.email} ${user.role}`.toLowerCase();
+    return !normalizedSearch || target.includes(normalizedSearch);
+  });
+  const activeCount = users.filter((user) => user.is_active ?? user.isActive ?? true).length;
+  const adminCount = users.filter((user) => user.role === "admin").length;
+  const allowedOverrides = draft.permissionOverrides.filter((entry) => entry.allowed).length;
+  const deniedOverrides = draft.permissionOverrides.filter((entry) => !entry.allowed).length;
+  const effectivePermissionCount = selectedUser?.permissions?.length ?? 0;
 
   useEffect(() => {
     setResetLink(null);
+    setTemporaryPassword("");
+    setPasswordSaved(false);
     setDraft(selectedUser ? draftFromUser(selectedUser) : emptyDraft());
   }, [selectedUser?.id]);
 
@@ -95,9 +168,13 @@ export function AdminUsersPage() {
       }
       return api.updateUser(token, selectedId, draft);
     },
-    onSuccess: async () => {
+    onSuccess: async (savedUsers) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       await refreshUser();
+      const savedUser = savedUsers.find((user) => user.email.toLowerCase() === draft.email.toLowerCase());
+      if (savedUser) {
+        setSelectedId(savedUser.id);
+      }
     },
   });
 
@@ -121,6 +198,17 @@ export function AdminUsersPage() {
     },
   });
 
+  const passwordMutation = useMutation({
+    mutationFn: async () => {
+      if (!token) throw new Error("Sessao ausente");
+      if (!selectedUser) throw new Error("Selecione um usuario");
+      return api.setUserPassword(token, selectedUser.id, temporaryPassword);
+    },
+    onSuccess: () => {
+      setPasswordSaved(true);
+    },
+  });
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setResetLink(null);
@@ -129,65 +217,154 @@ export function AdminUsersPage() {
 
   return (
     <div className="admin-users-page">
-      <header className="admin-users-header">
+      <header className="admin-access-header">
         <div>
-          <h1>Gestao de usuarios</h1>
-          <p>Crie logins, defina roles e ajuste permissoes individuais sem expor controles sensiveis para usuarios comuns.</p>
+          <span className="admin-access-eyebrow">Admin / Acessos do CRM</span>
+          <h1>Gestao de acessos</h1>
+          <p>Crie logins, escolha a role base e use excecoes individuais apenas quando necessario.</p>
         </div>
-        <button type="button" className="primary-button" onClick={() => setSelectedId("new")}>
+        <button type="button" className="primary-button admin-new-user-button" onClick={() => setSelectedId("new")}>
           <Plus size={16} />
-          Novo usuario
+          Novo acesso
         </button>
       </header>
 
-      <div className="admin-users-layout">
-        <aside className="admin-users-list" aria-label="Usuarios cadastrados">
-          {usersQuery.isLoading ? <span className="admin-muted">Carregando usuarios...</span> : null}
-          {users.map((user) => {
-            const isActive = user.is_active ?? user.isActive ?? true;
-            return (
-              <button
-                key={user.id}
-                type="button"
-                className={`admin-user-row ${selectedId === user.id ? "active" : ""}`}
-                onClick={() => setSelectedId(user.id)}
-              >
-                <span>
-                  <strong>{user.name}</strong>
-                  <small>{user.email}</small>
-                </span>
-                <em className={isActive ? "enabled" : "disabled"}>{isActive ? "Ativo" : "Inativo"}</em>
-              </button>
-            );
-          })}
+      <section className="admin-access-summary" aria-label="Resumo de acessos">
+        <div>
+          <span>Total de usuarios</span>
+          <strong>{users.length}</strong>
+        </div>
+        <div>
+          <span>Ativos</span>
+          <strong>{activeCount}</strong>
+        </div>
+        <div>
+          <span>Admins</span>
+          <strong>{adminCount}</strong>
+        </div>
+        <div>
+          <span>Permissoes</span>
+          <strong>{permissions.length}</strong>
+        </div>
+      </section>
+
+      <div className="admin-users-workspace">
+        <aside className="admin-directory" aria-label="Usuarios cadastrados">
+          <div className="admin-directory-header">
+            <div>
+              <h2>Usuarios</h2>
+              <span>{filteredUsers.length} encontrados</span>
+            </div>
+            <button type="button" className="admin-icon-button" onClick={() => usersQuery.refetch()} title="Atualizar lista">
+              <RefreshCw size={16} />
+            </button>
+          </div>
+
+          <label className="admin-search">
+            <Search size={16} />
+            <input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Buscar nome, email ou role"
+            />
+          </label>
+
+          <div className="admin-user-list">
+            {usersQuery.isLoading ? <span className="admin-muted">Carregando usuarios...</span> : null}
+            {!usersQuery.isLoading && filteredUsers.length === 0 ? (
+              <span className="admin-empty-state">Nenhum usuario encontrado.</span>
+            ) : null}
+            {filteredUsers.map((user) => {
+              const isActive = user.is_active ?? user.isActive ?? true;
+              return (
+                <button
+                  key={user.id}
+                  type="button"
+                  className={`admin-user-row ${selectedId === user.id ? "active" : ""}`}
+                  onClick={() => setSelectedId(user.id)}
+                >
+                  <span className="admin-user-avatar">{initials(user.name, user.email)}</span>
+                  <span className="admin-user-main">
+                    <strong>{user.name}</strong>
+                    <small>{user.email}</small>
+                  </span>
+                  <span className="admin-user-meta">
+                    <em className={isActive ? "enabled" : "disabled"}>{isActive ? "Ativo" : "Inativo"}</em>
+                    <small>{roleLabel(user.role)}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </aside>
 
-        <form className="admin-user-editor" onSubmit={handleSubmit}>
-          <section className="admin-editor-section">
+        <form className="admin-access-editor" onSubmit={handleSubmit}>
+          <section className="admin-editor-hero">
+            <div className="admin-editor-identity">
+              <span className={`admin-editor-avatar ${draft.isActive ? "" : "inactive"}`}>
+                {selectedUser ? initials(selectedUser.name, selectedUser.email) : <UserRound size={22} />}
+              </span>
+              <div>
+                <span>{selectedUser ? "Editando acesso" : "Novo acesso"}</span>
+                <h2>{draft.fullName || "Usuario sem nome"}</h2>
+                <p>{draft.email || "Informe email, senha inicial e role para criar o login."}</p>
+              </div>
+            </div>
+            <div className="admin-editor-badges">
+              <span className={draft.isActive ? "enabled" : "disabled"}>
+                {draft.isActive ? <CheckCircle2 size={14} /> : <Ban size={14} />}
+                {draft.isActive ? "Ativo" : "Inativo"}
+              </span>
+              <span>
+                <ShieldCheck size={14} />
+                {roleLabel(draft.role)}
+              </span>
+              {selectedUser ? <span>{effectivePermissionCount} permissoes efetivas</span> : null}
+            </div>
+          </section>
+
+          <section className="admin-editor-panel">
             <div className="admin-section-title">
-              <ShieldCheck size={18} />
-              <h2>{selectedUser ? "Editar acesso" : "Criar usuario"}</h2>
+              <Mail size={18} />
+              <div>
+                <h3>Dados de login</h3>
+                <p>Essas informacoes definem a conta de acesso ao CRM.</p>
+              </div>
             </div>
 
             <div className="admin-form-grid">
               <label>
-                Nome
-                <input value={draft.fullName} onChange={(event) => setDraft({ ...draft, fullName: event.target.value })} />
+                Nome completo
+                <input
+                  value={draft.fullName}
+                  required
+                  autoComplete="name"
+                  onChange={(event) => setDraft({ ...draft, fullName: event.target.value })}
+                  placeholder="Ex.: Maria Oliveira"
+                />
               </label>
               <label>
-                Email
-                <input value={draft.email} type="email" onChange={(event) => setDraft({ ...draft, email: event.target.value })} />
+                Email de login
+                <input
+                  value={draft.email}
+                  required
+                  type="email"
+                  autoComplete="email"
+                  onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                  placeholder="nome@empresa.com"
+                />
               </label>
               <label>
-                Role
+                Role base
                 <select value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value as AppRole })}>
                   {roleOptions.map((role) => (
                     <option key={role.value} value={role.value}>{role.label}</option>
                   ))}
                 </select>
+                <small>{selectedRole.description}</small>
               </label>
               <label>
-                Status
+                Status da conta
                 <select
                   value={draft.isActive ? "active" : "inactive"}
                   onChange={(event) => setDraft({ ...draft, isActive: event.target.value === "active" })}
@@ -195,55 +372,152 @@ export function AdminUsersPage() {
                   <option value="active">Ativo</option>
                   <option value="inactive">Inativo</option>
                 </select>
+                <small>Usuarios inativos nao conseguem acessar o sistema.</small>
               </label>
               {selectedId === "new" ? (
                 <label>
                   Senha inicial
-                  <input
-                    value={draft.password ?? ""}
-                    type="password"
-                    onChange={(event) => setDraft({ ...draft, password: event.target.value })}
-                  />
+                  <span className="admin-password-control">
+                    <input
+                      value={draft.password ?? ""}
+                      required
+                      minLength={6}
+                      type={showCreatePassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      onChange={(event) => setDraft({ ...draft, password: event.target.value })}
+                      placeholder="Minimo 6 caracteres"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatePassword((current) => !current)}
+                      title={showCreatePassword ? "Ocultar senha" : "Mostrar senha"}
+                    >
+                      {showCreatePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText(draft.password ?? "")}
+                      title="Copiar senha inicial"
+                    >
+                      <Copy size={15} />
+                    </button>
+                  </span>
+                  <small>Essa senha pode ser vista aqui apenas enquanto voce cria o login.</small>
                 </label>
-              ) : null}
+              ) : (
+                <label>
+                  Ultimo acesso
+                  <input readOnly value={formatDate(selectedUser?.last_sign_in_at)} />
+                </label>
+              )}
             </div>
           </section>
 
-          <section className="admin-editor-section">
-            <div className="admin-section-title">
-              <KeyRound size={18} />
-              <h2>Permissoes individuais</h2>
+          {selectedUser ? (
+            <section className="admin-editor-panel">
+              <div className="admin-section-title">
+                <KeyRound size={18} />
+                <div>
+                  <h3>Senha temporaria</h3>
+                  <p>Senha atual nao pode ser exibida. Defina uma nova senha quando precisar entregar acesso ao usuario.</p>
+                </div>
+              </div>
+              <div className="admin-password-reset-row">
+                <label>
+                  Nova senha
+                  <span className="admin-password-control">
+                    <input
+                      value={temporaryPassword}
+                      minLength={6}
+                      type={showTemporaryPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      onChange={(event) => {
+                        setPasswordSaved(false);
+                        setTemporaryPassword(event.target.value);
+                      }}
+                      placeholder="Digite uma nova senha temporaria"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowTemporaryPassword((current) => !current)}
+                      title={showTemporaryPassword ? "Ocultar senha" : "Mostrar senha"}
+                    >
+                      {showTemporaryPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard?.writeText(temporaryPassword)}
+                      title="Copiar senha temporaria"
+                    >
+                      <Copy size={15} />
+                    </button>
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={temporaryPassword.trim().length < 6 || passwordMutation.isPending}
+                  onClick={() => passwordMutation.mutate()}
+                >
+                  <Save size={16} />
+                  Salvar nova senha
+                </button>
+              </div>
+              {passwordSaved ? <div className="admin-success-message">Nova senha salva. Ela nao sera exibida novamente depois que voce sair desta tela.</div> : null}
+              {passwordMutation.error ? <div className="inline-error">{String(passwordMutation.error.message)}</div> : null}
+            </section>
+          ) : null}
+
+          <section className="admin-editor-panel">
+            <div className="admin-permission-heading">
+              <div className="admin-section-title">
+                <KeyRound size={18} />
+                <div>
+                  <h3>Permissoes individuais</h3>
+                  <p>Automatico usa o acesso do cargo escolhido. Use Liberar ou Bloquear apenas para excecoes.</p>
+                </div>
+              </div>
+              <div className="admin-override-summary">
+                <span>{allowedOverrides} extras</span>
+                <span>{deniedOverrides} bloqueios</span>
+              </div>
             </div>
 
             <div className="admin-permissions-grid">
               {Object.entries(groupedPermissions).map(([group, groupPermissions]) => (
                 <div key={group} className="admin-permission-group">
-                  <h3>{group}</h3>
-                  {groupPermissions.map((permission) => (
-                    <label key={permission.key} className="admin-permission-row">
-                      <span>
-                        <strong>{permission.name}</strong>
-                        <small>{permission.key}</small>
-                      </span>
-                      <select
-                        value={overrideValue(draft.permissionOverrides, permission.key)}
-                        onChange={(event) =>
-                          setDraft({
-                            ...draft,
-                            permissionOverrides: setOverride(
-                              draft.permissionOverrides,
-                              permission.key,
-                              event.target.value as "inherit" | "allow" | "deny",
-                            ),
-                          })
-                        }
-                      >
-                        <option value="inherit">Padrao da role</option>
-                        <option value="allow">Permitir</option>
-                        <option value="deny">Bloquear</option>
-                      </select>
-                    </label>
-                  ))}
+                  <div className="admin-permission-group-title">
+                    <SlidersHorizontal size={15} />
+                    <h4>{groupLabels[group] ?? group}</h4>
+                  </div>
+                  {groupPermissions.map((permission) => {
+                    const currentValue = overrideValue(draft.permissionOverrides, permission.key);
+                    return (
+                      <div key={permission.key} className="admin-permission-row">
+                        <span>
+                          <strong>{permission.name}</strong>
+                          <small>{permission.description || permission.key}</small>
+                        </span>
+                        <div className="admin-permission-toggle" role="group" aria-label={`Permissao ${permission.name}`}>
+                          {(["inherit", "allow", "deny"] as const).map((value) => (
+                            <button
+                              key={value}
+                              type="button"
+                              className={currentValue === value ? "active" : ""}
+                              onClick={() =>
+                                setDraft({
+                                  ...draft,
+                                  permissionOverrides: setOverride(draft.permissionOverrides, permission.key, value),
+                                })
+                              }
+                            >
+                              {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar" : "Bloquear"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -253,14 +527,21 @@ export function AdminUsersPage() {
           {resetMutation.error ? <div className="inline-error">{String(resetMutation.error.message)}</div> : null}
           {resetLink ? (
             <div className="admin-reset-link">
-              <strong>Link de recuperacao gerado</strong>
+              <div>
+                <strong>Link de recuperacao gerado</strong>
+                <span>Envie este link para o usuario redefinir a senha.</span>
+              </div>
               <input readOnly value={resetLink} onFocus={(event) => event.currentTarget.select()} />
+              <button type="button" className="secondary-button" onClick={() => navigator.clipboard?.writeText(resetLink)}>
+                <Copy size={15} />
+                Copiar
+              </button>
             </div>
           ) : null}
 
           <footer className="admin-editor-actions">
             {selectedUser ? (
-              <>
+              <div className="admin-secondary-actions">
                 <button
                   type="button"
                   className="secondary-button"
@@ -279,11 +560,13 @@ export function AdminUsersPage() {
                   <UserX size={16} />
                   {(selectedUser.is_active ?? true) ? "Desativar" : "Ativar"}
                 </button>
-              </>
-            ) : null}
+              </div>
+            ) : (
+              <span className="admin-form-hint">O usuario recebera acesso com a senha inicial informada.</span>
+            )}
             <button type="submit" className="primary-button" disabled={saveMutation.isPending}>
               <Save size={16} />
-              {saveMutation.isPending ? "Salvando..." : "Salvar acesso"}
+              {saveMutation.isPending ? "Salvando..." : selectedUser ? "Salvar alteracoes" : "Criar acesso"}
             </button>
           </footer>
         </form>

@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { BarChart3, Boxes, ChevronDown, ClipboardList, Crosshair, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
+import { BarChart3, Boxes, ChevronDown, ClipboardList, Crosshair, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, ShieldAlert, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
@@ -28,7 +28,8 @@ export const appShellLinks = [
     { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
     { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
     { to: "/estrategias", icon: Crosshair, labelPt: "Estratégias" },
-    { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
+    { to: "/usuarios", icon: UserCog, labelPt: "Usuarios WhatsApp", adminOnly: true },
+    { to: "/admin/usuarios", icon: ShieldAlert, labelPt: "Acessos", adminOnly: true },
 ];
 function isGroup(entry) {
     return "children" in entry;
@@ -37,6 +38,8 @@ function permissionForPath(path) {
     if (path === "/")
         return "dashboard.view";
     if (path === "/usuarios")
+        return "integrations.manage";
+    if (path === "/admin/usuarios")
         return "admin.users.manage";
     if (path === "/config/whatsapp")
         return "integrations.manage";
@@ -119,7 +122,15 @@ const sidebarMenu = [
             { to: "/novidades", labelPt: "Changelog" },
         ],
     },
-    { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
+    {
+        labelPt: "Admin",
+        icon: ShieldAlert,
+        adminOnly: true,
+        children: [
+            { to: "/usuarios", labelPt: "Usuários WhatsApp" },
+            { to: "/admin/usuarios", labelPt: "Acessos do CRM", adminOnly: true },
+        ],
+    },
 ];
 /* ── Collapsible group component ── */
 function SidebarGroupItem({ group, tx, isAdminLike, canAccess, }) {

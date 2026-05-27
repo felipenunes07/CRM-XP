@@ -98,6 +98,7 @@ import {
   createAdminUser,
   createPasswordResetLink,
   listAdminUsers,
+  setAdminUserPassword,
   setAdminUserActive,
   updateAdminUser,
 } from "./modules/platform/adminUserService.js";
@@ -173,6 +174,10 @@ const adminUserSchema = z.object({
 
 const adminUserStatusSchema = z.object({
   isActive: z.boolean(),
+});
+
+const adminUserPasswordSchema = z.object({
+  password: z.string().min(6),
 });
 
 const customerQuerySchema = z.object({
@@ -1638,6 +1643,15 @@ export function createApp() {
   app.post("/api/admin/users/:id/reset-password", requirePermission("admin.users.manage"), async (request, response, next) => {
     try {
       response.json(await createPasswordResetLink(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/admin/users/:id/password", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      const payload = adminUserPasswordSchema.parse(request.body);
+      response.json(await setAdminUserPassword(String(request.params.id), payload.password));
     } catch (error) {
       next(error);
     }

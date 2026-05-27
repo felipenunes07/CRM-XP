@@ -153,3 +153,24 @@ export async function createPasswordResetLink(userId: string) {
     actionLink: data.properties?.action_link ?? null,
   };
 }
+
+export async function setAdminUserPassword(userId: string, password: string) {
+  const nextPassword = password.trim();
+  if (nextPassword.length < 6) {
+    throw new HttpError(400, "Nova senha deve ter pelo menos 6 caracteres");
+  }
+  if (!isSupabaseAdminConfigured()) {
+    throw new HttpError(500, "Supabase Admin nao esta configurado no backend");
+  }
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    password: nextPassword,
+  });
+
+  if (error) {
+    throw new HttpError(error.status ?? 400, error.message);
+  }
+
+  return { ok: true };
+}

@@ -84,7 +84,8 @@ export default function App() {
             <Route path="/prospeccao" element={<PermissionElement permission="commercial.view"><ProspectingPage /></PermissionElement>} />
             <Route path="/metas" element={<PermissionElement permission="finance.manage"><MetasPage /></PermissionElement>} />
             <Route path="/eventos" element={<PermissionElement permission="messages.view"><EventsPage /></PermissionElement>} />
-            <Route path="/usuarios" element={<PermissionElement permission="admin.users.manage"><AdminUsersPage /></PermissionElement>} />
+            <Route path="/usuarios" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
+            <Route path="/admin/usuarios" element={<PermissionElement permission="admin.users.manage"><AdminUsersPage /></PermissionElement>} />
             <Route path="/config/whatsapp" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
             <Route path="/novidades" element={<NovidadesPage />} />
             <Route path="/estrategias" element={<PermissionElement permission="reports.view"><StrategiesPage /></PermissionElement>} />

@@ -600,6 +600,12 @@ export const api = {
       method: "POST",
     }, token);
   },
+  setUserPassword(token: string, id: string, password: string) {
+    return request<{ ok: boolean }>(`/api/admin/users/${id}/password`, {
+      method: "PATCH",
+      body: JSON.stringify({ password }),
+    }, token);
+  },
   syncData(token: string, mode: "queue" | "direct" = "direct") {
     return request<{ mode: string; result?: unknown }>("/api/admin/sync", {
       method: "POST",

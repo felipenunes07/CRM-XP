@@ -415,6 +415,12 @@ export const api = {
             method: "POST",
         }, token);
     },
+    setUserPassword(token, id, password) {
+        return request(`/api/admin/users/${id}/password`, {
+            method: "PATCH",
+            body: JSON.stringify({ password }),
+        }, token);
+    },
     syncData(token, mode = "direct") {
         return request("/api/admin/sync", {
             method: "POST",

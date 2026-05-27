@@ -53,7 +53,8 @@ export const appShellLinks = [
   { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
   { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
   { to: "/estrategias", icon: Crosshair, labelPt: "Estratégias" },
-  { to: "/usuarios", icon: UserCog, labelPt: "Usuarios", adminOnly: true },
+  { to: "/usuarios", icon: UserCog, labelPt: "Usuarios WhatsApp", adminOnly: true },
+  { to: "/admin/usuarios", icon: ShieldAlert, labelPt: "Acessos", adminOnly: true },
 ];
 
 /* ── Types ── */
@@ -79,7 +80,8 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
 
 function permissionForPath(path: string) {
   if (path === "/") return "dashboard.view";
-  if (path === "/usuarios") return "admin.users.manage";
+  if (path === "/usuarios") return "integrations.manage";
+  if (path === "/admin/usuarios") return "admin.users.manage";
   if (path === "/config/whatsapp") return "integrations.manage";
   if (path === "/clientes/financeiro") return "finance.view";
   if (path === "/automacoes") return "automations.view";
@@ -156,7 +158,15 @@ const sidebarMenu: SidebarEntry[] = [
       { to: "/novidades", labelPt: "Changelog" },
     ],
   },
-  { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
+  {
+    labelPt: "Admin",
+    icon: ShieldAlert,
+    adminOnly: true,
+    children: [
+      { to: "/usuarios", labelPt: "Usuários WhatsApp" },
+      { to: "/admin/usuarios", labelPt: "Acessos do CRM", adminOnly: true },
+    ],
+  },
 ];
 
 /* ── Collapsible group component ── */
