@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatNumber } from "../lib/format";
+import { formatCurrency, formatNumber, formatDate } from "../lib/format";
 import { Calendar, UserCheck, TrendingUp, Users, ExternalLink, Award, Medal, Camera, ShoppingBag, History } from "lucide-react";
 import { useState, Fragment } from "react";
 
@@ -308,8 +308,9 @@ export function ReactivationPage() {
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
                       <thead>
                         <tr style={{ background: "rgba(0,0,0,0.015)", borderBottom: "1px solid var(--line)" }}>
-                          <th style={{ width: "45%", textAlign: "left", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Cliente Reativado</th>
-                          <th style={{ width: "20%", textAlign: "center", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Período Inativo</th>
+                          <th style={{ width: "30%", textAlign: "left", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Cliente Reativado</th>
+                          <th style={{ width: "15%", textAlign: "center", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Período Inativo</th>
+                          <th style={{ width: "20%", textAlign: "center", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Data da Reativação</th>
                           <th style={{ width: "25%", textAlign: "right", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Pedido de Retorno</th>
                           <th style={{ width: "10%", minWidth: "90px", padding: "0.85rem 1.5rem", textAlign: "right" }}></th>
                         </tr>
@@ -322,13 +323,18 @@ export function ReactivationPage() {
                                 <strong style={{ color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                   {client.displayName}
                                 </strong>
-                                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "monospace", marginTop: "0.2rem" }}>{client.customerCode || "Sem código"}</span>
+                                <span style={{ fontSize: "0.75rem", color: "var(--muted)", fontFamily: "monospace", marginTop: "0.2rem" }}>
+                                  {client.customerCode || "Sem código"}
+                                </span>
                               </div>
                             </td>
                             <td style={{ textAlign: "center", padding: "1rem 1.5rem" }}>
                               <span style={{ display: "inline-flex", alignItems: "center", padding: "0.25rem 0.75rem", background: client.daysInactiveBeforeReturn > 90 ? "rgba(217, 83, 79, 0.08)" : "rgba(41, 86, 215, 0.06)", color: client.daysInactiveBeforeReturn > 90 ? "var(--danger)" : "var(--accent)", borderRadius: "14px", fontSize: "0.75rem", fontWeight: 600 }}>
                                 {formatNumber(client.daysInactiveBeforeReturn)} dias
                               </span>
+                            </td>
+                            <td style={{ textAlign: "center", padding: "1rem 1.5rem", color: "var(--text)", fontWeight: 500 }}>
+                              {client.reactivationOrderDate ? formatDate(client.reactivationOrderDate) : "--"}
                             </td>
                             <td style={{ textAlign: "right", padding: "1rem 1.5rem", fontWeight: 600, color: "var(--success)", whiteSpace: "nowrap", fontSize: "0.9rem" }}>
                               {formatCurrency(client.reactivatedOrderAmount)}
@@ -446,11 +452,12 @@ export function ReactivationPage() {
                                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                     <thead>
                                       <tr style={{ background: "rgba(41,86,215,0.04)", fontSize: "0.75rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "left", fontWeight: 600 }}>Cliente</th>
-                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "center", fontWeight: 600 }}>Tempo Inativo</th>
-                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "center", fontWeight: 600 }}>Peças</th>
-                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "right", fontWeight: 600 }}>Faturado</th>
-                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "right", fontWeight: 600 }}></th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "left", fontWeight: 600, width: "30%" }}>Cliente</th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "center", fontWeight: 600, width: "15%" }}>Tempo Inativo</th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "center", fontWeight: 600, width: "20%" }}>Data da Reativação</th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "center", fontWeight: 600, width: "10%" }}>Peças</th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "right", fontWeight: 600, width: "15%" }}>Faturado</th>
+                                        <th style={{ padding: "0.75rem 1.25rem", textAlign: "right", fontWeight: 600, width: "10%" }}></th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -462,6 +469,9 @@ export function ReactivationPage() {
                                           </td>
                                           <td style={{ textAlign: "center", padding: "0.75rem 1.25rem", fontSize: "0.85rem", color: "var(--muted)" }}>
                                             {client.daysInactiveBeforeReturn} dias
+                                          </td>
+                                          <td style={{ textAlign: "center", padding: "0.75rem 1.25rem", fontSize: "0.85rem", color: "var(--text)", fontWeight: 500 }}>
+                                            {client.reactivationOrderDate ? formatDate(client.reactivationOrderDate) : "--"}
                                           </td>
                                           <td style={{ textAlign: "center", padding: "0.75rem 1.25rem", fontSize: "0.85rem", color: "var(--text)" }}>
                                             {client.reactivatedItems || 0}
