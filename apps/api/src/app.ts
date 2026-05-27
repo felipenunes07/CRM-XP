@@ -542,16 +542,18 @@ function isAllowedCorsOrigin(origin?: string | null) {
     return true;
   }
 
+  const normalizedOrigin = origin.replace(/\/+$/, "");
+
   if (
-    webOrigins.includes(origin) ||
-    origin === "http://localhost:5174" ||
-    origin.endsWith(".trycloudflare.com")
+    webOrigins.includes(normalizedOrigin) ||
+    normalizedOrigin === "http://localhost:5174" ||
+    normalizedOrigin.endsWith(".trycloudflare.com")
   ) {
     return true;
   }
 
   try {
-    const hostname = new URL(origin).hostname;
+    const hostname = new URL(normalizedOrigin).hostname;
     return (
       hostname.endsWith(".ngrok-free.dev") ||
       hostname.endsWith(".ngrok-free.app") ||

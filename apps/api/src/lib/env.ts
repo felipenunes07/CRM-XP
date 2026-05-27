@@ -115,7 +115,7 @@ const envSchema = z.object({
 export const env = envSchema.parse(process.env);
 
 export const webOrigins = env.WEB_ORIGIN.split(",")
-  .map((value) => value.trim())
+  .map((value) => value.trim().replace(/\/+$/, ""))
   .filter(Boolean);
 
 export const historicalFiles = env.HISTORICAL_FILES.split(";")
