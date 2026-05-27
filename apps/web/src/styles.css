@@ -4331,8 +4331,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  max-height: 650px;
-  overflow-y: auto;
   padding-right: 0.4rem;
 }
 
@@ -17761,6 +17759,7 @@ body:has(.whatsapp-monitor-page) .main-content {
   background: #fee2e2;
   color: #991b1b;
 }
+
 
 .admin-editor-identity span {
   color: #64748b;
