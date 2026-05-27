@@ -1697,7 +1697,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/admin/sync/olist", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.post("/api/admin/sync/olist", requirePermission("settings.manage"), async (request, response, next) => {
     try {
       const payload = manualSyncSchema.parse(request.body ?? {});
       if (payload.mode === "direct") {
@@ -1712,7 +1712,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/admin/sync", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.post("/api/admin/sync", requirePermission("settings.manage"), async (request, response, next) => {
     try {
       const payload = manualSyncSchema.parse(request.body ?? {});
       if (payload.mode === "direct") {
@@ -1726,7 +1726,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/admin/import-supabase-2026", requireRole(["ADMIN"]), async (_request, response, next) => {
+  app.post("/api/admin/import-supabase-2026", requirePermission("settings.manage"), async (_request, response, next) => {
     try {
       response.json({ mode: "direct", result: await importSupabase2026() });
     } catch (error) {

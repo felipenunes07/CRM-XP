@@ -10,6 +10,7 @@ import { PeriodSelector } from "../components/PeriodSelector";
 import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
 import { TrendRangeAnalysisPanel } from "../components/TrendRangeAnalysisPanel";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
@@ -352,6 +353,8 @@ function formatShare(value, total) {
 }
 export function DashboardPage() {
     const { token } = useAuth();
+    const { canAccess } = usePermissions();
+    const canSyncData = canAccess("settings.manage");
     const { tx } = useUiLanguage();
     const [selectedPeriod, setSelectedPeriod] = useState("max");
     const [selectedPrefix, setSelectedPrefix] = useState(undefined);
@@ -675,7 +678,7 @@ export function DashboardPage() {
     };
     useEffect(() => {
         const metricsData = dashboardQuery.data;
-        if (!metricsData || isSyncing)
+        if (!metricsData || isSyncing || !canSyncData)
             return;
         // Validar se estamos em horário comercial local (Semana: 8h-18h, Sábado: 9h-13h)
         const now = new Date();
@@ -712,7 +715,7 @@ export function DashboardPage() {
             console.log("Detectado dados desatualizados por mais de 1 hora no horário comercial. Iniciando auto-sync...");
             void handleAutoSync();
         }
-    }, [dashboardQuery.data?.lastSyncAt, isSyncing, token]);
+    }, [dashboardQuery.data?.lastSyncAt, isSyncing, token, canSyncData]);
     if (dashboardQuery.isLoading) {
         return _jsx("div", { className: "page-loading", children: tx("Carregando dashboard...", "正在加载仪表盘...") });
     }
@@ -791,6 +794,9 @@ export function DashboardPage() {
     const currentYear = new Date().getFullYear();
     const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
     async function handleAutoSync() {
+        if (!canSyncData) {
+            return;
+        }
         try {
             setIsSyncing(true);
             const syncStartTime = Date.now();
@@ -818,6 +824,9 @@ export function DashboardPage() {
         }
     }
     async function handleSync() {
+        if (!canSyncData) {
+            return;
+        }
         try {
             setIsSyncing(true);
             // Salvar timestamp no localStorage para persistir entre reloads
@@ -909,7 +918,7 @@ export function DashboardPage() {
                 : tx("Objetivo concluido neste mes.", "本月目标已完成。")
             : tx(`Faltam ${formatNumber(targetRemaining)} para a meta`, `距离目标还差 ${formatNumber(targetRemaining)}`);
     const monthlyGoalMetaLabel = targetAmount > 0 ? tx(`Alvo ${formatNumber(targetAmount)}`, `目标 ${formatNumber(targetAmount)}`) : tx("Meta pendente", "待设置目标");
-    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), _jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, style: isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando...", "同步中..."), _jsx("span", { style: {
+    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), canSyncData ? (_jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, style: isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando...", "同步中..."), _jsx("span", { style: {
                                                                 position: 'absolute',
                                                                 right: '0.85rem',
                                                                 top: '50%',
@@ -921,7 +930,7 @@ export function DashboardPage() {
                                                                 borderTopColor: '#2956d7',
                                                                 borderRadius: '50%',
                                                                 animation: 'spin 1s linear infinite'
-                                                            } })] })) : tx("Sincronizar Agora", "立即同步") })] }), isSyncing && (_jsxs("div", { style: {
+                                                            } })] })) : tx("Sincronizar Agora", "立即同步") })) : null] }), isSyncing && (_jsxs("div", { style: {
                                             marginTop: '1rem',
                                             padding: '0.85rem 1.15rem',
                                             backgroundColor: '#ffffff',
