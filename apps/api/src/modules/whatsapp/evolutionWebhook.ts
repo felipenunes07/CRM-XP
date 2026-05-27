@@ -291,7 +291,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const isFromMe = Boolean(
         context.fromMe || 
         isSendMessageEvent ||
-        (instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+        (context.isGroup && instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
       );
       
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
