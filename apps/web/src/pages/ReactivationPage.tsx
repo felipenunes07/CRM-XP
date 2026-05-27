@@ -304,8 +304,8 @@ export function ReactivationPage() {
                 </div>
 
                 {!isCompactMode && (
-                  <div style={{ padding: "0" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
+                  <div style={{ padding: "0", overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed", minWidth: "600px" }}>
                       <thead>
                         <tr style={{ background: "rgba(0,0,0,0.015)", borderBottom: "1px solid var(--line)" }}>
                           <th style={{ width: "30%", textAlign: "left", padding: "0.85rem 1.5rem", fontWeight: 600, color: "var(--muted)" }}>Cliente Reativado</th>
@@ -448,8 +448,8 @@ export function ReactivationPage() {
                           {isExpanded && entry.recoveredClients && (
                             <tr style={{ borderBottom: "1px solid var(--line)", background: "rgba(41,86,215,0.02)" }}>
                               <td colSpan={5} style={{ padding: "0 1.5rem 1.5rem 1.5rem" }}>
-                                <div style={{ background: "#fff", borderRadius: "8px", border: "1px solid var(--line)", overflow: "hidden" }}>
-                                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <div style={{ background: "#fff", borderRadius: "8px", border: "1px solid var(--line)", overflowX: "auto" }}>
+                                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "600px" }}>
                                     <thead>
                                       <tr style={{ background: "rgba(41,86,215,0.04)", fontSize: "0.75rem", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                         <th style={{ padding: "0.75rem 1.25rem", textAlign: "left", fontWeight: 600, width: "30%" }}>Cliente</th>
