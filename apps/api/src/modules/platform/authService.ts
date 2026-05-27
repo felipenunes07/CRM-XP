@@ -70,6 +70,8 @@ async function upsertLegacyUserMirror(user: JwtUser) {
 }
 
 async function loadProfile(userId: string, fallbackEmail?: string) {
+  const normalizedFallbackEmail = fallbackEmail?.toLowerCase();
+  const isDefaultAdmin = normalizedFallbackEmail === env.DEFAULT_ADMIN_EMAIL.trim().toLowerCase();
   const result = await pool.query<ProfileRow>(
     `
       SELECT id, email, full_name, role, is_active
@@ -80,6 +82,20 @@ async function loadProfile(userId: string, fallbackEmail?: string) {
   );
 
   if (result.rows[0]) {
+    if (isDefaultAdmin && (normalizeAppRole(result.rows[0].role) !== "admin" || !result.rows[0].is_active)) {
+      const promoted = await pool.query<ProfileRow>(
+        `
+          UPDATE profiles
+          SET role = 'admin',
+              is_active = true,
+              updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, email, full_name, role, is_active
+        `,
+        [userId],
+      );
+      return promoted.rows[0] ?? result.rows[0];
+    }
     return result.rows[0];
   }
 
@@ -90,10 +106,15 @@ async function loadProfile(userId: string, fallbackEmail?: string) {
   const created = await pool.query<ProfileRow>(
     `
       INSERT INTO profiles (id, email, full_name, role, is_active)
-      VALUES ($1, $2, $3, 'viewer', true)
+      VALUES ($1, $2, $3, $4, true)
       RETURNING id, email, full_name, role, is_active
     `,
-    [userId, fallbackEmail.toLowerCase(), fallbackEmail.split("@")[0] ?? fallbackEmail],
+    [
+      userId,
+      normalizedFallbackEmail,
+      fallbackEmail.split("@")[0] ?? fallbackEmail,
+      isDefaultAdmin ? "admin" : "viewer",
+    ],
   );
 
   const profile = created.rows[0];

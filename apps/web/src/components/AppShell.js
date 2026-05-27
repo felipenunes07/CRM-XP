@@ -28,7 +28,7 @@ export const appShellLinks = [
     { to: "/rotulos", icon: Tags, labelPt: "Rotulos" },
     { to: "/novidades", icon: Sparkles, labelPt: "Changelog" },
     { to: "/estrategias", icon: Crosshair, labelPt: "Estratégias" },
-    { to: "/usuarios", icon: UserCog, labelPt: "Usuarios WhatsApp", adminOnly: true },
+    { to: "/usuarios", icon: UserCog, labelPt: "Usuarios WhatsApp" },
     { to: "/admin/usuarios", icon: ShieldAlert, labelPt: "Acessos", adminOnly: true },
 ];
 function isGroup(entry) {
@@ -125,7 +125,6 @@ const sidebarMenu = [
     {
         labelPt: "Admin",
         icon: ShieldAlert,
-        adminOnly: true,
         children: [
             { to: "/usuarios", labelPt: "Usuários WhatsApp" },
             { to: "/admin/usuarios", labelPt: "Acessos do CRM", adminOnly: true },
