@@ -92,8 +92,16 @@ import {
 import { importHistoryFile } from "./modules/ingestion/historyImporter.js";
 import { syncOlistIncremental } from "./modules/ingestion/olistSyncService.js";
 import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
-import { listUsers, login } from "./modules/platform/authService.js";
-import { requireAuth, requireRole } from "./modules/platform/authMiddleware.js";
+import { login } from "./modules/platform/authService.js";
+import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
+import {
+  createAdminUser,
+  createPasswordResetLink,
+  listAdminUsers,
+  setAdminUserActive,
+  updateAdminUser,
+} from "./modules/platform/adminUserService.js";
+import { APP_PERMISSIONS } from "./modules/platform/permissionService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
@@ -147,6 +155,24 @@ import { pool, redis } from "./db/client.js";
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const userPermissionOverrideSchema = z.object({
+  permissionKey: z.string().min(1),
+  allowed: z.boolean(),
+});
+
+const adminUserSchema = z.object({
+  email: z.string().email(),
+  fullName: z.string().min(1),
+  role: z.enum(["admin", "vendas", "financeiro", "operacional", "viewer", "ADMIN", "MANAGER", "SELLER"]),
+  isActive: z.boolean().default(true),
+  permissionOverrides: z.array(userPermissionOverrideSchema).default([]),
+  password: z.string().min(6).optional(),
+});
+
+const adminUserStatusSchema = z.object({
+  isActive: z.boolean(),
 });
 
 const customerQuerySchema = z.object({
@@ -1566,9 +1592,52 @@ export function createApp() {
     }
   });
 
-  app.get("/api/admin/users", requireRole(["ADMIN"]), async (_request, response, next) => {
+  app.get("/api/admin/permissions", requirePermission("admin.users.manage"), async (_request, response, next) => {
     try {
-      response.json(await listUsers());
+      response.json(APP_PERMISSIONS);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/admin/users", requirePermission("admin.users.manage"), async (_request, response, next) => {
+    try {
+      response.json(await listAdminUsers());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/users", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.status(201).json(
+        await createAdminUser(adminUserSchema.parse(request.body), request.user!.id),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/admin/users/:id", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.json(await updateAdminUser(String(request.params.id), adminUserSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/admin/users/:id/status", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      const payload = adminUserStatusSchema.parse(request.body);
+      response.json(await setAdminUserActive(String(request.params.id), payload.isActive));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/users/:id/reset-password", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.json(await createPasswordResetLink(String(request.params.id)));
     } catch (error) {
       next(error);
     }

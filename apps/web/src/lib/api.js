@@ -386,8 +386,34 @@ export const api = {
             body: JSON.stringify({ reason }),
         }, token);
     },
+    permissions(token) {
+        return request("/api/admin/permissions", {}, token);
+    },
     users(token) {
         return request("/api/admin/users", {}, token);
+    },
+    createUser(token, input) {
+        return request("/api/admin/users", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateUser(token, id, input) {
+        return request(`/api/admin/users/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    setUserActive(token, id, isActive) {
+        return request(`/api/admin/users/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ isActive }),
+        }, token);
+    },
+    resetUserPassword(token, id) {
+        return request(`/api/admin/users/${id}/reset-password`, {
+            method: "POST",
+        }, token);
     },
     syncData(token, mode = "direct") {
         return request("/api/admin/sync", {

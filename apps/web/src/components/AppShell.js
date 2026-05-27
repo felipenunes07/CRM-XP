@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { BarChart3, Boxes, ChevronDown, ClipboardList, Crosshair, Kanban, LayoutDashboard, Lightbulb, LogOut, MessageSquareText, Activity, RadioTower, SearchCheck, Star, Tags, TrendingUp, Trophy, UserCog, UserPlus, Users, Hexagon, Sparkles, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
 /* ── link structure for external tests ── */
 export const appShellLinks = [
@@ -32,6 +33,37 @@ export const appShellLinks = [
 function isGroup(entry) {
     return "children" in entry;
 }
+function permissionForPath(path) {
+    if (path === "/")
+        return "dashboard.view";
+    if (path === "/usuarios")
+        return "admin.users.manage";
+    if (path === "/config/whatsapp")
+        return "integrations.manage";
+    if (path === "/clientes/financeiro")
+        return "finance.view";
+    if (path === "/automacoes")
+        return "automations.view";
+    if (path === "/mensagens" || path === "/eventos")
+        return "messages.view";
+    if (path === "/disparador")
+        return "messages.manage";
+    if (path === "/metas")
+        return "finance.manage";
+    if (path === "/atividade-whatsapp" ||
+        path === "/movimentacao" ||
+        path === "/estoque" ||
+        path === "/segmentos" ||
+        path === "/estrategias" ||
+        path === "/atendentes") {
+        return "reports.view";
+    }
+    if (path === "/rotulos")
+        return "commercial.manage";
+    if (path === "/novidades")
+        return null;
+    return "commercial.view";
+}
 /* ── Sidebar menu structure ── */
 const sidebarMenu = [
     { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
@@ -43,7 +75,7 @@ const sidebarMenu = [
         icon: Users,
         children: [
             { to: "/clientes", labelPt: "Todos os Clientes" },
-            // { to: "/clientes/financeiro", labelPt: "Financeiro" },
+            { to: "/clientes/financeiro", labelPt: "Financeiro" },
             { to: "/clientes-novos", labelPt: "Clientes Novos" },
             { to: "/reativacao", labelPt: "Reativação" },
             { to: "/embaixadores", labelPt: "Embaixadores" },
@@ -90,9 +122,12 @@ const sidebarMenu = [
     { to: "/usuarios", icon: UserCog, labelPt: "Usuários", adminOnly: true },
 ];
 /* ── Collapsible group component ── */
-function SidebarGroupItem({ group, tx, isAdminLike, }) {
+function SidebarGroupItem({ group, tx, isAdminLike, canAccess, }) {
     const location = useLocation();
-    const visibleChildren = group.children.filter((child) => !child.adminOnly || isAdminLike);
+    const visibleChildren = group.children.filter((child) => {
+        const permission = permissionForPath(child.to);
+        return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+    });
     const childPaths = visibleChildren.map((c) => c.to);
     const isChildActive = childPaths.some((p) => location.pathname === p || location.pathname.startsWith(p + "/"));
     const [open, setOpen] = useState(isChildActive);
@@ -107,6 +142,7 @@ function SidebarGroupItem({ group, tx, isAdminLike, }) {
 /* ── Main AppShell ── */
 export function AppShell() {
     const { user, logout } = useAuth();
+    const { canAccess } = usePermissions();
     const { language, setLanguage, tx } = useUiLanguage();
     const userInitials = user?.name
         ?.split(" ")
@@ -118,13 +154,18 @@ export function AppShell() {
     return (_jsxs("div", { className: "app-shell", children: [_jsxs("aside", { className: "cw-sidebar", children: [_jsxs("section", { className: "cw-header", children: [_jsx(Link, { to: "/", className: "cw-premium-brand", children: _jsx("img", { src: "/xp-factory-logo.png", alt: "XP CRM", className: "cw-logo-image" }) }), _jsxs("div", { className: "sidebar-language-card", children: [_jsx("span", { className: "sidebar-language-label", children: "Idioma" }), _jsxs("div", { className: "language-switch", role: "radiogroup", "aria-label": tx("Selecionar idioma da interface", "Selecionar idioma da interface"), children: [_jsx("button", { type: "button", className: `language-switch-button ${language === "pt-BR" ? "active" : ""}`, onClick: () => setLanguage("pt-BR"), "aria-pressed": language === "pt-BR", "aria-label": tx("Exibir em portugues do Brasil", "Exibir em portugues do Brasil"), children: "PT" }), _jsx("button", { type: "button", className: `language-switch-button ${language === "zh-CN" ? "active" : ""}`, onClick: () => setLanguage("zh-CN"), "aria-pressed": language === "zh-CN", "aria-label": tx("Exibir em chines mandarim", "Exibir em chines mandarim"), children: "\u4E2D\u6587" })] })] })] }), _jsx("nav", { className: "cw-nav", children: _jsx("ul", { className: "cw-menu", children: sidebarMenu
                                 .filter((entry) => {
                                 if (isGroup(entry)) {
-                                    return !entry.adminOnly || isAdminLike;
+                                    const visibleChildren = entry.children.filter((child) => {
+                                        const permission = permissionForPath(child.to);
+                                        return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+                                    });
+                                    return (!entry.adminOnly || isAdminLike) && visibleChildren.length > 0;
                                 }
-                                return !entry.adminOnly || isAdminLike;
+                                const permission = permissionForPath(entry.to);
+                                return (!entry.adminOnly || isAdminLike) && (!permission || canAccess(permission));
                             })
                                 .map((entry) => {
                                 if (isGroup(entry)) {
-                                    return (_jsx(SidebarGroupItem, { group: entry, tx: tx, isAdminLike: isAdminLike }, entry.labelPt));
+                                    return (_jsx(SidebarGroupItem, { group: entry, tx: tx, isAdminLike: isAdminLike, canAccess: canAccess }, entry.labelPt));
                                 }
                                 const Icon = entry.icon;
                                 return (_jsx("li", { className: "cw-item", children: _jsxs(NavLink, { to: entry.to, end: entry.to === "/", className: ({ isActive }) => `cw-link ${isActive ? "active" : ""}`, children: [_jsx(Icon, { size: 16 }), _jsx("span", { className: "cw-label", children: tx(entry.labelPt, entry.labelPt) })] }) }, entry.to));

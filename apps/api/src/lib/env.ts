@@ -71,6 +71,11 @@ const envSchema = z.object({
   WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS: z.coerce.number().int().positive().default(6),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
+  SUPABASE_URL: z.string().default(""),
+  SUPABASE_ANON_KEY: z.string().default(""),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
+  VITE_SUPABASE_URL: z.string().default(""),
+  VITE_SUPABASE_ANON_KEY: z.string().default(""),
   HISTORICAL_FILES: z.string().default(""),
   // Dropbox API
   DROPBOX_ACCESS_TOKEN: z.string().optional(),

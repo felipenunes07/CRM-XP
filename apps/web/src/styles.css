@@ -17449,3 +17449,241 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 
 
+.access-denied-page {
+  min-height: 70vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.access-denied-panel {
+  width: min(520px, 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 2rem;
+  color: #0f172a;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.access-denied-panel svg {
+  color: #b42318;
+}
+
+.access-denied-panel h1 {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 1.35rem;
+}
+
+.access-denied-panel p {
+  margin: 0;
+  color: #475569;
+}
+
+.admin-users-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.5rem;
+}
+
+.admin-users-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-users-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #0f172a;
+}
+
+.admin-users-header p {
+  max-width: 760px;
+  margin: 0.35rem 0 0;
+  color: #64748b;
+}
+
+.admin-users-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-users-list,
+.admin-user-editor {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.admin-users-list {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.admin-user-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 0;
+  border-bottom: 1px solid #eef2f7;
+  background: transparent;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-user-row.active {
+  background: #f8fafc;
+}
+
+.admin-user-row strong,
+.admin-user-row small {
+  display: block;
+}
+
+.admin-user-row strong {
+  color: #0f172a;
+}
+
+.admin-user-row small,
+.admin-muted {
+  color: #64748b;
+}
+
+.admin-user-row em {
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  font-style: normal;
+}
+
+.admin-user-row em.enabled {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.admin-user-row em.disabled {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.admin-user-editor {
+  padding: 1rem;
+}
+
+.admin-editor-section + .admin-editor-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eef2f7;
+}
+
+.admin-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+  color: #0f172a;
+}
+
+.admin-section-title h2,
+.admin-permission-group h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-form-grid label,
+.admin-permission-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #334155;
+  font-size: 0.86rem;
+}
+
+.admin-form-grid input,
+.admin-form-grid select,
+.admin-permission-row select,
+.admin-reset-link input {
+  width: 100%;
+  min-height: 2.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.5rem 0.65rem;
+  color: #0f172a;
+}
+
+.admin-permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-permission-group {
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.admin-permission-row {
+  margin-top: 0.7rem;
+}
+
+.admin-permission-row small {
+  color: #64748b;
+}
+
+.admin-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eef2f7;
+}
+
+.secondary-button.danger {
+  color: #991b1b;
+}
+
+.admin-reset-link {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.admin-reset-link strong {
+  display: block;
+  margin-bottom: 0.45rem;
+  color: #1e3a8a;
+}
+
+@media (max-width: 980px) {
+  .admin-users-layout,
+  .admin-form-grid,
+  .admin-permissions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-users-header,
+  .admin-editor-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

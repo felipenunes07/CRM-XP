@@ -1,36 +1,43 @@
 import { jsx as _jsx } from "react/jsx-runtime";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
-const STORAGE_KEY = "xp-crm-auth-token";
+import { supabase } from "../lib/supabase";
 const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
     const [token, setToken] = useState(null);
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const loadUser = useCallback(async (accessToken) => {
+        const result = await api.me(accessToken);
+        setToken(accessToken);
+        setUser(result.user);
+    }, []);
+    const clearSession = useCallback(() => {
+        setToken(null);
+        setUser(null);
+    }, []);
     useEffect(() => {
         let cancelled = false;
         async function restoreSession() {
-            const storedToken = window.localStorage.getItem(STORAGE_KEY);
-            if (!storedToken) {
+            setLoading(true);
+            const { data } = await supabase.auth.getSession();
+            const accessToken = data.session?.access_token ?? null;
+            if (!accessToken) {
                 if (!cancelled) {
+                    clearSession();
                     setLoading(false);
                 }
                 return;
             }
-            if (!cancelled) {
-                setToken(storedToken);
-            }
             try {
-                const result = await api.me(storedToken);
                 if (!cancelled) {
-                    setUser(result.user);
+                    await loadUser(accessToken);
                 }
             }
             catch {
-                window.localStorage.removeItem(STORAGE_KEY);
+                await supabase.auth.signOut();
                 if (!cancelled) {
-                    setToken(null);
-                    setUser(null);
+                    clearSession();
                 }
             }
             finally {
@@ -40,10 +47,23 @@ export function AuthProvider({ children }) {
             }
         }
         void restoreSession();
+        const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+            const accessToken = session?.access_token ?? null;
+            if (!accessToken) {
+                clearSession();
+                setLoading(false);
+                return;
+            }
+            void loadUser(accessToken).catch(async () => {
+                await supabase.auth.signOut();
+                clearSession();
+            });
+        });
         return () => {
             cancelled = true;
+            subscription.subscription.unsubscribe();
         };
-    }, []);
+    }, [clearSession, loadUser]);
     const value = useMemo(() => ({
         token,
         user,
@@ -51,22 +71,31 @@ export function AuthProvider({ children }) {
         async login(email, password) {
             setLoading(true);
             try {
-                const result = await api.login(email, password);
-                window.localStorage.setItem(STORAGE_KEY, result.token);
-                setToken(result.token);
-                setUser(result.user);
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email: email.trim().toLowerCase(),
+                    password,
+                });
+                if (error || !data.session?.access_token) {
+                    throw new Error(error?.message ?? "Falha ao entrar");
+                }
+                await loadUser(data.session.access_token);
             }
             finally {
                 setLoading(false);
             }
         },
         logout() {
-            window.localStorage.removeItem(STORAGE_KEY);
-            setToken(null);
-            setUser(null);
+            void supabase.auth.signOut();
+            clearSession();
             setLoading(false);
         },
-    }), [loading, token, user]);
+        async refreshUser() {
+            const { data } = await supabase.auth.getSession();
+            if (data.session?.access_token) {
+                await loadUser(data.session.access_token);
+            }
+        },
+    }), [clearSession, loadUser, loading, token, user]);
     return _jsx(AuthContext.Provider, { value: value, children: children });
 }
 export function useAuth() {

@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useAuth } from "./hooks/useAuth";
+import { PublicOnlyRoute, ProtectedRoute } from "./components/ProtectedRoute";
+import { usePermissions } from "./hooks/usePermissions";
 import { useUiLanguage } from "./i18n";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
@@ -32,6 +33,8 @@ const PipelinePage = lazy(async () => ({ default: (await import("./pages/Pipelin
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
 const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
+const AccessDeniedPage = lazy(async () => ({ default: (await import("./pages/AccessDeniedPage")).AccessDeniedPage }));
+const AdminUsersPage = lazy(async () => ({ default: (await import("./pages/AdminUsersPage")).AdminUsersPage }));
 const NovidadesPage = lazy(async () => ({ default: (await import("./pages/NovidadesPage")).NovidadesPage }));
 const StrategiesPage = lazy(async () => ({ default: (await import("./pages/StrategiesPage")).StrategiesPage }));
 
@@ -41,32 +44,12 @@ function RouteLoadingFallback() {
   return <div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>;
 }
 
-function ProtectedShell() {
-  const { token, user, loading } = useAuth();
-
-  if (loading) {
-    return <RouteLoadingFallback />;
+function PermissionElement({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { canAccess } = usePermissions();
+  if (!canAccess(permission)) {
+    return <Navigate to="/acesso-negado" replace />;
   }
-
-  if (!token || !user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <AppShell />;
-}
-
-function PublicLoginRoute() {
-  const { token, user, loading } = useAuth();
-
-  if (loading) {
-    return <RouteLoadingFallback />;
-  }
-
-  if (token && user) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <LoginPage />;
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -75,34 +58,37 @@ export default function App() {
   return (
     <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>
       <Routes>
-        <Route path="/login" element={<PublicLoginRoute />} />
-        <Route element={<ProtectedShell />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/pipeline" element={<PipelinePage />} />
-          <Route path="/atendentes" element={<AttendantsPage />} />
-          <Route path="/clientes" element={<CustomersPage />} />
-{/* <Route path="/clientes/financeiro" element={<CustomerFinancialPage />} /> */}
-          <Route path="/estoque" element={<InventoryPage />} />
-          <Route path="/embaixadores" element={<AmbassadorsPage />} />
-          <Route path="/clientes/:id" element={<CustomerDetailPage />} />
-          <Route path="/automacoes" element={<AutomationsPage />} />
-          <Route path="/segmentos" element={<SegmentsPage />} />
-          <Route path="/agenda" element={<AgendaPage />} />
-          <Route path="/clientes-novos" element={<NewCustomersPage />} />
-          <Route path="/reativacao" element={<ReactivationPage />} />
-          <Route path="/ideias-votacao" element={<IdeaBoardPage />} />
-          <Route path="/mensagens" element={<MessagesPage />} />
-          <Route path="/atividade-whatsapp" element={<WhatsappActivityPage />} />
-          <Route path="/movimentacao" element={<MovementsPage />} />
-          <Route path="/disparador" element={<DisparadorPage />} />
-          <Route path="/rotulos" element={<LabelsPage />} />
-          <Route path="/prospeccao" element={<ProspectingPage />} />
-          <Route path="/metas" element={<MetasPage />} />
-          <Route path="/eventos" element={<EventsPage />} />
-          <Route path="/usuarios" element={<WhatsappConfigPage />} />
-          <Route path="/config/whatsapp" element={<WhatsappConfigPage />} />
-          <Route path="/novidades" element={<NovidadesPage />} />
-          <Route path="/estrategias" element={<StrategiesPage />} />
+        <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppShell />}>
+            <Route path="/acesso-negado" element={<AccessDeniedPage />} />
+            <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
+            <Route path="/pipeline" element={<PermissionElement permission="commercial.view"><PipelinePage /></PermissionElement>} />
+            <Route path="/atendentes" element={<PermissionElement permission="reports.view"><AttendantsPage /></PermissionElement>} />
+            <Route path="/clientes" element={<PermissionElement permission="commercial.view"><CustomersPage /></PermissionElement>} />
+            <Route path="/clientes/financeiro" element={<PermissionElement permission="finance.view"><CustomerFinancialPage /></PermissionElement>} />
+            <Route path="/estoque" element={<PermissionElement permission="reports.view"><InventoryPage /></PermissionElement>} />
+            <Route path="/embaixadores" element={<PermissionElement permission="commercial.view"><AmbassadorsPage /></PermissionElement>} />
+            <Route path="/clientes/:id" element={<PermissionElement permission="commercial.view"><CustomerDetailPage /></PermissionElement>} />
+            <Route path="/automacoes" element={<PermissionElement permission="automations.view"><AutomationsPage /></PermissionElement>} />
+            <Route path="/segmentos" element={<PermissionElement permission="reports.view"><SegmentsPage /></PermissionElement>} />
+            <Route path="/agenda" element={<PermissionElement permission="commercial.view"><AgendaPage /></PermissionElement>} />
+            <Route path="/clientes-novos" element={<PermissionElement permission="commercial.view"><NewCustomersPage /></PermissionElement>} />
+            <Route path="/reativacao" element={<PermissionElement permission="commercial.view"><ReactivationPage /></PermissionElement>} />
+            <Route path="/ideias-votacao" element={<PermissionElement permission="commercial.view"><IdeaBoardPage /></PermissionElement>} />
+            <Route path="/mensagens" element={<PermissionElement permission="messages.view"><MessagesPage /></PermissionElement>} />
+            <Route path="/atividade-whatsapp" element={<PermissionElement permission="reports.view"><WhatsappActivityPage /></PermissionElement>} />
+            <Route path="/movimentacao" element={<PermissionElement permission="reports.view"><MovementsPage /></PermissionElement>} />
+            <Route path="/disparador" element={<PermissionElement permission="messages.manage"><DisparadorPage /></PermissionElement>} />
+            <Route path="/rotulos" element={<PermissionElement permission="commercial.manage"><LabelsPage /></PermissionElement>} />
+            <Route path="/prospeccao" element={<PermissionElement permission="commercial.view"><ProspectingPage /></PermissionElement>} />
+            <Route path="/metas" element={<PermissionElement permission="finance.manage"><MetasPage /></PermissionElement>} />
+            <Route path="/eventos" element={<PermissionElement permission="messages.view"><EventsPage /></PermissionElement>} />
+            <Route path="/usuarios" element={<PermissionElement permission="admin.users.manage"><AdminUsersPage /></PermissionElement>} />
+            <Route path="/config/whatsapp" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
+            <Route path="/novidades" element={<NovidadesPage />} />
+            <Route path="/estrategias" element={<PermissionElement permission="reports.view"><StrategiesPage /></PermissionElement>} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>

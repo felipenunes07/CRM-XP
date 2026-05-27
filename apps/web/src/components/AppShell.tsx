@@ -27,6 +27,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
 
 /* ── link structure for external tests ── */
@@ -76,6 +77,30 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
   return "children" in entry;
 }
 
+function permissionForPath(path: string) {
+  if (path === "/") return "dashboard.view";
+  if (path === "/usuarios") return "admin.users.manage";
+  if (path === "/config/whatsapp") return "integrations.manage";
+  if (path === "/clientes/financeiro") return "finance.view";
+  if (path === "/automacoes") return "automations.view";
+  if (path === "/mensagens" || path === "/eventos") return "messages.view";
+  if (path === "/disparador") return "messages.manage";
+  if (path === "/metas") return "finance.manage";
+  if (
+    path === "/atividade-whatsapp" ||
+    path === "/movimentacao" ||
+    path === "/estoque" ||
+    path === "/segmentos" ||
+    path === "/estrategias" ||
+    path === "/atendentes"
+  ) {
+    return "reports.view";
+  }
+  if (path === "/rotulos") return "commercial.manage";
+  if (path === "/novidades") return null;
+  return "commercial.view";
+}
+
 /* ── Sidebar menu structure ── */
 const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
@@ -87,7 +112,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: Users,
     children: [
       { to: "/clientes", labelPt: "Todos os Clientes" },
-// { to: "/clientes/financeiro", labelPt: "Financeiro" },
+      { to: "/clientes/financeiro", labelPt: "Financeiro" },
       { to: "/clientes-novos", labelPt: "Clientes Novos" },
       { to: "/reativacao", labelPt: "Reativação" },
       { to: "/embaixadores", labelPt: "Embaixadores" },
@@ -139,13 +164,18 @@ function SidebarGroupItem({
   group,
   tx,
   isAdminLike,
+  canAccess,
 }: {
   group: SidebarGroup;
   tx: (pt: string, fallback: string) => string;
   isAdminLike: boolean;
+  canAccess: (permissionKey: string) => boolean;
 }) {
   const location = useLocation();
-  const visibleChildren = group.children.filter((child) => !child.adminOnly || isAdminLike);
+  const visibleChildren = group.children.filter((child) => {
+    const permission = permissionForPath(child.to);
+    return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+  });
   const childPaths = visibleChildren.map((c) => c.to);
   const isChildActive = childPaths.some(
     (p) => location.pathname === p || location.pathname.startsWith(p + "/")
@@ -195,6 +225,7 @@ function SidebarGroupItem({
 /* ── Main AppShell ── */
 export function AppShell() {
   const { user, logout } = useAuth();
+  const { canAccess } = usePermissions();
   const { language, setLanguage, tx } = useUiLanguage();
   const userInitials = user?.name
     ?.split(" ")
@@ -249,9 +280,14 @@ export function AppShell() {
             {sidebarMenu
               .filter((entry) => {
                 if (isGroup(entry)) {
-                  return !entry.adminOnly || isAdminLike;
+                  const visibleChildren = entry.children.filter((child) => {
+                    const permission = permissionForPath(child.to);
+                    return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+                  });
+                  return (!entry.adminOnly || isAdminLike) && visibleChildren.length > 0;
                 }
-                return !entry.adminOnly || isAdminLike;
+                const permission = permissionForPath(entry.to);
+                return (!entry.adminOnly || isAdminLike) && (!permission || canAccess(permission));
               })
               .map((entry) => {
                 if (isGroup(entry)) {
@@ -261,6 +297,7 @@ export function AppShell() {
               group={entry}
               tx={tx}
               isAdminLike={isAdminLike}
+              canAccess={canAccess}
             />
           );
         }

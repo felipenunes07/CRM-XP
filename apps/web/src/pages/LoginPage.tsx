@@ -4,8 +4,8 @@ import { Meteors } from "../components/Meteors";
 
 export function LoginPage() {
   const { login, loading } = useAuth();
-  const [email, setEmail] = useState("admin@example.com");
-  const [password, setPassword] = useState("change-me");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {

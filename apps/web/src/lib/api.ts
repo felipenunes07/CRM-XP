@@ -76,6 +76,40 @@ import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
+export interface PermissionDefinition {
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface UserPermissionOverride {
+  permissionKey: string;
+  allowed: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  is_active: boolean;
+  isActive?: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sign_in_at?: string | null;
+  permission_overrides?: UserPermissionOverride[];
+  permissions: string[];
+}
+
+export interface AdminUserInput {
+  email: string;
+  fullName: string;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  isActive: boolean;
+  permissionOverrides: UserPermissionOverride[];
+  password?: string;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -537,12 +571,34 @@ export const api = {
       body: JSON.stringify({ reason }),
     }, token);
   },
+  permissions(token: string) {
+    return request<PermissionDefinition[]>("/api/admin/permissions", {}, token);
+  },
   users(token: string) {
-    return request<Array<{ id: string; email: string; role: "ADMIN" | "MANAGER" | "SELLER"; name: string }>>(
-      "/api/admin/users",
-      {},
-      token,
-    );
+    return request<AdminUser[]>("/api/admin/users", {}, token);
+  },
+  createUser(token: string, input: AdminUserInput) {
+    return request<AdminUser[]>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  updateUser(token: string, id: string, input: AdminUserInput) {
+    return request<AdminUser[]>(`/api/admin/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  setUserActive(token: string, id: string, isActive: boolean) {
+    return request<AdminUser[]>(`/api/admin/users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive }),
+    }, token);
+  },
+  resetUserPassword(token: string, id: string) {
+    return request<{ email: string; actionLink: string | null }>(`/api/admin/users/${id}/reset-password`, {
+      method: "POST",
+    }, token);
   },
   syncData(token: string, mode: "queue" | "direct" = "direct") {
     return request<{ mode: string; result?: unknown }>("/api/admin/sync", {
