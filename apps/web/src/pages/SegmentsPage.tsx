@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SavedSegment, SegmentDefinition } from "@olist-crm/shared";
+import type { SavedSegment, SegmentDefinition, CustomerListItem } from "@olist-crm/shared";
 import { CustomerTable } from "../components/CustomerTable";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -177,6 +177,13 @@ export function SegmentsPage() {
   const [activeTab, setActiveTab] = useState<"builder" | "library">("builder");
   const [librarySearch, setLibrarySearch] = useState("");
 
+  // States for interactive manual client selection
+  const [manualMode, setManualMode] = useState<"search" | "paste">("search");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [clientSearchResults, setClientSearchResults] = useState<CustomerListItem[]>([]);
+  const [isSearchingClients, setIsSearchingClients] = useState(false);
+  const [displayNamesMap, setDisplayNamesMap] = useState<Record<string, string>>({});
+
   const bulkLabelMutation = useMutation({
     mutationFn: (input: { customerIds: string[]; labelName: string }) =>
       api.bulkAssignLabelToCustomers(token!, input.customerIds, input.labelName),
@@ -240,6 +247,105 @@ export function SegmentsPage() {
       void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
     },
   });
+
+  // Debounced search for clients manual selection
+  useEffect(() => {
+    const trimmed = clientSearchQuery.trim();
+    if (!trimmed) {
+      setClientSearchResults([]);
+      setIsSearchingClients(false);
+      return;
+    }
+
+    setIsSearchingClients(true);
+    const delayDebounceFn = setTimeout(() => {
+      api.customers(token!, { search: trimmed, limit: 10 })
+        .then((res) => {
+          setClientSearchResults(res);
+        })
+        .catch((err) => {
+          console.error("Erro ao buscar clientes:", err);
+          setClientSearchResults([]);
+        })
+        .finally(() => {
+          setIsSearchingClients(false);
+        });
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [clientSearchQuery, token]);
+
+  // Resolve display names from preview data or search results
+  useEffect(() => {
+    const codes = definition.customerCodes;
+    if (!codes || codes.length === 0) return;
+
+    const newMap = { ...displayNamesMap };
+    let changed = false;
+
+    // 1. Resolve from current preview results
+    if (previewMutation.data?.customers) {
+      previewMutation.data.customers.forEach((cust) => {
+        if (cust.customerCode && codes.includes(cust.customerCode) && !newMap[cust.customerCode]) {
+          newMap[cust.customerCode] = cust.displayName;
+          changed = true;
+        }
+      });
+    }
+
+    // 2. Resolve from current search results
+    if (clientSearchResults.length > 0) {
+      clientSearchResults.forEach((cust) => {
+        if (cust.customerCode && codes.includes(cust.customerCode) && !newMap[cust.customerCode]) {
+          newMap[cust.customerCode] = cust.displayName;
+          changed = true;
+        }
+      });
+    }
+
+    if (changed) {
+      setDisplayNamesMap(newMap);
+    }
+  }, [previewMutation.data, clientSearchResults, definition.customerCodes]);
+
+  const handleAddManualCode = (cust: CustomerListItem) => {
+    if (!cust.customerCode) return;
+    const code = cust.customerCode.trim().toUpperCase();
+    
+    // Add to displayNamesMap
+    setDisplayNamesMap(current => ({ ...current, [code]: cust.displayName }));
+
+    setDefinition((current) => {
+      const existing = current.customerCodes ?? [];
+      if (existing.includes(code)) return current;
+      const updatedCodes = [...existing, code];
+      
+      // Update manualCodesText to match
+      setManualCodesText(updatedCodes.join(", "));
+      
+      return {
+        ...current,
+        customerCodes: updatedCodes
+      };
+    });
+    setClientSearchQuery("");
+  };
+
+  const handleRemoveManualCode = (codeToRemove: string) => {
+    const code = codeToRemove.trim().toUpperCase();
+    setDefinition((current) => {
+      const existing = current.customerCodes ?? [];
+      const updatedCodes = existing.filter(c => c.trim().toUpperCase() !== code);
+      
+      // Update manualCodesText to match
+      setManualCodesText(updatedCodes.length ? updatedCodes.join(", ") : "");
+      
+      return {
+        ...current,
+        customerCodes: updatedCodes.length ? updatedCodes : undefined
+      };
+    });
+  };
 
   // Load a saved segment into state and trigger its preview
   function openSavedSegment(segment: SavedSegment) {
@@ -436,20 +542,339 @@ export function SegmentsPage() {
                   <input type="number" min={0} placeholder="Ex: 5" value={definition.minTotalOrders ?? ""} onChange={(event) => setDefinition((current) => ({ ...current, minTotalOrders: event.target.value ? Number(event.target.value) : undefined }))} />
                 </label>
 
-                <label className="full-span">
-                  Incluir clientes manualmente por código (opcional)
-                  <span style={{ fontSize: "0.75rem", color: "var(--muted-color)", display: "block", marginBottom: "0.25rem", fontWeight: 400 }}>
-                    Cole os códigos separados por vírgula ou espaço (ex: CL1200, KH9321).
-                  </span>
-                  <textarea placeholder="Cole códigos manuais de clientes..." style={{ minHeight: "65px", resize: "vertical" }} value={manualCodesText}
-                    onChange={(event) => {
-                      const val = event.target.value;
-                      setManualCodesText(val);
-                      const codes = val.split(/[\s,]+/).map((c) => c.trim()).filter(Boolean);
-                      setDefinition((current) => ({ ...current, customerCodes: codes.length ? codes : undefined }));
-                    }}
-                  />
-                </label>
+                <div className="full-span manual-inclusion-wrapper" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <style>{`
+                    .manual-inclusion-card {
+                      background: var(--panel-background, #fff);
+                      border: 1px solid var(--border-color, #e5e7eb);
+                      border-radius: 12px;
+                      padding: 1.25rem;
+                      margin-bottom: 0.5rem;
+                      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+                      display: flex;
+                      flex-direction: column;
+                      gap: 1rem;
+                    }
+                    .manual-inclusion-header {
+                      display: flex;
+                      justify-content: space-between;
+                      align-items: center;
+                      flex-wrap: wrap;
+                      gap: 0.75rem;
+                      border-bottom: 1px dashed var(--border-color, #e5e7eb);
+                      padding-bottom: 0.75rem;
+                    }
+                    .manual-inclusion-title {
+                      font-size: 0.875rem;
+                      font-weight: 700;
+                      color: var(--foreground, #1e293b);
+                      margin: 0;
+                    }
+                    .manual-inclusion-subtitle {
+                      font-size: 0.75rem;
+                      color: var(--muted-color, #64748b);
+                      margin-top: 0.25rem;
+                      font-weight: 400;
+                    }
+                    .manual-tabs {
+                      display: flex;
+                      background: rgba(107, 114, 128, 0.06);
+                      padding: 3px;
+                      border-radius: 8px;
+                      border: 1px solid rgba(107, 114, 128, 0.08);
+                    }
+                    .manual-tab-btn {
+                      border: none;
+                      background: transparent;
+                      padding: 0.35rem 0.75rem;
+                      font-size: 0.75rem;
+                      font-weight: 600;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      color: var(--muted-color, #64748b);
+                      transition: all 0.15s ease;
+                    }
+                    .manual-tab-btn.active {
+                      background: var(--panel-background, #fff);
+                      color: #2563eb;
+                      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+                    }
+                    .search-input-wrapper {
+                      position: relative;
+                      width: 100%;
+                    }
+                    .search-input-wrapper input {
+                      width: 100%;
+                      padding: 0.75rem 1rem 0.75rem 2.25rem;
+                      border-radius: 8px;
+                      border: 1px solid var(--border-color, #e5e7eb);
+                      background: var(--background, #fff);
+                      color: var(--foreground, #000);
+                      font-size: 0.9rem;
+                      outline: none;
+                      transition: all 0.2s ease;
+                    }
+                    .search-input-wrapper input:focus {
+                      border-color: #2563eb;
+                      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+                    }
+                    .search-icon-inside {
+                      position: absolute;
+                      left: 0.85rem;
+                      top: 50%;
+                      transform: translateY(-50%);
+                      color: var(--muted-color, #9ca3af);
+                      font-size: 0.95rem;
+                      pointer-events: none;
+                    }
+                    .autocomplete-dropdown {
+                      position: absolute;
+                      top: 100%;
+                      left: 0;
+                      right: 0;
+                      z-index: 1000;
+                      background: #ffffff !important;
+                      border: 1px solid #cbd5e1 !important;
+                      border-radius: 10px;
+                      margin-top: 0.35rem;
+                      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+                      max-height: 250px;
+                      overflow-y: auto;
+                      padding: 4px;
+                    }
+                    .autocomplete-item {
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                      padding: 0.5rem 0.75rem;
+                      border-radius: 6px;
+                      cursor: pointer;
+                      transition: all 0.15s ease;
+                      gap: 12px;
+                    }
+                    .autocomplete-item:hover {
+                      background: rgba(37, 99, 235, 0.08);
+                    }
+                    .autocomplete-client-info {
+                      display: flex;
+                      flex-direction: column;
+                      min-width: 0;
+                    }
+                    .autocomplete-client-name {
+                      font-size: 0.85rem;
+                      font-weight: 600;
+                      color: #0f172a !important;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    }
+                    .autocomplete-client-code {
+                      font-size: 0.7rem;
+                      color: #64748b !important;
+                      font-family: monospace;
+                      margin-top: 1px;
+                    }
+                    .chips-container {
+                      display: flex;
+                      flex-wrap: wrap;
+                      gap: 6px;
+                      padding: 0.75rem;
+                      border: 1px dashed var(--border-color, #e5e7eb);
+                      border-radius: 8px;
+                      min-height: 52px;
+                      align-items: center;
+                      background: rgba(107, 114, 128, 0.02);
+                      margin-top: 0.25rem;
+                    }
+                    .client-chip {
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                      background: rgba(37, 99, 235, 0.05);
+                      border: 1px solid rgba(37, 99, 235, 0.15);
+                      color: #2563eb;
+                      padding: 0.25rem 0.65rem;
+                      border-radius: 20px;
+                      font-size: 0.75rem;
+                      font-weight: 600;
+                      transition: all 0.2s ease;
+                      animation: scaleIn 0.2s ease forwards;
+                    }
+                    .client-chip:hover {
+                      background: rgba(37, 99, 235, 0.1);
+                      transform: translateY(-1px);
+                      box-shadow: 0 2px 4px rgba(37, 99, 235, 0.05);
+                    }
+                    .client-chip-remove {
+                      background: transparent;
+                      border: none;
+                      color: rgba(220, 38, 38, 0.6);
+                      cursor: pointer;
+                      font-size: 0.85rem;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 0;
+                      width: 14px;
+                      height: 14px;
+                      border-radius: 50%;
+                      transition: all 0.15s ease;
+                      font-weight: bold;
+                    }
+                    .client-chip-remove:hover {
+                      background: rgba(220, 38, 38, 0.1);
+                      color: #dc2626;
+                    }
+                    .status-badge-inline {
+                      font-size: 0.65rem;
+                      padding: 2px 6px;
+                      border-radius: 4px;
+                      font-weight: 700;
+                    }
+                    .status-badge-inline.ACTIVE {
+                      background: rgba(16, 185, 129, 0.1);
+                      color: #10b981;
+                    }
+                    .status-badge-inline.ATTENTION {
+                      background: rgba(245, 158, 11, 0.1);
+                      color: #f59e0b;
+                    }
+                    .status-badge-inline.INACTIVE {
+                      background: rgba(107, 114, 128, 0.1);
+                      color: #6b7280;
+                    }
+                  `}</style>
+
+                  <div className="manual-inclusion-card">
+                    <div className="manual-inclusion-header">
+                      <div>
+                        <h4 className="manual-inclusion-title">👤 Incluir Clientes Manualmente (Opcional)</h4>
+                        <p className="manual-inclusion-subtitle">Adicione clientes específicos ao público alvo de forma direta.</p>
+                      </div>
+                      <div className="manual-tabs">
+                        <button type="button" className={`manual-tab-btn ${manualMode === "search" ? "active" : ""}`} onClick={() => setManualMode("search")}>
+                          🔍 Buscar & Selecionar
+                        </button>
+                        <button type="button" className={`manual-tab-btn ${manualMode === "paste" ? "active" : ""}`} onClick={() => setManualMode("paste")}>
+                          📋 Colar em Lote
+                        </button>
+                      </div>
+                    </div>
+
+                    {manualMode === "search" ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", position: "relative" }}>
+                        <div className="search-input-wrapper">
+                          <span className="search-icon-inside">🔍</span>
+                          <input
+                            type="text"
+                            placeholder="Digite o nome ou código do cliente para buscar e adicionar..."
+                            value={clientSearchQuery}
+                            onChange={(e) => setClientSearchQuery(e.target.value)}
+                          />
+                          {isSearchingClients && (
+                            <span style={{ position: "absolute", right: "1rem", top: "50%", transform: "translateY(-50%)", fontSize: "0.8rem", color: "var(--muted-color)" }}>
+                              ⏳ Buscando...
+                            </span>
+                          )}
+                        </div>
+
+                        {clientSearchResults.length > 0 && (
+                          <div className="autocomplete-dropdown">
+                            {clientSearchResults.map((cust) => {
+                              const alreadyAdded = definition.customerCodes?.includes(cust.customerCode ?? "");
+                              return (
+                                <div
+                                  key={cust.id}
+                                  className="autocomplete-item"
+                                  onClick={() => {
+                                    if (!alreadyAdded) handleAddManualCode(cust);
+                                  }}
+                                  style={{ opacity: alreadyAdded ? 0.6 : 1, cursor: alreadyAdded ? "default" : "pointer" }}
+                                >
+                                  <div className="autocomplete-client-info">
+                                    <span className="autocomplete-client-name">{cust.displayName}</span>
+                                    <span className="autocomplete-client-code">{cust.customerCode || "Sem código"}</span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span className={`status-badge-inline ${cust.status}`}>
+                                      {cust.status === "ACTIVE" ? "Ativo" : cust.status === "ATTENTION" ? "Atenção" : "Inativo"}
+                                    </span>
+                                    {alreadyAdded ? (
+                                      <span style={{ color: "#10b981", fontSize: "0.85rem", fontWeight: 700 }}>✓</span>
+                                    ) : (
+                                      <span style={{ color: "#2563eb", fontSize: "0.85rem", fontWeight: 700 }}>＋</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {clientSearchQuery.trim() && clientSearchResults.length === 0 && !isSearchingClients && (
+                          <div className="autocomplete-dropdown" style={{ padding: "1rem", textAlign: "center", fontSize: "0.85rem", color: "var(--muted-color)" }}>
+                            Nenhum cliente correspondente encontrado.
+                          </div>
+                        )}
+
+                        <div>
+                          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--foreground)", display: "block", marginBottom: "0.25rem" }}>
+                            Clientes Selecionados ({definition.customerCodes?.length ?? 0}):
+                          </span>
+                          <div className="chips-container">
+                            {definition.customerCodes && definition.customerCodes.length > 0 ? (
+                              definition.customerCodes.map((code) => {
+                                const displayName = displayNamesMap[code];
+                                return (
+                                  <div key={code} className="client-chip">
+                                    <span>{displayName ? `${displayName} (${code})` : code}</span>
+                                    <button type="button" className="client-chip-remove" onClick={() => handleRemoveManualCode(code)}>×</button>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <span style={{ fontSize: "0.8rem", color: "var(--muted-color)", fontStyle: "italic" }}>
+                                Nenhum cliente selecionado ainda. Busque e clique acima para incluir.
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--muted-color)", display: "block", marginBottom: "0.25rem", fontWeight: 400 }}>
+                          Cole os códigos separados por vírgula, espaço ou quebra de linha (ex: CL1200, KH9321).
+                        </span>
+                        <textarea
+                          placeholder="Cole códigos manuais de clientes..."
+                          style={{ minHeight: "80px", resize: "vertical", padding: "0.75rem", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--background)", color: "var(--foreground)", outline: "none", fontSize: "0.9rem" }}
+                          value={manualCodesText}
+                          onChange={(event) => {
+                            const val = event.target.value;
+                            setManualCodesText(val);
+                            const codes = val.split(/[\s,]+/).map((c) => c.trim().toUpperCase()).filter(Boolean);
+                            setDefinition((current) => ({ ...current, customerCodes: codes.length ? codes : undefined }));
+                          }}
+                        />
+                        {definition.customerCodes && definition.customerCodes.length > 0 && (
+                          <div style={{ marginTop: "0.5rem" }}>
+                            <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--foreground)", display: "block", marginBottom: "0.25rem" }}>
+                              Códigos Identificados ({definition.customerCodes.length}):
+                            </span>
+                            <div className="chips-container" style={{ minHeight: "auto" }}>
+                              {definition.customerCodes.map((code) => (
+                                <div key={code} className="client-chip" style={{ background: "rgba(107, 114, 128, 0.05)", border: "1px solid rgba(107, 114, 128, 0.15)", color: "var(--muted-color)" }}>
+                                  <span>{displayNamesMap[code] ? `${displayNamesMap[code]} (${code})` : code}</span>
+                                  <button type="button" className="client-chip-remove" onClick={() => handleRemoveManualCode(code)}>×</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 <LabelMultiSelect label="Com rotulo" options={labelsQuery.data ?? []} selectedValues={definition.labels ?? []}
                   onChange={(newValues) => setDefinition((current) => ({ ...current, labels: newValues.length ? newValues : undefined }))} placeholder="Todos" />
