@@ -1561,8 +1561,11 @@ export async function getWhatsappAgentActivityReport(
         da.actor_user_id = $${userIdParamIndex}
         OR d.assigned_to = $${userIdParamIndex}
         OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
-        OR wi.assigned_user_id = $${userIdParamIndex}
-        OR LOWER(COALESCE(wi.assigned_user_name, '')) = LOWER($${userNameParamIndex})
+        OR EXISTS (
+          SELECT 1 FROM whatsapp_instances wi_sub 
+          WHERE wi_sub.id = d.whatsapp_instance_id 
+            AND (wi_sub.assigned_user_id = $${userIdParamIndex} OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($${userNameParamIndex}))
+        )
       )
     `);
   }
@@ -1584,60 +1587,34 @@ export async function getWhatsappAgentActivityReport(
   const result = await pool.query(
     `
     SELECT
-      COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
-      COALESCE(
-        CASE 
-          WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL 
-          THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) || ')'
-          ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name)
-        END,
-        'Sem agente'
-      ) AS agent_name,
-      COALESCE(wi_base.instance_name, wi.instance_name) as instance_name,
-      COALESCE(wi_base.display_label, wi.display_label) as display_label,
-      COALESCE(wi_base.phone_number, wi.phone_number) as phone_number,
-      COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) as profile_picture_url,
       da.activity_type,
       da.actor_user_id::text AS actor_user_id,
       da.actor_name,
       da.content,
       da.metadata,
       da.created_at,
-      COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
-      COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
+      d.assigned_to,
+      d.assigned_to_name,
+      d.whatsapp_instance_id,
+      d.whatsapp_jid,
+      d.customer_display_name,
+      d.title,
       TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
       EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN whatsapp_instances wi_base ON (
-      wi_base.id = d.whatsapp_instance_id 
-      OR LOWER(wi_base.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
-    )
-    LEFT JOIN users u ON (
-      u.id = da.actor_user_id 
-      OR u.id = d.assigned_to
-      OR u.id = wi_base.assigned_user_id
-      OR LOWER(u.name) = LOWER(da.actor_name)
-      OR LOWER(u.name) = LOWER(d.assigned_to_name)
-      OR LOWER(u.name) = LOWER(wi_base.assigned_user_name)
-    )
-    LEFT JOIN LATERAL (
-      SELECT wi_match.*
-      FROM whatsapp_instances wi_match
-      WHERE (wi_match.id = d.whatsapp_instance_id OR wi_match.assigned_user_id = u.id)
-      ORDER BY
-        CASE
-          WHEN wi_match.id = d.whatsapp_instance_id THEN 0
-          WHEN wi_match.assigned_user_id = u.id THEN 1
-          ELSE 2
-        END
-      LIMIT 1
-    ) wi ON true
     WHERE ${where.join("\n      AND ")}
     ORDER BY da.created_at ASC, da.id ASC
     `,
     params,
   );
+
+  // Fetch all users and whatsapp instances for fast in-memory name mapping
+  const usersRes = await pool.query("SELECT id, name FROM users");
+  const instancesRes = await pool.query("SELECT id, instance_name, display_label, phone_number, profile_picture_url, assigned_user_id, assigned_user_name FROM whatsapp_instances");
+  
+  const users = usersRes.rows;
+  const instances = instancesRes.rows;
 
   const currentPeriodDateKeys = new Set(reportDays.map((day) => day.date));
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
@@ -1701,20 +1678,60 @@ export async function getWhatsappAgentActivityReport(
       continue;
     }
 
-    const remoteJid = optionalString(row.remote_jid);
+    // Resolve WhatsApp instance (in-memory, highly efficient)
+    const metadataInstance = row.metadata?.instance ? String(row.metadata.instance).toLowerCase() : "";
+    const wi = instances.find(inst => 
+      inst.id === row.whatsapp_instance_id || 
+      (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
+    );
+
+    // Resolve matched user (in-memory fallback mapping, avoids unindexed outer joins)
+    const actorName = row.actor_name ? String(row.actor_name).toLowerCase() : "";
+    const assignedToName = row.assigned_to_name ? String(row.assigned_to_name).toLowerCase() : "";
+    const wiAssignedUserName = wi?.assigned_user_name ? String(wi.assigned_user_name).toLowerCase() : "";
+
+    const matchedUser = users.find(u => 
+      u.id === row.actor_user_id ||
+      u.id === row.assigned_to ||
+      (wi && u.id === wi.assigned_user_id) ||
+      (actorName && u.name && u.name.toLowerCase() === actorName) ||
+      (assignedToName && u.name && u.name.toLowerCase() === assignedToName) ||
+      (wiAssignedUserName && u.name && u.name.toLowerCase() === wiAssignedUserName)
+    );
+
+    const agentId = matchedUser 
+      ? String(matchedUser.id)
+      : (wi ? `instance:${wi.id}` : 'sem-agente');
+
+    let agentName = "Sem agente";
+    const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
+    if (matchedUser) {
+      if (wiLabel) {
+        agentName = `${matchedUser.name} (${wiLabel})`;
+      } else {
+        agentName = matchedUser.name;
+      }
+    } else if (wiLabel) {
+      agentName = wiLabel;
+    }
+
+    const instanceName = wi ? wi.instance_name : null;
+    const displayLabel = wi ? wi.display_label : null;
+    const phoneNumber = wi ? wi.phone_number : null;
+    const profilePictureUrl = wi ? wi.profile_picture_url : null;
+
+    const remoteJid = String(row.metadata?.remoteJid || row.whatsapp_jid || "");
     if (!remoteJid) {
       continue;
     }
 
-    const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+    const isGroup = remoteJid.endsWith("@g.us");
     const groupClass = classifyWhatsappGroup({
       isGroup,
-      name: optionalString(row.chat_name),
+      name: row.metadata?.chatDisplayName || row.customer_display_name || row.title,
     });
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
-    const chatName = optionalString(row.chat_name);
-    const agentId = String(row.agent_id ?? "sem-agente");
-    const agentName = String(row.agent_name ?? "Sem agente");
+    const chatName = row.metadata?.chatDisplayName || row.customer_display_name || row.title || "";
     const createdAt = new Date(String(row.created_at));
 
     const isCurrentPeriod = localDate >= pivotDate;
@@ -1742,20 +1759,20 @@ export async function getWhatsappAgentActivityReport(
         {
           agentId,
           agentName,
-          instanceName: optionalString(row.instance_name),
-          displayLabel: optionalString(row.display_label),
-          phoneNumber: optionalString(row.phone_number),
-          profilePictureUrl: optionalString(row.profile_picture_url),
+          instanceName,
+          displayLabel,
+          phoneNumber,
+          profilePictureUrl,
           accumulator: createActivityReportAccumulator(),
           activeHours: new Set<string>(),
           lastMessageAt: null,
         };
 
       current.agentName = agentName;
-      current.instanceName ??= optionalString(row.instance_name);
-      current.displayLabel ??= optionalString(row.display_label);
-      current.phoneNumber ??= optionalString(row.phone_number);
-      current.profilePictureUrl ??= optionalString(row.profile_picture_url);
+      current.instanceName ??= instanceName;
+      current.displayLabel ??= displayLabel;
+      current.phoneNumber ??= phoneNumber;
+      current.profilePictureUrl ??= profilePictureUrl;
       current.lastMessageAt = isoDate(row.created_at);
       agents.set(agentId, current);
 
