@@ -10,7 +10,7 @@ import type {
   WhatsappMonitorMetrics,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
-import { pool } from "../../db/client.js";
+import { pool, redis } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";
@@ -1699,6 +1699,22 @@ export async function getWhatsappAgentActivityReport(
   daysInput = 7,
 ): Promise<WhatsappAgentActivityReport> {
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
+
+  // Redis cache to avoid re-running the expensive query on every request
+  const cacheKey = user.role === "SELLER"
+    ? `wa-activity-report:${days}:seller:${user.id}`
+    : `wa-activity-report:${days}:all`;
+  const cacheTtl = user.role === "SELLER" ? 90 : 60; // seconds
+
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as WhatsappAgentActivityReport;
+    }
+  } catch {
+    // Redis failure should not block the report
+  }
+
   const reportDays = buildActivityReportDays(days);
   const totalReportDays = buildActivityReportDays(days * 2);
 
@@ -1711,7 +1727,6 @@ export async function getWhatsappAgentActivityReport(
     "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
     `da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
     `da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
-    monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
   ];
 
   if (user.role === "SELLER") {
@@ -1732,55 +1747,72 @@ export async function getWhatsappAgentActivityReport(
     `);
   }
 
-  const allInstances = await pool.query(`
-    SELECT 
-      wi.id as instance_id,
-      wi.instance_name,
-      wi.display_label,
-      wi.phone_number,
-      wi.profile_picture_url,
-      u.id as user_id,
-      u.name as user_name
-    FROM whatsapp_instances wi
-    LEFT JOIN users u ON u.id = wi.assigned_user_id
-    WHERE wi.status = 'ACTIVE'
-  `);
+  // Run all DB queries in parallel for maximum performance.
+  // Use a dedicated client with statement_timeout for the main heavy query
+  // to prevent the reverse proxy from killing the connection with a 502.
+  const client = await pool.connect();
+  try {
+    await client.query("SET statement_timeout = '25s'");
 
-  const result = await pool.query(
-    `
-    SELECT
-      da.activity_type,
-      da.actor_user_id::text AS actor_user_id,
-      da.actor_name,
-      da.metadata,
-      da.created_at,
-      NULL AS incoming_raw_payload,
-      NULL AS incoming_from_me,
-      (da.metadata ->> 'instance')::text AS metadata_instance,
-      (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
-      (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
-      d.assigned_to,
-      d.assigned_to_name,
-      d.whatsapp_instance_id,
-      d.whatsapp_jid,
-      d.customer_display_name,
-      d.title,
-      TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
-      EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
-    FROM deal_activities da
-    JOIN deals d ON d.id = da.deal_id
-    WHERE ${where.join("\n      AND ")}
-    ORDER BY da.created_at ASC, da.id ASC
-    `,
-    params,
-  );
+    const [allInstances, result, usersRes] = await Promise.all([
+      client.query(`
+        SELECT 
+          wi.id as instance_id,
+          wi.instance_name,
+          wi.display_label,
+          wi.phone_number,
+          wi.profile_picture_url,
+          wi.assigned_user_id,
+          wi.assigned_user_name,
+          u.id as user_id,
+          u.name as user_name
+        FROM whatsapp_instances wi
+        LEFT JOIN users u ON u.id = wi.assigned_user_id
+        WHERE wi.status = 'ACTIVE'
+      `),
+      client.query(
+        `
+        SELECT
+          da.activity_type,
+          da.actor_user_id::text AS actor_user_id,
+          da.actor_name,
+          da.created_at,
+          (da.metadata ->> 'instance')::text AS metadata_instance,
+          (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
+          (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
+          (da.metadata ->> 'fromMe')::text AS metadata_from_me,
+          (da.metadata ->> 'isOutbound')::text AS metadata_is_outbound,
+          (da.metadata ->> 'capturedFromWhatsapp')::text AS metadata_captured,
+          (da.metadata ->> 'sentFromMonitor')::text AS metadata_sent_from_monitor,
+          d.assigned_to,
+          d.assigned_to_name,
+          d.whatsapp_instance_id,
+          d.whatsapp_jid,
+          d.customer_display_name,
+          d.title,
+          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
+          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
+        FROM deal_activities da
+        JOIN deals d ON d.id = da.deal_id
+        WHERE ${where.join("\n          AND ")}
+        ORDER BY da.created_at ASC, da.id ASC
+        `,
+        params,
+      ),
+      client.query("SELECT id, name FROM users"),
+    ]);
 
-  // Fetch all users and whatsapp instances for fast in-memory name mapping
-  const usersRes = await pool.query("SELECT id, name FROM users");
-  const instancesRes = await pool.query("SELECT id, instance_name, display_label, phone_number, profile_picture_url, assigned_user_id, assigned_user_name FROM whatsapp_instances");
-  
   const users = usersRes.rows;
-  const instances = instancesRes.rows;
+  // Use allInstances rows also as instance lookup (avoid extra query)
+  const instances = allInstances.rows.map((r: Record<string, unknown>) => ({
+    id: r.instance_id,
+    instance_name: r.instance_name,
+    display_label: r.display_label,
+    phone_number: r.phone_number,
+    profile_picture_url: r.profile_picture_url,
+    assigned_user_id: r.assigned_user_id ?? r.user_id,
+    assigned_user_name: r.assigned_user_name ?? r.user_name,
+  }));
 
   const currentPeriodDateKeys = new Set(reportDays.map((day) => day.date));
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
@@ -1837,6 +1869,20 @@ export async function getWhatsappAgentActivityReport(
     });
   }
 
+  // Pre-build user/instance lookup maps for O(1) resolution instead of O(n) .find()
+  const userById = new Map<string, { id: string; name: string }>();
+  const userByNameLower = new Map<string, { id: string; name: string }>();
+  for (const u of users) {
+    userById.set(String(u.id), u);
+    if (u.name) userByNameLower.set(String(u.name).toLowerCase(), u);
+  }
+  const instanceById = new Map<string, Record<string, unknown>>();
+  const instanceByNameLower = new Map<string, Record<string, unknown>>();
+  for (const inst of instances) {
+    instanceById.set(String(inst.id), inst);
+    if (inst.instance_name) instanceByNameLower.set(String(inst.instance_name).toLowerCase(), inst);
+  }
+
   for (const row of result.rows) {
     const localDate = optionalString(row.local_date);
     const localHour = Number(row.local_hour);
@@ -1844,26 +1890,36 @@ export async function getWhatsappAgentActivityReport(
       continue;
     }
 
-    // Resolve WhatsApp instance (in-memory, highly efficient)
-    const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
-    const wi = instances.find(inst => 
-      inst.id === row.whatsapp_instance_id || 
-      (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
-    );
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
+    if (!remoteJid) {
+      continue;
+    }
 
-    // Resolve matched user (in-memory fallback mapping, avoids unindexed outer joins)
+    // In-memory monitorable JID filter (replaces expensive SQL COALESCE filter)
+    const jidLower = remoteJid.toLowerCase();
+    if (jidLower === 'status@broadcast' || jidLower.endsWith('@broadcast')) {
+      continue;
+    }
+
+    // Resolve WhatsApp instance (O(1) map lookup)
+    const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
+    const wi = (row.whatsapp_instance_id ? instanceById.get(String(row.whatsapp_instance_id)) : null)
+      ?? (metadataInstance ? instanceByNameLower.get(metadataInstance) : null)
+      ?? null;
+
+    // Resolve matched user (O(1) map lookup chain)
     const actorName = row.actor_name ? String(row.actor_name).toLowerCase() : "";
     const assignedToName = row.assigned_to_name ? String(row.assigned_to_name).toLowerCase() : "";
     const wiAssignedUserName = wi?.assigned_user_name ? String(wi.assigned_user_name).toLowerCase() : "";
 
-    const matchedUser = users.find(u => 
-      u.id === row.actor_user_id ||
-      u.id === row.assigned_to ||
-      (wi && u.id === wi.assigned_user_id) ||
-      (actorName && u.name && u.name.toLowerCase() === actorName) ||
-      (assignedToName && u.name && u.name.toLowerCase() === assignedToName) ||
-      (wiAssignedUserName && u.name && u.name.toLowerCase() === wiAssignedUserName)
-    );
+    const matchedUser = 
+      (row.actor_user_id ? userById.get(String(row.actor_user_id)) : null) ??
+      (row.assigned_to ? userById.get(String(row.assigned_to)) : null) ??
+      (wi?.assigned_user_id ? userById.get(String(wi.assigned_user_id)) : null) ??
+      (actorName ? userByNameLower.get(actorName) : null) ??
+      (assignedToName ? userByNameLower.get(assignedToName) : null) ??
+      (wiAssignedUserName ? userByNameLower.get(wiAssignedUserName) : null) ??
+      null;
 
     const agentId = matchedUser 
       ? String(matchedUser.id)
@@ -1878,25 +1934,27 @@ export async function getWhatsappAgentActivityReport(
         agentName = matchedUser.name;
       }
     } else if (wiLabel) {
-      agentName = wiLabel;
+      agentName = String(wiLabel);
     }
 
-    const instanceName = wi ? wi.instance_name : null;
-    const displayLabel = wi ? wi.display_label : null;
-    const phoneNumber = wi ? wi.phone_number : null;
-    const profilePictureUrl = wi ? wi.profile_picture_url : null;
-
-    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
-    if (!remoteJid) {
-      continue;
-    }
+    const instanceName = wi ? String(wi.instance_name ?? "") : null;
+    const displayLabel = wi ? String(wi.display_label ?? "") : null;
+    const phoneNumber = wi ? String(wi.phone_number ?? "") : null;
+    const profilePictureUrl = wi ? (wi.profile_picture_url ? String(wi.profile_picture_url) : null) : null;
 
     const isGroup = remoteJid.endsWith("@g.us");
     const groupClass = classifyWhatsappGroup({
       isGroup,
       name: row.metadata_chat_display_name || row.customer_display_name || row.title,
     });
-    const isOutbound = isWhatsappActivityOutbound(row);
+    // Resolve fromMe using extracted metadata fields instead of full metadata object
+    const resolvedFromMe = 
+      optionalBoolean(row.metadata_from_me) ??
+      optionalBoolean(row.metadata_is_outbound) ??
+      optionalBoolean(row.metadata_captured) ??
+      optionalBoolean(row.metadata_sent_from_monitor) ??
+      null;
+    const isOutbound = resolvedFromMe ?? (String(row.activity_type) === "WHATSAPP_SENT");
     const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || "";
     if (isInternalChat(chatName, remoteJid)) {
       continue;
@@ -2007,7 +2065,7 @@ export async function getWhatsappAgentActivityReport(
   const engagedPrivates = new Set(engagedConversations.filter((c) => c.kind === "private").map((c) => c.remoteJid));
   const engagedGroups = new Set(engagedConversations.filter((c) => c.kind !== "private").map((c) => c.remoteJid));
 
-  return {
+  const report: WhatsappAgentActivityReport = {
     period: {
       startDate: reportDays[0]?.date ?? pivotDate,
       endDate: reportDays[reportDays.length - 1]?.date ?? pivotDate,
@@ -2074,6 +2132,15 @@ export async function getWhatsappAgentActivityReport(
       };
     }),
   };
+
+  // Write to Redis cache (fire-and-forget, don't block the response)
+  redis.set(cacheKey, JSON.stringify(report), "EX", cacheTtl).catch(() => {});
+
+  return report;
+
+  } finally {
+    client.release();
+  }
 }
 
 export async function setWhatsappConversationReadState(

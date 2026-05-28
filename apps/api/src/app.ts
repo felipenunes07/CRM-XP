@@ -543,10 +543,14 @@ function isAllowedCorsOrigin(origin?: string | null) {
     return true;
   }
 
-  const normalizedOrigin = origin.replace(/\/+$/, "");
+  const normalizedOrigin = origin.trim().toLowerCase().replace(/\/+$/, "");
+
+  // Normalize entries in webOrigins to avoid trailing slash or capitalization mismatches
+  const allowedWebOrigins = webOrigins.map((o) => o.trim().toLowerCase().replace(/\/+$/, ""));
 
   if (
-    webOrigins.includes(normalizedOrigin) ||
+    allowedWebOrigins.includes(normalizedOrigin) ||
+    normalizedOrigin === "http://localhost:5173" ||
     normalizedOrigin === "http://localhost:5174" ||
     normalizedOrigin.endsWith(".trycloudflare.com")
   ) {
@@ -556,6 +560,8 @@ function isAllowedCorsOrigin(origin?: string | null) {
   try {
     const hostname = new URL(normalizedOrigin).hostname;
     return (
+      hostname === "xpcrm.vercel.app" ||
+      hostname.endsWith(".vercel.app") ||
       hostname.endsWith(".ngrok-free.dev") ||
       hostname.endsWith(".ngrok-free.app") ||
       hostname.endsWith(".ngrok.app") ||
