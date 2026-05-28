@@ -51,6 +51,41 @@ const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
 const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
 
+function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
+  if (!name && !remoteJid) return false;
+  
+  const jid = (remoteJid || "").toLowerCase();
+  const normalized = (name || "").trim().toLowerCase();
+  
+  if (jid.includes("status@broadcast") || jid.endsWith("@broadcast")) {
+    return true;
+  }
+
+  // Any group/chat starting with "xp" (case-insensitive)
+  if (normalized.startsWith("xp")) {
+    return true;
+  }
+
+  const blacklist = [
+    "felipe zhao",
+    "gabriel zanini",
+    "int 🏆强大团队🏆 xp brasil",
+    "int xp brasil",
+    "notas finalizadas",
+    "motoboy lucas",
+    "romário frete",
+    "romario frete",
+    "lorenzo"
+  ];
+
+  if (blacklist.some(item => normalized.includes(item))) {
+    return true;
+  }
+
+  return false;
+}
+
+
 function conversationMatchesInstanceSql(instanceAlias: string) {
   return `
     (
@@ -1733,6 +1768,9 @@ export async function getWhatsappAgentActivityReport(
     });
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
     const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || "";
+    if (isInternalChat(chatName, remoteJid)) {
+      continue;
+    }
     const createdAt = new Date(String(row.created_at));
 
     const isCurrentPeriod = localDate >= pivotDate;
@@ -2089,9 +2127,12 @@ export async function getWhatsappDailySummaryReport(
       d.whatsapp_instance_id,
       d.whatsapp_jid,
       d.customer_display_name,
-      d.title
+      d.title,
+      COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS real_customer_name
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
     WHERE ${where.join("\n      AND ")}
     ORDER BY da.created_at ASC, da.id ASC
     `,
@@ -2161,7 +2202,12 @@ export async function getWhatsappDailySummaryReport(
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
-    const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : "Particular sem nome");
+    const chatName = row.real_customer_name || row.metadata_chat_display_name || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : formatWhatsappJidPhone(remoteJid));
+    
+    if (isInternalChat(chatName, remoteJid)) {
+      continue;
+    }
+
     const createdAt = new Date(String(row.created_at));
 
     if (isOutbound) totalSent++;
@@ -2203,7 +2249,9 @@ export async function getWhatsappDailySummaryReport(
     }
 
     if (isGroup) {
-      agent.groupChats.add(remoteJid);
+      if (isOutbound) {
+        agent.groupChats.add(remoteJid);
+      }
       if (!agent.attendedGroupClients.has(remoteJid)) {
         agent.attendedGroupClients.set(remoteJid, {
           name: chatName,
@@ -2216,7 +2264,9 @@ export async function getWhatsappDailySummaryReport(
       if (isOutbound) client.sent++;
       else client.received++;
     } else {
-      agent.privateChats.add(remoteJid);
+      if (isOutbound) {
+        agent.privateChats.add(remoteJid);
+      }
       if (!agent.attendedPrivateClients.has(remoteJid)) {
         agent.attendedPrivateClients.set(remoteJid, {
           name: chatName,
@@ -2260,7 +2310,7 @@ export async function getWhatsappDailySummaryReport(
   const totalOrders = salesPerformance.reduce((sum, row) => sum + Number(row.total_orders ?? 0), 0);
 
   // Build vendedoras daily summary
-  const agentsList = Array.from(agentsMap.values()).map(a => {
+  const rawAgentsList = Array.from(agentsMap.values()).map(a => {
     // Find sales stats if they exist
     const sales = salesPerformance.find(s => 
       s.attendant.toLowerCase() === a.agentName.toLowerCase() ||
@@ -2278,11 +2328,68 @@ export async function getWhatsappDailySummaryReport(
       screensSold: sales ? Number(sales.total_items ?? 0) : 0,
       ordersCount: sales ? Number(sales.total_orders ?? 0) : 0,
       revenue: sales ? Number(sales.total_revenue ?? 0) : 0,
-      attendedPrivateClients: Array.from(a.attendedPrivateClients.values()),
-      attendedGroupClients: Array.from(a.attendedGroupClients.values()),
+      attendedPrivateClients: Array.from(a.attendedPrivateClients.values()).filter(c => c.sent > 0),
+      attendedGroupClients: Array.from(a.attendedGroupClients.values()).filter(g => g.sent > 0),
       averageFirstResponseSeconds: a.responseCount > 0 ? Math.round(a.totalResponseSeconds / a.responseCount) : null,
     };
   });
+
+  // Merge duplicate agents by name (case-insensitive)
+  const mergedAgentsMap = new Map<string, typeof rawAgentsList[0]>();
+  for (const agent of rawAgentsList) {
+    const nameKey = agent.agentName.trim().toLowerCase();
+    const existing = mergedAgentsMap.get(nameKey);
+    if (existing) {
+      existing.sentMessages += agent.sentMessages;
+      existing.receivedMessages += agent.receivedMessages;
+      existing.screensSold += agent.screensSold;
+      existing.ordersCount += agent.ordersCount;
+      existing.revenue += agent.revenue;
+      
+      // Merge unique private clients
+      const privateClientsMap = new Map(existing.attendedPrivateClients.map(c => [c.jid, c]));
+      agent.attendedPrivateClients.forEach(c => {
+        const ext = privateClientsMap.get(c.jid);
+        if (ext) {
+          ext.sent += c.sent;
+          ext.received += c.received;
+          ext.initiated = ext.initiated || c.initiated;
+        } else {
+          privateClientsMap.set(c.jid, c);
+        }
+      });
+      existing.attendedPrivateClients = Array.from(privateClientsMap.values());
+      existing.privateChatsCount = existing.attendedPrivateClients.length;
+
+      // Merge unique group clients
+      const groupClientsMap = new Map(existing.attendedGroupClients.map(g => [g.jid, g]));
+      agent.attendedGroupClients.forEach(g => {
+        const ext = groupClientsMap.get(g.jid);
+        if (ext) {
+          ext.sent += g.sent;
+          ext.received += g.received;
+        } else {
+          groupClientsMap.set(g.jid, g);
+        }
+      });
+      existing.attendedGroupClients = Array.from(groupClientsMap.values());
+      existing.groupChatsCount = existing.attendedGroupClients.length;
+
+      // Initiated count
+      existing.initiatedCount = existing.attendedPrivateClients.filter(c => c.initiated).length;
+
+      // Average response time
+      if (existing.averageFirstResponseSeconds !== null && agent.averageFirstResponseSeconds !== null) {
+         existing.averageFirstResponseSeconds = Math.round((existing.averageFirstResponseSeconds + agent.averageFirstResponseSeconds) / 2);
+      } else {
+         existing.averageFirstResponseSeconds = existing.averageFirstResponseSeconds ?? agent.averageFirstResponseSeconds;
+      }
+    } else {
+      mergedAgentsMap.set(nameKey, { ...agent });
+    }
+  }
+
+  const agentsList = Array.from(mergedAgentsMap.values());
 
   // Sort agents: first those with sales (by screens sold), then by messages sent
   agentsList.sort((left, right) => {

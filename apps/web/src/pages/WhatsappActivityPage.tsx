@@ -1089,10 +1089,27 @@ function DailySummaryTab({ token }: { token: string }) {
   const [useUniqueMessages, setUseUniqueMessages] = useState(false);
   const data = summaryQuery.data;
 
+  const [selectedAgents, setSelectedAgents] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (data?.agents) {
+      const initial: Record<string, boolean> = {};
+      data.agents.forEach((agent: any) => {
+        initial[agent.agentId] = true;
+      });
+      setSelectedAgents(initial);
+    }
+  }, [data]);
+
+  const activeAgentsList = useMemo(() => {
+    if (!data?.agents) return [];
+    return data.agents.filter((agent: any) => selectedAgents[agent.agentId] !== false);
+  }, [data?.agents, selectedAgents]);
+
   const totalUniqueContactsSent = useMemo(() => {
-    if (!data) return 0;
+    if (!activeAgentsList) return 0;
     const uniqueJids = new Set<string>();
-    data.agents.forEach((agent: any) => {
+    activeAgentsList.forEach((agent: any) => {
       agent.attendedPrivateClients.forEach((c: any) => {
         if (c.sent > 0) uniqueJids.add(c.jid);
       });
@@ -1101,7 +1118,7 @@ function DailySummaryTab({ token }: { token: string }) {
       });
     });
     return uniqueJids.size;
-  }, [data]);
+  }, [activeAgentsList]);
 
   const messageText = useMemo(() => {
     if (!data) return "";
@@ -1111,7 +1128,7 @@ function DailySummaryTab({ token }: { token: string }) {
     // Calculate Top Active Agent
     let topAgentName = "";
     let topAgentValue = 0;
-    data.agents.forEach((agent: any) => {
+    activeAgentsList.forEach((agent: any) => {
       const val = useUniqueMessages
         ? (agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length + agent.attendedGroupClients.filter((g: any) => g.sent > 0).length)
         : agent.sentMessages;
@@ -1146,7 +1163,7 @@ function DailySummaryTab({ token }: { token: string }) {
     
     text += `🏆 *Ranking de Vendedoras e Atendimentos:*\n\n`;
 
-    data.agents.forEach((agent: any, index: number) => {
+    activeAgentsList.forEach((agent: any, index: number) => {
       const medals = ["🥇", "🥈", "🥉"];
       const emoji = index < 3 ? medals[index] : "❤️";
       text += `${emoji} *${agent.agentName}*\n`;
@@ -1179,7 +1196,7 @@ function DailySummaryTab({ token }: { token: string }) {
     });
 
     return text;
-  }, [data, isDetailed, useUniqueMessages, totalUniqueContactsSent]);
+  }, [data, activeAgentsList, isDetailed, useUniqueMessages, totalUniqueContactsSent]);
 
   if (summaryQuery.isLoading) {
     return <div className="page-loading">Carregando resumo do dia...</div>;
@@ -1366,6 +1383,52 @@ function DailySummaryTab({ token }: { token: string }) {
             </button>
           </div>
         </div>
+        {/* Toggle checkboxes / filters */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem" }}>
+          <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <UserCheck size={14} /> Selecionar vendedoras para incluir no relatório:
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {data.agents.map((agent: any) => {
+              const isSelected = selectedAgents[agent.agentId] !== false;
+              return (
+                <button
+                  key={agent.agentId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedAgents((prev) => ({
+                      ...prev,
+                      [agent.agentId]: !isSelected,
+                    }));
+                  }}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "20px",
+                    border: isSelected ? "1px solid var(--primary)" : "1px solid var(--border-color)",
+                    background: isSelected ? "rgba(40, 126, 231, 0.08)" : "transparent",
+                    color: isSelected ? "var(--primary)" : "var(--text-muted)",
+                    fontSize: "0.825rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    style={{ accentColor: "var(--primary)", cursor: "pointer", margin: 0, width: "0.85rem", height: "0.85rem" }}
+                  />
+                  {agent.agentName}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div
           style={{
             background: "rgba(0, 0, 0, 0.02)",
@@ -1395,8 +1458,8 @@ function DailySummaryTab({ token }: { token: string }) {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {data.agents.length ? (
-            data.agents.map((agent: any, index: number) => {
+          {activeAgentsList.length ? (
+            activeAgentsList.map((agent: any, index: number) => {
               const medals = ["🥇", "🥈", "🥉"];
               const emoji = index < 3 ? medals[index] : "❤️";
               const isExpanded = expandedAgents[agent.agentId];
