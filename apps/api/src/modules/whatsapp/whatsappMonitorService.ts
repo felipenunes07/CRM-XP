@@ -52,51 +52,27 @@ const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
 const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
 
 function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
-  if (!name && !remoteJid) return false;
+  if (!remoteJid) return false;
   
-  const jid = (remoteJid || "").toLowerCase();
-  const normalized = (name || "").trim().toLowerCase();
+  const jid = remoteJid.toLowerCase();
   
   if (jid.includes("status@broadcast") || jid.endsWith("@broadcast")) {
     return true;
   }
 
-  // Any group/chat starting with "xp" (case-insensitive)
-  if (normalized.startsWith("xp")) {
-    return true;
-  }
-
-  const blacklist = [
-    "felipe zhao",
-    "gabriel zanini",
-    "int 🏆强大团队🏆 xp brasil",
-    "int xp brasil",
-    "notas finalizadas",
-    "motoboy lucas",
-    "romário frete",
-    "romario frete",
-    "lorenzo",
-    "conferência",
-    "conferencia",
-    "motoboy",
-    "frete"
+  // Lista de JIDs de grupos/chats internos a serem desconsiderados
+  // O usuário informará esses JIDs posteriormente.
+  const excludedJids: string[] = [
+    // adicione os JIDs de grupos internos aqui
   ];
 
-  if (blacklist.some(item => normalized.includes(item))) {
+  if (excludedJids.includes(jid)) {
     return true;
-  }
-
-  // Check if it matches internal group keywords!
-  const isGroup = jid.endsWith("@g.us");
-  if (isGroup) {
-    const internalKeywords = /(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor|expor|xp factory|crm)/;
-    if (internalKeywords.test(normalized)) {
-      return true;
-    }
   }
 
   return false;
 }
+
 
 
 function conversationMatchesInstanceSql(instanceAlias: string) {
