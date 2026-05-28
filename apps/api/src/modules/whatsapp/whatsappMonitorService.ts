@@ -75,11 +75,24 @@ function isInternalChat(name: string | null | undefined, remoteJid: string | nul
     "motoboy lucas",
     "romário frete",
     "romario frete",
-    "lorenzo"
+    "lorenzo",
+    "conferência",
+    "conferencia",
+    "motoboy",
+    "frete"
   ];
 
   if (blacklist.some(item => normalized.includes(item))) {
     return true;
+  }
+
+  // Check if it matches internal group keywords!
+  const isGroup = jid.endsWith("@g.us");
+  if (isGroup) {
+    const internalKeywords = /(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor|expor|xp factory|crm)/;
+    if (internalKeywords.test(normalized)) {
+      return true;
+    }
   }
 
   return false;
