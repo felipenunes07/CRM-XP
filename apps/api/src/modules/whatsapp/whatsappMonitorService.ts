@@ -2121,10 +2121,13 @@ export async function getWhatsappDailySummaryReport(
     // Detail lists
     attendedPrivateClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
     attendedGroupClients: Map<string, { name: string; jid: string; sent: number; received: number }>;
+    totalResponseSeconds: number;
+    responseCount: number;
   }>();
 
   let totalSent = 0;
   let totalReceived = 0;
+  const pendingInboundByAgentConversation = new Map<string, Date>();
 
   for (const row of activitiesResult.rows) {
     const agentId = String(row.agent_id ?? "sem-agente");
@@ -2133,6 +2136,7 @@ export async function getWhatsappDailySummaryReport(
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
     const chatName = row.chat_name ? String(row.chat_name) : (isGroup ? "Grupo sem nome" : "Particular sem nome");
+    const createdAt = new Date(String(row.created_at));
 
     if (isOutbound) totalSent++;
     else totalReceived++;
@@ -2149,15 +2153,27 @@ export async function getWhatsappDailySummaryReport(
         chatFirstActivity: new Map(),
         attendedPrivateClients: new Map(),
         attendedGroupClients: new Map(),
+        totalResponseSeconds: 0,
+        responseCount: 0,
       });
     }
 
     const agent = agentsMap.get(agentId)!;
 
+    // Track response seconds
+    const pendingKey = `${agentId}:${remoteJid}`;
     if (isOutbound) {
       agent.sentMessages++;
+      const pendingInboundAt = pendingInboundByAgentConversation.get(pendingKey);
+      if (pendingInboundAt) {
+        const responseSeconds = Math.max(0, (createdAt.getTime() - pendingInboundAt.getTime()) / 1000);
+        agent.totalResponseSeconds += responseSeconds;
+        agent.responseCount++;
+        pendingInboundByAgentConversation.delete(pendingKey);
+      }
     } else {
       agent.receivedMessages++;
+      pendingInboundByAgentConversation.set(pendingKey, createdAt);
     }
 
     if (isGroup) {
@@ -2238,6 +2254,7 @@ export async function getWhatsappDailySummaryReport(
       revenue: sales ? Number(sales.total_revenue ?? 0) : 0,
       attendedPrivateClients: Array.from(a.attendedPrivateClients.values()),
       attendedGroupClients: Array.from(a.attendedGroupClients.values()),
+      averageFirstResponseSeconds: a.responseCount > 0 ? Math.round(a.totalResponseSeconds / a.responseCount) : null,
     };
   });
 
@@ -2247,6 +2264,11 @@ export async function getWhatsappDailySummaryReport(
     if (left.ordersCount !== right.ordersCount) return right.ordersCount - left.ordersCount;
     return right.sentMessages - left.sentMessages;
   });
+
+  // Calculate global average response seconds
+  const globalTotalResponseSeconds = Array.from(agentsMap.values()).reduce((sum, a) => sum + a.totalResponseSeconds, 0);
+  const globalResponseCount = Array.from(agentsMap.values()).reduce((sum, a) => sum + a.responseCount, 0);
+  const averageFirstResponseSeconds = globalResponseCount > 0 ? Math.round(globalTotalResponseSeconds / globalResponseCount) : null;
 
   // Format date for display: DD/MM/YYYY
   const [year, month, day] = dateStr.split("-");
@@ -2298,5 +2320,6 @@ export async function getWhatsappDailySummaryReport(
     newCustomersList: newCustomers,
     recoveredCustomersList: recoveredCustomers,
     formattedText: text,
+    averageFirstResponseSeconds,
   };
 }

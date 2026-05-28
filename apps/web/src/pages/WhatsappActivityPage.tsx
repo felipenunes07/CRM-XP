@@ -1108,18 +1108,40 @@ function DailySummaryTab({ token }: { token: string }) {
     const [year, month, day] = data.date.split("-");
     const formattedDate = `${day}/${month}/${year}`;
 
+    // Calculate Top Active Agent
+    let topAgentName = "";
+    let topAgentValue = 0;
+    data.agents.forEach((agent: any) => {
+      const val = useUniqueMessages
+        ? (agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length + agent.attendedGroupClients.filter((g: any) => g.sent > 0).length)
+        : agent.sentMessages;
+      if (val > topAgentValue) {
+        topAgentValue = val;
+        topAgentName = agent.agentName;
+      }
+    });
+
     let text = `📅 *Relatório de Atendimento XP*\n_${formattedDate}_\n\n`;
     text += `📱 *Clientes Novos no Dia:* ${data.newCustomersCount}\n`;
     text += `🔄 *Clientes Recuperados no Dia:* ${data.recoveredCustomersCount}\n\n`;
     
     if (useUniqueMessages) {
-      text += `💬 *Resumo de Contatos:*\n`;
-      text += `📱 Contatos Enviados: ${totalUniqueContactsSent.toLocaleString("pt-BR")}\n`;
-      text += `🧾 Mensagens Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n\n`;
+      text += `💬 *Resumo de Mensagens:*\n`;
+      text += `📱 Mensagens Únicas Enviadas: ${totalUniqueContactsSent.toLocaleString("pt-BR")}\n`;
+      text += `🧾 Mensagens Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n`;
     } else {
       text += `💬 *Resumo de Mensagens:*\n`;
-      text += `📱 Enviadas: ${data.totalMessagesSent.toLocaleString("pt-BR")}\n`;
-      text += `🧾 Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n\n`;
+      text += `📱 Mensagens Enviadas: ${data.totalMessagesSent.toLocaleString("pt-BR")}\n`;
+      text += `🧾 Mensagens Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n`;
+    }
+
+    if (data.averageFirstResponseSeconds !== null && data.averageFirstResponseSeconds !== undefined) {
+      text += `⏱️ *Tempo Médio de Resposta (SLA):* ${formatSeconds(data.averageFirstResponseSeconds)}\n`;
+    }
+    text += `\n`;
+
+    if (topAgentName && topAgentValue > 0) {
+      text += `🌟 *Vendedora Mais Ativa:* ${topAgentName} (${topAgentValue.toLocaleString("pt-BR")} ${useUniqueMessages ? "mensagens únicas" : "mensagens enviadas"})\n\n`;
     }
     
     text += `🏆 *Ranking de Vendedoras e Atendimentos:*\n\n`;
@@ -1132,7 +1154,7 @@ function DailySummaryTab({ token }: { token: string }) {
       if (useUniqueMessages) {
         const agentUniqueContactsSent = agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length +
                                         agent.attendedGroupClients.filter((g: any) => g.sent > 0).length;
-        text += `💬 Contatos Enviados: ${agentUniqueContactsSent.toLocaleString("pt-BR")}\n`;
+        text += `💬 Mensagens Únicas Enviadas: ${agentUniqueContactsSent.toLocaleString("pt-BR")}\n`;
       } else {
         text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
       }
@@ -1157,7 +1179,7 @@ function DailySummaryTab({ token }: { token: string }) {
     });
 
     return text;
-  }, [data, isDetailed]);
+  }, [data, isDetailed, useUniqueMessages, totalUniqueContactsSent]);
 
   if (summaryQuery.isLoading) {
     return <div className="page-loading">Carregando resumo do dia...</div>;
@@ -1212,71 +1234,96 @@ function DailySummaryTab({ token }: { token: string }) {
       </div>
 
       {/* Metric Cards Grid */}
-      <section className="activity-metric-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(40, 126, 231, 0.1)", color: "#287ee7" }}>
-            <Smartphone size={18} />
+      <section className="daily-summary-grid">
+        <div className="daily-summary-card" style={{ '--card-theme': '#287ee7', '--card-theme-rgb': '40, 126, 231' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Smartphone size={20} />
+            </div>
+            <span className="daily-summary-card-title">Clientes Novos</span>
           </div>
-          <span>Clientes Novos</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value">
             <strong>{data.newCustomersCount}</strong>
           </div>
-          <small>Primeira compra no dia</small>
+          <p className="daily-summary-card-subtitle">Primeira compra no dia</p>
         </div>
 
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981" }}>
-            <RefreshCw size={18} />
+        <div className="daily-summary-card" style={{ '--card-theme': '#10b981', '--card-theme-rgb': '16, 185, 129' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <RefreshCw size={20} />
+            </div>
+            <span className="daily-summary-card-title">Clientes Recuperados</span>
           </div>
-          <span>Clientes Recuperados</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value">
             <strong>{data.recoveredCustomersCount}</strong>
           </div>
-          <small>Voltou a comprar após 90+ dias</small>
+          <p className="daily-summary-card-subtitle">Voltou a comprar após 90+ dias</p>
         </div>
 
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b" }}>
-            <Package size={18} />
+        <div className="daily-summary-card" style={{ '--card-theme': '#f59e0b', '--card-theme-rgb': '245, 158, 11' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Package size={20} />
+            </div>
+            <span className="daily-summary-card-title">Telas Vendidas</span>
           </div>
-          <span>Telas Vendidas</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value">
             <strong>{data.totalTelasSold.toLocaleString("pt-BR")}</strong>
           </div>
-          <small>Volume total de itens</small>
+          <p className="daily-summary-card-subtitle">Volume total de itens</p>
         </div>
 
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(139, 92, 246, 0.1)", color: "#8b5cf6" }}>
-            <DollarSign size={18} />
+        <div className="daily-summary-card" style={{ '--card-theme': '#8b5cf6', '--card-theme-rgb': '139, 92, 246' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <DollarSign size={20} />
+            </div>
+            <span className="daily-summary-card-title">Faturamento</span>
           </div>
-          <span>Faturamento</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value long-value">
             <strong>R$ {data.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
           </div>
-          <small>Pedidos faturados no dia</small>
+          <p className="daily-summary-card-subtitle">Pedidos faturados no dia</p>
         </div>
 
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(40, 126, 231, 0.1)", color: "#287ee7" }}>
-            <MessageCircle size={18} />
+        <div className="daily-summary-card" style={{ '--card-theme': '#06b6d4', '--card-theme-rgb': '6, 182, 212' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <MessageCircle size={20} />
+            </div>
+            <span className="daily-summary-card-title">Respostas Enviadas</span>
           </div>
-          <span>Respostas Enviadas</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value">
             <strong>{data.totalMessagesSent.toLocaleString("pt-BR")}</strong>
           </div>
-          <small>Mensagens ativas do time</small>
+          <p className="daily-summary-card-subtitle">Mensagens ativas do time</p>
         </div>
 
-        <div className="activity-metric-card">
-          <div className="activity-metric-icon" style={{ background: "rgba(107, 114, 128, 0.1)", color: "#6b7280" }}>
-            <Clock3 size={18} />
+        <div className="daily-summary-card" style={{ '--card-theme': '#6366f1', '--card-theme-rgb': '99, 102, 241' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Clock3 size={20} />
+            </div>
+            <span className="daily-summary-card-title">Mensagens Recebidas</span>
           </div>
-          <span>Mensagens Recebidas</span>
-          <div className="activity-metric-value">
+          <div className="daily-summary-card-value">
             <strong>{data.totalMessagesReceived.toLocaleString("pt-BR")}</strong>
           </div>
-          <small>Entradas enviadas por clientes</small>
+          <p className="daily-summary-card-subtitle">Entradas enviadas por clientes</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#f43f5e', '--card-theme-rgb': '244, 63, 94' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Clock3 size={20} />
+            </div>
+            <span className="daily-summary-card-title">Tempo de Resposta (SLA)</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{formatSeconds(data.averageFirstResponseSeconds)}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Tempo médio de resposta</p>
         </div>
       </section>
 
@@ -1306,7 +1353,7 @@ function DailySummaryTab({ token }: { token: string }) {
                 onChange={(e) => setUseUniqueMessages(e.target.checked)}
                 style={{ width: "1.1rem", height: "1.1rem", cursor: "pointer", accentColor: "var(--primary)" }}
               />
-              Contatos Únicos Enviados (vs Total)
+              Mensagens Únicas Enviadas (vs Total)
             </label>
             <button
               type="button"
