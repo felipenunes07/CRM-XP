@@ -18,6 +18,40 @@ export function AuthProvider({ children }) {
     }, []);
     useEffect(() => {
         let cancelled = false;
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        if (isLocal) {
+            if (!cancelled) {
+                setToken("local-dev-token");
+                setUser({
+                    id: "00000000-0000-0000-0000-000000000001",
+                    email: "admin@olist-crm.com.br",
+                    role: "ADMIN",
+                    appRole: "admin",
+                    name: "Administrador Local",
+                    isActive: true,
+                    permissions: [
+                        "dashboard.view",
+                        "commercial.view",
+                        "commercial.manage",
+                        "messages.view",
+                        "messages.manage",
+                        "finance.view",
+                        "finance.manage",
+                        "reports.view",
+                        "settings.manage",
+                        "admin.panel.view",
+                        "admin.users.manage",
+                        "automations.view",
+                        "automations.manage",
+                        "integrations.manage"
+                    ],
+                });
+                setLoading(false);
+            }
+            return () => {
+                cancelled = true;
+            };
+        }
         async function restoreSession() {
             setLoading(true);
             const { data } = await supabase.auth.getSession();
@@ -71,6 +105,35 @@ export function AuthProvider({ children }) {
         async login(email, password) {
             setLoading(true);
             try {
+                const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+                if (isLocal) {
+                    setToken("local-dev-token");
+                    setUser({
+                        id: "00000000-0000-0000-0000-000000000001",
+                        email: email.trim().toLowerCase() || "admin@olist-crm.com.br",
+                        role: "ADMIN",
+                        appRole: "admin",
+                        name: "Administrador Local",
+                        isActive: true,
+                        permissions: [
+                            "dashboard.view",
+                            "commercial.view",
+                            "commercial.manage",
+                            "messages.view",
+                            "messages.manage",
+                            "finance.view",
+                            "finance.manage",
+                            "reports.view",
+                            "settings.manage",
+                            "admin.panel.view",
+                            "admin.users.manage",
+                            "automations.view",
+                            "automations.manage",
+                            "integrations.manage"
+                        ],
+                    });
+                    return;
+                }
                 const { data, error } = await supabase.auth.signInWithPassword({
                     email: email.trim().toLowerCase(),
                     password,
@@ -85,11 +148,21 @@ export function AuthProvider({ children }) {
             }
         },
         logout() {
+            const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            if (isLocal) {
+                clearSession();
+                setLoading(false);
+                return;
+            }
             void supabase.auth.signOut();
             clearSession();
             setLoading(false);
         },
         async refreshUser() {
+            const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+            if (isLocal) {
+                return;
+            }
             const { data } = await supabase.auth.getSession();
             if (data.session?.access_token) {
                 await loadUser(data.session.access_token);

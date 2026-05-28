@@ -515,6 +515,13 @@ export const api = {
         }
         return request(`/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
+    whatsappDailySummary(token, date) {
+        const search = new URLSearchParams();
+        if (date) {
+            search.set("date", date);
+        }
+        return request(`/api/whatsapp-monitor/daily-summary${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
     setWhatsappMonitorReadState(token, id, input) {
         return request(`/api/whatsapp-monitor/conversations/${id}/read-state`, {
             method: "PATCH",

@@ -754,6 +754,18 @@ export const api = {
     );
   },
 
+  whatsappDailySummary(token: string, date?: string) {
+    const search = new URLSearchParams();
+    if (date) {
+      search.set("date", date);
+    }
+    return request<any>(
+      `/api/whatsapp-monitor/daily-summary${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
+  },
+
   setWhatsappMonitorReadState(token: string, id: string, input: { unread: boolean }) {
     return request<WhatsappMonitorConversationDetail>(
       `/api/whatsapp-monitor/conversations/${id}/read-state`,
