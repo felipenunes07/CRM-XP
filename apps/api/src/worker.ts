@@ -9,6 +9,7 @@ import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/what
 import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
+import { startRecurringJob, type RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -17,18 +18,19 @@ async function main() {
   const automationScheduler = startMessageAutomationScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
+  const recurringJobs: RecurringJobHandle[] = [];
 
   // 1. Olist Sync
   if (env.WORKER_OLIST_SYNC_ENABLED) {
-    intervals.push(
-      setInterval(
-        () => {
-          enqueueOlistSyncJob().catch((error) => {
-            logger.error("failed to enqueue scheduled olist sync", { error: String(error) });
-          });
+    logger.info("scheduled olist sync enabled", { intervalMinutes: env.WORKER_OLIST_SYNC_INTERVAL_MINUTES });
+    recurringJobs.push(
+      startRecurringJob({
+        intervalMs: env.WORKER_OLIST_SYNC_INTERVAL_MINUTES * 60 * 1000,
+        run: () => enqueueOlistSyncJob(),
+        onError: (error) => {
+          logger.error("failed to enqueue scheduled olist sync", { error: String(error) });
         },
-        env.WORKER_OLIST_SYNC_INTERVAL_MINUTES * 60 * 1000,
-      )
+      }),
     );
   }
 
@@ -121,6 +123,7 @@ async function main() {
 
   const shutdown = async () => {
     intervals.forEach(clearInterval);
+    await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
     await worker.close();
     await whatsappWorker.close();

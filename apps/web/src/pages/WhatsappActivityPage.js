@@ -260,8 +260,9 @@ export function WhatsappActivityPage() {
         queryKey: ["whatsapp-agent-activity-report", days],
         queryFn: () => api.whatsappAgentActivityReport(token, { days }),
         enabled: Boolean(token),
-        refetchInterval: 60000,
-        refetchOnWindowFocus: true,
+        refetchInterval: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        staleTime: 60 * 1000,
     });
     const report = reportQuery.data;
     const selectedAgent = report?.agents.find((agent) => agent.agentId === selectedAgentId) ?? null;
@@ -551,8 +552,9 @@ function DailySummaryTab({ token }) {
         queryKey: ["whatsapp-daily-summary", selectedDate],
         queryFn: () => api.whatsappDailySummary(token, selectedDate),
         enabled: Boolean(token),
-        refetchInterval: 60000,
-        refetchOnWindowFocus: true,
+        refetchInterval: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        staleTime: 60 * 1000,
     });
     const handleCopy = (text) => {
         navigator.clipboard.writeText(text);

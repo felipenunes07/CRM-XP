@@ -9,6 +9,7 @@ import {
   formatWhatsappJidPhone,
   isMonitorableWhatsappJid,
   areWhatsappJidsEqual,
+  extractEvolutionFromMeFlag,
   type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
@@ -80,7 +81,7 @@ function buildActivityMetadata(input: {
   chatDisplayName: string | null;
   chatProfilePictureUrl: string | null;
   instanceId?: string | null;
-  capturedFromWhatsapp?: boolean;
+  fromMe: boolean;
   outboundSource?: string | null;
   autoCreated?: boolean;
   media?: EvolutionMessageMedia | null;
@@ -96,8 +97,10 @@ function buildActivityMetadata(input: {
     senderProfilePictureUrl: input.senderProfilePictureUrl,
     chatDisplayName: input.chatDisplayName,
     chatProfilePictureUrl: input.chatProfilePictureUrl,
+    fromMe: input.fromMe,
+    isOutbound: input.fromMe,
+    capturedFromWhatsapp: input.fromMe,
     ...(input.instanceId ? { instanceId: input.instanceId } : {}),
-    ...(input.capturedFromWhatsapp ? { capturedFromWhatsapp: true } : {}),
     ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
     ...(input.autoCreated ? { autoCreated: true } : {}),
     ...(input.media ? input.media : {}),
@@ -129,7 +132,7 @@ async function insertDealActivity(input: {
     )
     UPDATE deal_activities
     SET
-      activity_type = CASE WHEN deal_activities.activity_type = 'WHATSAPP_SENT' THEN 'WHATSAPP_SENT' ELSE $2 END,
+      activity_type = $2,
       actor_user_id = COALESCE(deal_activities.actor_user_id, $3),
       actor_name = COALESCE(deal_activities.actor_name, $4),
       content = $5,
@@ -295,6 +298,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const instanceName = context.instanceName ?? "";
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
+      const explicitFromMe = extractEvolutionFromMeFlag(msg);
       
       const cleanSenderName = (senderName || "").trim().toLowerCase();
       const cleanAgentName = (instanceDetails?.assignedUserName || instanceDetails?.displayLabel || instanceName || "").trim().toLowerCase();
@@ -326,14 +330,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         areWhatsappJidsEqual(payloadParticipantJid, instanceOwnerJid)
       );
       
-      // Fallback: if senderJid matches instance owner JID, if this is a SEND_MESSAGE event, or if pushName matches agent, it's fromMe
-      const isFromMe = Boolean(
-        context.fromMe || 
+      const fallbackFromMe = Boolean(
         isSendMessageEvent ||
-        isAgentSender ||
-        isAgentJid ||
-        (instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+        (context.isGroup && (
+          isAgentSender ||
+          isAgentJid ||
+          Boolean(instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+        ))
       );
+      const isFromMe = explicitFromMe ?? fallbackFromMe;
       
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
       const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
@@ -355,7 +360,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         chatDisplayName,
         chatProfilePictureUrl,
         instanceId: instanceDetails?.id ?? null,
-        capturedFromWhatsapp: isFromMe,
+        fromMe: isFromMe,
         outboundSource: isFromMe ? "whatsapp_device" : null,
         media,
         contact,
@@ -392,7 +397,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           sender_profile_picture_url = COALESCE(EXCLUDED.sender_profile_picture_url, whatsapp_incoming_messages.sender_profile_picture_url),
           chat_display_name = COALESCE(EXCLUDED.chat_display_name, whatsapp_incoming_messages.chat_display_name),
           chat_profile_picture_url = COALESCE(EXCLUDED.chat_profile_picture_url, whatsapp_incoming_messages.chat_profile_picture_url),
-          from_me = whatsapp_incoming_messages.from_me OR EXCLUDED.from_me
+          from_me = EXCLUDED.from_me
         `,
         [
           remoteJid,

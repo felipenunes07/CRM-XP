@@ -359,8 +359,9 @@ export function WhatsappActivityPage() {
     queryKey: ["whatsapp-agent-activity-report", days],
     queryFn: () => api.whatsappAgentActivityReport(token!, { days }),
     enabled: Boolean(token),
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
   });
 
   const report = reportQuery.data;
@@ -1068,8 +1069,9 @@ function DailySummaryTab({ token }: { token: string }) {
     queryKey: ["whatsapp-daily-summary", selectedDate],
     queryFn: () => api.whatsappDailySummary(token, selectedDate),
     enabled: Boolean(token),
-    refetchInterval: 60000,
-    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
   });
 
   const handleCopy = (text: string) => {

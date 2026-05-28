@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { buildMessageTimelineItems } from "./messagesPage.helpers";
 
 function initials(name: string) {
   return name
@@ -216,8 +217,8 @@ function isMediaPlaceholder(content: string) {
   return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
 
-const CONVERSATION_REFRESH_MS = 3000;
-const CHAT_REFRESH_MS = 2000;
+const CONVERSATION_REFRESH_MS = 10000;
+const CHAT_REFRESH_MS = 5000;
 
 function SearchBox({
   value,
@@ -537,8 +538,8 @@ export function MessagesPage() {
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
-    staleTime: 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 5000,
     placeholderData: (previousData) => previousData,
   });
 
@@ -621,8 +622,8 @@ export function MessagesPage() {
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
-    staleTime: 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 3000,
   });
 
   const readStateMutation = useMutation({
@@ -728,6 +729,7 @@ export function MessagesPage() {
   const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
   const currentConversation = detailMatchesSelection ? detail : selectedConversation;
   const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
+  const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
@@ -1031,13 +1033,19 @@ export function MessagesPage() {
               >
                 {conversationDetailQuery.isLoading ? (
                   <div className="wa-empty-chat">Carregando conversa...</div>
-                ) : messages.length ? (
-                  messages.map((message) => (
-                    <ChatMessageBubble
-                      key={message.id}
-                      message={message}
-                      showSender={currentConversation.isGroup && message.direction === "INBOUND"}
-                    />
+                ) : timelineItems.length ? (
+                  timelineItems.map((item) => (
+                    item.type === "date" ? (
+                      <div key={item.key} className="wa-date-separator">
+                        <span>{item.label}</span>
+                      </div>
+                    ) : (
+                      <ChatMessageBubble
+                        key={item.key}
+                        message={item.message}
+                        showSender={currentConversation.isGroup && item.message.direction === "INBOUND"}
+                      />
+                    )
                   ))
                 ) : (
                   <div className="wa-empty-chat">Nenhuma mensagem registrada para esta conversa.</div>

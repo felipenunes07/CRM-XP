@@ -1325,4 +1325,28 @@ export const migrations = [
     BEFORE UPDATE ON user_permissions
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
   `,
+  `
+  -- Performance indexes for dashboard, reports and WhatsApp monitor read paths.
+  CREATE INDEX IF NOT EXISTS idx_orders_customer_order_date
+    ON orders(customer_id, order_date DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_order_items_order_quantity
+    ON order_items(order_id, quantity);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_type_created_at
+    ON deal_activities(activity_type, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_deal_type_created_at
+    ON deal_activities(deal_id, activity_type, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_message_id
+    ON deal_activities ((metadata ->> 'messageId'))
+    WHERE metadata ? 'messageId';
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_instance_created
+    ON whatsapp_incoming_messages(remote_jid, instance_name, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_message_created
+    ON whatsapp_incoming_messages(message_id, created_at DESC);
+  `,
 ];

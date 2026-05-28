@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Contact, FileAudio, FileImage, FileText, FileVideo, Menu, MoreVertical, Paperclip, Search, Send, ShieldCheck, Smile, Sparkles, Users, X, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { buildMessageTimelineItems } from "./messagesPage.helpers";
 function initials(name) {
     return name
         .split(" ")
@@ -153,8 +154,8 @@ function isMediaPlaceholder(content) {
     }
     return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
-const CONVERSATION_REFRESH_MS = 3000;
-const CHAT_REFRESH_MS = 2000;
+const CONVERSATION_REFRESH_MS = 10000;
+const CHAT_REFRESH_MS = 5000;
 function SearchBox({ value, onChange, placeholder, }) {
     return (_jsxs("label", { className: "whatsapp-search", children: [_jsx(Search, { size: 18 }), _jsx("input", { value: value, onChange: (event) => onChange(event.target.value), placeholder: placeholder })] }));
 }
@@ -300,8 +301,8 @@ export function MessagesPage() {
         refetchIntervalInBackground: false,
         refetchOnMount: "always",
         refetchOnReconnect: true,
-        refetchOnWindowFocus: true,
-        staleTime: 1000,
+        refetchOnWindowFocus: false,
+        staleTime: 5000,
         placeholderData: (previousData) => previousData,
     });
     const agents = conversationsQuery.data?.agents ?? [];
@@ -365,8 +366,8 @@ export function MessagesPage() {
         refetchIntervalInBackground: false,
         refetchOnMount: "always",
         refetchOnReconnect: true,
-        refetchOnWindowFocus: true,
-        staleTime: 1000,
+        refetchOnWindowFocus: false,
+        staleTime: 3000,
     });
     const readStateMutation = useMutation({
         mutationFn: ({ id, unread }) => api.setWhatsappMonitorReadState(token, id, { unread }),
@@ -444,6 +445,7 @@ export function MessagesPage() {
     const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
     const currentConversation = detailMatchesSelection ? detail : selectedConversation;
     const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
+    const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
     const lastMessageId = messages.at(-1)?.id ?? null;
     const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
     const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
@@ -540,7 +542,7 @@ export function MessagesPage() {
                                         const element = event.currentTarget;
                                         const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                                         stickToBottomRef.current = distanceFromBottom < 160;
-                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : messages.length ? (messages.map((message) => (_jsx(ChatMessageBubble, { message: message, showSender: currentConversation.isGroup && message.direction === "INBOUND" }, message.id)))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [showShortcuts && filteredTemplates.length > 0 ? (_jsxs("div", { className: "wa-shortcuts-dropdown", children: [_jsxs("div", { className: "wa-shortcuts-header", children: [_jsx("span", { children: "Respostas R\u00E1pidas" }), _jsx("small", { children: "Use as setas \u2191\u2193 e Enter para selecionar" })] }), _jsx("div", { className: "wa-shortcuts-list", children: filteredTemplates.map((template, index) => (_jsxs("button", { type: "button", className: `wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`, onClick: () => selectTemplate(template.content), onMouseEnter: () => setActiveTemplateIndex(index), children: [_jsxs("div", { className: "wa-shortcut-info", children: [_jsxs("span", { className: "wa-shortcut-trigger", children: ["/", template.title.toLowerCase().replace(/\s+/g, "")] }), _jsx("span", { className: "wa-shortcut-title", children: template.title })] }), _jsx("span", { className: "wa-shortcut-preview", children: template.content })] }, template.id))) })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("input", { type: "file", ref: fileInputRef, style: { display: "none" }, onChange: handleFileSelect }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", onClick: () => fileInputRef.current?.click(), disabled: sendMediaMutation.isPending, children: _jsx(Paperclip, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", onClick: () => setEmojiPickerOpen(!emojiPickerOpen), children: _jsx(Smile, { size: 20 }) }), emojiPickerOpen ? (_jsx("div", { className: "wa-emoji-picker", children: commonEmojis.map((emoji) => (_jsx("button", { type: "button", onClick: () => {
+                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : timelineItems.length ? (timelineItems.map((item) => (item.type === "date" ? (_jsx("div", { className: "wa-date-separator", children: _jsx("span", { children: item.label }) }, item.key)) : (_jsx(ChatMessageBubble, { message: item.message, showSender: currentConversation.isGroup && item.message.direction === "INBOUND" }, item.key))))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [showShortcuts && filteredTemplates.length > 0 ? (_jsxs("div", { className: "wa-shortcuts-dropdown", children: [_jsxs("div", { className: "wa-shortcuts-header", children: [_jsx("span", { children: "Respostas R\u00E1pidas" }), _jsx("small", { children: "Use as setas \u2191\u2193 e Enter para selecionar" })] }), _jsx("div", { className: "wa-shortcuts-list", children: filteredTemplates.map((template, index) => (_jsxs("button", { type: "button", className: `wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`, onClick: () => selectTemplate(template.content), onMouseEnter: () => setActiveTemplateIndex(index), children: [_jsxs("div", { className: "wa-shortcut-info", children: [_jsxs("span", { className: "wa-shortcut-trigger", children: ["/", template.title.toLowerCase().replace(/\s+/g, "")] }), _jsx("span", { className: "wa-shortcut-title", children: template.title })] }), _jsx("span", { className: "wa-shortcut-preview", children: template.content })] }, template.id))) })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("input", { type: "file", ref: fileInputRef, style: { display: "none" }, onChange: handleFileSelect }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", onClick: () => fileInputRef.current?.click(), disabled: sendMediaMutation.isPending, children: _jsx(Paperclip, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", onClick: () => setEmojiPickerOpen(!emojiPickerOpen), children: _jsx(Smile, { size: 20 }) }), emojiPickerOpen ? (_jsx("div", { className: "wa-emoji-picker", children: commonEmojis.map((emoji) => (_jsx("button", { type: "button", onClick: () => {
                                                                     setReplyText((prev) => prev + emoji);
                                                                     setEmojiPickerOpen(false);
                                                                 }, children: emoji }, emoji))) })) : null] }), _jsx("textarea", { ref: textareaRef, value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {

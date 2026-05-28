@@ -11637,6 +11637,26 @@ textarea {
   gap: 0.65rem;
 }
 
+.wa-date-separator {
+  position: sticky;
+  top: 0.4rem;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.wa-date-separator span {
+  padding: 0.32rem 0.68rem;
+  border: 1px solid rgba(31, 44, 51, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(31, 44, 51, 0.08);
+  color: var(--wa-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .wa-message-row {
   max-width: min(680px, 86%);
   display: grid;

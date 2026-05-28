@@ -717,23 +717,32 @@ export function median(values: number[]) {
   return (left + right) / 2;
 }
 
-function readMetadataBoolean(metadata: Record<string, unknown>, keys: string[]) {
+function readMetadataOptionalBoolean(metadata: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     if (key in metadata) {
-      const val = readBoolean(metadata[key]);
-      if (val) return true;
+      const value = readOptionalBoolean(metadata[key]);
+      if (value !== null) {
+        return value;
+      }
     }
   }
 
-  return false;
+  return null;
 }
 
 export function whatsappActivityDirection(
   activityType: DealActivity["activityType"],
   metadata: Record<string, unknown> = {},
 ): WhatsappMonitorMessageDirection {
-  if (readMetadataBoolean(metadata, ["fromMe", "isOutbound", "capturedFromWhatsapp", "sentFromMonitor"])) {
-    return "OUTBOUND";
+  const metadataFromMe = readMetadataOptionalBoolean(metadata, [
+    "fromMe",
+    "isOutbound",
+    "capturedFromWhatsapp",
+    "sentFromMonitor",
+  ]);
+
+  if (metadataFromMe !== null) {
+    return metadataFromMe ? "OUTBOUND" : "INBOUND";
   }
 
   if (activityType === "WHATSAPP_RECEIVED") {

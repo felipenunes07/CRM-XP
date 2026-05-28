@@ -607,7 +607,7 @@ export const api = {
     }, token);
   },
   syncData(token: string, mode: "queue" | "direct" = "direct") {
-    return request<{ mode: string; result?: unknown }>("/api/admin/sync", {
+    return request<{ mode: string; jobId?: string | number; result?: unknown }>("/api/admin/sync", {
       method: "POST",
       body: JSON.stringify({ mode }),
     }, token);

@@ -94,7 +94,7 @@ export async function runPrimarySync(reason: string) {
   const syncPromise = runPrimarySyncInternal(reason);
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("A sincronizacao excedeu o limite de 3 minutos.")), 3 * 60 * 1000)
+    setTimeout(() => reject(new Error("A sincronizacao excedeu o limite de 10 minutos.")), 10 * 60 * 1000)
   );
 
   activeSync = Promise.race([syncPromise, timeoutPromise]).finally(() => {

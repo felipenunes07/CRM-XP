@@ -138,6 +138,28 @@ function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function optionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLocaleLowerCase("pt-BR");
+    if (["true", "1", "yes", "sim"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "nao", "não"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
 function normalizeLabel(value: string | null | undefined) {
   return (value ?? "")
     .normalize("NFD")
@@ -153,6 +175,38 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return null;
+}
+
+function resolveWhatsappActivityFromMe(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  const incomingPayload = asRecord(row.incoming_raw_payload);
+  const providerFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
+  const storedIncomingFromMe = optionalBoolean(row.incoming_from_me);
+  const metadataFromMe =
+    optionalBoolean(metadata.fromMe) ??
+    optionalBoolean(metadata.isOutbound) ??
+    optionalBoolean(metadata.capturedFromWhatsapp) ??
+    optionalBoolean(metadata.sentFromMonitor);
+
+  return providerFromMe ?? storedIncomingFromMe ?? metadataFromMe;
+}
+
+function isWhatsappActivityOutbound(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  return resolveWhatsappActivityFromMe(row, metadata) ?? (String(row.activity_type) === "WHATSAPP_SENT");
+}
+
+function whatsappActivityHasMedia(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  if (
+    "fileName" in metadata ||
+    "filename" in metadata ||
+    "mediaName" in metadata ||
+    "mimetype" in metadata ||
+    "mediaType" in metadata
+  ) {
+    return true;
+  }
+
+  const incomingPayload = asRecord(row.incoming_raw_payload);
+  return incomingPayload ? Boolean(extractEvolutionMessageMedia(incomingPayload as any)) : false;
 }
 
 function extractProviderMessageId(payload: Record<string, unknown>) {
@@ -256,27 +310,23 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
-  const incomingFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
-  // An activity is outbound if it was originally saved as WHATSAPP_SENT, or if the synced message is fromMe
-  const isSent = row.activity_type === "WHATSAPP_SENT" || incomingFromMe === true;
+  const providerFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
+  const resolvedFromMe = resolveWhatsappActivityFromMe(row, baseMetadata);
+  const isSent = resolvedFromMe ?? (row.activity_type === "WHATSAPP_SENT");
 
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
-    ...(isSent
+    ...(resolvedFromMe !== null
       ? {
-        fromMe: true,
-        isOutbound: true,
-        capturedFromWhatsapp: true,
-        outboundSource: baseMetadata.outboundSource ?? (incomingFromMe === true ? "whatsapp_device" : "whatsapp_api"),
+        fromMe: resolvedFromMe,
+        isOutbound: resolvedFromMe,
+        capturedFromWhatsapp: resolvedFromMe,
+        ...(resolvedFromMe
+          ? { outboundSource: baseMetadata.outboundSource ?? (providerFromMe === true ? "whatsapp_device" : "whatsapp_api") }
+          : {}),
       }
-      : incomingFromMe === false
-        ? {
-          fromMe: false,
-          isOutbound: false,
-          capturedFromWhatsapp: false,
-        }
       : {}),
   };
   const participantName = optionalString(row.participant_display_name);
@@ -1270,65 +1320,123 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
   }
 
   const whereSql = dealWhere.join(" AND ");
-  const [summaryResult, responseResult] = await Promise.all([
-    pool.query(
-      `
-      SELECT
-        COUNT(DISTINCT d.id)::int AS total_conversations,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS received_messages,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_SENT')::int AS sent_messages,
-        COUNT(*) FILTER (
-          WHERE da.metadata ? 'fileName'
-            OR da.metadata ? 'filename'
-            OR da.metadata ? 'mediaName'
-            OR da.metadata ? 'mimetype'
-            OR da.metadata ? 'mediaType'
-        )::int AS media_messages,
-        COUNT(*) FILTER (WHERE ${riskSql("da")})::int AS risk_events
-      FROM deals d
-      LEFT JOIN deal_activities da
-        ON da.deal_id = d.id
-        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-      WHERE ${whereSql}
-      `,
-      params,
-    ),
-    pool.query(
-      `
-      SELECT
-        d.id AS deal_id,
-        d.whatsapp_instance_id,
-        COALESCE(wi.display_label, d.assigned_to_name, 'Sem agente') AS agent_name,
-        wi.profile_picture_url,
-        EXTRACT(EPOCH FROM (first_outbound.first_outbound_at - first_inbound.first_inbound_at)) / 60 AS response_minutes
-      FROM deals d
-      LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
-      JOIN LATERAL (
-        SELECT MIN(da.created_at) AS first_inbound_at
-        FROM deal_activities da
-        WHERE da.deal_id = d.id
-          AND da.activity_type = 'WHATSAPP_RECEIVED'
-      ) first_inbound ON first_inbound.first_inbound_at IS NOT NULL
-      LEFT JOIN LATERAL (
-        SELECT MIN(da.created_at) AS first_outbound_at
-        FROM deal_activities da
-        WHERE da.deal_id = d.id
-          AND da.activity_type = 'WHATSAPP_SENT'
-          AND da.created_at > first_inbound.first_inbound_at
-      ) first_outbound ON true
-      WHERE ${whereSql}
-      `,
-      params,
-    ),
-  ]);
+  const metricsResult = await pool.query(
+    `
+    SELECT
+      d.id AS deal_id,
+      d.whatsapp_instance_id,
+      COALESCE(wi.display_label, d.assigned_to_name, 'Sem agente') AS agent_name,
+      wi.profile_picture_url,
+      da.activity_type,
+      da.content,
+      da.metadata,
+      da.created_at,
+      incoming_message.raw_payload AS incoming_raw_payload,
+      incoming_message.from_me AS incoming_from_me
+    FROM deals d
+    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    LEFT JOIN deal_activities da
+      ON da.deal_id = d.id
+      AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+    LEFT JOIN LATERAL (
+      SELECT wim.raw_payload, wim.from_me
+      FROM whatsapp_incoming_messages wim
+      WHERE wim.message_id = da.metadata ->> 'messageId'
+      ORDER BY wim.created_at DESC, wim.id DESC
+      LIMIT 1
+    ) incoming_message ON true
+    WHERE ${whereSql}
+    ORDER BY d.id ASC, da.created_at ASC NULLS LAST, da.id ASC
+    `,
+    params,
+  );
 
-  const summary = summaryResult.rows[0] ?? {};
-  const responseRows = responseResult.rows.map((row) => ({
-    agentId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
-    agentName: optionalString(row.agent_name) ?? "Sem agente",
-    profilePictureUrl: optionalString(row.profile_picture_url),
-    responseMinutes: row.response_minutes === null ? null : Number(row.response_minutes),
-  }));
+  const conversationIds = new Set<string>();
+  const responseByDeal = new Map<
+    string,
+    {
+      agentId: string | null;
+      agentName: string;
+      profilePictureUrl: string | null;
+      firstInboundAt: Date | null;
+      firstOutboundAt: Date | null;
+    }
+  >();
+  const summary = {
+    totalConversations: 0,
+    receivedMessages: 0,
+    sentMessages: 0,
+    mediaMessages: 0,
+    riskEvents: 0,
+  };
+
+  for (const row of metricsResult.rows) {
+    const dealId = String(row.deal_id);
+    conversationIds.add(dealId);
+
+    if (!row.activity_type) {
+      continue;
+    }
+
+    const metadata = asRecord(row.metadata) ?? {};
+    const isOutbound = isWhatsappActivityOutbound(row, metadata);
+    const createdAt = new Date(String(row.created_at));
+
+    if (isOutbound) {
+      summary.sentMessages += 1;
+    } else {
+      summary.receivedMessages += 1;
+    }
+
+    if (whatsappActivityHasMedia(row, metadata)) {
+      summary.mediaMessages += 1;
+    }
+
+    if (detectWhatsappMessageRisk(optionalString(row.content) ?? "")) {
+      summary.riskEvents += 1;
+    }
+
+    if (!Number.isFinite(createdAt.getTime())) {
+      continue;
+    }
+
+    const responseState =
+      responseByDeal.get(dealId) ??
+      {
+        agentId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
+        agentName: optionalString(row.agent_name) ?? "Sem agente",
+        profilePictureUrl: optionalString(row.profile_picture_url),
+        firstInboundAt: null,
+        firstOutboundAt: null,
+      };
+
+    if (!isOutbound && responseState.firstInboundAt === null) {
+      responseState.firstInboundAt = createdAt;
+    } else if (
+      isOutbound &&
+      responseState.firstInboundAt !== null &&
+      responseState.firstOutboundAt === null &&
+      createdAt > responseState.firstInboundAt
+    ) {
+      responseState.firstOutboundAt = createdAt;
+    }
+
+    responseByDeal.set(dealId, responseState);
+  }
+
+  summary.totalConversations = conversationIds.size;
+
+  const responseRows = Array.from(responseByDeal.values())
+    .filter((row) => row.firstInboundAt !== null)
+    .map((row) => ({
+      agentId: row.agentId,
+      agentName: row.agentName,
+      profilePictureUrl: row.profilePictureUrl,
+      responseMinutes:
+        row.firstInboundAt && row.firstOutboundAt
+          ? (row.firstOutboundAt.getTime() - row.firstInboundAt.getTime()) / 60000
+          : null,
+    }));
   const responseMinutes = responseRows
     .map((row) => row.responseMinutes)
     .filter((value): value is number => value !== null && Number.isFinite(value));
@@ -1387,11 +1495,11 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
 
   return {
     summary: {
-      totalConversations: Number(summary.total_conversations ?? 0),
-      receivedMessages: Number(summary.received_messages ?? 0),
-      sentMessages: Number(summary.sent_messages ?? 0),
-      mediaMessages: Number(summary.media_messages ?? 0),
-      riskEvents: Number(summary.risk_events ?? 0),
+      totalConversations: summary.totalConversations,
+      receivedMessages: summary.receivedMessages,
+      sentMessages: summary.sentMessages,
+      mediaMessages: summary.mediaMessages,
+      riskEvents: summary.riskEvents,
       averageFirstResponseMinutes: responseMinutes.length
         ? responseMinutes.reduce((sum, value) => sum + value, 0) / responseMinutes.length
         : null,
@@ -1638,7 +1746,10 @@ export async function getWhatsappAgentActivityReport(
       da.activity_type,
       da.actor_user_id::text AS actor_user_id,
       da.actor_name,
+      da.metadata,
       da.created_at,
+      incoming_message.raw_payload AS incoming_raw_payload,
+      incoming_message.from_me AS incoming_from_me,
       (da.metadata ->> 'instance')::text AS metadata_instance,
       (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
       (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
@@ -1652,6 +1763,13 @@ export async function getWhatsappAgentActivityReport(
       EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN LATERAL (
+      SELECT wim.raw_payload, wim.from_me
+      FROM whatsapp_incoming_messages wim
+      WHERE wim.message_id = da.metadata ->> 'messageId'
+      ORDER BY wim.created_at DESC, wim.id DESC
+      LIMIT 1
+    ) incoming_message ON true
     WHERE ${where.join("\n      AND ")}
     ORDER BY da.created_at ASC, da.id ASC
     `,
@@ -1779,7 +1897,7 @@ export async function getWhatsappAgentActivityReport(
       isGroup,
       name: row.metadata_chat_display_name || row.customer_display_name || row.title,
     });
-    const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
+    const isOutbound = isWhatsappActivityOutbound(row);
     const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || "";
     if (isInternalChat(chatName, remoteJid)) {
       continue;
@@ -2131,7 +2249,10 @@ export async function getWhatsappDailySummaryReport(
       da.activity_type,
       da.actor_user_id,
       da.actor_name,
+      da.metadata,
       da.created_at,
+      incoming_message.raw_payload AS incoming_raw_payload,
+      incoming_message.from_me AS incoming_from_me,
       (da.metadata ->> 'instance')::text AS metadata_instance,
       (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
       (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
@@ -2144,6 +2265,13 @@ export async function getWhatsappDailySummaryReport(
       COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS real_customer_name
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN LATERAL (
+      SELECT wim.raw_payload, wim.from_me
+      FROM whatsapp_incoming_messages wim
+      WHERE wim.message_id = da.metadata ->> 'messageId'
+      ORDER BY wim.created_at DESC, wim.id DESC
+      LIMIT 1
+    ) incoming_message ON true
     LEFT JOIN customers c ON c.id = d.customer_id
     LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
     WHERE ${where.join("\n      AND ")}
@@ -2214,7 +2342,7 @@ export async function getWhatsappDailySummaryReport(
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
-    const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
+    const isOutbound = isWhatsappActivityOutbound(row);
     const chatName = row.real_customer_name || row.metadata_chat_display_name || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : formatWhatsappJidPhone(remoteJid));
     
     if (isInternalChat(chatName, remoteJid)) {
@@ -2297,7 +2425,7 @@ export async function getWhatsappDailySummaryReport(
     // Check first activity for initiation
     if (!agent.chatFirstActivity.has(remoteJid)) {
       agent.chatFirstActivity.set(remoteJid, {
-        activityType: String(row.activity_type),
+        activityType: isOutbound ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED",
         isGroup,
         name: chatName,
       });

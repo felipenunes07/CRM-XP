@@ -1721,7 +1721,8 @@ export function createApp() {
         return;
       }
 
-      response.status(202).json({ mode: "queue", result: await runPrimarySync("manual-dashboard") });
+      const job = await enqueueOlistSyncJob();
+      response.status(202).json({ mode: "queue", jobId: job.id });
     } catch (error) {
       next(error);
     }
