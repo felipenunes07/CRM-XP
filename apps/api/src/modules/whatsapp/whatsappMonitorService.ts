@@ -200,7 +200,20 @@ function whatsappActivityHasMedia(row: Record<string, unknown>, metadata = asRec
     "filename" in metadata ||
     "mediaName" in metadata ||
     "mimetype" in metadata ||
-    "mediaType" in metadata
+    "mediaType" in metadata ||
+    String(metadata.mediaType || "").trim() !== "" ||
+    String(metadata.mimetype || "").trim() !== ""
+  ) {
+    return true;
+  }
+
+  const content = String(row.content || "");
+  if (
+    content.startsWith("[Imagem]") ||
+    content.startsWith("[Vídeo]") ||
+    content.startsWith("[Áudio]") ||
+    content.startsWith("[Sticker]") ||
+    content.startsWith("[Documento]")
   ) {
     return true;
   }
@@ -1331,20 +1344,13 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
       da.content,
       da.metadata,
       da.created_at,
-      incoming_message.raw_payload AS incoming_raw_payload,
-      incoming_message.from_me AS incoming_from_me
+      NULL AS incoming_raw_payload,
+      NULL AS incoming_from_me
     FROM deals d
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
     LEFT JOIN deal_activities da
       ON da.deal_id = d.id
       AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-    LEFT JOIN LATERAL (
-      SELECT wim.raw_payload, wim.from_me
-      FROM whatsapp_incoming_messages wim
-      WHERE wim.message_id = da.metadata ->> 'messageId'
-      ORDER BY wim.created_at DESC, wim.id DESC
-      LIMIT 1
-    ) incoming_message ON true
     WHERE ${whereSql}
     ORDER BY d.id ASC, da.created_at ASC NULLS LAST, da.id ASC
     `,
@@ -1748,8 +1754,8 @@ export async function getWhatsappAgentActivityReport(
       da.actor_name,
       da.metadata,
       da.created_at,
-      incoming_message.raw_payload AS incoming_raw_payload,
-      incoming_message.from_me AS incoming_from_me,
+      NULL AS incoming_raw_payload,
+      NULL AS incoming_from_me,
       (da.metadata ->> 'instance')::text AS metadata_instance,
       (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
       (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
@@ -1763,13 +1769,6 @@ export async function getWhatsappAgentActivityReport(
       EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN LATERAL (
-      SELECT wim.raw_payload, wim.from_me
-      FROM whatsapp_incoming_messages wim
-      WHERE wim.message_id = da.metadata ->> 'messageId'
-      ORDER BY wim.created_at DESC, wim.id DESC
-      LIMIT 1
-    ) incoming_message ON true
     WHERE ${where.join("\n      AND ")}
     ORDER BY da.created_at ASC, da.id ASC
     `,
@@ -2251,8 +2250,8 @@ export async function getWhatsappDailySummaryReport(
       da.actor_name,
       da.metadata,
       da.created_at,
-      incoming_message.raw_payload AS incoming_raw_payload,
-      incoming_message.from_me AS incoming_from_me,
+      NULL AS incoming_raw_payload,
+      NULL AS incoming_from_me,
       (da.metadata ->> 'instance')::text AS metadata_instance,
       (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
       (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
@@ -2265,13 +2264,6 @@ export async function getWhatsappDailySummaryReport(
       COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS real_customer_name
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN LATERAL (
-      SELECT wim.raw_payload, wim.from_me
-      FROM whatsapp_incoming_messages wim
-      WHERE wim.message_id = da.metadata ->> 'messageId'
-      ORDER BY wim.created_at DESC, wim.id DESC
-      LIMIT 1
-    ) incoming_message ON true
     LEFT JOIN customers c ON c.id = d.customer_id
     LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
     WHERE ${where.join("\n      AND ")}
