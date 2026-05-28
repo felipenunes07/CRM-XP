@@ -220,6 +220,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
   for (const msg of messages) {
     try {
       const context = extractEvolutionMessageContext(msg, payload.instance);
+      
+      // Adjust createdAt to have millisecond precision based on loop processing to preserve exact order
+      const baseDate = new Date(context.createdAt);
+      if (baseDate.getMilliseconds() === 0) {
+        const serverMs = Date.now() % 1000;
+        baseDate.setMilliseconds(serverMs + processedCount);
+        context.createdAt = baseDate.toISOString();
+      }
+
       const { remoteJid, messageId, text, fromMe } = context;
 
       if (!remoteJid || !messageId) {
@@ -287,11 +296,43 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
       
-      // Fallback: if senderJid matches instance owner JID, or if this is a SEND_MESSAGE event, it's definitely fromMe
+      const cleanSenderName = (senderName || "").trim().toLowerCase();
+      const cleanAgentName = (instanceDetails?.assignedUserName || instanceDetails?.displayLabel || instanceName || "").trim().toLowerCase();
+      const isAgentSender = Boolean(
+        cleanAgentName && (
+          cleanSenderName === cleanAgentName ||
+          (cleanSenderName.includes("xp") && cleanSenderName.includes(cleanAgentName)) ||
+          (cleanAgentName.includes("xp") && cleanAgentName.includes(cleanSenderName)) ||
+          cleanSenderName === `xp ${cleanAgentName}` ||
+          cleanSenderName === `${cleanAgentName} xp` ||
+          cleanSenderName === `xp - ${cleanAgentName}` ||
+          cleanSenderName === `${cleanAgentName} - xp`
+        )
+      );
+      
+      const rawMsg = msg as Record<string, unknown>;
+      const msgKey = (rawMsg.key && typeof rawMsg.key === "object") ? (rawMsg.key as Record<string, unknown>) : {};
+      const payloadParticipantJid = typeof msgKey.participant === "string" 
+        ? msgKey.participant 
+        : typeof rawMsg.participant === "string" 
+          ? rawMsg.participant 
+          : typeof rawMsg.senderJid === "string" 
+            ? rawMsg.senderJid 
+            : null;
+
+      const isAgentJid = Boolean(
+        instanceOwnerJid && 
+        payloadParticipantJid && 
+        areWhatsappJidsEqual(payloadParticipantJid, instanceOwnerJid)
+      );
+      
+      // Fallback: if senderJid matches instance owner JID, if this is a SEND_MESSAGE event, or if pushName matches agent, it's fromMe
       const isFromMe = Boolean(
         context.fromMe || 
         isSendMessageEvent ||
-        (context.isGroup && instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+        isAgentSender ||
+        isAgentJid ||
+        (instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
       );
       
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
