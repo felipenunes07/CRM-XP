@@ -4,6 +4,11 @@ import { verifyToken, type JwtUser } from "./authService.js";
 import { hasPermission } from "./permissionService.js";
 
 export async function requireAuth(request: Request, _response: Response, next: NextFunction) {
+  if (request.method === "OPTIONS") {
+    next();
+    return;
+  }
+
   const header = request.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
     next(new HttpError(401, "Autenticacao obrigatoria"));
