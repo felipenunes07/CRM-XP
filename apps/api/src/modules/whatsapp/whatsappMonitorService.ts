@@ -1942,81 +1942,79 @@ export async function getWhatsappDailySummaryReport(
   // Use provided date or default to current date in America/Sao_Paulo timezone
   const dateStr = dateInput || new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
 
-  // 1. Query New Customers of the day
+  // 1. Query New Customers of the day (Optimized: filters by date first, then runs fast NOT EXISTS index lookup)
   const newCustomersResult = await pool.query(
     `
-    WITH first_orders AS (
-      SELECT
-        customer_id,
-        MIN(order_date) as first_order_date
-      FROM orders
-      GROUP BY customer_id
-    )
     SELECT
       c.customer_code,
       c.display_name,
       o.total_amount::numeric(14,2) as total_amount,
       o.item_count,
       COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') as last_attendant
-    FROM first_orders fo
-    JOIN customers c ON c.id = fo.customer_id
-    JOIN orders o ON o.customer_id = fo.customer_id AND o.order_date = fo.first_order_date
-    WHERE fo.first_order_date = $1::date
+    FROM orders o
+    JOIN customers c ON c.id = o.customer_id
+    WHERE o.order_date = $1::date
+      AND NOT EXISTS (
+        SELECT 1 FROM orders o2 
+        WHERE o2.customer_id = o.customer_id 
+          AND o2.order_date < $1::date
+      )
     ORDER BY o.total_amount DESC, c.display_name ASC
     `,
     [dateStr]
   );
 
-  // 2. Query Recovered Customers of the day
+  // 2. Query Recovered Customers of the day (Optimized: filters by date first, then retrieves prior order using MAX index)
   const recoveredCustomersResult = await pool.query(
     `
-    WITH ordered_orders AS (
+    WITH scoped_orders AS (
       SELECT
-        customer_id,
-        order_date,
-        total_amount,
-        item_count,
-        COALESCE(NULLIF(last_attendant, ''), 'Sem atendente') as last_attendant,
-        LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) as previous_order_date
-      FROM orders
+        o.customer_id,
+        o.order_date,
+        o.total_amount,
+        o.item_count,
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') as last_attendant,
+        (
+          SELECT MAX(o2.order_date) 
+          FROM orders o2 
+          WHERE o2.customer_id = o.customer_id 
+            AND o2.order_date < o.order_date
+        ) as previous_order_date
+      FROM orders o
+      WHERE o.order_date = $1::date
     )
     SELECT
       c.customer_code,
       c.display_name,
-      oo.total_amount::numeric(14,2) as total_amount,
-      oo.item_count,
-      oo.last_attendant,
-      oo.previous_order_date::text as previous_order_date,
-      (oo.order_date - oo.previous_order_date)::int as days_inactive
-    FROM ordered_orders oo
-    JOIN customers c ON c.id = oo.customer_id
-    WHERE oo.order_date = $1::date
-      AND oo.previous_order_date IS NOT NULL
-      AND (oo.order_date - oo.previous_order_date) >= 90
-    ORDER BY oo.total_amount DESC, c.display_name ASC
+      so.total_amount::numeric(14,2) as total_amount,
+      so.item_count,
+      so.last_attendant,
+      so.previous_order_date::text as previous_order_date,
+      (so.order_date - so.previous_order_date)::int as days_inactive
+    FROM scoped_orders so
+    JOIN customers c ON c.id = so.customer_id
+    WHERE so.previous_order_date IS NOT NULL
+      AND (so.order_date - so.previous_order_date) >= 90
+    ORDER BY so.total_amount DESC, c.display_name ASC
     `,
     [dateStr]
   );
 
-  // 3. Query Sales Performance for the day
+  // 3. Query Sales Performance for the day (Optimized: calculates sum of items only for the days' orders)
   const salesPerformanceResult = await pool.query(
     `
-    WITH order_item_totals AS (
-      SELECT
-        oi.order_id,
-        COALESCE(SUM(oi.quantity), 0)::int AS total_items
-      FROM order_items oi
-      GROUP BY oi.order_id
-    ),
-    scoped_orders AS (
+    WITH scoped_orders AS (
       SELECT
         o.id,
         o.customer_id,
         COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
         COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
-        COALESCE(oit.total_items, 0)::int AS total_items
+        COALESCE((
+          SELECT SUM(oi.quantity)
+          FROM order_items oi
+          WHERE oi.order_id = o.id
+        ), 0)::int AS total_items
       FROM orders o
-      LEFT JOIN order_item_totals oit ON oit.order_id = o.id
       WHERE o.order_date = $1::date
     )
     SELECT
@@ -2032,7 +2030,7 @@ export async function getWhatsappDailySummaryReport(
     [dateStr]
   );
 
-  // 4. Query Chat Activities for the day
+  // 4. Query Chat Activities for the day (Optimized: removed unindexed multi-OR outer joins and handles resolving in JS memory)
   const where: string[] = [
     "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
     "da.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
@@ -2049,8 +2047,11 @@ export async function getWhatsappDailySummaryReport(
         da.actor_user_id = $2
         OR d.assigned_to = $2
         OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($3)
-        OR wi_base.assigned_user_id = $2
-        OR LOWER(COALESCE(wi_base.assigned_user_name, '')) = LOWER($3)
+        OR EXISTS (
+          SELECT 1 FROM whatsapp_instances wi_sub 
+          WHERE wi_sub.id = d.whatsapp_instance_id 
+            AND (wi_sub.assigned_user_id = $2 OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3))
+        )
       )
     `);
   }
@@ -2058,54 +2059,32 @@ export async function getWhatsappDailySummaryReport(
   const activitiesResult = await pool.query(
     `
     SELECT
-      COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
-      COALESCE(
-        CASE 
-          WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL 
-          THEN u.name
-          ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name)
-        END,
-        'Sem agente'
-      ) AS agent_name,
       da.activity_type,
       da.actor_user_id,
       da.actor_name,
       da.content,
       da.metadata,
       da.created_at,
-      COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
-      COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name
+      d.assigned_to,
+      d.assigned_to_name,
+      d.whatsapp_instance_id,
+      d.whatsapp_jid,
+      d.customer_display_name,
+      d.title
     FROM deal_activities da
     JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN whatsapp_instances wi_base ON (
-      wi_base.id = d.whatsapp_instance_id 
-      OR LOWER(wi_base.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
-    )
-    LEFT JOIN users u ON (
-      u.id = da.actor_user_id 
-      OR u.id = d.assigned_to
-      OR u.id = wi_base.assigned_user_id
-      OR LOWER(u.name) = LOWER(da.actor_name)
-      OR LOWER(u.name) = LOWER(d.assigned_to_name)
-      OR LOWER(u.name) = LOWER(wi_base.assigned_user_name)
-    )
-    LEFT JOIN LATERAL (
-      SELECT wi_match.*
-      FROM whatsapp_instances wi_match
-      WHERE (wi_match.id = d.whatsapp_instance_id OR wi_match.assigned_user_id = u.id)
-      ORDER BY
-        CASE
-          WHEN wi_match.id = d.whatsapp_instance_id THEN 0
-          WHEN wi_match.assigned_user_id = u.id THEN 1
-          ELSE 2
-        END
-      LIMIT 1
-    ) wi ON true
     WHERE ${where.join("\n      AND ")}
     ORDER BY da.created_at ASC, da.id ASC
     `,
     params
   );
+
+  // Fetch all users and whatsapp instances for fast in-memory name mapping
+  const usersRes = await pool.query("SELECT id, name FROM users");
+  const instancesRes = await pool.query("SELECT id, instance_name, display_label, assigned_user_id, assigned_user_name FROM whatsapp_instances");
+  
+  const users = usersRes.rows;
+  const instances = instancesRes.rows;
 
   // Group activity data by agent
   const agentsMap = new Map<string, {
@@ -2130,12 +2109,40 @@ export async function getWhatsappDailySummaryReport(
   const pendingInboundByAgentConversation = new Map<string, Date>();
 
   for (const row of activitiesResult.rows) {
-    const agentId = String(row.agent_id ?? "sem-agente");
-    const agentName = String(row.agent_name ?? "Sem agente");
-    const remoteJid = String(row.remote_jid);
+    // Resolve WhatsApp instance (in-memory, highly efficient)
+    const metadataInstance = row.metadata?.instance ? String(row.metadata.instance).toLowerCase() : "";
+    const wi = instances.find(inst => 
+      inst.id === row.whatsapp_instance_id || 
+      (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
+    );
+
+    // Resolve matched user (in-memory fallback mapping, avoids unindexed outer joins)
+    const actorName = row.actor_name ? String(row.actor_name).toLowerCase() : "";
+    const assignedToName = row.assigned_to_name ? String(row.assigned_to_name).toLowerCase() : "";
+    const wiAssignedUserName = wi?.assigned_user_name ? String(wi.assigned_user_name).toLowerCase() : "";
+
+    const matchedUser = users.find(u => 
+      u.id === row.actor_user_id ||
+      u.id === row.assigned_to ||
+      (wi && u.id === wi.assigned_user_id) ||
+      (actorName && u.name && u.name.toLowerCase() === actorName) ||
+      (assignedToName && u.name && u.name.toLowerCase() === assignedToName) ||
+      (wiAssignedUserName && u.name && u.name.toLowerCase() === wiAssignedUserName)
+    );
+
+    const agentId = matchedUser 
+      ? String(matchedUser.id)
+      : (wi ? `instance:${wi.id}` : 'sem-agente');
+
+    const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
+    const agentName = matchedUser 
+      ? matchedUser.name 
+      : (wiLabel || 'Sem agente');
+
+    const remoteJid = String(row.metadata?.remoteJid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
-    const chatName = row.chat_name ? String(row.chat_name) : (isGroup ? "Grupo sem nome" : "Particular sem nome");
+    const chatName = row.metadata?.chatDisplayName || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : "Particular sem nome");
     const createdAt = new Date(String(row.created_at));
 
     if (isOutbound) totalSent++;
