@@ -1590,9 +1590,10 @@ export async function getWhatsappAgentActivityReport(
       da.activity_type,
       da.actor_user_id::text AS actor_user_id,
       da.actor_name,
-      da.content,
-      da.metadata,
       da.created_at,
+      (da.metadata ->> 'instance')::text AS metadata_instance,
+      (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
+      (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
       d.assigned_to,
       d.assigned_to_name,
       d.whatsapp_instance_id,
@@ -1679,7 +1680,7 @@ export async function getWhatsappAgentActivityReport(
     }
 
     // Resolve WhatsApp instance (in-memory, highly efficient)
-    const metadataInstance = row.metadata?.instance ? String(row.metadata.instance).toLowerCase() : "";
+    const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
     const wi = instances.find(inst => 
       inst.id === row.whatsapp_instance_id || 
       (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
@@ -1720,7 +1721,7 @@ export async function getWhatsappAgentActivityReport(
     const phoneNumber = wi ? wi.phone_number : null;
     const profilePictureUrl = wi ? wi.profile_picture_url : null;
 
-    const remoteJid = String(row.metadata?.remoteJid || row.whatsapp_jid || "");
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     if (!remoteJid) {
       continue;
     }
@@ -1728,10 +1729,10 @@ export async function getWhatsappAgentActivityReport(
     const isGroup = remoteJid.endsWith("@g.us");
     const groupClass = classifyWhatsappGroup({
       isGroup,
-      name: row.metadata?.chatDisplayName || row.customer_display_name || row.title,
+      name: row.metadata_chat_display_name || row.customer_display_name || row.title,
     });
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
-    const chatName = row.metadata?.chatDisplayName || row.customer_display_name || row.title || "";
+    const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || "";
     const createdAt = new Date(String(row.created_at));
 
     const isCurrentPeriod = localDate >= pivotDate;
@@ -2079,9 +2080,10 @@ export async function getWhatsappDailySummaryReport(
       da.activity_type,
       da.actor_user_id,
       da.actor_name,
-      da.content,
-      da.metadata,
       da.created_at,
+      (da.metadata ->> 'instance')::text AS metadata_instance,
+      (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
+      (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
       d.assigned_to,
       d.assigned_to_name,
       d.whatsapp_instance_id,
@@ -2127,7 +2129,7 @@ export async function getWhatsappDailySummaryReport(
 
   for (const row of activitiesResult.rows) {
     // Resolve WhatsApp instance (in-memory, highly efficient)
-    const metadataInstance = row.metadata?.instance ? String(row.metadata.instance).toLowerCase() : "";
+    const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
     const wi = instances.find(inst => 
       inst.id === row.whatsapp_instance_id || 
       (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
@@ -2156,10 +2158,10 @@ export async function getWhatsappDailySummaryReport(
       ? matchedUser.name 
       : (wiLabel || 'Sem agente');
 
-    const remoteJid = String(row.metadata?.remoteJid || row.whatsapp_jid || "");
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
-    const chatName = row.metadata?.chatDisplayName || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : "Particular sem nome");
+    const chatName = row.metadata_chat_display_name || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : "Particular sem nome");
     const createdAt = new Date(String(row.created_at));
 
     if (isOutbound) totalSent++;
