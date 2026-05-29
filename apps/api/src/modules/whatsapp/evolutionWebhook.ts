@@ -1,5 +1,6 @@
 import { pool, redis } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
+import { env } from "../../lib/env.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   extractEvolutionMessageContext,
@@ -221,6 +222,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
   });
 
   for (const msg of messages) {
+    let idempotencyKey: string | null = null;
     try {
       const context = extractEvolutionMessageContext(msg, payload.instance);
       
@@ -244,18 +246,81 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         continue;
       }
 
-      // Deduplicate webhook events by messageId in the last 60 seconds using Redis
-      const redisKey = `webhook:msg:${messageId}`;
-      const isDuplicate = await redis.get(redisKey);
-      if (isDuplicate) {
-        logger.info("evolution webhook skipped duplicate message", {
+      // Check group message filtering
+      if (context.isGroup && !env.EVOLUTION_PROCESS_GROUP_MESSAGES) {
+        logger.info("evolution webhook skipped message: group messages are disabled", {
           instance,
           remoteJid,
           messageId,
         });
+
+        idempotencyKey = `evolution:${messageId}:${remoteJid}`;
+        try {
+          await pool.query(
+            `
+            INSERT INTO webhook_events (
+              provider, event_type, idempotency_key, message_id, remote_jid,
+              instance_name, status, received_at, processed_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+            ON CONFLICT (idempotency_key) DO NOTHING
+            `,
+            [
+              "evolution",
+              event,
+              idempotencyKey,
+              messageId,
+              remoteJid,
+              instance,
+              "ignored"
+            ]
+          );
+        } catch (dbErr) {
+          logger.warn("Failed to record ignored group event in webhook_events", { error: String(dbErr) });
+        }
+
+        if (messages.length === 1) {
+          return { ignored: true };
+        }
         continue;
       }
-      await redis.set(redisKey, "1", "EX", 60);
+
+      idempotencyKey = `evolution:${messageId}:${remoteJid}`;
+
+      // Insert event into webhook_events table for idempotency
+      const insertEvent = await pool.query(
+        `
+        INSERT INTO webhook_events (
+          provider, event_type, idempotency_key, message_id, remote_jid,
+          instance_name, status, received_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        ON CONFLICT (idempotency_key) DO NOTHING
+        RETURNING id
+        `,
+        [
+          "evolution",
+          event,
+          idempotencyKey,
+          messageId,
+          remoteJid,
+          instance,
+          "processing"
+        ]
+      );
+
+      if (insertEvent.rowCount === 0) {
+        logger.info("evolution webhook skipped duplicate message via database", {
+          instance,
+          remoteJid,
+          messageId,
+          idempotencyKey,
+        });
+        if (messages.length === 1) {
+          return { duplicated: true };
+        }
+        continue;
+      }
 
       logger.info("evolution webhook processing message", {
         instance,
@@ -263,6 +328,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         messageId,
         fromMe,
         hasText: !!text,
+        idempotencyKey,
       });
 
       if (!isMonitorableWhatsappJid(remoteJid)) {
@@ -432,12 +498,16 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const dealMatch = await pool.query(
         `
         WITH existing_message_deal AS (
-          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at
+          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id
           FROM deal_activities da
           JOIN deals d ON d.id = da.deal_id
           WHERE da.metadata ->> 'messageId' = $1
-             OR da.metadata ->> 'providerMessageId' = $1
-          ORDER BY da.created_at DESC, da.id DESC
+          UNION ALL
+          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id
+          FROM deal_activities da
+          JOIN deals d ON d.id = da.deal_id
+          WHERE da.metadata ->> 'providerMessageId' = $1
+          ORDER BY created_at DESC, activity_id DESC
           LIMIT 1
         ),
         remote_jid_deal AS (
@@ -634,6 +704,18 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         }
       }
 
+      // Update status of the webhook event to processed
+      if (idempotencyKey) {
+        try {
+          await pool.query(
+            "UPDATE webhook_events SET status = $1, processed_at = NOW() WHERE idempotency_key = $2",
+            ["processed", idempotencyKey]
+          );
+        } catch (dbErr) {
+          logger.warn("Failed to update webhook_events status to processed", { error: String(dbErr) });
+        }
+      }
+
       processedCount++;
     } catch (err: any) {
       logger.error("Error processing single evolution webhook message", {
@@ -642,6 +724,18 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         error: err.message || err,
         stack: err.stack,
       });
+
+      // Update status of the webhook event to error
+      if (idempotencyKey) {
+        try {
+          await pool.query(
+            "UPDATE webhook_events SET status = $1, error = $2, processed_at = NOW() WHERE idempotency_key = $3",
+            ["error", err.message || String(err), idempotencyKey]
+          );
+        } catch (dbErr) {
+          logger.warn("Failed to update webhook_events status to error", { error: String(dbErr) });
+        }
+      }
       // Continue loop instead of throwing and crashing the entire webhook payload batch
     }
   }

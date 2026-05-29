@@ -1349,4 +1349,30 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_message_created
     ON whatsapp_incoming_messages(message_id, created_at DESC);
   `,
+  `
+  -- Evolution API Webhook Idempotency & Database Optimizations
+  CREATE TABLE IF NOT EXISTS webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider VARCHAR(50) NOT NULL DEFAULT 'evolution',
+    event_type VARCHAR(100) NOT NULL,
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    message_id VARCHAR(200),
+    remote_jid VARCHAR(200),
+    instance_name VARCHAR(100),
+    instance_id UUID,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    status VARCHAR(50) NOT NULL,
+    error TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_webhook_events_idempotency_key ON webhook_events(idempotency_key);
+  CREATE INDEX IF NOT EXISTS idx_webhook_events_received_at ON webhook_events(received_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid ON deals(whatsapp_jid);
+  CREATE INDEX IF NOT EXISTS idx_pipeline_stages_won_lost ON pipeline_stages(is_won, is_lost);
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_provider_id 
+    ON deal_activities ((metadata ->> 'providerMessageId')) 
+    WHERE metadata ? 'providerMessageId';
+  `,
 ];

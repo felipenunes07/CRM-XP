@@ -121,21 +121,29 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("only falls back to unassigned deals when the deal belongs to the instance owner", async () => {
-    mocks.query
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: "instance-amanda",
-            display_label: "Amanda",
-            phone_number: "+55 11 91234-5678",
-            assigned_user_id: "user-amanda",
-            assigned_user_name: "Amanda",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+      if (sql.includes("webhook_events")) {
+        return { rowCount: 1, rows: [{ id: "mock-event-id" }] };
+      }
+      if (sql.includes("whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-amanda",
+              display_label: "Amanda",
+              phone_number: "+55 11 91234-5678",
+              assigned_user_id: "user-amanda",
+              assigned_user_name: "Amanda",
+            },
+          ],
+        };
+      }
+      if (sql.includes("pipeline_stages")) {
+        return { rows: [{ id: "stage-1" }] };
+      }
+      return { rows: [] };
+    });
 
     await handleEvolutionWebhook({
       event: "MESSAGES_UPSERT",
@@ -154,7 +162,7 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const dealMatchCall = mocks.query.mock.calls[2];
+    const dealMatchCall = mocks.query.mock.calls[3];
     expect(dealMatchCall).toBeDefined();
     const dealMatchQuery = String(dealMatchCall![0]);
     const dealMatchParams = dealMatchCall![1];
@@ -172,28 +180,36 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("keeps private inbound messages from the customer on the inbound side when Evolution sender is the connection", async () => {
-    mocks.query
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: "instance-amanda",
-            display_label: "Amanda",
-            phone_number: "+55 11 91234-5678",
-            assigned_user_id: "user-amanda",
-            assigned_user_name: "Amanda",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: "deal-1",
-            whatsapp_instance_id: "instance-amanda",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [] });
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+      if (sql.includes("webhook_events")) {
+        return { rowCount: 1, rows: [{ id: "mock-event-id" }] };
+      }
+      if (sql.includes("whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-amanda",
+              display_label: "Amanda",
+              phone_number: "+55 11 91234-5678",
+              assigned_user_id: "user-amanda",
+              assigned_user_name: "Amanda",
+            },
+          ],
+        };
+      }
+      if (sql.includes("existing_message_deal") || sql.includes("remote_jid_deal")) {
+        return {
+          rows: [
+            {
+              id: "deal-1",
+              whatsapp_instance_id: "instance-amanda",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
 
     await handleEvolutionWebhook({
       event: "MESSAGES_UPSERT",
@@ -213,8 +229,8 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const incomingInsertParams = mocks.query.mock.calls[1]?.[1];
-    const activityInsertParams = mocks.query.mock.calls[3]?.[1];
+    const incomingInsertParams = mocks.query.mock.calls[2]?.[1];
+    const activityInsertParams = mocks.query.mock.calls[4]?.[1];
 
     expect(incomingInsertParams?.[11]).toBe(false);
     expect(activityInsertParams?.[1]).toBe("WHATSAPP_RECEIVED");
@@ -222,28 +238,36 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("matches send webhooks to the existing CRM reply by message id before creating a LID conversation", async () => {
-    mocks.query
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: "instance-suelen",
-            display_label: "Suelen",
-            phone_number: "+55 11 91234-5678",
-            assigned_user_id: "user-suelen",
-            assigned_user_name: "Suelen",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: "deal-leomar",
-            whatsapp_instance_id: "instance-suelen",
-          },
-        ],
-      })
-      .mockResolvedValueOnce({ rows: [] });
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+      if (sql.includes("webhook_events")) {
+        return { rowCount: 1, rows: [{ id: "mock-event-id" }] };
+      }
+      if (sql.includes("whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-suelen",
+              display_label: "Suelen",
+              phone_number: "+55 11 91234-5678",
+              assigned_user_id: "user-suelen",
+              assigned_user_name: "Suelen",
+            },
+          ],
+        };
+      }
+      if (sql.includes("existing_message_deal") || sql.includes("remote_jid_deal")) {
+        return {
+          rows: [
+            {
+              id: "deal-leomar",
+              whatsapp_instance_id: "instance-suelen",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
 
     await handleEvolutionWebhook({
       event: "SEND_MESSAGE",
@@ -261,7 +285,7 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const dealMatchCall = mocks.query.mock.calls[2];
+    const dealMatchCall = mocks.query.mock.calls[3];
     expect(dealMatchCall).toBeDefined();
     const dealMatchQuery = String(dealMatchCall![0]);
     const dealMatchParams = dealMatchCall![1];

@@ -110,6 +110,10 @@ const envSchema = z.object({
   PROSPECTING_PLACE_DETAILS_DAILY_LIMIT: z.coerce.number().int().positive().default(25),
   PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT: z.coerce.number().int().positive().default(800),
   PROSPECTING_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  EVOLUTION_PROCESS_GROUP_MESSAGES: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export const env = envSchema.parse(process.env);
