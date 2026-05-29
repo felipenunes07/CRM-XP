@@ -26,6 +26,15 @@ vi.mock("../events/eventsService.js", () => ({
   createEventFromMessage: mocks.createEventFromMessage,
 }));
 
+// Force group-message processing ON so the cross-instance dedup path is exercised.
+vi.mock("../../lib/env.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/env.js")>();
+  return {
+    ...actual,
+    env: { ...actual.env, EVOLUTION_PROCESS_GROUP_MESSAGES: true },
+  };
+});
+
 import { handleEvolutionWebhook } from "./evolutionWebhook.js";
 import {
   classifyWhatsappReportConversation,
@@ -386,6 +395,87 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("DISTINCT ON");
     expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
     expect(listSql).toContain("LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))");
+  });
+
+  it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
+    let webhookInsertCount = 0;
+    let dealMatchCount = 0;
+    let activityInsertCount = 0;
+    let dealUpdateCount = 0;
+
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+
+      // Strong idempotency gate: only the first instance wins the INSERT.
+      if (sql.includes("INSERT INTO webhook_events") && sql.includes("RETURNING id")) {
+        webhookInsertCount += 1;
+        return webhookInsertCount === 1
+          ? { rowCount: 1, rows: [{ id: "evt-1" }] }
+          : { rowCount: 0, rows: [] };
+      }
+      if (sql.includes("whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-amanda",
+              display_label: "Amanda",
+              phone_number: "+55 11 91234-5678",
+              assigned_user_id: "user-amanda",
+              assigned_user_name: "Amanda",
+            },
+          ],
+        };
+      }
+      if (sql.includes("existing_message_deal") || sql.includes("remote_jid_deal")) {
+        dealMatchCount += 1;
+        return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
+      }
+      if (sql.includes("INSERT INTO deal_activities")) {
+        activityInsertCount += 1;
+        return { rows: [] };
+      }
+      if (sql.includes("UPDATE deals SET last_activity_at")) {
+        dealUpdateCount += 1;
+        return { rows: [] };
+      }
+      if (sql.includes("pipeline_stages")) {
+        return { rows: [{ id: "stage-1" }] };
+      }
+      return { rows: [] };
+    });
+
+    const groupMessageFrom = (instance: string) => ({
+      event: "MESSAGES_UPSERT",
+      instance,
+      data: {
+        key: {
+          remoteJid: "120363409565036327@g.us",
+          id: "ACBEA60BD6C30AAE8783B67819DFABB4",
+          fromMe: false,
+          participant: "5511993372917@s.whatsapp.net",
+        },
+        pushName: "Cliente",
+        message: { conversation: "Ola grupo" },
+        messageTimestamp: 1779364800,
+      },
+    });
+
+    const first = await handleEvolutionWebhook(groupMessageFrom("amanda"));
+    const second = await handleEvolutionWebhook(groupMessageFrom("pedro"));
+    const third = await handleEvolutionWebhook(groupMessageFrom("Suelen"));
+
+    // The first instance processes the message normally.
+    expect(first).toEqual({ processed: true, processedCount: 1 });
+    // The other two are short-circuited as duplicates.
+    expect(second).toEqual({ duplicated: true });
+    expect(third).toEqual({ duplicated: true });
+
+    // All three hit the idempotency gate...
+    expect(webhookInsertCount).toBe(3);
+    // ...but the heavy work runs exactly once.
+    expect(dealMatchCount).toBe(1);
+    expect(activityInsertCount).toBe(1);
+    expect(dealUpdateCount).toBe(1);
   });
 
   it("can restrict the conversation list to sent interactions from the selected WhatsApp user", async () => {

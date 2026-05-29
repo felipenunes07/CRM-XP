@@ -1063,7 +1063,15 @@ export async function getWhatsappMonitorConversation(
         LIMIT 1
       ) participant_profile ON true
       WHERE wim.remote_jid = $1
-        AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+        AND (
+          -- Group chats are shared across every connected instance. Since the
+          -- webhook now stores each group message only once (idempotency dedup),
+          -- the message must stay visible to every seller who has a deal for this
+          -- group, regardless of which instance physically received it. Private
+          -- (1:1) chats remain isolated to the owning instance.
+          $1 LIKE '%@g.us'
+          OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+        )
       ORDER BY wim.created_at ASC, wim.id ASC
       LIMIT 300
       `,

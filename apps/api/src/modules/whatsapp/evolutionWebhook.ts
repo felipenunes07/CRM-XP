@@ -725,15 +725,19 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         stack: err.stack,
       });
 
-      // Update status of the webhook event to error
+      // Release the idempotency slot on failure so a legitimate provider retry
+      // can reprocess the message. Downstream writes are already idempotent by
+      // messageId (whatsapp_incoming_messages ON CONFLICT, deal_activities NOT EXISTS),
+      // so reprocessing will not create duplicates. Leaving the row marked as
+      // "error" would permanently block retries and silently drop the message.
       if (idempotencyKey) {
         try {
           await pool.query(
-            "UPDATE webhook_events SET status = $1, error = $2, processed_at = NOW() WHERE idempotency_key = $3",
-            ["error", err.message || String(err), idempotencyKey]
+            "DELETE FROM webhook_events WHERE idempotency_key = $1 AND status = 'processing'",
+            [idempotencyKey]
           );
         } catch (dbErr) {
-          logger.warn("Failed to update webhook_events status to error", { error: String(dbErr) });
+          logger.warn("Failed to release webhook_events idempotency slot after error", { error: String(dbErr) });
         }
       }
       // Continue loop instead of throwing and crashing the entire webhook payload batch
