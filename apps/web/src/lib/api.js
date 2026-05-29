@@ -9,6 +9,11 @@ async function request(path, options = {}, token) {
         },
     });
     if (!response.ok) {
+        if (response.status === 401) {
+            import("./supabase").then(({ supabase }) => {
+                supabase.auth.signOut().catch(() => { });
+            }).catch(() => { });
+        }
         const payload = (await response.json().catch(() => ({ message: "Request failed" })));
         throw new Error(payload.message ?? "Request failed");
     }

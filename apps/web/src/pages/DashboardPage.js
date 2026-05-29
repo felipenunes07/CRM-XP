@@ -761,9 +761,17 @@ export function DashboardPage() {
             setIsSyncing(true);
             const syncStartTime = Date.now();
             localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
-            await api.syncData(token, "queue");
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            await api.syncData(token, "direct");
             await dashboardQuery.refetch();
+            await agendaQuery.refetch();
+            if (selectedBucket) {
+                await filteredCustomersQuery.refetch();
+            }
+            else if (!selectedSaleMonth) {
+                await priorityCustomersQuery.refetch();
+            }
+            localStorage.removeItem('dashboard_sync_in_progress');
+            setIsSyncing(false);
         }
         catch (err) {
             alert(tx("Falha na sincronizacao: ", "同步失败：") + String(err));
