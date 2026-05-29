@@ -504,4 +504,78 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("agent_interaction_activity.created_at >=");
     expect(listSql).toContain("agent_interaction_activity.activity_type = 'WHATSAPP_SENT'");
   });
+
+  it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {
+    const groupJid = "120363409565036327@g.us";
+    // The list query is mocked, so we assert (a) the SQL sources the group
+    // preview from the canonical incoming message by remote_jid (instance
+    // agnostic) and (b) every seller row for that group surfaces the same
+    // last message after mapping.
+    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
+      rows: [
+        {
+          id: "deal-amanda",
+          title: "Grupo XP Cliente",
+          customer_display_name: "Grupo XP Cliente",
+          whatsapp_jid: groupJid,
+          whatsapp_instance_id: "instance-amanda",
+          instance_name: "amanda",
+          instance_display_label: "Amanda",
+          stage_name: "Atendimento",
+          last_message_content: "Ola grupo",
+          last_message_at: "2026-05-21T12:00:00.000Z",
+          event_count: 1,
+          inbound_count: 1,
+          unread_after_read: 0,
+          marked_unread: false,
+        },
+        {
+          id: "deal-pedro",
+          title: "Grupo XP Cliente",
+          customer_display_name: "Grupo XP Cliente",
+          whatsapp_jid: groupJid,
+          whatsapp_instance_id: "instance-pedro",
+          instance_name: "pedro",
+          instance_display_label: "Pedro",
+          stage_name: "Atendimento",
+          // Pedro does NOT own the deal_activity (dedup attached it elsewhere),
+          // yet the group preview is still populated from the shared message.
+          last_message_content: "Ola grupo",
+          last_message_at: "2026-05-21T12:00:00.000Z",
+          event_count: 0,
+          inbound_count: 0,
+          unread_after_read: 0,
+          marked_unread: false,
+        },
+      ],
+    });
+
+    const result = await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls[1];
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    // Group preview/last message comes from the canonical incoming message by
+    // remote_jid, regardless of which instance received it.
+    expect(listSql).toContain("group_latest_message");
+    expect(listSql).toContain("wim_group.remote_jid = d.whatsapp_jid");
+    expect(listSql).toMatch(/d\.whatsapp_jid LIKE '%@g\.us'/);
+    // Private (1:1) chats keep deriving the preview from their own deal_activities.
+    expect(listSql).toContain("ELSE latest_whatsapp.content");
+
+    // Every seller with a deal for the group surfaces the same last message,
+    // even though the message is stored (and processed) only once.
+    const amanda = result.conversations.find((c: { id: string }) => c.id === "deal-amanda");
+    const pedro = result.conversations.find((c: { id: string }) => c.id === "deal-pedro");
+    expect(amanda?.isGroup).toBe(true);
+    expect(pedro?.isGroup).toBe(true);
+    expect(amanda?.lastMessage).toBe("Ola grupo");
+    expect(pedro?.lastMessage).toBe("Ola grupo");
+  });
 });

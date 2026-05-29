@@ -626,8 +626,16 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         incoming_profile.sender_profile_picture_url,
         incoming_inbound_profile.inbound_sender_picture
       ) AS profile_picture_url,
-      latest_whatsapp.content AS last_message_content,
-      COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) AS last_message_at,
+      CASE
+        WHEN d.whatsapp_jid LIKE '%@g.us'
+          THEN COALESCE(group_latest_message.content, latest_whatsapp.content)
+        ELSE latest_whatsapp.content
+      END AS last_message_content,
+      CASE
+        WHEN d.whatsapp_jid LIKE '%@g.us'
+          THEN COALESCE(group_latest_message.created_at, activity_stats.last_message_at, d.last_activity_at, d.created_at)
+        ELSE COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at)
+      END AS last_message_at,
       COALESCE(activity_stats.event_count, 0)::int AS event_count,
       COALESCE(activity_stats.inbound_count, 0)::int AS inbound_count,
       COALESCE((
@@ -647,6 +655,23 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
     LEFT JOIN latest_whatsapp ON latest_whatsapp.deal_id = d.id AND latest_whatsapp.rn = 1
     LEFT JOIN activity_stats ON activity_stats.deal_id = d.id
+    LEFT JOIN LATERAL (
+      -- Group chats are shared across every connected instance. The webhook now
+      -- stores each group message only once (idempotency dedup), so the list
+      -- preview / last message for a group is derived from the canonical
+      -- whatsapp_incoming_messages row by remote_jid, ignoring which instance
+      -- physically received it. This keeps the preview visible to every seller
+      -- who has a deal for that group. Private (1:1) chats keep deriving the
+      -- preview from their own deal_activities, isolated per instance.
+      SELECT
+        wim_group.message_text AS content,
+        wim_group.created_at AS created_at
+      FROM whatsapp_incoming_messages wim_group
+      WHERE d.whatsapp_jid LIKE '%@g.us'
+        AND wim_group.remote_jid = d.whatsapp_jid
+      ORDER BY wim_group.created_at DESC, wim_group.id DESC
+      LIMIT 1
+    ) group_latest_message ON true
     LEFT JOIN whatsapp_conversation_reads conversation_reads
       ON conversation_reads.deal_id = d.id
       AND conversation_reads.user_id = $${userIdParamIndex}
