@@ -418,58 +418,86 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
       const dealMatch = await pool.query(
         `
-        SELECT d.id, d.whatsapp_instance_id FROM deals d
-        JOIN pipeline_stages ps ON ps.id = d.stage_id
-        WHERE ps.is_won = false AND ps.is_lost = false
-          AND (
-            d.whatsapp_jid = $1
-            OR (
-              $1 NOT LIKE '%@g.us'
-              AND d.whatsapp_jid NOT LIKE '%@g.us'
-              AND (
-                regexp_replace(d.whatsapp_jid, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g')
-                OR (
-                  length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 10
-                  AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
-                  AND (
-                    CASE
-                      WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
-                        substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
-                      WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
-                        substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
-                      ELSE
-                        right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 10)
-                    END
-                  ) = (
-                    CASE
-                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 13 AND substring(regexp_replace($1, '\\D', '', 'g') from 5 for 1) = '9') THEN
-                        substring(regexp_replace($1, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
-                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 11 AND substring(regexp_replace($1, '\\D', '', 'g') from 3 for 1) = '9') THEN
-                        substring(regexp_replace($1, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
-                      ELSE
-                        right(regexp_replace($1, '\\D', '', 'g'), 10)
-                    END
+        WITH existing_message_deal AS (
+          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at
+          FROM deal_activities da
+          JOIN deals d ON d.id = da.deal_id
+          WHERE da.metadata ->> 'messageId' = $1
+             OR da.metadata ->> 'providerMessageId' = $1
+          ORDER BY da.created_at DESC, da.id DESC
+          LIMIT 1
+        ),
+        remote_jid_deal AS (
+          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at
+          FROM deals d
+          JOIN pipeline_stages ps ON ps.id = d.stage_id
+          WHERE ps.is_won = false AND ps.is_lost = false
+            AND (
+              d.whatsapp_jid = $2
+              OR (
+                $2 NOT LIKE '%@g.us'
+                AND d.whatsapp_jid NOT LIKE '%@g.us'
+                AND (
+                  regexp_replace(d.whatsapp_jid, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
+                  OR (
+                    length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 10
+                    AND length(regexp_replace($2, '\\D', '', 'g')) >= 10
+                    AND (
+                      CASE
+                        WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                          substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                        WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                          substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                        ELSE
+                          right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 10)
+                      END
+                    ) = (
+                      CASE
+                        WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 13 AND substring(regexp_replace($2, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                          substring(regexp_replace($2, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
+                        WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 11 AND substring(regexp_replace($2, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                          substring(regexp_replace($2, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
+                        ELSE
+                          right(regexp_replace($2, '\\D', '', 'g'), 10)
+                      END
+                    )
                   )
                 )
               )
             )
-          )
-          AND (
-            d.whatsapp_instance_id = $2::uuid
-            OR (
-              d.whatsapp_instance_id IS NULL
-              AND (
-                d.assigned_to = $3::uuid
-                OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($4)
+            AND (
+              d.whatsapp_instance_id = $3::uuid
+              OR (
+                d.whatsapp_instance_id IS NULL
+                AND (
+                  d.assigned_to = $4::uuid
+                  OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)
+                )
               )
             )
-          )
-        ORDER BY
-          CASE WHEN d.whatsapp_instance_id = $2::uuid THEN 0 ELSE 1 END ASC,
-          d.last_activity_at DESC
+          ORDER BY
+            CASE WHEN d.whatsapp_instance_id = $3::uuid THEN 0 ELSE 1 END ASC,
+            d.last_activity_at DESC
+          LIMIT 1
+        )
+        SELECT id, whatsapp_instance_id
+        FROM (
+          SELECT id, whatsapp_instance_id, last_activity_at, 0 AS match_priority
+          FROM existing_message_deal
+          UNION ALL
+          SELECT id, whatsapp_instance_id, last_activity_at, 1 AS match_priority
+          FROM remote_jid_deal
+        ) matched_deals
+        ORDER BY match_priority ASC, last_activity_at DESC NULLS LAST
         LIMIT 1
         `,
-        [remoteJid, instanceDetails?.id ?? null, instanceDetails?.assignedUserId ?? null, instanceDetails?.assignedUserName ?? ""],
+        [
+          messageId,
+          remoteJid,
+          instanceDetails?.id ?? null,
+          instanceDetails?.assignedUserId ?? null,
+          instanceDetails?.assignedUserName ?? "",
+        ],
       );
 
       if (dealMatch.rows[0]) {

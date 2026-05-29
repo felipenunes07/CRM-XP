@@ -120,6 +120,7 @@ function attachmentName(message: WhatsappMonitorMessage) {
 type GroupFilter = "all" | "groups" | "contacts";
 type PeriodFilter = "all" | "today" | "yesterday" | "7d" | "30d";
 type StatusFilter = "all" | "unread" | "risk";
+type AgentInteractionFilter = "all" | "sent";
 
 function metadataString(metadata: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -454,6 +455,7 @@ export function MessagesPage() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
+  const [agentInteractionFilter, setAgentInteractionFilter] = useState<AgentInteractionFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
@@ -523,6 +525,7 @@ export function MessagesPage() {
       debouncedContactPhoneFilter,
       periodFilter,
       statusFilter,
+      agentInteractionFilter,
     ],
     queryFn: () =>
       api.whatsappMonitorConversations(token!, {
@@ -532,6 +535,10 @@ export function MessagesPage() {
         contactPhone: debouncedContactPhoneFilter || undefined,
         period: periodFilter === "all" ? undefined : periodFilter,
         status: statusFilter === "all" ? undefined : statusFilter,
+        agentInteraction:
+          activeAgentId !== "all" && agentInteractionFilter === "sent"
+            ? "sent"
+            : undefined,
       }),
     enabled: Boolean(token),
     refetchInterval: CONVERSATION_REFRESH_MS,
@@ -546,6 +553,12 @@ export function MessagesPage() {
   const agents = conversationsQuery.data?.agents ?? [];
   const conversations = conversationsQuery.data?.conversations ?? [];
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
+
+  useEffect(() => {
+    if (activeAgentId === "all") {
+      setAgentInteractionFilter("all");
+    }
+  }, [activeAgentId]);
 
   const filteredConversations = useMemo(() => {
     let result = conversations;
@@ -738,6 +751,7 @@ export function MessagesPage() {
     Boolean(contactPhoneFilter.trim()) ||
     periodFilter !== "all" ||
     groupFilter !== "all" ||
+    agentInteractionFilter !== "all" ||
     statusFilter !== "all";
 
   useEffect(() => {
@@ -881,6 +895,18 @@ export function MessagesPage() {
           </select>
           <ChevronDown size={18} aria-hidden="true" />
         </label>
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar interacoes do usuario"
+            value={agentInteractionFilter}
+            disabled={activeAgentId === "all"}
+            onChange={(event) => setAgentInteractionFilter(event.target.value as AgentInteractionFilter)}
+          >
+            <option value="all">Usuario: todas as conversas</option>
+            <option value="sent">Somente mensagens do usuario</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
         <button
           type="button"
           className="wa-filter-button"
@@ -891,6 +917,7 @@ export function MessagesPage() {
             setPeriodFilter("all");
             setGroupFilter("all");
             setStatusFilter("all");
+            setAgentInteractionFilter("all");
           }}
         >
           <X size={18} />

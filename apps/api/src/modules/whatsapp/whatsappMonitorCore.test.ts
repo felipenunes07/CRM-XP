@@ -140,6 +140,29 @@ describe("whatsappMonitorCore", () => {
     });
   });
 
+  it("uses a private phone alias instead of a provider LID as the conversation JID", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "269097182986462@lid",
+          fromMe: false,
+          id: "msg-lid-1",
+        },
+        senderPn: "5511998765432@s.whatsapp.net",
+        pushName: "Leomar",
+        message: { conversation: "Bom dia minha amiga. Tudo bem ?" },
+      },
+      "suelen",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      fromMe: false,
+      senderJid: "5511998765432@s.whatsapp.net",
+      senderName: "Leomar",
+    });
+  });
+
   it("ignores the connection sender field for inbound direct messages", () => {
     const context = extractEvolutionMessageContext(
       {

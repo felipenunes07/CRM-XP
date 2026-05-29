@@ -112,14 +112,15 @@ describe("whatsapp conversation isolation", () => {
     const dealMatchParams = dealMatchCall![1];
 
     expect(dealMatchParams).toEqual([
+      "msg-1",
       "5511999998888@s.whatsapp.net",
       "instance-amanda",
       "user-amanda",
       "Amanda",
     ]);
-    expect(dealMatchQuery).toContain("d.whatsapp_instance_id = $2::uuid");
-    expect(dealMatchQuery).toContain("d.assigned_to = $3::uuid");
-    expect(dealMatchQuery).toContain("LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($4)");
+    expect(dealMatchQuery).toContain("d.whatsapp_instance_id = $3::uuid");
+    expect(dealMatchQuery).toContain("d.assigned_to = $4::uuid");
+    expect(dealMatchQuery).toContain("LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)");
   });
 
   it("keeps private inbound messages from the customer on the inbound side when Evolution sender is the connection", async () => {
@@ -170,6 +171,63 @@ describe("whatsapp conversation isolation", () => {
     expect(incomingInsertParams?.[11]).toBe(false);
     expect(activityInsertParams?.[1]).toBe("WHATSAPP_RECEIVED");
     expect(activityInsertParams?.[2]).toBeNull();
+  });
+
+  it("matches send webhooks to the existing CRM reply by message id before creating a LID conversation", async () => {
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-suelen",
+            display_label: "Suelen",
+            phone_number: "+55 11 91234-5678",
+            assigned_user_id: "user-suelen",
+            assigned_user_name: "Suelen",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "deal-leomar",
+            whatsapp_instance_id: "instance-suelen",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await handleEvolutionWebhook({
+      event: "SEND_MESSAGE",
+      instance: "suelen",
+      data: {
+        key: {
+          remoteJid: "269097182986462@lid",
+          id: "reply-1",
+          fromMe: true,
+        },
+        message: {
+          conversation: "Sim, pode deixar",
+        },
+        messageTimestamp: 1779364800,
+      },
+    });
+
+    const dealMatchCall = mocks.query.mock.calls[2];
+    expect(dealMatchCall).toBeDefined();
+    const dealMatchQuery = String(dealMatchCall![0]);
+    const dealMatchParams = dealMatchCall![1];
+
+    expect(dealMatchParams).toEqual([
+      "reply-1",
+      "269097182986462@lid",
+      "instance-suelen",
+      "user-suelen",
+      "Suelen",
+    ]);
+    expect(dealMatchQuery).toContain("existing_message_deal");
+    expect(dealMatchQuery).toContain("metadata ->> 'messageId' = $1");
+    expect(dealMatchQuery).toContain("metadata ->> 'providerMessageId' = $1");
   });
 
   it("uses raw Evolution fromMe=false to render previously misclassified private activity direction", async () => {
@@ -256,5 +314,32 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("DISTINCT ON");
     expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
     expect(listSql).toContain("LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))");
+  });
+
+  it("can restrict the conversation list to sent interactions from the selected WhatsApp user", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations(
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      {
+        instanceId: "00000000-0000-0000-0000-000000000001",
+        period: "today",
+        agentInteraction: "sent",
+      },
+    );
+
+    const listCall = mocks.query.mock.calls[1];
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).toContain("agent_interaction_activity");
+    expect(listSql).toContain("agent_interaction_instance.id = $1");
+    expect(listSql).toContain("agent_interaction_activity.created_at >=");
+    expect(listSql).toContain("agent_interaction_activity.activity_type = 'WHATSAPP_SENT'");
   });
 });

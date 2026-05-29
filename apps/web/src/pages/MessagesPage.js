@@ -227,6 +227,7 @@ export function MessagesPage() {
     const [periodFilter, setPeriodFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState("all");
     const [groupFilter, setGroupFilter] = useState("all");
+    const [agentInteractionFilter, setAgentInteractionFilter] = useState("all");
     const [selectedConversationId, setSelectedConversationId] = useState(urlDealId);
     const [chatMenuOpen, setChatMenuOpen] = useState(false);
     const [replyText, setReplyText] = useState("");
@@ -287,6 +288,7 @@ export function MessagesPage() {
             debouncedContactPhoneFilter,
             periodFilter,
             statusFilter,
+            agentInteractionFilter,
         ],
         queryFn: () => api.whatsappMonitorConversations(token, {
             instanceId: activeAgentId === "all" ? undefined : activeAgentId,
@@ -295,6 +297,9 @@ export function MessagesPage() {
             contactPhone: debouncedContactPhoneFilter || undefined,
             period: periodFilter === "all" ? undefined : periodFilter,
             status: statusFilter === "all" ? undefined : statusFilter,
+            agentInteraction: activeAgentId !== "all" && agentInteractionFilter === "sent"
+                ? "sent"
+                : undefined,
         }),
         enabled: Boolean(token),
         refetchInterval: CONVERSATION_REFRESH_MS,
@@ -308,6 +313,11 @@ export function MessagesPage() {
     const agents = conversationsQuery.data?.agents ?? [];
     const conversations = conversationsQuery.data?.conversations ?? [];
     const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
+    useEffect(() => {
+        if (activeAgentId === "all") {
+            setAgentInteractionFilter("all");
+        }
+    }, [activeAgentId]);
     const filteredConversations = useMemo(() => {
         let result = conversations;
         if (activeAgent) {
@@ -453,6 +463,7 @@ export function MessagesPage() {
         Boolean(contactPhoneFilter.trim()) ||
         periodFilter !== "all" ||
         groupFilter !== "all" ||
+        agentInteractionFilter !== "all" ||
         statusFilter !== "all";
     useEffect(() => {
         const element = chatBodyRef.current;
@@ -526,12 +537,13 @@ export function MessagesPage() {
     if (conversationsQuery.isError) {
         return _jsx("div", { className: "page-error", children: "Nao foi possivel carregar as conversas monitoradas." });
     }
-    return (_jsxs("div", { className: "whatsapp-monitor-page", children: [_jsxs("div", { className: "wa-filter-strip", children: [_jsxs("label", { className: "wa-filter-field", children: [_jsx(Search, { size: 16 }), _jsx("input", { value: contactNameFilter, onChange: (event) => setContactNameFilter(event.target.value), placeholder: "Nome do contato" })] }), _jsx("label", { className: "wa-filter-field phone", children: _jsx("input", { value: contactPhoneFilter, onChange: (event) => setContactPhoneFilter(event.target.value), placeholder: "Telefone do contato" }) }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar periodo", value: periodFilter, onChange: (event) => setPeriodFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Periodo: todos" }), _jsx("option", { value: "today", children: "Hoje" }), _jsx("option", { value: "yesterday", children: "Ontem" }), _jsx("option", { value: "7d", children: "Ultimos 7 dias" }), _jsx("option", { value: "30d", children: "Ultimos 30 dias" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar grupos", value: groupFilter, onChange: (event) => setGroupFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Grupo: todos" }), _jsx("option", { value: "groups", children: "Somente grupos" }), _jsx("option", { value: "contacts", children: "Sem grupo" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar status", value: statusFilter, onChange: (event) => setStatusFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Status: todos" }), _jsx("option", { value: "unread", children: "Nao lidas" }), _jsx("option", { value: "risk", children: "Com alerta" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("button", { type: "button", className: "wa-filter-button", disabled: !hasTopFilters, onClick: () => {
+    return (_jsxs("div", { className: "whatsapp-monitor-page", children: [_jsxs("div", { className: "wa-filter-strip", children: [_jsxs("label", { className: "wa-filter-field", children: [_jsx(Search, { size: 16 }), _jsx("input", { value: contactNameFilter, onChange: (event) => setContactNameFilter(event.target.value), placeholder: "Nome do contato" })] }), _jsx("label", { className: "wa-filter-field phone", children: _jsx("input", { value: contactPhoneFilter, onChange: (event) => setContactPhoneFilter(event.target.value), placeholder: "Telefone do contato" }) }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar periodo", value: periodFilter, onChange: (event) => setPeriodFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Periodo: todos" }), _jsx("option", { value: "today", children: "Hoje" }), _jsx("option", { value: "yesterday", children: "Ontem" }), _jsx("option", { value: "7d", children: "Ultimos 7 dias" }), _jsx("option", { value: "30d", children: "Ultimos 30 dias" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar grupos", value: groupFilter, onChange: (event) => setGroupFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Grupo: todos" }), _jsx("option", { value: "groups", children: "Somente grupos" }), _jsx("option", { value: "contacts", children: "Sem grupo" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar status", value: statusFilter, onChange: (event) => setStatusFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Status: todos" }), _jsx("option", { value: "unread", children: "Nao lidas" }), _jsx("option", { value: "risk", children: "Com alerta" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar interacoes do usuario", value: agentInteractionFilter, disabled: activeAgentId === "all", onChange: (event) => setAgentInteractionFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Usuario: todas as conversas" }), _jsx("option", { value: "sent", children: "Somente mensagens do usuario" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("button", { type: "button", className: "wa-filter-button", disabled: !hasTopFilters, onClick: () => {
                             setContactNameFilter("");
                             setContactPhoneFilter("");
                             setPeriodFilter("all");
                             setGroupFilter("all");
                             setStatusFilter("all");
+                            setAgentInteractionFilter("all");
                         }, children: [_jsx(X, { size: 18 }), "Limpar"] })] }), _jsxs("section", { className: "wa-monitor-shell", children: [_jsxs("aside", { className: "wa-column agents", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Agentes" }), _jsx("span", { children: agents.length })] }), _jsx(SearchBox, { value: agentSearch, onChange: setAgentSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [_jsxs("button", { type: "button", className: `wa-list-row all-agents ${activeAgentId === "all" ? "active" : ""}`, onClick: () => setActiveAgentId("all"), children: [_jsx("span", { className: "wa-avatar synthetic", children: _jsx(Sparkles, { size: 18 }) }), _jsxs("span", { className: "wa-list-copy", children: [_jsx("strong", { children: "Todos os agentes" }), _jsxs("small", { children: [filteredConversations.length, " conversas no filtro"] })] })] }), visibleAgents.map((agent) => (_jsx(AgentRow, { agent: agent, active: agent.id === activeAgentId, onClick: () => setActiveAgentId(agent.id) }, agent.id))), !visibleAgents.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhum agente encontrado." }) : null] })] }), _jsxs("aside", { className: "wa-column conversations", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Conversas" }), _jsx("span", { children: filteredConversations.length })] }), _jsx(SearchBox, { value: conversationSearch, onChange: setConversationSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [filteredConversations.map((conversation) => (_jsx(ConversationRow, { conversation: conversation, active: conversation.id === selectedConversationId, onClick: () => openConversation(conversation) }, conversation.id))), !filteredConversations.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhuma conversa encontrada." }) : null] })] }), _jsx("main", { className: "wa-chat-panel", children: currentConversation ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "wa-chat-header", children: [_jsxs("div", { className: "wa-chat-contact", children: [_jsx(AgentAvatar, { name: currentConversation.contactName, imageUrl: currentConversation.profilePictureUrl, group: currentConversation.isGroup, alert: Boolean(currentConversation.risk) }), _jsxs("div", { children: [_jsx("strong", { children: currentConversation.contactName }), _jsxs("span", { children: [currentConversation.eventCount, " eventos - ", currentConversation.unreadCount, " nao lidas -", " ", activeAgent?.displayLabel || currentConversation.agentName || "Todos"] })] })] }), _jsxs("div", { className: "wa-chat-tools", children: [_jsx("span", { className: "wa-chat-status", children: currentConversation.stageName || "Monitorado" }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Conversa anterior", children: _jsx(ChevronLeft, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Proxima conversa", children: _jsx(ChevronRight, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Pesquisar na conversa", children: _jsx(Search, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Mais opcoes", onClick: () => setChatMenuOpen((open) => !open), children: _jsx(MoreVertical, { size: 20 }) }), chatMenuOpen ? (_jsxs("div", { className: "wa-chat-menu", children: [_jsx("button", { type: "button", disabled: readStateMutation.isPending, onClick: () => {
                                                                         readStateMutation.mutate({ id: currentConversation.id, unread: false });
                                                                         setChatMenuOpen(false);

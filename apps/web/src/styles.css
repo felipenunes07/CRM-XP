@@ -11108,6 +11108,11 @@ textarea {
   outline: 0;
 }
 
+.wa-filter-select select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .wa-filter-select svg {
   position: absolute;
   right: 0.85rem;

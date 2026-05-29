@@ -137,6 +137,57 @@ function pickString(source: Record<string, unknown> | null | undefined, keys: st
   return null;
 }
 
+function isProviderLidJid(value: string | null | undefined) {
+  return Boolean(value?.toLocaleLowerCase("pt-BR").endsWith("@lid"));
+}
+
+function normalizePhoneAliasJid(value: unknown) {
+  const raw = readString(value);
+  if (!raw) {
+    return null;
+  }
+
+  const normalized = raw.trim().toLocaleLowerCase("pt-BR");
+  if (normalized.endsWith("@lid") || normalized.endsWith("@g.us")) {
+    return null;
+  }
+
+  if (normalized.endsWith("@s.whatsapp.net")) {
+    return normalized;
+  }
+
+  if (normalized.includes("@")) {
+    return null;
+  }
+
+  const digits = normalized.replace(/\D/g, "");
+  return digits.length >= 10 ? `${digits}@s.whatsapp.net` : null;
+}
+
+function privatePhoneAliasFromProvider(
+  rawMessage: Record<string, unknown>,
+  key: Record<string, unknown>,
+  fromMe: boolean,
+) {
+  const candidates = [
+    key.remoteJidPn,
+    key.remoteJidAlt,
+    rawMessage.remoteJidPn,
+    rawMessage.remoteJidAlt,
+    rawMessage.chatIdPn,
+    ...(fromMe ? [] : [key.senderPn, key.participantPn, rawMessage.senderPn, rawMessage.participantPn]),
+  ];
+
+  for (const candidate of candidates) {
+    const phoneJid = normalizePhoneAliasJid(candidate);
+    if (phoneJid) {
+      return phoneJid;
+    }
+  }
+
+  return null;
+}
+
 function extractNestedString(source: Record<string, unknown> | null, path: string[]): string | null {
   let current: unknown = source;
   for (const segment of path) {
@@ -375,10 +426,14 @@ export function extractEvolutionMessageContext(
   instanceName?: string | null,
 ): EvolutionMessageContext {
   const rawMessage = message as Record<string, unknown>;
-  const key = message.key ?? {};
-  const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
-  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+  const key = (message.key ?? {}) as Record<string, unknown>;
+  const providerRemoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
   const fromMe = extractEvolutionFromMeFlag(message) ?? false;
+  const remoteJid =
+    providerRemoteJid && isProviderLidJid(providerRemoteJid)
+      ? privatePhoneAliasFromProvider(rawMessage, key, fromMe) ?? providerRemoteJid
+      : providerRemoteJid;
+  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
   const participantPhoneJid =
     readString(key.participantPn) ??
     pickString(rawMessage, ["participantPn", "senderPn"]);

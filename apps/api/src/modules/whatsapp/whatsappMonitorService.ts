@@ -45,6 +45,7 @@ interface ConversationFilters {
   contactPhone?: string;
   period?: "today" | "yesterday" | "7d" | "30d";
   status?: "unread" | "risk";
+  agentInteraction?: "sent";
 }
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
@@ -514,7 +515,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
   `;
 }
 
-function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]>) {
+function activityPeriodRangeSql(expression: string, period: NonNullable<ConversationFilters["period"]>) {
   const today = `timezone('${ACTIVITY_REPORT_TIMEZONE}', NOW())::date`;
   const rangeStart =
     period === "today"
@@ -527,8 +528,48 @@ function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]
   const rangeEnd = period === "yesterday" ? today : `${today} + INTERVAL '1 day'`;
 
   return `
-    activity_stats.last_message_at >= ((${rangeStart}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
-    AND activity_stats.last_message_at < ((${rangeEnd}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+    ${expression} >= ((${rangeStart}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+    AND ${expression} < ((${rangeEnd}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+  `;
+}
+
+function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]>) {
+  return activityPeriodRangeSql("activity_stats.last_message_at", period);
+}
+
+function outboundWhatsappActivitySql(alias: string) {
+  return `
+    (
+      ${alias}.activity_type = 'WHATSAPP_SENT'
+      OR LOWER(COALESCE(
+        ${alias}.metadata ->> 'fromMe',
+        ${alias}.metadata ->> 'isOutbound',
+        ${alias}.metadata ->> 'sentFromMonitor',
+        ''
+      )) IN ('true', '1', 'yes', 'sim')
+    )
+  `;
+}
+
+function selectedAgentInteractionSql(instanceIdParamIndex: number, period?: ConversationFilters["period"]) {
+  return `
+    EXISTS (
+      SELECT 1
+      FROM deal_activities agent_interaction_activity
+      JOIN whatsapp_instances agent_interaction_instance
+        ON agent_interaction_instance.id = $${instanceIdParamIndex}
+      WHERE agent_interaction_activity.deal_id = d.id
+        AND agent_interaction_activity.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND ${outboundWhatsappActivitySql("agent_interaction_activity")}
+        AND (
+          agent_interaction_activity.metadata ->> 'instanceId' = agent_interaction_instance.id::text
+          OR LOWER(COALESCE(agent_interaction_activity.metadata ->> 'instance', '')) = LOWER(agent_interaction_instance.instance_name)
+          OR agent_interaction_activity.actor_user_id = agent_interaction_instance.assigned_user_id
+          OR LOWER(COALESCE(agent_interaction_activity.actor_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
+          OR d.whatsapp_instance_id = agent_interaction_instance.id
+        )
+        ${period ? `AND ${activityPeriodRangeSql("agent_interaction_activity.created_at", period)}` : ""}
+    )
   `;
 }
 
@@ -664,14 +705,19 @@ export async function listWhatsappMonitorConversations(
 
   if (filters.instanceId) {
     params.push(filters.instanceId);
+    const instanceIdParamIndex = params.length;
     where.push(`
       EXISTS (
         SELECT 1
         FROM whatsapp_instances wif
-        WHERE wif.id = $${params.length}
+        WHERE wif.id = $${instanceIdParamIndex}
           AND ${conversationMatchesInstanceSql("wif")}
       )
     `);
+
+    if (filters.agentInteraction === "sent") {
+      where.push(selectedAgentInteractionSql(instanceIdParamIndex, filters.period));
+    }
   }
 
   if (filters.search?.trim()) {

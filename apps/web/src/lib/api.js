@@ -505,6 +505,9 @@ export const api = {
         if (query.status) {
             search.set("status", query.status);
         }
+        if (query.agentInteraction) {
+            search.set("agentInteraction", query.agentInteraction);
+        }
         return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     whatsappMonitorConversation(token, id) {

@@ -711,6 +711,7 @@ export const api = {
       contactPhone?: string;
       period?: "today" | "yesterday" | "7d" | "30d";
       status?: "unread" | "risk";
+      agentInteraction?: "sent";
     } = {},
   ) {
     const search = new URLSearchParams();
@@ -731,6 +732,9 @@ export const api = {
     }
     if (query.status) {
       search.set("status", query.status);
+    }
+    if (query.agentInteraction) {
+      search.set("agentInteraction", query.agentInteraction);
     }
     return request<WhatsappMonitorConversationsResponse>(
       `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,

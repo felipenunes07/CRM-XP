@@ -1790,6 +1790,7 @@ export function createApp() {
     contactPhone: z.string().optional(),
     period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
     status: z.enum(["unread", "risk"]).optional(),
+    agentInteraction: z.enum(["sent"]).optional(),
   });
 
   const whatsappMonitorReadStateSchema = z.object({
