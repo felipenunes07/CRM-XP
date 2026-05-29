@@ -1,4 +1,4 @@
-import { pool } from "../../db/client.js";
+import { pool, redis } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
@@ -243,6 +243,19 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         });
         continue;
       }
+
+      // Deduplicate webhook events by messageId in the last 60 seconds using Redis
+      const redisKey = `webhook:msg:${messageId}`;
+      const isDuplicate = await redis.get(redisKey);
+      if (isDuplicate) {
+        logger.info("evolution webhook skipped duplicate message", {
+          instance,
+          remoteJid,
+          messageId,
+        });
+        continue;
+      }
+      await redis.set(redisKey, "1", "EX", 60);
 
       logger.info("evolution webhook processing message", {
         instance,

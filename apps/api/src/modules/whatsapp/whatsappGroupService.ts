@@ -527,6 +527,17 @@ async function importWhatsappGroupsFromParsedRows(parsedRows: ParsedGroupRow[]):
   try {
     await client.query("BEGIN");
 
+    const jids: string[] = [];
+    const sourceNames: string[] = [];
+    const normalizedSourceNames: string[] = [];
+    const sourceCodes: (string | null)[] = [];
+    const classifications: string[] = [];
+    const mappingStatuses: string[] = [];
+    const matchMethods: (string | null)[] = [];
+    const customerIds: (string | null)[] = [];
+    const mappingNotes: string[] = [];
+    const lastImportedAts: string[] = [];
+
     for (const row of parsedRows) {
       classificationCounts[row.classification] += 1;
       const existing = existingGroups.get(row.jid);
@@ -576,49 +587,82 @@ async function importWhatsappGroupsFromParsedRows(parsedRows: ParsedGroupRow[]):
         insertedCount += 1;
       }
 
-      await client.query(
-        `
-          INSERT INTO whatsapp_groups (
-            jid,
-            source_name,
-            normalized_source_name,
-            source_code,
-            classification,
-            mapping_status,
-            match_method,
-            customer_id,
-            mapping_note,
-            last_imported_at,
-            updated_at
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, NOW())
-          ON CONFLICT (jid) DO UPDATE
-          SET
-            source_name = EXCLUDED.source_name,
-            normalized_source_name = EXCLUDED.normalized_source_name,
-            source_code = EXCLUDED.source_code,
-            classification = EXCLUDED.classification,
-            mapping_status = EXCLUDED.mapping_status,
-            match_method = EXCLUDED.match_method,
-            customer_id = EXCLUDED.customer_id,
-            mapping_note = EXCLUDED.mapping_note,
-            last_imported_at = EXCLUDED.last_imported_at,
-            updated_at = NOW()
-        `,
-        [
-          row.jid,
-          row.sourceName,
-          row.normalizedSourceName,
-          row.sourceCode,
-          row.classification,
-          mappingStatus,
-          matchMethod,
-          customerId,
-          mappingNote,
-          now,
-        ],
-      );
+      jids.push(row.jid);
+      sourceNames.push(row.sourceName);
+      normalizedSourceNames.push(row.normalizedSourceName);
+      sourceCodes.push(row.sourceCode);
+      classifications.push(row.classification);
+      mappingStatuses.push(mappingStatus);
+      matchMethods.push(matchMethod);
+      customerIds.push(customerId);
+      mappingNotes.push(mappingNote);
+      lastImportedAts.push(now);
     }
+
+    await client.query(
+      `
+        INSERT INTO whatsapp_groups (
+          jid,
+          source_name,
+          normalized_source_name,
+          source_code,
+          classification,
+          mapping_status,
+          match_method,
+          customer_id,
+          mapping_note,
+          last_imported_at,
+          updated_at
+        )
+        SELECT tmp.*, NOW() FROM UNNEST(
+          $1::text[],
+          $2::text[],
+          $3::text[],
+          $4::text[],
+          $5::text[],
+          $6::text[],
+          $7::text[],
+          $8::uuid[],
+          $9::text[],
+          $10::timestamptz[]
+        ) AS tmp(
+          jid,
+          source_name,
+          normalized_source_name,
+          source_code,
+          classification,
+          mapping_status,
+          match_method,
+          customer_id,
+          mapping_note,
+          last_imported_at
+        )
+        ON CONFLICT (jid) DO UPDATE
+        SET
+          source_name = EXCLUDED.source_name,
+          normalized_source_name = EXCLUDED.normalized_source_name,
+          source_code = EXCLUDED.source_code,
+          classification = EXCLUDED.classification,
+          mapping_status = EXCLUDED.mapping_status,
+          match_method = EXCLUDED.match_method,
+          customer_id = EXCLUDED.customer_id,
+          mapping_note = EXCLUDED.mapping_note,
+          last_imported_at = EXCLUDED.last_imported_at,
+          updated_at = NOW()
+      `,
+      [
+        jids,
+        sourceNames,
+        normalizedSourceNames,
+        sourceCodes,
+        classifications,
+        mappingStatuses,
+        matchMethods,
+        customerIds,
+        mappingNotes,
+        lastImportedAts,
+      ]
+    );
 
     await client.query("COMMIT");
   } catch (error) {
