@@ -69,6 +69,25 @@ function formatSeconds(value: number | null) {
   return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
 }
 
+function formatDailySummaryCustomerLines(customers: any[], options: { recovered?: boolean } = {}) {
+  return customers
+    .map((customer) => {
+      const code = customer.customer_code ? `${customer.customer_code} - ` : "";
+      const name = customer.display_name || "Cliente sem nome";
+      const attendant = customer.last_attendant || "Sem atendente";
+      const amount = Number(customer.total_amount ?? 0);
+      const amountText = Number.isFinite(amount)
+        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      const inactiveText = options.recovered && customer.days_inactive
+        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
+        : "";
+
+      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
+    })
+    .join("\n");
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -1142,7 +1161,14 @@ function DailySummaryTab({ token }: { token: string }) {
 
     let text = `📅 *Relatório de Atendimento XP*\n_${formattedDate}_\n\n`;
     text += `📱 *Clientes Novos no Dia:* ${data.newCustomersCount}\n`;
-    text += `🔄 *Clientes Recuperados no Dia:* ${data.recoveredCustomersCount}\n\n`;
+    if (data.newCustomersList?.length > 0) {
+      text += `${formatDailySummaryCustomerLines(data.newCustomersList)}\n`;
+    }
+    text += `🔄 *Clientes Recuperados no Dia:* ${data.recoveredCustomersCount}\n`;
+    if (data.recoveredCustomersList?.length > 0) {
+      text += `${formatDailySummaryCustomerLines(data.recoveredCustomersList, { recovered: true })}\n`;
+    }
+    text += `\n`;
     
     if (useUniqueMessages) {
       text += `💬 *Resumo de Mensagens:*\n`;

@@ -52,26 +52,157 @@ const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
 const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
 
-function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
-  if (!remoteJid) return false;
-  
-  const jid = remoteJid.toLowerCase();
-  
+const INTERNAL_WHATSAPP_REPORT_JIDS = new Set([
+  "120363024604307554@g.us",
+  "120363024388010129@g.us",
+  "120363044596886178@g.us",
+  "120363045047058306@g.us",
+  "120363029236155900@g.us",
+  "120363031213889254@g.us",
+  "120363122256330986@g.us",
+  "120363152763097348@g.us",
+  "120363155480608371@g.us",
+  "120363142000640785@g.us",
+  "120363179964808614@g.us",
+  "120363218363642984@g.us",
+  "120363219631231709@g.us",
+  "120363227964128051@g.us",
+  "120363239228364452@g.us",
+  "120363228554629988@g.us",
+  "120363284675472016@g.us",
+  "120363303361235238@g.us",
+  "120363302011320268@g.us",
+  "120363301240196425@g.us",
+  "120363330143238456@g.us",
+  "120363388324650509@g.us",
+  "120363402501055817@g.us",
+  "120363421936412412@g.us",
+  "120363420937498094@g.us",
+  "120363420351854508@g.us",
+  "120363404782149909@g.us",
+  "120363185981602575@g.us",
+  "120363134064333742@g.us",
+  "120363048463637470@g.us",
+  "120363044132316737@g.us",
+  "120363025402961504@g.us",
+  "120363278542101022@g.us",
+  "120363335551619512@g.us",
+  "120363024580077621@g.us",
+  "120363422564243122@g.us",
+  "120363422753753190@g.us",
+  "93755076042876@lid",
+  "269603754213443@lid",
+  "226362308726972@lid",
+  "214997741375562:74@lid",
+  "3960597401743@lid",
+  "214997741375562:78@lid",
+  "32624739369122@lid",
+  "128441684885669@lid",
+]);
+
+const INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS = new Set([
+  "8617568919597",
+  "5511911279702",
+  "5511914898986",
+  "5511915103835",
+  "5511915863088",
+  "5511916263525",
+  "5511930890128",
+  "5511944538074",
+  "5511944705416",
+  "5511945423284",
+  "5511947879036",
+  "5511951392256",
+  "5511952960701",
+  "5511958326930",
+  "5511959502231",
+  "5511964218475",
+  "5511971086782",
+  "5511975501901",
+  "5511976001044",
+  "5511978398236",
+  "5511986168888",
+  "5511988366300",
+  "5511988807532",
+  "5511991547568",
+  "5511992112882",
+  "5511996435466",
+  "5511998595698",
+]);
+
+const INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS = [
+  /^int\b.*xp brasil$/,
+  /\binterno\b/,
+  /^xp[-\s]?comprovante$/,
+  /^xp telas$/,
+  /^xp[-\s]?trocas\b/,
+  /conferencia/,
+  /uniao faz acucar/,
+  /^xp[-\s]?atencao\b/,
+  /^xp[-\s]?relatorio atendimento noturno$/,
+  /^xp sistema novo$/,
+  /^xp[-\s]?106b$/,
+  /^xp[-\s]?correios$/,
+  /^xp[-\s]?informativos$/,
+  /^xp[-\s]?nf para cobrar cliente$/,
+  /^xp[-\s]?modelos que nao temos$/,
+  /^xp tecnicos$/,
+  /^xp[-\s]?fechar caixas$/,
+  /^xp[-\s]?recondicionado pecas$/,
+  /^xp[-\s]?meninos$/,
+  /^xp[-\s]?erros de conferencia/,
+  /^xp contagem$/,
+  /^xp equipe de solucoes$/,
+  /^xp factory/,
+  /^marketing xp$/,
+  /^funcionario faltas$/,
+  /^taxista valmir$/,
+  /^romario taxista$/,
+  /^xp[-\s]?saida de caixas$/,
+  /^xp[-\s]?midias e posts$/,
+];
+
+function normalizeWhatsappReportJid(value: string | null | undefined) {
+  return String(value ?? "").trim().toLocaleLowerCase("pt-BR");
+}
+
+function whatsappReportJidDigits(value: string | null | undefined) {
+  const [localPart = ""] = normalizeWhatsappReportJid(value).split("@");
+  return localPart.replace(/\D/g, "");
+}
+
+function isInternalWhatsappReportJid(remoteJid: string | null | undefined) {
+  const jid = normalizeWhatsappReportJid(remoteJid);
+  if (!jid) {
+    return false;
+  }
+
   if (jid.includes("status@broadcast") || jid.endsWith("@broadcast")) {
     return true;
   }
 
-  // Lista de JIDs de grupos/chats internos a serem desconsiderados
-  // O usuário informará esses JIDs posteriormente.
-  const excludedJids: string[] = [
-    // adicione os JIDs de grupos internos aqui
-  ];
-
-  if (excludedJids.includes(jid)) {
+  if (INTERNAL_WHATSAPP_REPORT_JIDS.has(jid)) {
     return true;
   }
 
-  return false;
+  const digits = whatsappReportJidDigits(jid);
+  return Boolean(digits && INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS.has(digits));
+}
+
+function isInternalWhatsappReportName(name: string | null | undefined) {
+  const normalized = normalizeLabel(name);
+  return Boolean(normalized && INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS.some((pattern) => pattern.test(normalized)));
+}
+
+export function isInternalWhatsappReportChat(input: {
+  name?: string | null;
+  remoteJid?: string | null;
+}) {
+  return isInternalWhatsappReportJid(input.remoteJid) || isInternalWhatsappReportName(input.name);
+}
+
+function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
+  return isInternalWhatsappReportChat({ name, remoteJid });
 }
 
 
@@ -377,22 +508,30 @@ function buildActivityReportDays(days: number): WhatsappAgentActivityReport["day
   });
 }
 
-function classifyWhatsappGroup(input: { isGroup: boolean; name: string | null }) {
+export function classifyWhatsappReportConversation(input: {
+  isGroup: boolean;
+  name: string | null;
+  remoteJid?: string | null;
+}): WhatsappAgentActivityConversationKind {
   if (!input.isGroup) {
-    return "private" as const;
+    return "private";
+  }
+
+  if (isInternalWhatsappReportChat({ name: input.name, remoteJid: input.remoteJid })) {
+    return "internal_group";
   }
 
   const normalized = normalizeLabel(input.name);
 
-  if (/^(cliente|clientes|cl)(\b|[\s\-_:.\d#])/.test(normalized)) {
-    return "customer_group" as const;
+  if (/^(cliente|clientes|cl)(\b|[\s\-_:.\d#])/.test(normalized) || /\b(cl|kh|lj)\d+\b/.test(normalized)) {
+    return "customer_group";
   }
 
-  if (/(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor|expor|xp factory|crm)/.test(normalized)) {
-    return "internal_group" as const;
+  if (/(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor)/.test(normalized)) {
+    return "internal_group";
   }
 
-  return "other_group" as const;
+  return "other_group";
 }
 
 function conversationProfileJoinSql() {
@@ -1618,6 +1757,10 @@ function registerActivityReportEvent(input: {
   kind: WhatsappAgentActivityConversationKind;
   isOutbound: boolean;
 }) {
+  if (input.kind === "internal_group") {
+    return;
+  }
+
   const conversation = getActivityConversation(input.accumulator, input.remoteJid, input.chatName, input.kind);
 
   if (input.isOutbound) {
@@ -1628,9 +1771,6 @@ function registerActivityReportEvent(input: {
       input.accumulator.attendedPrivates.add(input.remoteJid);
       input.accumulator.attendedConversations.add(input.remoteJid);
       input.accumulator.sentUniquePrivates.add(input.remoteJid);
-    } else if (input.kind === "internal_group") {
-      input.accumulator.internalGroups.add(input.remoteJid);
-      input.accumulator.sentUniqueInternalGroups.add(input.remoteJid);
     } else {
       input.accumulator.attendedConversations.add(input.remoteJid);
       if (input.kind === "customer_group") {
@@ -1649,8 +1789,6 @@ function registerActivityReportEvent(input: {
       input.accumulator.receivedUniquePrivates.add(input.remoteJid);
     } else if (input.kind === "customer_group") {
       input.accumulator.receivedUniqueCustomerGroups.add(input.remoteJid);
-    } else if (input.kind === "internal_group") {
-      input.accumulator.receivedUniqueInternalGroups.add(input.remoteJid);
     } else {
       input.accumulator.receivedUniqueOtherGroups.add(input.remoteJid);
     }
@@ -1682,7 +1820,7 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
   const internalGroups = conversations.filter((c) => c.kind === "internal_group" && c.sentMessages > 0);
 
   const privateConvs = conversations.filter((c) => c.kind === "private");
-  const groupConvs = conversations.filter((c) => c.kind !== "private");
+  const groupConvs = conversations.filter((c) => c.kind === "customer_group" || c.kind === "other_group");
 
   return {
     attendedConversations: attendedPrivates.length + attendedGroups.length,
@@ -1965,10 +2103,6 @@ export async function getWhatsappAgentActivityReport(
     const profilePictureUrl = wi ? (wi.profile_picture_url ? String(wi.profile_picture_url) : null) : null;
 
     const isGroup = remoteJid.endsWith("@g.us");
-    const groupClass = classifyWhatsappGroup({
-      isGroup,
-      name: row.metadata_chat_display_name || row.customer_display_name || row.title,
-    });
     // Resolve fromMe using extracted metadata fields instead of full metadata object
     const resolvedFromMe = 
       optionalBoolean(row.metadata_from_me) ??
@@ -1981,6 +2115,11 @@ export async function getWhatsappAgentActivityReport(
     if (isInternalChat(chatName, remoteJid)) {
       continue;
     }
+    const groupClass = classifyWhatsappReportConversation({
+      isGroup,
+      name: chatName,
+      remoteJid,
+    });
     const createdAt = new Date(String(row.created_at));
 
     const isCurrentPeriod = localDate >= pivotDate;
@@ -2208,6 +2347,26 @@ export async function setWhatsappConversationReadState(
   void syncConversationReadStateWithEvolution(dealId, unread);
 
   return getWhatsappMonitorConversation(dealId, user);
+}
+
+function formatDailySummaryCustomerLines(customers: Record<string, unknown>[], options: { recovered?: boolean } = {}) {
+  return customers
+    .map((customer) => {
+      const customerCode = optionalString(customer.customer_code);
+      const code = customerCode ? `${customerCode} - ` : "";
+      const name = optionalString(customer.display_name) ?? "Cliente sem nome";
+      const attendant = optionalString(customer.last_attendant) ?? "Sem atendente";
+      const amount = Number(customer.total_amount ?? 0);
+      const amountText = Number.isFinite(amount)
+        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      const inactiveText = options.recovered && customer.days_inactive
+        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
+        : "";
+
+      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
+    })
+    .join("\n");
 }
 
 export async function getWhatsappDailySummaryReport(
@@ -2632,7 +2791,14 @@ export async function getWhatsappDailySummaryReport(
   // Assemble beautiful formatted text for copy paste to WhatsApp (no sales data)
   let text = `📅 *Relatório de Atendimento XP*\n_${formattedDate}_\n\n`;
   text += `📱 *Clientes Novos no Dia:* ${newCustomers.length}\n`;
-  text += `🔄 *Clientes Recuperados no Dia:* ${recoveredCustomers.length}\n\n`;
+  if (newCustomers.length > 0) {
+    text += `${formatDailySummaryCustomerLines(newCustomers)}\n`;
+  }
+  text += `🔄 *Clientes Recuperados no Dia:* ${recoveredCustomers.length}\n`;
+  if (recoveredCustomers.length > 0) {
+    text += `${formatDailySummaryCustomerLines(recoveredCustomers, { recovered: true })}\n`;
+  }
+  text += `\n`;
   text += `💬 *Resumo de Mensagens:*\n`;
   text += `📱 Enviadas: ${totalSent.toLocaleString("pt-BR")}\n`;
   text += `🧾 Recebidas: ${totalReceived.toLocaleString("pt-BR")}\n\n`;

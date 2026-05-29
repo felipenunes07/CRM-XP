@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
+  redisGet: vi.fn(),
+  redisSet: vi.fn(),
   resolveMetadata: vi.fn(),
   createEventFromMessage: vi.fn(),
 }));
@@ -9,6 +11,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../db/client.js", () => ({
   pool: {
     query: mocks.query,
+  },
+  redis: {
+    get: mocks.redisGet,
+    set: mocks.redisSet,
   },
 }));
 
@@ -21,13 +27,55 @@ vi.mock("../events/eventsService.js", () => ({
 }));
 
 import { handleEvolutionWebhook } from "./evolutionWebhook.js";
-import { getWhatsappMonitorConversation, listWhatsappMonitorConversations } from "./whatsappMonitorService.js";
+import {
+  classifyWhatsappReportConversation,
+  getWhatsappMonitorConversation,
+  isInternalWhatsappReportChat,
+  listWhatsappMonitorConversations,
+} from "./whatsappMonitorService.js";
+
+describe("whatsapp activity report classification", () => {
+  it("excludes internal groups and private company numbers from report calculations", () => {
+    expect(isInternalWhatsappReportChat({
+      remoteJid: "120363024388010129@g.us",
+      name: "XP-comprovante",
+    })).toBe(true);
+    expect(isInternalWhatsappReportChat({
+      remoteJid: "5511988366300@s.whatsapp.net",
+      name: "XP interno",
+    })).toBe(true);
+  });
+
+  it("keeps customer groups with XP suffixes counted as customer attendance", () => {
+    expect(classifyWhatsappReportConversation({
+      isGroup: true,
+      remoteJid: "120363371542185615@g.us",
+      name: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+    })).toBe("customer_group");
+    expect(isInternalWhatsappReportChat({
+      remoteJid: "120363371542185615@g.us",
+      name: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+    })).toBe(false);
+  });
+
+  it("counts unblocked non-private groups as group attendance instead of private", () => {
+    expect(classifyWhatsappReportConversation({
+      isGroup: true,
+      remoteJid: "120363303051942830@g.us",
+      name: "Xp Cliente Cavalo Cell",
+    })).toBe("other_group");
+  });
+});
 
 describe("whatsapp conversation isolation", () => {
   beforeEach(() => {
     mocks.query.mockReset();
+    mocks.redisGet.mockReset();
+    mocks.redisSet.mockReset();
     mocks.resolveMetadata.mockReset();
     mocks.createEventFromMessage.mockReset();
+    mocks.redisGet.mockResolvedValue(null);
+    mocks.redisSet.mockResolvedValue("OK");
     mocks.resolveMetadata.mockResolvedValue({});
     mocks.createEventFromMessage.mockResolvedValue(undefined);
   });
