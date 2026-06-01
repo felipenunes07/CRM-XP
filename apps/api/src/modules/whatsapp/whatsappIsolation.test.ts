@@ -171,7 +171,7 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const dealMatchCall = mocks.query.mock.calls[3];
+    const dealMatchCall = mocks.query.mock.calls.find(call => String(call[0]).includes("existing_message_deal"));
     expect(dealMatchCall).toBeDefined();
     const dealMatchQuery = String(dealMatchCall![0]);
     const dealMatchParams = dealMatchCall![1];
@@ -238,8 +238,14 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const incomingInsertParams = mocks.query.mock.calls[2]?.[1];
-    const activityInsertParams = mocks.query.mock.calls[4]?.[1];
+    const incomingCall = mocks.query.mock.calls.find(call => String(call[0]).includes("INSERT INTO whatsapp_incoming_messages"));
+    const activityCall = mocks.query.mock.calls.find(call => String(call[0]).includes("INSERT INTO deal_activities") || String(call[0]).includes("WITH inserted AS"));
+
+    expect(incomingCall).toBeDefined();
+    expect(activityCall).toBeDefined();
+
+    const incomingInsertParams = incomingCall![1];
+    const activityInsertParams = activityCall![1];
 
     expect(incomingInsertParams?.[11]).toBe(false);
     expect(activityInsertParams?.[1]).toBe("WHATSAPP_RECEIVED");
@@ -294,7 +300,7 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const dealMatchCall = mocks.query.mock.calls[3];
+    const dealMatchCall = mocks.query.mock.calls.find(call => String(call[0]).includes("existing_message_deal"));
     expect(dealMatchCall).toBeDefined();
     const dealMatchQuery = String(dealMatchCall![0]);
     const dealMatchParams = dealMatchCall![1];
