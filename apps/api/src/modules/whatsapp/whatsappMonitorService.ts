@@ -728,8 +728,10 @@ function selectedAgentInteractionSql(instanceIdParamIndex: number, period?: Conv
         AND (
           agent_interaction_activity.metadata ->> 'instanceId' = agent_interaction_instance.id::text
           OR LOWER(COALESCE(agent_interaction_activity.metadata ->> 'instance', '')) = LOWER(agent_interaction_instance.instance_name)
-          OR agent_interaction_activity.actor_user_id = agent_interaction_instance.assigned_user_id
+          OR (agent_interaction_activity.actor_user_id IS NOT NULL AND agent_interaction_activity.actor_user_id = agent_interaction_instance.assigned_user_id)
           OR LOWER(COALESCE(agent_interaction_activity.actor_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
+          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.display_label, ''), '^xp\\s+', '', 'i'))
+          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.assigned_user_name, ''), '^xp\\s+', '', 'i'))
           OR d.whatsapp_instance_id = agent_interaction_instance.id
         )
         ${period ? `AND ${activityPeriodRangeSql("agent_interaction_activity.created_at", period)}` : ""}

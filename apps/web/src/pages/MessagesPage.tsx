@@ -565,10 +565,22 @@ export function MessagesPage() {
 
     if (activeAgent) {
       result = result.filter(
-        (conversation) =>
-          conversation.whatsappInstanceId === activeAgent.id ||
-          conversation.instanceName === activeAgent.instanceName ||
-          conversation.agentName === activeAgent.displayLabel
+        (conversation) => {
+          const clean = (name?: string | null) => (name ?? "").toLowerCase().replace(/^xp[-_\s]+/i, "").trim();
+          const cleanAgentName = clean(conversation.agentName);
+          const cleanDisplayLabel = clean(activeAgent.displayLabel);
+          const cleanInstanceName = clean(activeAgent.instanceName);
+          const cleanAssignedUserName = clean(activeAgent.assignedUserName);
+
+          return (
+            conversation.whatsappInstanceId === activeAgent.id ||
+            conversation.instanceName === activeAgent.instanceName ||
+            conversation.agentName === activeAgent.displayLabel ||
+            (cleanAgentName && cleanAgentName === cleanDisplayLabel) ||
+            (cleanAgentName && cleanAgentName === cleanInstanceName) ||
+            (cleanAgentName && cleanAgentName === cleanAssignedUserName)
+          );
+        }
       );
     }
 
