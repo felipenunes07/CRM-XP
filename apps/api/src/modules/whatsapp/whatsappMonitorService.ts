@@ -2563,6 +2563,53 @@ export async function getWhatsappDailySummaryReport(
   const salesPerformance = salesPerformanceResult.rows;
   const salesAttendants = new Set(salesPerformance.map(s => s.attendant.trim().toLowerCase()));
 
+  // 1. Collect all unique private JIDs from activities to batch-resolve customer names
+  const privateJids = new Set<string>();
+  for (const row of activitiesResult.rows) {
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
+    if (remoteJid && !remoteJid.endsWith("@g.us")) {
+      privateJids.add(remoteJid);
+    }
+  }
+
+  const resolvedNamesMap = new Map<string, string>();
+  if (privateJids.size > 0) {
+    const jidList = Array.from(privateJids);
+    
+    // Fetch from whatsapp_chat_profiles
+    const profilesRes = await pool.query(
+      `
+      SELECT remote_jid, display_name 
+      FROM whatsapp_chat_profiles 
+      WHERE remote_jid = ANY($1) AND display_name IS NOT NULL AND display_name <> ''
+      `,
+      [jidList]
+    );
+    for (const p of profilesRes.rows) {
+      resolvedNamesMap.set(p.remote_jid, p.display_name);
+    }
+
+    // Fetch from whatsapp_incoming_messages (as fallback)
+    const messagesRes = await pool.query(
+      `
+      SELECT remote_jid, sender_name 
+      FROM whatsapp_incoming_messages 
+      WHERE remote_jid = ANY($1) 
+        AND sender_name IS NOT NULL 
+        AND sender_name <> '' 
+        AND LOWER(sender_name) NOT LIKE '%xp %'
+        AND LOWER(sender_name) NOT IN ('whatsapp', 'membro do grupo', 'whatsapp corporativo', 'sem agente', 'expor telas', 'sem atendente')
+      ORDER BY created_at DESC
+      `,
+      [jidList]
+    );
+    for (const m of messagesRes.rows) {
+      if (!resolvedNamesMap.has(m.remote_jid)) {
+        resolvedNamesMap.set(m.remote_jid, m.sender_name);
+      }
+    }
+  }
+
   // Group activity data by agent
   const agentsMap = new Map<string, {
     agentId: string;
@@ -2630,7 +2677,43 @@ export async function getWhatsappDailySummaryReport(
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = isWhatsappActivityOutbound(row);
-    const chatName = row.real_customer_name || row.metadata_chat_display_name || row.customer_display_name || row.title || (isGroup ? "Grupo sem nome" : formatWhatsappJidPhone(remoteJid));
+
+    // Resolve robust and clean customer display name
+    const chatName = (() => {
+      const candidates = [
+        row.real_customer_name,
+        resolvedNamesMap.get(remoteJid),
+        row.metadata_chat_display_name,
+        row.customer_display_name,
+        row.title
+      ].map(c => c ? String(c).trim() : "").filter(Boolean);
+
+      const cleanAgent = agentName.trim().toLowerCase().replace(/^xp\s+/i, '');
+
+      for (const c of candidates) {
+        const lower = c.toLowerCase();
+        
+        // Skip names matching or containing the agent/seller name
+        if (lower === cleanAgent || lower === agentName.toLowerCase() || (cleanAgent.length >= 3 && lower.includes(cleanAgent))) {
+          continue;
+        }
+
+        // Skip generic labels
+        if (["whatsapp", "whatsapp corporativo", "membro do grupo", "sem agente", "expor telas", "sem atendente"].includes(lower)) {
+          continue;
+        }
+
+        // Skip numeric-only fallbacks or raw JIDs
+        if (/^\d+$/.test(c) || c.includes("@")) {
+          continue;
+        }
+
+        return c;
+      }
+
+      // Final fallback to nicely formatted phone number
+      return isGroup ? "Grupo sem nome" : formatWhatsappJidPhone(remoteJid);
+    })();
     
     if (isInternalChat(chatName, remoteJid)) {
       continue;
