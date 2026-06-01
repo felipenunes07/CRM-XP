@@ -2560,6 +2560,9 @@ export async function getWhatsappDailySummaryReport(
   const users = usersRes.rows;
   const instances = instancesRes.rows;
 
+  const salesPerformance = salesPerformanceResult.rows;
+  const salesAttendants = new Set(salesPerformance.map(s => s.attendant.trim().toLowerCase()));
+
   // Group activity data by agent
   const agentsMap = new Map<string, {
     agentId: string;
@@ -2591,7 +2594,8 @@ export async function getWhatsappDailySummaryReport(
     );
 
     // Resolve matched user (in-memory fallback mapping, avoids unindexed outer joins)
-    const actorName = row.actor_name ? String(row.actor_name).toLowerCase() : "";
+    const actorName = row.actor_name ? String(row.actor_name).trim() : "";
+    const actorNameLower = actorName.toLowerCase();
     const assignedToName = row.assigned_to_name ? String(row.assigned_to_name).toLowerCase() : "";
     const wiAssignedUserName = wi?.assigned_user_name ? String(wi.assigned_user_name).toLowerCase() : "";
 
@@ -2599,19 +2603,29 @@ export async function getWhatsappDailySummaryReport(
       u.id === row.actor_user_id ||
       u.id === row.assigned_to ||
       (wi && u.id === wi.assigned_user_id) ||
-      (actorName && u.name && u.name.toLowerCase() === actorName) ||
+      (actorName && u.name && u.name.toLowerCase() === actorNameLower) ||
       (assignedToName && u.name && u.name.toLowerCase() === assignedToName) ||
       (wiAssignedUserName && u.name && u.name.toLowerCase() === wiAssignedUserName)
     );
 
-    const agentId = matchedUser 
-      ? String(matchedUser.id)
-      : (wi ? `instance:${wi.id}` : 'sem-agente');
+    const isXpAgentName = actorName && (
+      /^xp\s+/i.test(actorName) || 
+      salesAttendants.has(actorNameLower) ||
+      salesAttendants.has(actorNameLower.replace(/^xp\s+/i, '').trim())
+    ) && actorNameLower !== "sem atendente" && actorNameLower !== "sem agente";
+
+    const agentId = isXpAgentName
+      ? `xp-agent:${actorNameLower}`
+      : (matchedUser 
+          ? String(matchedUser.id)
+          : (wi ? `instance:${wi.id}` : 'sem-agente'));
 
     const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
-    const agentName = matchedUser 
-      ? matchedUser.name 
-      : (wiLabel || 'Sem agente');
+    const agentName = isXpAgentName
+      ? actorName
+      : (matchedUser 
+          ? matchedUser.name 
+          : (wiLabel || 'Sem agente'));
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
@@ -2715,7 +2729,6 @@ export async function getWhatsappDailySummaryReport(
   }
 
   // Combine sales performance with message metrics
-  const salesPerformance = salesPerformanceResult.rows;
   const newCustomers = newCustomersResult.rows;
   const recoveredCustomers = recoveredCustomersResult.rows;
 
@@ -2726,10 +2739,12 @@ export async function getWhatsappDailySummaryReport(
   // Build vendedoras daily summary
   const rawAgentsList = Array.from(agentsMap.values()).map(a => {
     // Find sales stats if they exist
-    const sales = salesPerformance.find(s => 
-      s.attendant.toLowerCase() === a.agentName.toLowerCase() ||
-      (s.attendant === "Sem atendente" && a.agentName === "Sem agente")
-    );
+    const sales = salesPerformance.find(s => {
+      const cleanAttendant = s.attendant.trim().toLowerCase().replace(/^xp\s+/i, '');
+      const cleanAgent = a.agentName.trim().toLowerCase().replace(/^xp\s+/i, '');
+      return cleanAttendant === cleanAgent ||
+        (s.attendant === "Sem atendente" && a.agentName === "Sem agente");
+    });
 
     return {
       agentId: a.agentId,

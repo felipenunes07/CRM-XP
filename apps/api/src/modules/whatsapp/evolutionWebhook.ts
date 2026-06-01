@@ -54,6 +54,35 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
   } : null;
 }
 
+async function findAgentByParticipantJid(participantJid: string | null) {
+  if (!participantJid) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT id, display_label, phone_number, assigned_user_id, assigned_user_name
+    FROM whatsapp_instances
+    WHERE phone_number IS NOT NULL AND status = 'ACTIVE'
+    `,
+  );
+
+  for (const row of result.rows) {
+    const instanceOwnerJid = formatWhatsappPhoneJid(row.phone_number);
+    if (instanceOwnerJid && areWhatsappJidsEqual(participantJid, instanceOwnerJid)) {
+      return {
+        id: String(row.id),
+        displayLabel: row.display_label ? String(row.display_label) : null,
+        phoneNumber: row.phone_number ? String(row.phone_number) : null,
+        assignedUserId: row.assigned_user_id ? String(row.assigned_user_id) : null,
+        assignedUserName: row.assigned_user_name ? String(row.assigned_user_name) : null,
+      };
+    }
+  }
+
+  return null;
+}
+
 function conversationTitle(input: {
   remoteJid: string;
   isGroup: boolean;
@@ -403,6 +432,12 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             ? rawMsg.senderJid 
             : null;
 
+      const messageSenderJid = payloadParticipantJid ?? context.senderJid;
+      let matchedSenderAgent = null;
+      if (context.isGroup && messageSenderJid) {
+        matchedSenderAgent = await findAgentByParticipantJid(messageSenderJid);
+      }
+
       const isAgentJid = Boolean(
         instanceOwnerJid && 
         payloadParticipantJid && 
@@ -414,19 +449,22 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         (context.isGroup && (
           isAgentSender ||
           isAgentJid ||
-          Boolean(instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid))
+          Boolean(instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid)) ||
+          Boolean(matchedSenderAgent)
         ))
       );
       const isFromMe = explicitFromMe ?? fallbackFromMe;
       
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
-      const actorUserId = isFromMe ? instanceDetails?.assignedUserId ?? null : null;
+      const actorUserId = isFromMe 
+        ? (matchedSenderAgent?.assignedUserId ?? instanceDetails?.assignedUserId ?? null)
+        : null;
       const actorName = isFromMe
-        ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo"
+        ? (matchedSenderAgent?.assignedUserName ?? matchedSenderAgent?.displayLabel ?? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? "WhatsApp corporativo")
         : senderName ?? (context.isGroup ? "Membro do grupo" : "WhatsApp");
-      const activitySenderJid = isFromMe ? instanceOwnerJid ?? context.senderJid : context.senderJid;
+      const activitySenderJid = isFromMe ? (matchedSenderAgent ? messageSenderJid : (instanceOwnerJid ?? context.senderJid)) : context.senderJid;
       const activitySenderName = isFromMe
-        ? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName
+        ? (matchedSenderAgent?.assignedUserName ?? matchedSenderAgent?.displayLabel ?? instanceDetails?.assignedUserName ?? instanceDetails?.displayLabel ?? senderName)
         : senderName;
       const metadata = buildActivityMetadata({
         remoteJid: String(remoteJid),
@@ -438,7 +476,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
-        instanceId: instanceDetails?.id ?? null,
+        instanceId: isFromMe ? (matchedSenderAgent?.id ?? instanceDetails?.id ?? null) : (instanceDetails?.id ?? null),
         fromMe: isFromMe,
         outboundSource: isFromMe ? "whatsapp_device" : null,
         media,

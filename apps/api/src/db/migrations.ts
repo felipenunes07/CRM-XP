@@ -1348,6 +1348,13 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_message_created
     ON whatsapp_incoming_messages(message_id, created_at DESC);
+
+  -- Serves the per-group "latest message" lookup used by the conversation list
+  -- (group preview by JID) and the group detail query. Without created_at as the
+  -- 2nd column (the older index put instance_name in the middle) Postgres had to
+  -- scan + sort every row of a group per deal row, spiking CPU on the monitor page.
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_jid_created
+    ON whatsapp_incoming_messages(remote_jid, created_at DESC, id DESC);
   `,
   `
   -- Evolution API Webhook Idempotency & Database Optimizations
