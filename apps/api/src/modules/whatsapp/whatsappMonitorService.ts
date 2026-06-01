@@ -589,22 +589,6 @@ function conversationProfileJoinSql() {
 
 function conversationBaseSelectSql(userIdParamIndex: number) {
   return `
-    WITH latest_whatsapp AS (
-      SELECT
-        da.*,
-        ROW_NUMBER() OVER (PARTITION BY da.deal_id ORDER BY da.created_at DESC, da.id DESC) AS rn
-      FROM deal_activities da
-      WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-    ),
-    activity_stats AS (
-      SELECT
-        da.deal_id,
-        COUNT(*) FILTER (WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED'))::int AS event_count,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS inbound_count,
-        MAX(da.created_at) FILTER (WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')) AS last_message_at
-      FROM deal_activities da
-      GROUP BY da.deal_id
-    )
     SELECT
       d.*,
       ps.name AS stage_name,
@@ -653,8 +637,23 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     FROM deals d
     LEFT JOIN pipeline_stages ps ON ps.id = d.stage_id
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
-    LEFT JOIN latest_whatsapp ON latest_whatsapp.deal_id = d.id AND latest_whatsapp.rn = 1
-    LEFT JOIN activity_stats ON activity_stats.deal_id = d.id
+    LEFT JOIN LATERAL (
+      SELECT *
+      FROM deal_activities da
+      WHERE da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      ORDER BY da.created_at DESC, da.id DESC
+      LIMIT 1
+    ) latest_whatsapp ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*)::int AS event_count,
+        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS inbound_count,
+        MAX(da.created_at) AS last_message_at
+      FROM deal_activities da
+      WHERE da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+    ) activity_stats ON true
     LEFT JOIN LATERAL (
       -- Group chats are shared across every connected instance. The webhook now
       -- stores each group message only once (idempotency dedup), so the list
