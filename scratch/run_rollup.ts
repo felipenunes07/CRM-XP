@@ -4,7 +4,7 @@ import { refreshWhatsappActivityRollups } from "../apps/api/src/modules/whatsapp
 async function run() {
   console.log("Running manual rollup refresh...");
   try {
-    const result = await refreshWhatsappActivityRollups();
+    const result = await refreshWhatsappActivityRollups(70);
     console.log("Rollup refresh result:", result);
   } catch (err) {
     console.error("Rollup refresh failed:", err);
