@@ -280,6 +280,7 @@ export function WhatsappActivityPage() {
         refetchInterval: 60 * 1000,
         refetchOnWindowFocus: true,
         refetchOnMount: true,
+        placeholderData: (previousData) => previousData,
     });
     const report = reportQuery.data;
     const selectedAgent = report?.agents.find((agent) => agent.agentId === selectedAgentId) ?? null;

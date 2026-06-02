@@ -381,6 +381,7 @@ export function WhatsappActivityPage() {
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
+    placeholderData: (previousData) => previousData,
   });
 
   const report = reportQuery.data;
@@ -467,7 +468,7 @@ export function WhatsappActivityPage() {
       if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessages ?? 0) : cell.sentMessages;
       if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessages ?? 0) : cell.receivedMessages;
       if (heatmapMetric === "conversations") return cell.attendedConversations;
-      return isUniqueMetric 
+      return isUniqueMetric
         ? (cell.sentUniqueMessages ?? 0) + (cell.receivedUniqueMessages ?? 0)
         : (cell.sentMessages || 0) + (cell.receivedMessages || 0);
     })),
@@ -884,8 +885,8 @@ export function WhatsappActivityPage() {
                           .filter((cell) => cell.sentMessages > 0 || cell.receivedMessages > 0)
                           .sort((left, right) => (right.sentMessages + right.receivedMessages) - (left.sentMessages + left.receivedMessages))
                           .map((cell) => {
-                            const val = heatmapMetric === "sent" ? cell.sentMessages : 
-                                        heatmapMetric === "received" ? cell.receivedMessages : 
+                            const val = heatmapMetric === "sent" ? cell.sentMessages :
+                                        heatmapMetric === "received" ? cell.receivedMessages :
                                         heatmapMetric === "received_unique" ? cell.receivedUniqueMessages :
                                         heatmapMetric === "conversations" ? cell.attendedConversations :
                                         cell.sentMessages + cell.receivedMessages;
@@ -919,8 +920,8 @@ export function WhatsappActivityPage() {
                         }
 
                         return filtered.slice(0, 8).map((conversation) => {
-                          const val = heatmapMetric === "sent" ? conversation.sentMessages : 
-                                      heatmapMetric === "received" ? conversation.receivedMessages : 
+                          const val = heatmapMetric === "sent" ? conversation.sentMessages :
+                                      heatmapMetric === "received" ? conversation.receivedMessages :
                                       heatmapMetric === "received_unique" ? (conversation.receivedMessages > 0 ? 1 : 0) :
                                       conversation.sentMessages + conversation.receivedMessages;
                           return (
@@ -1169,7 +1170,7 @@ function DailySummaryTab({ token }: { token: string }) {
       text += `${formatDailySummaryCustomerLines(data.recoveredCustomersList, { recovered: true })}\n`;
     }
     text += `\n`;
-    
+
     if (useUniqueMessages) {
       text += `💬 *Resumo de Mensagens:*\n`;
       text += `📱 Mensagens Únicas Enviadas: ${totalUniqueContactsSent.toLocaleString("pt-BR")}\n`;
@@ -1188,14 +1189,14 @@ function DailySummaryTab({ token }: { token: string }) {
     if (topAgentName && topAgentValue > 0) {
       text += `🌟 *Vendedora Mais Ativa:* ${topAgentName} (${topAgentValue.toLocaleString("pt-BR")} ${useUniqueMessages ? "mensagens únicas" : "mensagens enviadas"})\n\n`;
     }
-    
+
     text += `🏆 *Ranking de Vendedoras e Atendimentos:*\n\n`;
 
     activeAgentsList.forEach((agent: any, index: number) => {
       const medals = ["🥇", "🥈", "🥉"];
       const emoji = index < 3 ? medals[index] : "❤️";
       text += `${emoji} *${agent.agentName}*\n`;
-      
+
       if (useUniqueMessages) {
         const agentUniqueContactsSent = agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length +
                                         agent.attendedGroupClients.filter((g: any) => g.sent > 0).length;
@@ -1203,11 +1204,11 @@ function DailySummaryTab({ token }: { token: string }) {
       } else {
         text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
       }
-      
+
       text += `📱 Atendimentos Particular: ${agent.privateChatsCount}\n`;
       text += `👥 Atendimentos em Grupo: ${agent.groupChatsCount}\n`;
       text += `✨ Conversas Iniciadas: ${agent.initiatedCount}\n`;
-      
+
       if (isDetailed && (agent.attendedPrivateClients.length > 0 || agent.attendedGroupClients.length > 0)) {
         text += `👥 *Clientes Atendidos:*\n`;
         // Particular
@@ -1553,20 +1554,20 @@ function DailySummaryTab({ token }: { token: string }) {
                             <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.875rem" }}>
                               {agent.attendedPrivateClients.map((client: any) => (
                                 <li key={client.jid} style={{ lineHeight: 1.4 }}>
-                                  <strong>{client.name}</strong> 
+                                  <strong>{client.name}</strong>
                                   <span className="muted" style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>
                                     (💬 {client.sent} env / {client.received} rec)
                                   </span>
                                   {client.initiated && (
-                                    <span 
-                                      style={{ 
-                                        marginLeft: "0.5rem", 
-                                        fontSize: "0.7rem", 
-                                        background: "rgba(16, 185, 129, 0.15)", 
-                                        color: "#10b981", 
-                                        padding: "1px 6px", 
-                                        borderRadius: "10px", 
-                                        fontWeight: 600 
+                                    <span
+                                      style={{
+                                        marginLeft: "0.5rem",
+                                        fontSize: "0.7rem",
+                                        background: "rgba(16, 185, 129, 0.15)",
+                                        color: "#10b981",
+                                        padding: "1px 6px",
+                                        borderRadius: "10px",
+                                        fontWeight: 600
                                       }}
                                     >
                                       Iniciada

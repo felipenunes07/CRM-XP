@@ -1,7 +1,11 @@
-import { pool, redis } from "../../db/client.js";
+import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
+import {
+  resolveWhatsappConversationIdentity,
+  upsertWhatsappJidAliases,
+} from "./whatsappIdentityService.js";
 import {
   extractEvolutionMessageContext,
   extractEvolutionMessageContact,
@@ -95,7 +99,7 @@ async function resolvePhoneJidFromLid(lidJid: string): Promise<string | null> {
       ) as phone_net
     FROM whatsapp_incoming_messages
     WHERE (
-        participant_jid = $1 
+        participant_jid = $1
         OR remote_jid = $1
       )
       AND (
@@ -151,6 +155,9 @@ function buildActivityMetadata(input: {
   senderProfilePictureUrl: string | null;
   chatDisplayName: string | null;
   chatProfilePictureUrl: string | null;
+  providerRemoteJid?: string | null;
+  remoteJidAlt?: string | null;
+  remoteJidAliases?: string[];
   instanceId?: string | null;
   fromMe: boolean;
   outboundSource?: string | null;
@@ -168,6 +175,11 @@ function buildActivityMetadata(input: {
     senderProfilePictureUrl: input.senderProfilePictureUrl,
     chatDisplayName: input.chatDisplayName,
     chatProfilePictureUrl: input.chatProfilePictureUrl,
+    ...(input.providerRemoteJid && input.providerRemoteJid !== input.remoteJid
+      ? { providerRemoteJid: input.providerRemoteJid }
+      : {}),
+    ...(input.remoteJidAlt ? { remoteJidAlt: input.remoteJidAlt } : {}),
+    ...(input.remoteJidAliases?.length ? { remoteJidAliases: input.remoteJidAliases } : {}),
     fromMe: input.fromMe,
     isOutbound: input.fromMe,
     capturedFromWhatsapp: input.fromMe,
@@ -295,7 +307,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
     let idempotencyKey: string | null = null;
     try {
       const context = extractEvolutionMessageContext(msg, payload.instance);
-      
+
       // Adjust createdAt to have millisecond precision based on loop processing to preserve exact order
       const baseDate = new Date(context.createdAt);
       if (baseDate.getMilliseconds() === 0) {
@@ -316,13 +328,28 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         continue;
       }
 
-      let resolvedRemoteJid = remoteJid;
+      const resolvedIdentity = await resolveWhatsappConversationIdentity(instance, context);
+      let resolvedRemoteJid = resolvedIdentity.canonicalJid ?? remoteJid;
+      const remoteJidAliases = Array.from(
+        new Set([resolvedRemoteJid, remoteJid, ...context.remoteJidAliases, ...resolvedIdentity.aliases].filter(Boolean)),
+      ) as string[];
+      context.remoteJid = resolvedRemoteJid;
+      context.isGroup = Boolean(resolvedRemoteJid.endsWith("@g.us"));
+      context.remoteJidAliases = remoteJidAliases;
+
       if (remoteJid && remoteJid.endsWith("@lid")) {
         const historical = await resolvePhoneJidFromLid(remoteJid);
         if (historical) {
           logger.info("evolution webhook resolved phone JID from LID historically", { lid: remoteJid, resolved: historical });
           resolvedRemoteJid = historical;
           context.remoteJid = historical;
+          context.remoteJidAliases = Array.from(new Set([historical, ...context.remoteJidAliases]));
+          await upsertWhatsappJidAliases({
+            instanceName: instance,
+            canonicalJid: historical,
+            aliases: [remoteJid, historical, ...context.remoteJidAliases],
+            source: "historical-lid",
+          });
         }
       }
 
@@ -458,7 +485,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
       const explicitFromMe = extractEvolutionFromMeFlag(msg);
-      
+
       const cleanSenderName = (senderName || "").trim().toLowerCase();
       const cleanAgentName = (instanceDetails?.assignedUserName || instanceDetails?.displayLabel || instanceName || "").trim().toLowerCase();
       const isAgentSender = Boolean(
@@ -472,15 +499,15 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           cleanSenderName === `${cleanAgentName} - xp`
         )
       );
-      
+
       const rawMsg = msg as Record<string, unknown>;
       const msgKey = (rawMsg.key && typeof rawMsg.key === "object") ? (rawMsg.key as Record<string, unknown>) : {};
-      const payloadParticipantJid = typeof msgKey.participant === "string" 
-        ? msgKey.participant 
-        : typeof rawMsg.participant === "string" 
-          ? rawMsg.participant 
-          : typeof rawMsg.senderJid === "string" 
-            ? rawMsg.senderJid 
+      const payloadParticipantJid = typeof msgKey.participant === "string"
+        ? msgKey.participant
+        : typeof rawMsg.participant === "string"
+          ? rawMsg.participant
+          : typeof rawMsg.senderJid === "string"
+            ? rawMsg.senderJid
             : null;
 
       const messageSenderJid = payloadParticipantJid ?? context.senderJid;
@@ -490,11 +517,11 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       }
 
       const isAgentJid = Boolean(
-        instanceOwnerJid && 
-        payloadParticipantJid && 
+        instanceOwnerJid &&
+        payloadParticipantJid &&
         areWhatsappJidsEqual(payloadParticipantJid, instanceOwnerJid)
       );
-      
+
       const fallbackFromMe = Boolean(
         isSendMessageEvent ||
         (context.isGroup && (
@@ -505,9 +532,9 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         ))
       );
       const isFromMe = explicitFromMe ?? fallbackFromMe;
-      
+
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
-      const actorUserId = isFromMe 
+      const actorUserId = isFromMe
         ? (matchedSenderAgent?.assignedUserId ?? instanceDetails?.assignedUserId ?? null)
         : null;
       const actorName = isFromMe
@@ -527,6 +554,9 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
+        providerRemoteJid: context.providerRemoteJid,
+        remoteJidAlt: context.remoteJidAlt,
+        remoteJidAliases: context.remoteJidAliases,
         instanceId: isFromMe ? (matchedSenderAgent?.id ?? instanceDetails?.id ?? null) : (instanceDetails?.id ?? null),
         fromMe: isFromMe,
         outboundSource: isFromMe ? "whatsapp_device" : null,
@@ -602,10 +632,21 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         remote_jid_deal AS (
           SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, d.whatsapp_jid
           FROM deals d
+          LEFT JOIN LATERAL (
+            SELECT wja.canonical_jid
+            FROM whatsapp_jid_aliases wja
+            WHERE LOWER(wja.instance_name) = LOWER($7)
+              AND wja.alias_jid = d.whatsapp_jid
+            ORDER BY wja.updated_at DESC
+            LIMIT 1
+          ) deal_alias ON true
           JOIN pipeline_stages ps ON ps.id = d.stage_id
           WHERE ps.is_won = false AND ps.is_lost = false
             AND (
               d.whatsapp_jid = $2
+              OR d.whatsapp_jid = ANY($6::text[])
+              OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = $2
+              OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($6::text[])
               OR (
                 -- Se um é LID e o outro é telefone real, verificamos se há algum mapeamento histórico
                 -- que ligue os dois na tabela whatsapp_incoming_messages.
@@ -614,7 +655,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
                   OR (d.whatsapp_jid LIKE '%@s.whatsapp.net' AND $2 LIKE '%@lid')
                 )
                 AND EXISTS (
-                  SELECT 1 
+                  SELECT 1
                   FROM whatsapp_incoming_messages wim
                   WHERE (wim.remote_jid = d.whatsapp_jid OR wim.participant_jid = d.whatsapp_jid OR wim.remote_jid = $2 OR wim.participant_jid = $2)
                     AND (
@@ -690,12 +731,20 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           instanceDetails?.id ?? null,
           instanceDetails?.assignedUserId ?? null,
           instanceDetails?.assignedUserName ?? "",
+          context.remoteJidAliases,
+          instanceName,
         ],
       );
 
       if (dealMatch.rows[0]) {
         const dealId = String(dealMatch.rows[0].id);
         const currentDealJid = dealMatch.rows[0].whatsapp_jid;
+        await upsertWhatsappJidAliases({
+          instanceName,
+          canonicalJid: String(currentDealJid ?? resolvedRemoteJid),
+          aliases: [currentDealJid, resolvedRemoteJid, context.providerRemoteJid, context.remoteJidAlt, ...context.remoteJidAliases],
+          source: "deal-match",
+        });
 
         // Upgrade JID if deal has LID, but we resolved a real phone JID
         if (
@@ -782,8 +831,8 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             RETURNING id
             `,
             [
-              dealTitle, dealTitle, stageId, 
-              instanceDetails?.id ?? null, 
+              dealTitle, dealTitle, stageId,
+              instanceDetails?.id ?? null,
               resolvedRemoteJid, context.createdAt,
               instanceDetails?.assignedUserId ?? null,
               instanceDetails?.assignedUserName ?? null

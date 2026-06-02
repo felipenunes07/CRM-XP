@@ -69,6 +69,20 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS: z.coerce.number().int().positive().default(6),
+  WORKER_WHATSAPP_ACTIVITY_ROLLUP_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
+  WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS: z.coerce.number().int().min(2).max(120).default(3),
+  WHATSAPP_ACTIVITY_ROLLUP_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(90_000),
+  WHATSAPP_INCOMING_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(30),
+  WHATSAPP_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(180),
+  WHATSAPP_ROLLUP_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(400),
+  EVENTS_RESOLVED_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+  EVENTS_LOW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(60),
+  EVENTS_SENTIMENT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+  DATABASE_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(100).max(50_000).default(5_000),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
   SUPABASE_URL: z.string().default(""),

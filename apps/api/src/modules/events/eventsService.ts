@@ -194,6 +194,7 @@ export function isInternalSender(senderJid: string | null | undefined, senderNam
   return false;
 }
 import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
@@ -1397,6 +1398,147 @@ export async function aggregateAllDealsSentiment() {
   }
 }
 
+async function deleteInBatches(label: string, sql: string, params: unknown[]) {
+  let deletedTotal = 0;
+
+  for (let batch = 0; batch < 1_000; batch += 1) {
+    const result = await pool.query(sql, params);
+    const deleted = result.rowCount ?? 0;
+    deletedTotal += deleted;
+
+    if (deleted < env.DATABASE_CLEANUP_BATCH_SIZE) {
+      break;
+    }
+  }
+
+  logger.info("finished cleanup batch group", { label, deleted: deletedTotal });
+  return deletedTotal;
+}
+
+export async function purgeOldEventsData() {
+  logger.info("starting events data purge");
+  const results: Record<string, number> = {};
+
+  try {
+    results.incomingMessages = await deleteInBatches(
+      "whatsapp_incoming_messages",
+      `
+      DELETE FROM whatsapp_incoming_messages
+      WHERE ctid IN (
+        SELECT ctid
+        FROM whatsapp_incoming_messages
+        WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY created_at
+        LIMIT $2::int
+      )
+      `,
+      [env.WHATSAPP_INCOMING_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.whatsappActivities = await deleteInBatches(
+      "deal_activities_whatsapp",
+      `
+      DELETE FROM deal_activities
+      WHERE ctid IN (
+        SELECT ctid
+        FROM deal_activities
+        WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+          AND created_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY created_at
+        LIMIT $2::int
+      )
+      `,
+      [env.WHATSAPP_ACTIVITY_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.whatsappRollups = await deleteInBatches(
+      "whatsapp_activity_rollups",
+      `
+      DELETE FROM whatsapp_activity_rollups
+      WHERE ctid IN (
+        SELECT ctid
+        FROM whatsapp_activity_rollups
+        WHERE period_date < CURRENT_DATE - $1::int
+        ORDER BY period_date
+        LIMIT $2::int
+      )
+      `,
+      [env.WHATSAPP_ROLLUP_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.resolvedEvents = await deleteInBatches(
+      "message_events_resolved",
+      `
+      DELETE FROM message_events
+      WHERE ctid IN (
+        SELECT ctid
+        FROM message_events
+        WHERE resolved_at IS NOT NULL
+          AND resolved_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY resolved_at
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_RESOLVED_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.staleLowEvents = await deleteInBatches(
+      "message_events_low",
+      `
+      DELETE FROM message_events
+      WHERE ctid IN (
+        SELECT ctid
+        FROM message_events
+        WHERE resolved_at IS NULL
+          AND severity = 'LOW'
+          AND detected_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY detected_at
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_LOW_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.resolutions = await deleteInBatches(
+      "event_resolutions",
+      `
+      DELETE FROM event_resolutions
+      WHERE ctid IN (
+        SELECT ctid
+        FROM event_resolutions
+        WHERE resolved_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY resolved_at
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_RESOLVED_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.sentiments = await deleteInBatches(
+      "event_sentiments",
+      `
+      DELETE FROM event_sentiments
+      WHERE ctid IN (
+        SELECT ctid
+        FROM event_sentiments
+        WHERE date < CURRENT_DATE - $1::int
+        ORDER BY date
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_SENTIMENT_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    const totalPurged = Object.values(results).reduce((a, b) => a + b, 0);
+    logger.info("finished events data purge", { totalPurged, ...results });
+
+    return results;
+  } catch (error: any) {
+    logger.error("failed events data purge", { error: error.message });
+    throw error;
+  }
+}
+
 /**
  * Purge old data to prevent database bloat.
  * 
@@ -1407,7 +1549,7 @@ export async function aggregateAllDealsSentiment() {
  * - event_resolutions: 90 days
  * - event_sentiments: 180 days
  */
-export async function purgeOldEventsData() {
+async function purgeOldEventsDataLegacyUnused() {
   logger.info("starting events data purge");
   const results: Record<string, number> = {};
 

@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   redisSet: vi.fn(),
   resolveMetadata: vi.fn(),
   createEventFromMessage: vi.fn(),
+  resolveIdentity: vi.fn(),
+  upsertAliases: vi.fn(),
+  getAliases: vi.fn(),
 }));
 
 vi.mock("../../db/client.js", () => ({
@@ -20,6 +23,12 @@ vi.mock("../../db/client.js", () => ({
 
 vi.mock("./evolutionMetadataService.js", () => ({
   resolveWhatsappMessageMetadata: mocks.resolveMetadata,
+}));
+
+vi.mock("./whatsappIdentityService.js", () => ({
+  resolveWhatsappConversationIdentity: mocks.resolveIdentity,
+  upsertWhatsappJidAliases: mocks.upsertAliases,
+  getWhatsappConversationAliases: mocks.getAliases,
 }));
 
 vi.mock("../events/eventsService.js", () => ({
@@ -83,10 +92,19 @@ describe("whatsapp conversation isolation", () => {
     mocks.redisSet.mockReset();
     mocks.resolveMetadata.mockReset();
     mocks.createEventFromMessage.mockReset();
+    mocks.resolveIdentity.mockReset();
+    mocks.upsertAliases.mockReset();
+    mocks.getAliases.mockReset();
     mocks.redisGet.mockResolvedValue(null);
     mocks.redisSet.mockResolvedValue("OK");
     mocks.resolveMetadata.mockResolvedValue({});
     mocks.createEventFromMessage.mockResolvedValue(undefined);
+    mocks.resolveIdentity.mockImplementation((_instanceName, context) => ({
+      canonicalJid: context.remoteJid,
+      aliases: context.remoteJid ? [context.remoteJid] : [],
+    }));
+    mocks.getAliases.mockImplementation((_instanceName, remoteJid) => remoteJid ? [remoteJid] : []);
+    mocks.upsertAliases.mockResolvedValue(undefined);
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {
@@ -110,6 +128,7 @@ describe("whatsapp conversation isolation", () => {
         ],
       })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
     await getWhatsappMonitorConversation("deal-1", {
@@ -119,12 +138,12 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    const incomingCall = mocks.query.mock.calls[2];
+    const incomingCall = mocks.query.mock.calls[3];
     expect(incomingCall).toBeDefined();
     const incomingQuery = String(incomingCall![0]);
     const incomingParams = incomingCall![1];
 
-    expect(incomingParams).toEqual(["5511999998888@s.whatsapp.net", "amanda"]);
+    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda"]);
     expect(incomingQuery).toContain("LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)");
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim\.instance_name,\s*''\)\s*=\s*''/);
   });
@@ -182,6 +201,8 @@ describe("whatsapp conversation isolation", () => {
       "instance-amanda",
       "user-amanda",
       "Amanda",
+      ["5511999998888@s.whatsapp.net"],
+      "amanda",
     ]);
     expect(dealMatchQuery).toContain("d.whatsapp_instance_id = $3::uuid");
     expect(dealMatchQuery).toContain("d.assigned_to = $4::uuid");
@@ -311,6 +332,8 @@ describe("whatsapp conversation isolation", () => {
       "instance-suelen",
       "user-suelen",
       "Suelen",
+      ["269097182986462@lid"],
+      "suelen",
     ]);
     expect(dealMatchQuery).toContain("existing_message_deal");
     expect(dealMatchQuery).toContain("metadata ->> 'messageId' = $1");
@@ -337,6 +360,7 @@ describe("whatsapp conversation isolation", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [
           {
@@ -400,7 +424,7 @@ describe("whatsapp conversation isolation", () => {
 
     expect(listSql).toContain("DISTINCT ON");
     expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
-    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))");
+    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, ''))");
   });
 
   it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
@@ -485,7 +509,7 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("can restrict the conversation list to sent interactions from the selected WhatsApp user", async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+    mocks.query.mockResolvedValueOnce({ rows: [] });
 
     await listWhatsappMonitorConversations(
       {
@@ -501,7 +525,7 @@ describe("whatsapp conversation isolation", () => {
       },
     );
 
-    const listCall = mocks.query.mock.calls[1];
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("agent_interaction_activity"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
 
@@ -517,7 +541,7 @@ describe("whatsapp conversation isolation", () => {
     // preview from the canonical incoming message by remote_jid (instance
     // agnostic) and (b) every seller row for that group surfaces the same
     // last message after mapping.
-    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({
+    mocks.query.mockResolvedValueOnce({
       rows: [
         {
           id: "deal-amanda",
@@ -563,7 +587,7 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    const listCall = mocks.query.mock.calls[1];
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("group_latest_message"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
 

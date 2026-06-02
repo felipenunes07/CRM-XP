@@ -265,7 +265,6 @@ export function MessagesPage() {
     const chatBodyRef = useRef(null);
     const stickToBottomRef = useRef(true);
     const lastScrolledConversationRef = useRef(null);
-    const profileRefreshRequestedRef = useRef(false);
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedConversationSearch(conversationSearch);
@@ -434,31 +433,6 @@ export function MessagesPage() {
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
-    const refreshProfilesMutation = useMutation({
-        mutationFn: () => api.refreshWhatsappMonitorProfiles(token),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
-            queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversation"] });
-        },
-    });
-    useEffect(() => {
-        if (!token ||
-            !conversations.length ||
-            profileRefreshRequestedRef.current ||
-            refreshProfilesMutation.isPending ||
-            refreshProfilesMutation.isSuccess) {
-            return;
-        }
-        const hasMissingProfiles = conversations.some((conversation) => {
-            const looksNumeric = conversation.isGroup &&
-                (/^Grupo\s+\d+$/i.test(conversation.contactName) || /^\[GRUPO\]\s+\d+/i.test(conversation.contactName));
-            return !conversation.profilePictureUrl || looksNumeric;
-        });
-        if (hasMissingProfiles) {
-            profileRefreshRequestedRef.current = true;
-            refreshProfilesMutation.mutate();
-        }
-    }, [conversations, refreshProfilesMutation, token]);
     // Only use detail data when it actually belongs to the selected conversation
     // to prevent stale messages from a previous chat from appearing
     const detail = conversationDetailQuery.data;
