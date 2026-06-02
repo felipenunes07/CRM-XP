@@ -1155,6 +1155,234 @@ export const migrations = [
     ADD COLUMN IF NOT EXISTS carousel_data JSONB;
   `,
   `
+  CREATE OR REPLACE FUNCTION set_updated_at()
+  RETURNS trigger
+  LANGUAGE plpgsql
+  AS $$
+  BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+  END;
+  $$;
+
+  CREATE TABLE IF NOT EXISTS profiles (
+    id UUID PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    full_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'viewer',
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_sign_in_at TIMESTAMPTZ,
+    CHECK (role IN ('admin', 'vendas', 'financeiro', 'operacional', 'viewer'))
+  );
+
+  CREATE TABLE IF NOT EXISTS permissions (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    role TEXT NOT NULL,
+    permission_key TEXT NOT NULL REFERENCES permissions(key) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (role, permission_key),
+    CHECK (role IN ('admin', 'vendas', 'financeiro', 'operacional', 'viewer'))
+  );
+
+  ALTER TABLE profiles ALTER COLUMN role DROP DEFAULT;
+  ALTER TABLE profiles ALTER COLUMN role TYPE TEXT USING lower(role::text);
+  ALTER TABLE profiles ALTER COLUMN role SET DEFAULT 'viewer';
+
+  DO $$
+  BEGIN
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.table_constraints
+      WHERE table_schema = 'public'
+        AND table_name = 'profiles'
+        AND constraint_name = 'profiles_id_fkey'
+    ) THEN
+      ALTER TABLE profiles DROP CONSTRAINT profiles_id_fkey;
+    END IF;
+
+    IF EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'profiles'
+        AND column_name = 'name'
+    ) THEN
+      ALTER TABLE profiles ALTER COLUMN name DROP NOT NULL;
+    END IF;
+  END $$;
+
+  CREATE TABLE IF NOT EXISTS user_permissions (
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    permission_key TEXT NOT NULL REFERENCES permissions(key) ON DELETE CASCADE,
+    allowed BOOLEAN NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, permission_key)
+  );
+
+  ALTER TABLE profiles
+    ADD COLUMN IF NOT EXISTS full_name TEXT,
+    ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'viewer',
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS created_by UUID,
+    ADD COLUMN IF NOT EXISTS last_sign_in_at TIMESTAMPTZ;
+
+  UPDATE profiles
+  SET full_name = COALESCE(NULLIF(full_name, ''), split_part(email, '@', 1), 'Usuario')
+  WHERE full_name IS NULL OR full_name = '';
+
+  ALTER TABLE profiles ALTER COLUMN full_name SET NOT NULL;
+
+  INSERT INTO permissions (key, name, description)
+  VALUES
+    ('dashboard.view', 'Dashboard geral', 'Visualizar os indicadores principais do CRM.'),
+    ('commercial.view', 'Ferramentas comerciais', 'Acessar clientes, agenda, pipeline e prospeccao.'),
+    ('commercial.manage', 'Gestao comercial', 'Criar e alterar registros comerciais.'),
+    ('messages.view', 'Mensagens', 'Visualizar mensagens, disparos e conversas.'),
+    ('messages.manage', 'Gestao de mensagens', 'Criar modelos, campanhas e responder conversas.'),
+    ('finance.view', 'Financeiro', 'Visualizar credito, comprovantes e informacoes financeiras.'),
+    ('finance.manage', 'Gestao financeira', 'Atualizar metas e dados financeiros.'),
+    ('reports.view', 'Relatorios', 'Visualizar relatorios e analises.'),
+    ('settings.manage', 'Configuracoes', 'Alterar configuracoes internas do CRM.'),
+    ('admin.panel.view', 'Painel administrativo', 'Acessar area administrativa.'),
+    ('admin.users.manage', 'Gestao de usuarios', 'Criar, editar, desativar usuarios e redefinir acessos.'),
+    ('automations.view', 'Automacoes', 'Visualizar automacoes.'),
+    ('automations.manage', 'Gestao de automacoes', 'Criar, editar, executar e aprovar automacoes.'),
+    ('integrations.manage', 'Integracoes', 'Gerenciar integracoes e instancias externas.')
+  ON CONFLICT (key) DO UPDATE
+  SET name = EXCLUDED.name,
+      description = EXCLUDED.description;
+
+  INSERT INTO role_permissions (role, permission_key)
+  SELECT 'admin', key FROM permissions
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO role_permissions (role, permission_key)
+  VALUES
+    ('vendas', 'dashboard.view'),
+    ('vendas', 'commercial.view'),
+    ('vendas', 'commercial.manage'),
+    ('vendas', 'messages.view'),
+    ('vendas', 'messages.manage'),
+    ('vendas', 'reports.view'),
+    ('vendas', 'automations.view'),
+    ('financeiro', 'dashboard.view'),
+    ('financeiro', 'finance.view'),
+    ('financeiro', 'finance.manage'),
+    ('financeiro', 'reports.view'),
+    ('operacional', 'dashboard.view'),
+    ('operacional', 'commercial.view'),
+    ('operacional', 'messages.view'),
+    ('operacional', 'reports.view'),
+    ('operacional', 'automations.view'),
+    ('operacional', 'integrations.manage'),
+    ('viewer', 'dashboard.view'),
+    ('viewer', 'reports.view')
+  ON CONFLICT DO NOTHING;
+
+  INSERT INTO profiles (id, email, full_name, role, is_active, created_at, updated_at, last_sign_in_at)
+  SELECT
+    u.id,
+    u.email,
+    u.name,
+    CASE
+      WHEN UPPER(u.role) = 'ADMIN' THEN 'admin'
+      WHEN UPPER(u.role) = 'SELLER' THEN 'vendas'
+      ELSE 'operacional'
+    END,
+    TRUE,
+    u.created_at,
+    u.updated_at,
+    u.last_login_at
+  FROM users u
+  ON CONFLICT (id) DO UPDATE
+  SET email = EXCLUDED.email,
+      full_name = EXCLUDED.full_name,
+      role = EXCLUDED.role,
+      updated_at = NOW(),
+      last_sign_in_at = EXCLUDED.last_sign_in_at;
+
+  CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
+  CREATE INDEX IF NOT EXISTS idx_profiles_is_active ON profiles(is_active);
+  CREATE INDEX IF NOT EXISTS idx_user_permissions_user_id ON user_permissions(user_id);
+
+  DROP TRIGGER IF EXISTS set_profiles_updated_at ON profiles;
+  CREATE TRIGGER set_profiles_updated_at
+    BEFORE UPDATE ON profiles
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+  DROP TRIGGER IF EXISTS set_user_permissions_updated_at ON user_permissions;
+  CREATE TRIGGER set_user_permissions_updated_at
+    BEFORE UPDATE ON user_permissions
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+  `,
+  `
+  -- Performance indexes for dashboard, reports and WhatsApp monitor read paths.
+  CREATE INDEX IF NOT EXISTS idx_orders_customer_order_date
+    ON orders(customer_id, order_date DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_order_items_order_quantity
+    ON order_items(order_id, quantity);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_type_created_at
+    ON deal_activities(activity_type, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_deal_type_created_at
+    ON deal_activities(deal_id, activity_type, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_message_id
+    ON deal_activities ((metadata ->> 'messageId'))
+    WHERE metadata ? 'messageId';
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_instance_created
+    ON whatsapp_incoming_messages(remote_jid, instance_name, created_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_message_created
+    ON whatsapp_incoming_messages(message_id, created_at DESC);
+
+  -- Serves the per-group "latest message" lookup used by the conversation list
+  -- (group preview by JID) and the group detail query. Without created_at as the
+  -- 2nd column (the older index put instance_name in the middle) Postgres had to
+  -- scan + sort every row of a group per deal row, spiking CPU on the monitor page.
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_jid_created
+    ON whatsapp_incoming_messages(remote_jid, created_at DESC, id DESC);
+  `,
+  `
+  -- Evolution API Webhook Idempotency & Database Optimizations
+  CREATE TABLE IF NOT EXISTS webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    provider VARCHAR(50) NOT NULL DEFAULT 'evolution',
+    event_type VARCHAR(100) NOT NULL,
+    idempotency_key VARCHAR(255) NOT NULL UNIQUE,
+    message_id VARCHAR(200),
+    remote_jid VARCHAR(200),
+    instance_name VARCHAR(100),
+    instance_id UUID,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    status VARCHAR(50) NOT NULL,
+    error TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_webhook_events_idempotency_key ON webhook_events(idempotency_key);
+  CREATE INDEX IF NOT EXISTS idx_webhook_events_received_at ON webhook_events(received_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid ON deals(whatsapp_jid);
+  CREATE INDEX IF NOT EXISTS idx_pipeline_stages_won_lost ON pipeline_stages(is_won, is_lost);
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_provider_id
+    ON deal_activities ((metadata ->> 'providerMessageId'))
+    WHERE metadata ? 'providerMessageId';
+  `,
+  `
   -- WhatsApp monitor performance indexes
   CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_deal_created
     ON deal_activities(deal_id, created_at DESC, id DESC)
@@ -1172,7 +1400,7 @@ export const migrations = [
     ON deal_activities(deal_id, (LOWER(COALESCE(metadata ->> 'instance', ''))))
     WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED');
 
-  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid_not_null
     ON deals(whatsapp_jid)
     WHERE whatsapp_jid IS NOT NULL;
 
@@ -1184,7 +1412,7 @@ export const migrations = [
     ON deals(last_activity_at DESC, id DESC)
     WHERE whatsapp_jid IS NOT NULL;
 
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_instance_created
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_lower_instance_created
     ON whatsapp_incoming_messages(
       remote_jid,
       (LOWER(COALESCE(instance_name, ''))),

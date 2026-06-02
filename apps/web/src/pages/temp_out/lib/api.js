@@ -1,0 +1,629 @@
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+async function request(path, options = {}, token) {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers: {
+            "content-type": "application/json",
+            ...(token ? { authorization: `Bearer ${token}` } : {}),
+            ...(options.headers ?? {}),
+        },
+    });
+    if (!response.ok) {
+        const payload = (await response.json().catch(() => ({ message: "Request failed" })));
+        throw new Error(payload.message ?? "Request failed");
+    }
+    if (response.status === 204) {
+        return undefined;
+    }
+    return response.json();
+}
+export const api = {
+    login(email, password) {
+        return request("/api/auth/login", {
+            method: "POST",
+            body: JSON.stringify({ email, password }),
+        });
+    },
+    me(token) {
+        return request("/api/auth/me", {}, token);
+    },
+    /**
+     * Get dashboard metrics
+     * @param token Authentication token
+     * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
+     */
+    dashboard(token, trendDays, customerPrefix) {
+        const search = new URLSearchParams();
+        if (trendDays !== undefined) {
+            search.set("trendDays", String(trendDays));
+        }
+        if (customerPrefix !== undefined) {
+            search.set("customerPrefix", customerPrefix);
+        }
+        return request(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    dashboardTrendRangeAnalysis(token, startDate, endDate) {
+        const search = new URLSearchParams({
+            startDate,
+            endDate,
+        });
+        return request(`/api/dashboard/trend-range-analysis?${search.toString()}`, {}, token);
+    },
+    customerMovements(token, days = 7) {
+        const search = new URLSearchParams({
+            days: String(days),
+        });
+        return request(`/api/dashboard/movements?${search.toString()}`, {}, token);
+    },
+    getMonthlyTargets(token, year) {
+        const search = new URLSearchParams();
+        if (year)
+            search.set("year", String(year));
+        return request(`/api/dashboard/targets${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    saveMonthlyTarget(token, year, month, targetAmount, attendant = 'TOTAL', targetRevenue = 0) {
+        return request("/api/dashboard/targets", {
+            method: "POST",
+            body: JSON.stringify({ year, month, targetAmount, attendant, targetRevenue }),
+        }, token);
+    },
+    deleteMonthlyTarget(token, year, month, attendant) {
+        const search = new URLSearchParams({ year: String(year), month: String(month), attendant });
+        return request(`/api/dashboard/targets?${search.toString()}`, {
+            method: "DELETE",
+        }, token);
+    },
+    acquisition(token) {
+        return request("/api/dashboard/acquisition", {}, token);
+    },
+    attendants(token, windowMonths = 12) {
+        const search = new URLSearchParams({
+            windowMonths: String(windowMonths),
+        });
+        return request(`/api/attendants?${search.toString()}`, {}, token);
+    },
+    ambassadors(token) {
+        return request("/api/ambassadors", {}, token);
+    },
+    agenda(token, limit, offset, query = {}) {
+        const search = new URLSearchParams();
+        if (limit !== undefined) {
+            search.set("limit", String(limit));
+        }
+        if (offset !== undefined) {
+            search.set("offset", String(offset));
+        }
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/agenda${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    customers(token, query) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/customers?${search.toString()}`, {}, token);
+    },
+    customerDocInsights(token) {
+        return request("/api/customer-insights/doc", {}, token);
+    },
+    getGeographicSalesStats(token) {
+        return request("/api/geographic/sales", {}, token);
+    },
+    getGeographicModelSales(token, options) {
+        const params = new URLSearchParams();
+        if (options.state)
+            params.set("state", options.state);
+        if (options.city)
+            params.set("city", options.city);
+        if (options.year)
+            params.set("year", String(options.year));
+        return request(`/api/geographic/model-sales?${params.toString()}`, {}, token);
+    },
+    customerCreditOverview(token) {
+        return request("/api/customer-credit/overview", {}, token);
+    },
+    refreshCustomerCreditOverview(token) {
+        return request("/api/customer-credit/refresh", {
+            method: "POST",
+        }, token);
+    },
+    customerCreditOpportunities(token) {
+        return request("/api/customer-credit/opportunities", {}, token);
+    },
+    inventorySnapshot(token) {
+        return request("/api/inventory/snapshot", {}, token);
+    },
+    refreshInventorySnapshot(token) {
+        return request("/api/inventory/refresh", {
+            method: "POST",
+        }, token);
+    },
+    inventoryIntelligence(token, query = {}) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/inventory/intelligence${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    inventoryItemDetail(token, sku) {
+        return request(`/api/inventory/items/${encodeURIComponent(sku)}`, {}, token);
+    },
+    inventoryOverview(token) {
+        return request("/api/inventory/overview", {}, token);
+    },
+    inventoryBuying(token) {
+        return request("/api/inventory/buying", {}, token);
+    },
+    inventoryRestock(token) {
+        return request("/api/inventory/restock", {}, token);
+    },
+    inventoryStale(token) {
+        return request("/api/inventory/stale", {}, token);
+    },
+    inventoryModels(token) {
+        return request("/api/inventory/models", {}, token);
+    },
+    inventoryModelDetail(token, modelKey) {
+        return request(`/api/inventory/models/${encodeURIComponent(modelKey)}`, {}, token);
+    },
+    customer(token, id) {
+        return request(`/api/customers/${id}`, {}, token);
+    },
+    customerCreditDetail(token, id) {
+        return request(`/api/customers/${id}/credit`, {}, token);
+    },
+    customerOpportunity(token, id) {
+        return request(`/api/customers/${id}/opportunity`, {}, token);
+    },
+    customerLabels(token) {
+        return request("/api/customer-labels", {}, token);
+    },
+    createCustomerLabel(token, name) {
+        return request("/api/customer-labels", {
+            method: "POST",
+            body: JSON.stringify({ name }),
+        }, token);
+    },
+    updateCustomerLabel(token, id, color) {
+        return request(`/api/customer-labels/${id}`, {
+            method: "PUT",
+            body: JSON.stringify({ color }),
+        }, token);
+    },
+    deleteCustomerLabel(token, id) {
+        return request(`/api/customer-labels/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    updateCustomerLabels(token, id, input) {
+        return request(`/api/customers/${id}/labels`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateCustomerAmbassador(token, id, isAmbassador) {
+        return request(`/api/customers/${id}/ambassador`, {
+            method: "PUT",
+            body: JSON.stringify({ isAmbassador }),
+        }, token);
+    },
+    previewSegment(token, definition) {
+        return request("/api/segments/preview", {
+            method: "POST",
+            body: JSON.stringify(definition),
+        }, token);
+    },
+    savedSegments(token) {
+        return request("/api/segments/saved", {}, token);
+    },
+    createSavedSegment(token, input) {
+        return request("/api/segments/saved", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateSavedSegment(token, id, input) {
+        return request(`/api/segments/saved/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteSavedSegment(token, id) {
+        return request(`/api/segments/saved/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    automations(token) {
+        return request("/api/automations", {}, token);
+    },
+    createAutomation(token, input) {
+        return request("/api/automations", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateAutomation(token, id, input) {
+        return request(`/api/automations/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteAutomation(token, id) {
+        return request(`/api/automations/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    runAutomationNow(token, id, sendMode) {
+        return request(`/api/automations/${id}/run-now`, {
+            method: "POST",
+            body: JSON.stringify(sendMode ? { sendMode } : {}),
+        }, token);
+    },
+    automationRuns(token, limit = 100) {
+        return request(`/api/automations/runs?limit=${limit}`, {}, token);
+    },
+    approveAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/approve`, {
+            method: "POST",
+        }, token);
+    },
+    rejectAutomationRun(token, id) {
+        return request(`/api/automations/runs/${id}/reject`, {
+            method: "POST",
+        }, token);
+    },
+    messageTemplates(token) {
+        return request("/api/messages/templates", {}, token);
+    },
+    createMessageTemplate(token, input) {
+        return request("/api/messages/templates", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateMessageTemplate(token, id, input) {
+        return request(`/api/messages/templates/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteMessageTemplate(token, id) {
+        return request(`/api/messages/templates/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    sendTestMessage(token, input) {
+        return request("/api/messages/test", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    listIdeas(token) {
+        return request("/api/ideas", {}, token);
+    },
+    createIdea(token, input) {
+        return request("/api/ideas", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getIdea(token, id) {
+        return request(`/api/ideas/${id}`, {}, token);
+    },
+    deleteIdea(token, id) {
+        return request(`/api/ideas/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    moveIdeaLane(token, id, input) {
+        return request(`/api/ideas/${id}/lane`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    notifyIdeaWhatsapp(token, id) {
+        return request(`/api/ideas/${id}/notify-whatsapp`, {
+            method: "POST",
+        }, token);
+    },
+    submitIdeaVote(token, id, input) {
+        return request(`/api/ideas/${id}/vote`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    ideaFeedbacks(token, id) {
+        return request(`/api/ideas/${id}/feedback`, {}, token);
+    },
+    prospectingConfig(token) {
+        return request("/api/prospecting/config", {}, token);
+    },
+    createProspectPreset(token, keyword) {
+        return request("/api/prospecting/presets", {
+            method: "POST",
+            body: JSON.stringify({ keyword }),
+        }, token);
+    },
+    prospectingSearch(token, query) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/prospecting/search?${search.toString()}`, {}, token);
+    },
+    prospectingSummary(token) {
+        return request("/api/prospecting/summary", {}, token);
+    },
+    claimProspectLead(token, id) {
+        return request(`/api/prospecting/leads/${id}/claim`, {
+            method: "POST",
+        }, token);
+    },
+    releaseProspectLead(token, id) {
+        return request(`/api/prospecting/leads/${id}/release`, {
+            method: "POST",
+        }, token);
+    },
+    createProspectContactAttempt(token, id, input) {
+        return request(`/api/prospecting/leads/${id}/contact-attempts`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    discardProspectLead(token, id, reason) {
+        return request(`/api/prospecting/leads/${id}/discard`, {
+            method: "POST",
+            body: JSON.stringify({ reason }),
+        }, token);
+    },
+    users(token) {
+        return request("/api/admin/users", {}, token);
+    },
+    syncData(token, mode = "direct") {
+        return request("/api/admin/sync", {
+            method: "POST",
+            body: JSON.stringify({ mode }),
+        }, token);
+    },
+    whatsappGroups(token, query = {}) {
+        const search = new URLSearchParams();
+        Object.entries(query).forEach(([key, value]) => {
+            if (value !== undefined && value !== "") {
+                search.set(key, String(value));
+            }
+        });
+        return request(`/api/whatsapp-groups${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    whatsappGroupMappingSummary(token) {
+        return request("/api/whatsapp-groups/mapping-summary", {}, token);
+    },
+    importWhatsappGroups(token, input) {
+        return request("/api/whatsapp-groups/import", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    importWhatsappGroupsDefault(token) {
+        return request("/api/whatsapp-groups/import-default", {
+            method: "POST",
+        }, token);
+    },
+    updateWhatsappGroupMatch(token, id, input) {
+        return request(`/api/whatsapp-groups/${id}/match`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    whatsappCampaigns(token, limit = 20) {
+        return request(`/api/whatsapp-campaigns?limit=${limit}`, {}, token);
+    },
+    whatsappCampaign(token, id, query = {}) {
+        const search = new URLSearchParams();
+        if (query.limit !== undefined) {
+            search.set("limit", String(query.limit));
+        }
+        if (query.offset !== undefined) {
+            search.set("offset", String(query.offset));
+        }
+        return request(`/api/whatsapp-campaigns/${id}${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    createWhatsappCampaign(token, input) {
+        return request("/api/whatsapp-campaigns", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    cancelWhatsappCampaign(token, id) {
+        return request(`/api/whatsapp-campaigns/${id}/cancel`, {
+            method: "POST",
+        }, token);
+    },
+    whatsappMonitorConversations(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.instanceId) {
+            search.set("instanceId", query.instanceId);
+        }
+        if (query.search) {
+            search.set("search", query.search);
+        }
+        if (query.contactName) {
+            search.set("contactName", query.contactName);
+        }
+        if (query.contactPhone) {
+            search.set("contactPhone", query.contactPhone);
+        }
+        if (query.period) {
+            search.set("period", query.period);
+        }
+        if (query.status) {
+            search.set("status", query.status);
+        }
+        return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    whatsappMonitorConversation(token, id) {
+        return request(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
+    },
+    whatsappMonitorMetrics(token) {
+        return request("/api/whatsapp-monitor/metrics", {}, token);
+    },
+    whatsappAgentActivityReport(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.days) {
+            search.set("days", String(query.days));
+        }
+        return request(`/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    setWhatsappMonitorReadState(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/read-state`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    sendWhatsappMonitorReply(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/replies`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    sendWhatsappMonitorMediaReply(token, id, input) {
+        return request(`/api/whatsapp-monitor/conversations/${id}/media-replies`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    refreshWhatsappMonitorProfiles(token) {
+        return request("/api/whatsapp-monitor/refresh-profiles", { method: "POST" }, token);
+    },
+    getChartAnnotations(token) {
+        return request("/api/dashboard/annotations", {}, token);
+    },
+    saveChartAnnotation(token, input) {
+        return request("/api/dashboard/annotations", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteChartAnnotation(token, id) {
+        return request(`/api/dashboard/annotations/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    // ── Pipeline / Kanban ──────────────────────────────────────────
+    pipelineSummary(token, includeClosed = false) {
+        const q = includeClosed ? "?includeClosed=true" : "";
+        return request(`/api/pipeline/summary${q}`, {}, token);
+    },
+    createDeal(token, input) {
+        return request("/api/pipeline/deals", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getDeal(token, id) {
+        return request(`/api/pipeline/deals/${id}`, {}, token);
+    },
+    updateDeal(token, id, input) {
+        return request(`/api/pipeline/deals/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    moveDealStage(token, id, stageId) {
+        return request(`/api/pipeline/deals/${id}/stage`, {
+            method: "PATCH",
+            body: JSON.stringify({ stageId }),
+        }, token);
+    },
+    addDealActivity(token, id, input) {
+        return request(`/api/pipeline/deals/${id}/activities`, {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    // ── WhatsApp Instances ─────────────────────────────────────────
+    whatsappInstanceDefaults(token) {
+        return request("/api/whatsapp-instances/defaults", {}, token);
+    },
+    whatsappInstances(token) {
+        return request("/api/whatsapp-instances", {}, token);
+    },
+    createWhatsappInstance(token, input) {
+        return request("/api/whatsapp-instances", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    deleteWhatsappInstance(token, id) {
+        return request(`/api/whatsapp-instances/${id}`, {
+            method: "DELETE",
+        }, token);
+    },
+    configureWhatsappInstance(token, id) {
+        return request(`/api/whatsapp-instances/${id}/configure`, {
+            method: "POST",
+        }, token);
+    },
+    getEventsMetrics(token, query = {}) {
+        const search = new URLSearchParams();
+        if (query.dateFrom)
+            search.set("dateFrom", query.dateFrom);
+        if (query.dateTo)
+            search.set("dateTo", query.dateTo);
+        if (query.isGroup !== undefined)
+            search.set("isGroup", String(query.isGroup));
+        return request(`/api/events/metrics?${search.toString()}`, {}, token);
+    },
+    listEvents(token, filters, pagination) {
+        const search = new URLSearchParams();
+        Object.entries(filters).forEach(([key, value]) => {
+            if (value !== undefined && value !== "")
+                search.set(key, String(value));
+        });
+        search.set("page", String(pagination.page));
+        search.set("pageSize", String(pagination.pageSize));
+        return request(`/api/events?${search.toString()}`, {}, token);
+    },
+    resolveEvent(token, id, input) {
+        return request(`/api/events/${id}/resolve`, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    getDailySentiments(token, query) {
+        const from = query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const to = query.to || new Date().toISOString().split('T')[0];
+        const search = new URLSearchParams();
+        search.set("dateFrom", from);
+        search.set("dateTo", to);
+        return request(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
+    },
+    // ── Strategies ──────────────────────────────────────────────
+    strategyCrossSell(token, minStock = 50, topN = 50) {
+        const search = new URLSearchParams();
+        search.set("minStock", String(minStock));
+        search.set("topN", String(topN));
+        return request(`/api/strategies/cross-sell?${search.toString()}`, {}, token);
+    },
+    strategySlowMoving(token, minStock = 1, daysWithoutSales = 30) {
+        const search = new URLSearchParams();
+        search.set("minStock", String(minStock));
+        search.set("daysWithoutSales", String(daysWithoutSales));
+        return request(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
+    },
+    bulkAssignLabelToCustomers(token, customerIds, labelName) {
+        return request("/api/customers/batch/labels", {
+            method: "POST",
+            body: JSON.stringify({ customerIds, labelName }),
+        }, token);
+    },
+};

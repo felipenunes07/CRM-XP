@@ -10,7 +10,7 @@ import type {
   WhatsappMonitorMetrics,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
-import { pool } from "../../db/client.js";
+import { pool, redis } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";
@@ -46,6 +46,7 @@ interface ConversationFilters {
   contactPhone?: string;
   period?: "today" | "yesterday" | "7d" | "30d";
   status?: "unread" | "risk";
+  agentInteraction?: "sent";
 }
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
@@ -61,6 +62,161 @@ const whatsappActivityReportCache = new Map<string, { expiresAt: number; report:
 function userCacheKey(user?: JwtUser) {
   return user ? `${user.role}:${user.id}:${user.name}` : "anonymous";
 }
+
+const INTERNAL_WHATSAPP_REPORT_JIDS = new Set([
+  "120363024604307554@g.us",
+  "120363024388010129@g.us",
+  "120363044596886178@g.us",
+  "120363045047058306@g.us",
+  "120363029236155900@g.us",
+  "120363031213889254@g.us",
+  "120363122256330986@g.us",
+  "120363152763097348@g.us",
+  "120363155480608371@g.us",
+  "120363142000640785@g.us",
+  "120363179964808614@g.us",
+  "120363218363642984@g.us",
+  "120363219631231709@g.us",
+  "120363227964128051@g.us",
+  "120363239228364452@g.us",
+  "120363228554629988@g.us",
+  "120363284675472016@g.us",
+  "120363303361235238@g.us",
+  "120363302011320268@g.us",
+  "120363301240196425@g.us",
+  "120363330143238456@g.us",
+  "120363388324650509@g.us",
+  "120363402501055817@g.us",
+  "120363421936412412@g.us",
+  "120363420937498094@g.us",
+  "120363420351854508@g.us",
+  "120363404782149909@g.us",
+  "120363185981602575@g.us",
+  "120363134064333742@g.us",
+  "120363048463637470@g.us",
+  "120363044132316737@g.us",
+  "120363025402961504@g.us",
+  "120363278542101022@g.us",
+  "120363335551619512@g.us",
+  "120363024580077621@g.us",
+  "120363422564243122@g.us",
+  "120363422753753190@g.us",
+  "93755076042876@lid",
+  "269603754213443@lid",
+  "226362308726972@lid",
+  "214997741375562:74@lid",
+  "3960597401743@lid",
+  "214997741375562:78@lid",
+  "32624739369122@lid",
+  "128441684885669@lid",
+]);
+
+const INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS = new Set([
+  "8617568919597",
+  "5511911279702",
+  "5511914898986",
+  "5511915103835",
+  "5511915863088",
+  "5511916263525",
+  "5511930890128",
+  "5511944538074",
+  "5511944705416",
+  "5511945423284",
+  "5511947879036",
+  "5511951392256",
+  "5511952960701",
+  "5511958326930",
+  "5511959502231",
+  "5511964218475",
+  "5511971086782",
+  "5511975501901",
+  "5511976001044",
+  "5511978398236",
+  "5511986168888",
+  "5511988366300",
+  "5511988807532",
+  "5511991547568",
+  "5511992112882",
+  "5511996435466",
+  "5511998595698",
+]);
+
+const INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS = [
+  /^int\b.*xp brasil$/,
+  /\binterno\b/,
+  /^xp[-\s]?comprovante$/,
+  /^xp telas$/,
+  /^xp[-\s]?trocas\b/,
+  /conferencia/,
+  /uniao faz acucar/,
+  /^xp[-\s]?atencao\b/,
+  /^xp[-\s]?relatorio atendimento noturno$/,
+  /^xp sistema novo$/,
+  /^xp[-\s]?106b$/,
+  /^xp[-\s]?correios$/,
+  /^xp[-\s]?informativos$/,
+  /^xp[-\s]?nf para cobrar cliente$/,
+  /^xp[-\s]?modelos que nao temos$/,
+  /^xp tecnicos$/,
+  /^xp[-\s]?fechar caixas$/,
+  /^xp[-\s]?recondicionado pecas$/,
+  /^xp[-\s]?meninos$/,
+  /^xp[-\s]?erros de conferencia/,
+  /^xp contagem$/,
+  /^xp equipe de solucoes$/,
+  /^xp factory/,
+  /^marketing xp$/,
+  /^funcionario faltas$/,
+  /^taxista valmir$/,
+  /^romario taxista$/,
+  /^xp[-\s]?saida de caixas$/,
+  /^xp[-\s]?midias e posts$/,
+];
+
+function normalizeWhatsappReportJid(value: string | null | undefined) {
+  return String(value ?? "").trim().toLocaleLowerCase("pt-BR");
+}
+
+function whatsappReportJidDigits(value: string | null | undefined) {
+  const [localPart = ""] = normalizeWhatsappReportJid(value).split("@");
+  return localPart.replace(/\D/g, "");
+}
+
+function isInternalWhatsappReportJid(remoteJid: string | null | undefined) {
+  const jid = normalizeWhatsappReportJid(remoteJid);
+  if (!jid) {
+    return false;
+  }
+
+  if (jid.includes("status@broadcast") || jid.endsWith("@broadcast")) {
+    return true;
+  }
+
+  if (INTERNAL_WHATSAPP_REPORT_JIDS.has(jid)) {
+    return true;
+  }
+
+  const digits = whatsappReportJidDigits(jid);
+  return Boolean(digits && INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS.has(digits));
+}
+
+function isInternalWhatsappReportName(name: string | null | undefined) {
+  const normalized = normalizeLabel(name);
+  return Boolean(normalized && INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS.some((pattern) => pattern.test(normalized)));
+}
+
+export function isInternalWhatsappReportChat(input: {
+  name?: string | null;
+  remoteJid?: string | null;
+}) {
+  return isInternalWhatsappReportJid(input.remoteJid) || isInternalWhatsappReportName(input.name);
+}
+
+function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
+  return isInternalWhatsappReportChat({ name, remoteJid });
+}
+
+
 
 function conversationMatchesInstanceSql(instanceAlias: string) {
   return `
@@ -117,6 +273,28 @@ function optionalString(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function optionalBoolean(value: unknown): boolean | null {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value === 1;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLocaleLowerCase("pt-BR");
+    if (["true", "1", "yes", "sim"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "nao", "não"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return null;
+}
+
 function normalizeLabel(value: string | null | undefined) {
   return (value ?? "")
     .normalize("NFD")
@@ -132,6 +310,51 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   }
 
   return null;
+}
+
+function resolveWhatsappActivityFromMe(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  const incomingPayload = asRecord(row.incoming_raw_payload);
+  const providerFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
+  const storedIncomingFromMe = optionalBoolean(row.incoming_from_me);
+  const metadataFromMe =
+    optionalBoolean(metadata.fromMe) ??
+    optionalBoolean(metadata.isOutbound) ??
+    optionalBoolean(metadata.capturedFromWhatsapp) ??
+    optionalBoolean(metadata.sentFromMonitor);
+
+  return providerFromMe ?? storedIncomingFromMe ?? metadataFromMe;
+}
+
+function isWhatsappActivityOutbound(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  return resolveWhatsappActivityFromMe(row, metadata) ?? (String(row.activity_type) === "WHATSAPP_SENT");
+}
+
+function whatsappActivityHasMedia(row: Record<string, unknown>, metadata = asRecord(row.metadata) ?? {}) {
+  if (
+    "fileName" in metadata ||
+    "filename" in metadata ||
+    "mediaName" in metadata ||
+    "mimetype" in metadata ||
+    "mediaType" in metadata ||
+    String(metadata.mediaType || "").trim() !== "" ||
+    String(metadata.mimetype || "").trim() !== ""
+  ) {
+    return true;
+  }
+
+  const content = String(row.content || "");
+  if (
+    content.startsWith("[Imagem]") ||
+    content.startsWith("[Vídeo]") ||
+    content.startsWith("[Áudio]") ||
+    content.startsWith("[Sticker]") ||
+    content.startsWith("[Documento]")
+  ) {
+    return true;
+  }
+
+  const incomingPayload = asRecord(row.incoming_raw_payload);
+  return incomingPayload ? Boolean(extractEvolutionMessageMedia(incomingPayload as any)) : false;
 }
 
 function extractProviderMessageId(payload: Record<string, unknown>) {
@@ -239,27 +462,23 @@ function mapActivityRow(row: Record<string, unknown>): DealActivity {
   const incomingMedia = incomingPayload ? extractEvolutionMessageMedia(incomingPayload as any) : null;
   const incomingContact = incomingPayload ? extractEvolutionMessageContact(incomingPayload as any) : null;
   const incomingContext = incomingPayload ? extractEvolutionMessageContext(incomingPayload as any, optionalString(row.instance_name)) : null;
-  const incomingFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
-  // An activity is outbound if it was originally saved as WHATSAPP_SENT, or if the synced message is fromMe
-  const isSent = row.activity_type === "WHATSAPP_SENT" || incomingFromMe === true;
+  const providerFromMe = incomingPayload ? extractEvolutionFromMeFlag(incomingPayload as any) : null;
+  const resolvedFromMe = resolveWhatsappActivityFromMe(row, baseMetadata);
+  const isSent = resolvedFromMe ?? (row.activity_type === "WHATSAPP_SENT");
 
   const metadata: Record<string, unknown> = {
     ...baseMetadata,
     ...(incomingMedia ? incomingMedia : {}),
     ...(incomingContact ? { contact: incomingContact } : {}),
-    ...(isSent
+    ...(resolvedFromMe !== null
       ? {
-        fromMe: true,
-        isOutbound: true,
-        capturedFromWhatsapp: true,
-        outboundSource: baseMetadata.outboundSource ?? (incomingFromMe === true ? "whatsapp_device" : "whatsapp_api"),
+        fromMe: resolvedFromMe,
+        isOutbound: resolvedFromMe,
+        capturedFromWhatsapp: resolvedFromMe,
+        ...(resolvedFromMe
+          ? { outboundSource: baseMetadata.outboundSource ?? (providerFromMe === true ? "whatsapp_device" : "whatsapp_api") }
+          : {}),
       }
-      : incomingFromMe === false
-        ? {
-          fromMe: false,
-          isOutbound: false,
-          capturedFromWhatsapp: false,
-        }
       : {}),
   };
   const participantName = optionalString(row.participant_display_name);
@@ -320,22 +539,30 @@ function buildActivityReportDays(days: number): WhatsappAgentActivityReport["day
   });
 }
 
-function classifyWhatsappGroup(input: { isGroup: boolean; name: string | null }) {
+export function classifyWhatsappReportConversation(input: {
+  isGroup: boolean;
+  name: string | null;
+  remoteJid?: string | null;
+}): WhatsappAgentActivityConversationKind {
   if (!input.isGroup) {
-    return "private" as const;
+    return "private";
+  }
+
+  if (isInternalWhatsappReportChat({ name: input.name, remoteJid: input.remoteJid })) {
+    return "internal_group";
   }
 
   const normalized = normalizeLabel(input.name);
 
-  if (/^(cliente|clientes|cl)(\b|[\s\-_:.\d#])/.test(normalized)) {
-    return "customer_group" as const;
+  if (/^(cliente|clientes|cl)(\b|[\s\-_:.\d#])/.test(normalized) || /\b(cl|kh|lj)\d+\b/.test(normalized)) {
+    return "customer_group";
   }
 
-  if (/(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor|expor|xp factory|crm)/.test(normalized)) {
-    return "internal_group" as const;
+  if (/(interno|equipe|time|vendedor|vendedora|vendas|financeiro|diretoria|gestao|gestor)/.test(normalized)) {
+    return "internal_group";
   }
 
-  return "other_group" as const;
+  return "other_group";
 }
 
 function conversationProfileJoinSql() {
@@ -407,22 +634,6 @@ function conversationProfileJoinSql() {
 
 function conversationBaseSelectSql(userIdParamIndex: number) {
   return `
-    WITH latest_whatsapp AS (
-      SELECT
-        da.*,
-        ROW_NUMBER() OVER (PARTITION BY da.deal_id ORDER BY da.created_at DESC, da.id DESC) AS rn
-      FROM deal_activities da
-      WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-    ),
-    activity_stats AS (
-      SELECT
-        da.deal_id,
-        COUNT(*) FILTER (WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED'))::int AS event_count,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS inbound_count,
-        MAX(da.created_at) FILTER (WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')) AS last_message_at
-      FROM deal_activities da
-      GROUP BY da.deal_id
-    )
     SELECT
       d.*,
       ps.name AS stage_name,
@@ -445,8 +656,16 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         incoming_profile.sender_profile_picture_url,
         incoming_inbound_profile.inbound_sender_picture
       ) AS profile_picture_url,
-      latest_whatsapp.content AS last_message_content,
-      COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at) AS last_message_at,
+      CASE
+        WHEN d.whatsapp_jid LIKE '%@g.us'
+          THEN COALESCE(group_latest_message.content, latest_whatsapp.content)
+        ELSE latest_whatsapp.content
+      END AS last_message_content,
+      CASE
+        WHEN d.whatsapp_jid LIKE '%@g.us'
+          THEN COALESCE(group_latest_message.created_at, activity_stats.last_message_at, d.last_activity_at, d.created_at)
+        ELSE COALESCE(activity_stats.last_message_at, d.last_activity_at, d.created_at)
+      END AS last_message_at,
       COALESCE(activity_stats.event_count, 0)::int AS event_count,
       COALESCE(activity_stats.inbound_count, 0)::int AS inbound_count,
       COALESCE((
@@ -464,8 +683,40 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     FROM deals d
     LEFT JOIN pipeline_stages ps ON ps.id = d.stage_id
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
-    LEFT JOIN latest_whatsapp ON latest_whatsapp.deal_id = d.id AND latest_whatsapp.rn = 1
-    LEFT JOIN activity_stats ON activity_stats.deal_id = d.id
+    LEFT JOIN LATERAL (
+      SELECT *
+      FROM deal_activities da
+      WHERE da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      ORDER BY da.created_at DESC, da.id DESC
+      LIMIT 1
+    ) latest_whatsapp ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*)::int AS event_count,
+        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS inbound_count,
+        MAX(da.created_at) AS last_message_at
+      FROM deal_activities da
+      WHERE da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+    ) activity_stats ON true
+    LEFT JOIN LATERAL (
+      -- Group chats are shared across every connected instance. The webhook now
+      -- stores each group message only once (idempotency dedup), so the list
+      -- preview / last message for a group is derived from the canonical
+      -- whatsapp_incoming_messages row by remote_jid, ignoring which instance
+      -- physically received it. This keeps the preview visible to every seller
+      -- who has a deal for that group. Private (1:1) chats keep deriving the
+      -- preview from their own deal_activities, isolated per instance.
+      SELECT
+        wim_group.message_text AS content,
+        wim_group.created_at AS created_at
+      FROM whatsapp_incoming_messages wim_group
+      WHERE d.whatsapp_jid LIKE '%@g.us'
+        AND wim_group.remote_jid = d.whatsapp_jid
+      ORDER BY wim_group.created_at DESC, wim_group.id DESC
+      LIMIT 1
+    ) group_latest_message ON true
     LEFT JOIN whatsapp_conversation_reads conversation_reads
       ON conversation_reads.deal_id = d.id
       AND conversation_reads.user_id = $${userIdParamIndex}
@@ -481,7 +732,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
   `;
 }
 
-function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]>) {
+function activityPeriodRangeSql(expression: string, period: NonNullable<ConversationFilters["period"]>) {
   const today = `timezone('${ACTIVITY_REPORT_TIMEZONE}', NOW())::date`;
   const rangeStart =
     period === "today"
@@ -494,8 +745,50 @@ function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]
   const rangeEnd = period === "yesterday" ? today : `${today} + INTERVAL '1 day'`;
 
   return `
-    activity_stats.last_message_at >= ((${rangeStart}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
-    AND activity_stats.last_message_at < ((${rangeEnd}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+    ${expression} >= ((${rangeStart}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+    AND ${expression} < ((${rangeEnd}) AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+  `;
+}
+
+function conversationPeriodSql(period: NonNullable<ConversationFilters["period"]>) {
+  return activityPeriodRangeSql("activity_stats.last_message_at", period);
+}
+
+function outboundWhatsappActivitySql(alias: string) {
+  return `
+    (
+      ${alias}.activity_type = 'WHATSAPP_SENT'
+      OR LOWER(COALESCE(
+        ${alias}.metadata ->> 'fromMe',
+        ${alias}.metadata ->> 'isOutbound',
+        ${alias}.metadata ->> 'sentFromMonitor',
+        ''
+      )) IN ('true', '1', 'yes', 'sim')
+    )
+  `;
+}
+
+function selectedAgentInteractionSql(instanceIdParamIndex: number, period?: ConversationFilters["period"]) {
+  return `
+    EXISTS (
+      SELECT 1
+      FROM deal_activities agent_interaction_activity
+      JOIN whatsapp_instances agent_interaction_instance
+        ON agent_interaction_instance.id = $${instanceIdParamIndex}
+      WHERE agent_interaction_activity.deal_id = d.id
+        AND agent_interaction_activity.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND ${outboundWhatsappActivitySql("agent_interaction_activity")}
+        AND (
+          agent_interaction_activity.metadata ->> 'instanceId' = agent_interaction_instance.id::text
+          OR LOWER(COALESCE(agent_interaction_activity.metadata ->> 'instance', '')) = LOWER(agent_interaction_instance.instance_name)
+          OR (agent_interaction_activity.actor_user_id IS NOT NULL AND agent_interaction_activity.actor_user_id = agent_interaction_instance.assigned_user_id)
+          OR LOWER(COALESCE(agent_interaction_activity.actor_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
+          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.display_label, ''), '^xp\\s+', '', 'i'))
+          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+          OR d.whatsapp_instance_id = agent_interaction_instance.id
+        )
+        ${period ? `AND ${activityPeriodRangeSql("agent_interaction_activity.created_at", period)}` : ""}
+    )
   `;
 }
 
@@ -642,14 +935,19 @@ export async function listWhatsappMonitorConversations(
 
   if (filters.instanceId) {
     params.push(filters.instanceId);
+    const instanceIdParamIndex = params.length;
     where.push(`
       EXISTS (
         SELECT 1
         FROM whatsapp_instances wif
-        WHERE wif.id = $${params.length}
+        WHERE wif.id = $${instanceIdParamIndex}
           AND ${conversationMatchesInstanceSql("wif")}
       )
     `);
+
+    if (filters.agentInteraction === "sent") {
+      where.push(selectedAgentInteractionSql(instanceIdParamIndex, filters.period));
+    }
   }
 
   if (filters.search?.trim()) {
@@ -910,7 +1208,13 @@ export async function getWhatsappMonitorConversation(
         SELECT wim.*
         FROM whatsapp_incoming_messages wim
         WHERE wim.remote_jid = ANY($1::text[])
-          AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+          AND (
+            EXISTS (
+              SELECT 1 FROM unnest($1::text[]) AS alias_jid
+              WHERE alias_jid LIKE '%@g.us'
+            )
+            OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+          )
         ORDER BY created_at DESC, id DESC
         LIMIT 300
       ) wim
@@ -924,9 +1228,9 @@ export async function getWhatsappMonitorConversation(
           )
         ORDER BY
           CASE WHEN wpp.instance_name = COALESCE(wim.instance_name, '') THEN 0 ELSE 1 END,
-        wpp.updated_at DESC
-      LIMIT 1
-    ) participant_profile ON true
+          wpp.updated_at DESC
+        LIMIT 1
+      ) participant_profile ON true
       ORDER BY wim.created_at ASC, wim.id ASC
       `,
       [remoteJidAliases, conversation.instanceName || ""],
@@ -1364,65 +1668,116 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
   }
 
   const whereSql = dealWhere.join(" AND ");
-  const [summaryResult, responseResult] = await Promise.all([
-    pool.query(
-      `
-      SELECT
-        COUNT(DISTINCT d.id)::int AS total_conversations,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS received_messages,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_SENT')::int AS sent_messages,
-        COUNT(*) FILTER (
-          WHERE da.metadata ? 'fileName'
-            OR da.metadata ? 'filename'
-            OR da.metadata ? 'mediaName'
-            OR da.metadata ? 'mimetype'
-            OR da.metadata ? 'mediaType'
-        )::int AS media_messages,
-        COUNT(*) FILTER (WHERE ${riskSql("da")})::int AS risk_events
-      FROM deals d
-      LEFT JOIN deal_activities da
-        ON da.deal_id = d.id
-        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-      WHERE ${whereSql}
-      `,
-      params,
-    ),
-    pool.query(
-      `
-      SELECT
-        d.id AS deal_id,
-        d.whatsapp_instance_id,
-        COALESCE(wi.display_label, d.assigned_to_name, 'Sem agente') AS agent_name,
-        wi.profile_picture_url,
-        EXTRACT(EPOCH FROM (first_outbound.first_outbound_at - first_inbound.first_inbound_at)) / 60 AS response_minutes
-      FROM deals d
-      LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
-      JOIN LATERAL (
-        SELECT MIN(da.created_at) AS first_inbound_at
-        FROM deal_activities da
-        WHERE da.deal_id = d.id
-          AND da.activity_type = 'WHATSAPP_RECEIVED'
-      ) first_inbound ON first_inbound.first_inbound_at IS NOT NULL
-      LEFT JOIN LATERAL (
-        SELECT MIN(da.created_at) AS first_outbound_at
-        FROM deal_activities da
-        WHERE da.deal_id = d.id
-          AND da.activity_type = 'WHATSAPP_SENT'
-          AND da.created_at > first_inbound.first_inbound_at
-      ) first_outbound ON true
-      WHERE ${whereSql}
-      `,
-      params,
-    ),
-  ]);
+  const metricsResult = await pool.query(
+    `
+    SELECT
+      d.id AS deal_id,
+      d.whatsapp_instance_id,
+      COALESCE(wi.display_label, d.assigned_to_name, 'Sem agente') AS agent_name,
+      wi.profile_picture_url,
+      da.activity_type,
+      da.content,
+      da.metadata,
+      da.created_at,
+      NULL AS incoming_raw_payload,
+      NULL AS incoming_from_me
+    FROM deals d
+    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    LEFT JOIN deal_activities da
+      ON da.deal_id = d.id
+      AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+    WHERE ${whereSql}
+    ORDER BY d.id ASC, da.created_at ASC NULLS LAST, da.id ASC
+    `,
+    params,
+  );
 
-  const summary = summaryResult.rows[0] ?? {};
-  const responseRows = responseResult.rows.map((row) => ({
-    agentId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
-    agentName: optionalString(row.agent_name) ?? "Sem agente",
-    profilePictureUrl: optionalString(row.profile_picture_url),
-    responseMinutes: row.response_minutes === null ? null : Number(row.response_minutes),
-  }));
+  const conversationIds = new Set<string>();
+  const responseByDeal = new Map<
+    string,
+    {
+      agentId: string | null;
+      agentName: string;
+      profilePictureUrl: string | null;
+      firstInboundAt: Date | null;
+      firstOutboundAt: Date | null;
+    }
+  >();
+  const summary = {
+    totalConversations: 0,
+    receivedMessages: 0,
+    sentMessages: 0,
+    mediaMessages: 0,
+    riskEvents: 0,
+  };
+
+  for (const row of metricsResult.rows) {
+    const dealId = String(row.deal_id);
+    conversationIds.add(dealId);
+
+    if (!row.activity_type) {
+      continue;
+    }
+
+    const metadata = asRecord(row.metadata) ?? {};
+    const isOutbound = isWhatsappActivityOutbound(row, metadata);
+    const createdAt = new Date(String(row.created_at));
+
+    if (isOutbound) {
+      summary.sentMessages += 1;
+    } else {
+      summary.receivedMessages += 1;
+    }
+
+    if (whatsappActivityHasMedia(row, metadata)) {
+      summary.mediaMessages += 1;
+    }
+
+    if (detectWhatsappMessageRisk(optionalString(row.content) ?? "")) {
+      summary.riskEvents += 1;
+    }
+
+    if (!Number.isFinite(createdAt.getTime())) {
+      continue;
+    }
+
+    const responseState =
+      responseByDeal.get(dealId) ??
+      {
+        agentId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
+        agentName: optionalString(row.agent_name) ?? "Sem agente",
+        profilePictureUrl: optionalString(row.profile_picture_url),
+        firstInboundAt: null,
+        firstOutboundAt: null,
+      };
+
+    if (!isOutbound && responseState.firstInboundAt === null) {
+      responseState.firstInboundAt = createdAt;
+    } else if (
+      isOutbound &&
+      responseState.firstInboundAt !== null &&
+      responseState.firstOutboundAt === null &&
+      createdAt > responseState.firstInboundAt
+    ) {
+      responseState.firstOutboundAt = createdAt;
+    }
+
+    responseByDeal.set(dealId, responseState);
+  }
+
+  summary.totalConversations = conversationIds.size;
+
+  const responseRows = Array.from(responseByDeal.values())
+    .filter((row) => row.firstInboundAt !== null)
+    .map((row) => ({
+      agentId: row.agentId,
+      agentName: row.agentName,
+      profilePictureUrl: row.profilePictureUrl,
+      responseMinutes:
+        row.firstInboundAt && row.firstOutboundAt
+          ? (row.firstOutboundAt.getTime() - row.firstInboundAt.getTime()) / 60000
+          : null,
+    }));
   const responseMinutes = responseRows
     .map((row) => row.responseMinutes)
     .filter((value): value is number => value !== null && Number.isFinite(value));
@@ -1481,11 +1836,11 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
 
   return {
     summary: {
-      totalConversations: Number(summary.total_conversations ?? 0),
-      receivedMessages: Number(summary.received_messages ?? 0),
-      sentMessages: Number(summary.sent_messages ?? 0),
-      mediaMessages: Number(summary.media_messages ?? 0),
-      riskEvents: Number(summary.risk_events ?? 0),
+      totalConversations: summary.totalConversations,
+      receivedMessages: summary.receivedMessages,
+      sentMessages: summary.sentMessages,
+      mediaMessages: summary.mediaMessages,
+      riskEvents: summary.riskEvents,
       averageFirstResponseMinutes: responseMinutes.length
         ? responseMinutes.reduce((sum, value) => sum + value, 0) / responseMinutes.length
         : null,
@@ -1581,6 +1936,10 @@ function registerActivityReportBucket(input: {
   responseSecondsTotal: number;
   responseCount: number;
 }) {
+  if (input.kind === "internal_group") {
+    return;
+  }
+
   const conversation = getActivityConversation(input.accumulator, input.remoteJid, input.chatName, input.kind);
 
   if (input.sentMessages > 0) {
@@ -1591,9 +1950,6 @@ function registerActivityReportBucket(input: {
       input.accumulator.attendedPrivates.add(input.remoteJid);
       input.accumulator.attendedConversations.add(input.remoteJid);
       input.accumulator.sentUniquePrivates.add(input.remoteJid);
-    } else if (input.kind === "internal_group") {
-      input.accumulator.internalGroups.add(input.remoteJid);
-      input.accumulator.sentUniqueInternalGroups.add(input.remoteJid);
     } else {
       input.accumulator.attendedConversations.add(input.remoteJid);
       if (input.kind === "customer_group") {
@@ -1614,8 +1970,6 @@ function registerActivityReportBucket(input: {
       input.accumulator.receivedUniquePrivates.add(input.remoteJid);
     } else if (input.kind === "customer_group") {
       input.accumulator.receivedUniqueCustomerGroups.add(input.remoteJid);
-    } else if (input.kind === "internal_group") {
-      input.accumulator.receivedUniqueInternalGroups.add(input.remoteJid);
     } else {
       input.accumulator.receivedUniqueOtherGroups.add(input.remoteJid);
     }
@@ -1650,7 +2004,7 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
   const internalGroups = conversations.filter((c) => c.kind === "internal_group" && c.sentMessages > 0);
 
   const privateConvs = conversations.filter((c) => c.kind === "private");
-  const groupConvs = conversations.filter((c) => c.kind !== "private");
+  const groupConvs = conversations.filter((c) => c.kind === "customer_group" || c.kind === "other_group");
 
   return {
     attendedConversations: attendedPrivates.length + attendedGroups.length,
@@ -1695,6 +2049,24 @@ export async function getWhatsappAgentActivityReport(
     return cachedReport.report;
   }
 
+  const redisCacheKey = user.role === "SELLER"
+    ? `wa-activity-report:${days}:seller:${user.id}`
+    : `wa-activity-report:${days}:all`;
+  const redisCacheTtl = user.role === "SELLER" ? 90 : 60;
+  try {
+    const cached = await redis.get(redisCacheKey);
+    if (cached) {
+      const report = JSON.parse(cached) as WhatsappAgentActivityReport;
+      whatsappActivityReportCache.set(reportCacheKey, {
+        expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
+        report,
+      });
+      return report;
+    }
+  } catch {
+    // Redis failure should not block the report.
+  }
+
   const reportDays = buildActivityReportDays(days);
   const totalReportDays = buildActivityReportDays(days * 2);
 
@@ -1730,6 +2102,8 @@ export async function getWhatsappAgentActivityReport(
         wi.display_label,
         wi.phone_number,
         wi.profile_picture_url,
+        wi.assigned_user_id,
+        wi.assigned_user_name,
         u.id as user_id,
         u.name as user_name
       FROM whatsapp_instances wi
@@ -1797,11 +2171,13 @@ export async function getWhatsappAgentActivityReport(
 
   // Pre-populate with all active instances/assigned users
   for (const row of allInstances.rows) {
-    const agentId = row.user_id ? String(row.user_id) : `instance:${row.instance_id}`;
-    const agentName = row.user_name && row.user_name !== row.display_label && row.user_name !== row.instance_name
-      ? `${row.user_name} (${row.display_label || row.instance_name})`
-      : row.user_name || row.display_label || row.instance_name || "Agente desconhecido";
-    
+    const assignedUserId = row.user_id ?? row.assigned_user_id;
+    const assignedUserName = row.user_name ?? row.assigned_user_name;
+    const agentId = assignedUserId ? String(assignedUserId) : `instance:${row.instance_id}`;
+    const agentName = assignedUserName && assignedUserName !== row.display_label && assignedUserName !== row.instance_name
+      ? `${assignedUserName} (${row.display_label || row.instance_name})`
+      : assignedUserName || row.display_label || row.instance_name || "Agente desconhecido";
+
     agents.set(agentId, {
       agentId,
       agentName,
@@ -1827,12 +2203,17 @@ export async function getWhatsappAgentActivityReport(
       continue;
     }
 
-    const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-    const groupClass = classifyWhatsappGroup({
-      isGroup,
-      name: optionalString(row.chat_name),
-    });
     const chatName = optionalString(row.chat_name);
+    if (isInternalChat(chatName, remoteJid)) {
+      continue;
+    }
+
+    const isGroup = remoteJid.endsWith("@g.us");
+    const groupClass = classifyWhatsappReportConversation({
+      isGroup,
+      name: chatName,
+      remoteJid,
+    });
     const agentId = String(row.agent_id ?? "sem-agente");
     const agentName = String(row.agent_name ?? "Sem agente");
     const sentMessages = Number(row.sent_messages ?? 0);
@@ -1864,7 +2245,7 @@ export async function getWhatsappAgentActivityReport(
           accumulator: createActivityReportAccumulator(),
           activeHours: new Set<string>(),
           lastMessageAt: null,
-        };
+      };
 
       current.agentName = agentName;
       current.instanceName ??= optionalString(row.instance_name);
@@ -2017,6 +2398,8 @@ export async function getWhatsappAgentActivityReport(
     report,
   });
 
+  redis.set(redisCacheKey, JSON.stringify(report), "EX", redisCacheTtl).catch(() => {});
+
   return report;
 }
 
@@ -2063,4 +2446,598 @@ export async function setWhatsappConversationReadState(
   void syncConversationReadStateWithEvolution(dealId, unread);
 
   return getWhatsappMonitorConversation(dealId, user);
+}
+
+function formatDailySummaryCustomerLines(customers: Record<string, unknown>[], options: { recovered?: boolean } = {}) {
+  return customers
+    .map((customer) => {
+      const customerCode = optionalString(customer.customer_code);
+      const code = customerCode ? `${customerCode} - ` : "";
+      const name = optionalString(customer.display_name) ?? "Cliente sem nome";
+      const attendant = optionalString(customer.last_attendant) ?? "Sem atendente";
+      const amount = Number(customer.total_amount ?? 0);
+      const amountText = Number.isFinite(amount)
+        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      const inactiveText = options.recovered && customer.days_inactive
+        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
+        : "";
+
+      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
+    })
+    .join("\n");
+}
+
+export async function getWhatsappDailySummaryReport(
+  user: JwtUser,
+  dateInput?: string
+): Promise<any> {
+  // Use provided date or default to current date in America/Sao_Paulo timezone
+  const dateStr = dateInput || new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
+
+  // 1. Query New Customers of the day (Optimized: filters by date first, then runs fast NOT EXISTS index lookup)
+  const newCustomersResult = await pool.query(
+    `
+    SELECT
+      c.customer_code,
+      c.display_name,
+      o.total_amount::numeric(14,2) as total_amount,
+      o.item_count,
+      COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') as last_attendant
+    FROM orders o
+    JOIN customers c ON c.id = o.customer_id
+    WHERE o.order_date = $1::date
+      AND NOT EXISTS (
+        SELECT 1 FROM orders o2
+        WHERE o2.customer_id = o.customer_id
+          AND o2.order_date < $1::date
+      )
+    ORDER BY o.total_amount DESC, c.display_name ASC
+    `,
+    [dateStr]
+  );
+
+  // 2. Query Recovered Customers of the day (Optimized: filters by date first, then retrieves prior order using MAX index)
+  const recoveredCustomersResult = await pool.query(
+    `
+    WITH scoped_orders AS (
+      SELECT
+        o.customer_id,
+        o.order_date,
+        o.total_amount,
+        o.item_count,
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') as last_attendant,
+        (
+          SELECT MAX(o2.order_date)
+          FROM orders o2
+          WHERE o2.customer_id = o.customer_id
+            AND o2.order_date < o.order_date
+        ) as previous_order_date
+      FROM orders o
+      WHERE o.order_date = $1::date
+    )
+    SELECT
+      c.customer_code,
+      c.display_name,
+      so.total_amount::numeric(14,2) as total_amount,
+      so.item_count,
+      so.last_attendant,
+      so.previous_order_date::text as previous_order_date,
+      (so.order_date - so.previous_order_date)::int as days_inactive
+    FROM scoped_orders so
+    JOIN customers c ON c.id = so.customer_id
+    WHERE so.previous_order_date IS NOT NULL
+      AND (so.order_date - so.previous_order_date) >= 90
+    ORDER BY so.total_amount DESC, c.display_name ASC
+    `,
+    [dateStr]
+  );
+
+  // 3. Query Sales Performance for the day (Optimized: calculates sum of items only for the days' orders)
+  const salesPerformanceResult = await pool.query(
+    `
+    WITH scoped_orders AS (
+      SELECT
+        o.id,
+        o.customer_id,
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+        COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
+        COALESCE((
+          SELECT SUM(oi.quantity)
+          FROM order_items oi
+          WHERE oi.order_id = o.id
+        ), 0)::int AS total_items
+      FROM orders o
+      WHERE o.order_date = $1::date
+    )
+    SELECT
+      so.attendant,
+      COUNT(*)::int AS total_orders,
+      COUNT(DISTINCT so.customer_id)::int AS unique_customers,
+      COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
+      COALESCE(SUM(so.total_items), 0)::int AS total_items
+    FROM scoped_orders so
+    GROUP BY so.attendant
+    ORDER BY total_items DESC, total_revenue DESC, attendant ASC
+    `,
+    [dateStr]
+  );
+
+  // 4. Query Chat Activities for the day (Optimized: removed unindexed multi-OR outer joins and handles resolving in JS memory)
+  const where: string[] = [
+    "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
+    "da.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
+    "da.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
+    monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
+  ];
+
+  const params: any[] = [dateStr];
+
+  if (user.role === "SELLER") {
+    params.push(user.id, user.name);
+    where.push(`
+      (
+        da.actor_user_id = $2
+        OR d.assigned_to = $2
+        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($3)
+        OR EXISTS (
+          SELECT 1 FROM whatsapp_instances wi_sub
+          WHERE wi_sub.id = d.whatsapp_instance_id
+            AND (wi_sub.assigned_user_id = $2 OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3))
+        )
+      )
+    `);
+  }
+
+  const activitiesResult = await pool.query(
+    `
+    SELECT
+      da.activity_type,
+      da.actor_user_id,
+      da.actor_name,
+      da.metadata,
+      da.created_at,
+      NULL AS incoming_raw_payload,
+      NULL AS incoming_from_me,
+      (da.metadata ->> 'instance')::text AS metadata_instance,
+      (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
+      (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
+      d.assigned_to,
+      d.assigned_to_name,
+      d.whatsapp_instance_id,
+      d.whatsapp_jid,
+      d.customer_display_name,
+      d.title,
+      COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS real_customer_name
+    FROM deal_activities da
+    JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
+    WHERE ${where.join("\n      AND ")}
+    ORDER BY da.created_at ASC, da.id ASC
+    `,
+    params
+  );
+
+  // Fetch all users and whatsapp instances for fast in-memory name mapping
+  const usersRes = await pool.query("SELECT id, name FROM users");
+  const instancesRes = await pool.query("SELECT id, instance_name, display_label, assigned_user_id, assigned_user_name FROM whatsapp_instances");
+
+  const users = usersRes.rows;
+  const instances = instancesRes.rows;
+
+  const salesPerformance = salesPerformanceResult.rows;
+  const salesAttendants = new Set(salesPerformance.map(s => s.attendant.trim().toLowerCase()));
+
+  // 1. Collect all unique private JIDs from activities to batch-resolve customer names
+  const privateJids = new Set<string>();
+  for (const row of activitiesResult.rows) {
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
+    if (remoteJid && !remoteJid.endsWith("@g.us")) {
+      privateJids.add(remoteJid);
+    }
+  }
+
+  const resolvedNamesMap = new Map<string, string>();
+  if (privateJids.size > 0) {
+    const jidList = Array.from(privateJids);
+
+    // Fetch from whatsapp_chat_profiles
+    const profilesRes = await pool.query(
+      `
+      SELECT remote_jid, display_name
+      FROM whatsapp_chat_profiles
+      WHERE remote_jid = ANY($1) AND display_name IS NOT NULL AND display_name <> ''
+      `,
+      [jidList]
+    );
+    for (const p of profilesRes.rows) {
+      resolvedNamesMap.set(p.remote_jid, p.display_name);
+    }
+
+    // Fetch from whatsapp_incoming_messages (as fallback)
+    const messagesRes = await pool.query(
+      `
+      SELECT remote_jid, sender_name
+      FROM whatsapp_incoming_messages
+      WHERE remote_jid = ANY($1)
+        AND sender_name IS NOT NULL
+        AND sender_name <> ''
+        AND LOWER(sender_name) NOT LIKE '%xp %'
+        AND LOWER(sender_name) NOT IN ('whatsapp', 'membro do grupo', 'whatsapp corporativo', 'sem agente', 'expor telas', 'sem atendente')
+      ORDER BY created_at DESC
+      `,
+      [jidList]
+    );
+    for (const m of messagesRes.rows) {
+      if (!resolvedNamesMap.has(m.remote_jid)) {
+        resolvedNamesMap.set(m.remote_jid, m.sender_name);
+      }
+    }
+  }
+
+  // Group activity data by agent
+  const agentsMap = new Map<string, {
+    agentId: string;
+    agentName: string;
+    sentMessages: number;
+    receivedMessages: number;
+    privateChats: Set<string>;
+    groupChats: Set<string>;
+    initiatedChats: Set<string>;
+    // Keep track of first activity in each chat to calculate initiation
+    chatFirstActivity: Map<string, { activityType: string; isGroup: boolean; name: string }>;
+    // Detail lists
+    attendedPrivateClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
+    attendedGroupClients: Map<string, { name: string; jid: string; sent: number; received: number }>;
+    totalResponseSeconds: number;
+    responseCount: number;
+  }>();
+
+  let totalSent = 0;
+  let totalReceived = 0;
+  const pendingInboundByAgentConversation = new Map<string, Date>();
+
+  for (const row of activitiesResult.rows) {
+    // Resolve WhatsApp instance (in-memory, highly efficient)
+    const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
+    const wi = instances.find(inst =>
+      inst.id === row.whatsapp_instance_id ||
+      (metadataInstance && inst.instance_name && inst.instance_name.toLowerCase() === metadataInstance)
+    );
+
+    // Resolve matched user (in-memory fallback mapping, avoids unindexed outer joins)
+    const actorName = row.actor_name ? String(row.actor_name).trim() : "";
+    const actorNameLower = actorName.toLowerCase();
+    const assignedToName = row.assigned_to_name ? String(row.assigned_to_name).toLowerCase() : "";
+    const wiAssignedUserName = wi?.assigned_user_name ? String(wi.assigned_user_name).toLowerCase() : "";
+
+    const matchedUser = users.find(u =>
+      u.id === row.actor_user_id ||
+      u.id === row.assigned_to ||
+      (wi && u.id === wi.assigned_user_id) ||
+      (actorName && u.name && u.name.toLowerCase() === actorNameLower) ||
+      (assignedToName && u.name && u.name.toLowerCase() === assignedToName) ||
+      (wiAssignedUserName && u.name && u.name.toLowerCase() === wiAssignedUserName)
+    );
+
+    const isXpAgentName = actorName && (
+      /^xp\s+/i.test(actorName) ||
+      salesAttendants.has(actorNameLower) ||
+      salesAttendants.has(actorNameLower.replace(/^xp\s+/i, '').trim())
+    ) && actorNameLower !== "sem atendente" && actorNameLower !== "sem agente";
+
+    const agentId = isXpAgentName
+      ? `xp-agent:${actorNameLower}`
+      : (matchedUser
+          ? String(matchedUser.id)
+          : (wi ? `instance:${wi.id}` : 'sem-agente'));
+
+    const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
+    const agentName = isXpAgentName
+      ? actorName
+      : (matchedUser
+          ? matchedUser.name
+          : (wiLabel || 'Sem agente'));
+
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
+    const isGroup = remoteJid.endsWith("@g.us");
+    const isOutbound = isWhatsappActivityOutbound(row);
+
+    // Resolve robust and clean customer display name
+    const chatName = (() => {
+      const candidates = [
+        row.real_customer_name,
+        resolvedNamesMap.get(remoteJid),
+        row.metadata_chat_display_name,
+        row.customer_display_name,
+        row.title
+      ].map(c => c ? String(c).trim() : "").filter(Boolean);
+
+      const cleanAgent = agentName.trim().toLowerCase().replace(/^xp\s+/i, '');
+
+      for (const c of candidates) {
+        const lower = c.toLowerCase();
+
+        // Skip names matching or containing the agent/seller name
+        if (lower === cleanAgent || lower === agentName.toLowerCase() || (cleanAgent.length >= 3 && lower.includes(cleanAgent))) {
+          continue;
+        }
+
+        // Skip generic labels
+        if (["whatsapp", "whatsapp corporativo", "membro do grupo", "sem agente", "expor telas", "sem atendente"].includes(lower)) {
+          continue;
+        }
+
+        // Skip numeric-only fallbacks or raw JIDs
+        if (/^\d+$/.test(c) || c.includes("@")) {
+          continue;
+        }
+
+        return c;
+      }
+
+      // Final fallback to nicely formatted phone number
+      return isGroup ? "Grupo sem nome" : formatWhatsappJidPhone(remoteJid);
+    })();
+
+    if (isInternalChat(chatName, remoteJid)) {
+      continue;
+    }
+
+    const createdAt = new Date(String(row.created_at));
+
+    if (isOutbound) totalSent++;
+    else totalReceived++;
+
+    if (!agentsMap.has(agentId)) {
+      agentsMap.set(agentId, {
+        agentId,
+        agentName,
+        sentMessages: 0,
+        receivedMessages: 0,
+        privateChats: new Set(),
+        groupChats: new Set(),
+        initiatedChats: new Set(),
+        chatFirstActivity: new Map(),
+        attendedPrivateClients: new Map(),
+        attendedGroupClients: new Map(),
+        totalResponseSeconds: 0,
+        responseCount: 0,
+      });
+    }
+
+    const agent = agentsMap.get(agentId)!;
+
+    // Track response seconds
+    const pendingKey = `${agentId}:${remoteJid}`;
+    if (isOutbound) {
+      agent.sentMessages++;
+      const pendingInboundAt = pendingInboundByAgentConversation.get(pendingKey);
+      if (pendingInboundAt) {
+        const responseSeconds = Math.max(0, (createdAt.getTime() - pendingInboundAt.getTime()) / 1000);
+        agent.totalResponseSeconds += responseSeconds;
+        agent.responseCount++;
+        pendingInboundByAgentConversation.delete(pendingKey);
+      }
+    } else {
+      agent.receivedMessages++;
+      pendingInboundByAgentConversation.set(pendingKey, createdAt);
+    }
+
+    if (isGroup) {
+      if (isOutbound) {
+        agent.groupChats.add(remoteJid);
+      }
+      if (!agent.attendedGroupClients.has(remoteJid)) {
+        agent.attendedGroupClients.set(remoteJid, {
+          name: chatName,
+          jid: remoteJid,
+          sent: 0,
+          received: 0,
+        });
+      }
+      const client = agent.attendedGroupClients.get(remoteJid)!;
+      if (isOutbound) client.sent++;
+      else client.received++;
+    } else {
+      if (isOutbound) {
+        agent.privateChats.add(remoteJid);
+      }
+      if (!agent.attendedPrivateClients.has(remoteJid)) {
+        agent.attendedPrivateClients.set(remoteJid, {
+          name: chatName,
+          jid: remoteJid,
+          sent: 0,
+          received: 0,
+          initiated: false,
+        });
+      }
+      const client = agent.attendedPrivateClients.get(remoteJid)!;
+      if (isOutbound) client.sent++;
+      else client.received++;
+    }
+
+    // Check first activity for initiation
+    if (!agent.chatFirstActivity.has(remoteJid)) {
+      agent.chatFirstActivity.set(remoteJid, {
+        activityType: isOutbound ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED",
+        isGroup,
+        name: chatName,
+      });
+
+      // If the first activity is outbound and it's private, it's initiated!
+      if (isOutbound && !isGroup) {
+        agent.initiatedChats.add(remoteJid);
+        const client = agent.attendedPrivateClients.get(remoteJid);
+        if (client) {
+          client.initiated = true;
+        }
+      }
+    }
+  }
+
+  // Combine sales performance with message metrics
+  const newCustomers = newCustomersResult.rows;
+  const recoveredCustomers = recoveredCustomersResult.rows;
+
+  const totalTelasSold = salesPerformance.reduce((sum, row) => sum + Number(row.total_items ?? 0), 0);
+  const totalRevenue = salesPerformance.reduce((sum, row) => sum + Number(row.total_revenue ?? 0), 0);
+  const totalOrders = salesPerformance.reduce((sum, row) => sum + Number(row.total_orders ?? 0), 0);
+
+  // Build vendedoras daily summary
+  const rawAgentsList = Array.from(agentsMap.values()).map(a => {
+    // Find sales stats if they exist
+    const sales = salesPerformance.find(s => {
+      const cleanAttendant = s.attendant.trim().toLowerCase().replace(/^xp\s+/i, '');
+      const cleanAgent = a.agentName.trim().toLowerCase().replace(/^xp\s+/i, '');
+      return cleanAttendant === cleanAgent ||
+        (s.attendant === "Sem atendente" && a.agentName === "Sem agente");
+    });
+
+    return {
+      agentId: a.agentId,
+      agentName: a.agentName,
+      sentMessages: a.sentMessages,
+      receivedMessages: a.receivedMessages,
+      privateChatsCount: a.privateChats.size,
+      groupChatsCount: a.groupChats.size,
+      initiatedCount: a.initiatedChats.size,
+      screensSold: sales ? Number(sales.total_items ?? 0) : 0,
+      ordersCount: sales ? Number(sales.total_orders ?? 0) : 0,
+      revenue: sales ? Number(sales.total_revenue ?? 0) : 0,
+      attendedPrivateClients: Array.from(a.attendedPrivateClients.values()).filter(c => c.sent > 0),
+      attendedGroupClients: Array.from(a.attendedGroupClients.values()).filter(g => g.sent > 0),
+      averageFirstResponseSeconds: a.responseCount > 0 ? Math.round(a.totalResponseSeconds / a.responseCount) : null,
+    };
+  });
+
+  // Merge duplicate agents by name (case-insensitive)
+  const mergedAgentsMap = new Map<string, typeof rawAgentsList[0]>();
+  for (const agent of rawAgentsList) {
+    const nameKey = agent.agentName.trim().toLowerCase();
+    const existing = mergedAgentsMap.get(nameKey);
+    if (existing) {
+      existing.sentMessages += agent.sentMessages;
+      existing.receivedMessages += agent.receivedMessages;
+      existing.screensSold += agent.screensSold;
+      existing.ordersCount += agent.ordersCount;
+      existing.revenue += agent.revenue;
+
+      // Merge unique private clients
+      const privateClientsMap = new Map(existing.attendedPrivateClients.map(c => [c.jid, c]));
+      agent.attendedPrivateClients.forEach(c => {
+        const ext = privateClientsMap.get(c.jid);
+        if (ext) {
+          ext.sent += c.sent;
+          ext.received += c.received;
+          ext.initiated = ext.initiated || c.initiated;
+        } else {
+          privateClientsMap.set(c.jid, c);
+        }
+      });
+      existing.attendedPrivateClients = Array.from(privateClientsMap.values());
+      existing.privateChatsCount = existing.attendedPrivateClients.length;
+
+      // Merge unique group clients
+      const groupClientsMap = new Map(existing.attendedGroupClients.map(g => [g.jid, g]));
+      agent.attendedGroupClients.forEach(g => {
+        const ext = groupClientsMap.get(g.jid);
+        if (ext) {
+          ext.sent += g.sent;
+          ext.received += g.received;
+        } else {
+          groupClientsMap.set(g.jid, g);
+        }
+      });
+      existing.attendedGroupClients = Array.from(groupClientsMap.values());
+      existing.groupChatsCount = existing.attendedGroupClients.length;
+
+      // Initiated count
+      existing.initiatedCount = existing.attendedPrivateClients.filter(c => c.initiated).length;
+
+      // Average response time
+      if (existing.averageFirstResponseSeconds !== null && agent.averageFirstResponseSeconds !== null) {
+         existing.averageFirstResponseSeconds = Math.round((existing.averageFirstResponseSeconds + agent.averageFirstResponseSeconds) / 2);
+      } else {
+         existing.averageFirstResponseSeconds = existing.averageFirstResponseSeconds ?? agent.averageFirstResponseSeconds;
+      }
+    } else {
+      mergedAgentsMap.set(nameKey, { ...agent });
+    }
+  }
+
+  const agentsList = Array.from(mergedAgentsMap.values());
+
+  // Sort agents: first those with sales (by screens sold), then by messages sent
+  agentsList.sort((left, right) => {
+    if (left.screensSold !== right.screensSold) return right.screensSold - left.screensSold;
+    if (left.ordersCount !== right.ordersCount) return right.ordersCount - left.ordersCount;
+    return right.sentMessages - left.sentMessages;
+  });
+
+  // Calculate global average response seconds
+  const globalTotalResponseSeconds = Array.from(agentsMap.values()).reduce((sum, a) => sum + a.totalResponseSeconds, 0);
+  const globalResponseCount = Array.from(agentsMap.values()).reduce((sum, a) => sum + a.responseCount, 0);
+  const averageFirstResponseSeconds = globalResponseCount > 0 ? Math.round(globalTotalResponseSeconds / globalResponseCount) : null;
+
+  // Format date for display: DD/MM/YYYY
+  const [year, month, day] = dateStr.split("-");
+  const formattedDate = `${day}/${month}/${year}`;
+
+  // Assemble beautiful formatted text for copy paste to WhatsApp (no sales data)
+  let text = `📅 *Relatório de Atendimento XP*\n_${formattedDate}_\n\n`;
+  text += `📱 *Clientes Novos no Dia:* ${newCustomers.length}\n`;
+  if (newCustomers.length > 0) {
+    text += `${formatDailySummaryCustomerLines(newCustomers)}\n`;
+  }
+  text += `🔄 *Clientes Recuperados no Dia:* ${recoveredCustomers.length}\n`;
+  if (recoveredCustomers.length > 0) {
+    text += `${formatDailySummaryCustomerLines(recoveredCustomers, { recovered: true })}\n`;
+  }
+  text += `\n`;
+  text += `💬 *Resumo de Mensagens:*\n`;
+  text += `📱 Enviadas: ${totalSent.toLocaleString("pt-BR")}\n`;
+  text += `🧾 Recebidas: ${totalReceived.toLocaleString("pt-BR")}\n\n`;
+  text += `🏆 *Ranking de Vendedoras e Atendimentos:*\n\n`;
+
+  agentsList.forEach((agent, index) => {
+    const medals = ["🥇", "🥈", "🥉"];
+    const emoji = index < 3 ? medals[index] : "❤️";
+    text += `${emoji} *${agent.agentName}*\n`;
+    text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
+    text += `📱 Atendimentos Particular: ${agent.privateChatsCount}\n`;
+    text += `👥 Atendimentos em Grupo: ${agent.groupChatsCount}\n`;
+    text += `✨ Conversas Iniciadas: ${agent.initiatedCount}\n`;
+
+    if (agent.attendedPrivateClients.length > 0 || agent.attendedGroupClients.length > 0) {
+      text += `👥 *Clientes Atendidos:*\n`;
+      // Particular
+      agent.attendedPrivateClients.forEach(c => {
+        const initiatedTag = c.initiated ? " _[Iniciada]_" : "";
+        text += `* ${c.name} (Particular)${initiatedTag}\n`;
+      });
+      // Grupos
+      agent.attendedGroupClients.forEach(g => {
+        text += `* ${g.name} (Grupo)\n`;
+      });
+    }
+    text += `\n`;
+  });
+
+  return {
+    date: dateStr,
+    newCustomersCount: newCustomers.length,
+    recoveredCustomersCount: recoveredCustomers.length,
+    totalMessagesSent: totalSent,
+    totalMessagesReceived: totalReceived,
+    totalTelasSold,
+    totalOrders,
+    totalRevenue,
+    agents: agentsList,
+    newCustomersList: newCustomers,
+    recoveredCustomersList: recoveredCustomers,
+    formattedText: text,
+    averageFirstResponseSeconds,
+  };
 }

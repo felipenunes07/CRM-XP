@@ -139,6 +139,7 @@ export interface CustomerFilters {
   state?: string;
   city?: string;
   customerCodes?: string[];
+  minTotalOrders?: number;
 }
 
 export function buildWhere(filters: FilterLike) {
@@ -190,6 +191,9 @@ export function buildWhere(filters: FilterLike) {
   }
   if (filters.minTotalSpent !== undefined) {
     push((index) => `s.total_spent >= $${index}`, filters.minTotalSpent);
+  }
+  if (filters.minTotalOrders !== undefined) {
+    push((index) => `s.total_orders >= $${index}`, filters.minTotalOrders);
   }
   if (filters.minFrequencyDrop !== undefined) {
     push((index) => `s.frequency_drop_ratio >= $${index}`, filters.minFrequencyDrop);
@@ -255,11 +259,22 @@ export function buildWhere(filters: FilterLike) {
     push((index) => `s.city = $${index}`, filters.city);
   }
 
-  if (filters.customerCodes?.length) {
-    push((index) => `UPPER(s.customer_code) = ANY($${index})`, filters.customerCodes.map(c => c.trim().toUpperCase()));
+  let whereSql = "";
+  if (clauses.length) {
+    if (filters.customerCodes?.length) {
+      params.push(filters.customerCodes.map(c => c.trim().toUpperCase()));
+      const codesIndex = params.length;
+      whereSql = `WHERE (${clauses.join(" AND ")}) OR (UPPER(s.customer_code) = ANY($${codesIndex}))`;
+    } else {
+      whereSql = `WHERE ${clauses.join(" AND ")}`;
+    }
+  } else if (filters.customerCodes?.length) {
+    params.push(filters.customerCodes.map(c => c.trim().toUpperCase()));
+    const codesIndex = params.length;
+    whereSql = `WHERE UPPER(s.customer_code) = ANY($${codesIndex})`;
   }
 
-  return { whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", params };
+  return { whereSql, params };
 }
 
 function sortSql(sortBy?: CustomerFilters["sortBy"]) {
@@ -560,6 +575,9 @@ export async function previewSegment(definition: SegmentDefinition): Promise<Seg
     labels: definition.labels,
     excludeLabels: definition.excludeLabels,
     customerPrefix: definition.customerPrefix,
+    state: definition.state,
+    minTotalOrders: definition.minTotalOrders,
+    customerCodes: definition.customerCodes,
     sortBy: "priority",
   });
 
@@ -887,3 +905,51 @@ export async function updateCustomerLabels(
 
   return getCustomerDetail(customerId);
 }
+
+export async function bulkAssignLabelToCustomers(
+  customerIds: string[],
+  labelName: string
+): Promise<void> {
+  const cleanedName = labelName.trim();
+  if (!cleanedName || !customerIds.length) {
+    return;
+  }
+
+  const normalizedName = normalizeLabelName(cleanedName);
+
+  await pool.query("BEGIN");
+  try {
+    // 1. Ensure the label exists, create if not
+    const labelResult = await pool.query(
+      `
+        INSERT INTO customer_labels (name, normalized_name, color, created_at, updated_at)
+        VALUES ($1, $2, $3, NOW(), NOW())
+        ON CONFLICT (normalized_name) DO UPDATE
+        SET name = EXCLUDED.name, updated_at = NOW()
+        RETURNING id
+      `,
+      [cleanedName, normalizedName, labelColorForName(cleanedName)]
+    );
+
+    const labelId = labelResult.rows[0]?.id;
+    if (!labelId) {
+      throw new HttpError(500, "Erro ao criar ou encontrar o rótulo");
+    }
+
+    // 2. Insert assignments for all customer IDs
+    await pool.query(
+      `
+        INSERT INTO customer_label_assignments (customer_id, label_id, created_at)
+        SELECT unnest($1::uuid[]), $2, NOW()
+        ON CONFLICT (customer_id, label_id) DO NOTHING
+      `,
+      [customerIds, labelId]
+    );
+
+    await pool.query("COMMIT");
+  } catch (error) {
+    await pool.query("ROLLBACK");
+    throw error;
+  }
+}
+

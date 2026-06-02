@@ -9,6 +9,11 @@ async function request(path, options = {}, token) {
         },
     });
     if (!response.ok) {
+        if (response.status === 401) {
+            import("./supabase").then(({ supabase }) => {
+                supabase.auth.signOut().catch(() => { });
+            }).catch(() => { });
+        }
         const payload = (await response.json().catch(() => ({ message: "Request failed" })));
         throw new Error(payload.message ?? "Request failed");
     }
@@ -386,8 +391,40 @@ export const api = {
             body: JSON.stringify({ reason }),
         }, token);
     },
+    permissions(token) {
+        return request("/api/admin/permissions", {}, token);
+    },
     users(token) {
         return request("/api/admin/users", {}, token);
+    },
+    createUser(token, input) {
+        return request("/api/admin/users", {
+            method: "POST",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    updateUser(token, id, input) {
+        return request(`/api/admin/users/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        }, token);
+    },
+    setUserActive(token, id, isActive) {
+        return request(`/api/admin/users/${id}/status`, {
+            method: "PATCH",
+            body: JSON.stringify({ isActive }),
+        }, token);
+    },
+    resetUserPassword(token, id) {
+        return request(`/api/admin/users/${id}/reset-password`, {
+            method: "POST",
+        }, token);
+    },
+    setUserPassword(token, id, password) {
+        return request(`/api/admin/users/${id}/password`, {
+            method: "PATCH",
+            body: JSON.stringify({ password }),
+        }, token);
     },
     syncData(token, mode = "direct") {
         return request("/api/admin/sync", {
@@ -468,6 +505,9 @@ export const api = {
         if (query.status) {
             search.set("status", query.status);
         }
+        if (query.agentInteraction) {
+            search.set("agentInteraction", query.agentInteraction);
+        }
         return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     whatsappMonitorConversation(token, id) {
@@ -482,6 +522,13 @@ export const api = {
             search.set("days", String(query.days));
         }
         return request(`/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+    },
+    whatsappDailySummary(token, date) {
+        const search = new URLSearchParams();
+        if (date) {
+            search.set("date", date);
+        }
+        return request(`/api/whatsapp-monitor/daily-summary${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     setWhatsappMonitorReadState(token, id, input) {
         return request(`/api/whatsapp-monitor/conversations/${id}/read-state`, {
@@ -619,5 +666,11 @@ export const api = {
         search.set("minStock", String(minStock));
         search.set("daysWithoutSales", String(daysWithoutSales));
         return request(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
+    },
+    bulkAssignLabelToCustomers(token, customerIds, labelName) {
+        return request("/api/customers/batch/labels", {
+            method: "POST",
+            body: JSON.stringify({ customerIds, labelName }),
+        }, token);
     },
 };

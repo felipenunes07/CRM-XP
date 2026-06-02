@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { useUiLanguage } from "../i18n";
 
 /* ── Types ── */
 
@@ -109,40 +110,48 @@ function getStatusConfig(status: CustomerStatus) {
   }
 }
 
-function generateReactivationMessage(customer: CustomerEntry, products: ProductItem[]): string {
+function generateReactivationMessage(customer: CustomerEntry, products: ProductItem[], language: string): string {
   const firstName = customer.displayName.split(" ")[0] || customer.displayName;
-  
-  // Filter products that are actually in stock
-  const inStockProducts = products
-    .filter(p => p.stockQuantity !== null && p.stockQuantity > 0);
-    
-  let productsListText = "";
-  if (inStockProducts.length > 0) {
-    productsListText = "\n\nOlha só os modelos que você costuma pedir e que temos a pronta entrega:\n" + 
-      inStockProducts.map(p => `• *${p.itemDescription}* (Disponível: ${p.stockQuantity} un)`).join("\n");
+  const inStockProducts = products.filter(p => p.stockQuantity !== null && p.stockQuantity > 0);
+
+  if (language === "zh-CN") {
+    let productsListText = "";
+    if (inStockProducts.length > 0) {
+      productsListText = "\n\n这是您经常订购且我们目前有现货的型号：\n" + 
+        inStockProducts.map(p => `• *${p.itemDescription}* (现货数量: ${p.stockQuantity} 件)`).join("\n");
+    }
+    const daysInactiveText = customer.status === "INACTIVE" ? "一段时间" : "几天";
+    return `您好，${firstName}！最近好吗？\n\n我注意到您已经有${daysInactiveText}没有在我们这里下单了。${productsListText}\n\n要不要趁现在补充一下您的库存？我们来敲定一个新订单吧？😊`;
+  } else {
+    let productsListText = "";
+    if (inStockProducts.length > 0) {
+      productsListText = "\n\nOlha só os modelos que você costuma pedir e que temos a pronta entrega:\n" + 
+        inStockProducts.map(p => `• *${p.itemDescription}* (Disponível: ${p.stockQuantity} un)`).join("\n");
+    }
+    const daysInactiveText = customer.status === "INACTIVE" ? "um tempinho" : "alguns dias";
+    return `Oi, ${firstName}! Tudo bem?\n\nReparei que já faz ${daysInactiveText} que você não faz um pedido com a gente.${productsListText}\n\nQue tal aproveitarmos para abastecer seu estoque? Bora fechar um novo pedido? 😊`;
   }
-
-  const daysInactiveText = customer.status === "INACTIVE" 
-    ? "um tempinho" 
-    : "alguns dias";
-
-  return `Oi, ${firstName}! Tudo bem?\n\nReparei que já faz ${daysInactiveText} que você não faz um pedido com a gente.${productsListText}\n\nQue tal aproveitarmos para abastecer seu estoque? Bora fechar um novo pedido? 😊`;
 }
 
-function generateSlowMovingMessage(customer: CustomerEntry, products: ProductItem[]): string {
+function generateSlowMovingMessage(customer: CustomerEntry, products: ProductItem[], language: string): string {
   const firstName = customer.displayName.split(" ")[0] || customer.displayName;
-  
-  // Filter products that are actually in stock
-  const inStockProducts = products
-    .filter(p => p.stockQuantity !== null && p.stockQuantity > 0);
-    
-  let productsListText = "";
-  if (inStockProducts.length > 0) {
-    productsListText = "\n\nTenho alguns modelos em estoque que você comprou anteriormente e estão disponíveis para entrega imediata:\n" + 
-      inStockProducts.map(p => `• *${p.itemDescription}* (Média habitual de compra: ${Math.round(p.totalQuantityBought / (p.orderCount || 1))} un)`).join("\n");
-  }
+  const inStockProducts = products.filter(p => p.stockQuantity !== null && p.stockQuantity > 0);
 
-  return `Oi, ${firstName}! Tudo bem?\n\nEstou passando para te mostrar algumas excelentes oportunidades de reposição de modelos que você já trabalhou anteriormente conosco.${productsListText}\n\nConsegue receber um orçamento hoje para aproveitarmos essas peças em estoque? 😊`;
+  if (language === "zh-CN") {
+    let productsListText = "";
+    if (inStockProducts.length > 0) {
+      productsListText = "\n\n我们仓库里有几款您之前购买过的型号，目前可立即发货：\n" + 
+        inStockProducts.map(p => `• *${p.itemDescription}* (日常平均采购量: ${Math.round(p.totalQuantityBought / (p.orderCount || 1))} 件)`).join("\n");
+    }
+    return `您好，${firstName}！最近好吗？\n\n给您推荐几款您之前从我们这里采购过的型号，目前是补货的绝佳机会。${productsListText}\n\n您今天能收一下报价单，以便我们为您预留 these 库存件吗？😊`;
+  } else {
+    let productsListText = "";
+    if (inStockProducts.length > 0) {
+      productsListText = "\n\nTenho alguns modelos em estoque que você comprou anteriormente e estão disponíveis para entrega imediata:\n" + 
+        inStockProducts.map(p => `• *${p.itemDescription}* (Média habitual de compra: ${Math.round(p.totalQuantityBought / (p.orderCount || 1))} un)`).join("\n");
+    }
+    return `Oi, ${firstName}! Tudo bem?\n\nEstou passando para te mostrar algumas excelentes oportunidades de reposição de modelos que você já trabalhou anteriormente conosco.${productsListText}\n\nConsegue receber um orçamento hoje para aproveitarmos essas peças em estoque? 😊`;
+  }
 }
 
 /* ── Customer Card Component ── */
@@ -158,6 +167,7 @@ function CustomerCard({
   showStockFilter: boolean;
   strategyMode: "reactivation" | "slowMoving";
 }) {
+  const { language } = useUiLanguage();
   const [expanded, setExpanded] = useState(false);
   const products = showStockFilter ? customer.productsWithStock : customer.productsAll;
   const statusCfg = getStatusConfig(customer.status);
@@ -177,8 +187,8 @@ function CustomerCard({
 
   const handleCopyMessage = () => {
     const msg = strategyMode === "reactivation"
-      ? generateReactivationMessage(customer, products)
-      : generateSlowMovingMessage(customer, products);
+      ? generateReactivationMessage(customer, products, language)
+      : generateSlowMovingMessage(customer, products, language);
     navigator.clipboard.writeText(msg).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

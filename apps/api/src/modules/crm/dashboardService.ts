@@ -7,6 +7,7 @@ import type {
   InsightTag,
   ItemsSoldTrendPoint,
   MonthlyTarget,
+  NewCustomerDetail,
   NewCustomerLeaderboardEntry,
   ProspectingLeaderboardEntry,
   ReactivationLeaderboardEntry,
@@ -380,59 +381,95 @@ async function getTodaySalesPerformance() {
 }
 
 async function getNewCustomerLeaderboard(): Promise<NewCustomerLeaderboardEntry[]> {
-  const result = await pool.query(
-    `
-      WITH old_codes AS (
-        SELECT customer_code
-        FROM customers
-        WHERE source_system_first = 'history_xls'
-          AND customer_code ~ '^(CL|KH|LJ)[0-9]+$'
-      ),
-      ranked_orders AS (
-        SELECT
-          o.customer_id,
-          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-          o.order_date::date AS order_date,
-          COALESCE(o.total_amount, 0)::numeric(14,2) AS first_order_amount,
-          COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = o.id), 0)::int AS first_item_count,
-          ROW_NUMBER() OVER (
-            PARTITION BY o.customer_id
-            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
-          ) AS order_rank
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
-        WHERE NOT (
-          c.source_system_first = 'supabase_2026'
-          AND EXISTS (
-            SELECT 1
-            FROM old_codes oc
-            WHERE c.display_name LIKE oc.customer_code || ' %'
-               OR c.display_name LIKE oc.customer_code || '-%'
-               OR c.display_name LIKE oc.customer_code || ' -%'
-          )
+  const baseCte = `
+    WITH old_codes AS (
+      SELECT customer_code
+      FROM customers
+      WHERE source_system_first = 'history_xls'
+        AND customer_code ~ '^(CL|KH|LJ)[0-9]+$'
+    ),
+    ranked_orders AS (
+      SELECT
+        o.customer_id,
+        COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+        o.order_date::date AS order_date,
+        COALESCE(o.total_amount, 0)::numeric(14,2) AS first_order_amount,
+        COALESCE((SELECT SUM(quantity) FROM order_items WHERE order_id = o.id), 0)::int AS first_item_count,
+        ROW_NUMBER() OVER (
+          PARTITION BY o.customer_id
+          ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+        ) AS order_rank
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      WHERE NOT (
+        c.source_system_first = 'supabase_2026'
+        AND EXISTS (
+          SELECT 1
+          FROM old_codes oc
+          WHERE c.display_name LIKE oc.customer_code || ' %'
+             OR c.display_name LIKE oc.customer_code || '-%'
+             OR c.display_name LIKE oc.customer_code || ' -%'
         )
-          AND c.customer_code != 'OEM417'
-          AND c.display_name NOT ILIKE '%MARX%'
       )
+        AND c.customer_code != 'OEM417'
+        AND c.display_name NOT ILIKE '%MARX%'
+    ),
+    first_orders AS (
+      SELECT * FROM ranked_orders
+      WHERE order_rank = 1
+        AND order_date >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
+    )
+  `;
+
+  const [aggResult, detailResult] = await Promise.all([
+    pool.query(
+      `${baseCte}
       SELECT
         attendant,
         COUNT(*)::int AS new_customers,
         COALESCE(SUM(first_order_amount), 0)::numeric(14,2) AS total_revenue,
         COALESCE(SUM(first_item_count), 0)::int AS total_items
-      FROM ranked_orders
-      WHERE order_rank = 1
-        AND order_date >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
+      FROM first_orders
       GROUP BY attendant
       ORDER BY new_customers DESC, total_revenue DESC, attendant ASC
-      LIMIT 10
-    `,
-  );
+      LIMIT 10`,
+    ),
+    pool.query(
+      `${baseCte}
+      SELECT
+        fo.attendant,
+        fo.customer_id,
+        c.customer_code,
+        c.display_name,
+        fo.order_date::text AS first_order_date,
+        fo.first_order_amount,
+        fo.first_item_count
+      FROM first_orders fo
+      JOIN customers c ON c.id = fo.customer_id
+      ORDER BY fo.order_date DESC, c.display_name ASC`,
+    ),
+  ]);
 
-  return result.rows.map((row) => ({
+  const customersByAttendant = new Map<string, NewCustomerDetail[]>();
+  for (const row of detailResult.rows) {
+    const att = String(row.attendant ?? "Sem atendente");
+    if (!customersByAttendant.has(att)) customersByAttendant.set(att, []);
+    customersByAttendant.get(att)!.push({
+      customerId: String(row.customer_id),
+      customerCode: String(row.customer_code ?? ""),
+      displayName: String(row.display_name ?? ""),
+      firstOrderDate: row.first_order_date ? String(row.first_order_date) : null,
+      firstOrderAmount: Number(row.first_order_amount ?? 0),
+      firstItemCount: Number(row.first_item_count ?? 0),
+    });
+  }
+
+  return aggResult.rows.map((row) => ({
     attendant: String(row.attendant ?? "Sem atendente"),
     newCustomers: Number(row.new_customers ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
     totalItems: Number(row.total_items ?? 0),
+    customers: customersByAttendant.get(String(row.attendant ?? "Sem atendente")) ?? [],
   }));
 }
 

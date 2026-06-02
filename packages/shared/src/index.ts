@@ -86,11 +86,21 @@ export interface SalesPerformanceEntry {
   totalItems: number;
 }
 
+export interface NewCustomerDetail {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  firstOrderDate: string | null;
+  firstOrderAmount: number;
+  firstItemCount: number;
+}
+
 export interface NewCustomerLeaderboardEntry {
   attendant: string;
   newCustomers: number;
   totalRevenue: number;
   totalItems: number;
+  customers: NewCustomerDetail[];
 }
 
 export interface ProspectingLeaderboardEntry {
@@ -1105,6 +1115,7 @@ export interface SegmentDefinition {
   state?: string;
   city?: string;
   customerCodes?: string[];
+  minTotalOrders?: number;
 }
 
 export interface SegmentResult {

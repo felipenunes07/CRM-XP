@@ -1,11 +1,18 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { supabase } from "../lib/supabase";
+
+export type LegacyRole = "ADMIN" | "MANAGER" | "SELLER";
+export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
 
 export interface AuthUser {
   id: string;
   email: string;
-  role: "ADMIN" | "MANAGER" | "SELLER";
+  role: LegacyRole;
+  appRole: AppRole;
   name: string;
+  isActive: boolean;
+  permissions: string[];
 }
 
 interface AuthContextValue {
@@ -14,9 +21,8 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
-
-const STORAGE_KEY = "xp-crm-auth-token";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -25,32 +31,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const loadUser = useCallback(async (accessToken: string) => {
+    const result = await api.me(accessToken);
+    setToken(accessToken);
+    setUser(result.user);
+  }, []);
+
+  const clearSession = useCallback(() => {
+    setToken(null);
+    setUser(null);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if (isLocal) {
+      if (!cancelled) {
+        setToken("local-dev-token");
+        setUser({
+          id: "00000000-0000-0000-0000-000000000001",
+          email: "admin@olist-crm.com.br",
+          role: "ADMIN",
+          appRole: "admin",
+          name: "Administrador Local",
+          isActive: true,
+          permissions: [
+            "dashboard.view",
+            "commercial.view",
+            "commercial.manage",
+            "messages.view",
+            "messages.manage",
+            "finance.view",
+            "finance.manage",
+            "reports.view",
+            "settings.manage",
+            "admin.panel.view",
+            "admin.users.manage",
+            "automations.view",
+            "automations.manage",
+            "integrations.manage"
+          ],
+        });
+        setLoading(false);
+      }
+      return () => {
+        cancelled = true;
+      };
+    }
+
     async function restoreSession() {
-      const storedToken = window.localStorage.getItem(STORAGE_KEY);
-      if (!storedToken) {
+      setLoading(true);
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token ?? null;
+
+      if (!accessToken) {
         if (!cancelled) {
+          clearSession();
           setLoading(false);
         }
         return;
       }
 
-      if (!cancelled) {
-        setToken(storedToken);
-      }
-
       try {
-        const result = await api.me(storedToken);
         if (!cancelled) {
-          setUser(result.user);
+          await loadUser(accessToken);
         }
       } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
+        await supabase.auth.signOut();
         if (!cancelled) {
-          setToken(null);
-          setUser(null);
+          clearSession();
         }
       } finally {
         if (!cancelled) {
@@ -61,10 +111,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     void restoreSession();
 
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      const accessToken = session?.access_token ?? null;
+      if (!accessToken) {
+        clearSession();
+        setLoading(false);
+        return;
+      }
+
+      void loadUser(accessToken).catch(async () => {
+        await supabase.auth.signOut();
+        clearSession();
+      });
+    });
+
     return () => {
       cancelled = true;
+      subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [clearSession, loadUser]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -74,22 +139,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async login(email: string, password: string) {
         setLoading(true);
         try {
-          const result = await api.login(email, password);
-          window.localStorage.setItem(STORAGE_KEY, result.token);
-          setToken(result.token);
-          setUser(result.user);
+          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+          if (isLocal) {
+            setToken("local-dev-token");
+            setUser({
+              id: "00000000-0000-0000-0000-000000000001",
+              email: email.trim().toLowerCase() || "admin@olist-crm.com.br",
+              role: "ADMIN",
+              appRole: "admin",
+              name: "Administrador Local",
+              isActive: true,
+              permissions: [
+                "dashboard.view",
+                "commercial.view",
+                "commercial.manage",
+                "messages.view",
+                "messages.manage",
+                "finance.view",
+                "finance.manage",
+                "reports.view",
+                "settings.manage",
+                "admin.panel.view",
+                "admin.users.manage",
+                "automations.view",
+                "automations.manage",
+                "integrations.manage"
+              ],
+            });
+            return;
+          }
+
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+          });
+          if (error || !data.session?.access_token) {
+            throw new Error(error?.message ?? "Falha ao entrar");
+          }
+          await loadUser(data.session.access_token);
         } finally {
           setLoading(false);
         }
       },
       logout() {
-        window.localStorage.removeItem(STORAGE_KEY);
-        setToken(null);
-        setUser(null);
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        if (isLocal) {
+          clearSession();
+          setLoading(false);
+          return;
+        }
+        void supabase.auth.signOut();
+        clearSession();
         setLoading(false);
       },
+      async refreshUser() {
+        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+        if (isLocal) {
+          return;
+        }
+        const { data } = await supabase.auth.getSession();
+        if (data.session?.access_token) {
+          await loadUser(data.session.access_token);
+        }
+      },
     }),
-    [loading, token, user],
+    [clearSession, loadUser, loading, token, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

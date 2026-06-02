@@ -141,6 +141,29 @@ describe("whatsappMonitorCore", () => {
     });
   });
 
+  it("uses a private phone alias instead of a provider LID as the conversation JID", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "269097182986462@lid",
+          fromMe: false,
+          id: "msg-lid-1",
+        },
+        senderPn: "5511998765432@s.whatsapp.net",
+        pushName: "Leomar",
+        message: { conversation: "Bom dia minha amiga. Tudo bem ?" },
+      },
+      "suelen",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      fromMe: false,
+      senderJid: "5511998765432@s.whatsapp.net",
+      senderName: "Leomar",
+    });
+  });
+
   it("ignores the connection sender field for inbound direct messages", () => {
     const context = extractEvolutionMessageContext(
       {
@@ -402,6 +425,26 @@ describe("whatsappMonitorCore", () => {
     );
 
     expect(merged.map((message) => message.id)).toEqual(["incoming-in-1", "activity-out-1"]);
+  });
+
+  it("uses explicit fromMe=false metadata before the stored activity type", () => {
+    const message = mapWhatsappActivityToMessage({
+      id: "activity-misclassified-1",
+      dealId: "deal-1",
+      activityType: "WHATSAPP_SENT",
+      actorName: "Cliente",
+      content: "Vou pedir pra equipe preparar",
+      metadata: {
+        remoteJid: "5511998765432@s.whatsapp.net",
+        messageId: "in-1",
+        fromMe: false,
+        isOutbound: false,
+        capturedFromWhatsapp: false,
+      },
+      createdAt: "2026-05-28T14:18:00.000Z",
+    });
+
+    expect(message.direction).toBe("INBOUND");
   });
 
   it("computes median values for response-time indicators", () => {

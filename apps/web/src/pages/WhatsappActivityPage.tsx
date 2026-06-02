@@ -7,18 +7,19 @@ import type {
   WhatsappAgentActivityReport,
 } from "@olist-crm/shared";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Search, Smartphone, TrendingDown, TrendingUp, Users, UserCheck } from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Search, Smartphone, TrendingDown, TrendingUp, Users, UserCheck, Calendar, Copy, Check, ChevronDown, ChevronUp, Award, ShoppingBag, DollarSign, Package } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 
 type ActivityWindowDays = 1 | 7 | 14 | 30;
-type ActivityTab = "overview" | "conversations" | "agents";
+type ActivityTab = "overview" | "conversations" | "agents" | "daily-summary";
 
 const windowOptions: ActivityWindowDays[] = [1, 7, 14, 30];
 const tabs: Array<{ id: ActivityTab; label: string }> = [
   { id: "overview", label: "Visao geral" },
   { id: "conversations", label: "Conversas" },
   { id: "agents", label: "Agentes" },
+  { id: "daily-summary", label: "Resumo do Dia" },
 ];
 
 const EMPTY_SUMMARY = {
@@ -66,6 +67,25 @@ function formatSeconds(value: number | null) {
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
   return restMinutes ? `${hours}h ${restMinutes}m` : `${hours}h`;
+}
+
+function formatDailySummaryCustomerLines(customers: any[], options: { recovered?: boolean } = {}) {
+  return customers
+    .map((customer) => {
+      const code = customer.customer_code ? `${customer.customer_code} - ` : "";
+      const name = customer.display_name || "Cliente sem nome";
+      const attendant = customer.last_attendant || "Sem atendente";
+      const amount = Number(customer.total_amount ?? 0);
+      const amountText = Number.isFinite(amount)
+        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      const inactiveText = options.recovered && customer.days_inactive
+        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
+        : "";
+
+      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
+    })
+    .join("\n");
 }
 
 function initials(name: string) {
@@ -358,9 +378,9 @@ export function WhatsappActivityPage() {
     queryKey: ["whatsapp-agent-activity-report", days],
     queryFn: () => api.whatsappAgentActivityReport(token!, { days }),
     enabled: Boolean(token),
-    refetchInterval: 60000,
+    refetchInterval: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    staleTime: 30000,
+    staleTime: 60 * 1000,
     placeholderData: (previousData) => previousData,
   });
 
@@ -448,7 +468,7 @@ export function WhatsappActivityPage() {
       if (heatmapMetric === "sent") return isUniqueMetric ? (cell.sentUniqueMessages ?? 0) : cell.sentMessages;
       if (heatmapMetric === "received") return isUniqueMetric ? (cell.receivedUniqueMessages ?? 0) : cell.receivedMessages;
       if (heatmapMetric === "conversations") return cell.attendedConversations;
-      return isUniqueMetric 
+      return isUniqueMetric
         ? (cell.sentUniqueMessages ?? 0) + (cell.receivedUniqueMessages ?? 0)
         : (cell.sentMessages || 0) + (cell.receivedMessages || 0);
     })),
@@ -586,68 +606,80 @@ export function WhatsappActivityPage() {
     <div className="whatsapp-activity-page">
       <div className="activity-report-header">
         <div>
-          <h1>{activeTab === "overview" ? "Visao geral" : activeTab === "conversations" ? "Conversas" : "Visao Geral de Agentes"}</h1>
+          <h1>
+            {activeTab === "overview"
+              ? "Visão Geral"
+              : activeTab === "conversations"
+              ? "Conversas"
+              : activeTab === "agents"
+              ? "Visão Geral de Agentes"
+              : "Resumo do Dia"}
+          </h1>
           <span>
             {activeTab === "agents"
               ? "Acompanhe desempenho por agente e clique em uma vendedora para filtrar."
+              : activeTab === "daily-summary"
+              ? "Acompanhe os principais acontecimentos comerciais consolidados do dia."
               : "Acompanhe o atendimento por hora, agente e tipo de conversa."}
           </span>
         </div>
-        <div className="activity-actions">
-          <button
-            type="button"
-            className="activity-primary-button"
-            onClick={() => downloadReportCsv(report, selectedAgent?.agentName ?? "Todos os agentes", dailySeries)}
-          >
-            <Download size={16} />
-            Baixar relatorios de agentes
-          </button>
-          <label className="activity-select">
-            <select value={days} onChange={(event) => setDays(Number(event.target.value) as ActivityWindowDays)}>
-              {windowOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option === 1 ? "Hoje" : `Ultimos ${option} dias`}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="activity-select">
-            <select value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>
-              <option value="all">Todos os agentes</option>
-              {report.agents.map((agent) => (
-                <option key={agent.agentId} value={agent.agentId}>
-                  {agent.agentName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="activity-heatmap-toggles">
+        {activeTab !== "daily-summary" && (
+          <div className="activity-actions">
             <button
               type="button"
-              className={typeFilter === "all" ? "active" : ""}
-              onClick={() => setTypeFilter("all")}
+              className="activity-primary-button"
+              onClick={() => downloadReportCsv(report, selectedAgent?.agentName ?? "Todos os agentes", dailySeries)}
             >
-              Todas
+              <Download size={16} />
+              Baixar relatorios de agentes
             </button>
-            <button
-              type="button"
-              className={typeFilter === "private" ? "active" : ""}
-              onClick={() => setTypeFilter("private")}
-            >
-              Privado
-            </button>
-            <button
-              type="button"
-              className={typeFilter === "group" ? "active" : ""}
-              onClick={() => setTypeFilter("group")}
-            >
-              Grupos
+            <label className="activity-select">
+              <select value={days} onChange={(event) => setDays(Number(event.target.value) as ActivityWindowDays)}>
+                {windowOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option === 1 ? "Hoje" : `Ultimos ${option} dias`}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="activity-select">
+              <select value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>
+                <option value="all">Todos os agentes</option>
+                {report.agents.map((agent) => (
+                  <option key={agent.agentId} value={agent.agentId}>
+                    {agent.agentName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="activity-heatmap-toggles">
+              <button
+                type="button"
+                className={typeFilter === "all" ? "active" : ""}
+                onClick={() => setTypeFilter("all")}
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                className={typeFilter === "private" ? "active" : ""}
+                onClick={() => setTypeFilter("private")}
+              >
+                Privado
+              </button>
+              <button
+                type="button"
+                className={typeFilter === "group" ? "active" : ""}
+                onClick={() => setTypeFilter("group")}
+              >
+                Grupos
+              </button>
+            </div>
+            <button type="button" className="activity-icon-button" onClick={() => reportQuery.refetch()} title="Atualizar">
+              <RefreshCw size={17} />
             </button>
           </div>
-          <button type="button" className="activity-icon-button" onClick={() => reportQuery.refetch()} title="Atualizar">
-            <RefreshCw size={17} />
-          </button>
-        </div>
+        )}
       </div>
 
       <div className="activity-tabs" role="tablist" aria-label="Relatorios WhatsApp">
@@ -853,8 +885,8 @@ export function WhatsappActivityPage() {
                           .filter((cell) => cell.sentMessages > 0 || cell.receivedMessages > 0)
                           .sort((left, right) => (right.sentMessages + right.receivedMessages) - (left.sentMessages + left.receivedMessages))
                           .map((cell) => {
-                            const val = heatmapMetric === "sent" ? cell.sentMessages : 
-                                        heatmapMetric === "received" ? cell.receivedMessages : 
+                            const val = heatmapMetric === "sent" ? cell.sentMessages :
+                                        heatmapMetric === "received" ? cell.receivedMessages :
                                         heatmapMetric === "received_unique" ? cell.receivedUniqueMessages :
                                         heatmapMetric === "conversations" ? cell.attendedConversations :
                                         cell.sentMessages + cell.receivedMessages;
@@ -888,8 +920,8 @@ export function WhatsappActivityPage() {
                         }
 
                         return filtered.slice(0, 8).map((conversation) => {
-                          const val = heatmapMetric === "sent" ? conversation.sentMessages : 
-                                      heatmapMetric === "received" ? conversation.receivedMessages : 
+                          const val = heatmapMetric === "sent" ? conversation.sentMessages :
+                                      heatmapMetric === "received" ? conversation.receivedMessages :
                                       heatmapMetric === "received_unique" ? (conversation.receivedMessages > 0 ? 1 : 0) :
                                       conversation.sentMessages + conversation.receivedMessages;
                           return (
@@ -1038,6 +1070,635 @@ export function WhatsappActivityPage() {
           </div>
         </section>
       ) : null}
+
+      {activeTab === "daily-summary" ? (
+        <DailySummaryTab token={token!} />
+      ) : null}
+    </div>
+  );
+}
+
+function DailySummaryTab({ token }: { token: string }) {
+  const [selectedDate, setSelectedDate] = useState(() => {
+    return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  });
+  const [copySuccess, setCopySuccess] = useState(false);
+  const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
+
+  const summaryQuery = useQuery({
+    queryKey: ["whatsapp-daily-summary", selectedDate],
+    queryFn: () => api.whatsappDailySummary(token, selectedDate),
+    enabled: Boolean(token),
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
+  });
+
+  const handleCopy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  const toggleAgent = (agentId: string) => {
+    setExpandedAgents((prev) => ({
+      ...prev,
+      [agentId]: !prev[agentId],
+    }));
+  };
+
+  const [isDetailed, setIsDetailed] = useState(false);
+  const [useUniqueMessages, setUseUniqueMessages] = useState(false);
+  const data = summaryQuery.data;
+
+  const [selectedAgents, setSelectedAgents] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (data?.agents) {
+      const initial: Record<string, boolean> = {};
+      data.agents.forEach((agent: any) => {
+        initial[agent.agentId] = true;
+      });
+      setSelectedAgents(initial);
+    }
+  }, [data]);
+
+  const activeAgentsList = useMemo(() => {
+    if (!data?.agents) return [];
+    return data.agents.filter((agent: any) => selectedAgents[agent.agentId] !== false);
+  }, [data?.agents, selectedAgents]);
+
+  const totalUniqueContactsSent = useMemo(() => {
+    if (!activeAgentsList) return 0;
+    const uniqueJids = new Set<string>();
+    activeAgentsList.forEach((agent: any) => {
+      agent.attendedPrivateClients.forEach((c: any) => {
+        if (c.sent > 0) uniqueJids.add(c.jid);
+      });
+      agent.attendedGroupClients.forEach((g: any) => {
+        if (g.sent > 0) uniqueJids.add(g.jid);
+      });
+    });
+    return uniqueJids.size;
+  }, [activeAgentsList]);
+
+  const messageText = useMemo(() => {
+    if (!data) return "";
+    const [year, month, day] = data.date.split("-");
+    const formattedDate = `${day}/${month}/${year}`;
+
+    // Calculate Top Active Agent
+    let topAgentName = "";
+    let topAgentValue = 0;
+    activeAgentsList.forEach((agent: any) => {
+      const val = useUniqueMessages
+        ? (agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length + agent.attendedGroupClients.filter((g: any) => g.sent > 0).length)
+        : agent.sentMessages;
+      if (val > topAgentValue) {
+        topAgentValue = val;
+        topAgentName = agent.agentName;
+      }
+    });
+
+    let text = `📅 *Relatório de Atendimento XP*\n_${formattedDate}_\n\n`;
+    text += `📱 *Clientes Novos no Dia:* ${data.newCustomersCount}\n`;
+    if (data.newCustomersList?.length > 0) {
+      text += `${formatDailySummaryCustomerLines(data.newCustomersList)}\n`;
+    }
+    text += `🔄 *Clientes Recuperados no Dia:* ${data.recoveredCustomersCount}\n`;
+    if (data.recoveredCustomersList?.length > 0) {
+      text += `${formatDailySummaryCustomerLines(data.recoveredCustomersList, { recovered: true })}\n`;
+    }
+    text += `\n`;
+
+    if (useUniqueMessages) {
+      text += `💬 *Resumo de Mensagens:*\n`;
+      text += `📱 Mensagens Únicas Enviadas: ${totalUniqueContactsSent.toLocaleString("pt-BR")}\n`;
+      text += `🧾 Mensagens Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n`;
+    } else {
+      text += `💬 *Resumo de Mensagens:*\n`;
+      text += `📱 Mensagens Enviadas: ${data.totalMessagesSent.toLocaleString("pt-BR")}\n`;
+      text += `🧾 Mensagens Recebidas: ${data.totalMessagesReceived.toLocaleString("pt-BR")}\n`;
+    }
+
+    if (data.averageFirstResponseSeconds !== null && data.averageFirstResponseSeconds !== undefined) {
+      text += `⏱️ *Tempo Médio de Resposta (SLA):* ${formatSeconds(data.averageFirstResponseSeconds)}\n`;
+    }
+    text += `\n`;
+
+    if (topAgentName && topAgentValue > 0) {
+      text += `🌟 *Vendedora Mais Ativa:* ${topAgentName} (${topAgentValue.toLocaleString("pt-BR")} ${useUniqueMessages ? "mensagens únicas" : "mensagens enviadas"})\n\n`;
+    }
+
+    text += `🏆 *Ranking de Vendedoras e Atendimentos:*\n\n`;
+
+    activeAgentsList.forEach((agent: any, index: number) => {
+      const medals = ["🥇", "🥈", "🥉"];
+      const emoji = index < 3 ? medals[index] : "❤️";
+      text += `${emoji} *${agent.agentName}*\n`;
+
+      if (useUniqueMessages) {
+        const agentUniqueContactsSent = agent.attendedPrivateClients.filter((c: any) => c.sent > 0).length +
+                                        agent.attendedGroupClients.filter((g: any) => g.sent > 0).length;
+        text += `💬 Mensagens Únicas Enviadas: ${agentUniqueContactsSent.toLocaleString("pt-BR")}\n`;
+      } else {
+        text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
+      }
+
+      text += `📱 Atendimentos Particular: ${agent.privateChatsCount}\n`;
+      text += `👥 Atendimentos em Grupo: ${agent.groupChatsCount}\n`;
+      text += `✨ Conversas Iniciadas: ${agent.initiatedCount}\n`;
+
+      if (isDetailed && (agent.attendedPrivateClients.length > 0 || agent.attendedGroupClients.length > 0)) {
+        text += `👥 *Clientes Atendidos:*\n`;
+        // Particular
+        agent.attendedPrivateClients.forEach((c: any) => {
+          const initiatedTag = c.initiated ? " _[Iniciada]_" : "";
+          text += `* ${c.name} (Particular)${initiatedTag}\n`;
+        });
+        // Grupos
+        agent.attendedGroupClients.forEach((g: any) => {
+          text += `* ${g.name} (Grupo)\n`;
+        });
+      }
+      text += `\n`;
+    });
+
+    return text;
+  }, [data, activeAgentsList, isDetailed, useUniqueMessages, totalUniqueContactsSent]);
+
+  if (summaryQuery.isLoading) {
+    return <div className="page-loading">Carregando resumo do dia...</div>;
+  }
+
+  if (summaryQuery.isError || !data) {
+    return (
+      <div className="activity-panel" style={{ padding: "2rem", textAlign: "center" }}>
+        <p className="muted" style={{ marginBottom: "1rem" }}>Não foi possível carregar o resumo diário.</p>
+        <button
+          type="button"
+          className="premium-button primary"
+          onClick={() => summaryQuery.refetch()}
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="daily-summary-tab animate-in" style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+      {/* Top Filter Bar */}
+      <div className="panel" style={{ padding: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <Calendar className="muted" size={20} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Selecione a data do relatório</h3>
+              <p className="muted" style={{ margin: 0, fontSize: "0.85rem" }}>Visualizando acontecimentos comerciais consolidados do dia</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <input
+              type="date"
+              className="form-input"
+              style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "1px solid var(--border-color)", width: "auto" }}
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+            />
+            <button
+              type="button"
+              className="premium-button ghost"
+              onClick={() => summaryQuery.refetch()}
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
+            >
+              <RefreshCw size={16} />
+              Atualizar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Metric Cards Grid */}
+      <section className="daily-summary-grid">
+        <div className="daily-summary-card" style={{ '--card-theme': '#287ee7', '--card-theme-rgb': '40, 126, 231' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Smartphone size={20} />
+            </div>
+            <span className="daily-summary-card-title">Clientes Novos</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{data.newCustomersCount}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Primeira compra no dia</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#10b981', '--card-theme-rgb': '16, 185, 129' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <RefreshCw size={20} />
+            </div>
+            <span className="daily-summary-card-title">Clientes Recuperados</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{data.recoveredCustomersCount}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Voltou a comprar após 90+ dias</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#f59e0b', '--card-theme-rgb': '245, 158, 11' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Package size={20} />
+            </div>
+            <span className="daily-summary-card-title">Telas Vendidas</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{data.totalTelasSold.toLocaleString("pt-BR")}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Volume total de itens</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#8b5cf6', '--card-theme-rgb': '139, 92, 246' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <DollarSign size={20} />
+            </div>
+            <span className="daily-summary-card-title">Faturamento</span>
+          </div>
+          <div className="daily-summary-card-value long-value">
+            <strong>R$ {data.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Pedidos faturados no dia</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#06b6d4', '--card-theme-rgb': '6, 182, 212' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <MessageCircle size={20} />
+            </div>
+            <span className="daily-summary-card-title">Respostas Enviadas</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{data.totalMessagesSent.toLocaleString("pt-BR")}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Mensagens ativas do time</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#6366f1', '--card-theme-rgb': '99, 102, 241' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Clock3 size={20} />
+            </div>
+            <span className="daily-summary-card-title">Mensagens Recebidas</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{data.totalMessagesReceived.toLocaleString("pt-BR")}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Entradas enviadas por clientes</p>
+        </div>
+
+        <div className="daily-summary-card" style={{ '--card-theme': '#f43f5e', '--card-theme-rgb': '244, 63, 94' } as React.CSSProperties}>
+          <div className="daily-summary-card-header">
+            <div className="daily-summary-card-icon">
+              <Clock3 size={20} />
+            </div>
+            <span className="daily-summary-card-title">Tempo de Resposta (SLA)</span>
+          </div>
+          <div className="daily-summary-card-value">
+            <strong>{formatSeconds(data.averageFirstResponseSeconds)}</strong>
+          </div>
+          <p className="daily-summary-card-subtitle">Tempo médio de resposta</p>
+        </div>
+      </section>
+
+      {/* Copy / Markdown Panel */}
+      <div className="panel" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1.5rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 600 }}>Relatório Formatado para WhatsApp</h3>
+            <p className="muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.875rem" }}>
+              Copie o relatório consolidado com cliques e publique direto no grupo da empresa.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "1.5rem", flexWrap: "wrap" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", fontWeight: 500, color: "var(--text-color)" }}>
+              <input
+                type="checkbox"
+                checked={isDetailed}
+                onChange={(e) => setIsDetailed(e.target.checked)}
+                style={{ width: "1.1rem", height: "1.1rem", cursor: "pointer", accentColor: "var(--primary)" }}
+              />
+              Relatório Detalhado
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.9rem", fontWeight: 500, color: "var(--text-color)" }}>
+              <input
+                type="checkbox"
+                checked={useUniqueMessages}
+                onChange={(e) => setUseUniqueMessages(e.target.checked)}
+                style={{ width: "1.1rem", height: "1.1rem", cursor: "pointer", accentColor: "var(--primary)" }}
+              />
+              Mensagens Únicas Enviadas (vs Total)
+            </label>
+            <button
+              type="button"
+              className={`premium-button ${copySuccess ? "success" : "primary"}`}
+              onClick={() => handleCopy(messageText)}
+              style={{ display: "flex", alignItems: "center", gap: "0.5rem", transition: "all 0.2s ease" }}
+            >
+              {copySuccess ? <Check size={18} /> : <Copy size={18} />}
+              {copySuccess ? "Copiado! ✅" : "Copiar para WhatsApp 📱"}
+            </button>
+          </div>
+        </div>
+        {/* Toggle checkboxes / filters */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem" }}>
+          <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <UserCheck size={14} /> Selecionar vendedoras para incluir no relatório:
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+            {data.agents.map((agent: any) => {
+              const isSelected = selectedAgents[agent.agentId] !== false;
+              return (
+                <button
+                  key={agent.agentId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedAgents((prev) => ({
+                      ...prev,
+                      [agent.agentId]: !isSelected,
+                    }));
+                  }}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "20px",
+                    border: isSelected ? "1px solid var(--primary)" : "1px solid var(--border-color)",
+                    background: isSelected ? "rgba(40, 126, 231, 0.08)" : "transparent",
+                    color: isSelected ? "var(--primary)" : "var(--text-muted)",
+                    fontSize: "0.825rem",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    readOnly
+                    style={{ accentColor: "var(--primary)", cursor: "pointer", margin: 0, width: "0.85rem", height: "0.85rem" }}
+                  />
+                  {agent.agentName}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div
+          style={{
+            background: "rgba(0, 0, 0, 0.02)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "12px",
+            padding: "1.5rem",
+            maxHeight: "350px",
+            overflowY: "auto",
+            fontFamily: "monospace",
+            whiteSpace: "pre-wrap",
+            fontSize: "0.9rem",
+            color: "var(--text-color)",
+            lineHeight: 1.5,
+          }}
+        >
+          {messageText}
+        </div>
+      </div>
+
+      {/* Salesperson engagement accordion list */}
+      <div className="panel" style={{ padding: "2rem" }}>
+        <div style={{ marginBottom: "1.5rem" }}>
+          <h3 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 600 }}>Desempenho por Vendedora</h3>
+          <p className="muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.875rem" }}>
+            Produtividade comercial e lista detalhada de atendimentos no dia.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          {activeAgentsList.length ? (
+            activeAgentsList.map((agent: any, index: number) => {
+              const medals = ["🥇", "🥈", "🥉"];
+              const emoji = index < 3 ? medals[index] : "❤️";
+              const isExpanded = expandedAgents[agent.agentId];
+
+              return (
+                <div
+                  key={agent.agentId}
+                  style={{
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "12px",
+                    overflow: "hidden",
+                    background: "var(--card-background)",
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  {/* Header Row */}
+                  <div
+                    onClick={() => toggleAgent(agent.agentId)}
+                    style={{
+                      padding: "1.25rem 1.5rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      cursor: "pointer",
+                      background: "rgba(0,0,0,0.01)",
+                      userSelect: "none",
+                      flexWrap: "wrap",
+                      gap: "1rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <span style={{ fontSize: "1.5rem" }}>{emoji}</span>
+                      <div>
+                        <strong style={{ fontSize: "1.05rem" }}>{agent.agentName}</strong>
+                        <div className="muted" style={{ fontSize: "0.8rem", marginTop: "0.2rem" }}>
+                          📱 Telas: <strong>{agent.screensSold}</strong> | 🧾 Pedidos: <strong>{agent.ordersCount}</strong> | 💰 Faturamento: <strong>R$ {agent.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
+                      <div style={{ display: "flex", gap: "1.5rem", fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                        <div>💬 Msg Enviadas: <strong style={{ color: "var(--text-color)" }}>{agent.sentMessages}</strong></div>
+                        <div>📱 Particular: <strong style={{ color: "var(--text-color)" }}>{agent.privateChatsCount}</strong></div>
+                        <div>👥 Grupo: <strong style={{ color: "var(--text-color)" }}>{agent.groupChatsCount}</strong></div>
+                        <div>✨ Iniciadas: <strong style={{ color: "var(--text-color)" }}>{agent.initiatedCount}</strong></div>
+                      </div>
+                      {isExpanded ? <ChevronUp size={20} className="muted" /> : <ChevronDown size={20} className="muted" />}
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div style={{ padding: "1.5rem", borderTop: "1px solid var(--border-color)", background: "rgba(0,0,0,0.005)" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.5rem" }}>
+                        {/* Particulares */}
+                        <div>
+                          <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <Smartphone size={16} className="muted" />
+                            Contatos Particulares ({agent.attendedPrivateClients.length})
+                          </h4>
+                          {agent.attendedPrivateClients.length ? (
+                            <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.875rem" }}>
+                              {agent.attendedPrivateClients.map((client: any) => (
+                                <li key={client.jid} style={{ lineHeight: 1.4 }}>
+                                  <strong>{client.name}</strong>
+                                  <span className="muted" style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>
+                                    (💬 {client.sent} env / {client.received} rec)
+                                  </span>
+                                  {client.initiated && (
+                                    <span
+                                      style={{
+                                        marginLeft: "0.5rem",
+                                        fontSize: "0.7rem",
+                                        background: "rgba(16, 185, 129, 0.15)",
+                                        color: "#10b981",
+                                        padding: "1px 6px",
+                                        borderRadius: "10px",
+                                        fontWeight: 600
+                                      }}
+                                    >
+                                      Iniciada
+                                    </span>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="muted" style={{ margin: 0, fontSize: "0.85rem", fontStyle: "italic" }}>Nenhum particular atendido.</p>
+                          )}
+                        </div>
+
+                        {/* Grupos */}
+                        <div>
+                          <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <Users size={16} className="muted" />
+                            Grupos Atendidos ({agent.attendedGroupClients.length})
+                          </h4>
+                          {agent.attendedGroupClients.length ? (
+                            <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.4rem", fontSize: "0.875rem" }}>
+                              {agent.attendedGroupClients.map((group: any) => (
+                                <li key={group.jid} style={{ lineHeight: 1.4 }}>
+                                  <strong>{group.name}</strong>
+                                  <span className="muted" style={{ fontSize: "0.75rem", marginLeft: "0.4rem" }}>
+                                    (💬 {group.sent} env / {group.received} rec)
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="muted" style={{ margin: 0, fontSize: "0.85rem", fontStyle: "italic" }}>Nenhum grupo atendido.</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ textAlign: "center", padding: "2rem" }}>
+              <p className="muted" style={{ margin: 0 }}>Nenhuma vendedora registrou atividade nesta data.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Special Customers Tables Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "2rem" }}>
+        {/* Novos Clientes */}
+        <div className="panel" style={{ padding: "2rem" }}>
+          <div style={{ marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <Award className="accent-primary" size={20} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 600 }}>Clientes Novos do Dia ({data.newCustomersCount})</h3>
+              <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>Registraram a primeira compra na empresa hoje</p>
+            </div>
+          </div>
+          {data.newCustomersList.length ? (
+            <div className="table-scroll">
+              <table className="data-table" style={{ fontSize: "0.85rem" }}>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th>Valor</th>
+                    <th>Peças</th>
+                    <th>Vendedora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.newCustomersList.map((c: any) => (
+                    <tr key={c.customer_code}>
+                      <td style={{ fontWeight: 600, color: "var(--primary)" }}>{c.customer_code}</td>
+                      <td>{c.display_name}</td>
+                      <td>R$ {Number(c.total_amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                      <td>{c.item_count}</td>
+                      <td className="muted">{c.last_attendant}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontStyle: "italic", fontSize: "0.875rem" }}>Nenhum novo cliente registrado nesta data.</p>
+          )}
+        </div>
+
+        {/* Recuperados */}
+        <div className="panel" style={{ padding: "2rem" }}>
+          <div style={{ marginBottom: "1.25rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <RefreshCw className="accent-success" size={20} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 600 }}>Clientes Recuperados ({data.recoveredCustomersCount})</h3>
+              <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>Voltaram a comprar depois de 90+ dias inativos</p>
+            </div>
+          </div>
+          {data.recoveredCustomersList.length ? (
+            <div className="table-scroll">
+              <table className="data-table" style={{ fontSize: "0.85rem" }}>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Nome</th>
+                    <th>Valor</th>
+                    <th>Inatividade</th>
+                    <th>Vendedora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.recoveredCustomersList.map((c: any) => (
+                    <tr key={c.customer_code}>
+                      <td style={{ fontWeight: 600, color: "var(--success)" }}>{c.customer_code}</td>
+                      <td>{c.display_name}</td>
+                      <td>R$ {Number(c.total_amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                      <td>
+                        <strong style={{ color: "var(--success)" }}>{c.days_inactive} dias</strong>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>Desde {c.previous_order_date.split("-").reverse().join("/")}</div>
+                      </td>
+                      <td className="muted">{c.last_attendant}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontStyle: "italic", fontSize: "0.875rem" }}>Nenhum cliente recuperado registrado nesta data.</p>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -16,6 +16,15 @@ const SYNC_WINDOW_END_HOUR = 18;   // 6 PM
 
 let activeSync: Promise<unknown> | null = null;
 
+interface PrimarySyncSchedulerOptions {
+  enabled: boolean;
+  reason: string;
+  checkIntervalMs?: number;
+  runImmediately?: boolean;
+  shouldRun?: () => Promise<boolean>;
+  runSync?: (reason: string) => Promise<unknown>;
+}
+
 function getLocalParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: DAILY_SYNC_TIMEZONE,
@@ -94,7 +103,7 @@ export async function runPrimarySync(reason: string) {
   const syncPromise = runPrimarySyncInternal(reason);
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("A sincronizacao excedeu o limite de 3 minutos.")), 3 * 60 * 1000)
+    setTimeout(() => reject(new Error("A sincronizacao excedeu o limite de 10 minutos.")), 10 * 60 * 1000)
   );
 
   activeSync = Promise.race([syncPromise, timeoutPromise]).finally(() => {
@@ -149,9 +158,16 @@ async function shouldRunPeriodicSync() {
   return nowTime - lastRunTime >= SYNC_INTERVAL_MS;
 }
 
-export function startDailySyncScheduler() {
-  if (!env.STARTUP_SYNC_ENABLED) {
-    logger.info("startup sync disabled");
+export function startPrimarySyncScheduler({
+  enabled,
+  reason,
+  checkIntervalMs = CHECK_INTERVAL_MS,
+  runImmediately = true,
+  shouldRun = shouldRunPeriodicSync,
+  runSync = runPrimarySync,
+}: PrimarySyncSchedulerOptions) {
+  if (!enabled) {
+    logger.info("primary sync scheduler disabled", { reason });
     return {
       async close() {
         return;
@@ -161,26 +177,27 @@ export function startDailySyncScheduler() {
 
   const check = async () => {
     try {
-      const shouldRun = await shouldRunPeriodicSync();
-      if (shouldRun) {
-        logger.info("triggering scheduled periodic sync");
-        await runPrimarySync("scheduled-periodic-sync");
+      const shouldRunNow = await shouldRun();
+      if (shouldRunNow) {
+        logger.info("triggering scheduled periodic sync", { reason });
+        await runSync(reason);
       }
     } catch (error) {
-      logger.error("scheduled periodic sync check failed", { error: String(error) });
+      logger.error("scheduled periodic sync check failed", { reason, error: String(error) });
     }
   };
 
-  // Run immediately on startup
-  void check();
+  if (runImmediately) {
+    void check();
+  }
 
-  // Then check periodically
-  const interval = setInterval(check, CHECK_INTERVAL_MS);
+  const interval = setInterval(check, checkIntervalMs);
 
   logger.info("periodic sync scheduler initialized", {
-    checkIntervalMinutes: CHECK_INTERVAL_MS / 60000,
+    reason,
+    checkIntervalMinutes: checkIntervalMs / 60000,
     syncIntervalHours: SYNC_INTERVAL_MS / 3600000,
-    window: `${SYNC_WINDOW_START_HOUR}h - ${SYNC_WINDOW_END_HOUR}h`
+    window: `segunda-sexta ${SYNC_WINDOW_START_HOUR}h-${SYNC_WINDOW_END_HOUR}h; sabado 9h-13h`
   });
 
   return {
@@ -188,4 +205,11 @@ export function startDailySyncScheduler() {
       clearInterval(interval);
     },
   };
+}
+
+export function startDailySyncScheduler() {
+  return startPrimarySyncScheduler({
+    enabled: env.STARTUP_SYNC_ENABLED,
+    reason: "scheduled-periodic-sync",
+  });
 }

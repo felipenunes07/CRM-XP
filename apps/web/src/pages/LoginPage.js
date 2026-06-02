@@ -4,8 +4,8 @@ import { useAuth } from "../hooks/useAuth";
 import { Meteors } from "../components/Meteors";
 export function LoginPage() {
     const { login, loading } = useAuth();
-    const [email, setEmail] = useState("admin@example.com");
-    const [password, setPassword] = useState("change-me");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [error, setError] = useState(null);
     async function handleSubmit(event) {
         event.preventDefault();

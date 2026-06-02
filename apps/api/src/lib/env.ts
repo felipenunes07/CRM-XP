@@ -85,6 +85,11 @@ const envSchema = z.object({
   DATABASE_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(100).max(50_000).default(5_000),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
+  SUPABASE_URL: z.string().default(""),
+  SUPABASE_ANON_KEY: z.string().default(""),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),
+  VITE_SUPABASE_URL: z.string().default(""),
+  VITE_SUPABASE_ANON_KEY: z.string().default(""),
   HISTORICAL_FILES: z.string().default(""),
   // Dropbox API
   DROPBOX_ACCESS_TOKEN: z.string().optional(),
@@ -119,12 +124,16 @@ const envSchema = z.object({
   PROSPECTING_PLACE_DETAILS_DAILY_LIMIT: z.coerce.number().int().positive().default(25),
   PROSPECTING_PLACE_DETAILS_MONTHLY_LIMIT: z.coerce.number().int().positive().default(800),
   PROSPECTING_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  EVOLUTION_PROCESS_GROUP_MESSAGES: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 export const env = envSchema.parse(process.env);
 
 export const webOrigins = env.WEB_ORIGIN.split(",")
-  .map((value) => value.trim())
+  .map((value) => value.trim().replace(/\/+$/, ""))
   .filter(Boolean);
 
 export const historicalFiles = env.HISTORICAL_FILES.split(";")

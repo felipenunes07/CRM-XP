@@ -49,7 +49,7 @@ OLIST_API_TOKEN=...
 OLIST_API_BASE_URL=https://api.tiny.com.br/api2
 OLIST_SYNC_START_DATE=2026-01-01
 STARTUP_SYNC_ENABLED=false
-WORKER_OLIST_SYNC_ENABLED=false
+WORKER_OLIST_SYNC_ENABLED=true
 WORKER_OLIST_SYNC_INTERVAL_MINUTES=60
 SUPABASE_DATABASE_URL=postgresql://... # somente fonte 2026, se usar
 SUPABASE_TABLE_2026=f_vendas_2026
@@ -61,6 +61,8 @@ DROPBOX_CUSTOMER_CREDIT_PATH=/XP SALDO TEMPORARIO
 ```
 
 No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use caminhos reais do Dropbox iniciando com `/`.
+
+Mantenha `WORKER_OLIST_SYNC_ENABLED=true` no servico worker para atualizar os dados a cada 1 hora mesmo quando ninguem estiver logado no CRM.
 
 Depois que o backend estiver no ar, teste:
 

@@ -472,24 +472,28 @@ export function extractEvolutionMessageContext(
   instanceName?: string | null,
 ): EvolutionMessageContext {
   const rawMessage = message as Record<string, unknown>;
-  const key = message.key ?? {};
+  const key = (message.key ?? {}) as Record<string, unknown>;
   const providerRemoteJid = normalizeWhatsappJidForStorage(
     readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]),
   );
   const fromMe = extractEvolutionFromMeFlag(message) ?? false;
   const remoteJidAlt = normalizeWhatsappJidForStorage(
-    readString(key.remoteJidAlt) ?? pickString(rawMessage, ["remoteJidAlt", "chatIdAlt", "jidAlt"]),
+    readString(key.remoteJidPn) ??
+      readString(key.remoteJidAlt) ??
+      pickString(rawMessage, ["remoteJidPn", "remoteJidAlt", "chatIdPn", "chatIdAlt", "jidAlt"]),
   );
   const remoteAltPhoneJid = normalizeWhatsappPhoneJidCandidate(remoteJidAlt);
   const senderPhoneJid =
     normalizeWhatsappPhoneJidCandidate(readString(key.senderPn)) ??
-    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["senderPn"]));
+    normalizeWhatsappPhoneJidCandidate(readString(key.participantPn)) ??
+    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["senderPn", "participantPn"]));
   const remoteJid = providerRemoteJid?.endsWith("@g.us")
     ? providerRemoteJid
     : remoteAltPhoneJid ?? (!fromMe ? senderPhoneJid : null) ?? providerRemoteJid;
   const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
   const participantPhoneJid =
     normalizeWhatsappPhoneJidCandidate(readString(key.participantAlt)) ??
+    normalizeWhatsappPhoneJidCandidate(readString(key.participantPn)) ??
     normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["participantAlt"])) ??
     readString(key.participantPn) ??
     pickString(rawMessage, ["participantPn", "senderPn"]);
@@ -838,18 +842,23 @@ function readMetadataBoolean(metadata: Record<string, unknown>, keys: string[]) 
   for (const key of keys) {
     if (key in metadata) {
       const val = readBoolean(metadata[key]);
-      if (val) return true;
+      if (val !== null) return val;
     }
   }
 
-  return false;
+  return null;
 }
 
 export function whatsappActivityDirection(
   activityType: DealActivity["activityType"],
   metadata: Record<string, unknown> = {},
 ): WhatsappMonitorMessageDirection {
-  if (readMetadataBoolean(metadata, ["fromMe", "isOutbound", "capturedFromWhatsapp", "sentFromMonitor"])) {
+  const metadataDirection = readMetadataBoolean(metadata, ["fromMe", "isOutbound", "capturedFromWhatsapp", "sentFromMonitor"]);
+  if (metadataDirection !== null) {
+    return metadataDirection ? "OUTBOUND" : "INBOUND";
+  }
+
+  if (readMetadataBoolean(metadata, ["sentFromMonitor"]) === true) {
     return "OUTBOUND";
   }
 

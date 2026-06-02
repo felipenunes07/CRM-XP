@@ -16,6 +16,7 @@ import {
   previewSegment,
   updateCustomerAmbassador,
   updateCustomerLabels,
+  bulkAssignLabelToCustomers,
 } from "./modules/crm/customerService.js";
 import {
   getCustomerCreditDetail,
@@ -91,8 +92,17 @@ import {
 import { importHistoryFile } from "./modules/ingestion/historyImporter.js";
 import { syncOlistIncremental } from "./modules/ingestion/olistSyncService.js";
 import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
-import { listUsers, login } from "./modules/platform/authService.js";
-import { requireAuth, requireRole } from "./modules/platform/authMiddleware.js";
+import { login } from "./modules/platform/authService.js";
+import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
+import {
+  createAdminUser,
+  createPasswordResetLink,
+  listAdminUsers,
+  setAdminUserPassword,
+  setAdminUserActive,
+  updateAdminUser,
+} from "./modules/platform/adminUserService.js";
+import { APP_PERMISSIONS } from "./modules/platform/permissionService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
@@ -124,6 +134,7 @@ import {
   getWhatsappMonitorConversation,
   getWhatsappMonitorMetrics,
   getWhatsappAgentActivityReport,
+  getWhatsappDailySummaryReport,
   listWhatsappMonitorConversations,
   sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
@@ -148,6 +159,28 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+const userPermissionOverrideSchema = z.object({
+  permissionKey: z.string().min(1),
+  allowed: z.boolean(),
+});
+
+const adminUserSchema = z.object({
+  email: z.string().email(),
+  fullName: z.string().min(1),
+  role: z.enum(["admin", "vendas", "financeiro", "operacional", "viewer", "ADMIN", "MANAGER", "SELLER"]),
+  isActive: z.boolean().default(true),
+  permissionOverrides: z.array(userPermissionOverrideSchema).default([]),
+  password: z.string().min(6).optional(),
+});
+
+const adminUserStatusSchema = z.object({
+  isActive: z.boolean(),
+});
+
+const adminUserPasswordSchema = z.object({
+  password: z.string().min(6),
+});
+
 const customerQuerySchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
@@ -165,6 +198,7 @@ const customerQuerySchema = z.object({
   customerPrefix: z.string().optional(),
   state: z.string().optional(),
   city: z.string().optional(),
+  minTotalOrders: z.coerce.number().optional(),
 });
 
 const dashboardQuerySchema = z.object({
@@ -232,6 +266,7 @@ const segmentSchema = z.object({
   state: z.string().optional(),
   city: z.string().optional(),
   customerCodes: z.array(z.string()).optional(),
+  minTotalOrders: z.number().optional(),
 });
 
 const messageSchema = z.object({
@@ -508,17 +543,25 @@ function isAllowedCorsOrigin(origin?: string | null) {
     return true;
   }
 
+  const normalizedOrigin = origin.trim().toLowerCase().replace(/\/+$/, "");
+
+  // Normalize entries in webOrigins to avoid trailing slash or capitalization mismatches
+  const allowedWebOrigins = webOrigins.map((o) => o.trim().toLowerCase().replace(/\/+$/, ""));
+
   if (
-    webOrigins.includes(origin) ||
-    origin === "http://localhost:5174" ||
-    origin.endsWith(".trycloudflare.com")
+    allowedWebOrigins.includes(normalizedOrigin) ||
+    normalizedOrigin === "http://localhost:5173" ||
+    normalizedOrigin === "http://localhost:5174" ||
+    normalizedOrigin.endsWith(".trycloudflare.com")
   ) {
     return true;
   }
 
   try {
-    const hostname = new URL(origin).hostname;
+    const hostname = new URL(normalizedOrigin).hostname;
     return (
+      hostname === "xpcrm.vercel.app" ||
+      hostname.endsWith(".vercel.app") ||
       hostname.endsWith(".ngrok-free.dev") ||
       hostname.endsWith(".ngrok-free.app") ||
       hostname.endsWith(".ngrok.app") ||
@@ -973,6 +1016,20 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.post("/api/customers/batch/labels", async (request, response, next) => {
+    try {
+      const { customerIds, labelName } = request.body;
+      if (!Array.isArray(customerIds) || !labelName) {
+        throw new HttpError(400, "customerIds (array) e labelName (string) são obrigatórios");
+      }
+      await bulkAssignLabelToCustomers(customerIds, labelName);
+      response.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
 
   app.get("/api/customer-labels", async (_request, response, next) => {
     try {
@@ -1549,9 +1606,61 @@ export function createApp() {
     }
   });
 
-  app.get("/api/admin/users", requireRole(["ADMIN"]), async (_request, response, next) => {
+  app.get("/api/admin/permissions", requirePermission("admin.users.manage"), async (_request, response, next) => {
     try {
-      response.json(await listUsers());
+      response.json(APP_PERMISSIONS);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/admin/users", requirePermission("admin.users.manage"), async (_request, response, next) => {
+    try {
+      response.json(await listAdminUsers());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/users", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.status(201).json(
+        await createAdminUser(adminUserSchema.parse(request.body), request.user!.id),
+      );
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/admin/users/:id", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.json(await updateAdminUser(String(request.params.id), adminUserSchema.parse(request.body)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/admin/users/:id/status", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      const payload = adminUserStatusSchema.parse(request.body);
+      response.json(await setAdminUserActive(String(request.params.id), payload.isActive));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/users/:id/reset-password", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      response.json(await createPasswordResetLink(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/admin/users/:id/password", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      const payload = adminUserPasswordSchema.parse(request.body);
+      response.json(await setAdminUserPassword(String(request.params.id), payload.password));
     } catch (error) {
       next(error);
     }
@@ -1595,7 +1704,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/admin/sync/olist", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.post("/api/admin/sync/olist", requirePermission("settings.manage"), async (request, response, next) => {
     try {
       const payload = manualSyncSchema.parse(request.body ?? {});
       if (payload.mode === "direct") {
@@ -1610,7 +1719,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/admin/sync", requireRole(["ADMIN"]), async (request, response, next) => {
+  app.post("/api/admin/sync", requirePermission("settings.manage"), async (request, response, next) => {
     try {
       const payload = manualSyncSchema.parse(request.body ?? {});
       if (payload.mode === "direct") {
@@ -1618,13 +1727,14 @@ export function createApp() {
         return;
       }
 
-      response.status(202).json({ mode: "queue", result: await runPrimarySync("manual-dashboard") });
+      const job = await enqueueOlistSyncJob();
+      response.status(202).json({ mode: "queue", jobId: job.id });
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/admin/import-supabase-2026", requireRole(["ADMIN"]), async (_request, response, next) => {
+  app.post("/api/admin/import-supabase-2026", requirePermission("settings.manage"), async (_request, response, next) => {
     try {
       response.json({ mode: "direct", result: await importSupabase2026() });
     } catch (error) {
@@ -1680,6 +1790,7 @@ export function createApp() {
     contactPhone: z.string().optional(),
     period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
     status: z.enum(["unread", "risk"]).optional(),
+    agentInteraction: z.enum(["sent"]).optional(),
   });
 
   const whatsappMonitorReadStateSchema = z.object({
@@ -1692,6 +1803,10 @@ export function createApp() {
 
   const whatsappActivityReportQuerySchema = z.object({
     days: z.coerce.number().int().min(1).max(31).optional(),
+  });
+
+  const whatsappDailySummaryQuerySchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   });
 
   app.get("/api/pipeline/summary", async (request, response, next) => {
@@ -1770,6 +1885,15 @@ export function createApp() {
     try {
       const query = whatsappActivityReportQuerySchema.parse(request.query);
       response.json(await getWhatsappAgentActivityReport(request.user!, query.days));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/whatsapp-monitor/daily-summary", async (request, response, next) => {
+    try {
+      const query = whatsappDailySummaryQuerySchema.parse(request.query);
+      response.json(await getWhatsappDailySummaryReport(request.user!, query.date));
     } catch (error) {
       next(error);
     }

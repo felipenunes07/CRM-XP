@@ -10,6 +10,7 @@ import { PeriodSelector } from "../components/PeriodSelector";
 import { SalesPerformancePanel } from "../components/SalesPerformancePanel";
 import { TrendRangeAnalysisPanel } from "../components/TrendRangeAnalysisPanel";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
@@ -352,8 +353,10 @@ function formatShare(value, total) {
 }
 export function DashboardPage() {
     const { token } = useAuth();
+    const { canAccess } = usePermissions();
+    const canSyncData = canAccess("settings.manage");
     const { tx } = useUiLanguage();
-    const [selectedPeriod, setSelectedPeriod] = useState("max");
+    const [selectedPeriod, setSelectedPeriod] = useState("1y");
     const [selectedPrefix, setSelectedPrefix] = useState(undefined);
     const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? 730;
     const dashboardQuery = useQuery({
@@ -673,46 +676,6 @@ export function DashboardPage() {
         e.preventDefault();
         setIsDraggingFsResize(true);
     };
-    useEffect(() => {
-        const metricsData = dashboardQuery.data;
-        if (!metricsData || isSyncing)
-            return;
-        // Validar se estamos em horário comercial local (Semana: 8h-18h, Sábado: 9h-13h)
-        const now = new Date();
-        const day = now.getDay(); // 0 = Domingo, 6 = Sábado
-        const hour = now.getHours();
-        let isWorkingHours = false;
-        if (day === 0) {
-            isWorkingHours = false; // Domingo nunca sincroniza automaticamente
-        }
-        else if (day === 6) {
-            isWorkingHours = hour >= 9 && hour < 13; // Sábado das 09:00 às 12:59:59
-        }
-        else {
-            isWorkingHours = hour >= 8 && hour < 18; // Segunda a Sexta das 08:00 às 17:59:59
-        }
-        if (!isWorkingHours) {
-            return; // Fora do expediente, não sincroniza automaticamente
-        }
-        // Verificar se já existe uma sincronização manual ou automática em andamento no localStorage
-        const inProgress = localStorage.getItem('dashboard_sync_in_progress');
-        if (inProgress) {
-            // Se tiver mais de 5 minutos, podemos considerar que travou e limpar
-            const ageMs = Date.now() - Number(inProgress);
-            if (ageMs > 5 * 60 * 1000) {
-                localStorage.removeItem('dashboard_sync_in_progress');
-            }
-            else {
-                return; // Sincronização em andamento recente, não faz nada
-            }
-        }
-        const lastSync = metricsData.lastSyncAt ? new Date(metricsData.lastSyncAt).getTime() : 0;
-        const oneHour = 60 * 60 * 1000;
-        if (Date.now() - lastSync > oneHour) {
-            console.log("Detectado dados desatualizados por mais de 1 hora no horário comercial. Iniciando auto-sync...");
-            void handleAutoSync();
-        }
-    }, [dashboardQuery.data?.lastSyncAt, isSyncing, token]);
     if (dashboardQuery.isLoading) {
         return _jsx("div", { className: "page-loading", children: tx("Carregando dashboard...", "正在加载仪表盘...") });
     }
@@ -790,50 +753,16 @@ export function DashboardPage() {
         : null;
     const currentYear = new Date().getFullYear();
     const chartYears = [currentYear - 3, currentYear - 2, currentYear - 1, currentYear];
-    async function handleAutoSync() {
-        try {
-            setIsSyncing(true);
-            const syncStartTime = Date.now();
-            localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
-            await api.syncData(token, "direct");
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            await dashboardQuery.refetch();
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await dashboardQuery.refetch();
-            await agendaQuery.refetch();
-            if (selectedBucket) {
-                await filteredCustomersQuery.refetch();
-            }
-            else if (!selectedSaleMonth) {
-                await priorityCustomersQuery.refetch();
-            }
-            localStorage.removeItem('dashboard_sync_in_progress');
-        }
-        catch (err) {
-            console.warn("Falha na sincronizacao automatica: ", err);
-            localStorage.removeItem('dashboard_sync_in_progress');
-        }
-        finally {
-            setIsSyncing(false);
-        }
-    }
     async function handleSync() {
+        if (!canSyncData) {
+            return;
+        }
         try {
             setIsSyncing(true);
-            // Salvar timestamp no localStorage para persistir entre reloads
             const syncStartTime = Date.now();
             localStorage.setItem('dashboard_sync_in_progress', syncStartTime.toString());
-            // Executar a sincronização
             await api.syncData(token, "direct");
-            // Aguardar 3 segundos para garantir que o banco foi atualizado
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            // Primeira atualização dos dados
             await dashboardQuery.refetch();
-            // Aguardar mais 2 segundos e fazer uma segunda atualização
-            // para garantir que pegou o lastSyncAt atualizado
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            await dashboardQuery.refetch();
-            // Atualizar outras queries
             await agendaQuery.refetch();
             if (selectedBucket) {
                 await filteredCustomersQuery.refetch();
@@ -841,14 +770,12 @@ export function DashboardPage() {
             else if (!selectedSaleMonth) {
                 await priorityCustomersQuery.refetch();
             }
-            // Remover flag de sincronização em andamento
             localStorage.removeItem('dashboard_sync_in_progress');
+            setIsSyncing(false);
         }
         catch (err) {
             alert(tx("Falha na sincronizacao: ", "同步失败：") + String(err));
             localStorage.removeItem('dashboard_sync_in_progress');
-        }
-        finally {
             setIsSyncing(false);
         }
     }
@@ -909,7 +836,7 @@ export function DashboardPage() {
                 : tx("Objetivo concluido neste mes.", "本月目标已完成。")
             : tx(`Faltam ${formatNumber(targetRemaining)} para a meta`, `距离目标还差 ${formatNumber(targetRemaining)}`);
     const monthlyGoalMetaLabel = targetAmount > 0 ? tx(`Alvo ${formatNumber(targetAmount)}`, `目标 ${formatNumber(targetAmount)}`) : tx("Meta pendente", "待设置目标");
-    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), _jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, style: isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando...", "同步中..."), _jsx("span", { style: {
+    return (_jsxs("div", { className: "page-stack", children: [_jsxs("section", { className: "dashboard-hero-premium", children: [_jsx("div", { className: "hero-premium-bg", children: _jsx("div", { className: "hero-premium-gradient" }) }), _jsxs("div", { className: "hero-premium-content", children: [_jsxs("div", { className: "hero-premium-copy", children: [_jsx("div", { className: "premium-badge", children: tx("Operacao comercial", "销售运营") }), _jsx("h2", { className: "premium-title", children: tx("Saude da carteira de clientes XP", "XP 客户池健康度") }), _jsx("p", { className: "premium-subtitle", children: tx("Use esta tela para decidir quem puxar agora, acompanhar faixas de risco e manter a base atualizada.", "用这块面板判断现在该联系谁、跟踪风险区间，并保持客户库最新。") }), _jsxs("div", { className: "premium-actions", children: [_jsx(Link, { className: "premium-button primary", to: "/agenda", children: tx("Abrir agenda do dia", "打开今日日程") }), canSyncData ? (_jsx("button", { className: "premium-button ghost", type: "button", disabled: isSyncing, onClick: handleSync, style: isSyncing ? { position: 'relative', paddingRight: '2.8rem', color: '#64748b' } : {}, children: isSyncing ? (_jsxs(_Fragment, { children: [tx("Sincronizando...", "同步中..."), _jsx("span", { style: {
                                                                 position: 'absolute',
                                                                 right: '0.85rem',
                                                                 top: '50%',
@@ -921,7 +848,7 @@ export function DashboardPage() {
                                                                 borderTopColor: '#2956d7',
                                                                 borderRadius: '50%',
                                                                 animation: 'spin 1s linear infinite'
-                                                            } })] })) : tx("Sincronizar Agora", "立即同步") })] }), isSyncing && (_jsxs("div", { style: {
+                                                            } })] })) : tx("Sincronizar Agora", "立即同步") })) : null] }), isSyncing && (_jsxs("div", { style: {
                                             marginTop: '1rem',
                                             padding: '0.85rem 1.15rem',
                                             backgroundColor: '#ffffff',

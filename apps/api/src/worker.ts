@@ -1,7 +1,7 @@
 import { pool, redis } from "./db/client.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
-import { enqueueOlistSyncJob, startWorkerProcessing } from "./modules/platform/jobs.js";
+import { startWorkerProcessing } from "./modules/platform/jobs.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
 import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 import { syncGeographicData } from "./modules/crm/geographicService.js";
@@ -10,6 +10,8 @@ import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditServic
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
+import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
+import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -18,20 +20,15 @@ async function main() {
   const automationScheduler = startMessageAutomationScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
+  const recurringJobs: RecurringJobHandle[] = [];
 
-  // 1. Olist Sync
-  if (env.WORKER_OLIST_SYNC_ENABLED) {
-    intervals.push(
-      setInterval(
-        () => {
-          enqueueOlistSyncJob().catch((error) => {
-            logger.error("failed to enqueue scheduled olist sync", { error: String(error) });
-          });
-        },
-        env.WORKER_OLIST_SYNC_INTERVAL_MINUTES * 60 * 1000,
-      )
-    );
-  }
+  // 1. Primary sales sync
+  recurringJobs.push(
+    startPrimarySyncScheduler({
+      enabled: env.WORKER_OLIST_SYNC_ENABLED,
+      reason: "worker-scheduled-periodic-sync",
+    }),
+  );
 
   // 2. Geographic Data Sync (Google Sheets)
   if (env.WORKER_GEOGRAPHIC_SYNC_ENABLED) {
@@ -146,6 +143,7 @@ async function main() {
 
   const shutdown = async () => {
     intervals.forEach(clearInterval);
+    await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
     await worker.close();
     await whatsappWorker.close();

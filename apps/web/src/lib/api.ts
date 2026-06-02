@@ -76,6 +76,40 @@ import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
+export interface PermissionDefinition {
+  key: string;
+  name: string;
+  description: string;
+}
+
+export interface UserPermissionOverride {
+  permissionKey: string;
+  allowed: boolean;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  is_active: boolean;
+  isActive?: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sign_in_at?: string | null;
+  permission_overrides?: UserPermissionOverride[];
+  permissions: string[];
+}
+
+export interface AdminUserInput {
+  email: string;
+  fullName: string;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  isActive: boolean;
+  permissionOverrides: UserPermissionOverride[];
+  password?: string;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -87,6 +121,11 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   });
 
   if (!response.ok) {
+    if (response.status === 401) {
+      import("./supabase").then(({ supabase }) => {
+        supabase.auth.signOut().catch(() => {});
+      }).catch(() => {});
+    }
     const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };
     throw new Error(payload.message ?? "Request failed");
   }
@@ -537,15 +576,43 @@ export const api = {
       body: JSON.stringify({ reason }),
     }, token);
   },
+  permissions(token: string) {
+    return request<PermissionDefinition[]>("/api/admin/permissions", {}, token);
+  },
   users(token: string) {
-    return request<Array<{ id: string; email: string; role: "ADMIN" | "MANAGER" | "SELLER"; name: string }>>(
-      "/api/admin/users",
-      {},
-      token,
-    );
+    return request<AdminUser[]>("/api/admin/users", {}, token);
+  },
+  createUser(token: string, input: AdminUserInput) {
+    return request<AdminUser[]>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  updateUser(token: string, id: string, input: AdminUserInput) {
+    return request<AdminUser[]>(`/api/admin/users/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  setUserActive(token: string, id: string, isActive: boolean) {
+    return request<AdminUser[]>(`/api/admin/users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive }),
+    }, token);
+  },
+  resetUserPassword(token: string, id: string) {
+    return request<{ email: string; actionLink: string | null }>(`/api/admin/users/${id}/reset-password`, {
+      method: "POST",
+    }, token);
+  },
+  setUserPassword(token: string, id: string, password: string) {
+    return request<{ ok: boolean }>(`/api/admin/users/${id}/password`, {
+      method: "PATCH",
+      body: JSON.stringify({ password }),
+    }, token);
   },
   syncData(token: string, mode: "queue" | "direct" = "direct") {
-    return request<{ mode: string; result?: unknown }>("/api/admin/sync", {
+    return request<{ mode: string; jobId?: string | number; result?: unknown }>("/api/admin/sync", {
       method: "POST",
       body: JSON.stringify({ mode }),
     }, token);
@@ -644,6 +711,7 @@ export const api = {
       contactPhone?: string;
       period?: "today" | "yesterday" | "7d" | "30d";
       status?: "unread" | "risk";
+      agentInteraction?: "sent";
     } = {},
   ) {
     const search = new URLSearchParams();
@@ -664,6 +732,9 @@ export const api = {
     }
     if (query.status) {
       search.set("status", query.status);
+    }
+    if (query.agentInteraction) {
+      search.set("agentInteraction", query.agentInteraction);
     }
     return request<WhatsappMonitorConversationsResponse>(
       `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,
@@ -687,6 +758,18 @@ export const api = {
     }
     return request<WhatsappAgentActivityReport>(
       `/api/whatsapp-monitor/activity-report${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
+  },
+
+  whatsappDailySummary(token: string, date?: string) {
+    const search = new URLSearchParams();
+    if (date) {
+      search.set("date", date);
+    }
+    return request<any>(
+      `/api/whatsapp-monitor/daily-summary${search.toString() ? `?${search.toString()}` : ""}`,
       {},
       token,
     );
@@ -960,4 +1043,11 @@ export const api = {
       generatedAt: string;
     }>(`/api/strategies/slow-moving?${search.toString()}`, {}, token);
   },
+  bulkAssignLabelToCustomers(token: string, customerIds: string[], labelName: string) {
+    return request<{ success: boolean }>("/api/customers/batch/labels", {
+      method: "POST",
+      body: JSON.stringify({ customerIds, labelName }),
+    }, token);
+  },
 };
+

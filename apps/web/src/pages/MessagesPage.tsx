@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { buildMessageTimelineItems } from "./messagesPage.helpers";
 
 function initials(name: string) {
   return name
@@ -119,6 +120,7 @@ function attachmentName(message: WhatsappMonitorMessage) {
 type GroupFilter = "all" | "groups" | "contacts";
 type PeriodFilter = "all" | "today" | "yesterday" | "7d" | "30d";
 type StatusFilter = "all" | "unread" | "risk";
+type AgentInteractionFilter = "all" | "sent";
 
 function metadataString(metadata: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -453,6 +455,7 @@ export function MessagesPage() {
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [groupFilter, setGroupFilter] = useState<GroupFilter>("all");
+  const [agentInteractionFilter, setAgentInteractionFilter] = useState<AgentInteractionFilter>("all");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(urlDealId);
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [replyText, setReplyText] = useState("");
@@ -521,6 +524,7 @@ export function MessagesPage() {
       debouncedContactPhoneFilter,
       periodFilter,
       statusFilter,
+      agentInteractionFilter,
     ],
     queryFn: () =>
       api.whatsappMonitorConversations(token!, {
@@ -530,13 +534,17 @@ export function MessagesPage() {
         contactPhone: debouncedContactPhoneFilter || undefined,
         period: periodFilter === "all" ? undefined : periodFilter,
         status: statusFilter === "all" ? undefined : statusFilter,
+        agentInteraction:
+          activeAgentId !== "all" && agentInteractionFilter === "sent"
+            ? "sent"
+            : undefined,
       }),
     enabled: Boolean(token),
     refetchInterval: CONVERSATION_REFRESH_MS,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     staleTime: 5000,
     placeholderData: (previousData) => previousData,
   });
@@ -545,15 +553,33 @@ export function MessagesPage() {
   const conversations = conversationsQuery.data?.conversations ?? [];
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
 
+  useEffect(() => {
+    if (activeAgentId === "all") {
+      setAgentInteractionFilter("all");
+    }
+  }, [activeAgentId]);
+
   const filteredConversations = useMemo(() => {
     let result = conversations;
 
     if (activeAgent) {
       result = result.filter(
-        (conversation) =>
-          conversation.whatsappInstanceId === activeAgent.id ||
-          conversation.instanceName === activeAgent.instanceName ||
-          conversation.agentName === activeAgent.displayLabel
+        (conversation) => {
+          const clean = (name?: string | null) => (name ?? "").toLowerCase().replace(/^xp[-_\s]+/i, "").trim();
+          const cleanAgentName = clean(conversation.agentName);
+          const cleanDisplayLabel = clean(activeAgent.displayLabel);
+          const cleanInstanceName = clean(activeAgent.instanceName);
+          const cleanAssignedUserName = clean(activeAgent.assignedUserName);
+
+          return (
+            conversation.whatsappInstanceId === activeAgent.id ||
+            conversation.instanceName === activeAgent.instanceName ||
+            conversation.agentName === activeAgent.displayLabel ||
+            (cleanAgentName && cleanAgentName === cleanDisplayLabel) ||
+            (cleanAgentName && cleanAgentName === cleanInstanceName) ||
+            (cleanAgentName && cleanAgentName === cleanAssignedUserName)
+          );
+        }
       );
     }
 
@@ -620,7 +646,7 @@ export function MessagesPage() {
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     staleTime: 3000,
   });
 
@@ -694,6 +720,7 @@ export function MessagesPage() {
   const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
   const currentConversation = detailMatchesSelection ? detail : selectedConversation;
   const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
+  const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
   const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
@@ -702,6 +729,7 @@ export function MessagesPage() {
     Boolean(contactPhoneFilter.trim()) ||
     periodFilter !== "all" ||
     groupFilter !== "all" ||
+    agentInteractionFilter !== "all" ||
     statusFilter !== "all";
 
   useEffect(() => {
@@ -845,6 +873,18 @@ export function MessagesPage() {
           </select>
           <ChevronDown size={18} aria-hidden="true" />
         </label>
+        <label className="wa-filter-select">
+          <select
+            aria-label="Filtrar interacoes do usuario"
+            value={agentInteractionFilter}
+            disabled={activeAgentId === "all"}
+            onChange={(event) => setAgentInteractionFilter(event.target.value as AgentInteractionFilter)}
+          >
+            <option value="all">Usuario: todas as conversas</option>
+            <option value="sent">Somente mensagens do usuario</option>
+          </select>
+          <ChevronDown size={18} aria-hidden="true" />
+        </label>
         <button
           type="button"
           className="wa-filter-button"
@@ -855,6 +895,7 @@ export function MessagesPage() {
             setPeriodFilter("all");
             setGroupFilter("all");
             setStatusFilter("all");
+            setAgentInteractionFilter("all");
           }}
         >
           <X size={18} />
@@ -997,13 +1038,19 @@ export function MessagesPage() {
               >
                 {conversationDetailQuery.isLoading ? (
                   <div className="wa-empty-chat">Carregando conversa...</div>
-                ) : messages.length ? (
-                  messages.map((message) => (
-                    <ChatMessageBubble
-                      key={message.id}
-                      message={message}
-                      showSender={currentConversation.isGroup && message.direction === "INBOUND"}
-                    />
+                ) : timelineItems.length ? (
+                  timelineItems.map((item) => (
+                    item.type === "date" ? (
+                      <div key={item.key} className="wa-date-separator">
+                        <span>{item.label}</span>
+                      </div>
+                    ) : (
+                      <ChatMessageBubble
+                        key={item.key}
+                        message={item.message}
+                        showSender={currentConversation.isGroup && item.message.direction === "INBOUND"}
+                      />
+                    )
                   ))
                 ) : (
                   <div className="wa-empty-chat">Nenhuma mensagem registrada para esta conversa.</div>
