@@ -153,8 +153,8 @@ function isMediaPlaceholder(content) {
     }
     return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
-const CONVERSATION_REFRESH_MS = 3000;
-const CHAT_REFRESH_MS = 2000;
+const CONVERSATION_REFRESH_MS = 10000;
+const CHAT_REFRESH_MS = 5000;
 function SearchBox({ value, onChange, placeholder, }) {
     return (_jsxs("label", { className: "whatsapp-search", children: [_jsx(Search, { size: 18 }), _jsx("input", { value: value, onChange: (event) => onChange(event.target.value), placeholder: placeholder })] }));
 }
@@ -263,7 +263,6 @@ export function MessagesPage() {
     const chatBodyRef = useRef(null);
     const stickToBottomRef = useRef(true);
     const lastScrolledConversationRef = useRef(null);
-    const profileRefreshRequestedRef = useRef(false);
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedConversationSearch(conversationSearch);
@@ -301,7 +300,7 @@ export function MessagesPage() {
         refetchOnMount: "always",
         refetchOnReconnect: true,
         refetchOnWindowFocus: true,
-        staleTime: 1000,
+        staleTime: 5000,
         placeholderData: (previousData) => previousData,
     });
     const agents = conversationsQuery.data?.agents ?? [];
@@ -366,7 +365,7 @@ export function MessagesPage() {
         refetchOnMount: "always",
         refetchOnReconnect: true,
         refetchOnWindowFocus: true,
-        staleTime: 1000,
+        staleTime: 3000,
     });
     const readStateMutation = useMutation({
         mutationFn: ({ id, unread }) => api.setWhatsappMonitorReadState(token, id, { unread }),
@@ -413,31 +412,6 @@ export function MessagesPage() {
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
-    const refreshProfilesMutation = useMutation({
-        mutationFn: () => api.refreshWhatsappMonitorProfiles(token),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
-            queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversation"] });
-        },
-    });
-    useEffect(() => {
-        if (!token ||
-            !conversations.length ||
-            profileRefreshRequestedRef.current ||
-            refreshProfilesMutation.isPending ||
-            refreshProfilesMutation.isSuccess) {
-            return;
-        }
-        const hasMissingProfiles = conversations.some((conversation) => {
-            const looksNumeric = conversation.isGroup &&
-                (/^Grupo\s+\d+$/i.test(conversation.contactName) || /^\[GRUPO\]\s+\d+/i.test(conversation.contactName));
-            return !conversation.profilePictureUrl || looksNumeric;
-        });
-        if (hasMissingProfiles) {
-            profileRefreshRequestedRef.current = true;
-            refreshProfilesMutation.mutate();
-        }
-    }, [conversations, refreshProfilesMutation, token]);
     // Only use detail data when it actually belongs to the selected conversation
     // to prevent stale messages from a previous chat from appearing
     const detail = conversationDetailQuery.data;

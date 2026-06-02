@@ -1154,4 +1154,159 @@ export const migrations = [
     ADD COLUMN IF NOT EXISTS message_type VARCHAR(20) NOT NULL DEFAULT 'TEXT',
     ADD COLUMN IF NOT EXISTS carousel_data JSONB;
   `,
+  `
+  -- WhatsApp monitor performance indexes
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_deal_created
+    ON deal_activities(deal_id, created_at DESC, id DESC)
+    WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED');
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_created
+    ON deal_activities(created_at DESC, id DESC)
+    WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED');
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_type_created
+    ON deal_activities(activity_type, created_at DESC, id DESC)
+    WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED');
+
+  CREATE INDEX IF NOT EXISTS idx_deal_activities_whatsapp_deal_instance
+    ON deal_activities(deal_id, (LOWER(COALESCE(metadata ->> 'instance', ''))))
+    WHERE activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED');
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid
+    ON deals(whatsapp_jid)
+    WHERE whatsapp_jid IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_instance_id
+    ON deals(whatsapp_instance_id)
+    WHERE whatsapp_instance_id IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_last_activity
+    ON deals(last_activity_at DESC, id DESC)
+    WHERE whatsapp_jid IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_instance_created
+    ON whatsapp_incoming_messages(
+      remote_jid,
+      (LOWER(COALESCE(instance_name, ''))),
+      created_at DESC,
+      id DESC
+    );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_chat_profiles_remote_instance_updated
+    ON whatsapp_chat_profiles(remote_jid, instance_name, updated_at DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_participant_profiles_jid_instance_updated
+    ON whatsapp_participant_profiles(participant_jid, instance_name, updated_at DESC);
+  `,
+  `
+  -- Pre-aggregated WhatsApp activity read model
+  CREATE TABLE IF NOT EXISTS whatsapp_activity_rollups (
+    period_date DATE NOT NULL,
+    hour SMALLINT NOT NULL CHECK (hour >= 0 AND hour <= 23),
+    agent_id TEXT NOT NULL,
+    agent_name TEXT NOT NULL,
+    instance_name TEXT,
+    display_label TEXT,
+    phone_number TEXT,
+    profile_picture_url TEXT,
+    remote_jid TEXT NOT NULL,
+    chat_name TEXT,
+    sent_messages INTEGER NOT NULL DEFAULT 0,
+    received_messages INTEGER NOT NULL DEFAULT 0,
+    response_count INTEGER NOT NULL DEFAULT 0,
+    response_seconds_total DOUBLE PRECISION NOT NULL DEFAULT 0,
+    last_message_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (period_date, hour, agent_id, remote_jid)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_activity_rollups_period
+    ON whatsapp_activity_rollups(period_date DESC, hour);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_activity_rollups_agent_period
+    ON whatsapp_activity_rollups(agent_id, period_date DESC);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_activity_rollups_last_message
+    ON whatsapp_activity_rollups(last_message_at DESC);
+  `,
+  `
+  -- WhatsApp LID/PN alias mapping for Evolution/Baileys mixed identifiers
+  CREATE TABLE IF NOT EXISTS whatsapp_jid_aliases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instance_name VARCHAR(100) NOT NULL DEFAULT '',
+    alias_jid VARCHAR(200) NOT NULL,
+    canonical_jid VARCHAR(200) NOT NULL,
+    alias_type VARCHAR(20) NOT NULL DEFAULT 'UNKNOWN',
+    source VARCHAR(80),
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(instance_name, alias_jid)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_jid_aliases_canonical
+    ON whatsapp_jid_aliases(instance_name, canonical_jid);
+
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_jid_aliases_alias_type
+    ON whatsapp_jid_aliases(alias_type);
+
+  WITH raw_candidates AS (
+    SELECT
+      LOWER(COALESCE(instance_name, '')) AS instance_name,
+      LOWER(remote_jid) AS alias_jid,
+      COALESCE(
+        NULLIF(raw_payload #>> '{key,remoteJidAlt}', ''),
+        NULLIF(raw_payload ->> 'remoteJidAlt', ''),
+        CASE
+          WHEN COALESCE(from_me, false) = false THEN COALESCE(
+            NULLIF(raw_payload #>> '{key,senderPn}', ''),
+            NULLIF(raw_payload ->> 'senderPn', '')
+          )
+          ELSE NULL
+        END
+      ) AS phone_candidate
+    FROM whatsapp_incoming_messages
+    WHERE remote_jid LIKE '%@lid'
+      OR (
+        remote_jid NOT LIKE '%@%'
+        AND length(regexp_replace(remote_jid, '\\D', '', 'g')) > 13
+      )
+  ),
+  normalized_candidates AS (
+    SELECT
+      instance_name,
+      alias_jid,
+      CASE
+        WHEN LOWER(phone_candidate) LIKE '%@s.whatsapp.net' THEN LOWER(phone_candidate)
+        WHEN regexp_replace(COALESCE(phone_candidate, ''), '\\D', '', 'g') <> '' THEN
+          regexp_replace(phone_candidate, '\\D', '', 'g') || '@s.whatsapp.net'
+        ELSE NULL
+      END AS canonical_jid
+    FROM raw_candidates
+  )
+  INSERT INTO whatsapp_jid_aliases (
+    instance_name, alias_jid, canonical_jid, alias_type, source,
+    first_seen_at, last_seen_at, created_at, updated_at
+  )
+  SELECT
+    instance_name,
+    alias_jid,
+    canonical_jid,
+    'LID',
+    'migration-backfill',
+    NOW(),
+    NOW(),
+    NOW(),
+    NOW()
+  FROM normalized_candidates
+  WHERE canonical_jid IS NOT NULL
+    AND canonical_jid <> alias_jid
+  ON CONFLICT (instance_name, alias_jid) DO UPDATE SET
+    canonical_jid = EXCLUDED.canonical_jid,
+    alias_type = EXCLUDED.alias_type,
+    source = COALESCE(whatsapp_jid_aliases.source, EXCLUDED.source),
+    last_seen_at = NOW(),
+    updated_at = NOW();
+  `,
 ];

@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   resolveMetadata: vi.fn(),
   createEventFromMessage: vi.fn(),
+  resolveIdentity: vi.fn(),
+  upsertAliases: vi.fn(),
+  getAliases: vi.fn(),
 }));
 
 vi.mock("../../db/client.js", () => ({
@@ -14,6 +17,12 @@ vi.mock("../../db/client.js", () => ({
 
 vi.mock("./evolutionMetadataService.js", () => ({
   resolveWhatsappMessageMetadata: mocks.resolveMetadata,
+}));
+
+vi.mock("./whatsappIdentityService.js", () => ({
+  resolveWhatsappConversationIdentity: mocks.resolveIdentity,
+  upsertWhatsappJidAliases: mocks.upsertAliases,
+  getWhatsappConversationAliases: mocks.getAliases,
 }));
 
 vi.mock("../events/eventsService.js", () => ({
@@ -28,8 +37,17 @@ describe("whatsapp conversation isolation", () => {
     mocks.query.mockReset();
     mocks.resolveMetadata.mockReset();
     mocks.createEventFromMessage.mockReset();
+    mocks.resolveIdentity.mockReset();
+    mocks.upsertAliases.mockReset();
+    mocks.getAliases.mockReset();
     mocks.resolveMetadata.mockResolvedValue({});
     mocks.createEventFromMessage.mockResolvedValue(undefined);
+    mocks.resolveIdentity.mockImplementation((_instanceName, context) => ({
+      canonicalJid: context.remoteJid,
+      aliases: context.remoteJid ? [context.remoteJid] : [],
+    }));
+    mocks.getAliases.mockImplementation((_instanceName, remoteJid) => remoteJid ? [remoteJid] : []);
+    mocks.upsertAliases.mockResolvedValue(undefined);
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {
@@ -53,6 +71,7 @@ describe("whatsapp conversation isolation", () => {
         ],
       })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
     await getWhatsappMonitorConversation("deal-1", {
@@ -62,12 +81,12 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    const incomingCall = mocks.query.mock.calls[2];
+    const incomingCall = mocks.query.mock.calls[3];
     expect(incomingCall).toBeDefined();
     const incomingQuery = String(incomingCall![0]);
     const incomingParams = incomingCall![1];
 
-    expect(incomingParams).toEqual(["5511999998888@s.whatsapp.net", "amanda"]);
+    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda"]);
     expect(incomingQuery).toContain("LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)");
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim\.instance_name,\s*''\)\s*=\s*''/);
   });
@@ -85,6 +104,7 @@ describe("whatsapp conversation isolation", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
@@ -106,7 +126,7 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const dealMatchCall = mocks.query.mock.calls[2];
+    const dealMatchCall = mocks.query.mock.calls[3];
     expect(dealMatchCall).toBeDefined();
     const dealMatchQuery = String(dealMatchCall![0]);
     const dealMatchParams = dealMatchCall![1];
@@ -116,6 +136,8 @@ describe("whatsapp conversation isolation", () => {
       "instance-amanda",
       "user-amanda",
       "Amanda",
+      ["5511999998888@s.whatsapp.net"],
+      "amanda",
     ]);
     expect(dealMatchQuery).toContain("d.whatsapp_instance_id = $2::uuid");
     expect(dealMatchQuery).toContain("d.assigned_to = $3::uuid");
@@ -135,6 +157,7 @@ describe("whatsapp conversation isolation", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [
@@ -164,8 +187,8 @@ describe("whatsapp conversation isolation", () => {
       },
     });
 
-    const incomingInsertParams = mocks.query.mock.calls[1]?.[1];
-    const activityInsertParams = mocks.query.mock.calls[3]?.[1];
+    const incomingInsertParams = mocks.query.mock.calls[2]?.[1];
+    const activityInsertParams = mocks.query.mock.calls[4]?.[1];
 
     expect(incomingInsertParams?.[11]).toBe(false);
     expect(activityInsertParams?.[1]).toBe("WHATSAPP_RECEIVED");
@@ -192,6 +215,7 @@ describe("whatsapp conversation isolation", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({
         rows: [
           {
@@ -255,6 +279,6 @@ describe("whatsapp conversation isolation", () => {
 
     expect(listSql).toContain("DISTINCT ON");
     expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
-    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))");
+    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, ''))");
   });
 });

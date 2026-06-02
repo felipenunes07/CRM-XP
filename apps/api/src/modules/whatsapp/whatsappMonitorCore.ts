@@ -11,10 +11,13 @@ const PRESSURE_KEYWORDS = ["urgente", "processo", "reclamacao", "procon", "cance
 
 interface EvolutionMessageKeyLike {
   remoteJid?: string;
+  remoteJidAlt?: string;
   fromMe?: boolean | number | string;
   id?: string;
   participant?: string;
+  participantAlt?: string;
   participantPn?: string;
+  senderPn?: string;
 }
 
 export interface EvolutionMessageLike {
@@ -22,9 +25,11 @@ export interface EvolutionMessageLike {
   message?: Record<string, unknown>;
   pushName?: string;
   participant?: string;
+  participantAlt?: string;
   participantPn?: string;
   sender?: string;
   senderJid?: string;
+  remoteJidAlt?: string;
   senderPn?: string;
   participantJid?: string;
   participantName?: string;
@@ -60,12 +65,16 @@ export interface EvolutionMessageContact {
 
 export interface EvolutionMessageContext {
   remoteJid: string | null;
+  providerRemoteJid: string | null;
+  remoteJidAlt: string | null;
+  remoteJidAliases: string[];
   messageId: string | null;
   instanceName: string | null;
   isGroup: boolean;
   fromMe: boolean;
   text: string | null;
   senderJid: string | null;
+  senderJidAlt: string | null;
   senderName: string | null;
   senderProfilePictureUrl: string | null;
   chatDisplayName: string | null;
@@ -94,6 +103,22 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function uniqueStrings(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const output: string[] = [];
+
+  for (const value of values) {
+    const normalized = normalizeWhatsappJidForStorage(value);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    output.push(normalized);
+  }
+
+  return output;
 }
 
 function readBoolean(value: unknown) {
@@ -135,6 +160,78 @@ function pickString(source: Record<string, unknown> | null | undefined, keys: st
   }
 
   return null;
+}
+
+export function normalizeWhatsappJidForStorage(value: string | null | undefined) {
+  const trimmed = String(value ?? "").trim().toLocaleLowerCase("pt-BR");
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.includes("@")) {
+    const [rawId = "", server = ""] = trimmed.split("@");
+    const digits = rawId.replace(/\D/g, "");
+
+    if (server === "s.whatsapp.net" && digits) {
+      return `${digits}@s.whatsapp.net`;
+    }
+
+    if ((server === "lid" || server === "g.us") && digits) {
+      return `${digits}@${server}`;
+    }
+
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+export function isWhatsappLidJid(jid: string | null | undefined) {
+  const normalized = normalizeWhatsappJidForStorage(jid);
+  if (!normalized) {
+    return false;
+  }
+
+  const [rawId = normalized] = normalized.split("@");
+  return normalized.endsWith("@lid") || (!normalized.includes("@") && rawId.replace(/\D/g, "").length > 13);
+}
+
+export function isWhatsappPhoneJid(jid: string | null | undefined) {
+  const normalized = normalizeWhatsappJidForStorage(jid);
+  return Boolean(normalized?.endsWith("@s.whatsapp.net"));
+}
+
+function normalizeWhatsappPhoneJidCandidate(value: string | null | undefined) {
+  const normalized = normalizeWhatsappJidForStorage(value);
+  if (!normalized || normalized.endsWith("@g.us") || normalized.endsWith("@lid") || normalized.endsWith("@broadcast")) {
+    return null;
+  }
+
+  const [rawId = normalized] = normalized.split("@");
+  const digits = rawId.replace(/\D/g, "");
+  return digits ? `${digits}@s.whatsapp.net` : null;
+}
+
+export function chooseCanonicalWhatsappJid(
+  aliases: Array<string | null | undefined>,
+  fallback?: string | null,
+) {
+  const candidates = uniqueStrings([...aliases, fallback]);
+  if (!candidates.length) {
+    return null;
+  }
+
+  const groupJid = candidates.find((candidate) => candidate.endsWith("@g.us"));
+  if (groupJid) {
+    return groupJid;
+  }
+
+  const phoneJid = candidates.find(isWhatsappPhoneJid);
+  if (phoneJid) {
+    return phoneJid;
+  }
+
+  return candidates[0] ?? null;
 }
 
 function extractNestedString(source: Record<string, unknown> | null, path: string[]): string | null {
@@ -376,16 +473,32 @@ export function extractEvolutionMessageContext(
 ): EvolutionMessageContext {
   const rawMessage = message as Record<string, unknown>;
   const key = message.key ?? {};
-  const remoteJid = readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]);
-  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
+  const providerRemoteJid = normalizeWhatsappJidForStorage(
+    readString(key.remoteJid) ?? pickString(rawMessage, ["remoteJid", "chatId", "jid"]),
+  );
   const fromMe = extractEvolutionFromMeFlag(message) ?? false;
+  const remoteJidAlt = normalizeWhatsappJidForStorage(
+    readString(key.remoteJidAlt) ?? pickString(rawMessage, ["remoteJidAlt", "chatIdAlt", "jidAlt"]),
+  );
+  const remoteAltPhoneJid = normalizeWhatsappPhoneJidCandidate(remoteJidAlt);
+  const senderPhoneJid =
+    normalizeWhatsappPhoneJidCandidate(readString(key.senderPn)) ??
+    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["senderPn"]));
+  const remoteJid = providerRemoteJid?.endsWith("@g.us")
+    ? providerRemoteJid
+    : remoteAltPhoneJid ?? (!fromMe ? senderPhoneJid : null) ?? providerRemoteJid;
+  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
   const participantPhoneJid =
+    normalizeWhatsappPhoneJidCandidate(readString(key.participantAlt)) ??
+    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["participantAlt"])) ??
     readString(key.participantPn) ??
     pickString(rawMessage, ["participantPn", "senderPn"]);
   const participantJid =
-    participantPhoneJid ??
-    readString(key.participant) ??
-    pickString(rawMessage, ["participant", "participantJid"]);
+    normalizeWhatsappJidForStorage(participantPhoneJid) ??
+    normalizeWhatsappJidForStorage(readString(key.participant) ?? pickString(rawMessage, ["participant", "participantJid"]));
+  const rawParticipantJid = normalizeWhatsappJidForStorage(
+    readString(key.participant) ?? pickString(rawMessage, ["participant", "participantJid"]),
+  );
   const connectionSenderJid = pickString(rawMessage, ["senderJid", "sender"]);
   const senderJid = isGroup
     ? participantJid ?? connectionSenderJid
@@ -398,12 +511,16 @@ export function extractEvolutionMessageContext(
 
   return {
     remoteJid,
+    providerRemoteJid,
+    remoteJidAlt,
+    remoteJidAliases: uniqueStrings([remoteJid, providerRemoteJid, remoteJidAlt]),
     messageId: readString(key.id) ?? pickString(rawMessage, ["id", "messageId"]),
     instanceName: instanceName ?? null,
     isGroup,
     fromMe,
     text: extractEvolutionMessageText(message),
     senderJid,
+    senderJidAlt: rawParticipantJid && rawParticipantJid !== senderJid ? rawParticipantJid : null,
     senderName,
     senderProfilePictureUrl: pickString(rawMessage, [
       "profilePictureUrl",

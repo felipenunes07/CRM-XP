@@ -16,6 +16,7 @@ import {
   mapWhatsappActivityToMessage,
   median,
   mergeWhatsappMonitorMessages,
+  chooseCanonicalWhatsappJid,
 } from "./whatsappMonitorCore.js";
 
 describe("whatsappMonitorCore", () => {
@@ -183,6 +184,31 @@ describe("whatsappMonitorCore", () => {
       fromMe: true,
       senderJid: "5511959502231@s.whatsapp.net",
     });
+  });
+
+  it("uses Evolution alternate JIDs to canonicalize private LID chats", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "128282200694792@lid",
+          remoteJidAlt: "5511999998888@s.whatsapp.net",
+          fromMe: false,
+          id: "msg-lid-1",
+        } as any,
+        pushName: "Jorge",
+        message: { conversation: "Oi" },
+      },
+      "amanda",
+    );
+
+    expect(context.remoteJid).toBe("5511999998888@s.whatsapp.net");
+    expect(context.providerRemoteJid).toBe("128282200694792@lid");
+    expect(context.remoteJidAlt).toBe("5511999998888@s.whatsapp.net");
+    expect(context.remoteJidAliases).toEqual([
+      "5511999998888@s.whatsapp.net",
+      "128282200694792@lid",
+    ]);
+    expect(chooseCanonicalWhatsappJid(context.remoteJidAliases)).toBe("5511999998888@s.whatsapp.net");
   });
 
   it("extracts Evolution media metadata for image and audio messages", () => {

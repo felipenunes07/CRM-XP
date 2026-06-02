@@ -9,6 +9,7 @@ import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/what
 import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
+import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -96,7 +97,30 @@ async function main() {
     );
   }
 
-  // 6. Database Cleanup (Daily)
+  // 6. WhatsApp Activity Rollups
+  if (env.WORKER_WHATSAPP_ACTIVITY_ROLLUP_ENABLED) {
+    logger.info("scheduled whatsapp activity rollup enabled", {
+      intervalMinutes: env.WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES,
+      refreshDays: env.WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS,
+    });
+
+    const refreshRollups = () => {
+      logger.info("starting scheduled whatsapp activity rollup refresh");
+      refreshWhatsappActivityRollups().catch((error) => {
+        logger.error("failed scheduled whatsapp activity rollup refresh", { error: String(error) });
+      });
+    };
+
+    refreshRollups();
+    intervals.push(
+      setInterval(
+        refreshRollups,
+        env.WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES * 60 * 1000,
+      )
+    );
+  }
+
+  // 7. Database Cleanup (Daily)
   intervals.push(
     setInterval(
       () => {
@@ -117,6 +141,7 @@ async function main() {
     whatsappSyncEnabled: env.WORKER_WHATSAPP_SYNC_ENABLED,
     creditSyncEnabled: env.WORKER_CREDIT_SYNC_ENABLED,
     sentimentAggregationEnabled: env.WORKER_SENTIMENT_AGGREGATION_ENABLED,
+    whatsappActivityRollupEnabled: env.WORKER_WHATSAPP_ACTIVITY_ROLLUP_ENABLED,
   });
 
   const shutdown = async () => {

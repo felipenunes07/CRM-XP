@@ -2,6 +2,10 @@ import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
+  resolveWhatsappConversationIdentity,
+  upsertWhatsappJidAliases,
+} from "./whatsappIdentityService.js";
+import {
   extractEvolutionMessageContext,
   extractEvolutionMessageContact,
   extractEvolutionMessageMedia,
@@ -79,6 +83,9 @@ function buildActivityMetadata(input: {
   senderProfilePictureUrl: string | null;
   chatDisplayName: string | null;
   chatProfilePictureUrl: string | null;
+  providerRemoteJid?: string | null;
+  remoteJidAlt?: string | null;
+  remoteJidAliases?: string[];
   instanceId?: string | null;
   capturedFromWhatsapp?: boolean;
   outboundSource?: string | null;
@@ -96,6 +103,11 @@ function buildActivityMetadata(input: {
     senderProfilePictureUrl: input.senderProfilePictureUrl,
     chatDisplayName: input.chatDisplayName,
     chatProfilePictureUrl: input.chatProfilePictureUrl,
+    ...(input.providerRemoteJid && input.providerRemoteJid !== input.remoteJid
+      ? { providerRemoteJid: input.providerRemoteJid }
+      : {}),
+    ...(input.remoteJidAlt ? { remoteJidAlt: input.remoteJidAlt } : {}),
+    ...(input.remoteJidAliases?.length ? { remoteJidAliases: input.remoteJidAliases } : {}),
     ...(input.instanceId ? { instanceId: input.instanceId } : {}),
     ...(input.capturedFromWhatsapp ? { capturedFromWhatsapp: true } : {}),
     ...(input.outboundSource ? { outboundSource: input.outboundSource } : {}),
@@ -103,6 +115,35 @@ function buildActivityMetadata(input: {
     ...(input.media ? input.media : {}),
     ...(input.contact ? { contact: input.contact } : {}),
   };
+}
+
+async function findDealByProviderMessageId(messageId: string, instanceName: string | null) {
+  const result = await pool.query(
+    `
+    SELECT
+      d.id,
+      d.whatsapp_instance_id,
+      d.whatsapp_jid,
+      COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name
+    FROM deal_activities da
+    JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      AND (
+        da.metadata ->> 'messageId' = $1
+        OR da.metadata ->> 'providerMessageId' = $1
+      )
+      AND (
+        $2 = ''
+        OR LOWER(COALESCE(wi.instance_name, da.metadata ->> 'instance', '')) = LOWER($2)
+      )
+    ORDER BY da.created_at DESC, da.id DESC
+    LIMIT 1
+    `,
+    [messageId, instanceName ?? ""],
+  );
+
+  return result.rows[0] ?? null;
 }
 
 async function insertDealActivity(input: {
@@ -219,22 +260,33 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
 
   for (const msg of messages) {
     try {
-      const context = extractEvolutionMessageContext(msg, payload.instance);
-      const { remoteJid, messageId, text, fromMe } = context;
+      const extractedContext = extractEvolutionMessageContext(msg, payload.instance);
+      const { messageId, text, fromMe } = extractedContext;
 
-      if (!remoteJid || !messageId) {
+      if (!extractedContext.remoteJid || !messageId) {
         logger.info("evolution webhook skipped message: missing remoteJid or messageId", {
           instance,
-          remoteJid,
+          remoteJid: extractedContext.remoteJid,
           messageId,
           fromMe,
         });
         continue;
       }
 
+      const resolvedIdentity = await resolveWhatsappConversationIdentity(payload.instance ?? "", extractedContext);
+      let remoteJid = resolvedIdentity.canonicalJid ?? extractedContext.remoteJid;
+      let context = {
+        ...extractedContext,
+        remoteJid,
+        isGroup: Boolean(remoteJid?.endsWith("@g.us")),
+        remoteJidAliases: resolvedIdentity.aliases,
+      };
+
       logger.info("evolution webhook processing message", {
         instance,
         remoteJid,
+        providerRemoteJid: context.providerRemoteJid,
+        remoteJidAliases: context.remoteJidAliases,
         messageId,
         fromMe,
         hasText: !!text,
@@ -286,6 +338,24 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const instanceName = context.instanceName ?? "";
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
+      const existingMessageDeal = await findDealByProviderMessageId(String(messageId), instanceName);
+
+      if (existingMessageDeal?.whatsapp_jid) {
+        const existingRemoteJid = String(existingMessageDeal.whatsapp_jid);
+        await upsertWhatsappJidAliases({
+          instanceName,
+          canonicalJid: existingRemoteJid,
+          aliases: [existingRemoteJid, context.remoteJid, context.providerRemoteJid, context.remoteJidAlt, ...context.remoteJidAliases],
+          source: "message-id-match",
+        });
+        remoteJid = existingRemoteJid;
+        context = {
+          ...context,
+          remoteJid,
+          isGroup: remoteJid.endsWith("@g.us"),
+          remoteJidAliases: Array.from(new Set([remoteJid, ...context.remoteJidAliases].filter(Boolean))) as string[],
+        };
+      }
       
       // Fallback: if senderJid matches instance owner JID, or if this is a SEND_MESSAGE event, it's definitely fromMe
       const isFromMe = Boolean(
@@ -313,6 +383,9 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         senderProfilePictureUrl,
         chatDisplayName,
         chatProfilePictureUrl,
+        providerRemoteJid: context.providerRemoteJid,
+        remoteJidAlt: context.remoteJidAlt,
+        remoteJidAliases: context.remoteJidAliases,
         instanceId: instanceDetails?.id ?? null,
         capturedFromWhatsapp: isFromMe,
         outboundSource: isFromMe ? "whatsapp_device" : null,
@@ -373,10 +446,21 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
       const dealMatch = await pool.query(
         `
         SELECT d.id, d.whatsapp_instance_id FROM deals d
+        LEFT JOIN LATERAL (
+          SELECT wja.canonical_jid
+          FROM whatsapp_jid_aliases wja
+          WHERE LOWER(wja.instance_name) = LOWER($6)
+            AND wja.alias_jid = d.whatsapp_jid
+          ORDER BY wja.updated_at DESC
+          LIMIT 1
+        ) deal_alias ON true
         JOIN pipeline_stages ps ON ps.id = d.stage_id
         WHERE ps.is_won = false AND ps.is_lost = false
           AND (
             d.whatsapp_jid = $1
+            OR d.whatsapp_jid = ANY($5::text[])
+            OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = $1
+            OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($5::text[])
             OR (
               $1 NOT LIKE '%@g.us'
               AND d.whatsapp_jid NOT LIKE '%@g.us'
@@ -423,11 +507,20 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           d.last_activity_at DESC
         LIMIT 1
         `,
-        [remoteJid, instanceDetails?.id ?? null, instanceDetails?.assignedUserId ?? null, instanceDetails?.assignedUserName ?? ""],
+        [
+          remoteJid,
+          instanceDetails?.id ?? null,
+          instanceDetails?.assignedUserId ?? null,
+          instanceDetails?.assignedUserName ?? "",
+          context.remoteJidAliases,
+          instanceName,
+        ],
       );
 
-      if (dealMatch.rows[0]) {
-        const dealId = String(dealMatch.rows[0].id);
+      const matchedDeal = existingMessageDeal ?? dealMatch.rows[0];
+
+      if (matchedDeal) {
+        const dealId = String(matchedDeal.id);
 
         await insertDealActivity({
           dealId,
@@ -464,7 +557,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         });
 
         // Backfill whatsapp_instance_id if missing on the deal
-        if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
+        if (!matchedDeal.whatsapp_instance_id && instanceName) {
           if (instanceDetails) {
             await pool.query(
               "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",

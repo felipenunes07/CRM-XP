@@ -260,7 +260,9 @@ export function WhatsappActivityPage() {
         queryFn: () => api.whatsappAgentActivityReport(token, { days }),
         enabled: Boolean(token),
         refetchInterval: 60000,
-        refetchOnWindowFocus: true,
+        refetchOnWindowFocus: false,
+        staleTime: 30000,
+        placeholderData: (previousData) => previousData,
     });
     const report = reportQuery.data;
     const selectedAgent = report?.agents.find((agent) => agent.agentId === selectedAgentId) ?? null;

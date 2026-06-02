@@ -36,6 +36,7 @@ import {
   median,
   mergeWhatsappMonitorMessages,
 } from "./whatsappMonitorCore.js";
+import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 
 interface ConversationFilters {
@@ -50,6 +51,16 @@ interface ConversationFilters {
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
 const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
+const WHATSAPP_MONITOR_AGENT_CACHE_MS = 30_000;
+const WHATSAPP_ACTIVITY_REPORT_CACHE_MS = 30_000;
+const ACTIVITY_REPORT_CELL_CONVERSATION_LIMIT = 12;
+
+const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
+const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
+
+function userCacheKey(user?: JwtUser) {
+  return user ? `${user.role}:${user.id}:${user.name}` : "anonymous";
+}
 
 function conversationMatchesInstanceSql(instanceAlias: string) {
   return `
@@ -58,7 +69,23 @@ function conversationMatchesInstanceSql(instanceAlias: string) {
       OR EXISTS (
         SELECT 1
         FROM whatsapp_incoming_messages wim_inst
-        WHERE wim_inst.remote_jid = d.whatsapp_jid
+        WHERE (
+            wim_inst.remote_jid = d.whatsapp_jid
+            OR EXISTS (
+              SELECT 1
+              FROM whatsapp_jid_aliases wja_inst
+              WHERE LOWER(wja_inst.instance_name) = LOWER(${instanceAlias}.instance_name)
+                AND wja_inst.alias_jid = wim_inst.remote_jid
+                AND wja_inst.canonical_jid = d.whatsapp_jid
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM whatsapp_jid_aliases wja_deal
+              WHERE LOWER(wja_deal.instance_name) = LOWER(${instanceAlias}.instance_name)
+                AND wja_deal.alias_jid = d.whatsapp_jid
+                AND wim_inst.remote_jid = wja_deal.canonical_jid
+            )
+          )
           AND LOWER(COALESCE(wim_inst.instance_name, '')) = LOWER(${instanceAlias}.instance_name)
       )
       OR EXISTS (
@@ -157,7 +184,11 @@ function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
 }
 
 function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConversation {
-  const remoteJid = row.whatsapp_jid ? String(row.whatsapp_jid) : null;
+  const remoteJid = row.canonical_whatsapp_jid
+    ? String(row.canonical_whatsapp_jid)
+    : row.whatsapp_jid
+      ? String(row.whatsapp_jid)
+      : null;
   const lastMessage = row.last_message_content ? String(row.last_message_content) : null;
   const rawTitle = optionalString(row.title) ?? optionalString(row.customer_display_name);
   const title = rawTitle ?? "Conversa sem nome";
@@ -308,20 +339,34 @@ function classifyWhatsappGroup(input: { isGroup: boolean; name: string | null })
 }
 
 function conversationProfileJoinSql() {
+  const conversationInstance = "COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')";
+  const canonicalJid = "COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)";
+  const profileJidMatch = (alias: string) => `
+    (
+      ${alias}.remote_jid = d.whatsapp_jid
+      OR ${alias}.remote_jid = ${canonicalJid}
+      OR EXISTS (
+        SELECT 1
+        FROM whatsapp_jid_aliases wja_profile
+        WHERE LOWER(wja_profile.instance_name) = LOWER(${conversationInstance})
+          AND wja_profile.canonical_jid = ${canonicalJid}
+          AND wja_profile.alias_jid = ${alias}.remote_jid
+      )
+    )
+  `;
+
   return `
     LEFT JOIN LATERAL (
       SELECT wcp.display_name, wcp.profile_picture_url
       FROM whatsapp_chat_profiles wcp
-      WHERE wcp.remote_jid = d.whatsapp_jid
+      WHERE ${profileJidMatch("wcp")}
         AND (
-          wcp.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          wcp.instance_name = ${conversationInstance}
           OR wcp.instance_name = ''
         )
       ORDER BY
-        CASE
-          WHEN wcp.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '') THEN 0
-          ELSE 1
-        END,
+        CASE WHEN wcp.remote_jid = ${canonicalJid} THEN 0 ELSE 1 END,
+        CASE WHEN wcp.instance_name = ${conversationInstance} THEN 0 ELSE 1 END,
         wcp.updated_at DESC
       LIMIT 1
     ) chat_profile ON true
@@ -333,9 +378,9 @@ function conversationProfileJoinSql() {
         wim.participant_name,
         wim.sender_profile_picture_url
       FROM whatsapp_incoming_messages wim
-      WHERE wim.remote_jid = d.whatsapp_jid
+      WHERE ${profileJidMatch("wim")}
         AND (
-          wim.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          wim.instance_name = ${conversationInstance}
           OR COALESCE(wim.instance_name, '') = ''
         )
       ORDER BY wim.created_at DESC, wim.id DESC
@@ -346,12 +391,12 @@ function conversationProfileJoinSql() {
         wim_inbound.sender_name AS inbound_sender_name,
         COALESCE(wim_inbound.sender_profile_picture_url, wim_inbound.chat_profile_picture_url) AS inbound_sender_picture
       FROM whatsapp_incoming_messages wim_inbound
-      WHERE wim_inbound.remote_jid = d.whatsapp_jid
+      WHERE ${profileJidMatch("wim_inbound")}
         AND wim_inbound.from_me = false
         AND wim_inbound.sender_name IS NOT NULL
         AND wim_inbound.sender_name <> ''
         AND (
-          wim_inbound.instance_name = COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')
+          wim_inbound.instance_name = ${conversationInstance}
           OR COALESCE(wim_inbound.instance_name, '') = ''
         )
       ORDER BY wim_inbound.created_at DESC
@@ -381,6 +426,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     SELECT
       d.*,
       ps.name AS stage_name,
+      COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid) AS canonical_whatsapp_jid,
       COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance') AS instance_name,
       COALESCE(wi.display_label, latest_whatsapp.metadata ->> 'instance') AS instance_display_label,
       COALESCE(wi.display_label, d.assigned_to_name, latest_whatsapp.actor_name) AS agent_name,
@@ -423,6 +469,14 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     LEFT JOIN whatsapp_conversation_reads conversation_reads
       ON conversation_reads.deal_id = d.id
       AND conversation_reads.user_id = $${userIdParamIndex}
+    LEFT JOIN LATERAL (
+      SELECT wja.canonical_jid
+      FROM whatsapp_jid_aliases wja
+      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', ''))
+        AND wja.alias_jid = d.whatsapp_jid
+      ORDER BY wja.updated_at DESC
+      LIMIT 1
+    ) conversation_alias ON true
     ${conversationProfileJoinSql()}
   `;
 }
@@ -464,6 +518,12 @@ function unreadConversationSql() {
 }
 
 export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<WhatsappMonitorAgent[]> {
+  const cacheKey = userCacheKey(user);
+  const cached = whatsappMonitorAgentCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.agents;
+  }
+
   const params: unknown[] = [];
   const where: string[] = [];
 
@@ -535,7 +595,12 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
     params,
   );
 
-  return result.rows.map(mapAgentRow);
+  const agents = result.rows.map(mapAgentRow);
+  whatsappMonitorAgentCache.set(cacheKey, {
+    expiresAt: Date.now() + WHATSAPP_MONITOR_AGENT_CACHE_MS,
+    agents,
+  });
+  return agents;
 }
 
 export async function listWhatsappMonitorConversations(
@@ -663,7 +728,7 @@ export async function listWhatsappMonitorConversations(
       FROM (
         SELECT DISTINCT ON (
           COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
-          LOWER(COALESCE(conversation_rows.whatsapp_jid, ''))
+          LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, ''))
         )
           conversation_rows.*
         FROM (
@@ -672,7 +737,7 @@ export async function listWhatsappMonitorConversations(
         ) conversation_rows
         ORDER BY
           COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
-          LOWER(COALESCE(conversation_rows.whatsapp_jid, '')),
+          LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, '')),
           COALESCE(conversation_rows.last_message_at, conversation_rows.last_activity_at, conversation_rows.created_at) DESC,
           conversation_rows.id DESC
       ) deduped_conversations
@@ -687,6 +752,58 @@ export async function listWhatsappMonitorConversations(
     agents,
     conversations: conversationsResult.rows.map(mapConversationRow),
   };
+}
+
+async function getLinkedWhatsappConversationDealIds(
+  rootDealId: string,
+  instanceName: string | null,
+  aliases: string[],
+) {
+  if (!aliases.length) {
+    return [rootDealId];
+  }
+
+  const result = await pool.query(
+    `
+    SELECT DISTINCT d.id
+    FROM deals d
+    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    LEFT JOIN LATERAL (
+      SELECT da.metadata ->> 'instance' AS instance_name
+      FROM deal_activities da
+      WHERE da.deal_id = d.id
+        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND da.metadata ->> 'instance' IS NOT NULL
+      ORDER BY da.created_at DESC, da.id DESC
+      LIMIT 1
+    ) latest_deal_instance ON true
+    LEFT JOIN LATERAL (
+      SELECT wja.canonical_jid
+      FROM whatsapp_jid_aliases wja
+      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, ''))
+        AND wja.alias_jid = d.whatsapp_jid
+      ORDER BY wja.updated_at DESC
+      LIMIT 1
+    ) deal_alias ON true
+    WHERE d.id = $1
+      OR (
+        ${monitorableWhatsappJidSql("d.whatsapp_jid")}
+        AND (
+          d.whatsapp_jid = ANY($2::text[])
+          OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($2::text[])
+        )
+        AND (
+          $3 = ''
+          OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($3)
+        )
+      )
+    ORDER BY d.id
+    `,
+    [rootDealId, aliases, instanceName ?? ""],
+  );
+
+  const ids = result.rows.map((row) => String(row.id));
+  return ids.includes(rootDealId) ? ids : [rootDealId, ...ids];
 }
 
 export async function getWhatsappMonitorConversation(
@@ -731,6 +848,15 @@ export async function getWhatsappMonitorConversation(
   }
 
   const conversation = mapConversationRow(conversationResult.rows[0]);
+  const conversationAliases = conversation.remoteJid
+    ? await getWhatsappConversationAliases(conversation.instanceName || "", conversation.remoteJid)
+    : [];
+  const remoteJidAliases = conversationAliases.length
+    ? conversationAliases
+    : conversation.remoteJid
+      ? [conversation.remoteJid]
+      : [];
+  const linkedDealIds = await getLinkedWhatsappConversationDealIds(dealId, conversation.instanceName, remoteJidAliases);
   const activitiesResult = await pool.query(
     `
     SELECT
@@ -740,7 +866,14 @@ export async function getWhatsappMonitorConversation(
       incoming_message.raw_payload AS incoming_raw_payload,
       incoming_message.from_me AS incoming_from_me,
       COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name
-    FROM deal_activities da
+    FROM (
+      SELECT *
+      FROM deal_activities
+      WHERE deal_id = ANY($1::uuid[])
+        AND activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      ORDER BY created_at DESC, id DESC
+      LIMIT 300
+    ) da
     LEFT JOIN deals activity_deal ON activity_deal.id = da.deal_id
     LEFT JOIN whatsapp_instances wi ON wi.id = activity_deal.whatsapp_instance_id
     LEFT JOIN whatsapp_incoming_messages incoming_message
@@ -758,25 +891,29 @@ export async function getWhatsappMonitorConversation(
         wpp.updated_at DESC
       LIMIT 1
     ) participant_profile ON true
-    WHERE da.deal_id = $1
-      AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
     ORDER BY da.created_at ASC, incoming_message.created_at ASC NULLS LAST, da.id ASC
-    LIMIT 300
     `,
-    [dealId],
+    [linkedDealIds],
   );
 
   const activityMessages = activitiesResult.rows.map((row) => mapWhatsappActivityToMessage(mapActivityRow(row)));
   let messages = activityMessages;
 
-  if (conversation.remoteJid) {
+  if (conversation.remoteJid && remoteJidAliases.length) {
     const incomingResult = await pool.query(
       `
       SELECT
         wim.*,
         COALESCE(participant_profile.display_name, wim.participant_name, wim.sender_name) AS sender_display_name,
         COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url) AS participant_profile_picture_url
-      FROM whatsapp_incoming_messages wim
+      FROM (
+        SELECT wim.*
+        FROM whatsapp_incoming_messages wim
+        WHERE wim.remote_jid = ANY($1::text[])
+          AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+        ORDER BY created_at DESC, id DESC
+        LIMIT 300
+      ) wim
       LEFT JOIN LATERAL (
         SELECT wpp.display_name, wpp.profile_picture_url
         FROM whatsapp_participant_profiles wpp
@@ -787,15 +924,12 @@ export async function getWhatsappMonitorConversation(
           )
         ORDER BY
           CASE WHEN wpp.instance_name = COALESCE(wim.instance_name, '') THEN 0 ELSE 1 END,
-          wpp.updated_at DESC
-        LIMIT 1
-      ) participant_profile ON true
-      WHERE wim.remote_jid = $1
-        AND LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+        wpp.updated_at DESC
+      LIMIT 1
+    ) participant_profile ON true
       ORDER BY wim.created_at ASC, wim.id ASC
-      LIMIT 300
       `,
-      [conversation.remoteJid, conversation.instanceName || ""],
+      [remoteJidAliases, conversation.instanceName || ""],
     );
 
     const capturedMessages = incomingResult.rows.map((row): WhatsappMonitorMessage => {
@@ -818,7 +952,7 @@ export async function getWhatsappMonitorConversation(
         senderProfilePictureUrl: row.participant_profile_picture_url ? String(row.participant_profile_picture_url) : null,
         content,
         createdAt: isoDate(row.created_at),
-        remoteJid: String(row.remote_jid),
+        remoteJid: conversation.remoteJid,
         isGroup: conversation.isGroup,
         metadata: {
           ...metadata,
@@ -854,7 +988,7 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
     )
     SELECT
       d.id,
-      d.whatsapp_jid,
+      COALESCE(send_alias.canonical_jid, d.whatsapp_jid) AS whatsapp_jid,
       COALESCE(primary_instance.id, activity_instance.id) AS instance_id,
       COALESCE(primary_instance.instance_name, activity_instance.instance_name) AS instance_name,
       COALESCE(primary_instance.display_label, activity_instance.display_label) AS display_label,
@@ -868,6 +1002,14 @@ async function getWhatsappConversationEvolutionContext(dealId: string) {
     LEFT JOIN latest_instance ON true
     LEFT JOIN whatsapp_instances activity_instance
       ON lower(activity_instance.instance_name) = lower(latest_instance.instance_name)
+    LEFT JOIN LATERAL (
+      SELECT wja.canonical_jid
+      FROM whatsapp_jid_aliases wja
+      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(primary_instance.instance_name, activity_instance.instance_name, ''))
+        AND wja.alias_jid = d.whatsapp_jid
+      ORDER BY wja.updated_at DESC
+      LIMIT 1
+    ) send_alias ON true
     WHERE d.id = $1
       AND ${monitorableWhatsappJidSql("d.whatsapp_jid")}
     LIMIT 1
@@ -1378,7 +1520,8 @@ interface ActivityReportAccumulator {
   internalGroups: Set<string>;
   otherGroups: Set<string>;
   conversations: Map<string, ActivityConversationAccumulator>;
-  responseSeconds: number[];
+  responseSecondsTotal: number;
+  responseCount: number;
 }
 
 function createActivityReportAccumulator(): ActivityReportAccumulator {
@@ -1399,7 +1542,8 @@ function createActivityReportAccumulator(): ActivityReportAccumulator {
     internalGroups: new Set<string>(),
     otherGroups: new Set<string>(),
     conversations: new Map<string, ActivityConversationAccumulator>(),
-    responseSeconds: [],
+    responseSecondsTotal: 0,
+    responseCount: 0,
   };
 }
 
@@ -1427,18 +1571,21 @@ function getActivityConversation(
   return current;
 }
 
-function registerActivityReportEvent(input: {
+function registerActivityReportBucket(input: {
   accumulator: ActivityReportAccumulator;
   remoteJid: string;
   chatName: string | null;
   kind: WhatsappAgentActivityConversationKind;
-  isOutbound: boolean;
+  sentMessages: number;
+  receivedMessages: number;
+  responseSecondsTotal: number;
+  responseCount: number;
 }) {
   const conversation = getActivityConversation(input.accumulator, input.remoteJid, input.chatName, input.kind);
 
-  if (input.isOutbound) {
-    input.accumulator.sentMessages += 1;
-    conversation.sentMessages += 1;
+  if (input.sentMessages > 0) {
+    input.accumulator.sentMessages += input.sentMessages;
+    conversation.sentMessages += input.sentMessages;
 
     if (input.kind === "private") {
       input.accumulator.attendedPrivates.add(input.remoteJid);
@@ -1457,10 +1604,12 @@ function registerActivityReportEvent(input: {
         input.accumulator.sentUniqueOtherGroups.add(input.remoteJid);
       }
     }
-  } else {
-    input.accumulator.receivedMessages += 1;
-    conversation.receivedMessages += 1;
-    
+  }
+
+  if (input.receivedMessages > 0) {
+    input.accumulator.receivedMessages += input.receivedMessages;
+    conversation.receivedMessages += input.receivedMessages;
+
     if (input.kind === "private") {
       input.accumulator.receivedUniquePrivates.add(input.remoteJid);
     } else if (input.kind === "customer_group") {
@@ -1471,20 +1620,23 @@ function registerActivityReportEvent(input: {
       input.accumulator.receivedUniqueOtherGroups.add(input.remoteJid);
     }
   }
+
+  addResponseSecondsSummary(input.accumulator, input.responseSecondsTotal, input.responseCount);
 }
 
-function addResponseSeconds(accumulator: ActivityReportAccumulator, responseSeconds: number | null) {
-  if (responseSeconds !== null && Number.isFinite(responseSeconds) && responseSeconds >= 0) {
-    accumulator.responseSeconds.push(responseSeconds);
+function addResponseSecondsSummary(accumulator: ActivityReportAccumulator, total: number, count: number) {
+  if (count > 0 && Number.isFinite(total) && total >= 0) {
+    accumulator.responseSecondsTotal += total;
+    accumulator.responseCount += count;
   }
 }
 
-function average(values: number[]) {
-  if (!values.length) {
+function averageResponseSeconds(accumulator: ActivityReportAccumulator) {
+  if (!accumulator.responseCount) {
     return null;
   }
 
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  return accumulator.responseSecondsTotal / accumulator.responseCount;
 }
 
 function publicActivityCounters(accumulator: ActivityReportAccumulator) {
@@ -1520,8 +1672,8 @@ function publicActivityCounters(accumulator: ActivityReportAccumulator) {
     sentUniqueMessagesPrivate: accumulator.sentUniquePrivates.size,
     sentUniqueMessagesGroup: accumulator.sentUniqueCustomerGroups.size + accumulator.sentUniqueOtherGroups.size,
     attendedConversationsCount: accumulator.attendedConversations.size, // Use the Set for accurate unique count across periods
-    responseCount: accumulator.responseSeconds.length,
-    averageFirstResponseSeconds: average(accumulator.responseSeconds),
+    responseCount: accumulator.responseCount,
+    averageFirstResponseSeconds: averageResponseSeconds(accumulator),
   };
 }
 
@@ -1529,7 +1681,7 @@ function publicActivityConversations(accumulator: ActivityReportAccumulator) {
   return Array.from(accumulator.conversations.values())
     .filter((conversation) => conversation.sentMessages > 0 || conversation.receivedMessages > 0)
     .sort((left, right) => right.sentMessages - left.sentMessages || left.name.localeCompare(right.name))
-    .slice(0, 100);
+    .slice(0, ACTIVITY_REPORT_CELL_CONVERSATION_LIMIT);
 }
 
 export async function getWhatsappAgentActivityReport(
@@ -1537,6 +1689,12 @@ export async function getWhatsappAgentActivityReport(
   daysInput = 7,
 ): Promise<WhatsappAgentActivityReport> {
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
+  const reportCacheKey = `${userCacheKey(user)}:${days}`;
+  const cachedReport = whatsappActivityReportCache.get(reportCacheKey);
+  if (cachedReport && cachedReport.expiresAt > Date.now()) {
+    return cachedReport.report;
+  }
+
   const reportDays = buildActivityReportDays(days);
   const totalReportDays = buildActivityReportDays(days * 2);
 
@@ -1546,10 +1704,9 @@ export async function getWhatsappAgentActivityReport(
 
   const params: unknown[] = [startDate, endDate];
   const where: string[] = [
-    "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
-    `da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
-    `da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')`,
-    monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
+    "war.period_date >= $1::date",
+    "war.period_date <= $2::date",
+    monitorableWhatsappJidSql("war.remote_jid"),
   ];
 
   if (user.role === "SELLER") {
@@ -1558,88 +1715,53 @@ export async function getWhatsappAgentActivityReport(
     const userNameParamIndex = params.length;
     where.push(`
       (
-        da.actor_user_id = $${userIdParamIndex}
-        OR d.assigned_to = $${userIdParamIndex}
-        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
-        OR wi.assigned_user_id = $${userIdParamIndex}
-        OR LOWER(COALESCE(wi.assigned_user_name, '')) = LOWER($${userNameParamIndex})
+        war.agent_id = $${userIdParamIndex}::text
+        OR LOWER(war.agent_name) = LOWER($${userNameParamIndex})
+        OR LOWER(war.agent_name) LIKE LOWER($${userNameParamIndex} || ' (%)')
       )
     `);
   }
 
-  const allInstances = await pool.query(`
-    SELECT 
-      wi.id as instance_id,
-      wi.instance_name,
-      wi.display_label,
-      wi.phone_number,
-      wi.profile_picture_url,
-      u.id as user_id,
-      u.name as user_name
-    FROM whatsapp_instances wi
-    LEFT JOIN users u ON u.id = wi.assigned_user_id
-    WHERE wi.status = 'ACTIVE'
-  `);
+  const [allInstances, result] = await Promise.all([
+    pool.query(`
+      SELECT
+        wi.id as instance_id,
+        wi.instance_name,
+        wi.display_label,
+        wi.phone_number,
+        wi.profile_picture_url,
+        u.id as user_id,
+        u.name as user_name
+      FROM whatsapp_instances wi
+      LEFT JOIN users u ON u.id = wi.assigned_user_id
+      WHERE wi.status = 'ACTIVE'
+    `),
+    pool.query(
+      `
+      SELECT
+        war.agent_id,
+        war.agent_name,
+        war.instance_name,
+        war.display_label,
+        war.phone_number,
+        war.profile_picture_url,
+        war.remote_jid,
+        war.chat_name,
+        TO_CHAR(war.period_date, 'YYYY-MM-DD') AS local_date,
+        war.hour::int AS local_hour,
+        war.sent_messages,
+        war.received_messages,
+        war.response_count,
+        war.response_seconds_total,
+        war.last_message_at
+      FROM whatsapp_activity_rollups war
+      WHERE ${where.join("\n        AND ")}
+      ORDER BY war.period_date ASC, war.hour ASC, war.agent_name ASC
+      `,
+      params,
+    ),
+  ]);
 
-  const result = await pool.query(
-    `
-    SELECT
-      COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
-      COALESCE(
-        CASE 
-          WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL 
-          THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) || ')'
-          ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name)
-        END,
-        'Sem agente'
-      ) AS agent_name,
-      COALESCE(wi_base.instance_name, wi.instance_name) as instance_name,
-      COALESCE(wi_base.display_label, wi.display_label) as display_label,
-      COALESCE(wi_base.phone_number, wi.phone_number) as phone_number,
-      COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) as profile_picture_url,
-      da.activity_type,
-      da.actor_user_id::text AS actor_user_id,
-      da.actor_name,
-      da.content,
-      da.metadata,
-      da.created_at,
-      COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
-      COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
-      TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
-      EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
-    FROM deal_activities da
-    JOIN deals d ON d.id = da.deal_id
-    LEFT JOIN whatsapp_instances wi_base ON (
-      wi_base.id = d.whatsapp_instance_id 
-      OR LOWER(wi_base.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
-    )
-    LEFT JOIN users u ON (
-      u.id = da.actor_user_id 
-      OR u.id = d.assigned_to
-      OR u.id = wi_base.assigned_user_id
-      OR LOWER(u.name) = LOWER(da.actor_name)
-      OR LOWER(u.name) = LOWER(d.assigned_to_name)
-      OR LOWER(u.name) = LOWER(wi_base.assigned_user_name)
-    )
-    LEFT JOIN LATERAL (
-      SELECT wi_match.*
-      FROM whatsapp_instances wi_match
-      WHERE (wi_match.id = d.whatsapp_instance_id OR wi_match.assigned_user_id = u.id)
-      ORDER BY
-        CASE
-          WHEN wi_match.id = d.whatsapp_instance_id THEN 0
-          WHEN wi_match.assigned_user_id = u.id THEN 1
-          ELSE 2
-        END
-      LIMIT 1
-    ) wi ON true
-    WHERE ${where.join("\n      AND ")}
-    ORDER BY da.created_at ASC, da.id ASC
-    `,
-    params,
-  );
-
-  const currentPeriodDateKeys = new Set(reportDays.map((day) => day.date));
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
   const agents = new Map<
     string,
@@ -1668,7 +1790,6 @@ export async function getWhatsappAgentActivityReport(
   const dailyAccumulators = new Map<string, ActivityReportAccumulator>();
   const summaryAccumulator = createActivityReportAccumulator();
   const previousSummaryAccumulator = createActivityReportAccumulator();
-  const pendingInboundByAgentConversation = new Map<string, Date>();
 
   // To track active agents in each period correctly
   const currentPeriodAgents = new Set<string>();
@@ -1711,29 +1832,23 @@ export async function getWhatsappAgentActivityReport(
       isGroup,
       name: optionalString(row.chat_name),
     });
-    const isOutbound = String(row.activity_type) === "WHATSAPP_SENT";
     const chatName = optionalString(row.chat_name);
     const agentId = String(row.agent_id ?? "sem-agente");
     const agentName = String(row.agent_name ?? "Sem agente");
-    const createdAt = new Date(String(row.created_at));
+    const sentMessages = Number(row.sent_messages ?? 0);
+    const receivedMessages = Number(row.received_messages ?? 0);
+    const responseCount = Number(row.response_count ?? 0);
+    const responseSecondsTotal = Number(row.response_seconds_total ?? 0);
+    const lastMessageAt = row.last_message_at ? isoDate(row.last_message_at) : null;
 
     const isCurrentPeriod = localDate >= pivotDate;
 
-    const pendingKey = `${agentId}:${remoteJid}`;
-    let responseSeconds: number | null = null;
-    if (isOutbound) {
-      const pendingInboundAt = pendingInboundByAgentConversation.get(pendingKey);
-      if (pendingInboundAt) {
-        responseSeconds = Math.max(0, (createdAt.getTime() - pendingInboundAt.getTime()) / 1000);
-        pendingInboundByAgentConversation.delete(pendingKey);
-      }
+    if (sentMessages > 0) {
       if (isCurrentPeriod) {
         currentPeriodAgents.add(agentId);
       } else {
         previousPeriodAgents.add(agentId);
       }
-    } else {
-      pendingInboundByAgentConversation.set(pendingKey, createdAt);
     }
 
     if (isCurrentPeriod) {
@@ -1756,7 +1871,12 @@ export async function getWhatsappAgentActivityReport(
       current.displayLabel ??= optionalString(row.display_label);
       current.phoneNumber ??= optionalString(row.phone_number);
       current.profilePictureUrl ??= optionalString(row.profile_picture_url);
-      current.lastMessageAt = isoDate(row.created_at);
+      if (
+        lastMessageAt &&
+        (!current.lastMessageAt || new Date(lastMessageAt).getTime() > new Date(current.lastMessageAt).getTime())
+      ) {
+        current.lastMessageAt = lastMessageAt;
+      }
       agents.set(agentId, current);
 
       const dailyAccumulator = dailyAccumulators.get(localDate) ?? createActivityReportAccumulator();
@@ -1775,30 +1895,33 @@ export async function getWhatsappAgentActivityReport(
       cell.agentName = agentName;
       cells.set(cellKey, cell);
 
-      if (isOutbound) {
+      if (sentMessages > 0) {
         current.activeHours.add(`${localDate}:${localHour}`);
       }
 
       for (const accumulator of [summaryAccumulator, dailyAccumulator, current.accumulator, cell.accumulator]) {
-        registerActivityReportEvent({
+        registerActivityReportBucket({
           accumulator,
           remoteJid,
           chatName,
           kind: groupClass,
-          isOutbound,
+          sentMessages,
+          receivedMessages,
+          responseSecondsTotal,
+          responseCount,
         });
-        addResponseSeconds(accumulator, responseSeconds);
       }
     } else {
-      // Previous period
-      registerActivityReportEvent({
+      registerActivityReportBucket({
         accumulator: previousSummaryAccumulator,
         remoteJid,
         chatName,
         kind: groupClass,
-        isOutbound,
+        sentMessages,
+        receivedMessages,
+        responseSecondsTotal,
+        responseCount,
       });
-      addResponseSeconds(previousSummaryAccumulator, responseSeconds);
     }
   }
 
@@ -1821,7 +1944,7 @@ export async function getWhatsappAgentActivityReport(
   const engagedPrivates = new Set(engagedConversations.filter((c) => c.kind === "private").map((c) => c.remoteJid));
   const engagedGroups = new Set(engagedConversations.filter((c) => c.kind !== "private").map((c) => c.remoteJid));
 
-  return {
+  const report: WhatsappAgentActivityReport = {
     period: {
       startDate: reportDays[0]?.date ?? pivotDate,
       endDate: reportDays[reportDays.length - 1]?.date ?? pivotDate,
@@ -1888,6 +2011,13 @@ export async function getWhatsappAgentActivityReport(
       };
     }),
   };
+
+  whatsappActivityReportCache.set(reportCacheKey, {
+    expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
+    report,
+  });
+
+  return report;
 }
 
 export async function setWhatsappConversationReadState(
