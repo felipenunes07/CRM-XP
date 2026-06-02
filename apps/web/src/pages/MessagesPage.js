@@ -327,14 +327,12 @@ export function MessagesPage() {
                 const cleanDisplayLabel = clean(activeAgent.displayLabel);
                 const cleanInstanceName = clean(activeAgent.instanceName);
                 const cleanAssignedUserName = clean(activeAgent.assignedUserName);
-                return (
-                    conversation.whatsappInstanceId === activeAgent.id ||
+                return (conversation.whatsappInstanceId === activeAgent.id ||
                     conversation.instanceName === activeAgent.instanceName ||
                     conversation.agentName === activeAgent.displayLabel ||
                     (cleanAgentName && cleanAgentName === cleanDisplayLabel) ||
                     (cleanAgentName && cleanAgentName === cleanInstanceName) ||
-                    (cleanAgentName && cleanAgentName === cleanAssignedUserName)
-                );
+                    (cleanAgentName && cleanAgentName === cleanAssignedUserName));
             });
         }
         if (groupFilter === "groups") {

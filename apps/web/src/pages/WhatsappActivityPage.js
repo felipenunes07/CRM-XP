@@ -277,9 +277,9 @@ export function WhatsappActivityPage() {
         queryKey: ["whatsapp-agent-activity-report", days],
         queryFn: () => api.whatsappAgentActivityReport(token, { days }),
         enabled: Boolean(token),
-        refetchInterval: 5 * 60 * 1000,
-        refetchOnWindowFocus: false,
-        staleTime: 60 * 1000,
+        refetchInterval: 60 * 1000,
+        refetchOnWindowFocus: true,
+        refetchOnMount: true,
     });
     const report = reportQuery.data;
     const selectedAgent = report?.agents.find((agent) => agent.agentId === selectedAgentId) ?? null;
@@ -377,7 +377,7 @@ export function WhatsappActivityPage() {
         return isUniqueMetric
             ? (cell.sentUniqueMessages ?? 0) + (cell.receivedUniqueMessages ?? 0)
             : (cell.sentMessages || 0) + (cell.receivedMessages || 0);
-    })), [cellMap, heatmapMetric, typeFilter]);
+    })), [cellMap, heatmapMetric, isUniqueMetric, typeFilter]);
     const selectedCellSummary = selectedCellKey ? cellMap.get(selectedCellKey) ?? null : null;
     const selectedCellRows = selectedCellKey ? cellsBySlot.get(selectedCellKey) ?? [] : null;
     const growthMetrics = useMemo(() => {
@@ -569,9 +569,9 @@ function DailySummaryTab({ token }) {
         queryKey: ["whatsapp-daily-summary", selectedDate],
         queryFn: () => api.whatsappDailySummary(token, selectedDate),
         enabled: Boolean(token),
-        refetchInterval: 5 * 60 * 1000,
-        refetchOnWindowFocus: false,
-        staleTime: 60 * 1000,
+        refetchInterval: 60 * 1000,
+        refetchOnWindowFocus: true,
+        refetchOnMount: true,
     });
     const handleCopy = (text) => {
         navigator.clipboard.writeText(text);
