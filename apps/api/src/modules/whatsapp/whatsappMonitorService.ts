@@ -36,6 +36,7 @@ import {
   median,
   mergeWhatsappMonitorMessages,
 } from "./whatsappMonitorCore.js";
+import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.js";
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 
@@ -2037,6 +2038,21 @@ function publicActivityConversations(accumulator: ActivityReportAccumulator) {
     .slice(0, ACTIVITY_REPORT_CELL_CONVERSATION_LIMIT);
 }
 
+function hasCurrentActivityRows(rows: Record<string, unknown>[], pivotDate: string) {
+  return rows.some((row) => {
+    const localDate = optionalString(row.local_date);
+    if (!localDate || localDate < pivotDate) {
+      return false;
+    }
+
+    return Number(row.sent_messages ?? 0) > 0 || Number(row.received_messages ?? 0) > 0;
+  });
+}
+
+function reportHasCurrentActivity(report: WhatsappAgentActivityReport) {
+  return report.hourlyCells.some((cell) => (cell.sentMessages || 0) > 0 || (cell.receivedMessages || 0) > 0);
+}
+
 export async function getWhatsappAgentActivityReport(
   user: JwtUser,
   daysInput = 7,
@@ -2044,7 +2060,7 @@ export async function getWhatsappAgentActivityReport(
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
   const reportCacheKey = `${userCacheKey(user)}:${days}`;
   const cachedReport = whatsappActivityReportCache.get(reportCacheKey);
-  if (cachedReport && cachedReport.expiresAt > Date.now()) {
+  if (cachedReport && cachedReport.expiresAt > Date.now() && reportHasCurrentActivity(cachedReport.report)) {
     return cachedReport.report;
   }
 
@@ -2056,11 +2072,13 @@ export async function getWhatsappAgentActivityReport(
     const cached = await redis.get(redisCacheKey);
     if (cached) {
       const report = JSON.parse(cached) as WhatsappAgentActivityReport;
-      whatsappActivityReportCache.set(reportCacheKey, {
-        expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
-        report,
-      });
-      return report;
+      if (reportHasCurrentActivity(report)) {
+        whatsappActivityReportCache.set(reportCacheKey, {
+          expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
+          report,
+        });
+        return report;
+      }
     }
   } catch {
     // Redis failure should not block the report.
@@ -2093,22 +2111,7 @@ export async function getWhatsappAgentActivityReport(
     `);
   }
 
-  const [allInstances, result] = await Promise.all([
-    pool.query(`
-      SELECT
-        wi.id as instance_id,
-        wi.instance_name,
-        wi.display_label,
-        wi.phone_number,
-        wi.profile_picture_url,
-        wi.assigned_user_id,
-        wi.assigned_user_name,
-        u.id as user_id,
-        u.name as user_name
-      FROM whatsapp_instances wi
-      LEFT JOIN users u ON u.id = wi.assigned_user_id
-      WHERE wi.status = 'ACTIVE'
-    `),
+  const queryActivityRollups = () =>
     pool.query(
       `
       SELECT
@@ -2132,8 +2135,40 @@ export async function getWhatsappAgentActivityReport(
       ORDER BY war.period_date ASC, war.hour ASC, war.agent_name ASC
       `,
       params,
-    ),
+    );
+
+  const [allInstances, result] = await Promise.all([
+    pool.query(`
+      SELECT
+        wi.id as instance_id,
+        wi.instance_name,
+        wi.display_label,
+        wi.phone_number,
+        wi.profile_picture_url,
+        wi.assigned_user_id,
+        wi.assigned_user_name,
+        u.id as user_id,
+        u.name as user_name
+      FROM whatsapp_instances wi
+      LEFT JOIN users u ON u.id = wi.assigned_user_id
+      WHERE wi.status = 'ACTIVE'
+    `),
+    queryActivityRollups(),
   ]);
+
+  let activityRows = result.rows;
+  if (!hasCurrentActivityRows(activityRows, pivotDate)) {
+    try {
+      await refreshWhatsappActivityRollups(days * 2);
+      const refreshed = await queryActivityRollups();
+      activityRows = refreshed.rows;
+    } catch (error) {
+      logger.warn("failed to refresh empty whatsapp activity rollups during report request", {
+        days,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
   const agents = new Map<
@@ -2190,7 +2225,7 @@ export async function getWhatsappAgentActivityReport(
     });
   }
 
-  for (const row of result.rows) {
+  for (const row of activityRows) {
     const localDate = optionalString(row.local_date);
     const localHour = Number(row.local_hour);
     if (!localDate || !Number.isInteger(localHour)) {
@@ -2392,12 +2427,14 @@ export async function getWhatsappAgentActivityReport(
     }),
   };
 
-  whatsappActivityReportCache.set(reportCacheKey, {
-    expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
-    report,
-  });
+  if (reportHasCurrentActivity(report)) {
+    whatsappActivityReportCache.set(reportCacheKey, {
+      expiresAt: Date.now() + WHATSAPP_ACTIVITY_REPORT_CACHE_MS,
+      report,
+    });
 
-  redis.set(redisCacheKey, JSON.stringify(report), "EX", redisCacheTtl).catch(() => {});
+    redis.set(redisCacheKey, JSON.stringify(report), "EX", redisCacheTtl).catch(() => {});
+  }
 
   return report;
 }

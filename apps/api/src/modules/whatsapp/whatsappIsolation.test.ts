@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   resolveIdentity: vi.fn(),
   upsertAliases: vi.fn(),
   getAliases: vi.fn(),
+  refreshRollups: vi.fn(),
 }));
 
 vi.mock("../../db/client.js", () => ({
@@ -31,6 +32,10 @@ vi.mock("./whatsappIdentityService.js", () => ({
   getWhatsappConversationAliases: mocks.getAliases,
 }));
 
+vi.mock("./whatsappActivityRollupService.js", () => ({
+  refreshWhatsappActivityRollups: mocks.refreshRollups,
+}));
+
 vi.mock("../events/eventsService.js", () => ({
   createEventFromMessage: mocks.createEventFromMessage,
 }));
@@ -47,10 +52,24 @@ vi.mock("../../lib/env.js", async (importOriginal) => {
 import { handleEvolutionWebhook } from "./evolutionWebhook.js";
 import {
   classifyWhatsappReportConversation,
+  getWhatsappAgentActivityReport,
   getWhatsappMonitorConversation,
   isInternalWhatsappReportChat,
   listWhatsappMonitorConversations,
 } from "./whatsappMonitorService.js";
+
+function localTodayKey() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const year = parts.find((part) => part.type === "year")?.value ?? "2026";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
 
 describe("whatsapp activity report classification", () => {
   it("excludes internal groups and private company numbers from report calculations", () => {
@@ -95,6 +114,7 @@ describe("whatsapp conversation isolation", () => {
     mocks.resolveIdentity.mockReset();
     mocks.upsertAliases.mockReset();
     mocks.getAliases.mockReset();
+    mocks.refreshRollups.mockReset();
     mocks.redisGet.mockResolvedValue(null);
     mocks.redisSet.mockResolvedValue("OK");
     mocks.resolveMetadata.mockResolvedValue({});
@@ -105,6 +125,80 @@ describe("whatsapp conversation isolation", () => {
     }));
     mocks.getAliases.mockImplementation((_instanceName, remoteJid) => remoteJid ? [remoteJid] : []);
     mocks.upsertAliases.mockResolvedValue(undefined);
+    mocks.refreshRollups.mockResolvedValue({ refreshed: true, deleted: 0, inserted: 1 });
+  });
+
+  it("refreshes empty activity rollups before returning the heatmap report", async () => {
+    const today = localTodayKey();
+    let rollupQueryCount = 0;
+
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+
+      if (sql.includes("FROM whatsapp_instances wi")) {
+        return {
+          rows: [
+            {
+              instance_id: "instance-amanda",
+              instance_name: "amanda",
+              display_label: "Amanda",
+              phone_number: "+55 11 91234-5678",
+              profile_picture_url: null,
+              assigned_user_id: "user-amanda",
+              assigned_user_name: "Amanda",
+              user_id: "user-amanda",
+              user_name: "Amanda",
+            },
+          ],
+        };
+      }
+
+      if (sql.includes("FROM whatsapp_activity_rollups war")) {
+        rollupQueryCount += 1;
+        return rollupQueryCount === 1
+          ? { rows: [] }
+          : {
+              rows: [
+                {
+                  agent_id: "user-amanda",
+                  agent_name: "Amanda (Amanda)",
+                  instance_name: "amanda",
+                  display_label: "Amanda",
+                  phone_number: "+55 11 91234-5678",
+                  profile_picture_url: null,
+                  remote_jid: "5511999998888@s.whatsapp.net",
+                  chat_name: "Cliente Exemplo",
+                  local_date: today,
+                  local_hour: 13,
+                  sent_messages: 2,
+                  received_messages: 1,
+                  response_count: 1,
+                  response_seconds_total: 180,
+                  last_message_at: `${today}T16:00:00.000Z`,
+                },
+              ],
+            };
+      }
+
+      return { rows: [] };
+    });
+
+    const report = await getWhatsappAgentActivityReport({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
+    expect(rollupQueryCount).toBe(2);
+    expect(report.hourlyCells).toHaveLength(1);
+    expect(report.hourlyCells[0]).toMatchObject({
+      date: today,
+      hour: 13,
+      sentMessages: 2,
+      receivedMessages: 1,
+    });
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {
