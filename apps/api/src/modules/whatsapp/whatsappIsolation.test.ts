@@ -239,8 +239,7 @@ describe("whatsapp conversation isolation", () => {
 
     expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], ["5511999998888"], "amanda", 21]);
     expect(incomingQuery).toContain("wim_base.participant_jid = ANY($1::text[])");
-    expect(incomingQuery).toContain("raw_payload #>> '{key,remoteJidPn}'");
-    expect(incomingQuery).toContain("raw_payload ->> 'senderPn'");
+    expect(incomingQuery).toContain("wim_base.remote_jid = ANY($1::text[])");
     expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($3)");
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim_base\.instance_name,\s*''\)\s*=\s*''/);
   });
