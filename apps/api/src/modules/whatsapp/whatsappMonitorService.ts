@@ -286,32 +286,9 @@ function conversationMatchesInstanceSql(instanceAlias: string) {
       d.whatsapp_instance_id = ${instanceAlias}.id
       OR EXISTS (
         SELECT 1
-        FROM whatsapp_incoming_messages wim_inst
-        WHERE (
-            wim_inst.remote_jid = d.whatsapp_jid
-            OR EXISTS (
-              SELECT 1
-              FROM whatsapp_jid_aliases wja_inst
-              WHERE LOWER(wja_inst.instance_name) = LOWER(${instanceAlias}.instance_name)
-                AND wja_inst.alias_jid = wim_inst.remote_jid
-                AND wja_inst.canonical_jid = d.whatsapp_jid
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM whatsapp_jid_aliases wja_deal
-              WHERE LOWER(wja_deal.instance_name) = LOWER(${instanceAlias}.instance_name)
-                AND wja_deal.alias_jid = d.whatsapp_jid
-                AND wim_inst.remote_jid = wja_deal.canonical_jid
-            )
-          )
-          AND LOWER(COALESCE(wim_inst.instance_name, '')) = LOWER(${instanceAlias}.instance_name)
-      )
-      OR EXISTS (
-        SELECT 1
-        FROM deal_activities da_inst
-        WHERE da_inst.deal_id = d.id
-          AND da_inst.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-          AND LOWER(COALESCE(da_inst.metadata ->> 'instance', '')) = LOWER(${instanceAlias}.instance_name)
+        FROM whatsapp_monitor_messages wmm_inst
+        WHERE wmm_inst.deal_id = d.id
+          AND LOWER(wmm_inst.instance_name) = LOWER(${instanceAlias}.instance_name)
       )
     )
   `;
@@ -699,20 +676,20 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       d.*,
       ps.name AS stage_name,
       COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid) AS canonical_whatsapp_jid,
-      COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance') AS instance_name,
-      COALESCE(wi.display_label, latest_whatsapp.metadata ->> 'instance') AS instance_display_label,
-      COALESCE(wi.display_label, d.assigned_to_name, latest_whatsapp.actor_name) AS agent_name,
+      COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_name,
+      COALESCE(wi.display_label, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_display_label,
+      COALESCE(wi.display_label, d.assigned_to_name, latest_whatsapp.sender_name) AS agent_name,
       COALESCE(
         chat_profile.display_name,
-        latest_whatsapp.metadata ->> 'chatDisplayName',
+        latest_whatsapp.media_json ->> 'chatDisplayName',
         incoming_profile.chat_display_name
       ) AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       COALESCE(
         chat_profile.profile_picture_url,
         CASE
-          WHEN latest_whatsapp.activity_type = 'WHATSAPP_RECEIVED'
-            THEN latest_whatsapp.metadata ->> 'chatProfilePictureUrl'
+          WHEN latest_whatsapp.direction = 'INBOUND'
+            THEN COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl')
           ELSE NULL
         END,
         incoming_profile.chat_profile_picture_url,
@@ -733,12 +710,12 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       COALESCE(activity_stats.inbound_count, 0)::int AS inbound_count,
       COALESCE((
         SELECT COUNT(*)
-        FROM deal_activities unread_activity
-        WHERE unread_activity.deal_id = d.id
-          AND unread_activity.activity_type = 'WHATSAPP_RECEIVED'
+        FROM whatsapp_monitor_messages unread_msg
+        WHERE unread_msg.deal_id = d.id
+          AND unread_msg.direction = 'INBOUND'
           AND (
             conversation_reads.last_read_at IS NULL
-            OR unread_activity.created_at > conversation_reads.last_read_at
+            OR unread_msg.created_at > conversation_reads.last_read_at
           )
       ), 0)::int AS unread_after_read,
       COALESCE(conversation_reads.force_unread, false) AS marked_unread,
@@ -748,20 +725,18 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
     LEFT JOIN LATERAL (
       SELECT *
-      FROM deal_activities da
-      WHERE da.deal_id = d.id
-        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-      ORDER BY da.created_at DESC, da.id DESC
+      FROM whatsapp_monitor_messages wmm
+      WHERE wmm.deal_id = d.id
+      ORDER BY wmm.created_at DESC, wmm.id DESC
       LIMIT 1
     ) latest_whatsapp ON true
     LEFT JOIN LATERAL (
       SELECT
         COUNT(*)::int AS event_count,
-        COUNT(*) FILTER (WHERE da.activity_type = 'WHATSAPP_RECEIVED')::int AS inbound_count,
-        MAX(da.created_at) AS last_message_at
-      FROM deal_activities da
-      WHERE da.deal_id = d.id
-        AND da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        COUNT(*) FILTER (WHERE wmm.direction = 'INBOUND')::int AS inbound_count,
+        MAX(wmm.created_at) AS last_message_at
+      FROM whatsapp_monitor_messages wmm
+      WHERE wmm.deal_id = d.id
     ) activity_stats ON true
     LEFT JOIN LATERAL (
       -- Group chats are shared across every connected instance. The webhook now
@@ -770,7 +745,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       -- whatsapp_incoming_messages row by remote_jid, ignoring which instance
       -- physically received it. This keeps the preview visible to every seller
       -- who has a deal for that group. Private (1:1) chats keep deriving the
-      -- preview from their own deal_activities, isolated per instance.
+      -- preview from their own whatsapp_monitor_messages rows.
       SELECT
         wim_group.message_text AS content,
         wim_group.created_at AS created_at
@@ -786,7 +761,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     LEFT JOIN LATERAL (
       SELECT wja.canonical_jid
       FROM whatsapp_jid_aliases wja
-      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', ''))
+      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', ''))
         AND wja.alias_jid = d.whatsapp_jid
       ORDER BY wja.updated_at DESC
       LIMIT 1
@@ -860,12 +835,12 @@ function unreadConversationSql() {
       COALESCE(conversation_reads.force_unread, false)
       OR EXISTS (
         SELECT 1
-        FROM deal_activities unread_activity
-        WHERE unread_activity.deal_id = d.id
-          AND unread_activity.activity_type = 'WHATSAPP_RECEIVED'
+        FROM whatsapp_monitor_messages unread_msg
+        WHERE unread_msg.deal_id = d.id
+          AND unread_msg.direction = 'INBOUND'
           AND (
             conversation_reads.last_read_at IS NULL
-            OR unread_activity.created_at > conversation_reads.last_read_at
+            OR unread_msg.created_at > conversation_reads.last_read_at
           )
       )
     )
@@ -917,20 +892,12 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
       SELECT
         ci.whatsapp_instance_id,
         COUNT(DISTINCT ci.deal_id)::int AS conversation_count,
-        COUNT(DISTINCT da.id) FILTER (
-          WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-            AND da.content IS NOT NULL
-            AND (
-              lower(da.content) LIKE '%porra%'
-              OR lower(da.content) LIKE '%senha%'
-              OR lower(da.content) LIKE '%cartao de credito%'
-              OR lower(da.content) LIKE '%token%'
-              OR lower(da.content) LIKE '%procon%'
-            )
+        COUNT(DISTINCT wmm.id) FILTER (
+          WHERE ${riskSql("wmm")}
         )::int AS risk_count,
-        MAX(da.created_at) AS last_message_at
+        MAX(wmm.created_at) AS last_message_at
       FROM conversation_instances ci
-      LEFT JOIN deal_activities da ON da.deal_id = ci.deal_id
+      LEFT JOIN whatsapp_monitor_messages wmm ON wmm.deal_id = ci.deal_id
       GROUP BY ci.whatsapp_instance_id
     )
     SELECT
@@ -1363,6 +1330,21 @@ export async function getWhatsappMonitorConversation(
       if (mode !== "after") {
         rows = [...rows].reverse();
       }
+
+      const seenMessageIds = new Set<string>();
+      const uniqueRows: typeof rows = [];
+      for (const row of rows) {
+        const msgId = row.message_id;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(msgId);
+        if (msgId && !isUuid) {
+          if (seenMessageIds.has(msgId)) {
+            continue;
+          }
+          seenMessageIds.add(msgId);
+        }
+        uniqueRows.push(row);
+      }
+      rows = uniqueRows;
 
       const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
       const fastMessages = rows.map((row): WhatsappMonitorMessage => {

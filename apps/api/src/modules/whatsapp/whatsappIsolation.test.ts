@@ -19,7 +19,7 @@ vi.mock("../../db/client.js", () => ({
   whatsappMonitorPool: {
     query: (sql: unknown, params: unknown) => {
       const sqlStr = String(sql ?? "");
-      if (sqlStr.includes("FROM whatsapp_monitor_messages")) {
+      if (sqlStr.includes("FROM whatsapp_monitor_messages") && !sqlStr.includes("deals")) {
         return Promise.resolve({ rows: [] });
       }
       return mocks.query(sql, params);
@@ -671,7 +671,7 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
     expect(listSql).toContain("ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC");
     expect(listSql).toContain("WHERE d.id IN (SELECT id FROM candidate_deals)");
-    expect(listSql).toContain("latest_whatsapp.activity_type = 'WHATSAPP_RECEIVED'");
+    expect(listSql).toContain("latest_whatsapp.direction = 'INBOUND'");
     expect(listSql).not.toContain("incoming_profile.sender_profile_picture_url");
     expect(listSql).not.toContain("incoming_profile.sender_name");
     expect(listSql).not.toContain("DISTINCT ON");
