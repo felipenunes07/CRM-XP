@@ -2362,19 +2362,32 @@ function publicActivityConversations(accumulator: ActivityReportAccumulator) {
     .slice(0, ACTIVITY_REPORT_CELL_CONVERSATION_LIMIT);
 }
 
-function hasCurrentActivityRows(rows: Record<string, unknown>[], pivotDate: string) {
+function hasReportableCurrentActivityRows(rows: Record<string, unknown>[], pivotDate: string) {
   return rows.some((row) => {
     const localDate = optionalString(row.local_date);
     if (!localDate || localDate < pivotDate) {
       return false;
     }
 
-    return Number(row.sent_messages ?? 0) > 0 || Number(row.received_messages ?? 0) > 0;
+    const hasMessages = Number(row.sent_messages ?? 0) > 0 || Number(row.received_messages ?? 0) > 0;
+    if (!hasMessages) {
+      return false;
+    }
+
+    const remoteJid = optionalString(row.remote_jid);
+    if (!remoteJid) {
+      return false;
+    }
+
+    return !isInternalChat(optionalString(row.chat_name), remoteJid);
   });
 }
 
 function reportHasCurrentActivity(report: WhatsappAgentActivityReport) {
-  return report.hourlyCells.some((cell) => (cell.sentMessages || 0) > 0 || (cell.receivedMessages || 0) > 0);
+  const currentDate = report.period.endDate;
+  return report.hourlyCells.some((cell) =>
+    cell.date === currentDate && ((cell.sentMessages || 0) > 0 || (cell.receivedMessages || 0) > 0)
+  );
 }
 
 export async function getWhatsappAgentActivityReport(
@@ -2648,7 +2661,7 @@ export async function getWhatsappAgentActivityReport(
   ]);
 
   let activityRows = result.rows;
-  if (!hasCurrentActivityRows(activityRows, pivotDate)) {
+  if (!hasReportableCurrentActivityRows(activityRows, pivotDate)) {
     try {
       await refreshWhatsappActivityRollups(days * 2);
       const refreshed = await queryActivityRollups();
@@ -2660,10 +2673,10 @@ export async function getWhatsappAgentActivityReport(
       });
     }
   }
-  if (!hasCurrentActivityRows(activityRows, pivotDate)) {
+  if (!hasReportableCurrentActivityRows(activityRows, pivotDate)) {
     try {
       const direct = await queryActivityEventsDirectly();
-      if (hasCurrentActivityRows(direct.rows, pivotDate)) {
+      if (hasReportableCurrentActivityRows(direct.rows, pivotDate)) {
         activityRows = direct.rows;
       }
     } catch (error) {
