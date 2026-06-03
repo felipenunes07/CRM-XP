@@ -1,91 +1,193 @@
 import { pool, redis } from "../db/client.js";
 import { logger } from "../lib/logger.js";
-import { getWhatsappMonitorConversation } from "../modules/whatsapp/whatsappMonitorService.js";
-import { recordMonitorMessage } from "../modules/whatsapp/whatsappMonitorMessages.js";
-import type { JwtUser } from "../modules/platform/authService.js";
 
 async function main() {
-  // Force old read path during backfill to avoid reading from the incomplete flat table
-  process.env.WHATSAPP_FAST_READ = "off";
+  logger.info("Starting optimized whatsapp monitor messages backfill...");
 
-  logger.info("Starting whatsapp monitor messages backfill...");
+  // 1. Backfill from deal_activities
+  logger.info("Backfilling from deal_activities...");
+  const activitiesResult = await pool.query(`
+    INSERT INTO whatsapp_monitor_messages (
+      deal_id, message_id, remote_jid, instance_name, direction, from_me,
+      sender_name, sender_jid, sender_pic_url, content, media_json, source, created_at
+    )
+    SELECT
+      da.deal_id,
+      COALESCE(da.metadata ->> 'messageId', da.metadata ->> 'providerMessageId', da.id::text) AS message_id,
+      d.whatsapp_jid AS remote_jid,
+      COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name,
+      CASE 
+        WHEN COALESCE((da.metadata ->> 'fromMe')::boolean, (da.metadata ->> 'isOutbound')::boolean, (da.metadata ->> 'capturedFromWhatsapp')::boolean, (da.metadata ->> 'sentFromMonitor')::boolean) = true THEN 'OUTBOUND'
+        WHEN da.activity_type = 'WHATSAPP_SENT' THEN 'OUTBOUND'
+        ELSE 'INBOUND'
+      END AS direction,
+      CASE 
+        WHEN COALESCE((da.metadata ->> 'fromMe')::boolean, (da.metadata ->> 'isOutbound')::boolean, (da.metadata ->> 'capturedFromWhatsapp')::boolean, (da.metadata ->> 'sentFromMonitor')::boolean) = true THEN true
+        WHEN da.activity_type = 'WHATSAPP_SENT' THEN true
+        ELSE false
+      END AS from_me,
+      COALESCE(da.metadata ->> 'senderName', da.actor_name) AS sender_name,
+      da.metadata ->> 'senderJid' AS sender_jid,
+      COALESCE(da.metadata ->> 'senderProfilePictureUrl', wpp.profile_picture_url) AS sender_pic_url,
+      da.content AS content,
+      da.metadata AS media_json,
+      'activity' AS source,
+      da.created_at AS created_at
+    FROM deal_activities da
+    JOIN deals d ON d.id = da.deal_id
+    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    LEFT JOIN LATERAL (
+      SELECT wpp_inner.profile_picture_url
+      FROM whatsapp_participant_profiles wpp_inner
+      WHERE wpp_inner.participant_jid = da.metadata ->> 'senderJid'
+        AND (wpp_inner.instance_name = COALESCE(da.metadata ->> 'instance', '') OR wpp_inner.instance_name = '')
+      ORDER BY
+        CASE WHEN wpp_inner.instance_name = COALESCE(da.metadata ->> 'instance', '') THEN 0 ELSE 1 END,
+        wpp_inner.updated_at DESC
+      LIMIT 1
+    ) wpp ON true
+    WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+      AND da.created_at >= NOW() - INTERVAL '90 days'
+    ON CONFLICT (deal_id, message_id, source) DO UPDATE SET
+      content        = EXCLUDED.content,
+      sender_name    = COALESCE(EXCLUDED.sender_name, whatsapp_monitor_messages.sender_name),
+      sender_pic_url = COALESCE(EXCLUDED.sender_pic_url, whatsapp_monitor_messages.sender_pic_url),
+      media_json     = COALESCE(EXCLUDED.media_json, whatsapp_monitor_messages.media_json),
+      from_me        = EXCLUDED.from_me
+  `);
+  logger.info(`Completed activities backfill: ${activitiesResult.rowCount} rows processed/inserted.`);
 
-  const dealsResult = await pool.query(
-    "SELECT id, title, whatsapp_jid FROM deals WHERE whatsapp_jid IS NOT NULL"
-  );
-  const deals = dealsResult.rows;
-  logger.info(`Found ${deals.length} deals to process.`);
+  // 2. Backfill from whatsapp_incoming_messages (Direct remote_jid matches)
+  logger.info("Backfilling from whatsapp_incoming_messages (remote_jid)...");
+  const incomingRemoteResult = await pool.query(`
+    INSERT INTO whatsapp_monitor_messages (
+      deal_id, message_id, remote_jid, instance_name, direction, from_me,
+      sender_name, sender_jid, sender_pic_url, content, media_json, source, created_at
+    )
+    SELECT
+      d.id AS deal_id,
+      wim.message_id AS message_id,
+      d.whatsapp_jid AS remote_jid,
+      wim.instance_name AS instance_name,
+      CASE WHEN COALESCE(wim.from_me, false) THEN 'OUTBOUND' ELSE 'INBOUND' END AS direction,
+      COALESCE(wim.from_me, false) AS from_me,
+      COALESCE(wpp.display_name, wim.participant_name, wim.sender_name) AS sender_name,
+      wim.participant_jid AS sender_jid,
+      COALESCE(wpp.profile_picture_url, wim.sender_profile_picture_url) AS sender_pic_url,
+      COALESCE(wim.message_text, '') AS content,
+      wim.raw_payload AS media_json,
+      'incoming' AS source,
+      wim.created_at AS created_at
+    FROM whatsapp_incoming_messages wim
+    JOIN deals d ON d.whatsapp_jid = wim.remote_jid
+    LEFT JOIN LATERAL (
+      SELECT wpp_inner.display_name, wpp_inner.profile_picture_url
+      FROM whatsapp_participant_profiles wpp_inner
+      WHERE wpp_inner.participant_jid = wim.participant_jid
+        AND (wpp_inner.instance_name = COALESCE(wim.instance_name, '') OR wpp_inner.instance_name = '')
+      ORDER BY
+        CASE WHEN wpp_inner.instance_name = COALESCE(wim.instance_name, '') THEN 0 ELSE 1 END,
+        wpp_inner.updated_at DESC
+      LIMIT 1
+    ) wpp ON true
+    WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+    ON CONFLICT (deal_id, message_id, source) DO UPDATE SET
+      content        = EXCLUDED.content,
+      sender_name    = COALESCE(EXCLUDED.sender_name, whatsapp_monitor_messages.sender_name),
+      sender_pic_url = COALESCE(EXCLUDED.sender_pic_url, whatsapp_monitor_messages.sender_pic_url),
+      media_json     = COALESCE(EXCLUDED.media_json, whatsapp_monitor_messages.media_json),
+      from_me        = EXCLUDED.from_me
+  `);
+  logger.info(`Completed incoming remote matches: ${incomingRemoteResult.rowCount} rows processed/inserted.`);
 
-  const adminUser: JwtUser = {
-    id: "00000000-0000-0000-0000-000000000000",
-    name: "System Backfill",
-    email: "backfill@system.local",
-    role: "ADMIN",
-  };
+  // 3. Backfill from whatsapp_incoming_messages (Direct participant_jid matches)
+  logger.info("Backfilling from whatsapp_incoming_messages (participant_jid)...");
+  const incomingParticipantResult = await pool.query(`
+    INSERT INTO whatsapp_monitor_messages (
+      deal_id, message_id, remote_jid, instance_name, direction, from_me,
+      sender_name, sender_jid, sender_pic_url, content, media_json, source, created_at
+    )
+    SELECT
+      d.id AS deal_id,
+      wim.message_id AS message_id,
+      d.whatsapp_jid AS remote_jid,
+      wim.instance_name AS instance_name,
+      CASE WHEN COALESCE(wim.from_me, false) THEN 'OUTBOUND' ELSE 'INBOUND' END AS direction,
+      COALESCE(wim.from_me, false) AS from_me,
+      COALESCE(wpp.display_name, wim.participant_name, wim.sender_name) AS sender_name,
+      wim.participant_jid AS sender_jid,
+      COALESCE(wpp.profile_picture_url, wim.sender_profile_picture_url) AS sender_pic_url,
+      COALESCE(wim.message_text, '') AS content,
+      wim.raw_payload AS media_json,
+      'incoming' AS source,
+      wim.created_at AS created_at
+    FROM whatsapp_incoming_messages wim
+    JOIN deals d ON d.whatsapp_jid = wim.participant_jid
+    LEFT JOIN LATERAL (
+      SELECT wpp_inner.display_name, wpp_inner.profile_picture_url
+      FROM whatsapp_participant_profiles wpp_inner
+      WHERE wpp_inner.participant_jid = wim.participant_jid
+        AND (wpp_inner.instance_name = COALESCE(wim.instance_name, '') OR wpp_inner.instance_name = '')
+      ORDER BY
+        CASE WHEN wpp_inner.instance_name = COALESCE(wim.instance_name, '') THEN 0 ELSE 1 END,
+        wpp_inner.updated_at DESC
+      LIMIT 1
+    ) wpp ON true
+    WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+    ON CONFLICT (deal_id, message_id, source) DO UPDATE SET
+      content        = EXCLUDED.content,
+      sender_name    = COALESCE(EXCLUDED.sender_name, whatsapp_monitor_messages.sender_name),
+      sender_pic_url = COALESCE(EXCLUDED.sender_pic_url, whatsapp_monitor_messages.sender_pic_url),
+      media_json     = COALESCE(EXCLUDED.media_json, whatsapp_monitor_messages.media_json),
+      from_me        = EXCLUDED.from_me
+  `);
+  logger.info(`Completed incoming participant matches: ${incomingParticipantResult.rowCount} rows processed/inserted.`);
 
-  let totalProcessed = 0;
-  let totalSaved = 0;
+  // 4. Backfill from whatsapp_incoming_messages (Alias matches)
+  logger.info("Backfilling from whatsapp_incoming_messages (alias matches)...");
+  const incomingAliasResult = await pool.query(`
+    INSERT INTO whatsapp_monitor_messages (
+      deal_id, message_id, remote_jid, instance_name, direction, from_me,
+      sender_name, sender_jid, sender_pic_url, content, media_json, source, created_at
+    )
+    SELECT
+      d.id AS deal_id,
+      wim.message_id AS message_id,
+      d.whatsapp_jid AS remote_jid,
+      wim.instance_name AS instance_name,
+      CASE WHEN COALESCE(wim.from_me, false) THEN 'OUTBOUND' ELSE 'INBOUND' END AS direction,
+      COALESCE(wim.from_me, false) AS from_me,
+      COALESCE(wpp.display_name, wim.participant_name, wim.sender_name) AS sender_name,
+      wim.participant_jid AS sender_jid,
+      COALESCE(wpp.profile_picture_url, wim.sender_profile_picture_url) AS sender_pic_url,
+      COALESCE(wim.message_text, '') AS content,
+      wim.raw_payload AS media_json,
+      'incoming' AS source,
+      wim.created_at AS created_at
+    FROM whatsapp_incoming_messages wim
+    JOIN whatsapp_jid_aliases wja ON wja.alias_jid = wim.remote_jid OR wja.alias_jid = wim.participant_jid
+    JOIN deals d ON d.whatsapp_jid = wja.canonical_jid
+    LEFT JOIN LATERAL (
+      SELECT wpp_inner.display_name, wpp_inner.profile_picture_url
+      FROM whatsapp_participant_profiles wpp_inner
+      WHERE wpp_inner.participant_jid = wim.participant_jid
+        AND (wpp_inner.instance_name = COALESCE(wim.instance_name, '') OR wpp_inner.instance_name = '')
+      ORDER BY
+        CASE WHEN wpp_inner.instance_name = COALESCE(wim.instance_name, '') THEN 0 ELSE 1 END,
+        wpp_inner.updated_at DESC
+      LIMIT 1
+    ) wpp ON true
+    WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+    ON CONFLICT (deal_id, message_id, source) DO UPDATE SET
+      content        = EXCLUDED.content,
+      sender_name    = COALESCE(EXCLUDED.sender_name, whatsapp_monitor_messages.sender_name),
+      sender_pic_url = COALESCE(EXCLUDED.sender_pic_url, whatsapp_monitor_messages.sender_pic_url),
+      media_json     = COALESCE(EXCLUDED.media_json, whatsapp_monitor_messages.media_json),
+      from_me        = EXCLUDED.from_me
+  `);
+  logger.info(`Completed incoming alias matches: ${incomingAliasResult.rowCount} rows processed/inserted.`);
 
-  for (const deal of deals) {
-    logger.info(`Processing deal "${deal.title}" (${deal.id})...`);
-    let beforeCursor: string | undefined = undefined;
-    let dealMessagesCount = 0;
-
-    while (true) {
-      const detail = await getWhatsappMonitorConversation(deal.id, adminUser, {
-        limit: 100,
-        before: beforeCursor,
-      });
-
-      if (!detail.messages || detail.messages.length === 0) {
-        break;
-      }
-
-      for (const msg of detail.messages) {
-        // Flat message needs Evolution's message_id
-        const providerMessageId =
-          typeof msg.metadata.messageId === "string"
-            ? msg.metadata.messageId
-            : typeof msg.metadata.providerMessageId === "string"
-              ? msg.metadata.providerMessageId
-              : msg.id; // Fallback to normal msg.id if not found
-
-        // Determine source ('activity' vs 'incoming') by checking if msg.id exists in deal_activities
-        const activityCheck = await pool.query(
-          "SELECT 1 FROM deal_activities WHERE id = $1 LIMIT 1",
-          [msg.id]
-        );
-        const source = activityCheck.rowCount && activityCheck.rowCount > 0 ? "activity" : "incoming";
-
-        await recordMonitorMessage({
-          dealId: deal.id,
-          messageId: providerMessageId,
-          remoteJid: msg.remoteJid,
-          instanceName: detail.instanceName,
-          fromMe: msg.direction === "OUTBOUND",
-          senderName: msg.senderName,
-          senderJid: msg.senderJid,
-          senderPicUrl: msg.senderProfilePictureUrl,
-          content: msg.content,
-          mediaJson: msg.metadata,
-          source,
-          createdAt: msg.createdAt,
-        });
-        dealMessagesCount++;
-        totalSaved++;
-      }
-
-      if (!detail.pageInfo.hasPreviousPage || !detail.pageInfo.previousCursor) {
-        break;
-      }
-      beforeCursor = detail.pageInfo.previousCursor;
-    }
-
-    logger.info(`Saved ${dealMessagesCount} messages for deal "${deal.title}"`);
-    totalProcessed++;
-  }
-
-  logger.info(`Backfill completed. Processed ${totalProcessed} deals, saved ${totalSaved} messages.`);
+  logger.info("Optimized backfill completed successfully.");
 }
 
 main()
