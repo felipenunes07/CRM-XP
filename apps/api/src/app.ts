@@ -92,8 +92,9 @@ import {
 import { importHistoryFile } from "./modules/ingestion/historyImporter.js";
 import { syncOlistIncremental } from "./modules/ingestion/olistSyncService.js";
 import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
-import { login } from "./modules/platform/authService.js";
+import { login, verifyToken } from "./modules/platform/authService.js";
 import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
+import { subscribeMonitorMessages } from "./modules/whatsapp/whatsappMonitorBus.js";
 import {
   createAdminUser,
   createPasswordResetLink,
@@ -631,6 +632,41 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  // SSE stream for real-time WhatsApp monitor messages (Auth verified manually via query token)
+  app.get("/api/whatsapp-monitor/stream", async (request, response) => {
+    const token = typeof request.query.token === "string" ? request.query.token : "";
+    let user;
+    try {
+      user = await verifyToken(token);
+    } catch {
+      response.status(401).end();
+      return;
+    }
+
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no", // prevents buffering behind proxies like Nginx/EasyPanel
+    });
+
+    response.write(`event: ready\ndata: "ok"\n\n`);
+
+    const unsubscribe = subscribeMonitorMessages((msg) => {
+      response.write(`data: ${JSON.stringify(msg)}\n\n`);
+    });
+
+    const heartbeat = setInterval(() => {
+      response.write(`: ping\n\n`);
+    }, 25_000);
+
+    request.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      response.end();
+    });
   });
 
   app.use("/api", requireAuth);
