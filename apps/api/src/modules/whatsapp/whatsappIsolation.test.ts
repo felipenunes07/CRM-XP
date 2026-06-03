@@ -238,10 +238,12 @@ describe("whatsapp conversation isolation", () => {
     const incomingQuery = String(incomingCall![0]);
     const incomingParams = incomingCall![1];
 
-    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], ["5511999998888"], "amanda", 21]);
+    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda", 21]);
     expect(incomingQuery).toContain("wim_base.participant_jid = ANY($1::text[])");
     expect(incomingQuery).toContain("wim_base.remote_jid = ANY($1::text[])");
-    expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($3)");
+    expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)");
+    expect(incomingQuery).toContain("LIMIT $3");
+    expect(Array.from(new Set([...incomingQuery.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]))))).toEqual([1, 2, 3]);
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim_base\.instance_name,\s*''\)\s*=\s*''/);
   });
 

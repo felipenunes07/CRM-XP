@@ -35,7 +35,6 @@ import {
   mapWhatsappActivityToMessage,
   median,
   mergeWhatsappMonitorMessages,
-  whatsappJidDigits,
 } from "./whatsappMonitorCore.js";
 import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.js";
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
@@ -1389,14 +1388,7 @@ export async function getWhatsappMonitorConversation(
   let messages = activityMessages;
 
   if (conversation.remoteJid && remoteJidAliases.length) {
-    const remoteJidAliasDigits = Array.from(
-      new Set(
-        remoteJidAliases
-          .map((alias) => (alias.endsWith("@g.us") ? null : whatsappJidDigits(alias)))
-          .filter((digits): digits is string => Boolean(digits)),
-      ),
-    );
-    const incomingParams: unknown[] = [remoteJidAliases, remoteJidAliasDigits, conversation.instanceName || ""];
+    const incomingParams: unknown[] = [remoteJidAliases, conversation.instanceName || ""];
     const incomingCursorSql = messageCursorConditionSql("wim_base", cursor, mode, incomingParams);
     incomingParams.push(queryLimit);
     const incomingLimitParamIndex = incomingParams.length;
@@ -1420,7 +1412,7 @@ export async function getWhatsappMonitorConversation(
               SELECT 1 FROM unnest($1::text[]) AS alias_jid
               WHERE alias_jid LIKE '%@g.us'
             )
-            OR LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($3)
+            OR LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)
           )
           ${incomingCursorSql}
         ORDER BY wim_base.created_at ${orderDirection}, wim_base.id ${orderDirection}
