@@ -10,13 +10,18 @@ export const pool = new Pool({
   statement_timeout: 20_000,
 });
 
+// Pool isolado do monitor de WhatsApp. O ISOLAMENTO (que protege login/dashboard)
+// vem do pool ser separado e do limite de conexoes — NAO do statement_timeout.
+// O timeout de 8s era agressivo demais: matava agregacoes pesadas legitimas
+// (/agents, /conversations, /metrics) que levam >8s em producao, causando 500.
+// 30s da folga para essas queries completarem; o pool separado impede o cascata.
 export const whatsappMonitorPool = new Pool({
   connectionString: env.DATABASE_URL,
   max: 6,
   connectionTimeoutMillis: 8_000,
   idleTimeoutMillis: 30_000,
-  query_timeout: 8_000,
-  statement_timeout: 8_000,
+  query_timeout: 30_000,
+  statement_timeout: 30_000,
 });
 
 class MemoryRedis {
