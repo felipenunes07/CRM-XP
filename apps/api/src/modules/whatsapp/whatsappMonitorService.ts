@@ -2454,6 +2454,30 @@ export async function getWhatsappAgentActivityReport(
       params,
     );
 
+  if (process.env.NODE_ENV !== "test") {
+    try {
+      const lastUpdateRes = await pool.query(
+        `
+        SELECT MAX(updated_at) AS last_update
+        FROM whatsapp_activity_rollups
+        WHERE period_date = CURRENT_DATE
+        `
+      );
+      const lastUpdate = lastUpdateRes.rows[0]?.last_update;
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      if (!lastUpdate || new Date(lastUpdate) < fiveMinutesAgo) {
+        logger.info("proactively refreshing whatsapp activity rollups (data stale or missing for today)", {
+          lastUpdate,
+        });
+        await refreshWhatsappActivityRollups(days * 2);
+      }
+    } catch (error) {
+      logger.warn("failed to proactively refresh whatsapp activity rollups during report request", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const [allInstances, result] = await Promise.all([
     pool.query(`
       SELECT
