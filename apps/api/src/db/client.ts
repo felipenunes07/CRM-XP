@@ -4,6 +4,10 @@ import { env } from "../lib/env.js";
 
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  connectionTimeoutMillis: 5_000,
+  idleTimeoutMillis: 30_000,
+  query_timeout: 20_000,
+  statement_timeout: 20_000,
 });
 
 class MemoryRedis {

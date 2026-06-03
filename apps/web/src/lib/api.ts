@@ -77,6 +77,7 @@ export interface ChartAnnotation {
 import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+export const API_REQUEST_TIMEOUT_MS = 15_000;
 
 export interface PermissionDefinition {
   key: string;
@@ -112,31 +113,59 @@ export interface AdminUserInput {
   password?: string;
 }
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(options.headers ?? {}),
+function createRequestSignal(upstreamSignal?: AbortSignal | null) {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+
+  const abortFromUpstream = () => controller.abort();
+  upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      globalThis.clearTimeout(timeoutId);
+      upstreamSignal?.removeEventListener("abort", abortFromUpstream);
     },
-  });
+  };
+}
 
-  if (!response.ok) {
-    if (response.status === 401) {
-      import("./supabase").then(({ supabase }) => {
-        supabase.auth.signOut().catch(() => {});
-      }).catch(() => {});
+async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+  const { signal, cleanup } = createRequestSignal(options.signal);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      signal,
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(options.headers ?? {}),
+      },
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        import("./supabase").then(({ supabase }) => {
+          supabase.auth.signOut().catch(() => {});
+        }).catch(() => {});
+      }
+      const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };
+      throw new Error(payload.message ?? "Request failed");
     }
-    const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };
-    throw new Error(payload.message ?? "Request failed");
-  }
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
+    if (response.status === 204) {
+      return undefined as T;
+    }
 
-  return response.json() as Promise<T>;
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError" && !options.signal?.aborted) {
+      throw new Error("Tempo limite excedido ao conectar com a API");
+    }
+    throw error;
+  } finally {
+    cleanup();
+  }
 }
 
 export const api = {
