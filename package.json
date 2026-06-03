@@ -17,6 +17,8 @@
     "start:worker": "npm run start:worker -w @olist-crm/api",
     "migrate": "npm run migrate -w @olist-crm/api",
     "seed:admin": "npm run seed:admin -w @olist-crm/api",
+    "repair:whatsapp-identity": "npm run repair:whatsapp-identity -w @olist-crm/api",
+    "backfill:monitor-messages": "npm run backfill:monitor-messages -w @olist-crm/api",
     "test": "npm run test -w @olist-crm/shared && npm run test -w @olist-crm/web",
     "test:legacy-api": "npm run test -w @olist-crm/api",
     "lint": "npm run lint -w @olist-crm/web",

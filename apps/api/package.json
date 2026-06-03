@@ -16,6 +16,7 @@
     "import:supabase:2026": "tsx src/scripts/importSupabase2026.ts",
     "whatsapp:rollups": "tsx src/scripts/refreshWhatsappActivityRollups.ts",
     "repair:whatsapp-identity": "tsx src/scripts/repairWhatsappIdentity.ts",
+    "backfill:monitor-messages": "tsx src/scripts/backfillMonitorMessages.ts",
     "events:reclassify": "tsx src/scripts/reclassifyMessageEvents.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
