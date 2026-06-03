@@ -11,7 +11,7 @@ import type {
   WhatsappMonitorMetrics,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
-import { pool, redis } from "../../db/client.js";
+import { whatsappMonitorPool as pool, redis } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";

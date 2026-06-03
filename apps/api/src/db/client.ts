@@ -10,6 +10,15 @@ export const pool = new Pool({
   statement_timeout: 20_000,
 });
 
+export const whatsappMonitorPool = new Pool({
+  connectionString: env.DATABASE_URL,
+  max: 6,
+  connectionTimeoutMillis: 8_000,
+  idleTimeoutMillis: 30_000,
+  query_timeout: 8_000,
+  statement_timeout: 8_000,
+});
+
 class MemoryRedis {
   private store = new Map<string, string>();
   private timeouts = new Map<string, NodeJS.Timeout>();

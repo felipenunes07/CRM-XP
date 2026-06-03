@@ -16,6 +16,9 @@ vi.mock("../../db/client.js", () => ({
   pool: {
     query: mocks.query,
   },
+  whatsappMonitorPool: {
+    query: mocks.query,
+  },
   redis: {
     get: mocks.redisGet,
     set: mocks.redisSet,
