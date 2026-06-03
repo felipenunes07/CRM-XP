@@ -17,7 +17,13 @@ vi.mock("../../db/client.js", () => ({
     query: mocks.query,
   },
   whatsappMonitorPool: {
-    query: mocks.query,
+    query: (sql: unknown, params: unknown) => {
+      const sqlStr = String(sql ?? "");
+      if (sqlStr.includes("FROM whatsapp_monitor_messages")) {
+        return Promise.resolve({ rows: [] });
+      }
+      return mocks.query(sql, params);
+    },
   },
   redis: {
     get: mocks.redisGet,
