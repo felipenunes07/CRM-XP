@@ -5,6 +5,7 @@ import type {
   WhatsappAgentActivityConversation,
   WhatsappAgentActivityDailyPoint,
   WhatsappAgentActivityReport,
+  WhatsappAgentActivitySummary,
 } from "@olist-crm/shared";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Search, Smartphone, TrendingDown, TrendingUp, Users, UserCheck, Calendar, Copy, Check, ChevronDown, ChevronUp, Award, ShoppingBag, DollarSign, Package } from "lucide-react";
@@ -240,6 +241,103 @@ function buildDailySeries(report: WhatsappAgentActivityReport, cells: WhatsappAg
   });
 }
 
+function cellHasActivity(cell: WhatsappAgentActivityCell) {
+  return (cell.sentMessages || 0) > 0 || (cell.receivedMessages || 0) > 0;
+}
+
+function reportHasActivityForDate(report: WhatsappAgentActivityReport, date: string) {
+  return report.hourlyCells.some((cell) => cell.date === date && cellHasActivity(cell));
+}
+
+function latestIsoDate(left: string | null | undefined, right: string | null | undefined) {
+  if (!left) return right ?? null;
+  if (!right) return left;
+  return new Date(right).getTime() > new Date(left).getTime() ? right : left;
+}
+
+function mergeCurrentDayActivityReport(
+  report: WhatsappAgentActivityReport,
+  currentDayReport: WhatsappAgentActivityReport,
+) {
+  const currentDate = report.period.endDate;
+  if (currentDayReport.period.endDate !== currentDate || !reportHasActivityForDate(currentDayReport, currentDate)) {
+    return report;
+  }
+
+  const currentDayCells = currentDayReport.hourlyCells.filter((cell) => cell.date === currentDate);
+  const mergedCells = [
+    ...report.hourlyCells.filter((cell) => cell.date !== currentDate),
+    ...currentDayCells,
+  ].sort((left, right) =>
+    left.date.localeCompare(right.date) ||
+    left.hour - right.hour ||
+    left.agentName.localeCompare(right.agentName)
+  );
+
+  const { conversations: _summaryConversations, ...summaryFromCells } = summarizeCells(mergedCells);
+  const agentMap = new Map<string, WhatsappAgentActivitySummary>();
+  for (const agent of report.agents) {
+    agentMap.set(agent.agentId, agent);
+  }
+  for (const agent of currentDayReport.agents) {
+    const existing = agentMap.get(agent.agentId);
+    agentMap.set(agent.agentId, {
+      ...agent,
+      ...existing,
+      instanceName: existing?.instanceName ?? agent.instanceName,
+      displayLabel: existing?.displayLabel ?? agent.displayLabel,
+      phoneNumber: existing?.phoneNumber ?? agent.phoneNumber,
+      profilePictureUrl: existing?.profilePictureUrl ?? agent.profilePictureUrl,
+      lastMessageAt: latestIsoDate(existing?.lastMessageAt, agent.lastMessageAt),
+    });
+  }
+
+  const agents = Array.from(agentMap.values()).map((agent) => {
+    const agentCells = mergedCells.filter((cell) => cell.agentId === agent.agentId);
+    const { conversations: _agentConversations, ...agentSummary } = summarizeCells(agentCells);
+    const activeHours = new Set(
+      agentCells
+        .filter(cellHasActivity)
+        .map((cell) => `${cell.date}:${cell.hour}`),
+    ).size;
+
+    return {
+      ...agent,
+      ...agentSummary,
+      activeHours,
+    };
+  }).sort((left, right) =>
+    (right.sentMessages + right.receivedMessages) - (left.sentMessages + left.receivedMessages) ||
+    left.agentName.localeCompare(right.agentName)
+  );
+
+  return {
+    ...report,
+    summary: {
+      ...report.summary,
+      ...summaryFromCells,
+      activeAgents: agents.filter((agent) => (agent.sentMessages || 0) > 0 || (agent.receivedMessages || 0) > 0).length,
+    },
+    agents,
+    dailySeries: buildDailySeries(report, mergedCells),
+    hourlyCells: mergedCells,
+  };
+}
+
+async function loadWhatsappActivityReport(token: string, days: ActivityWindowDays) {
+  const report = await api.whatsappAgentActivityReport(token, { days });
+  if (days === 1 || reportHasActivityForDate(report, report.period.endDate)) {
+    return report;
+  }
+
+  try {
+    const currentDayReport = await api.whatsappAgentActivityReport(token, { days: 1 });
+    return mergeCurrentDayActivityReport(report, currentDayReport);
+  } catch {
+    return report;
+  }
+}
+
 function heatLevel(value: number, max: number) {
   if (!value) return 0;
   const ratio = value / Math.max(1, max);
@@ -376,7 +474,7 @@ export function WhatsappActivityPage() {
 
   const reportQuery = useQuery({
     queryKey: ["whatsapp-agent-activity-report", days],
-    queryFn: () => api.whatsappAgentActivityReport(token!, { days }),
+    queryFn: () => loadWhatsappActivityReport(token!, days),
     enabled: Boolean(token),
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
