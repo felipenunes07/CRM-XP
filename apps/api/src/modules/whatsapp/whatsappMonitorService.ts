@@ -3124,19 +3124,25 @@ export async function getWhatsappDailySummaryReport(
     [dateStr]
   );
 
-  // 4. Query Chat Activities for the day (Optimized: removed unindexed multi-OR outer joins and handles resolving in JS memory)
-  const where: string[] = [
+  // 4. Query Chat Activities for the day. The monitor table is the fresher
+  // source for group traffic; deal_activities remains as fallback for older rows.
+  const activityWhere: string[] = [
     "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
     "da.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
     "da.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
     monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
+  ];
+  const monitorWhere: string[] = [
+    "wmm.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
+    "wmm.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
+    monitorableWhatsappJidSql("COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)"),
   ];
 
   const params: any[] = [dateStr];
 
   if (user.role === "SELLER") {
     params.push(user.id, user.name);
-    where.push(`
+    activityWhere.push(`
       (
         da.actor_user_id = $2
         OR d.assigned_to = $2
@@ -3148,21 +3154,104 @@ export async function getWhatsappDailySummaryReport(
         )
       )
     `);
+    monitorWhere.push(`
+      (
+        d.assigned_to = $2
+        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($3)
+        OR EXISTS (
+          SELECT 1 FROM whatsapp_instances wi_sub
+          WHERE (
+              wi_sub.id = d.whatsapp_instance_id
+              OR LOWER(COALESCE(wi_sub.instance_name, '')) = LOWER(COALESCE(wmm.instance_name, ''))
+            )
+            AND (wi_sub.assigned_user_id = $2 OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3))
+        )
+      )
+    `);
   }
 
   const activitiesResult = await pool.query(
     `
+    WITH monitor_messages AS (
+      SELECT
+        0 AS source_priority,
+        wmm.id::text AS source_id,
+        wmm.deal_id,
+        COALESCE(NULLIF(wmm.message_id, ''), wmm.id::text) AS message_key,
+        CASE
+          WHEN COALESCE(wmm.from_me, false) OR UPPER(COALESCE(wmm.direction, '')) = 'OUTBOUND'
+            THEN 'WHATSAPP_SENT'
+          ELSE 'WHATSAPP_RECEIVED'
+        END AS activity_type,
+        NULL::uuid AS actor_user_id,
+        CASE
+          WHEN COALESCE(wmm.from_me, false) OR UPPER(COALESCE(wmm.direction, '')) = 'OUTBOUND'
+            THEN NULLIF(wmm.sender_name, '')
+          ELSE NULL
+        END AS actor_name,
+        COALESCE(wmm.media_json, '{}'::jsonb) AS metadata,
+        wmm.created_at,
+        NULL::jsonb AS incoming_raw_payload,
+        wmm.from_me AS incoming_from_me,
+        NULLIF(wmm.instance_name, '') AS metadata_instance,
+        COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', '')) AS metadata_remote_jid,
+        COALESCE(
+          NULLIF(wmm.media_json ->> 'chatDisplayName', ''),
+          NULLIF(wmm.media_json ->> 'groupName', '')
+        ) AS metadata_chat_display_name
+      FROM whatsapp_monitor_messages wmm
+      JOIN deals d ON d.id = wmm.deal_id
+      WHERE ${monitorWhere.join("\n        AND ")}
+    ),
+    activity_messages AS (
+      SELECT
+        1 AS source_priority,
+        da.id::text AS source_id,
+        da.deal_id,
+        COALESCE(NULLIF(da.metadata ->> 'messageId', ''), NULLIF(da.metadata ->> 'providerMessageId', ''), da.id::text) AS message_key,
+        da.activity_type,
+        da.actor_user_id,
+        da.actor_name,
+        COALESCE(da.metadata, '{}'::jsonb) AS metadata,
+        da.created_at,
+        NULL::jsonb AS incoming_raw_payload,
+        NULL::boolean AS incoming_from_me,
+        (da.metadata ->> 'instance')::text AS metadata_instance,
+        (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
+        (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name
+      FROM deal_activities da
+      JOIN deals d ON d.id = da.deal_id
+      WHERE ${activityWhere.join("\n        AND ")}
+    ),
+    source_messages AS (
+      SELECT * FROM monitor_messages
+      UNION ALL
+      SELECT * FROM activity_messages
+    ),
+    deduped_source AS (
+      SELECT *
+      FROM (
+        SELECT
+          source_messages.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY deal_id, message_key
+            ORDER BY source_priority ASC, created_at ASC, source_id ASC
+          ) AS source_rank
+        FROM source_messages
+      ) ranked_source
+      WHERE source_rank = 1
+    )
     SELECT
-      da.activity_type,
-      da.actor_user_id,
-      da.actor_name,
-      da.metadata,
-      da.created_at,
-      NULL AS incoming_raw_payload,
-      NULL AS incoming_from_me,
-      (da.metadata ->> 'instance')::text AS metadata_instance,
-      (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
-      (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
+      src.activity_type,
+      src.actor_user_id,
+      src.actor_name,
+      src.metadata,
+      src.created_at,
+      src.incoming_raw_payload,
+      src.incoming_from_me,
+      src.metadata_instance,
+      src.metadata_remote_jid,
+      src.metadata_chat_display_name,
       d.assigned_to,
       d.assigned_to_name,
       d.whatsapp_instance_id,
@@ -3170,12 +3259,11 @@ export async function getWhatsappDailySummaryReport(
       d.customer_display_name,
       d.title,
       COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS real_customer_name
-    FROM deal_activities da
-    JOIN deals d ON d.id = da.deal_id
+    FROM deduped_source src
+    JOIN deals d ON d.id = src.deal_id
     LEFT JOIN customers c ON c.id = d.customer_id
     LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
-    WHERE ${where.join("\n      AND ")}
-    ORDER BY da.created_at ASC, da.id ASC
+    ORDER BY src.created_at ASC, src.source_id ASC
     `,
     params
   );

@@ -338,6 +338,140 @@ async function loadWhatsappActivityReport(token: string, days: ActivityWindowDay
   }
 }
 
+function localTodayKeySaoPaulo() {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+function normalizeDailyAgentKey(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .replace(/^xp\s+/i, "")
+    .trim();
+}
+
+function mergeDailySummaryGroupFallback(data: any, report?: WhatsappAgentActivityReport) {
+  if (!data || !report || report.period.endDate !== data.date) {
+    return data;
+  }
+
+  const hasBackendGroups = data.agents?.some((agent: any) =>
+    Number(agent.groupChatsCount ?? 0) > 0 ||
+    agent.attendedGroupClients?.some((group: any) => Number(group.sent ?? 0) > 0)
+  );
+  if (hasBackendGroups) {
+    return data;
+  }
+
+  const fallbackByAgent = new Map<string, {
+    agentId: string;
+    agentName: string;
+    groups: Map<string, { name: string; jid: string; sent: number; received: number }>;
+  }>();
+
+  for (const cell of report.hourlyCells) {
+    for (const conversation of cell.conversations || []) {
+      if (conversation.kind === "private" || conversation.kind === "internal_group") {
+        continue;
+      }
+
+      const key = normalizeDailyAgentKey(cell.agentName);
+      const agentFallback =
+        fallbackByAgent.get(key) ??
+        {
+          agentId: cell.agentId,
+          agentName: cell.agentName.replace(/\s*\([^)]*\)\s*$/, ""),
+          groups: new Map<string, { name: string; jid: string; sent: number; received: number }>(),
+        };
+      const current =
+        agentFallback.groups.get(conversation.remoteJid) ??
+        {
+          name: conversation.name,
+          jid: conversation.remoteJid,
+          sent: 0,
+          received: 0,
+        };
+      current.name = current.name || conversation.name;
+      current.sent += Number(conversation.sentMessages ?? 0);
+      current.received += Number(conversation.receivedMessages ?? 0);
+      agentFallback.groups.set(conversation.remoteJid, current);
+      fallbackByAgent.set(key, agentFallback);
+    }
+  }
+
+  if (!Array.from(fallbackByAgent.values()).some((agent) => Array.from(agent.groups.values()).some((group) => group.sent > 0))) {
+    return data;
+  }
+
+  const matchedKeys = new Set<string>();
+  const agents = (data.agents ?? []).map((agent: any) => {
+    const key = normalizeDailyAgentKey(agent.agentName);
+    const fallback = fallbackByAgent.get(key);
+    if (!fallback) {
+      return agent;
+    }
+
+    matchedKeys.add(key);
+    const existingGroups = new Map<string, { name: string; jid: string; sent: number; received: number }>();
+    for (const group of agent.attendedGroupClients ?? []) {
+      existingGroups.set(group.jid, {
+        name: group.name,
+        jid: group.jid,
+        sent: Number(group.sent ?? 0),
+        received: Number(group.received ?? 0),
+      });
+    }
+    for (const group of fallback.groups.values()) {
+      const current = existingGroups.get(group.jid);
+      existingGroups.set(group.jid, current
+        ? {
+            ...current,
+            sent: Math.max(current.sent, group.sent),
+            received: Math.max(current.received, group.received),
+          }
+        : group
+      );
+    }
+    const attendedGroupClients = Array.from(existingGroups.values()).filter((group) => group.sent > 0);
+
+    return {
+      ...agent,
+      groupChatsCount: attendedGroupClients.length,
+      attendedGroupClients,
+    };
+  });
+
+  for (const [key, fallback] of fallbackByAgent.entries()) {
+    if (matchedKeys.has(key)) {
+      continue;
+    }
+    const attendedGroupClients = Array.from(fallback.groups.values()).filter((group) => group.sent > 0);
+    if (!attendedGroupClients.length) {
+      continue;
+    }
+    agents.push({
+      agentId: fallback.agentId,
+      agentName: fallback.agentName,
+      sentMessages: 0,
+      receivedMessages: 0,
+      privateChatsCount: 0,
+      groupChatsCount: attendedGroupClients.length,
+      initiatedCount: 0,
+      screensSold: 0,
+      ordersCount: 0,
+      revenue: 0,
+      attendedPrivateClients: [],
+      attendedGroupClients,
+      averageFirstResponseSeconds: null,
+    });
+  }
+
+  return {
+    ...data,
+    agents,
+  };
+}
+
 function heatLevel(value: number, max: number) {
   if (!value) return 0;
   const ratio = value / Math.max(1, max);
@@ -1178,7 +1312,7 @@ export function WhatsappActivityPage() {
 
 function DailySummaryTab({ token }: { token: string }) {
   const [selectedDate, setSelectedDate] = useState(() => {
-    return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
+    return localTodayKeySaoPaulo();
   });
   const [copySuccess, setCopySuccess] = useState(false);
   const [expandedAgents, setExpandedAgents] = useState<Record<string, boolean>>({});
@@ -1187,6 +1321,15 @@ function DailySummaryTab({ token }: { token: string }) {
     queryKey: ["whatsapp-daily-summary", selectedDate],
     queryFn: () => api.whatsappDailySummary(token, selectedDate),
     enabled: Boolean(token),
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  const groupFallbackQuery = useQuery({
+    queryKey: ["whatsapp-daily-summary-group-fallback", selectedDate],
+    queryFn: () => api.whatsappAgentActivityReport(token, { days: 1 }),
+    enabled: Boolean(token) && selectedDate === localTodayKeySaoPaulo(),
     refetchInterval: 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnMount: true,
@@ -1207,7 +1350,10 @@ function DailySummaryTab({ token }: { token: string }) {
 
   const [isDetailed, setIsDetailed] = useState(false);
   const [useUniqueMessages, setUseUniqueMessages] = useState(false);
-  const data = summaryQuery.data;
+  const data = useMemo(
+    () => mergeDailySummaryGroupFallback(summaryQuery.data, groupFallbackQuery.data),
+    [summaryQuery.data, groupFallbackQuery.data],
+  );
 
   const [selectedAgents, setSelectedAgents] = useState<Record<string, boolean>>({});
 

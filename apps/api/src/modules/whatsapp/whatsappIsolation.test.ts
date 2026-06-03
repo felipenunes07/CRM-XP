@@ -62,6 +62,7 @@ import { handleEvolutionWebhook } from "./evolutionWebhook.js";
 import {
   classifyWhatsappReportConversation,
   getWhatsappAgentActivityReport,
+  getWhatsappDailySummaryReport,
   getWhatsappMonitorConversation,
   isInternalWhatsappReportChat,
   listWhatsappMonitorConversations,
@@ -316,6 +317,96 @@ describe("whatsapp conversation isolation", () => {
     expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
     expect(rollupQueryCount).toBe(2);
     expect(report.hourlyCells.some((cell) => cell.date === today && cell.sentMessages === 2)).toBe(true);
+  });
+
+  it("counts group attendances in the formatted daily WhatsApp summary", async () => {
+    const date = localTodayKey();
+    mocks.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            activity_type: "WHATSAPP_RECEIVED",
+            actor_user_id: null,
+            actor_name: null,
+            metadata: {
+              remoteJid: "120363371542185615@g.us",
+              chatDisplayName: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+              instance: "thais",
+              fromMe: false,
+            },
+            created_at: `${date}T12:00:00.000Z`,
+            incoming_raw_payload: null,
+            incoming_from_me: false,
+            metadata_instance: "thais",
+            metadata_remote_jid: "120363371542185615@g.us",
+            metadata_chat_display_name: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+            assigned_to: "user-thais",
+            assigned_to_name: "Thais",
+            whatsapp_instance_id: "instance-thais",
+            whatsapp_jid: "120363371542185615@g.us",
+            customer_display_name: null,
+            title: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+            real_customer_name: null,
+          },
+          {
+            activity_type: "WHATSAPP_SENT",
+            actor_user_id: null,
+            actor_name: "Thais",
+            metadata: {
+              remoteJid: "120363371542185615@g.us",
+              chatDisplayName: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+              instance: "thais",
+              fromMe: true,
+            },
+            created_at: `${date}T12:01:00.000Z`,
+            incoming_raw_payload: null,
+            incoming_from_me: true,
+            metadata_instance: "thais",
+            metadata_remote_jid: "120363371542185615@g.us",
+            metadata_chat_display_name: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+            assigned_to: "user-thais",
+            assigned_to_name: "Thais",
+            whatsapp_instance_id: "instance-thais",
+            whatsapp_jid: "120363371542185615@g.us",
+            customer_display_name: null,
+            title: "CL1049 - MINAS CELL / XP EXPOR TELAS",
+            real_customer_name: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: "user-thais", name: "Thais" }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-thais",
+            instance_name: "thais",
+            display_label: "Thais",
+            assigned_user_id: "user-thais",
+            assigned_user_name: "Thais",
+          },
+        ],
+      });
+
+    const summary = await getWhatsappDailySummaryReport({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any, date);
+
+    const activitiesSql = String(mocks.query.mock.calls[3]?.[0] ?? "");
+    expect(activitiesSql).toContain("FROM whatsapp_monitor_messages wmm");
+    expect(summary.totalMessagesSent).toBe(1);
+    expect(summary.totalMessagesReceived).toBe(1);
+    expect(summary.agents[0]).toMatchObject({
+      agentName: "Thais",
+      groupChatsCount: 1,
+    });
+    expect(summary.formattedText).toContain("Atendimentos em Grupo: 1");
+    expect(summary.formattedText).toContain("CL1049 - MINAS CELL / XP EXPOR TELAS (Grupo)");
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {
