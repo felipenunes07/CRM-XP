@@ -39,6 +39,7 @@ import {
 import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.js";
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
 import { createEventFromMessage } from "../events/eventsService.js";
+import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
 
 interface ConversationFilters {
   instanceId?: string;
@@ -1324,6 +1325,98 @@ export async function getWhatsappMonitorConversation(
     WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT,
   );
   const queryLimit = messageLimit + 1;
+
+  // Fast read path with flat table and automated fallback
+  if (process.env.WHATSAPP_FAST_READ !== "off") {
+    let cursorSql = "";
+    const fastParams: unknown[] = [linkedDealIds, queryLimit];
+
+    if (cursor) {
+      fastParams.push(cursor.createdAt, cursor.id);
+      const timeIdx = 3;
+      const idIdx = 4;
+      if (mode === "before") {
+        cursorSql = `AND (created_at < $${timeIdx}::timestamptz OR (created_at = $${timeIdx}::timestamptz AND id < $${idIdx}::uuid))`;
+      } else if (mode === "after") {
+        cursorSql = `AND (created_at > $${timeIdx}::timestamptz OR (created_at = $${timeIdx}::timestamptz AND id > $${idIdx}::uuid))`;
+      }
+    }
+
+    const orderDir = mode === "after" ? "ASC" : "DESC";
+
+    const fast = await pool.query(
+      `
+      SELECT id, message_id, direction, from_me, sender_name, sender_jid,
+             sender_pic_url, content, media_json, source, created_at
+      FROM whatsapp_monitor_messages
+      WHERE deal_id = ANY($1::uuid[])
+        AND created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${cursorSql}
+      ORDER BY created_at ${orderDir}, id ${orderDir}
+      LIMIT $2
+      `,
+      fastParams,
+    );
+
+    if (fast.rows.length > 0) {
+      let rows = fast.rows;
+      if (mode !== "after") {
+        rows = [...rows].reverse();
+      }
+
+      const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
+      const fastMessages = rows.map((row): WhatsappMonitorMessage => {
+        const mediaJson = row.media_json && typeof row.media_json === "object" ? (row.media_json as Record<string, unknown>) : {};
+        const content = String(row.content ?? "");
+        const isGroup = Boolean(row.remote_jid?.endsWith("@g.us"));
+        const msgId = String(row.id);
+        const createdAtIso = isoDate(row.created_at);
+
+        sourceByMessageId.set(msgId, {
+          createdAt: createdAtIso,
+          id: msgId,
+          source: row.source as "activity" | "incoming",
+        });
+
+        return {
+          id: msgId,
+          dealId,
+          direction: row.direction as "INBOUND" | "OUTBOUND",
+          senderName: row.sender_name ? String(row.sender_name) : null,
+          senderJid: row.sender_jid ? String(row.sender_jid) : null,
+          senderProfilePictureUrl: row.sender_pic_url ? String(row.sender_pic_url) : null,
+          content,
+          createdAt: createdAtIso,
+          remoteJid: row.remote_jid ? String(row.remote_jid) : null,
+          isGroup,
+          metadata: {
+            ...mediaJson,
+            messageId: row.message_id,
+          },
+          risk: detectWhatsappMessageRisk(content),
+        };
+      });
+
+      const visibleMessages = mode === "after"
+        ? fastMessages.slice(0, messageLimit)
+        : fastMessages.slice(-messageLimit);
+      const oldestMessage = visibleMessages[0];
+      const newestMessage = visibleMessages.at(-1);
+
+      return {
+        ...conversation,
+        messages: visibleMessages,
+        pageInfo: {
+          hasPreviousPage: mode === "after" ? false : fastMessages.length > messageLimit,
+          previousCursor: oldestMessage ? messageCursorFor(oldestMessage, sourceByMessageId) : null,
+          hasNextPage: mode === "after" ? fastMessages.length > messageLimit : false,
+          nextCursor: newestMessage ? messageCursorFor(newestMessage, sourceByMessageId) : null,
+          limit: messageLimit,
+        },
+      };
+    }
+  }
+
   const orderDirection = mode === "after" ? "ASC" : "DESC";
   const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
 
@@ -1714,6 +1807,20 @@ export async function sendWhatsappMonitorReply(
   });
 
   await Promise.all([
+    recordMonitorMessage({
+      dealId,
+      messageId: providerMessageId,
+      remoteJid: context.remoteJid,
+      instanceName: context.evolution?.instanceName || "WhatsApp",
+      fromMe: true,
+      senderName: user.name,
+      senderJid: null,
+      senderPicUrl: null,
+      content: text,
+      mediaJson: null,
+      source: "activity",
+      createdAt,
+    }),
     pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),
     pool.query(
       `
@@ -1855,6 +1962,23 @@ export async function sendWhatsappMonitorMediaReply(
   });
 
   await Promise.all([
+    recordMonitorMessage({
+      dealId,
+      messageId: providerMessageId,
+      remoteJid: context.remoteJid,
+      instanceName: context.evolution?.instanceName || "WhatsApp",
+      fromMe: true,
+      senderName: user.name,
+      senderJid: null,
+      senderPicUrl: null,
+      content: input.caption || (input.fileName ? `Arquivo: ${input.fileName}` : `Midia enviada (${input.mediaType})`),
+      mediaJson: {
+        mediaType: input.mediaType,
+        fileName: input.fileName,
+      },
+      source: "activity",
+      createdAt,
+    }),
     pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]),
     pool.query(
       `

@@ -23,6 +23,7 @@ import {
 import { detectWhatsappMessageRisk } from "./whatsappMonitorCore.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 import { WhatsappMonitorMessage } from "@olist-crm/shared";
+import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
 
 /**
  * Handles MESSAGES_UPSERT events from Evolution API webhook.
@@ -756,8 +757,10 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         ],
       );
 
+      let dealId: string | null = null;
+
       if (dealMatch.rows[0]) {
-        const dealId = String(dealMatch.rows[0].id);
+        dealId = String(dealMatch.rows[0].id);
         const currentDealJid = dealMatch.rows[0].whatsapp_jid;
         await upsertWhatsappJidAliases({
           instanceName,
@@ -858,10 +861,11 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
               instanceDetails?.assignedUserName ?? null
             ],
           );
-          const dealId = newDeal.rows[0].id;
+          const newDealId = String(newDeal.rows[0].id);
+          dealId = newDealId;
 
           await insertDealActivity({
-            dealId,
+            dealId: newDealId,
             activityType,
             actorUserId,
             actorName,
@@ -873,7 +877,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           // Messaging Intelligence: Detect and create event for new deal
           const monitorMessage: WhatsappMonitorMessage = {
             id: String(messageId),
-            dealId,
+            dealId: newDealId,
             direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
             senderName: activitySenderName,
             senderJid: activitySenderJid,
@@ -886,15 +890,32 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             risk: detectWhatsappMessageRisk(messageContent),
           };
 
-          createEventFromMessage(monitorMessage, dealId).catch((err) => {
+          createEventFromMessage(monitorMessage, newDealId).catch((err) => {
             logger.warn("failed to create message event for new deal from webhook", {
-              dealId,
+              dealId: newDealId,
               messageId,
               error: err.message,
             });
           });
-          logger.info("evolution webhook auto-created deal", { dealId, remoteJid: resolvedRemoteJid });
+          logger.info("evolution webhook auto-created deal", { dealId: newDealId, remoteJid: resolvedRemoteJid });
         }
+      }
+
+      if (dealId) {
+        await recordMonitorMessage({
+          dealId,
+          messageId,
+          remoteJid: resolvedRemoteJid,
+          instanceName,
+          fromMe: isFromMe,
+          senderName: activitySenderName ?? senderName,
+          senderJid: activitySenderJid,
+          senderPicUrl: senderProfilePictureUrl,
+          content: messageContent,
+          mediaJson: media ?? null,
+          source: "incoming",
+          createdAt: context.createdAt,
+        });
       }
 
       // Update status of the webhook event to processed
