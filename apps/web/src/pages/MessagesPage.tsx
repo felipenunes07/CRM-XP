@@ -345,7 +345,7 @@ function ConversationRow({
   );
 }
 
-function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMessage; showSender: boolean }) {
+function ChatMessageBubble({ message, showSender, onImageClick }: { message: WhatsappMonitorMessage; showSender: boolean; onImageClick?: (url: string) => void }) {
   const media = messageMedia(message);
   const contact = messageContact(message);
   const fileName = media?.fileName ?? attachmentName(message);
@@ -374,7 +374,13 @@ function ChatMessageBubble({ message, showSender }: { message: WhatsappMonitorMe
             </div>
           ) : null}
           {media?.mediaType === "image" && media.src ? (
-            <img className="wa-media-image" src={media.src} alt={fileName ?? "Imagem recebida"} loading="lazy" />
+            <img
+              className="wa-media-image"
+              src={media.src}
+              alt={fileName ?? "Imagem recebida"}
+              loading="lazy"
+              onClick={() => onImageClick?.(media.src!)}
+            />
           ) : null}
           {media?.mediaType === "audio" && media.src ? (
             <audio className="wa-media-audio" controls preload="metadata" src={media.src} />
@@ -453,6 +459,7 @@ export function MessagesPage() {
   const urlDealId = searchParams.get("dealId");
 
   const [activeAgentId, setActiveAgentIdRaw] = useState<string>("all");
+  const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
 
   // When switching agents, clear the selected conversation so no chat is pre-selected
   const setActiveAgentId = (id: string) => {
@@ -1266,6 +1273,7 @@ export function MessagesPage() {
                           key={item.key}
                           message={item.message}
                           showSender={currentConversation.isGroup && item.message.direction === "INBOUND"}
+                          onImageClick={setZoomedImageUrl}
                         />
                       )
                     ))}
@@ -1397,6 +1405,24 @@ export function MessagesPage() {
           )}
         </main>
       </section>
+
+      {zoomedImageUrl ? (
+        <div className="wa-image-zoom-overlay" onClick={() => setZoomedImageUrl(null)}>
+          <button
+            type="button"
+            className="wa-image-zoom-close"
+            onClick={() => setZoomedImageUrl(null)}
+            aria-label="Fechar visualização"
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={zoomedImageUrl}
+            alt="Imagem expandida"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
