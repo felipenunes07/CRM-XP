@@ -1,10 +1,11 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MessageTemplate,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
+  WhatsappMonitorConversationsResponse,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
 import {
@@ -220,6 +221,19 @@ function isMediaPlaceholder(content: string) {
 
 const CONVERSATION_REFRESH_MS = 10000;
 const CHAT_REFRESH_MS = 5000;
+
+function conversationSortValue(conversation: WhatsappMonitorConversation) {
+  const parsed = Date.parse(conversation.lastMessageAt ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function sortConversationsByActivity(
+  a: WhatsappMonitorConversation,
+  b: WhatsappMonitorConversation,
+) {
+  const dateDiff = conversationSortValue(b) - conversationSortValue(a);
+  return dateDiff || b.id.localeCompare(a.id);
+}
 
 function SearchBox({
   value,
@@ -499,6 +513,7 @@ export function MessagesPage() {
   const chatBodyRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastScrolledConversationRef = useRef<string | null>(null);
+  const conversationSyncSinceRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -515,8 +530,16 @@ export function MessagesPage() {
     return () => clearTimeout(handler);
   }, [contactNameFilter, contactPhoneFilter]);
 
-  const conversationsQuery = useQuery({
-    queryKey: [
+  const agentsQuery = useQuery({
+    queryKey: ["whatsapp-monitor-agents"],
+    queryFn: () => api.whatsappMonitorAgents(token!),
+    enabled: Boolean(token),
+    refetchOnWindowFocus: false,
+    staleTime: 60 * 1000,
+  });
+
+  const conversationQueryKey = useMemo(
+    () => [
       "whatsapp-monitor-conversations",
       activeAgentId,
       debouncedConversationSearch,
@@ -525,32 +548,143 @@ export function MessagesPage() {
       periodFilter,
       statusFilter,
       agentInteractionFilter,
+    ] as const,
+    [
+      activeAgentId,
+      debouncedContactNameFilter,
+      debouncedContactPhoneFilter,
+      debouncedConversationSearch,
+      periodFilter,
+      statusFilter,
+      agentInteractionFilter,
     ],
-    queryFn: () =>
+  );
+
+  const conversationFilters = useMemo(
+    () => ({
+      instanceId: activeAgentId === "all" ? undefined : activeAgentId,
+      search: debouncedConversationSearch || undefined,
+      contactName: debouncedContactNameFilter || undefined,
+      contactPhone: debouncedContactPhoneFilter || undefined,
+      period: periodFilter === "all" ? undefined : periodFilter,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      agentInteraction:
+        activeAgentId !== "all" && agentInteractionFilter === "sent"
+          ? ("sent" as const)
+          : undefined,
+    }),
+    [
+      activeAgentId,
+      debouncedContactNameFilter,
+      debouncedContactPhoneFilter,
+      debouncedConversationSearch,
+      periodFilter,
+      statusFilter,
+      agentInteractionFilter,
+    ],
+  );
+
+  const conversationsQuery = useInfiniteQuery({
+    queryKey: conversationQueryKey,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
       api.whatsappMonitorConversations(token!, {
-        instanceId: activeAgentId === "all" ? undefined : activeAgentId,
-        search: debouncedConversationSearch || undefined,
-        contactName: debouncedContactNameFilter || undefined,
-        contactPhone: debouncedContactPhoneFilter || undefined,
-        period: periodFilter === "all" ? undefined : periodFilter,
-        status: statusFilter === "all" ? undefined : statusFilter,
-        agentInteraction:
-          activeAgentId !== "all" && agentInteractionFilter === "sent"
-            ? "sent"
-            : undefined,
+        ...conversationFilters,
+        limit: 25,
+        cursor: pageParam ?? undefined,
       }),
+    getNextPageParam: (lastPage) => lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.nextCursor ?? undefined) : undefined,
     enabled: Boolean(token),
-    refetchInterval: CONVERSATION_REFRESH_MS,
+    refetchInterval: false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
     staleTime: 5000,
-    placeholderData: (previousData) => previousData,
   });
 
-  const agents = conversationsQuery.data?.agents ?? [];
-  const conversations = conversationsQuery.data?.conversations ?? [];
+  useEffect(() => {
+    conversationSyncSinceRef.current = null;
+  }, [conversationQueryKey]);
+
+  useEffect(() => {
+    if (conversationsQuery.dataUpdatedAt && !conversationSyncSinceRef.current) {
+      conversationSyncSinceRef.current = new Date(Math.max(conversationsQuery.dataUpdatedAt - 1000, 0)).toISOString();
+    }
+  }, [conversationsQuery.dataUpdatedAt]);
+
+  useEffect(() => {
+    if (!token || !conversationsQuery.data) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      const updatedSince = conversationSyncSinceRef.current;
+      if (!updatedSince) {
+        return;
+      }
+
+      const requestStartedAt = new Date(Date.now() - 1000).toISOString();
+      api.whatsappMonitorConversations(token, {
+        ...conversationFilters,
+        limit: 100,
+        updatedSince,
+      }).then((updatedPage) => {
+        conversationSyncSinceRef.current = requestStartedAt;
+
+        if (!updatedPage.conversations.length) {
+          return;
+        }
+
+        queryClient.setQueryData(conversationQueryKey, (old: any) => {
+          if (!old?.pages?.length) {
+            return { pages: [updatedPage], pageParams: [null] };
+          }
+
+          const promotedIds = new Set(updatedPage.conversations.map((conversation) => conversation.id));
+          const pages = old.pages.map((page: WhatsappMonitorConversationsResponse) => ({
+            ...page,
+            conversations: page.conversations.filter((conversation) => !promotedIds.has(conversation.id)),
+          }));
+          const firstPage = pages[0] ?? updatedPage;
+          const seen = new Set<string>();
+          const promotedConversations = [...updatedPage.conversations].sort(sortConversationsByActivity);
+          const mergedFirstPage = [...promotedConversations, ...firstPage.conversations]
+            .sort(sortConversationsByActivity)
+            .filter((conversation) => {
+              if (seen.has(conversation.id)) {
+                return false;
+              }
+              seen.add(conversation.id);
+              return true;
+            });
+
+          return {
+            ...old,
+            pages: [
+              {
+                ...firstPage,
+                conversations: mergedFirstPage,
+              },
+              ...pages.slice(1),
+            ],
+          };
+        });
+
+        if (updatedPage.pageInfo.hasNextPage) {
+          queryClient.invalidateQueries({ queryKey: conversationQueryKey });
+        }
+      }).catch(() => undefined);
+    }, CONVERSATION_REFRESH_MS);
+
+    return () => window.clearInterval(interval);
+  }, [conversationFilters, conversationQueryKey, conversationsQuery.data, queryClient, token]);
+
+  const agents = agentsQuery.data ?? [];
+  const conversations = useMemo(
+    () => conversationsQuery.data?.pages.flatMap((page) => page.conversations) ?? [],
+    [conversationsQuery.data],
+  );
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
 
   useEffect(() => {
@@ -562,27 +696,6 @@ export function MessagesPage() {
   const filteredConversations = useMemo(() => {
     let result = conversations;
 
-    if (activeAgent) {
-      result = result.filter(
-        (conversation) => {
-          const clean = (name?: string | null) => (name ?? "").toLowerCase().replace(/^xp[-_\s]+/i, "").trim();
-          const cleanAgentName = clean(conversation.agentName);
-          const cleanDisplayLabel = clean(activeAgent.displayLabel);
-          const cleanInstanceName = clean(activeAgent.instanceName);
-          const cleanAssignedUserName = clean(activeAgent.assignedUserName);
-
-          return (
-            conversation.whatsappInstanceId === activeAgent.id ||
-            conversation.instanceName === activeAgent.instanceName ||
-            conversation.agentName === activeAgent.displayLabel ||
-            (cleanAgentName && cleanAgentName === cleanDisplayLabel) ||
-            (cleanAgentName && cleanAgentName === cleanInstanceName) ||
-            (cleanAgentName && cleanAgentName === cleanAssignedUserName)
-          );
-        }
-      );
-    }
-
     if (groupFilter === "groups") {
       return result.filter((conversation) => conversation.isGroup);
     }
@@ -592,7 +705,7 @@ export function MessagesPage() {
     }
 
     return result;
-  }, [conversations, groupFilter, activeAgent]);
+  }, [conversations, groupFilter]);
 
   const visibleAgents = useMemo(() => {
     const normalized = agentSearch.trim().toLocaleLowerCase("pt-BR");
@@ -638,11 +751,17 @@ export function MessagesPage() {
     }
   }, [selectedConversationId, queryClient]);
 
-  const conversationDetailQuery = useQuery({
+  const conversationDetailQuery = useInfiniteQuery({
     queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
-    queryFn: () => api.whatsappMonitorConversation(token!, selectedConversationId!),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) =>
+      api.whatsappMonitorConversation(token!, selectedConversationId!, {
+        limit: 20,
+        before: pageParam ?? undefined,
+      }),
+    getNextPageParam: (lastPage) => lastPage.pageInfo.hasPreviousPage ? (lastPage.pageInfo.previousCursor ?? undefined) : undefined,
     enabled: Boolean(token && selectedConversationId),
-    refetchInterval: selectedConversationId ? CHAT_REFRESH_MS : false,
+    refetchInterval: false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
     refetchOnReconnect: true,
@@ -662,7 +781,19 @@ export function MessagesPage() {
 
       // Optimistically update to the new value in all matching conversation queries
       queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old: any) => {
-        if (!old || !old.conversations) return old;
+        if (!old) return old;
+        if (old.pages) {
+          return {
+            ...old,
+            pages: old.pages.map((page: any) => ({
+              ...page,
+              conversations: page.conversations.map((c: any) =>
+                c.id === id ? { ...c, isUnread: unread, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c
+              ),
+            })),
+          };
+        }
+        if (!old.conversations) return old;
         return {
           ...old,
           conversations: old.conversations.map((c: any) => 
@@ -681,7 +812,10 @@ export function MessagesPage() {
       }
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+        pages: [updated],
+        pageParams: [null],
+      });
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
   });
@@ -691,7 +825,10 @@ export function MessagesPage() {
       api.sendWhatsappMonitorReply(token!, id, { messageText }),
     onSuccess: (updated) => {
       setReplyText("");
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+        pages: [updated],
+        pageParams: [null],
+      });
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
   });
@@ -709,17 +846,21 @@ export function MessagesPage() {
       fileName?: string;
     }) => api.sendWhatsappMonitorMediaReply(token!, id, { mediaBase64, mediaType, fileName }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+        pages: [updated],
+        pageParams: [null],
+      });
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
   });
 
   // Only use detail data when it actually belongs to the selected conversation
   // to prevent stale messages from a previous chat from appearing
-  const detail = conversationDetailQuery.data;
+  const detailPages = conversationDetailQuery.data?.pages ?? [];
+  const detail = detailPages[0];
   const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
   const currentConversation = detailMatchesSelection ? detail : selectedConversation;
-  const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
+  const messages = detailMatchesSelection ? [...detailPages].reverse().flatMap((page) => page.messages) : [];
   const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
   const lastMessageId = messages.at(-1)?.id ?? null;
   const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
@@ -731,6 +872,56 @@ export function MessagesPage() {
     groupFilter !== "all" ||
     agentInteractionFilter !== "all" ||
     statusFilter !== "all";
+
+  useEffect(() => {
+    const newestCursor = detail?.pageInfo.nextCursor;
+    if (!token || !selectedConversationId || !detailMatchesSelection || !newestCursor) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      api.whatsappMonitorConversation(token, selectedConversationId, {
+        after: newestCursor,
+        limit: 100,
+      }).then((updated) => {
+        if (!updated.messages.length) {
+          return;
+        }
+
+        queryClient.setQueryData(["whatsapp-monitor-conversation", selectedConversationId], (old: any) => {
+          if (!old?.pages?.length) {
+            return { pages: [updated], pageParams: [null] };
+          }
+
+          const [latestPage, ...olderPages] = old.pages;
+          const knownIds = new Set(latestPage.messages.map((message: WhatsappMonitorMessage) => message.id));
+          const freshMessages = updated.messages.filter((message) => !knownIds.has(message.id));
+          if (!freshMessages.length) {
+            return old;
+          }
+
+          return {
+            ...old,
+            pages: [
+              {
+                ...latestPage,
+                ...updated,
+                messages: [...latestPage.messages, ...freshMessages],
+                pageInfo: {
+                  ...latestPage.pageInfo,
+                  nextCursor: updated.pageInfo.nextCursor ?? latestPage.pageInfo.nextCursor,
+                },
+              },
+              ...olderPages,
+            ],
+          };
+        });
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+      }).catch(() => undefined);
+    }, CHAT_REFRESH_MS);
+
+    return () => window.clearInterval(interval);
+  }, [detail?.pageInfo.nextCursor, detailMatchesSelection, queryClient, selectedConversationId, token]);
 
   useEffect(() => {
     const element = chatBodyRef.current;
@@ -809,11 +1000,11 @@ export function MessagesPage() {
 
   const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
 
-  if (conversationsQuery.isLoading) {
+  if (agentsQuery.isLoading || conversationsQuery.isLoading) {
     return <div className="page-loading">Carregando monitoramento de WhatsApp...</div>;
   }
 
-  if (conversationsQuery.isError) {
+  if (agentsQuery.isError || conversationsQuery.isError) {
     return <div className="page-error">Nao foi possivel carregar as conversas monitoradas.</div>;
   }
 
@@ -956,6 +1147,19 @@ export function MessagesPage() {
               />
             ))}
 
+            {conversationsQuery.hasNextPage ? (
+              <div className="wa-load-more-row">
+                <button
+                  type="button"
+                  className="wa-load-more-button"
+                  disabled={conversationsQuery.isFetchingNextPage}
+                  onClick={() => void conversationsQuery.fetchNextPage()}
+                >
+                  {conversationsQuery.isFetchingNextPage ? "Carregando..." : "Carregar conversas antigas"}
+                </button>
+              </div>
+            ) : null}
+
             {!filteredConversations.length ? <div className="wa-empty-list">Nenhuma conversa encontrada.</div> : null}
           </div>
         </aside>
@@ -1039,19 +1243,33 @@ export function MessagesPage() {
                 {conversationDetailQuery.isLoading ? (
                   <div className="wa-empty-chat">Carregando conversa...</div>
                 ) : timelineItems.length ? (
-                  timelineItems.map((item) => (
-                    item.type === "date" ? (
-                      <div key={item.key} className="wa-date-separator">
-                        <span>{item.label}</span>
+                  <>
+                    {conversationDetailQuery.hasNextPage ? (
+                      <div className="wa-load-more-row chat">
+                        <button
+                          type="button"
+                          className="wa-load-more-button"
+                          disabled={conversationDetailQuery.isFetchingNextPage}
+                          onClick={() => void conversationDetailQuery.fetchNextPage()}
+                        >
+                          {conversationDetailQuery.isFetchingNextPage ? "Carregando..." : "Carregar mensagens antigas"}
+                        </button>
                       </div>
-                    ) : (
-                      <ChatMessageBubble
-                        key={item.key}
-                        message={item.message}
-                        showSender={currentConversation.isGroup && item.message.direction === "INBOUND"}
-                      />
-                    )
-                  ))
+                    ) : null}
+                    {timelineItems.map((item) => (
+                      item.type === "date" ? (
+                        <div key={item.key} className="wa-date-separator">
+                          <span>{item.label}</span>
+                        </div>
+                      ) : (
+                        <ChatMessageBubble
+                          key={item.key}
+                          message={item.message}
+                          showSender={currentConversation.isGroup && item.message.direction === "INBOUND"}
+                        />
+                      )
+                    ))}
+                  </>
                 ) : (
                   <div className="wa-empty-chat">Nenhuma mensagem registrada para esta conversa.</div>
                 )}

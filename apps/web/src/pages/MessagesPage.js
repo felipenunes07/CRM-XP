@@ -1,7 +1,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Contact, FileAudio, FileImage, FileText, FileVideo, Menu, MoreVertical, Paperclip, Search, Send, ShieldCheck, Smile, Sparkles, Users, X, } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -156,6 +156,14 @@ function isMediaPlaceholder(content) {
 }
 const CONVERSATION_REFRESH_MS = 10000;
 const CHAT_REFRESH_MS = 5000;
+function conversationSortValue(conversation) {
+    const parsed = Date.parse(conversation.lastMessageAt ?? "");
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+function sortConversationsByActivity(a, b) {
+    const dateDiff = conversationSortValue(b) - conversationSortValue(a);
+    return dateDiff || b.id.localeCompare(a.id);
+}
 function SearchBox({ value, onChange, placeholder, }) {
     return (_jsxs("label", { className: "whatsapp-search", children: [_jsx(Search, { size: 18 }), _jsx("input", { value: value, onChange: (event) => onChange(event.target.value), placeholder: placeholder })] }));
 }
@@ -265,6 +273,7 @@ export function MessagesPage() {
     const chatBodyRef = useRef(null);
     const stickToBottomRef = useRef(true);
     const lastScrolledConversationRef = useRef(null);
+    const conversationSyncSinceRef = useRef(null);
     useEffect(() => {
         const handler = setTimeout(() => {
             setDebouncedConversationSearch(conversationSearch);
@@ -278,39 +287,135 @@ export function MessagesPage() {
         }, 400);
         return () => clearTimeout(handler);
     }, [contactNameFilter, contactPhoneFilter]);
-    const conversationsQuery = useQuery({
-        queryKey: [
-            "whatsapp-monitor-conversations",
-            activeAgentId,
-            debouncedConversationSearch,
-            debouncedContactNameFilter,
-            debouncedContactPhoneFilter,
-            periodFilter,
-            statusFilter,
-            agentInteractionFilter,
-        ],
-        queryFn: () => api.whatsappMonitorConversations(token, {
-            instanceId: activeAgentId === "all" ? undefined : activeAgentId,
-            search: debouncedConversationSearch || undefined,
-            contactName: debouncedContactNameFilter || undefined,
-            contactPhone: debouncedContactPhoneFilter || undefined,
-            period: periodFilter === "all" ? undefined : periodFilter,
-            status: statusFilter === "all" ? undefined : statusFilter,
-            agentInteraction: activeAgentId !== "all" && agentInteractionFilter === "sent"
-                ? "sent"
-                : undefined,
-        }),
+    const agentsQuery = useQuery({
+        queryKey: ["whatsapp-monitor-agents"],
+        queryFn: () => api.whatsappMonitorAgents(token),
         enabled: Boolean(token),
-        refetchInterval: CONVERSATION_REFRESH_MS,
+        refetchOnWindowFocus: false,
+        staleTime: 60 * 1000,
+    });
+    const conversationQueryKey = useMemo(() => [
+        "whatsapp-monitor-conversations",
+        activeAgentId,
+        debouncedConversationSearch,
+        debouncedContactNameFilter,
+        debouncedContactPhoneFilter,
+        periodFilter,
+        statusFilter,
+        agentInteractionFilter,
+    ], [
+        activeAgentId,
+        debouncedContactNameFilter,
+        debouncedContactPhoneFilter,
+        debouncedConversationSearch,
+        periodFilter,
+        statusFilter,
+        agentInteractionFilter,
+    ]);
+    const conversationFilters = useMemo(() => ({
+        instanceId: activeAgentId === "all" ? undefined : activeAgentId,
+        search: debouncedConversationSearch || undefined,
+        contactName: debouncedContactNameFilter || undefined,
+        contactPhone: debouncedContactPhoneFilter || undefined,
+        period: periodFilter === "all" ? undefined : periodFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
+        agentInteraction: activeAgentId !== "all" && agentInteractionFilter === "sent"
+            ? "sent"
+            : undefined,
+    }), [
+        activeAgentId,
+        debouncedContactNameFilter,
+        debouncedContactPhoneFilter,
+        debouncedConversationSearch,
+        periodFilter,
+        statusFilter,
+        agentInteractionFilter,
+    ]);
+    const conversationsQuery = useInfiniteQuery({
+        queryKey: conversationQueryKey,
+        initialPageParam: null,
+        queryFn: ({ pageParam }) => api.whatsappMonitorConversations(token, {
+            ...conversationFilters,
+            limit: 25,
+            cursor: pageParam ?? undefined,
+        }),
+        getNextPageParam: (lastPage) => lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.nextCursor ?? undefined) : undefined,
+        enabled: Boolean(token),
+        refetchInterval: false,
         refetchIntervalInBackground: false,
         refetchOnMount: "always",
         refetchOnReconnect: true,
         refetchOnWindowFocus: false,
         staleTime: 5000,
-        placeholderData: (previousData) => previousData,
     });
-    const agents = conversationsQuery.data?.agents ?? [];
-    const conversations = conversationsQuery.data?.conversations ?? [];
+    useEffect(() => {
+        conversationSyncSinceRef.current = null;
+    }, [conversationQueryKey]);
+    useEffect(() => {
+        if (conversationsQuery.dataUpdatedAt && !conversationSyncSinceRef.current) {
+            conversationSyncSinceRef.current = new Date(Math.max(conversationsQuery.dataUpdatedAt - 1000, 0)).toISOString();
+        }
+    }, [conversationsQuery.dataUpdatedAt]);
+    useEffect(() => {
+        if (!token || !conversationsQuery.data) {
+            return;
+        }
+        const interval = window.setInterval(() => {
+            const updatedSince = conversationSyncSinceRef.current;
+            if (!updatedSince) {
+                return;
+            }
+            const requestStartedAt = new Date(Date.now() - 1000).toISOString();
+            api.whatsappMonitorConversations(token, {
+                ...conversationFilters,
+                limit: 100,
+                updatedSince,
+            }).then((updatedPage) => {
+                conversationSyncSinceRef.current = requestStartedAt;
+                if (!updatedPage.conversations.length) {
+                    return;
+                }
+                queryClient.setQueryData(conversationQueryKey, (old) => {
+                    if (!old?.pages?.length) {
+                        return { pages: [updatedPage], pageParams: [null] };
+                    }
+                    const promotedIds = new Set(updatedPage.conversations.map((conversation) => conversation.id));
+                    const pages = old.pages.map((page) => ({
+                        ...page,
+                        conversations: page.conversations.filter((conversation) => !promotedIds.has(conversation.id)),
+                    }));
+                    const firstPage = pages[0] ?? updatedPage;
+                    const seen = new Set();
+                    const promotedConversations = [...updatedPage.conversations].sort(sortConversationsByActivity);
+                    const mergedFirstPage = [...promotedConversations, ...firstPage.conversations]
+                        .sort(sortConversationsByActivity)
+                        .filter((conversation) => {
+                        if (seen.has(conversation.id)) {
+                            return false;
+                        }
+                        seen.add(conversation.id);
+                        return true;
+                    });
+                    return {
+                        ...old,
+                        pages: [
+                            {
+                                ...firstPage,
+                                conversations: mergedFirstPage,
+                            },
+                            ...pages.slice(1),
+                        ],
+                    };
+                });
+                if (updatedPage.pageInfo.hasNextPage) {
+                    queryClient.invalidateQueries({ queryKey: conversationQueryKey });
+                }
+            }).catch(() => undefined);
+        }, CONVERSATION_REFRESH_MS);
+        return () => window.clearInterval(interval);
+    }, [conversationFilters, conversationQueryKey, conversationsQuery.data, queryClient, token]);
+    const agents = agentsQuery.data ?? [];
+    const conversations = useMemo(() => conversationsQuery.data?.pages.flatMap((page) => page.conversations) ?? [], [conversationsQuery.data]);
     const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
     useEffect(() => {
         if (activeAgentId === "all") {
@@ -319,21 +424,6 @@ export function MessagesPage() {
     }, [activeAgentId]);
     const filteredConversations = useMemo(() => {
         let result = conversations;
-        if (activeAgent) {
-            result = result.filter((conversation) => {
-                const clean = (name) => (name ?? "").toLowerCase().replace(/^xp[-_\s]+/i, "").trim();
-                const cleanAgentName = clean(conversation.agentName);
-                const cleanDisplayLabel = clean(activeAgent.displayLabel);
-                const cleanInstanceName = clean(activeAgent.instanceName);
-                const cleanAssignedUserName = clean(activeAgent.assignedUserName);
-                return (conversation.whatsappInstanceId === activeAgent.id ||
-                    conversation.instanceName === activeAgent.instanceName ||
-                    conversation.agentName === activeAgent.displayLabel ||
-                    (cleanAgentName && cleanAgentName === cleanDisplayLabel) ||
-                    (cleanAgentName && cleanAgentName === cleanInstanceName) ||
-                    (cleanAgentName && cleanAgentName === cleanAssignedUserName));
-            });
-        }
         if (groupFilter === "groups") {
             return result.filter((conversation) => conversation.isGroup);
         }
@@ -341,7 +431,7 @@ export function MessagesPage() {
             return result.filter((conversation) => !conversation.isGroup);
         }
         return result;
-    }, [conversations, groupFilter, activeAgent]);
+    }, [conversations, groupFilter]);
     const visibleAgents = useMemo(() => {
         const normalized = agentSearch.trim().toLocaleLowerCase("pt-BR");
         if (!normalized) {
@@ -377,11 +467,16 @@ export function MessagesPage() {
             queryClient.removeQueries({ queryKey: ["whatsapp-monitor-conversation", prev] });
         }
     }, [selectedConversationId, queryClient]);
-    const conversationDetailQuery = useQuery({
+    const conversationDetailQuery = useInfiniteQuery({
         queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
-        queryFn: () => api.whatsappMonitorConversation(token, selectedConversationId),
+        initialPageParam: null,
+        queryFn: ({ pageParam }) => api.whatsappMonitorConversation(token, selectedConversationId, {
+            limit: 20,
+            before: pageParam ?? undefined,
+        }),
+        getNextPageParam: (lastPage) => lastPage.pageInfo.hasPreviousPage ? (lastPage.pageInfo.previousCursor ?? undefined) : undefined,
         enabled: Boolean(token && selectedConversationId),
-        refetchInterval: selectedConversationId ? CHAT_REFRESH_MS : false,
+        refetchInterval: false,
         refetchIntervalInBackground: false,
         refetchOnMount: "always",
         refetchOnReconnect: true,
@@ -397,7 +492,18 @@ export function MessagesPage() {
             const previousQueries = queryClient.getQueriesData({ queryKey: ["whatsapp-monitor-conversations"] });
             // Optimistically update to the new value in all matching conversation queries
             queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old) => {
-                if (!old || !old.conversations)
+                if (!old)
+                    return old;
+                if (old.pages) {
+                    return {
+                        ...old,
+                        pages: old.pages.map((page) => ({
+                            ...page,
+                            conversations: page.conversations.map((c) => c.id === id ? { ...c, isUnread: unread, unreadCount: unread ? Math.max(1, c.unreadCount) : 0 } : c),
+                        })),
+                    };
+                }
+                if (!old.conversations)
                     return old;
                 return {
                     ...old,
@@ -414,7 +520,10 @@ export function MessagesPage() {
             }
         },
         onSuccess: (updated) => {
-            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+                pages: [updated],
+                pageParams: [null],
+            });
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
@@ -422,23 +531,30 @@ export function MessagesPage() {
         mutationFn: ({ id, messageText }) => api.sendWhatsappMonitorReply(token, id, { messageText }),
         onSuccess: (updated) => {
             setReplyText("");
-            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+                pages: [updated],
+                pageParams: [null],
+            });
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
     const sendMediaMutation = useMutation({
         mutationFn: ({ id, mediaBase64, mediaType, fileName, }) => api.sendWhatsappMonitorMediaReply(token, id, { mediaBase64, mediaType, fileName }),
         onSuccess: (updated) => {
-            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+            queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+                pages: [updated],
+                pageParams: [null],
+            });
             queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
         },
     });
     // Only use detail data when it actually belongs to the selected conversation
     // to prevent stale messages from a previous chat from appearing
-    const detail = conversationDetailQuery.data;
+    const detailPages = conversationDetailQuery.data?.pages ?? [];
+    const detail = detailPages[0];
     const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
     const currentConversation = detailMatchesSelection ? detail : selectedConversation;
-    const messages = detailMatchesSelection ? (detail?.messages ?? []) : [];
+    const messages = detailMatchesSelection ? [...detailPages].reverse().flatMap((page) => page.messages) : [];
     const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
     const lastMessageId = messages.at(-1)?.id ?? null;
     const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
@@ -449,6 +565,50 @@ export function MessagesPage() {
         groupFilter !== "all" ||
         agentInteractionFilter !== "all" ||
         statusFilter !== "all";
+    useEffect(() => {
+        const newestCursor = detail?.pageInfo.nextCursor;
+        if (!token || !selectedConversationId || !detailMatchesSelection || !newestCursor) {
+            return;
+        }
+        const interval = window.setInterval(() => {
+            api.whatsappMonitorConversation(token, selectedConversationId, {
+                after: newestCursor,
+                limit: 100,
+            }).then((updated) => {
+                if (!updated.messages.length) {
+                    return;
+                }
+                queryClient.setQueryData(["whatsapp-monitor-conversation", selectedConversationId], (old) => {
+                    if (!old?.pages?.length) {
+                        return { pages: [updated], pageParams: [null] };
+                    }
+                    const [latestPage, ...olderPages] = old.pages;
+                    const knownIds = new Set(latestPage.messages.map((message) => message.id));
+                    const freshMessages = updated.messages.filter((message) => !knownIds.has(message.id));
+                    if (!freshMessages.length) {
+                        return old;
+                    }
+                    return {
+                        ...old,
+                        pages: [
+                            {
+                                ...latestPage,
+                                ...updated,
+                                messages: [...latestPage.messages, ...freshMessages],
+                                pageInfo: {
+                                    ...latestPage.pageInfo,
+                                    nextCursor: updated.pageInfo.nextCursor ?? latestPage.pageInfo.nextCursor,
+                                },
+                            },
+                            ...olderPages,
+                        ],
+                    };
+                });
+                queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+            }).catch(() => undefined);
+        }, CHAT_REFRESH_MS);
+        return () => window.clearInterval(interval);
+    }, [detail?.pageInfo.nextCursor, detailMatchesSelection, queryClient, selectedConversationId, token]);
     useEffect(() => {
         const element = chatBodyRef.current;
         if (!element || !selectedConversationId) {
@@ -515,10 +675,10 @@ export function MessagesPage() {
         }
     }
     const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
-    if (conversationsQuery.isLoading) {
+    if (agentsQuery.isLoading || conversationsQuery.isLoading) {
         return _jsx("div", { className: "page-loading", children: "Carregando monitoramento de WhatsApp..." });
     }
-    if (conversationsQuery.isError) {
+    if (agentsQuery.isError || conversationsQuery.isError) {
         return _jsx("div", { className: "page-error", children: "Nao foi possivel carregar as conversas monitoradas." });
     }
     return (_jsxs("div", { className: "whatsapp-monitor-page", children: [_jsxs("div", { className: "wa-filter-strip", children: [_jsxs("label", { className: "wa-filter-field", children: [_jsx(Search, { size: 16 }), _jsx("input", { value: contactNameFilter, onChange: (event) => setContactNameFilter(event.target.value), placeholder: "Nome do contato" })] }), _jsx("label", { className: "wa-filter-field phone", children: _jsx("input", { value: contactPhoneFilter, onChange: (event) => setContactPhoneFilter(event.target.value), placeholder: "Telefone do contato" }) }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar periodo", value: periodFilter, onChange: (event) => setPeriodFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Periodo: todos" }), _jsx("option", { value: "today", children: "Hoje" }), _jsx("option", { value: "yesterday", children: "Ontem" }), _jsx("option", { value: "7d", children: "Ultimos 7 dias" }), _jsx("option", { value: "30d", children: "Ultimos 30 dias" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar grupos", value: groupFilter, onChange: (event) => setGroupFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Grupo: todos" }), _jsx("option", { value: "groups", children: "Somente grupos" }), _jsx("option", { value: "contacts", children: "Sem grupo" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar status", value: statusFilter, onChange: (event) => setStatusFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Status: todos" }), _jsx("option", { value: "unread", children: "Nao lidas" }), _jsx("option", { value: "risk", children: "Com alerta" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("label", { className: "wa-filter-select", children: [_jsxs("select", { "aria-label": "Filtrar interacoes do usuario", value: agentInteractionFilter, disabled: activeAgentId === "all", onChange: (event) => setAgentInteractionFilter(event.target.value), children: [_jsx("option", { value: "all", children: "Usuario: todas as conversas" }), _jsx("option", { value: "sent", children: "Somente mensagens do usuario" })] }), _jsx(ChevronDown, { size: 18, "aria-hidden": "true" })] }), _jsxs("button", { type: "button", className: "wa-filter-button", disabled: !hasTopFilters, onClick: () => {
@@ -528,7 +688,7 @@ export function MessagesPage() {
                             setGroupFilter("all");
                             setStatusFilter("all");
                             setAgentInteractionFilter("all");
-                        }, children: [_jsx(X, { size: 18 }), "Limpar"] })] }), _jsxs("section", { className: "wa-monitor-shell", children: [_jsxs("aside", { className: "wa-column agents", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Agentes" }), _jsx("span", { children: agents.length })] }), _jsx(SearchBox, { value: agentSearch, onChange: setAgentSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [_jsxs("button", { type: "button", className: `wa-list-row all-agents ${activeAgentId === "all" ? "active" : ""}`, onClick: () => setActiveAgentId("all"), children: [_jsx("span", { className: "wa-avatar synthetic", children: _jsx(Sparkles, { size: 18 }) }), _jsxs("span", { className: "wa-list-copy", children: [_jsx("strong", { children: "Todos os agentes" }), _jsxs("small", { children: [filteredConversations.length, " conversas no filtro"] })] })] }), visibleAgents.map((agent) => (_jsx(AgentRow, { agent: agent, active: agent.id === activeAgentId, onClick: () => setActiveAgentId(agent.id) }, agent.id))), !visibleAgents.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhum agente encontrado." }) : null] })] }), _jsxs("aside", { className: "wa-column conversations", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Conversas" }), _jsx("span", { children: filteredConversations.length })] }), _jsx(SearchBox, { value: conversationSearch, onChange: setConversationSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [filteredConversations.map((conversation) => (_jsx(ConversationRow, { conversation: conversation, active: conversation.id === selectedConversationId, onClick: () => openConversation(conversation) }, conversation.id))), !filteredConversations.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhuma conversa encontrada." }) : null] })] }), _jsx("main", { className: "wa-chat-panel", children: currentConversation ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "wa-chat-header", children: [_jsxs("div", { className: "wa-chat-contact", children: [_jsx(AgentAvatar, { name: currentConversation.contactName, imageUrl: currentConversation.profilePictureUrl, group: currentConversation.isGroup, alert: Boolean(currentConversation.risk) }), _jsxs("div", { children: [_jsx("strong", { children: currentConversation.contactName }), _jsxs("span", { children: [currentConversation.eventCount, " eventos - ", currentConversation.unreadCount, " nao lidas -", " ", activeAgent?.displayLabel || currentConversation.agentName || "Todos"] })] })] }), _jsxs("div", { className: "wa-chat-tools", children: [_jsx("span", { className: "wa-chat-status", children: currentConversation.stageName || "Monitorado" }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Conversa anterior", children: _jsx(ChevronLeft, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Proxima conversa", children: _jsx(ChevronRight, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Pesquisar na conversa", children: _jsx(Search, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Mais opcoes", onClick: () => setChatMenuOpen((open) => !open), children: _jsx(MoreVertical, { size: 20 }) }), chatMenuOpen ? (_jsxs("div", { className: "wa-chat-menu", children: [_jsx("button", { type: "button", disabled: readStateMutation.isPending, onClick: () => {
+                        }, children: [_jsx(X, { size: 18 }), "Limpar"] })] }), _jsxs("section", { className: "wa-monitor-shell", children: [_jsxs("aside", { className: "wa-column agents", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Agentes" }), _jsx("span", { children: agents.length })] }), _jsx(SearchBox, { value: agentSearch, onChange: setAgentSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [_jsxs("button", { type: "button", className: `wa-list-row all-agents ${activeAgentId === "all" ? "active" : ""}`, onClick: () => setActiveAgentId("all"), children: [_jsx("span", { className: "wa-avatar synthetic", children: _jsx(Sparkles, { size: 18 }) }), _jsxs("span", { className: "wa-list-copy", children: [_jsx("strong", { children: "Todos os agentes" }), _jsxs("small", { children: [filteredConversations.length, " conversas no filtro"] })] })] }), visibleAgents.map((agent) => (_jsx(AgentRow, { agent: agent, active: agent.id === activeAgentId, onClick: () => setActiveAgentId(agent.id) }, agent.id))), !visibleAgents.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhum agente encontrado." }) : null] })] }), _jsxs("aside", { className: "wa-column conversations", children: [_jsxs("div", { className: "wa-column-heading", children: [_jsx("strong", { children: "Conversas" }), _jsx("span", { children: filteredConversations.length })] }), _jsx(SearchBox, { value: conversationSearch, onChange: setConversationSearch, placeholder: "Pesquisar" }), _jsxs("div", { className: "wa-list", children: [filteredConversations.map((conversation) => (_jsx(ConversationRow, { conversation: conversation, active: conversation.id === selectedConversationId, onClick: () => openConversation(conversation) }, conversation.id))), conversationsQuery.hasNextPage ? (_jsx("div", { className: "wa-load-more-row", children: _jsx("button", { type: "button", className: "wa-load-more-button", disabled: conversationsQuery.isFetchingNextPage, onClick: () => void conversationsQuery.fetchNextPage(), children: conversationsQuery.isFetchingNextPage ? "Carregando..." : "Carregar conversas antigas" }) })) : null, !filteredConversations.length ? _jsx("div", { className: "wa-empty-list", children: "Nenhuma conversa encontrada." }) : null] })] }), _jsx("main", { className: "wa-chat-panel", children: currentConversation ? (_jsxs(_Fragment, { children: [_jsxs("div", { className: "wa-chat-header", children: [_jsxs("div", { className: "wa-chat-contact", children: [_jsx(AgentAvatar, { name: currentConversation.contactName, imageUrl: currentConversation.profilePictureUrl, group: currentConversation.isGroup, alert: Boolean(currentConversation.risk) }), _jsxs("div", { children: [_jsx("strong", { children: currentConversation.contactName }), _jsxs("span", { children: [currentConversation.eventCount, " eventos - ", currentConversation.unreadCount, " nao lidas -", " ", activeAgent?.displayLabel || currentConversation.agentName || "Todos"] })] })] }), _jsxs("div", { className: "wa-chat-tools", children: [_jsx("span", { className: "wa-chat-status", children: currentConversation.stageName || "Monitorado" }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Conversa anterior", children: _jsx(ChevronLeft, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Proxima conversa", children: _jsx(ChevronRight, { size: 20 }) }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Pesquisar na conversa", children: _jsx(Search, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Mais opcoes", onClick: () => setChatMenuOpen((open) => !open), children: _jsx(MoreVertical, { size: 20 }) }), chatMenuOpen ? (_jsxs("div", { className: "wa-chat-menu", children: [_jsx("button", { type: "button", disabled: readStateMutation.isPending, onClick: () => {
                                                                         readStateMutation.mutate({ id: currentConversation.id, unread: false });
                                                                         setChatMenuOpen(false);
                                                                     }, children: "Marcar como lida" }), _jsx("button", { type: "button", disabled: readStateMutation.isPending, onClick: () => {
@@ -538,7 +698,7 @@ export function MessagesPage() {
                                         const element = event.currentTarget;
                                         const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                                         stickToBottomRef.current = distanceFromBottom < 160;
-                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : timelineItems.length ? (timelineItems.map((item) => (item.type === "date" ? (_jsx("div", { className: "wa-date-separator", children: _jsx("span", { children: item.label }) }, item.key)) : (_jsx(ChatMessageBubble, { message: item.message, showSender: currentConversation.isGroup && item.message.direction === "INBOUND" }, item.key))))) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [showShortcuts && filteredTemplates.length > 0 ? (_jsxs("div", { className: "wa-shortcuts-dropdown", children: [_jsxs("div", { className: "wa-shortcuts-header", children: [_jsx("span", { children: "Respostas R\u00E1pidas" }), _jsx("small", { children: "Use as setas \u2191\u2193 e Enter para selecionar" })] }), _jsx("div", { className: "wa-shortcuts-list", children: filteredTemplates.map((template, index) => (_jsxs("button", { type: "button", className: `wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`, onClick: () => selectTemplate(template.content), onMouseEnter: () => setActiveTemplateIndex(index), children: [_jsxs("div", { className: "wa-shortcut-info", children: [_jsxs("span", { className: "wa-shortcut-trigger", children: ["/", template.title.toLowerCase().replace(/\s+/g, "")] }), _jsx("span", { className: "wa-shortcut-title", children: template.title })] }), _jsx("span", { className: "wa-shortcut-preview", children: template.content })] }, template.id))) })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("input", { type: "file", ref: fileInputRef, style: { display: "none" }, onChange: handleFileSelect }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", onClick: () => fileInputRef.current?.click(), disabled: sendMediaMutation.isPending, children: _jsx(Paperclip, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", onClick: () => setEmojiPickerOpen(!emojiPickerOpen), children: _jsx(Smile, { size: 20 }) }), emojiPickerOpen ? (_jsx("div", { className: "wa-emoji-picker", children: commonEmojis.map((emoji) => (_jsx("button", { type: "button", onClick: () => {
+                                    }, children: conversationDetailQuery.isLoading ? (_jsx("div", { className: "wa-empty-chat", children: "Carregando conversa..." })) : timelineItems.length ? (_jsxs(_Fragment, { children: [conversationDetailQuery.hasNextPage ? (_jsx("div", { className: "wa-load-more-row chat", children: _jsx("button", { type: "button", className: "wa-load-more-button", disabled: conversationDetailQuery.isFetchingNextPage, onClick: () => void conversationDetailQuery.fetchNextPage(), children: conversationDetailQuery.isFetchingNextPage ? "Carregando..." : "Carregar mensagens antigas" }) })) : null, timelineItems.map((item) => (item.type === "date" ? (_jsx("div", { className: "wa-date-separator", children: _jsx("span", { children: item.label }) }, item.key)) : (_jsx(ChatMessageBubble, { message: item.message, showSender: currentConversation.isGroup && item.message.direction === "INBOUND" }, item.key))))] })) : (_jsx("div", { className: "wa-empty-chat", children: "Nenhuma mensagem registrada para esta conversa." })) }), _jsxs("form", { className: "wa-reply-composer", onSubmit: handleSendReply, children: [showShortcuts && filteredTemplates.length > 0 ? (_jsxs("div", { className: "wa-shortcuts-dropdown", children: [_jsxs("div", { className: "wa-shortcuts-header", children: [_jsx("span", { children: "Respostas R\u00E1pidas" }), _jsx("small", { children: "Use as setas \u2191\u2193 e Enter para selecionar" })] }), _jsx("div", { className: "wa-shortcuts-list", children: filteredTemplates.map((template, index) => (_jsxs("button", { type: "button", className: `wa-shortcut-item ${index === activeTemplateIndex ? "active" : ""}`, onClick: () => selectTemplate(template.content), onMouseEnter: () => setActiveTemplateIndex(index), children: [_jsxs("div", { className: "wa-shortcut-info", children: [_jsxs("span", { className: "wa-shortcut-trigger", children: ["/", template.title.toLowerCase().replace(/\s+/g, "")] }), _jsx("span", { className: "wa-shortcut-title", children: template.title })] }), _jsx("span", { className: "wa-shortcut-preview", children: template.content })] }, template.id))) })] })) : null, _jsxs("div", { className: "wa-reply-bar", children: [_jsx("input", { type: "file", ref: fileInputRef, style: { display: "none" }, onChange: handleFileSelect }), _jsx("button", { type: "button", className: "wa-icon-button", title: "Anexar arquivo", onClick: () => fileInputRef.current?.click(), disabled: sendMediaMutation.isPending, children: _jsx(Paperclip, { size: 20 }) }), _jsxs("div", { className: "wa-menu-anchor", children: [_jsx("button", { type: "button", className: "wa-icon-button", title: "Emoji", onClick: () => setEmojiPickerOpen(!emojiPickerOpen), children: _jsx(Smile, { size: 20 }) }), emojiPickerOpen ? (_jsx("div", { className: "wa-emoji-picker", children: commonEmojis.map((emoji) => (_jsx("button", { type: "button", onClick: () => {
                                                                     setReplyText((prev) => prev + emoji);
                                                                     setEmojiPickerOpen(false);
                                                                 }, children: emoji }, emoji))) })) : null] }), _jsx("textarea", { ref: textareaRef, value: replyText, onChange: (event) => setReplyText(event.target.value), onKeyDown: (event) => {

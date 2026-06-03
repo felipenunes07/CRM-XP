@@ -11247,6 +11247,36 @@ textarea {
   background: rgba(0, 168, 132, 0.06);
 }
 
+.wa-load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 0.45rem 0.25rem;
+}
+
+.wa-load-more-row.chat {
+  padding: 0.75rem 0 1rem;
+}
+
+.wa-load-more-button {
+  border: 1px solid #cfd7df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--wa-text);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+}
+
+.wa-load-more-button:hover:not(:disabled) {
+  background: var(--wa-soft-2);
+}
+
+.wa-load-more-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .wa-avatar {
   position: relative;
   width: 3rem;

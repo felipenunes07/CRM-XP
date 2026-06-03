@@ -508,10 +508,32 @@ export const api = {
         if (query.agentInteraction) {
             search.set("agentInteraction", query.agentInteraction);
         }
+        if (query.limit) {
+            search.set("limit", String(query.limit));
+        }
+        if (query.cursor) {
+            search.set("cursor", query.cursor);
+        }
+        if (query.updatedSince) {
+            search.set("updatedSince", query.updatedSince);
+        }
         return request(`/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
-    whatsappMonitorConversation(token, id) {
-        return request(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
+    whatsappMonitorAgents(token) {
+        return request("/api/whatsapp-monitor/agents", {}, token);
+    },
+    whatsappMonitorConversation(token, id, query = {}) {
+        const search = new URLSearchParams();
+        if (query.limit) {
+            search.set("limit", String(query.limit));
+        }
+        if (query.before) {
+            search.set("before", query.before);
+        }
+        if (query.after) {
+            search.set("after", query.after);
+        }
+        return request(`/api/whatsapp-monitor/conversations/${id}${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
     },
     whatsappMonitorMetrics(token) {
         return request("/api/whatsapp-monitor/metrics", {}, token);

@@ -48,17 +48,77 @@ interface ConversationFilters {
   period?: "today" | "yesterday" | "7d" | "30d";
   status?: "unread" | "risk";
   agentInteraction?: "sent";
+  limit?: number;
+  cursor?: string;
+  updatedSince?: string;
+}
+
+interface ConversationDetailOptions {
+  limit?: number;
+  before?: string;
+  after?: string;
 }
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_REPORT_NIGHT_START_HOUR = 18;
 const ACTIVITY_REPORT_NIGHT_END_HOUR = 8;
-const WHATSAPP_MONITOR_AGENT_CACHE_MS = 30_000;
+const WHATSAPP_MONITOR_AGENT_CACHE_MS = 60_000;
 const WHATSAPP_ACTIVITY_REPORT_CACHE_MS = 30_000;
 const ACTIVITY_REPORT_CELL_CONVERSATION_LIMIT = 12;
+const WHATSAPP_MONITOR_HISTORY_DAYS = 90;
+const WHATSAPP_MONITOR_CONVERSATION_LIMIT = 25;
+const WHATSAPP_MONITOR_CONVERSATION_MAX_LIMIT = 100;
+const WHATSAPP_MONITOR_MESSAGE_LIMIT = 20;
+const WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT = 100;
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
 const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
+
+type WhatsappConversationCursor = {
+  lastActivityAt: string;
+  id: string;
+};
+
+type WhatsappMessageCursor = {
+  createdAt: string;
+  id: string;
+  source: "activity" | "incoming";
+};
+
+function encodeCursor(payload: Record<string, unknown>) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeCursor<T extends Record<string, unknown>>(cursor: string | null | undefined): T | null {
+  if (!cursor) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function boundedLimit(value: number | undefined, fallback: number, max: number) {
+  const limit = Math.floor(Number(value ?? fallback));
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return fallback;
+  }
+
+  return Math.min(limit, max);
+}
+
+function isValidDateString(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time);
+}
 
 function userCacheKey(user?: JwtUser) {
   return user ? `${user.role}:${user.id}:${user.name}` : "anonymous";
@@ -900,9 +960,14 @@ export async function listWhatsappMonitorConversations(
   user: JwtUser,
   filters: ConversationFilters = {},
 ): Promise<WhatsappMonitorConversationsResponse> {
+  const limit = boundedLimit(filters.limit, WHATSAPP_MONITOR_CONVERSATION_LIMIT, WHATSAPP_MONITOR_CONVERSATION_MAX_LIMIT);
+  const queryLimit = limit + 1;
   const params: unknown[] = [];
   const where: string[] = [
     monitorableWhatsappJidSql("d.whatsapp_jid"),
+    `
+      COALESCE(d.last_activity_at, d.created_at) >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+    `,
     `
       EXISTS (
         SELECT 1
@@ -933,6 +998,9 @@ export async function listWhatsappMonitorConversations(
     `);
   }
 
+  params.push(user.id);
+  const userIdParamIndex = params.length;
+
   if (filters.instanceId) {
     params.push(filters.instanceId);
     const instanceIdParamIndex = params.length;
@@ -957,14 +1025,22 @@ export async function listWhatsappMonitorConversations(
         lower(d.title) LIKE $${params.length}
         OR lower(COALESCE(d.customer_display_name, '')) LIKE $${params.length}
         OR lower(COALESCE(d.whatsapp_jid, '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.chat_display_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.sender_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.participant_name, '')) LIKE $${params.length}
         OR EXISTS (
           SELECT 1
           FROM whatsapp_chat_profiles wcpf
           WHERE wcpf.remote_jid = d.whatsapp_jid
             AND lower(COALESCE(wcpf.display_name, '')) LIKE $${params.length}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_incoming_messages wim_search
+          WHERE wim_search.remote_jid = d.whatsapp_jid
+            AND wim_search.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+            AND (
+              lower(COALESCE(wim_search.chat_display_name, '')) LIKE $${params.length}
+              OR lower(COALESCE(wim_search.sender_name, '')) LIKE $${params.length}
+              OR lower(COALESCE(wim_search.participant_name, '')) LIKE $${params.length}
+            )
         )
       )
     `);
@@ -976,11 +1052,23 @@ export async function listWhatsappMonitorConversations(
       (
         lower(d.title) LIKE $${params.length}
         OR lower(COALESCE(d.customer_display_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(chat_profile.display_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(latest_whatsapp.metadata ->> 'chatDisplayName', '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.chat_display_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.sender_name, '')) LIKE $${params.length}
-        OR lower(COALESCE(incoming_profile.participant_name, '')) LIKE $${params.length}
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_chat_profiles wcpf_name
+          WHERE wcpf_name.remote_jid = d.whatsapp_jid
+            AND lower(COALESCE(wcpf_name.display_name, '')) LIKE $${params.length}
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_incoming_messages wim_name
+          WHERE wim_name.remote_jid = d.whatsapp_jid
+            AND wim_name.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+            AND (
+              lower(COALESCE(wim_name.chat_display_name, '')) LIKE $${params.length}
+              OR lower(COALESCE(wim_name.sender_name, '')) LIKE $${params.length}
+              OR lower(COALESCE(wim_name.participant_name, '')) LIKE $${params.length}
+            )
+        )
       )
     `);
   }
@@ -996,7 +1084,7 @@ export async function listWhatsappMonitorConversations(
   }
 
   if (filters.period) {
-    where.push(conversationPeriodSql(filters.period));
+    where.push(activityPeriodRangeSql("COALESCE(d.last_activity_at, d.created_at)", filters.period));
   }
 
   if (filters.status === "unread") {
@@ -1015,40 +1103,71 @@ export async function listWhatsappMonitorConversations(
     `);
   }
 
-  params.push(user.id);
-  const userIdParamIndex = params.length;
-
-  const [agents, conversationsResult] = await Promise.all([
-    listWhatsappMonitorAgents(user),
-    pool.query(
-      `
-      SELECT *
-      FROM (
-        SELECT DISTINCT ON (
-          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
-          LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, ''))
+  const conversationCursor = decodeCursor<WhatsappConversationCursor>(filters.cursor);
+  if (conversationCursor?.lastActivityAt && conversationCursor.id && isValidDateString(conversationCursor.lastActivityAt)) {
+    params.push(conversationCursor.lastActivityAt, conversationCursor.id);
+    const lastActivityParamIndex = params.length - 1;
+    const idParamIndex = params.length;
+    where.push(`
+      (
+        COALESCE(d.last_activity_at, d.created_at) < $${lastActivityParamIndex}::timestamptz
+        OR (
+          COALESCE(d.last_activity_at, d.created_at) = $${lastActivityParamIndex}::timestamptz
+          AND d.id < $${idParamIndex}::uuid
         )
-          conversation_rows.*
-        FROM (
-          ${conversationBaseSelectSql(userIdParamIndex)}
-          WHERE ${where.join(" AND ")}
-        ) conversation_rows
-        ORDER BY
-          COALESCE(conversation_rows.whatsapp_instance_id::text, LOWER(COALESCE(conversation_rows.instance_name, ''))),
-          LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, '')),
-          COALESCE(conversation_rows.last_message_at, conversation_rows.last_activity_at, conversation_rows.created_at) DESC,
-          conversation_rows.id DESC
-      ) deduped_conversations
-      ORDER BY COALESCE(deduped_conversations.last_message_at, deduped_conversations.last_activity_at, deduped_conversations.created_at) DESC, deduped_conversations.id DESC
-      LIMIT 200
-      `,
-      params,
-    ),
-  ]);
+      )
+    `);
+  }
+
+  if (filters.updatedSince && isValidDateString(filters.updatedSince)) {
+    params.push(filters.updatedSince);
+    where.push(`COALESCE(d.last_activity_at, d.updated_at, d.created_at) >= $${params.length}::timestamptz`);
+  }
+
+  params.push(queryLimit);
+  const queryLimitParamIndex = params.length;
+
+  const conversationsResult = await pool.query(
+    `
+    WITH candidate_deals AS (
+      SELECT
+        d.id,
+        COALESCE(d.last_activity_at, d.created_at) AS sort_last_activity_at
+      FROM deals d
+      LEFT JOIN whatsapp_conversation_reads conversation_reads
+        ON conversation_reads.deal_id = d.id
+        AND conversation_reads.user_id = $${userIdParamIndex}
+      WHERE ${where.join(" AND ")}
+      ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC
+      LIMIT $${queryLimitParamIndex}
+    )
+    SELECT conversation_rows.*
+    FROM (
+      ${conversationBaseSelectSql(userIdParamIndex)}
+      WHERE d.id IN (SELECT id FROM candidate_deals)
+    ) conversation_rows
+    ORDER BY COALESCE(conversation_rows.last_activity_at, conversation_rows.created_at) DESC, conversation_rows.id DESC
+    `,
+    params,
+  );
+
+  const rows = conversationsResult.rows;
+  const pageRows = rows.slice(0, limit);
+  const lastRow = pageRows.at(-1);
+  const nextCursor = lastRow
+    ? encodeCursor({
+      lastActivityAt: isoDate(lastRow.last_activity_at ?? lastRow.created_at),
+      id: String(lastRow.id),
+    })
+    : null;
 
   return {
-    agents,
-    conversations: conversationsResult.rows.map(mapConversationRow),
+    conversations: pageRows.map(mapConversationRow),
+    pageInfo: {
+      hasNextPage: rows.length > limit,
+      nextCursor: rows.length > limit ? nextCursor : null,
+      limit,
+    },
   };
 }
 
@@ -1104,9 +1223,45 @@ async function getLinkedWhatsappConversationDealIds(
   return ids.includes(rootDealId) ? ids : [rootDealId, ...ids];
 }
 
+function messageCursorConditionSql(
+  alias: string,
+  cursor: WhatsappMessageCursor | null,
+  mode: "before" | "after" | "latest",
+  params: unknown[],
+) {
+  if (!cursor || mode === "latest" || !isValidDateString(cursor.createdAt)) {
+    return "";
+  }
+
+  params.push(cursor.createdAt, cursor.id);
+  const createdAtParamIndex = params.length - 1;
+  const idParamIndex = params.length;
+  const operator = mode === "after" ? ">" : "<";
+
+  return `
+    AND (
+      ${alias}.created_at ${operator} $${createdAtParamIndex}::timestamptz
+      OR (
+        ${alias}.created_at = $${createdAtParamIndex}::timestamptz
+        AND ${alias}.id ${operator} $${idParamIndex}::uuid
+      )
+    )
+  `;
+}
+
+function messageCursorFor(message: WhatsappMonitorMessage, sourceById: Map<string, WhatsappMessageCursor>) {
+  const sourceCursor = sourceById.get(message.id);
+  return encodeCursor({
+    createdAt: sourceCursor?.createdAt ?? message.createdAt,
+    id: sourceCursor?.id ?? message.id,
+    source: sourceCursor?.source ?? "activity",
+  });
+}
+
 export async function getWhatsappMonitorConversation(
   dealId: string,
   user: JwtUser,
+  options: ConversationDetailOptions = {},
 ): Promise<WhatsappMonitorConversationDetail> {
   const conversationParams: unknown[] = [dealId, user.id];
   const accessWhere: string[] = [];
@@ -1155,6 +1310,23 @@ export async function getWhatsappMonitorConversation(
       ? [conversation.remoteJid]
       : [];
   const linkedDealIds = await getLinkedWhatsappConversationDealIds(dealId, conversation.instanceName, remoteJidAliases);
+
+  const cursor = decodeCursor<WhatsappMessageCursor>(options.after ?? options.before);
+  const mode: "before" | "after" | "latest" = options.after && cursor ? "after" : options.before && cursor ? "before" : "latest";
+  const messageLimit = boundedLimit(
+    options.limit,
+    mode === "after" ? WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT : WHATSAPP_MONITOR_MESSAGE_LIMIT,
+    WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT,
+  );
+  const queryLimit = messageLimit + 1;
+  const orderDirection = mode === "after" ? "ASC" : "DESC";
+  const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
+
+  const activityParams: unknown[] = [linkedDealIds];
+  const activityCursorSql = messageCursorConditionSql("da_base", cursor, mode, activityParams);
+  activityParams.push(queryLimit);
+  const activityLimitParamIndex = activityParams.length;
+
   const activitiesResult = await pool.query(
     `
     SELECT
@@ -1165,12 +1337,14 @@ export async function getWhatsappMonitorConversation(
       incoming_message.from_me AS incoming_from_me,
       COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name
     FROM (
-      SELECT *
-      FROM deal_activities
-      WHERE deal_id = ANY($1::uuid[])
-        AND activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-      ORDER BY created_at DESC, id DESC
-      LIMIT 300
+      SELECT da_base.*
+      FROM deal_activities da_base
+      WHERE da_base.deal_id = ANY($1::uuid[])
+        AND da_base.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+        AND da_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${activityCursorSql}
+      ORDER BY da_base.created_at ${orderDirection}, da_base.id ${orderDirection}
+      LIMIT $${activityLimitParamIndex}
     ) da
     LEFT JOIN deals activity_deal ON activity_deal.id = da.deal_id
     LEFT JOIN whatsapp_instances wi ON wi.id = activity_deal.whatsapp_instance_id
@@ -1189,15 +1363,24 @@ export async function getWhatsappMonitorConversation(
         wpp.updated_at DESC
       LIMIT 1
     ) participant_profile ON true
-    ORDER BY da.created_at ASC, incoming_message.created_at ASC NULLS LAST, da.id ASC
+    ORDER BY da.created_at ${orderDirection}, da.id ${orderDirection}
     `,
-    [linkedDealIds],
+    activityParams,
   );
 
-  const activityMessages = activitiesResult.rows.map((row) => mapWhatsappActivityToMessage(mapActivityRow(row)));
+  const activityMessages = activitiesResult.rows.map((row) => {
+    const message = mapWhatsappActivityToMessage(mapActivityRow(row));
+    sourceByMessageId.set(message.id, { createdAt: message.createdAt, id: message.id, source: "activity" });
+    return message;
+  });
   let messages = activityMessages;
 
   if (conversation.remoteJid && remoteJidAliases.length) {
+    const incomingParams: unknown[] = [remoteJidAliases, conversation.instanceName || ""];
+    const incomingCursorSql = messageCursorConditionSql("wim_base", cursor, mode, incomingParams);
+    incomingParams.push(queryLimit);
+    const incomingLimitParamIndex = incomingParams.length;
+
     const incomingResult = await pool.query(
       `
       SELECT
@@ -1205,18 +1388,20 @@ export async function getWhatsappMonitorConversation(
         COALESCE(participant_profile.display_name, wim.participant_name, wim.sender_name) AS sender_display_name,
         COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url) AS participant_profile_picture_url
       FROM (
-        SELECT wim.*
-        FROM whatsapp_incoming_messages wim
-        WHERE wim.remote_jid = ANY($1::text[])
+        SELECT wim_base.*
+        FROM whatsapp_incoming_messages wim_base
+        WHERE wim_base.remote_jid = ANY($1::text[])
+          AND wim_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
           AND (
             EXISTS (
               SELECT 1 FROM unnest($1::text[]) AS alias_jid
               WHERE alias_jid LIKE '%@g.us'
             )
-            OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)
+            OR LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)
           )
-        ORDER BY created_at DESC, id DESC
-        LIMIT 300
+          ${incomingCursorSql}
+        ORDER BY wim_base.created_at ${orderDirection}, wim_base.id ${orderDirection}
+        LIMIT $${incomingLimitParamIndex}
       ) wim
       LEFT JOIN LATERAL (
         SELECT wpp.display_name, wpp.profile_picture_url
@@ -1231,9 +1416,9 @@ export async function getWhatsappMonitorConversation(
           wpp.updated_at DESC
         LIMIT 1
       ) participant_profile ON true
-      ORDER BY wim.created_at ASC, wim.id ASC
+      ORDER BY wim.created_at ${orderDirection}, wim.id ${orderDirection}
       `,
-      [remoteJidAliases, conversation.instanceName || ""],
+      incomingParams,
     );
 
     const capturedMessages = incomingResult.rows.map((row): WhatsappMonitorMessage => {
@@ -1269,12 +1454,29 @@ export async function getWhatsappMonitorConversation(
       };
     });
 
+    for (const message of capturedMessages) {
+      sourceByMessageId.set(message.id, { createdAt: message.createdAt, id: message.id, source: "incoming" });
+    }
+
     messages = mergeWhatsappMonitorMessages(activityMessages, capturedMessages);
   }
 
+  const visibleMessages = mode === "after"
+    ? messages.slice(0, messageLimit)
+    : messages.slice(-messageLimit);
+  const oldestMessage = visibleMessages[0];
+  const newestMessage = visibleMessages.at(-1);
+
   return {
     ...conversation,
-    messages,
+    messages: visibleMessages,
+    pageInfo: {
+      hasPreviousPage: mode === "after" ? false : messages.length > messageLimit,
+      previousCursor: oldestMessage ? messageCursorFor(oldestMessage, sourceByMessageId) : null,
+      hasNextPage: mode === "after" ? messages.length > messageLimit : false,
+      nextCursor: newestMessage ? messageCursorFor(newestMessage, sourceByMessageId) : null,
+      limit: messageLimit,
+    },
   };
 }
 

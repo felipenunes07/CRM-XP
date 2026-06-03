@@ -237,9 +237,9 @@ describe("whatsapp conversation isolation", () => {
     const incomingQuery = String(incomingCall![0]);
     const incomingParams = incomingCall![1];
 
-    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda"]);
-    expect(incomingQuery).toContain("LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)");
-    expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim\.instance_name,\s*''\)\s*=\s*''/);
+    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda", 21]);
+    expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)");
+    expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim_base\.instance_name,\s*''\)\s*=\s*''/);
   });
 
   it("only falls back to unassigned deals when the deal belongs to the instance owner", async () => {
@@ -502,23 +502,32 @@ describe("whatsapp conversation isolation", () => {
     expect(conversation.messages[0]?.senderJid).toBe("5511999998888@s.whatsapp.net");
   });
 
-  it("deduplicates conversation list rows by instance and WhatsApp JID", async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [] });
+  it("paginates conversation list by deal activity before hydrating rows", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
 
-    await listWhatsappMonitorConversations({
+    const result = await listWhatsappMonitorConversations({
       id: "admin-1",
       name: "Admin",
       email: "admin@example.com",
       role: "ADMIN",
     } as any);
 
-    const listCall = mocks.query.mock.calls[1];
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
+    const listParams = listCall![1];
 
-    expect(listSql).toContain("DISTINCT ON");
-    expect(listSql).toContain("conversation_rows.whatsapp_instance_id::text");
-    expect(listSql).toContain("LOWER(COALESCE(conversation_rows.canonical_whatsapp_jid, conversation_rows.whatsapp_jid, ''))");
+    expect(listSql).toContain("WITH candidate_deals");
+    expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
+    expect(listSql).toContain("ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC");
+    expect(listSql).toContain("WHERE d.id IN (SELECT id FROM candidate_deals)");
+    expect(listSql).not.toContain("DISTINCT ON");
+    expect(listParams).toEqual(["admin-1", 26]);
+    expect(result.pageInfo).toEqual({
+      hasNextPage: false,
+      nextCursor: null,
+      limit: 25,
+    });
   });
 
   it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
@@ -624,7 +633,7 @@ describe("whatsapp conversation isolation", () => {
     const listSql = String(listCall![0]);
 
     expect(listSql).toContain("agent_interaction_activity");
-    expect(listSql).toContain("agent_interaction_instance.id = $1");
+    expect(listSql).toContain("agent_interaction_instance.id = $2");
     expect(listSql).toContain("agent_interaction_activity.created_at >=");
     expect(listSql).toContain("agent_interaction_activity.activity_type = 'WHATSAPP_SENT'");
   });

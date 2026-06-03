@@ -1412,6 +1412,20 @@ export const migrations = [
     ON deals(last_activity_at DESC, id DESC)
     WHERE whatsapp_jid IS NOT NULL;
 
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_instance_last_activity
+    ON deals(whatsapp_instance_id, last_activity_at DESC, id DESC)
+    WHERE whatsapp_jid IS NOT NULL
+      AND whatsapp_instance_id IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_assigned_last_activity
+    ON deals(assigned_to, last_activity_at DESC, id DESC)
+    WHERE whatsapp_jid IS NOT NULL
+      AND assigned_to IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_assigned_name_last_activity
+    ON deals((LOWER(COALESCE(assigned_to_name, ''))), last_activity_at DESC, id DESC)
+    WHERE whatsapp_jid IS NOT NULL;
+
   CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_lower_instance_created
     ON whatsapp_incoming_messages(
       remote_jid,
