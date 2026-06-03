@@ -219,8 +219,8 @@ function isMediaPlaceholder(content: string) {
   return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
 
-const CONVERSATION_REFRESH_MS = 10000;
-const CHAT_REFRESH_MS = 5000;
+const CONVERSATION_REFRESH_MS = 20000;
+const CHAT_REFRESH_MS = 8000;
 
 function conversationSortValue(conversation: WhatsappMonitorConversation) {
   const parsed = Date.parse(conversation.lastMessageAt ?? "");
@@ -626,6 +626,9 @@ export function MessagesPage() {
     }
 
     const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
       const updatedSince = conversationSyncSinceRef.current;
       if (!updatedSince) {
         return;
@@ -913,6 +916,9 @@ export function MessagesPage() {
     }
 
     const interval = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
       api.whatsappMonitorConversation(token, selectedConversationId, {
         after: newestCursor,
         limit: 100,
