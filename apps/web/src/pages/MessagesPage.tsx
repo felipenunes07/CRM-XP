@@ -681,7 +681,18 @@ export function MessagesPage() {
       }
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], updated);
+      queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old: any) => {
+        if (!old || !old.conversations) return old;
+        return {
+          ...old,
+          conversations: old.conversations.map((conversation: any) =>
+            conversation.id === updated.id ? { ...conversation, ...updated } : conversation,
+          ),
+        };
+      });
+      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], (old: any) =>
+        old ? { ...old, ...updated } : old,
+      );
       queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
     },
   });

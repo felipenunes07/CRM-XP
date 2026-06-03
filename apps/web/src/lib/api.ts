@@ -56,6 +56,7 @@ import type {
   WhatsappInstanceItem,
   WhatsappInstanceProvider,
   WhatsappAgentActivityReport,
+  WhatsappConversationReadStateResponse,
   WhatsappMappingSummary,
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
@@ -776,7 +777,7 @@ export const api = {
   },
 
   setWhatsappMonitorReadState(token: string, id: string, input: { unread: boolean }) {
-    return request<WhatsappMonitorConversationDetail>(
+    return request<WhatsappConversationReadStateResponse>(
       `/api/whatsapp-monitor/conversations/${id}/read-state`,
       {
         method: "PATCH",

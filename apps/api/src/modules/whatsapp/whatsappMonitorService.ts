@@ -3,6 +3,7 @@ import type {
   DealPriority,
   WhatsappAgentActivityConversationKind,
   WhatsappAgentActivityReport,
+  WhatsappConversationReadStateResponse,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
   WhatsappMonitorConversationDetail,
@@ -16,7 +17,6 @@ import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";
 import {
   markWhatsappChatAsUnread,
-  markWhatsappMessagesAsRead,
   sendWhatsappInstanceMediaMessage,
   sendWhatsappInstanceTextMessage,
   type EvolutionInstanceConfig,
@@ -1083,7 +1083,7 @@ async function getLinkedWhatsappConversationDealIds(
       ORDER BY wja.updated_at DESC
       LIMIT 1
     ) deal_alias ON true
-    WHERE d.id = $1
+    WHERE d.id = $1::uuid
       OR (
         ${monitorableWhatsappJidSql("d.whatsapp_jid")}
         AND (
@@ -1091,8 +1091,8 @@ async function getLinkedWhatsappConversationDealIds(
           OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($2::text[])
         )
         AND (
-          $3 = ''
-          OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($3)
+          $3::text = ''
+          OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($3::text)
         )
       )
     ORDER BY d.id
@@ -1378,21 +1378,18 @@ async function getRecentEvolutionMessageKeys(dealId: string, onlyInbound = false
 }
 
 async function syncConversationReadStateWithEvolution(dealId: string, unread: boolean) {
+  if (!unread) {
+    return;
+  }
+
   try {
     const context = await getWhatsappConversationEvolutionContext(dealId);
     if (!context.remoteJid || !context.evolution) {
       return;
     }
 
-    const keys = await getRecentEvolutionMessageKeys(dealId, !unread);
-    if (unread) {
-      await markWhatsappChatAsUnread(context.evolution, context.remoteJid, keys[0] ?? null);
-      return;
-    }
-
-    // We no longer sync "read" state to Evolution to prevent marking as read on WhatsApp Web
-    // as requested by the user.
-    // await markWhatsappMessagesAsRead(context.evolution, keys);
+    const keys = await getRecentEvolutionMessageKeys(dealId, false);
+    await markWhatsappChatAsUnread(context.evolution, context.remoteJid, keys[0] ?? null);
   } catch (error) {
     logger.warn("whatsapp monitor failed to sync read state with Evolution", {
       dealId,
@@ -2443,45 +2440,53 @@ export async function setWhatsappConversationReadState(
   dealId: string,
   user: JwtUser,
   unread: boolean,
-): Promise<WhatsappMonitorConversationDetail> {
+): Promise<WhatsappConversationReadStateResponse> {
   const existing = await pool.query(
-    `SELECT id FROM deals WHERE id = $1 AND ${monitorableWhatsappJidSql("whatsapp_jid")}`,
+    `SELECT id FROM deals WHERE id = $1::uuid AND ${monitorableWhatsappJidSql("whatsapp_jid")}`,
     [dealId],
   );
   if (!existing.rows[0]) {
     throw new HttpError(404, "Conversa de WhatsApp nao encontrada.");
   }
 
+  const changedAt = new Date().toISOString();
+
   if (unread) {
     await pool.query(
       `
       INSERT INTO whatsapp_conversation_reads (deal_id, user_id, force_unread, marked_unread_at, updated_at)
-      VALUES ($1, $2, true, NOW(), NOW())
+      VALUES ($1::uuid, $2::uuid, true, $3::timestamptz, NOW())
       ON CONFLICT (deal_id, user_id) DO UPDATE SET
         force_unread = true,
-        marked_unread_at = NOW(),
+        marked_unread_at = $3::timestamptz,
         updated_at = NOW()
       `,
-      [dealId, user.id],
+      [dealId, user.id, changedAt],
     );
   } else {
     await pool.query(
       `
       INSERT INTO whatsapp_conversation_reads (deal_id, user_id, last_read_at, force_unread, marked_unread_at, updated_at)
-      VALUES ($1, $2, NOW(), false, NULL, NOW())
+      VALUES ($1::uuid, $2::uuid, $3::timestamptz, false, NULL, NOW())
       ON CONFLICT (deal_id, user_id) DO UPDATE SET
-        last_read_at = NOW(),
+        last_read_at = $3::timestamptz,
         force_unread = false,
         marked_unread_at = NULL,
         updated_at = NOW()
       `,
-      [dealId, user.id],
+      [dealId, user.id, changedAt],
     );
   }
 
   void syncConversationReadStateWithEvolution(dealId, unread);
 
-  return getWhatsappMonitorConversation(dealId, user);
+  return {
+    id: dealId,
+    isUnread: unread,
+    unreadCount: unread ? 1 : 0,
+    markedUnread: unread,
+    lastReadAt: unread ? null : changedAt,
+  };
 }
 
 function formatDailySummaryCustomerLines(customers: Record<string, unknown>[], options: { recovered?: boolean } = {}) {

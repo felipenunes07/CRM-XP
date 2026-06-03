@@ -1954,6 +1954,14 @@ export interface WhatsappMonitorConversationDetail extends WhatsappMonitorConver
   messages: WhatsappMonitorMessage[];
 }
 
+export interface WhatsappConversationReadStateResponse {
+  id: string;
+  isUnread: boolean;
+  unreadCount: number;
+  markedUnread: boolean;
+  lastReadAt: string | null;
+}
+
 // ── Event Types ─────────────────────────────────────────────
 
 export type EventType =

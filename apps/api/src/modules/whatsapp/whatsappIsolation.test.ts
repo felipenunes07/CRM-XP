@@ -56,6 +56,7 @@ import {
   getWhatsappMonitorConversation,
   isInternalWhatsappReportChat,
   listWhatsappMonitorConversations,
+  setWhatsappConversationReadState,
 } from "./whatsappMonitorService.js";
 
 function localTodayKey() {
@@ -240,6 +241,78 @@ describe("whatsapp conversation isolation", () => {
     expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda"]);
     expect(incomingQuery).toContain("LOWER(COALESCE(wim.instance_name, '')) = LOWER($2)");
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim\.instance_name,\s*''\)\s*=\s*''/);
+  });
+
+  it("casts linked conversation parameters before querying equivalent WhatsApp deals", async () => {
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145",
+            title: "Cliente",
+            customer_display_name: "Cliente",
+            whatsapp_jid: "5511999998888@s.whatsapp.net",
+            instance_name: "amanda",
+            instance_display_label: "Amanda",
+            stage_name: "Contato Inicial",
+            last_message_at: "2026-05-21T12:00:00.000Z",
+            event_count: 0,
+            inbound_count: 0,
+            unread_after_read: 0,
+            marked_unread: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await getWhatsappMonitorConversation("2d3f5448-1dcd-49f1-9a33-a66b3f3c2145", {
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const linkedDealCall = mocks.query.mock.calls[1];
+    expect(linkedDealCall).toBeDefined();
+    const linkedDealQuery = String(linkedDealCall![0]);
+    const linkedDealParams = linkedDealCall![1];
+
+    expect(linkedDealParams).toEqual([
+      "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145",
+      ["5511999998888@s.whatsapp.net"],
+      "amanda",
+    ]);
+    expect(linkedDealQuery).toContain("WHERE d.id = $1::uuid");
+    expect(linkedDealQuery).toContain("$3::text = ''");
+    expect(linkedDealQuery).toContain("LOWER($3::text)");
+  });
+
+  it("marks a conversation as read without reloading the full message history", async () => {
+    mocks.query
+      .mockResolvedValueOnce({ rows: [{ id: "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145" }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await setWhatsappConversationReadState(
+      "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145",
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      false,
+    );
+
+    expect(result).toMatchObject({
+      id: "2d3f5448-1dcd-49f1-9a33-a66b3f3c2145",
+      isUnread: false,
+      unreadCount: 0,
+      markedUnread: false,
+    });
+    expect(mocks.query).toHaveBeenCalledTimes(2);
+    expect(String(mocks.query.mock.calls[1]?.[0])).toContain("last_read_at");
   });
 
   it("only falls back to unassigned deals when the deal belongs to the instance owner", async () => {
