@@ -11247,6 +11247,36 @@ textarea {
   background: rgba(0, 168, 132, 0.06);
 }
 
+.wa-load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 0.45rem 0.25rem;
+}
+
+.wa-load-more-row.chat {
+  padding: 0.75rem 0 1rem;
+}
+
+.wa-load-more-button {
+  border: 1px solid #cfd7df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--wa-text);
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 0.55rem 0.85rem;
+  cursor: pointer;
+}
+
+.wa-load-more-button:hover:not(:disabled) {
+  background: var(--wa-soft-2);
+}
+
+.wa-load-more-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .wa-avatar {
   position: relative;
   width: 3rem;
@@ -11843,6 +11873,17 @@ textarea {
   object-fit: cover;
   background: rgba(31, 44, 51, 0.08);
 }
+
+.wa-media-image {
+  cursor: pointer;
+  transition: transform 0.2s ease, filter 0.2s ease;
+}
+
+.wa-media-image:hover {
+  transform: scale(1.015);
+  filter: brightness(0.95);
+}
+
 
 .wa-media-audio {
   display: block;
@@ -18249,3 +18290,77 @@ body:has(.whatsapp-monitor-page) .main-content {
 .daily-summary-card:hover .daily-summary-card-subtitle {
   color: #64748b !important;
 }
+
+/* Image Zoom Overlay */
+.wa-image-zoom-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: wa-zoom-fade-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.wa-image-zoom-overlay img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  cursor: default;
+  transform: scale(0.95);
+  animation: wa-zoom-scale-up 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.wa-image-zoom-close {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 10000;
+}
+
+.wa-image-zoom-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.1);
+}
+
+@keyframes wa-zoom-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes wa-zoom-scale-up {
+  from {
+    transform: scale(0.95);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+

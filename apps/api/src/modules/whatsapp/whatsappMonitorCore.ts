@@ -11,6 +11,7 @@ const PRESSURE_KEYWORDS = ["urgente", "processo", "reclamacao", "procon", "cance
 
 interface EvolutionMessageKeyLike {
   remoteJid?: string;
+  remoteJidPn?: string;
   remoteJidAlt?: string;
   fromMe?: boolean | number | string;
   id?: string;
@@ -18,18 +19,26 @@ interface EvolutionMessageKeyLike {
   participantAlt?: string;
   participantPn?: string;
   senderPn?: string;
+  senderJid?: string;
 }
 
 export interface EvolutionMessageLike {
   key?: EvolutionMessageKeyLike;
   message?: Record<string, unknown>;
   pushName?: string;
+  remoteJid?: string;
+  remoteJidPn?: string;
   participant?: string;
   participantAlt?: string;
   participantPn?: string;
   sender?: string;
   senderJid?: string;
   remoteJidAlt?: string;
+  chatId?: string;
+  chatIdPn?: string;
+  chatIdAlt?: string;
+  jid?: string;
+  jidAlt?: string;
   senderPn?: string;
   participantJid?: string;
   participantName?: string;
@@ -201,7 +210,14 @@ export function isWhatsappPhoneJid(jid: string | null | undefined) {
   return Boolean(normalized?.endsWith("@s.whatsapp.net"));
 }
 
-function normalizeWhatsappPhoneJidCandidate(value: string | null | undefined) {
+export function whatsappJidDigits(value: string | null | undefined) {
+  const normalized = normalizeWhatsappJidForStorage(value);
+  const [rawId = normalized ?? value ?? ""] = String(normalized ?? value ?? "").split("@");
+  const digits = rawId.replace(/\D/g, "");
+  return digits.length >= 8 ? digits : null;
+}
+
+export function normalizeWhatsappPhoneJidCandidate(value: string | null | undefined) {
   const normalized = normalizeWhatsappJidForStorage(value);
   if (!normalized || normalized.endsWith("@g.us") || normalized.endsWith("@lid") || normalized.endsWith("@broadcast")) {
     return null;
@@ -209,7 +225,22 @@ function normalizeWhatsappPhoneJidCandidate(value: string | null | undefined) {
 
   const [rawId = normalized] = normalized.split("@");
   const digits = rawId.replace(/\D/g, "");
+  if (!normalized.includes("@") && digits.length > 13) {
+    return null;
+  }
+
   return digits ? `${digits}@s.whatsapp.net` : null;
+}
+
+function firstWhatsappPhoneJidCandidate(values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const normalized = normalizeWhatsappPhoneJidCandidate(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return null;
 }
 
 export function chooseCanonicalWhatsappJid(
@@ -482,28 +513,38 @@ export function extractEvolutionMessageContext(
       readString(key.remoteJidAlt) ??
       pickString(rawMessage, ["remoteJidPn", "remoteJidAlt", "chatIdPn", "chatIdAlt", "jidAlt"]),
   );
-  const remoteAltPhoneJid = normalizeWhatsappPhoneJidCandidate(remoteJidAlt);
-  const senderPhoneJid =
-    normalizeWhatsappPhoneJidCandidate(readString(key.senderPn)) ??
-    normalizeWhatsappPhoneJidCandidate(readString(key.participantPn)) ??
-    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["senderPn", "participantPn"]));
+  const privatePhoneJid = firstWhatsappPhoneJidCandidate([
+    remoteJidAlt,
+    readString(key.remoteJidPn),
+    pickString(rawMessage, ["remoteJidPn", "chatIdPn"]),
+    readString(key.senderPn),
+    pickString(rawMessage, ["senderPn"]),
+    readString(key.participantPn),
+    pickString(rawMessage, ["participantPn"]),
+    readString(key.participantAlt),
+    pickString(rawMessage, ["participantAlt"]),
+  ]);
   const remoteJid = providerRemoteJid?.endsWith("@g.us")
     ? providerRemoteJid
-    : remoteAltPhoneJid ?? (!fromMe ? senderPhoneJid : null) ?? providerRemoteJid;
-  const isGroup = Boolean(remoteJid?.endsWith("@g.us"));
-  const participantPhoneJid =
-    normalizeWhatsappPhoneJidCandidate(readString(key.participantAlt)) ??
-    normalizeWhatsappPhoneJidCandidate(readString(key.participantPn)) ??
-    normalizeWhatsappPhoneJidCandidate(pickString(rawMessage, ["participantAlt"])) ??
-    readString(key.participantPn) ??
-    pickString(rawMessage, ["participantPn", "senderPn"]);
+    : privatePhoneJid ?? providerRemoteJid;
+  const isGroup = Boolean(remoteJid?.endsWith("@g.us") || providerRemoteJid?.endsWith("@g.us"));
+  const participantPhoneJid = firstWhatsappPhoneJidCandidate([
+    readString(key.participantAlt),
+    readString(key.participantPn),
+    readString(key.senderPn),
+    pickString(rawMessage, ["participantAlt"]),
+    pickString(rawMessage, ["participantPn"]),
+    pickString(rawMessage, ["senderPn"]),
+  ]);
   const participantJid =
     normalizeWhatsappJidForStorage(participantPhoneJid) ??
-    normalizeWhatsappJidForStorage(readString(key.participant) ?? pickString(rawMessage, ["participant", "participantJid"]));
+    normalizeWhatsappJidForStorage(
+      readString(key.participant) ?? readString(key.senderJid) ?? pickString(rawMessage, ["participant", "participantJid", "senderJid"]),
+    );
   const rawParticipantJid = normalizeWhatsappJidForStorage(
-    readString(key.participant) ?? pickString(rawMessage, ["participant", "participantJid"]),
+    readString(key.participant) ?? readString(key.senderJid) ?? pickString(rawMessage, ["participant", "participantJid", "senderJid"]),
   );
-  const connectionSenderJid = pickString(rawMessage, ["senderJid", "sender"]);
+  const connectionSenderJid = normalizeWhatsappJidForStorage(pickString(rawMessage, ["senderJid", "sender"]));
   const senderJid = isGroup
     ? participantJid ?? connectionSenderJid
     : fromMe
@@ -517,7 +558,7 @@ export function extractEvolutionMessageContext(
     remoteJid,
     providerRemoteJid,
     remoteJidAlt,
-    remoteJidAliases: uniqueStrings([remoteJid, providerRemoteJid, remoteJidAlt]),
+    remoteJidAliases: uniqueStrings([remoteJid, providerRemoteJid, remoteJidAlt, privatePhoneJid]),
     messageId: readString(key.id) ?? pickString(rawMessage, ["id", "messageId"]),
     instanceName: instanceName ?? null,
     isGroup,
@@ -562,6 +603,10 @@ export function isMonitorableWhatsappJid(jid: string | null | undefined) {
 export function formatWhatsappJidPhone(jid: string | null | undefined) {
   if (!jid) {
     return "Sem telefone";
+  }
+
+  if (jid.endsWith("@lid")) {
+    return "Cliente sem nome";
   }
 
   const [rawId = jid] = jid.split("@");
@@ -682,7 +727,7 @@ export function chooseWhatsappConversationContactName(input: {
 }) {
   const remoteJid = input.remoteJid;
   const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
-  const candidates = [input.chatDisplayName, input.customerDisplayName, input.title]
+  const candidates = [input.customerDisplayName, input.title, input.chatDisplayName]
     .map((candidate) => readString(candidate))
     .filter((candidate): candidate is string => Boolean(candidate));
 

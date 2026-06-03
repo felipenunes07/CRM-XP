@@ -57,6 +57,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappAgentActivityReport,
   WhatsappConversationReadStateResponse,
+  WhatsappMonitorAgent,
   WhatsappMappingSummary,
   WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
@@ -713,6 +714,9 @@ export const api = {
       period?: "today" | "yesterday" | "7d" | "30d";
       status?: "unread" | "risk";
       agentInteraction?: "sent";
+      limit?: number;
+      cursor?: string;
+      updatedSince?: string;
     } = {},
   ) {
     const search = new URLSearchParams();
@@ -737,6 +741,15 @@ export const api = {
     if (query.agentInteraction) {
       search.set("agentInteraction", query.agentInteraction);
     }
+    if (query.limit) {
+      search.set("limit", String(query.limit));
+    }
+    if (query.cursor) {
+      search.set("cursor", query.cursor);
+    }
+    if (query.updatedSince) {
+      search.set("updatedSince", query.updatedSince);
+    }
     return request<WhatsappMonitorConversationsResponse>(
       `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,
       {},
@@ -744,8 +757,34 @@ export const api = {
     );
   },
 
-  whatsappMonitorConversation(token: string, id: string) {
-    return request<WhatsappMonitorConversationDetail>(`/api/whatsapp-monitor/conversations/${id}`, {}, token);
+  whatsappMonitorAgents(token: string) {
+    return request<WhatsappMonitorAgent[]>("/api/whatsapp-monitor/agents", {}, token);
+  },
+
+  whatsappMonitorConversation(
+    token: string,
+    id: string,
+    query: {
+      limit?: number;
+      before?: string;
+      after?: string;
+    } = {},
+  ) {
+    const search = new URLSearchParams();
+    if (query.limit) {
+      search.set("limit", String(query.limit));
+    }
+    if (query.before) {
+      search.set("before", query.before);
+    }
+    if (query.after) {
+      search.set("after", query.after);
+    }
+    return request<WhatsappMonitorConversationDetail>(
+      `/api/whatsapp-monitor/conversations/${id}${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
   },
 
   whatsappMonitorMetrics(token: string) {

@@ -234,6 +234,56 @@ describe("whatsappMonitorCore", () => {
     expect(chooseCanonicalWhatsappJid(context.remoteJidAliases)).toBe("5511999998888@s.whatsapp.net");
   });
 
+  it("canonicalizes outbound private LID messages when Evolution sends the phone alias", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "269097182986462@lid",
+          fromMe: true,
+          id: "msg-out-lid-1",
+          senderPn: "5511998765432@s.whatsapp.net",
+        } as any,
+        message: { conversation: "Sim, pode deixar" },
+      },
+      "suelen",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "5511998765432@s.whatsapp.net",
+      providerRemoteJid: "269097182986462@lid",
+      fromMe: true,
+      senderJid: null,
+    });
+    expect(context.remoteJidAliases).toEqual([
+      "5511998765432@s.whatsapp.net",
+      "269097182986462@lid",
+    ]);
+  });
+
+  it("uses participant phone aliases as the sender in group LID payloads", () => {
+    const context = extractEvolutionMessageContext(
+      {
+        key: {
+          remoteJid: "120363371542185615@g.us",
+          fromMe: false,
+          id: "msg-group-lid-1",
+          participant: "278971715473575@lid",
+          senderPn: "5511959502231@s.whatsapp.net",
+        } as any,
+        pushName: "Cliente Grupo",
+        message: { conversation: "Oi grupo" },
+      },
+      "amanda",
+    );
+
+    expect(context).toMatchObject({
+      remoteJid: "120363371542185615@g.us",
+      isGroup: true,
+      senderJid: "5511959502231@s.whatsapp.net",
+      senderJidAlt: "278971715473575@lid",
+    });
+  });
+
   it("extracts Evolution media metadata for image and audio messages", () => {
     const imageMessage = {
       message: {
@@ -351,6 +401,21 @@ describe("whatsappMonitorCore", () => {
         agentName: "XP AMANDA",
       }),
     ).toBe("CL1246 - JAMARC / XP EXPOR TELAS");
+  });
+
+  it("prefers customer/title names over seller-like chat profile names", () => {
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "5511998595698@s.whatsapp.net",
+        isGroup: false,
+        chatDisplayName: "XP AMANDA",
+        customerDisplayName: "Joyal Comercio",
+        title: "Amanda",
+        agentName: "Amanda",
+        instanceLabel: "XP AMANDA",
+      }),
+    ).toBe("Joyal Comercio");
+    expect(formatWhatsappJidPhone("269097182986462@lid")).toBe("Cliente sem nome");
   });
 
   it("formats the Evolution send target without losing group JIDs", () => {

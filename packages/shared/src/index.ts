@@ -1946,11 +1946,22 @@ export interface WhatsappAgentActivityReport {
 }
 
 export interface WhatsappMonitorConversationsResponse {
-  agents: WhatsappMonitorAgent[];
+  pageInfo: {
+    hasNextPage: boolean;
+    nextCursor: string | null;
+    limit: number;
+  };
   conversations: WhatsappMonitorConversation[];
 }
 
 export interface WhatsappMonitorConversationDetail extends WhatsappMonitorConversation {
+  pageInfo: {
+    hasPreviousPage: boolean;
+    previousCursor: string | null;
+    hasNextPage: boolean;
+    nextCursor: string | null;
+    limit: number;
+  };
   messages: WhatsappMonitorMessage[];
 }
 

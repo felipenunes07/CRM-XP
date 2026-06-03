@@ -135,6 +135,7 @@ import {
   getWhatsappMonitorMetrics,
   getWhatsappAgentActivityReport,
   getWhatsappDailySummaryReport,
+  listWhatsappMonitorAgents,
   listWhatsappMonitorConversations,
   sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
@@ -570,6 +571,18 @@ function isAllowedCorsOrigin(origin?: string | null) {
   } catch {
     return false;
   }
+}
+
+function logWhatsappMonitorEndpointTiming(
+  route: string,
+  startedAt: number,
+  context: Record<string, unknown> = {},
+) {
+  logger.info("whatsapp monitor endpoint timing", {
+    route,
+    durationMs: Date.now() - startedAt,
+    ...context,
+  });
 }
 
 export function createApp() {
@@ -1791,6 +1804,15 @@ export function createApp() {
     period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
     status: z.enum(["unread", "risk"]).optional(),
     agentInteraction: z.enum(["sent"]).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    cursor: z.string().optional(),
+    updatedSince: z.string().optional(),
+  });
+
+  const whatsappMonitorConversationDetailQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    before: z.string().optional(),
+    after: z.string().optional(),
   });
 
   const whatsappMonitorReadStateSchema = z.object({
@@ -1864,11 +1886,42 @@ export function createApp() {
 
   // ── WhatsApp Instances ────────────────────────────────────────
 
+  app.get("/api/whatsapp-monitor/agents", async (request, response, next) => {
+    const startedAt = Date.now();
+    try {
+      const agents = await listWhatsappMonitorAgents(request.user!);
+      response.json(agents);
+      logWhatsappMonitorEndpointTiming("agents", startedAt, {
+        count: agents.length,
+      });
+    } catch (error) {
+      logWhatsappMonitorEndpointTiming("agents", startedAt, {
+        failed: true,
+        error: String(error),
+      });
+      next(error);
+    }
+  });
+
   app.get("/api/whatsapp-monitor/conversations", async (request, response, next) => {
+    const startedAt = Date.now();
     try {
       const query = whatsappMonitorQuerySchema.parse(request.query);
-      response.json(await listWhatsappMonitorConversations(request.user!, query));
+      const result = await listWhatsappMonitorConversations(request.user!, query);
+      response.json(result);
+      logWhatsappMonitorEndpointTiming("conversations", startedAt, {
+        count: result.conversations.length,
+        limit: result.pageInfo.limit,
+        hasNextPage: result.pageInfo.hasNextPage,
+        cursor: Boolean(query.cursor),
+        updatedSince: Boolean(query.updatedSince),
+        instanceId: query.instanceId ?? "all",
+      });
     } catch (error) {
+      logWhatsappMonitorEndpointTiming("conversations", startedAt, {
+        failed: true,
+        error: String(error),
+      });
       next(error);
     }
   });
@@ -1900,9 +1953,25 @@ export function createApp() {
   });
 
   app.get("/api/whatsapp-monitor/conversations/:id", async (request, response, next) => {
+    const startedAt = Date.now();
     try {
-      response.json(await getWhatsappMonitorConversation(String(request.params.id), request.user!));
+      const query = whatsappMonitorConversationDetailQuerySchema.parse(request.query);
+      const result = await getWhatsappMonitorConversation(String(request.params.id), request.user!, query);
+      response.json(result);
+      logWhatsappMonitorEndpointTiming("conversation-detail", startedAt, {
+        dealId: String(request.params.id),
+        messages: result.messages.length,
+        limit: result.pageInfo.limit,
+        before: Boolean(query.before),
+        after: Boolean(query.after),
+        hasPreviousPage: result.pageInfo.hasPreviousPage,
+      });
     } catch (error) {
+      logWhatsappMonitorEndpointTiming("conversation-detail", startedAt, {
+        dealId: String(request.params.id),
+        failed: true,
+        error: String(error),
+      });
       next(error);
     }
   });

@@ -26,6 +26,18 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const isLocalAddress = () => {
+  return (
+    import.meta.env.DEV ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.startsWith("192.168.") ||
+    window.location.hostname.startsWith("10.") ||
+    window.location.hostname.endsWith(".ngrok-free.dev") ||
+    window.location.hostname.endsWith(".ngrok-free.app")
+  );
+};
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -45,8 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    if (isLocal) {
+    if (isLocalAddress()) {
       if (!cancelled) {
         setToken("local-dev-token");
         setUser({
@@ -139,8 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async login(email: string, password: string) {
         setLoading(true);
         try {
-          const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-          if (isLocal) {
+          if (isLocalAddress()) {
             setToken("local-dev-token");
             setUser({
               id: "00000000-0000-0000-0000-000000000001",
@@ -182,8 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
       logout() {
-        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        if (isLocal) {
+        if (isLocalAddress()) {
           clearSession();
           setLoading(false);
           return;
@@ -193,8 +202,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       },
       async refreshUser() {
-        const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-        if (isLocal) {
+        if (isLocalAddress()) {
           return;
         }
         const { data } = await supabase.auth.getSession();
