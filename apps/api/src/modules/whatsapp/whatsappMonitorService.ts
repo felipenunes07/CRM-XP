@@ -2461,6 +2461,149 @@ export async function getWhatsappAgentActivityReport(
       params,
     );
 
+  const queryActivityEventsDirectly = () => {
+    const directParams: unknown[] = [startDate, endDate];
+    const directWhere: string[] = ["TRUE"];
+
+    if (user.role === "SELLER") {
+      directParams.push(user.id, user.name);
+      const userIdParamIndex = directParams.length - 1;
+      const userNameParamIndex = directParams.length;
+      directWhere.push(`
+        (
+          sequenced.agent_id = $${userIdParamIndex}::text
+          OR LOWER(sequenced.agent_name) = LOWER($${userNameParamIndex})
+          OR LOWER(sequenced.agent_name) LIKE LOWER($${userNameParamIndex} || ' (%)')
+        )
+      `);
+    }
+
+    return pool.query(
+      `
+      WITH event_rows AS (
+        SELECT
+          da.id,
+          COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
+          COALESCE(
+            CASE
+              WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL
+                THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) || ')'
+              ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name)
+            END,
+            'Sem agente'
+          ) AS agent_name,
+          COALESCE(wi_base.instance_name, wi.instance_name) AS instance_name,
+          COALESCE(wi_base.display_label, wi.display_label) AS display_label,
+          COALESCE(wi_base.phone_number, wi.phone_number) AS phone_number,
+          COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) AS profile_picture_url,
+          da.activity_type,
+          da.created_at,
+          COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
+          COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
+          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
+          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
+        FROM deal_activities da
+        JOIN deals d ON d.id = da.deal_id
+        LEFT JOIN LATERAL (
+          SELECT wi_match.*
+          FROM whatsapp_instances wi_match
+          WHERE wi_match.id = d.whatsapp_instance_id
+            OR LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
+          ORDER BY
+            CASE
+              WHEN wi_match.id = d.whatsapp_instance_id THEN 0
+              ELSE 1
+            END
+          LIMIT 1
+        ) wi_base ON true
+        LEFT JOIN LATERAL (
+          SELECT user_match.*
+          FROM users user_match
+          WHERE user_match.id = da.actor_user_id
+            OR user_match.id = d.assigned_to
+            OR user_match.id = wi_base.assigned_user_id
+            OR LOWER(user_match.name) = LOWER(da.actor_name)
+            OR LOWER(user_match.name) = LOWER(d.assigned_to_name)
+            OR LOWER(user_match.name) = LOWER(wi_base.assigned_user_name)
+          ORDER BY
+            CASE
+              WHEN user_match.id = da.actor_user_id THEN 0
+              WHEN user_match.id = d.assigned_to THEN 1
+              WHEN user_match.id = wi_base.assigned_user_id THEN 2
+              ELSE 3
+            END
+          LIMIT 1
+        ) u ON true
+        LEFT JOIN LATERAL (
+          SELECT wi_match.*
+          FROM whatsapp_instances wi_match
+          WHERE wi_match.id = d.whatsapp_instance_id
+            OR wi_match.assigned_user_id = u.id
+          ORDER BY
+            CASE
+              WHEN wi_match.id = d.whatsapp_instance_id THEN 0
+              WHEN wi_match.assigned_user_id = u.id THEN 1
+              ELSE 2
+            END
+          LIMIT 1
+        ) wi ON true
+        WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+          AND da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND ${monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)")}
+      ),
+      sequenced AS (
+        SELECT
+          event_rows.*,
+          MAX(created_at) FILTER (WHERE activity_type = 'WHATSAPP_RECEIVED') OVER (
+            PARTITION BY agent_id, remote_jid
+            ORDER BY created_at, id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+          ) AS last_inbound_at,
+          MAX(created_at) FILTER (WHERE activity_type = 'WHATSAPP_SENT') OVER (
+            PARTITION BY agent_id, remote_jid
+            ORDER BY created_at, id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+          ) AS last_outbound_at
+        FROM event_rows
+      )
+      SELECT
+        agent_id,
+        MAX(agent_name) AS agent_name,
+        MAX(instance_name) AS instance_name,
+        MAX(display_label) AS display_label,
+        MAX(phone_number) AS phone_number,
+        MAX(profile_picture_url) AS profile_picture_url,
+        remote_jid,
+        MAX(chat_name) AS chat_name,
+        local_date,
+        local_hour,
+        COUNT(*) FILTER (WHERE activity_type = 'WHATSAPP_SENT')::int AS sent_messages,
+        COUNT(*) FILTER (WHERE activity_type = 'WHATSAPP_RECEIVED')::int AS received_messages,
+        COUNT(*) FILTER (
+          WHERE activity_type = 'WHATSAPP_SENT'
+            AND last_inbound_at IS NOT NULL
+            AND (last_outbound_at IS NULL OR last_inbound_at > last_outbound_at)
+        )::int AS response_count,
+        COALESCE(SUM(EXTRACT(EPOCH FROM (created_at - last_inbound_at))) FILTER (
+          WHERE activity_type = 'WHATSAPP_SENT'
+            AND last_inbound_at IS NOT NULL
+            AND (last_outbound_at IS NULL OR last_inbound_at > last_outbound_at)
+        ), 0)::double precision AS response_seconds_total,
+        MAX(created_at) AS last_message_at
+      FROM sequenced
+      WHERE ${directWhere.join("\n        AND ")}
+      GROUP BY
+        local_date,
+        local_hour,
+        agent_id,
+        remote_jid
+      ORDER BY local_date ASC, local_hour ASC, agent_id ASC
+      `,
+      directParams,
+    );
+  };
+
   if (process.env.NODE_ENV !== "test") {
     try {
       const lastUpdateRes = await pool.query(
@@ -2512,6 +2655,19 @@ export async function getWhatsappAgentActivityReport(
       activityRows = refreshed.rows;
     } catch (error) {
       logger.warn("failed to refresh empty whatsapp activity rollups during report request", {
+        days,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  if (!hasCurrentActivityRows(activityRows, pivotDate)) {
+    try {
+      const direct = await queryActivityEventsDirectly();
+      if (hasCurrentActivityRows(direct.rows, pivotDate)) {
+        activityRows = direct.rows;
+      }
+    } catch (error) {
+      logger.warn("failed to read direct whatsapp activity events during report request", {
         days,
         error: error instanceof Error ? error.message : String(error),
       });
