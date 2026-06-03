@@ -268,10 +268,17 @@ function isInternalWhatsappReportName(name: string | null | undefined) {
 }
 
 export function isInternalWhatsappReportChat(input: {
+  isGroup?: boolean;
   name?: string | null;
   remoteJid?: string | null;
 }) {
-  return isInternalWhatsappReportJid(input.remoteJid) || isInternalWhatsappReportName(input.name);
+  if (isInternalWhatsappReportJid(input.remoteJid)) {
+    return true;
+  }
+
+  const jid = normalizeWhatsappReportJid(input.remoteJid);
+  const isGroup = input.isGroup ?? Boolean(jid?.endsWith("@g.us"));
+  return isGroup && isInternalWhatsappReportName(input.name);
 }
 
 function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
@@ -587,7 +594,7 @@ export function classifyWhatsappReportConversation(input: {
     return "private";
   }
 
-  if (isInternalWhatsappReportChat({ name: input.name, remoteJid: input.remoteJid })) {
+  if (isInternalWhatsappReportChat({ isGroup: input.isGroup, name: input.name, remoteJid: input.remoteJid })) {
     return "internal_group";
   }
 

@@ -112,6 +112,14 @@ describe("whatsapp activity report classification", () => {
       name: "Xp Cliente Cavalo Cell",
     })).toBe("other_group");
   });
+
+  it("does not drop private customer chats only because the display name looks internal", () => {
+    expect(isInternalWhatsappReportChat({
+      isGroup: false,
+      remoteJid: "557798074897@s.whatsapp.net",
+      name: "XP Suelen",
+    })).toBe(false);
+  });
 });
 
 describe("whatsapp conversation isolation", () => {
