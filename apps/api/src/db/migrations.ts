@@ -1560,17 +1560,17 @@ export const migrations = [
       created_at DESC,
       id DESC
     );
-
+ 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_lower_instance_created
     ON whatsapp_incoming_messages(
       (LOWER(COALESCE(instance_name, ''))),
       created_at DESC,
       id DESC
     );
-
+ 
   CREATE INDEX IF NOT EXISTS idx_whatsapp_jid_aliases_instance_alias_canonical
     ON whatsapp_jid_aliases(instance_name, alias_jid, canonical_jid);
-
+ 
   DO $$
   DECLARE
     lid_deals INTEGER;
@@ -1581,30 +1581,30 @@ export const migrations = [
     SELECT COUNT(*) INTO lid_deals
     FROM deals
     WHERE whatsapp_jid LIKE '%@lid'
-      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '90 days';
-
+      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '3 days';
+ 
     SELECT COUNT(*) INTO numeric_names
     FROM deals
     WHERE whatsapp_jid IS NOT NULL
-      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '90 days'
+      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '3 days'
       AND (
         customer_display_name IS NULL
         OR customer_display_name = ''
         OR LOWER(customer_display_name) = LOWER(whatsapp_jid)
         OR regexp_replace(customer_display_name, '\\D', '', 'g') = regexp_replace(whatsapp_jid, '\\D', '', 'g')
       );
-
+ 
     SELECT COUNT(*) INTO seller_avatar_profiles
     FROM whatsapp_chat_profiles wcp
     JOIN whatsapp_instances wi
       ON LOWER(wi.instance_name) = LOWER(wcp.instance_name)
-    WHERE wcp.updated_at >= NOW() - INTERVAL '90 days'
+    WHERE wcp.updated_at >= NOW() - INTERVAL '3 days'
       AND NULLIF(wcp.profile_picture_url, '') IS NOT NULL
       AND wcp.profile_picture_url = wi.profile_picture_url;
-
+ 
     SELECT COUNT(*) INTO unlinked_outbound
     FROM whatsapp_incoming_messages wim
-    WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+    WHERE wim.created_at >= NOW() - INTERVAL '3 days'
       AND COALESCE(wim.from_me, false) = true
       AND NOT EXISTS (
         SELECT 1
@@ -1612,11 +1612,11 @@ export const migrations = [
         WHERE da.metadata ->> 'messageId' = wim.message_id
            OR da.metadata ->> 'providerMessageId' = wim.message_id
       );
-
+ 
     RAISE NOTICE 'whatsapp_identity_repair before: lid_deals=%, numeric_names=%, seller_avatar_profiles=%, unlinked_outbound=%',
       lid_deals, numeric_names, seller_avatar_profiles, unlinked_outbound;
   END $$;
-
+ 
   WITH source_messages AS (
     SELECT
       LOWER(COALESCE(instance_name, '')) AS instance_name,
@@ -1625,7 +1625,7 @@ export const migrations = [
       raw_payload,
       created_at
     FROM whatsapp_incoming_messages
-    WHERE created_at >= NOW() - INTERVAL '90 days'
+    WHERE created_at >= NOW() - INTERVAL '3 days'
       AND LOWER(COALESCE(remote_jid, '')) NOT LIKE '%@g.us'
   ),
   candidate_pairs AS (
@@ -1712,7 +1712,7 @@ export const migrations = [
     first_seen_at = LEAST(whatsapp_jid_aliases.first_seen_at, EXCLUDED.first_seen_at),
     last_seen_at = GREATEST(whatsapp_jid_aliases.last_seen_at, EXCLUDED.last_seen_at),
     updated_at = NOW();
-
+ 
   WITH safe_deal_alias AS (
     SELECT
       d.id AS deal_id,
@@ -1726,7 +1726,7 @@ export const migrations = [
      AND wja.alias_jid = LOWER(d.whatsapp_jid)
     WHERE LOWER(COALESCE(d.whatsapp_jid, '')) LIKE '%@lid'
       AND wja.canonical_jid LIKE '%@s.whatsapp.net'
-      AND COALESCE(d.last_activity_at, d.created_at) >= NOW() - INTERVAL '90 days'
+      AND COALESCE(d.last_activity_at, d.created_at) >= NOW() - INTERVAL '3 days'
     GROUP BY d.id
   )
   UPDATE deals d
@@ -1736,7 +1736,7 @@ export const migrations = [
   FROM safe_deal_alias
   WHERE d.id = safe_deal_alias.deal_id
     AND safe_deal_alias.canonical_count = 1;
-
+ 
   WITH inbound_profiles AS (
     SELECT DISTINCT ON (profile_instance_name, profile_remote_jid)
       profile_instance_name AS instance_name,
@@ -1766,7 +1766,7 @@ export const migrations = [
        AND wja.alias_jid = LOWER(wim.remote_jid)
       LEFT JOIN whatsapp_instances wi
         ON LOWER(wi.instance_name) = LOWER(COALESCE(wim.instance_name, ''))
-      WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+      WHERE wim.created_at >= NOW() - INTERVAL '3 days'
         AND COALESCE(wim.from_me, false) = false
         AND LOWER(COALESCE(wim.remote_jid, '')) NOT LIKE '%@g.us'
         AND (
@@ -1839,7 +1839,7 @@ export const migrations = [
     raw_profile = COALESCE(whatsapp_chat_profiles.raw_profile, '{}'::jsonb) || EXCLUDED.raw_profile,
     last_synced_at = GREATEST(COALESCE(whatsapp_chat_profiles.last_synced_at, EXCLUDED.last_synced_at), EXCLUDED.last_synced_at),
     updated_at = NOW();
-
+ 
   DO $$
   DECLARE
     lid_deals INTEGER;
@@ -1850,30 +1850,30 @@ export const migrations = [
     SELECT COUNT(*) INTO lid_deals
     FROM deals
     WHERE whatsapp_jid LIKE '%@lid'
-      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '90 days';
-
+      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '3 days';
+ 
     SELECT COUNT(*) INTO numeric_names
     FROM deals
     WHERE whatsapp_jid IS NOT NULL
-      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '90 days'
+      AND COALESCE(last_activity_at, created_at) >= NOW() - INTERVAL '3 days'
       AND (
         customer_display_name IS NULL
         OR customer_display_name = ''
         OR LOWER(customer_display_name) = LOWER(whatsapp_jid)
         OR regexp_replace(customer_display_name, '\\D', '', 'g') = regexp_replace(whatsapp_jid, '\\D', '', 'g')
       );
-
+ 
     SELECT COUNT(*) INTO seller_avatar_profiles
     FROM whatsapp_chat_profiles wcp
     JOIN whatsapp_instances wi
       ON LOWER(wi.instance_name) = LOWER(wcp.instance_name)
-    WHERE wcp.updated_at >= NOW() - INTERVAL '90 days'
+    WHERE wcp.updated_at >= NOW() - INTERVAL '3 days'
       AND NULLIF(wcp.profile_picture_url, '') IS NOT NULL
       AND wcp.profile_picture_url = wi.profile_picture_url;
-
+ 
     SELECT COUNT(*) INTO unlinked_outbound
     FROM whatsapp_incoming_messages wim
-    WHERE wim.created_at >= NOW() - INTERVAL '90 days'
+    WHERE wim.created_at >= NOW() - INTERVAL '3 days'
       AND COALESCE(wim.from_me, false) = true
       AND NOT EXISTS (
         SELECT 1
@@ -1881,7 +1881,7 @@ export const migrations = [
         WHERE da.metadata ->> 'messageId' = wim.message_id
            OR da.metadata ->> 'providerMessageId' = wim.message_id
       );
-
+ 
     RAISE NOTICE 'whatsapp_identity_repair after: lid_deals=%, numeric_names=%, seller_avatar_profiles=%, unlinked_outbound=%',
       lid_deals, numeric_names, seller_avatar_profiles, unlinked_outbound;
   END $$;
