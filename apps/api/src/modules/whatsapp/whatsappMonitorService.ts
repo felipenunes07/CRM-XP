@@ -605,7 +605,7 @@ export function classifyWhatsappReportConversation(input: {
 }
 
 function conversationProfileJoinSql() {
-  const conversationInstance = "COALESCE(wi.instance_name, latest_whatsapp.metadata ->> 'instance', '')";
+  const conversationInstance = "COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', '')";
   const canonicalJid = "COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)";
   const profileJidMatch = (alias: string) => `
     (
