@@ -674,6 +674,25 @@ describe("whatsapp conversation isolation", () => {
     });
   });
 
+  it("does not run per-deal instance matching for the admin all-agents conversation list", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).not.toContain("wi_monitor");
+    expect(listSql).not.toContain("conversationMatchesInstanceSql");
+    expect(listSql).not.toMatch(/FROM whatsapp_incoming_messages wim_inst/);
+  });
+
   it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
     let webhookInsertCount = 0;
     let dealMatchCount = 0;

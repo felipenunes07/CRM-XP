@@ -969,13 +969,6 @@ export async function listWhatsappMonitorConversations(
     `
       COALESCE(d.last_activity_at, d.created_at) >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
     `,
-    `
-      EXISTS (
-        SELECT 1
-        FROM whatsapp_instances wi_monitor
-        WHERE ${conversationMatchesInstanceSql("wi_monitor")}
-      )
-    `,
   ];
 
   if (user.role === "SELLER") {
