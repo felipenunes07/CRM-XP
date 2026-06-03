@@ -1907,5 +1907,8 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
     on public.whatsapp_monitor_messages (deal_id, created_at desc, id desc);
+
+  CREATE INDEX IF NOT EXISTS idx_wmm_created
+    on public.whatsapp_monitor_messages (created_at desc, id desc);
   `,
 ];
