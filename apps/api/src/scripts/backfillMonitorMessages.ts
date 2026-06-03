@@ -1,12 +1,22 @@
-import { pool, redis } from "../db/client.js";
+import pg from "pg";
+import { redis } from "../db/client.js";
+import { env } from "../lib/env.js";
 import { logger } from "../lib/logger.js";
+
+const { Pool } = pg;
 
 async function main() {
   logger.info("Starting optimized whatsapp monitor messages backfill...");
 
-  const client = await pool.connect();
+  // Create a dedicated pool for the backfill script without the restrictive 20-second timeouts
+  const localPool = new Pool({
+    connectionString: env.DATABASE_URL,
+    connectionTimeoutMillis: 10_000,
+  });
+
+  const client = await localPool.connect();
   try {
-    logger.info("Setting statement_timeout to 5 minutes (300,000ms) for backfill session...");
+    logger.info("Setting server-side statement_timeout to 5 minutes (300,000ms)...");
     await client.query("SET statement_timeout = 300000");
 
     // 1. Backfill from deal_activities
@@ -243,6 +253,7 @@ async function main() {
     logger.info("Optimized backfill completed successfully.");
   } finally {
     client.release();
+    await localPool.end().catch(() => undefined);
   }
 }
 
@@ -253,5 +264,4 @@ main()
   })
   .finally(async () => {
     await redis.quit().catch(() => undefined);
-    await pool.end().catch(() => undefined);
   });
