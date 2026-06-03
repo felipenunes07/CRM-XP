@@ -1886,4 +1886,26 @@ export const migrations = [
       lid_deals, numeric_names, seller_avatar_profiles, unlinked_outbound;
   END $$;
   `,
+  `
+  CREATE TABLE IF NOT EXISTS public.whatsapp_monitor_messages (
+    id                uuid primary key default gen_random_uuid(),
+    deal_id           uuid not null,
+    message_id        varchar(200) not null,
+    remote_jid        varchar(200),
+    instance_name     varchar(100),
+    direction         varchar(10) not null,
+    from_me           boolean not null default false,
+    sender_name       varchar(200),
+    sender_jid        varchar(200),
+    sender_pic_url    text,
+    content           text not null default '',
+    media_json        jsonb,
+    source            varchar(20) not null,
+    created_at        timestamptz not null default now(),
+    constraint uq_wmm_deal_msg_source unique (deal_id, message_id, source)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
+    on public.whatsapp_monitor_messages (deal_id, created_at desc, id desc);
+  `,
 ];

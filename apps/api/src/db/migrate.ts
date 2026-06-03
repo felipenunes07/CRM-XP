@@ -1,10 +1,14 @@
+import { fileURLToPath } from "url";
+import path from "path";
 import { pool } from "./client.js";
 import { logger } from "../lib/logger.js";
 import { runMigrations } from "./runMigrations.js";
 
 export { runMigrations };
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const isMain = process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+
+if (isMain) {
   runMigrations()
     .then(async () => {
       await pool.end();
