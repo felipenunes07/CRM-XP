@@ -2661,7 +2661,7 @@ export async function getWhatsappAgentActivityReport(
   ]);
 
   let activityRows = result.rows;
-  if (!hasReportableCurrentActivityRows(activityRows, pivotDate)) {
+  if (!hasReportableCurrentActivityRows(activityRows, endDate)) {
     try {
       await refreshWhatsappActivityRollups(days * 2);
       const refreshed = await queryActivityRollups();
@@ -2673,10 +2673,10 @@ export async function getWhatsappAgentActivityReport(
       });
     }
   }
-  if (!hasReportableCurrentActivityRows(activityRows, pivotDate)) {
+  if (!hasReportableCurrentActivityRows(activityRows, endDate)) {
     try {
       const direct = await queryActivityEventsDirectly();
-      if (hasReportableCurrentActivityRows(direct.rows, pivotDate)) {
+      if (hasReportableCurrentActivityRows(direct.rows, endDate)) {
         activityRows = direct.rows;
       }
     } catch (error) {

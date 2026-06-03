@@ -81,6 +81,21 @@ function localTodayKey() {
   return `${year}-${month}-${day}`;
 }
 
+function localDateKeyDaysAgo(daysAgo: number) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - daysAgo);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value ?? "2026";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
 describe("whatsapp activity report classification", () => {
   it("excludes internal groups and private company numbers from report calculations", () => {
     expect(isInternalWhatsappReportChat({
@@ -217,6 +232,90 @@ describe("whatsapp conversation isolation", () => {
       sentMessages: 2,
       receivedMessages: 1,
     });
+  });
+
+  it("refreshes stale rollups when the report end date has no activity", async () => {
+    const today = localTodayKey();
+    const yesterday = localDateKeyDaysAgo(1);
+    let rollupQueryCount = 0;
+
+    const staleRow = {
+      agent_id: "user-amanda",
+      agent_name: "Amanda (Amanda)",
+      instance_name: "amanda",
+      display_label: "Amanda",
+      phone_number: "+55 11 91234-5678",
+      profile_picture_url: null,
+      remote_jid: "5511999997777@s.whatsapp.net",
+      chat_name: "Cliente Ontem",
+      local_date: yesterday,
+      local_hour: 15,
+      sent_messages: 4,
+      received_messages: 1,
+      response_count: 1,
+      response_seconds_total: 240,
+      last_message_at: `${yesterday}T18:00:00.000Z`,
+    };
+
+    const freshRow = {
+      agent_id: "user-amanda",
+      agent_name: "Amanda (Amanda)",
+      instance_name: "amanda",
+      display_label: "Amanda",
+      phone_number: "+55 11 91234-5678",
+      profile_picture_url: null,
+      remote_jid: "5511999998888@s.whatsapp.net",
+      chat_name: "Cliente Hoje",
+      local_date: today,
+      local_hour: 13,
+      sent_messages: 2,
+      received_messages: 1,
+      response_count: 1,
+      response_seconds_total: 180,
+      last_message_at: `${today}T16:00:00.000Z`,
+    };
+
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+
+      if (sql.includes("FROM whatsapp_instances wi")) {
+        return {
+          rows: [
+            {
+              instance_id: "instance-amanda",
+              instance_name: "amanda",
+              display_label: "Amanda",
+              phone_number: "+55 11 91234-5678",
+              profile_picture_url: null,
+              assigned_user_id: "user-amanda",
+              assigned_user_name: "Amanda",
+              user_id: "user-amanda",
+              user_name: "Amanda",
+            },
+          ],
+        };
+      }
+
+      if (sql.includes("FROM whatsapp_activity_rollups war")) {
+        rollupQueryCount += 1;
+        return rollupQueryCount === 1
+          ? { rows: [staleRow] }
+          : { rows: [staleRow, freshRow] };
+      }
+
+      return { rows: [] };
+    });
+
+    const report = await getWhatsappAgentActivityReport({
+      id: "admin-stale",
+      name: "Admin Stale",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
+    expect(rollupQueryCount).toBe(2);
+    expect(report.hourlyCells.some((cell) => cell.date === today && cell.sentMessages === 2)).toBe(true);
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {
