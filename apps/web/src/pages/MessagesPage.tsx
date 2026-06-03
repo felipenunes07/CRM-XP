@@ -34,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { api } from "../lib/api";
+import { api, API_BASE_URL } from "../lib/api";
 import { buildMessageTimelineItems } from "./messagesPage.helpers";
 
 function initials(name: string) {
@@ -219,8 +219,8 @@ function isMediaPlaceholder(content: string) {
   return /^\[(Imagem|Video|Vídeo|Audio|Áudio|Sticker|Documento)\]$/i.test(content.trim());
 }
 
-const CONVERSATION_REFRESH_MS = 20000;
-const CHAT_REFRESH_MS = 8000;
+const CONVERSATION_REFRESH_MS = 120000; // 2 min (SSE fallback)
+const CHAT_REFRESH_MS = 60000;          // 1 min (SSE fallback)
 
 function conversationSortValue(conversation: WhatsappMonitorConversation) {
   const parsed = Date.parse(conversation.lastMessageAt ?? "");
@@ -482,6 +482,86 @@ export function MessagesPage() {
   const [replyText, setReplyText] = useState("");
   const [activeTemplateIndex, setActiveTemplateIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const selectedConversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversationId;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const base = API_BASE_URL.replace(/\/+$/, "");
+    const es = new EventSource(`${base}/api/whatsapp-monitor/stream?token=${encodeURIComponent(token)}`);
+
+    es.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data) as {
+          dealId: string;
+          messageId: string;
+          direction: "INBOUND" | "OUTBOUND";
+          fromMe: boolean;
+          senderName: string | null;
+          content: string;
+          createdAt: string;
+        };
+
+        if (msg.dealId === selectedConversationIdRef.current) {
+          queryClient.setQueryData(["whatsapp-monitor-conversation", msg.dealId], (old: any) => {
+            if (!old) return old;
+            
+            const newMsg: WhatsappMonitorMessage = {
+              id: msg.messageId,
+              dealId: msg.dealId,
+              direction: msg.direction,
+              senderName: msg.senderName,
+              senderJid: null,
+              senderProfilePictureUrl: null,
+              content: msg.content,
+              createdAt: msg.createdAt,
+              remoteJid: null,
+              isGroup: false,
+              metadata: {
+                messageId: msg.messageId,
+              },
+              risk: null,
+            };
+
+            if (old.pages) {
+              const [latestPage, ...olderPages] = old.pages;
+              
+              const exists = latestPage.messages.some((m: any) => m.id === newMsg.id || m.metadata?.messageId === newMsg.id);
+              if (exists) return old;
+
+              return {
+                ...old,
+                pages: [
+                  {
+                    ...latestPage,
+                    messages: [...latestPage.messages, newMsg],
+                  },
+                  ...olderPages,
+                ],
+              };
+            }
+            return old;
+          });
+        }
+
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+      } catch (err) {
+        console.error("Error parsing SSE data", err);
+      }
+    };
+
+    es.onerror = () => {
+      // EventSource reconecta sozinho
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [token, queryClient]);
 
   const templatesQuery = useQuery({
     queryKey: ["message-templates"],
