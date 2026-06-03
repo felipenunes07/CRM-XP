@@ -1182,8 +1182,33 @@ async function getLinkedWhatsappConversationDealIds(
     return [rootDealId];
   }
 
+  // PERF: the previous form used `WHERE d.id = $1 OR (...)`, which forced the
+  // planner to sequential-scan the entire `deals` table (the OR with the PK
+  // defeats every index) and run a per-row LATERAL lookup against
+  // deal_activities + whatsapp_jid_aliases. With a large deals table this could
+  // take minutes per conversation open. We now:
+  //   1. expand the alias set up front (cheap, indexed lookup on
+  //      whatsapp_jid_aliases by canonical_jid) so deals stored under a LID/PN
+  //      variant are still captured, then
+  //   2. match deals.whatsapp_jid against that set with an indexed semi-join
+  //      (idx_deals_whatsapp_jid), computing the instance LATERAL only for the
+  //      handful of matched deals.
+  // The root deal id is guaranteed in the result by the JS guard below, so it
+  // no longer needs to live inside the SQL OR.
   const result = await pool.query(
     `
+    WITH alias_set AS (
+      SELECT DISTINCT jid
+      FROM (
+        SELECT unnest($2::text[]) AS jid
+        UNION
+        SELECT wja.alias_jid AS jid
+        FROM whatsapp_jid_aliases wja
+        WHERE wja.canonical_jid = ANY($2::text[])
+          AND ($3 = '' OR LOWER(wja.instance_name) = LOWER($3))
+      ) expanded
+      WHERE jid IS NOT NULL AND jid <> ''
+    )
     SELECT DISTINCT d.id
     FROM deals d
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
@@ -1196,25 +1221,11 @@ async function getLinkedWhatsappConversationDealIds(
       ORDER BY da.created_at DESC, da.id DESC
       LIMIT 1
     ) latest_deal_instance ON true
-    LEFT JOIN LATERAL (
-      SELECT wja.canonical_jid
-      FROM whatsapp_jid_aliases wja
-      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, ''))
-        AND wja.alias_jid = d.whatsapp_jid
-      ORDER BY wja.updated_at DESC
-      LIMIT 1
-    ) deal_alias ON true
-    WHERE d.id = $1
-      OR (
-        ${monitorableWhatsappJidSql("d.whatsapp_jid")}
-        AND (
-          d.whatsapp_jid = ANY($2::text[])
-          OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($2::text[])
-        )
-        AND (
-          $3 = ''
-          OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($3)
-        )
+    WHERE ${monitorableWhatsappJidSql("d.whatsapp_jid")}
+      AND d.whatsapp_jid IN (SELECT jid FROM alias_set)
+      AND (
+        $3 = ''
+        OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($3)
       )
     ORDER BY d.id
     `,

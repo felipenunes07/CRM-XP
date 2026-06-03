@@ -131,6 +131,25 @@ async function getEvolutionInstanceConfig(instanceName: string | null | undefine
   };
 }
 
+async function getInstanceOwnAvatarUrl(instanceName: string | null | undefined): Promise<string | null> {
+  if (!instanceName) {
+    return null;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT profile_picture_url
+    FROM whatsapp_instances
+    WHERE LOWER(instance_name) = LOWER($1)
+    LIMIT 1
+    `,
+    [instanceName],
+  );
+
+  const url = result.rows[0]?.profile_picture_url;
+  return url ? String(url) : null;
+}
+
 async function fetchEvolutionJson(
   config: EvolutionInstanceConfig,
   path: string,
@@ -338,11 +357,25 @@ async function upsertParticipantProfile(
 export async function resolveWhatsappMessageMetadata(context: EvolutionMessageContext): Promise<WhatsappChatMetadata> {
   const config = await getEvolutionInstanceConfig(context.instanceName);
   const instanceName = config?.instanceName ?? context.instanceName ?? "";
+
+  // Guard against assigning the seller's own avatar (the instance owner's photo)
+  // to a customer. This happens when remoteJid/senderJid is an unresolved @lid
+  // and Evolution returns the instance owner's picture. We drop any picture that
+  // matches the instance's own avatar so the client never inherits the seller's
+  // photo.
+  const ownAvatarUrl = await getInstanceOwnAvatarUrl(instanceName);
+  const sanitizePicture = (url: string | null | undefined): string | null => {
+    if (!url) {
+      return null;
+    }
+    return ownAvatarUrl && url === ownAvatarUrl ? null : url;
+  };
+
   const metadata: WhatsappChatMetadata = {
     chatDisplayName: context.chatDisplayName,
-    chatProfilePictureUrl: context.chatProfilePictureUrl,
+    chatProfilePictureUrl: sanitizePicture(context.chatProfilePictureUrl),
     senderName: context.senderName,
-    senderProfilePictureUrl: context.senderProfilePictureUrl,
+    senderProfilePictureUrl: sanitizePicture(context.senderProfilePictureUrl),
   };
 
   if (!context.remoteJid) {
@@ -370,7 +403,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
           });
         }
       } else {
-        const profilePictureUrl = await fetchEvolutionProfilePicture(config, context.remoteJid);
+        const profilePictureUrl = sanitizePicture(await fetchEvolutionProfilePicture(config, context.remoteJid));
         metadata.chatProfilePictureUrl = profilePictureUrl ?? metadata.chatProfilePictureUrl;
         await upsertChatProfile(instanceName, context.remoteJid, {
           displayName: metadata.chatDisplayName ?? context.senderName,
@@ -407,7 +440,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
 
     if (config && (!cachedSender || !isFresh(cachedSender.lastSyncedAt) || !cachedSender.profilePictureUrl)) {
       const profilePictureUrl =
-        metadata.senderProfilePictureUrl ?? (await fetchEvolutionProfilePicture(config, context.senderJid));
+        metadata.senderProfilePictureUrl ?? sanitizePicture(await fetchEvolutionProfilePicture(config, context.senderJid));
       metadata.senderProfilePictureUrl = profilePictureUrl ?? metadata.senderProfilePictureUrl;
       await upsertParticipantProfile(instanceName, context.senderJid, {
         displayName: metadata.senderName,
