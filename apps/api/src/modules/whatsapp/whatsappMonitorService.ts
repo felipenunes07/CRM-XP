@@ -35,6 +35,7 @@ import {
   mapWhatsappActivityToMessage,
   median,
   mergeWhatsappMonitorMessages,
+  whatsappJidDigits,
 } from "./whatsappMonitorCore.js";
 import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.js";
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
@@ -661,12 +662,10 @@ function conversationProfileJoinSql() {
     LEFT JOIN LATERAL (
       SELECT
         wim.chat_display_name,
-        wim.chat_profile_picture_url,
-        wim.sender_name,
-        wim.participant_name,
-        wim.sender_profile_picture_url
+        wim.chat_profile_picture_url
       FROM whatsapp_incoming_messages wim
       WHERE ${profileJidMatch("wim")}
+        AND (wim.from_me = false OR d.whatsapp_jid LIKE '%@g.us')
         AND (
           wim.instance_name = ${conversationInstance}
           OR COALESCE(wim.instance_name, '') = ''
@@ -677,7 +676,8 @@ function conversationProfileJoinSql() {
     LEFT JOIN LATERAL (
       SELECT
         wim_inbound.sender_name AS inbound_sender_name,
-        COALESCE(wim_inbound.sender_profile_picture_url, wim_inbound.chat_profile_picture_url) AS inbound_sender_picture
+        wim_inbound.sender_profile_picture_url AS inbound_sender_picture,
+        wim_inbound.chat_profile_picture_url AS inbound_chat_picture
       FROM whatsapp_incoming_messages wim_inbound
       WHERE ${profileJidMatch("wim_inbound")}
         AND wim_inbound.from_me = false
@@ -705,16 +705,18 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       COALESCE(
         chat_profile.display_name,
         latest_whatsapp.metadata ->> 'chatDisplayName',
-        incoming_profile.chat_display_name,
-        incoming_profile.sender_name,
-        incoming_profile.participant_name
+        incoming_profile.chat_display_name
       ) AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       COALESCE(
         chat_profile.profile_picture_url,
-        latest_whatsapp.metadata ->> 'chatProfilePictureUrl',
+        CASE
+          WHEN latest_whatsapp.activity_type = 'WHATSAPP_RECEIVED'
+            THEN latest_whatsapp.metadata ->> 'chatProfilePictureUrl'
+          ELSE NULL
+        END,
         incoming_profile.chat_profile_picture_url,
-        incoming_profile.sender_profile_picture_url,
+        incoming_inbound_profile.inbound_chat_picture,
         incoming_inbound_profile.inbound_sender_picture
       ) AS profile_picture_url,
       CASE
@@ -1376,7 +1378,14 @@ export async function getWhatsappMonitorConversation(
   let messages = activityMessages;
 
   if (conversation.remoteJid && remoteJidAliases.length) {
-    const incomingParams: unknown[] = [remoteJidAliases, conversation.instanceName || ""];
+    const remoteJidAliasDigits = Array.from(
+      new Set(
+        remoteJidAliases
+          .map((alias) => (alias.endsWith("@g.us") ? null : whatsappJidDigits(alias)))
+          .filter((digits): digits is string => Boolean(digits)),
+      ),
+    );
+    const incomingParams: unknown[] = [remoteJidAliases, remoteJidAliasDigits, conversation.instanceName || ""];
     const incomingCursorSql = messageCursorConditionSql("wim_base", cursor, mode, incomingParams);
     incomingParams.push(queryLimit);
     const incomingLimitParamIndex = incomingParams.length;
@@ -1390,14 +1399,39 @@ export async function getWhatsappMonitorConversation(
       FROM (
         SELECT wim_base.*
         FROM whatsapp_incoming_messages wim_base
-        WHERE wim_base.remote_jid = ANY($1::text[])
+        WHERE (
+            wim_base.remote_jid = ANY($1::text[])
+            OR wim_base.participant_jid = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload #>> '{key,remoteJid}', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload #>> '{key,participant}', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload #>> '{key,senderJid}', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'remoteJid', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'chatId', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'jid', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'participant', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'participantJid', '')) = ANY($1::text[])
+            OR LOWER(COALESCE(wim_base.raw_payload ->> 'senderJid', '')) = ANY($1::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload #>> '{key,remoteJidPn}', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload #>> '{key,remoteJidAlt}', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload #>> '{key,senderPn}', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload #>> '{key,participantPn}', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload #>> '{key,participantAlt}', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'remoteJidPn', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'remoteJidAlt', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'chatIdPn', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'chatIdAlt', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'jidAlt', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'senderPn', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'participantPn', ''), '\\D', '', 'g') = ANY($2::text[])
+            OR regexp_replace(COALESCE(wim_base.raw_payload ->> 'participantAlt', ''), '\\D', '', 'g') = ANY($2::text[])
+          )
           AND wim_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
           AND (
             EXISTS (
               SELECT 1 FROM unnest($1::text[]) AS alias_jid
               WHERE alias_jid LIKE '%@g.us'
             )
-            OR LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)
+            OR LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($3)
           )
           ${incomingCursorSql}
         ORDER BY wim_base.created_at ${orderDirection}, wim_base.id ${orderDirection}
@@ -1436,9 +1470,17 @@ export async function getWhatsappMonitorConversation(
         id: String(row.id),
         dealId,
         direction: fromMe ? "OUTBOUND" : "INBOUND",
-        senderName: row.sender_display_name ? String(row.sender_display_name) : conversation.contactName,
+        senderName: fromMe
+          ? conversation.agentName ?? (row.sender_display_name ? String(row.sender_display_name) : "Vendedora")
+          : row.sender_display_name
+            ? String(row.sender_display_name)
+            : conversation.contactName,
         senderJid: row.participant_jid ? String(row.participant_jid) : null,
-        senderProfilePictureUrl: row.participant_profile_picture_url ? String(row.participant_profile_picture_url) : null,
+        senderProfilePictureUrl: fromMe
+          ? null
+          : row.participant_profile_picture_url
+            ? String(row.participant_profile_picture_url)
+            : null,
         content,
         createdAt: isoDate(row.created_at),
         remoteJid: conversation.remoteJid,

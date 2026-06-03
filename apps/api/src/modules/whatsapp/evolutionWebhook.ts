@@ -15,6 +15,7 @@ import {
   isMonitorableWhatsappJid,
   areWhatsappJidsEqual,
   extractEvolutionFromMeFlag,
+  normalizeWhatsappPhoneJidCandidate,
   type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
@@ -90,37 +91,56 @@ async function findAgentByParticipantJid(participantJid: string | null) {
 async function resolvePhoneJidFromLid(lidJid: string): Promise<string | null> {
   const res = await pool.query(
     `
-    SELECT DISTINCT
-      COALESCE(
-        raw_payload -> 'key' ->> 'participantPn',
-        raw_payload -> 'key' ->> 'remoteJidPn',
-        raw_payload ->> 'participantPn',
-        raw_payload ->> 'remoteJidPn'
-      ) as phone_net
-    FROM whatsapp_incoming_messages
-    WHERE (
-        participant_jid = $1
-        OR remote_jid = $1
-      )
-      AND (
-        raw_payload -> 'key' ->> 'participantPn' IS NOT NULL
-        OR raw_payload -> 'key' ->> 'remoteJidPn' IS NOT NULL
-        OR raw_payload ->> 'participantPn' IS NOT NULL
-        OR raw_payload ->> 'remoteJidPn' IS NOT NULL
-      )
-    LIMIT 1
+    WITH matching_payloads AS (
+      SELECT raw_payload
+      FROM whatsapp_incoming_messages
+      WHERE created_at >= NOW() - INTERVAL '90 days'
+        AND (
+          LOWER(COALESCE(participant_jid, '')) = LOWER($1)
+          OR LOWER(COALESCE(remote_jid, '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload #>> '{key,remoteJid}', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload #>> '{key,participant}', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload #>> '{key,senderJid}', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload ->> 'remoteJid', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload ->> 'participant', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload ->> 'participantJid', '')) = LOWER($1)
+          OR LOWER(COALESCE(raw_payload ->> 'senderJid', '')) = LOWER($1)
+        )
+      ORDER BY created_at DESC
+      LIMIT 50
+    ),
+    candidates AS (
+      SELECT DISTINCT field_value AS phone_net
+      FROM matching_payloads
+      CROSS JOIN LATERAL (
+        VALUES
+          (raw_payload #>> '{key,remoteJidPn}'),
+          (raw_payload #>> '{key,remoteJidAlt}'),
+          (raw_payload #>> '{key,senderPn}'),
+          (raw_payload #>> '{key,participantPn}'),
+          (raw_payload #>> '{key,participantAlt}'),
+          (raw_payload ->> 'remoteJidPn'),
+          (raw_payload ->> 'remoteJidAlt'),
+          (raw_payload ->> 'chatIdPn'),
+          (raw_payload ->> 'chatIdAlt'),
+          (raw_payload ->> 'jidAlt'),
+          (raw_payload ->> 'senderPn'),
+          (raw_payload ->> 'participantPn'),
+          (raw_payload ->> 'participantAlt')
+      ) AS fields(field_value)
+      WHERE field_value IS NOT NULL AND field_value <> ''
+    )
+    SELECT phone_net
+    FROM candidates
+    LIMIT 10
     `,
     [lidJid],
   );
 
-  if (res.rows[0]?.phone_net) {
-    const raw = res.rows[0].phone_net;
-    if (raw.endsWith("@s.whatsapp.net")) {
-      return raw;
-    }
-    const digits = raw.replace(/\D/g, "");
-    if (digits.length >= 10) {
-      return `${digits}@s.whatsapp.net`;
+  for (const row of res.rows) {
+    const normalized = normalizeWhatsappPhoneJidCandidate(row.phone_net);
+    if (normalized) {
+      return normalized;
     }
   }
 

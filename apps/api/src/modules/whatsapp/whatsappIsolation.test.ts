@@ -237,8 +237,11 @@ describe("whatsapp conversation isolation", () => {
     const incomingQuery = String(incomingCall![0]);
     const incomingParams = incomingCall![1];
 
-    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], "amanda", 21]);
-    expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($2)");
+    expect(incomingParams).toEqual([["5511999998888@s.whatsapp.net"], ["5511999998888"], "amanda", 21]);
+    expect(incomingQuery).toContain("wim_base.participant_jid = ANY($1::text[])");
+    expect(incomingQuery).toContain("raw_payload #>> '{key,remoteJidPn}'");
+    expect(incomingQuery).toContain("raw_payload ->> 'senderPn'");
+    expect(incomingQuery).toContain("LOWER(COALESCE(wim_base.instance_name, '')) = LOWER($3)");
     expect(incomingQuery).not.toMatch(/OR\s+COALESCE\(wim_base\.instance_name,\s*''\)\s*=\s*''/);
   });
 
@@ -434,6 +437,73 @@ describe("whatsapp conversation isolation", () => {
     expect(dealMatchQuery).toContain("metadata ->> 'providerMessageId' = $1");
   });
 
+  it("matches outbound fromMe LID upserts by the canonical phone alias", async () => {
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+      if (sql.includes("webhook_events")) {
+        return { rowCount: 1, rows: [{ id: "mock-event-id" }] };
+      }
+      if (sql.includes("whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-suelen",
+              display_label: "Suelen",
+              phone_number: "+55 11 91234-5678",
+              assigned_user_id: "user-suelen",
+              assigned_user_name: "Suelen",
+            },
+          ],
+        };
+      }
+      if (sql.includes("existing_message_deal") || sql.includes("remote_jid_deal")) {
+        return {
+          rows: [
+            {
+              id: "deal-leomar",
+              whatsapp_instance_id: "instance-suelen",
+              whatsapp_jid: "5511998765432@s.whatsapp.net",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    await handleEvolutionWebhook({
+      event: "MESSAGES_UPSERT",
+      instance: "suelen",
+      data: {
+        key: {
+          remoteJid: "269097182986462@lid",
+          id: "reply-phone-alias-1",
+          fromMe: true,
+          senderPn: "5511998765432@s.whatsapp.net",
+        },
+        message: {
+          conversation: "Sim, pode deixar",
+        },
+        messageTimestamp: 1779364800,
+      },
+    });
+
+    const incomingCall = mocks.query.mock.calls.find(call => String(call[0]).includes("INSERT INTO whatsapp_incoming_messages"));
+    const dealMatchCall = mocks.query.mock.calls.find(call => String(call[0]).includes("existing_message_deal"));
+
+    expect(incomingCall?.[1]?.[0]).toBe("5511998765432@s.whatsapp.net");
+    expect(incomingCall?.[1]?.[11]).toBe(true);
+    expect(dealMatchCall).toBeDefined();
+    expect(dealMatchCall![1]).toEqual([
+      "reply-phone-alias-1",
+      "5511998765432@s.whatsapp.net",
+      "instance-suelen",
+      "user-suelen",
+      "Suelen",
+      ["5511998765432@s.whatsapp.net", "269097182986462@lid"],
+      "suelen",
+    ]);
+  });
+
   it("uses raw Evolution fromMe=false to render previously misclassified private activity direction", async () => {
     mocks.query
       .mockResolvedValueOnce({
@@ -521,6 +591,9 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
     expect(listSql).toContain("ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC");
     expect(listSql).toContain("WHERE d.id IN (SELECT id FROM candidate_deals)");
+    expect(listSql).toContain("latest_whatsapp.activity_type = 'WHATSAPP_RECEIVED'");
+    expect(listSql).not.toContain("incoming_profile.sender_profile_picture_url");
+    expect(listSql).not.toContain("incoming_profile.sender_name");
     expect(listSql).not.toContain("DISTINCT ON");
     expect(listParams).toEqual(["admin-1", 26]);
     expect(result.pageInfo).toEqual({
