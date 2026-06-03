@@ -1,4 +1,5 @@
 import { pool } from "../../db/client.js"; // pool principal: a escrita do webhook NÃO usa o pool isolado de leitura
+import { publishMonitorMessage } from "./whatsappMonitorBus.js";
 
 export interface MonitorMessageInput {
   dealId: string;
@@ -51,6 +52,16 @@ export async function recordMonitorMessage(input: MonitorMessageInput): Promise<
         input.createdAt,
       ],
     );
+
+    publishMonitorMessage({
+      dealId: input.dealId,
+      messageId: input.messageId,
+      direction: input.fromMe ? "OUTBOUND" : "INBOUND",
+      fromMe: input.fromMe,
+      senderName: input.senderName,
+      content: input.content ?? "",
+      createdAt: typeof input.createdAt === "string" ? input.createdAt : new Date(input.createdAt).toISOString(),
+    });
   } catch (err) {
     // best-effort: loga e segue. A verdade continua em whatsapp_incoming_messages/deal_activities.
     console.error("recordMonitorMessage falhou (ignorado):", (err as Error).message);
