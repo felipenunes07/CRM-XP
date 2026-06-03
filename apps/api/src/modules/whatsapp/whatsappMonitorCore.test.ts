@@ -401,6 +401,19 @@ describe("whatsappMonitorCore", () => {
         agentName: "XP AMANDA",
       }),
     ).toBe("CL1246 - JAMARC / XP EXPOR TELAS");
+
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "5511998595698@s.whatsapp.net",
+        isGroup: false,
+        chatDisplayName: "XP Thais",
+        customerDisplayName: "XP Thais",
+        title: "XP Thais",
+        agentName: "XP AMANDA",
+        assignedUserName: "Amanda",
+        instanceLabel: "XP AMANDA",
+      }),
+    ).toBe("XP Thais");
   });
 
   it("prefers customer/title names over seller-like chat profile names", () => {

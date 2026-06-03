@@ -800,14 +800,14 @@ describe("whatsapp conversation isolation", () => {
       },
     );
 
-    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("agent_interaction_activity"));
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("wmm_agent"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
 
-    expect(listSql).toContain("agent_interaction_activity");
+    expect(listSql).toContain("wmm_agent");
     expect(listSql).toContain("agent_interaction_instance.id = $2");
-    expect(listSql).toContain("agent_interaction_activity.created_at >=");
-    expect(listSql).toContain("agent_interaction_activity.activity_type = 'WHATSAPP_SENT'");
+    expect(listSql).toContain("wmm_agent.created_at >=");
+    expect(listSql).toContain("wmm_agent.direction = 'OUTBOUND'");
   });
 
   it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {

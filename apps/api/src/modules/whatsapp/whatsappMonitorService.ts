@@ -686,15 +686,15 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       ) AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       COALESCE(
-        chat_profile.profile_picture_url,
+        NULLIF(chat_profile.profile_picture_url, wi.profile_picture_url),
         CASE
           WHEN latest_whatsapp.direction = 'INBOUND'
-            THEN COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl')
+            THEN NULLIF(COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl'), wi.profile_picture_url)
           ELSE NULL
         END,
-        incoming_profile.chat_profile_picture_url,
-        incoming_inbound_profile.inbound_chat_picture,
-        incoming_inbound_profile.inbound_sender_picture
+        NULLIF(incoming_profile.chat_profile_picture_url, wi.profile_picture_url),
+        NULLIF(incoming_inbound_profile.inbound_chat_picture, wi.profile_picture_url),
+        NULLIF(incoming_inbound_profile.inbound_sender_picture, wi.profile_picture_url)
       ) AS profile_picture_url,
       CASE
         WHEN d.whatsapp_jid LIKE '%@g.us'
@@ -810,21 +810,18 @@ function selectedAgentInteractionSql(instanceIdParamIndex: number, period?: Conv
   return `
     EXISTS (
       SELECT 1
-      FROM deal_activities agent_interaction_activity
+      FROM whatsapp_monitor_messages wmm_agent
       JOIN whatsapp_instances agent_interaction_instance
         ON agent_interaction_instance.id = $${instanceIdParamIndex}
-      WHERE agent_interaction_activity.deal_id = d.id
-        AND agent_interaction_activity.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-        AND ${outboundWhatsappActivitySql("agent_interaction_activity")}
+      WHERE wmm_agent.deal_id = d.id
+        AND wmm_agent.direction = 'OUTBOUND'
         AND (
-          agent_interaction_activity.metadata ->> 'instanceId' = agent_interaction_instance.id::text
-          OR LOWER(COALESCE(agent_interaction_activity.metadata ->> 'instance', '')) = LOWER(agent_interaction_instance.instance_name)
-          OR (agent_interaction_activity.actor_user_id IS NOT NULL AND agent_interaction_activity.actor_user_id = agent_interaction_instance.assigned_user_id)
-          OR LOWER(COALESCE(agent_interaction_activity.actor_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
-          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.display_label, ''), '^xp\\s+', '', 'i'))
-          OR LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_activity.actor_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+          LOWER(COALESCE(wmm_agent.instance_name, '')) = LOWER(agent_interaction_instance.instance_name)
+          OR LOWER(COALESCE(wmm_agent.sender_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
+          OR LOWER(REGEXP_REPLACE(COALESCE(wmm_agent.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.display_label, ''), '^xp\\s+', '', 'i'))
+          OR LOWER(REGEXP_REPLACE(COALESCE(wmm_agent.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.assigned_user_name, ''), '^xp\\s+', '', 'i'))
         )
-        ${period ? `AND ${activityPeriodRangeSql("agent_interaction_activity.created_at", period)}` : ""}
+        ${period ? `AND ${activityPeriodRangeSql("wmm_agent.created_at", period)}` : ""}
     )
   `;
 }

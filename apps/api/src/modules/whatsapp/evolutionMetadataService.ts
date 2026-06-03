@@ -484,11 +484,21 @@ export async function refreshWhatsappChatProfile(
     return metadata;
   }
 
+  const ownAvatarUrl = await getInstanceOwnAvatarUrl(resolvedInstanceName);
+  const sanitizePicture = (url: string | null | undefined): string | null => {
+    if (!url) {
+      return null;
+    }
+    return ownAvatarUrl && url === ownAvatarUrl ? null : url;
+  };
+
+  metadata.chatProfilePictureUrl = sanitizePicture(metadata.chatProfilePictureUrl);
+
   if (isGroup) {
     const groupInfo = await fetchEvolutionGroupInfo(config, remoteJid);
     if (groupInfo) {
       metadata.chatDisplayName = groupInfo.displayName ?? metadata.chatDisplayName;
-      metadata.chatProfilePictureUrl = groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl;
+      metadata.chatProfilePictureUrl = sanitizePicture(groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl);
       await upsertChatProfile(resolvedInstanceName, remoteJid, {
         displayName: metadata.chatDisplayName,
         profilePictureUrl: metadata.chatProfilePictureUrl,
@@ -500,7 +510,7 @@ export async function refreshWhatsappChatProfile(
   }
 
   const profilePictureUrl = await fetchEvolutionProfilePicture(config, remoteJid);
-  metadata.chatProfilePictureUrl = profilePictureUrl ?? metadata.chatProfilePictureUrl;
+  metadata.chatProfilePictureUrl = sanitizePicture(profilePictureUrl ?? metadata.chatProfilePictureUrl);
   await upsertChatProfile(resolvedInstanceName, remoteJid, {
     displayName: metadata.chatDisplayName,
     profilePictureUrl: metadata.chatProfilePictureUrl,

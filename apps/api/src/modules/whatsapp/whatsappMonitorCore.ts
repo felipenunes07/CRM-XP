@@ -703,9 +703,6 @@ function looksLikeAgentOwnedPrivateName(
     return true;
   }
 
-  if (/^xp(\s|-|$)/.test(normalizedCandidate)) {
-    return true;
-  }
 
   return blockedLabels.some((label) => {
     const firstName = label.split(" ")[0] ?? "";
