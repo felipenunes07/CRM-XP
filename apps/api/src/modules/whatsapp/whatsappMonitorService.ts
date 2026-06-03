@@ -1368,7 +1368,6 @@ export async function getWhatsappMonitorConversation(
       const fastMessages = rows.map((row): WhatsappMonitorMessage => {
         const mediaJson = row.media_json && typeof row.media_json === "object" ? (row.media_json as Record<string, unknown>) : {};
         const content = String(row.content ?? "");
-        const isGroup = Boolean(row.remote_jid?.endsWith("@g.us"));
         const msgId = String(row.id);
         const createdAtIso = isoDate(row.created_at);
 
@@ -1387,8 +1386,8 @@ export async function getWhatsappMonitorConversation(
           senderProfilePictureUrl: row.sender_pic_url ? String(row.sender_pic_url) : null,
           content,
           createdAt: createdAtIso,
-          remoteJid: row.remote_jid ? String(row.remote_jid) : null,
-          isGroup,
+          remoteJid: conversation.remoteJid,
+          isGroup: conversation.isGroup,
           metadata: {
             ...mediaJson,
             messageId: row.message_id,
