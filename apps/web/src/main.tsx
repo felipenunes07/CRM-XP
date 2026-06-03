@@ -5,9 +5,26 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { UiLanguageProvider } from "./i18n";
+import { isApiAuthError } from "./lib/api";
 import "./styles.css";
 
-const queryClient = new QueryClient();
+const shouldRetryRequest = (failureCount: number, error: unknown) => {
+  if (isApiAuthError(error)) {
+    return false;
+  }
+  return failureCount < 2;
+};
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: shouldRetryRequest,
+    },
+    mutations: {
+      retry: shouldRetryRequest,
+    },
+  },
+});
 
 // Handle chunk load errors (caused by new deployments)
 window.addEventListener("error", (e) => {

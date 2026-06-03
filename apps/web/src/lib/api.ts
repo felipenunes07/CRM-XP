@@ -79,6 +79,22 @@ import type { AuthUser } from "../hooks/useAuth";
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 15_000;
 
+export class ApiAuthError extends Error {
+  status = 401;
+
+  constructor(message = "Sessao invalida") {
+    super(message);
+    this.name = "ApiAuthError";
+  }
+}
+
+export function isApiAuthError(error: unknown) {
+  return error instanceof ApiAuthError || (
+    error instanceof Error &&
+    error.name === "ApiAuthError"
+  );
+}
+
 export interface PermissionDefinition {
   key: string;
   name: string;
@@ -129,7 +145,12 @@ function createRequestSignal(upstreamSignal?: AbortSignal | null) {
   };
 }
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string | null): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  token?: string | null,
+  didRefreshAuth = false,
+): Promise<T> {
   const { signal, cleanup } = createRequestSignal(options.signal);
 
   try {
@@ -145,9 +166,28 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
     if (!response.ok) {
       if (response.status === 401) {
-        import("./supabase").then(({ supabase }) => {
-          supabase.auth.signOut().catch(() => {});
-        }).catch(() => {});
+        const payload = (await response.json().catch(() => ({ message: "Sessao invalida" }))) as { message?: string };
+        const message = payload.message ?? "Sessao invalida";
+
+        if (token && !didRefreshAuth) {
+          try {
+            const { supabase } = await import("./supabase");
+            const { data, error } = await supabase.auth.refreshSession();
+            const refreshedToken = data.session?.access_token;
+            if (!error && refreshedToken && refreshedToken !== token) {
+              return request<T>(path, options, refreshedToken, true);
+            }
+          } catch {
+            // Fall through to sign-out below.
+          }
+        }
+
+        import("./supabase")
+          .then(({ supabase }) => {
+            supabase.auth.signOut().catch(() => {});
+          })
+          .catch(() => {});
+        throw new ApiAuthError(message);
       }
       const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };
       throw new Error(payload.message ?? "Request failed");
