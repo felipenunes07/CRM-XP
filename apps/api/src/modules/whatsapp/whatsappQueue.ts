@@ -8,8 +8,8 @@ import {
   markRecipientSent,
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
-import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } from "./evolutionService.js";
-import { sendUazapiTextMessage, sendUazapiCarouselMessage } from "./uazapiService.js";
+import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
+import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage } from "./uazapiService.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 const connection = queueEnabled
@@ -54,15 +54,43 @@ async function processRecipientDispatch(recipientId: string) {
       // UazAPI provider
       if (context.messageType === "CAROUSEL" && context.carouselData?.length) {
         payload = await sendUazapiCarouselMessage(context.uazapiInstance, context.jid, context.carouselData);
+      } else if (context.messageType === "VIDEO" && context.videoUrl) {
+        payload = await sendUazapiVideoMessage(context.uazapiInstance, context.jid, context.videoUrl, context.messageText);
       } else {
         payload = await sendUazapiTextMessage(context.uazapiInstance, context.jid, context.messageText);
       }
     } else if (context.evolutionInstance) {
       // Evolution API provider
-      payload = await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText);
+      if (context.messageType === "VIDEO" && context.videoUrl) {
+        payload = await sendWhatsappInstanceMediaMessage(
+          context.evolutionInstance,
+          context.jid,
+          context.videoUrl,
+          "video",
+          "video.mp4",
+          context.messageText,
+        );
+      } else {
+        payload = await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText);
+      }
     } else {
       // Default Evolution fallback
-      payload = await sendWhatsappTextMessage(context.jid, context.messageText);
+      if (context.messageType === "VIDEO" && context.videoUrl) {
+        payload = await sendWhatsappInstanceMediaMessage(
+          {
+            instanceName: env.EVOLUTION_INSTANCE_NAME,
+            evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+            evolutionApiKey: env.EVOLUTION_API_KEY,
+          },
+          context.jid,
+          context.videoUrl,
+          "video",
+          "video.mp4",
+          context.messageText,
+        );
+      } else {
+        payload = await sendWhatsappTextMessage(context.jid, context.messageText);
+      }
     }
 
     await markRecipientSent(context, payload, extractProviderMessageId(payload), payload.status ? String(payload.status) : null);

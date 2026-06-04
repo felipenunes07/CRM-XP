@@ -64,6 +64,20 @@ export async function sendUazapiCarouselMessage(
   });
 }
 
+export async function sendUazapiVideoMessage(
+  config: UazapiInstanceConfig,
+  destinationJid: string,
+  videoUrl: string,
+  caption?: string,
+) {
+  return requestUazapi(config, "/send/media", "POST", {
+    number: stripJidToNumber(destinationJid),
+    file: videoUrl,
+    type: "video",
+    caption: caption ?? "",
+  });
+}
+
 export async function requestUazapi(
   config: UazapiInstanceConfig,
   path: string,

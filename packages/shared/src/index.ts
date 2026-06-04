@@ -1420,7 +1420,7 @@ export type WhatsappGroupMappingStatus =
   | "IGNORED";
 export type WhatsappGroupMatchMethod = "CODE" | "NAME" | "MANUAL" | "CONFIRMED_NONE" | "IGNORED";
 export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
-export type WhatsappCampaignMessageType = "TEXT" | "CAROUSEL";
+export type WhatsappCampaignMessageType = "TEXT" | "CAROUSEL" | "VIDEO";
 export type WhatsappInstanceProvider = "EVOLUTION" | "UAZAPI";
 
 export interface CarouselSlide {
@@ -1529,8 +1529,75 @@ export interface WhatsappCampaignRecipient {
   providerMessageId: string | null;
   providerStatus: string | null;
   responsePayload: Record<string, unknown> | null;
+  responded: boolean;
+  firstResponseAt: string | null;
+  responseCount: number;
+  purchased: boolean;
+  firstOrderAt: string | null;
+  ordersCount: number;
+  pieces: number;
+  revenue: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export type WhatsappCampaignAttributedMessageDirection = "OUTBOUND" | "INBOUND";
+export type WhatsappCampaignAttributedMessageSource = "message_logs" | "deal_activities" | "whatsapp_incoming_messages";
+
+export interface WhatsappCampaignRecipientPerformance {
+  recipientId: string;
+  responded: boolean;
+  firstResponseAt: string | null;
+  responseCount: number;
+  purchased: boolean;
+  firstOrderAt: string | null;
+  ordersCount: number;
+  pieces: number;
+  revenue: number;
+}
+
+export interface WhatsappCampaignAttributedMessage {
+  id: string;
+  recipientId: string | null;
+  campaignId: string;
+  customerId: string | null;
+  customerCode: string | null;
+  customerDisplayName: string | null;
+  jid: string | null;
+  direction: WhatsappCampaignAttributedMessageDirection;
+  source: WhatsappCampaignAttributedMessageSource;
+  senderName: string | null;
+  content: string;
+  createdAt: string;
+}
+
+export interface WhatsappCampaignPerformanceDiagnosis {
+  tone: "success" | "warning" | "danger" | "neutral";
+  title: string;
+  description: string;
+}
+
+export interface WhatsappCampaignPerformance {
+  attributionWindowDays: number;
+  totalRecipients: number;
+  eligibleRecipients: number;
+  sentRecipients: number;
+  blockedRecipients: number;
+  failedRecipients: number;
+  skippedRecipients: number;
+  respondedRecipients: number;
+  notRespondedRecipients: number;
+  purchasedRecipients: number;
+  responseRate: number;
+  purchaseRate: number;
+  orderCount: number;
+  pieces: number;
+  revenue: number;
+  sentMessages: number;
+  receivedMessages: number;
+  diagnosis: WhatsappCampaignPerformanceDiagnosis;
+  recipients: WhatsappCampaignRecipientPerformance[];
+  messages: WhatsappCampaignAttributedMessage[];
 }
 
 export interface WhatsappCampaignListItem {
@@ -1544,6 +1611,7 @@ export interface WhatsappCampaignListItem {
   messageText: string;
   messageType: WhatsappCampaignMessageType;
   carouselData: CarouselSlide[] | null;
+  videoUrl: string | null;
   minDelaySeconds: number;
   maxDelaySeconds: number;
   overrideRecentBlock: boolean;
@@ -1559,6 +1627,7 @@ export interface WhatsappCampaignListItem {
 
 export interface WhatsappCampaignDetail extends WhatsappCampaignListItem {
   recipients: WhatsappCampaignRecipient[];
+  performance: WhatsappCampaignPerformance;
   recipientsPage: {
     total: number;
     offset: number;

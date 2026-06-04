@@ -71,6 +71,7 @@ const WHATSAPP_MONITOR_CONVERSATION_LIMIT = 25;
 const WHATSAPP_MONITOR_CONVERSATION_MAX_LIMIT = 100;
 const WHATSAPP_MONITOR_MESSAGE_LIMIT = 20;
 const WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT = 100;
+const WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION = "v2";
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
 const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
@@ -290,14 +291,59 @@ function isInternalChat(name: string | null | undefined, remoteJid: string | nul
 function conversationMatchesInstanceSql(instanceAlias: string) {
   return `
     (
-      d.whatsapp_instance_id = ${instanceAlias}.id
-      OR EXISTS (
+      EXISTS (
         SELECT 1
         FROM whatsapp_monitor_messages wmm_inst
         WHERE wmm_inst.deal_id = d.id
-          AND LOWER(wmm_inst.instance_name) = LOWER(${instanceAlias}.instance_name)
+          AND LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER(${instanceAlias}.instance_name)
+      )
+      OR (
+        d.whatsapp_jid LIKE '%@g.us'
+        AND d.whatsapp_instance_id = ${instanceAlias}.id
+      )
+      OR (
+        d.whatsapp_jid NOT LIKE '%@g.us'
+        AND d.whatsapp_instance_id = ${instanceAlias}.id
+        AND NOT EXISTS (
+          SELECT 1
+          FROM whatsapp_monitor_messages wmm_inst_any
+          WHERE wmm_inst_any.deal_id = d.id
+        )
       )
     )
+  `;
+}
+
+function conversationSafeProfileJoinSql() {
+  return `
+    LEFT JOIN LATERAL (
+      SELECT candidate.url AS profile_picture_url
+      FROM (
+        VALUES
+          (chat_profile.profile_picture_url, 1),
+          (
+            CASE
+              WHEN latest_whatsapp.direction = 'INBOUND'
+                THEN COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl')
+              ELSE NULL
+            END,
+            2
+          ),
+          (incoming_profile.chat_profile_picture_url, 3),
+          (incoming_inbound_profile.inbound_chat_picture, 4),
+          (incoming_inbound_profile.inbound_sender_picture, 5)
+      ) AS candidate(url, priority)
+      WHERE NULLIF(candidate.url, '') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM whatsapp_instances wi_avatar
+          WHERE wi_avatar.status = 'ACTIVE'
+            AND wi_avatar.profile_picture_url IS NOT NULL
+            AND wi_avatar.profile_picture_url = candidate.url
+        )
+      ORDER BY candidate.priority ASC
+      LIMIT 1
+    ) safe_profile ON true
   `;
 }
 
@@ -692,17 +738,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         incoming_profile.chat_display_name
       ) AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
-      COALESCE(
-        NULLIF(chat_profile.profile_picture_url, wi.profile_picture_url),
-        CASE
-          WHEN latest_whatsapp.direction = 'INBOUND'
-            THEN NULLIF(COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl'), wi.profile_picture_url)
-          ELSE NULL
-        END,
-        NULLIF(incoming_profile.chat_profile_picture_url, wi.profile_picture_url),
-        NULLIF(incoming_inbound_profile.inbound_chat_picture, wi.profile_picture_url),
-        NULLIF(incoming_inbound_profile.inbound_sender_picture, wi.profile_picture_url)
-      ) AS profile_picture_url,
+      safe_profile.profile_picture_url AS profile_picture_url,
       CASE
         WHEN d.whatsapp_jid LIKE '%@g.us'
           THEN COALESCE(group_latest_message.content, latest_whatsapp.content)
@@ -774,6 +810,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
       LIMIT 1
     ) conversation_alias ON true
     ${conversationProfileJoinSql()}
+    ${conversationSafeProfileJoinSql()}
   `;
 }
 
@@ -1189,7 +1226,25 @@ async function getLinkedWhatsappConversationDealIds(
       AND d.whatsapp_jid IN (SELECT jid FROM alias_set)
       AND (
         $2::text = ''
-        OR LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($2::text)
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_monitor_messages wmm_link
+          WHERE wmm_link.deal_id = d.id
+            AND LOWER(COALESCE(wmm_link.instance_name, '')) = LOWER($2::text)
+        )
+        OR (
+          d.whatsapp_jid LIKE '%@g.us'
+          AND LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($2::text)
+        )
+        OR (
+          d.whatsapp_jid NOT LIKE '%@g.us'
+          AND LOWER(COALESCE(wi.instance_name, latest_deal_instance.instance_name, '')) = LOWER($2::text)
+          AND NOT EXISTS (
+            SELECT 1
+            FROM whatsapp_monitor_messages wmm_link_any
+            WHERE wmm_link_any.deal_id = d.id
+          )
+        )
       )
     ORDER BY d.id
     `,
@@ -1317,13 +1372,33 @@ export async function getWhatsappMonitorConversation(
 
     const fast = await pool.query(
       `
-      SELECT id, message_id, direction, from_me, sender_name, sender_jid,
-             sender_pic_url, content, media_json, source, created_at
-      FROM whatsapp_monitor_messages
-      WHERE deal_id = ANY($1::uuid[])
-        AND created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+      SELECT
+        wmm.id,
+        wmm.message_id,
+        wmm.direction,
+        wmm.from_me,
+        wmm.sender_name,
+        wmm.sender_jid,
+        CASE
+          WHEN wmm.sender_pic_url IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM whatsapp_instances wi_avatar
+              WHERE wi_avatar.status = 'ACTIVE'
+                AND wi_avatar.profile_picture_url = wmm.sender_pic_url
+            )
+            THEN NULL
+          ELSE wmm.sender_pic_url
+        END AS sender_pic_url,
+        wmm.content,
+        wmm.media_json,
+        wmm.source,
+        wmm.created_at
+      FROM whatsapp_monitor_messages wmm
+      WHERE wmm.deal_id = ANY($1::uuid[])
+        AND wmm.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
         ${cursorSql}
-      ORDER BY created_at ${orderDir}, id ${orderDir}
+      ORDER BY wmm.created_at ${orderDir}, wmm.id ${orderDir}
       LIMIT $2
       `,
       fastParams,
@@ -1415,7 +1490,17 @@ export async function getWhatsappMonitorConversation(
     SELECT
       da.*,
       participant_profile.display_name AS participant_display_name,
-      participant_profile.profile_picture_url AS participant_profile_picture_url,
+      CASE
+        WHEN participant_profile.profile_picture_url IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM whatsapp_instances wi_avatar
+            WHERE wi_avatar.status = 'ACTIVE'
+              AND wi_avatar.profile_picture_url = participant_profile.profile_picture_url
+          )
+          THEN NULL
+        ELSE participant_profile.profile_picture_url
+      END AS participant_profile_picture_url,
       incoming_message.raw_payload AS incoming_raw_payload,
       incoming_message.from_me AS incoming_from_me,
       COALESCE(wi.instance_name, da.metadata ->> 'instance') AS instance_name
@@ -1469,7 +1554,17 @@ export async function getWhatsappMonitorConversation(
       SELECT
         wim.*,
         COALESCE(participant_profile.display_name, wim.participant_name, wim.sender_name) AS sender_display_name,
-        COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url) AS participant_profile_picture_url
+        CASE
+          WHEN COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url) IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM whatsapp_instances wi_avatar
+              WHERE wi_avatar.status = 'ACTIVE'
+                AND wi_avatar.profile_picture_url = COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url)
+            )
+            THEN NULL
+          ELSE COALESCE(participant_profile.profile_picture_url, wim.sender_profile_picture_url)
+        END AS participant_profile_picture_url
       FROM (
         SELECT wim_base.*
         FROM whatsapp_incoming_messages wim_base
@@ -2395,15 +2490,15 @@ export async function getWhatsappAgentActivityReport(
   daysInput = 7,
 ): Promise<WhatsappAgentActivityReport> {
   const days = Math.max(1, Math.min(31, Math.floor(daysInput) || 7));
-  const reportCacheKey = `${userCacheKey(user)}:${days}`;
+  const reportCacheKey = `${WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION}:${userCacheKey(user)}:${days}`;
   const cachedReport = whatsappActivityReportCache.get(reportCacheKey);
   if (cachedReport && cachedReport.expiresAt > Date.now() && reportHasCurrentActivity(cachedReport.report)) {
     return cachedReport.report;
   }
 
   const redisCacheKey = user.role === "SELLER"
-    ? `wa-activity-report:${days}:seller:${user.id}`
-    : `wa-activity-report:${days}:all`;
+    ? `wa-activity-report:${WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION}:${days}:seller:${user.id}`
+    : `wa-activity-report:${WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION}:${days}:all`;
   const redisCacheTtl = user.role === "SELLER" ? 90 : 60;
   try {
     const cached = await redis.get(redisCacheKey);
@@ -2493,9 +2588,72 @@ export async function getWhatsappAgentActivityReport(
 
     return pool.query(
       `
-      WITH event_rows AS (
+      WITH monitor_rows AS (
         SELECT
-          da.id,
+          ('monitor:' || wmm.id::text) AS id,
+          COALESCE(NULLIF(wmm.message_id, ''), wmm.id::text) AS message_key,
+          0 AS source_priority,
+          COALESCE(u.id::text, 'instance:' || wi_base.id, 'sem-agente') AS agent_id,
+          COALESCE(
+            CASE
+              WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name) IS NOT NULL
+                THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name) || ')'
+              ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name)
+            END,
+            'Sem agente'
+          ) AS agent_name,
+          wi_base.instance_name,
+          wi_base.display_label,
+          wi_base.phone_number,
+          wi_base.profile_picture_url,
+          CASE
+            WHEN wmm.direction = 'OUTBOUND' THEN 'WHATSAPP_SENT'
+            ELSE 'WHATSAPP_RECEIVED'
+          END AS activity_type,
+          wmm.created_at,
+          COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid) AS remote_jid,
+          COALESCE(NULLIF(wmm.media_json ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
+          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', wmm.created_at), 'YYYY-MM-DD') AS local_date,
+          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', wmm.created_at))::int AS local_hour
+        FROM whatsapp_monitor_messages wmm
+        JOIN deals d ON d.id = wmm.deal_id
+        LEFT JOIN LATERAL (
+          SELECT wi_match.*
+          FROM whatsapp_instances wi_match
+          WHERE LOWER(wi_match.instance_name) = LOWER(COALESCE(wmm.instance_name, ''))
+            OR wi_match.id = d.whatsapp_instance_id
+          ORDER BY
+            CASE
+              WHEN LOWER(wi_match.instance_name) = LOWER(COALESCE(wmm.instance_name, '')) THEN 0
+              WHEN wi_match.id = d.whatsapp_instance_id THEN 1
+              ELSE 2
+            END
+          LIMIT 1
+        ) wi_base ON true
+        LEFT JOIN LATERAL (
+          SELECT user_match.*
+          FROM users user_match
+          WHERE user_match.id = wi_base.assigned_user_id
+            OR user_match.id = d.assigned_to
+            OR LOWER(user_match.name) = LOWER(wi_base.assigned_user_name)
+            OR LOWER(user_match.name) = LOWER(d.assigned_to_name)
+          ORDER BY
+            CASE
+              WHEN user_match.id = wi_base.assigned_user_id THEN 0
+              WHEN user_match.id = d.assigned_to THEN 1
+              ELSE 2
+            END
+          LIMIT 1
+        ) u ON true
+        WHERE wmm.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND wmm.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND ${monitorableWhatsappJidSql("COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)")}
+      ),
+      activity_rows AS (
+        SELECT
+          ('activity:' || da.id::text) AS id,
+          COALESCE(NULLIF(da.metadata ->> 'messageId', ''), NULLIF(da.metadata ->> 'providerMessageId', ''), da.id::text) AS message_key,
+          1 AS source_priority,
           COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
           COALESCE(
             CASE
@@ -2564,6 +2722,40 @@ export async function getWhatsappAgentActivityReport(
           AND da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
           AND da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
           AND ${monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)")}
+      ),
+      deduped_rows AS (
+        SELECT *
+        FROM (
+          SELECT
+            unioned.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY unioned.remote_jid, unioned.message_key
+              ORDER BY unioned.source_priority ASC, unioned.created_at ASC, unioned.id ASC
+            ) AS row_rank
+          FROM (
+            SELECT * FROM monitor_rows
+            UNION ALL
+            SELECT * FROM activity_rows
+          ) unioned
+        ) ranked
+        WHERE row_rank = 1
+      ),
+      event_rows AS (
+        SELECT
+          id,
+          agent_id,
+          agent_name,
+          instance_name,
+          display_label,
+          phone_number,
+          profile_picture_url,
+          activity_type,
+          created_at,
+          remote_jid,
+          chat_name,
+          local_date,
+          local_hour
+        FROM deduped_rows
       ),
       sequenced AS (
         SELECT
