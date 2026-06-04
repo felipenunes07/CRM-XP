@@ -58,6 +58,7 @@ interface ConversationDetailOptions {
   limit?: number;
   before?: string;
   after?: string;
+  instanceId?: string;
 }
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
@@ -288,26 +289,90 @@ function isInternalChat(name: string | null | undefined, remoteJid: string | nul
 
 
 
-function conversationMatchesInstanceSql(instanceAlias: string) {
+function whatsappMonitorMessageMatchesInstanceSql(messageAlias: string, instanceAlias: string) {
   return `
     (
-      EXISTS (
-        SELECT 1
-        FROM whatsapp_monitor_messages wmm_inst
-        WHERE wmm_inst.deal_id = d.id
-          AND LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER(${instanceAlias}.instance_name)
-      )
+      LOWER(COALESCE(${messageAlias}.instance_name, '')) = LOWER(COALESCE(${instanceAlias}.instance_name, ''))
       OR (
+        ${messageAlias}.direction = 'OUTBOUND'
+        AND (
+          (
+            NULLIF(COALESCE(${instanceAlias}.assigned_user_name, ''), '') IS NOT NULL
+            AND LOWER(COALESCE(${messageAlias}.sender_name, '')) = LOWER(${instanceAlias}.assigned_user_name)
+          )
+          OR (
+            NULLIF(COALESCE(${instanceAlias}.display_label, ''), '') IS NOT NULL
+            AND LOWER(REGEXP_REPLACE(COALESCE(${messageAlias}.sender_name, ''), '^xp\\s+', '', 'i')) =
+                LOWER(REGEXP_REPLACE(COALESCE(${instanceAlias}.display_label, ''), '^xp\\s+', '', 'i'))
+          )
+          OR (
+            NULLIF(COALESCE(${instanceAlias}.assigned_user_name, ''), '') IS NOT NULL
+            AND LOWER(REGEXP_REPLACE(COALESCE(${messageAlias}.sender_name, ''), '^xp\\s+', '', 'i')) =
+                LOWER(REGEXP_REPLACE(COALESCE(${instanceAlias}.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+          )
+        )
+      )
+    )
+  `;
+}
+
+function conversationMatchesInstanceSql(instanceAlias: string) {
+  const messageMatchesInstance = whatsappMonitorMessageMatchesInstanceSql("wmm_inst", instanceAlias);
+  return `
+    (
+      (
         d.whatsapp_jid LIKE '%@g.us'
-        AND d.whatsapp_instance_id = ${instanceAlias}.id
+        AND (
+          d.whatsapp_instance_id = ${instanceAlias}.id
+          OR EXISTS (
+            SELECT 1
+            FROM whatsapp_monitor_messages wmm_inst
+            WHERE wmm_inst.deal_id = d.id
+              AND ${messageMatchesInstance}
+          )
+        )
       )
       OR (
         d.whatsapp_jid NOT LIKE '%@g.us'
-        AND d.whatsapp_instance_id = ${instanceAlias}.id
-        AND NOT EXISTS (
-          SELECT 1
-          FROM whatsapp_monitor_messages wmm_inst_any
-          WHERE wmm_inst_any.deal_id = d.id
+        AND (
+          d.whatsapp_instance_id = ${instanceAlias}.id
+          OR (
+            d.whatsapp_instance_id IS NULL
+            AND EXISTS (
+              SELECT 1
+              FROM whatsapp_monitor_messages wmm_inst
+              WHERE wmm_inst.deal_id = d.id
+                AND ${messageMatchesInstance}
+            )
+          )
+        )
+      )
+    )
+  `;
+}
+
+function dealActivityMatchesInstanceSql(activityAlias: string, instanceAlias: string) {
+  return `
+    (
+      LOWER(COALESCE(${activityAlias}.metadata ->> 'instance', '')) = LOWER(COALESCE(${instanceAlias}.instance_name, ''))
+      OR ${activityAlias}.metadata ->> 'instanceId' = ${instanceAlias}.id::text
+      OR (
+        ${activityAlias}.activity_type = 'WHATSAPP_SENT'
+        AND (
+          (
+            NULLIF(COALESCE(${instanceAlias}.assigned_user_name, ''), '') IS NOT NULL
+            AND LOWER(COALESCE(${activityAlias}.actor_name, '')) = LOWER(${instanceAlias}.assigned_user_name)
+          )
+          OR (
+            NULLIF(COALESCE(${instanceAlias}.display_label, ''), '') IS NOT NULL
+            AND LOWER(REGEXP_REPLACE(COALESCE(${activityAlias}.actor_name, ''), '^xp\\s+', '', 'i')) =
+                LOWER(REGEXP_REPLACE(COALESCE(${instanceAlias}.display_label, ''), '^xp\\s+', '', 'i'))
+          )
+          OR (
+            NULLIF(COALESCE(${instanceAlias}.assigned_user_name, ''), '') IS NOT NULL
+            AND LOWER(REGEXP_REPLACE(COALESCE(${activityAlias}.actor_name, ''), '^xp\\s+', '', 'i')) =
+                LOWER(REGEXP_REPLACE(COALESCE(${instanceAlias}.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+          )
         )
       )
     )
@@ -320,18 +385,44 @@ function conversationSafeProfileJoinSql() {
       SELECT candidate.url AS profile_picture_url
       FROM (
         VALUES
-          (chat_profile.profile_picture_url, 1),
           (
             CASE
-              WHEN latest_whatsapp.direction = 'INBOUND'
+              WHEN d.whatsapp_jid NOT LIKE '%@g.us'
+                AND latest_whatsapp.direction = 'INBOUND'
                 THEN COALESCE(latest_whatsapp.sender_pic_url, latest_whatsapp.media_json ->> 'chatProfilePictureUrl')
+              ELSE NULL
+            END,
+            1
+          ),
+          (
+            CASE
+              WHEN d.whatsapp_jid NOT LIKE '%@g.us'
+                THEN incoming_inbound_profile.inbound_sender_picture
               ELSE NULL
             END,
             2
           ),
-          (incoming_profile.chat_profile_picture_url, 3),
-          (incoming_inbound_profile.inbound_chat_picture, 4),
-          (incoming_inbound_profile.inbound_sender_picture, 5)
+          (
+            CASE
+              WHEN d.whatsapp_jid LIKE '%@g.us'
+                THEN COALESCE(incoming_profile.chat_profile_picture_url, chat_profile.profile_picture_url, incoming_inbound_profile.inbound_chat_picture)
+              ELSE NULL
+            END,
+            3
+          ),
+          (
+            CASE
+              WHEN d.whatsapp_jid NOT LIKE '%@g.us'
+                AND NOT (
+                  LOWER(COALESCE(chat_profile.display_name, '')) = LOWER(COALESCE(selected_filter_instance.display_label, wi.display_label, d.assigned_to_name, ''))
+                  OR LOWER(REGEXP_REPLACE(COALESCE(chat_profile.display_name, ''), '^xp\\s+', '', 'i')) =
+                     LOWER(REGEXP_REPLACE(COALESCE(selected_filter_instance.assigned_user_name, wi.assigned_user_name, d.assigned_to_name, ''), '^xp\\s+', '', 'i'))
+                )
+                THEN chat_profile.profile_picture_url
+              ELSE NULL
+            END,
+            4
+          )
       ) AS candidate(url, priority)
       WHERE NULLIF(candidate.url, '') IS NOT NULL
         AND NOT EXISTS (
@@ -658,7 +749,7 @@ export function classifyWhatsappReportConversation(input: {
 }
 
 function conversationProfileJoinSql() {
-  const conversationInstance = "COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', '')";
+  const conversationInstance = "COALESCE(selected_filter_instance.instance_name, wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', '')";
   const canonicalJid = "COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)";
   const profileJidMatch = (alias: string) => `
     (
@@ -682,6 +773,7 @@ function conversationProfileJoinSql() {
         AND (
           wcp.instance_name = ${conversationInstance}
           OR wcp.instance_name = ''
+          OR d.whatsapp_jid LIKE '%@g.us'
         )
       ORDER BY
         CASE WHEN wcp.remote_jid = ${canonicalJid} THEN 0 ELSE 1 END,
@@ -699,8 +791,12 @@ function conversationProfileJoinSql() {
         AND (
           wim.instance_name = ${conversationInstance}
           OR COALESCE(wim.instance_name, '') = ''
+          OR d.whatsapp_jid LIKE '%@g.us'
         )
-      ORDER BY wim.created_at DESC, wim.id DESC
+      ORDER BY
+        CASE WHEN NULLIF(wim.chat_display_name, '') IS NOT NULL THEN 0 ELSE 1 END,
+        wim.created_at DESC,
+        wim.id DESC
       LIMIT 1
     ) incoming_profile ON true
     LEFT JOIN LATERAL (
@@ -716,6 +812,7 @@ function conversationProfileJoinSql() {
         AND (
           wim_inbound.instance_name = ${conversationInstance}
           OR COALESCE(wim_inbound.instance_name, '') = ''
+          OR d.whatsapp_jid LIKE '%@g.us'
         )
       ORDER BY wim_inbound.created_at DESC
       LIMIT 1
@@ -723,20 +820,39 @@ function conversationProfileJoinSql() {
   `;
 }
 
-function conversationBaseSelectSql(userIdParamIndex: number) {
+function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdParamIndex?: number) {
+  const selectedInstanceJoin = scopedInstanceIdParamIndex
+    ? `LEFT JOIN whatsapp_instances selected_filter_instance ON selected_filter_instance.id = $${scopedInstanceIdParamIndex}`
+    : "LEFT JOIN whatsapp_instances selected_filter_instance ON false";
+  const selectedMessageScope = (alias: string) => scopedInstanceIdParamIndex
+    ? `
+      AND (
+        d.whatsapp_jid LIKE '%@g.us'
+        OR ${whatsappMonitorMessageMatchesInstanceSql(alias, "selected_filter_instance")}
+      )
+    `
+    : "";
+
   return `
     SELECT
       d.*,
       ps.name AS stage_name,
       COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid) AS canonical_whatsapp_jid,
-      COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_name,
-      COALESCE(wi.display_label, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_display_label,
-      COALESCE(wi.display_label, d.assigned_to_name, latest_whatsapp.sender_name) AS agent_name,
-      COALESCE(
-        chat_profile.display_name,
-        latest_whatsapp.media_json ->> 'chatDisplayName',
-        incoming_profile.chat_display_name
-      ) AS chat_display_name,
+      COALESCE(selected_filter_instance.instance_name, wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_name,
+      COALESCE(selected_filter_instance.display_label, wi.display_label, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_display_label,
+      COALESCE(selected_filter_instance.display_label, wi.display_label, d.assigned_to_name, latest_whatsapp.sender_name) AS agent_name,
+      CASE WHEN d.whatsapp_jid LIKE '%@g.us'
+        THEN COALESCE(
+          NULLIF(latest_whatsapp.media_json ->> 'chatDisplayName', ''),
+          NULLIF(incoming_profile.chat_display_name, ''),
+          NULLIF(chat_profile.display_name, '')
+        )
+        ELSE COALESCE(
+          chat_profile.display_name,
+          latest_whatsapp.media_json ->> 'chatDisplayName',
+          incoming_profile.chat_display_name
+        )
+      END AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       safe_profile.profile_picture_url AS profile_picture_url,
       CASE
@@ -766,10 +882,12 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     FROM deals d
     LEFT JOIN pipeline_stages ps ON ps.id = d.stage_id
     LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+    ${selectedInstanceJoin}
     LEFT JOIN LATERAL (
       SELECT *
       FROM whatsapp_monitor_messages wmm
       WHERE wmm.deal_id = d.id
+        ${selectedMessageScope("wmm")}
       ORDER BY wmm.created_at DESC, wmm.id DESC
       LIMIT 1
     ) latest_whatsapp ON true
@@ -780,6 +898,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
         MAX(wmm.created_at) AS last_message_at
       FROM whatsapp_monitor_messages wmm
       WHERE wmm.deal_id = d.id
+        ${selectedMessageScope("wmm")}
     ) activity_stats ON true
     LEFT JOIN LATERAL (
       -- Group chats are shared across every connected instance. The webhook now
@@ -804,7 +923,7 @@ function conversationBaseSelectSql(userIdParamIndex: number) {
     LEFT JOIN LATERAL (
       SELECT wja.canonical_jid
       FROM whatsapp_jid_aliases wja
-      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', ''))
+      WHERE LOWER(wja.instance_name) = LOWER(COALESCE(selected_filter_instance.instance_name, wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', ''))
         AND wja.alias_jid = d.whatsapp_jid
       ORDER BY wja.updated_at DESC
       LIMIT 1
@@ -859,26 +978,35 @@ function selectedAgentInteractionSql(instanceIdParamIndex: number, period?: Conv
         ON agent_interaction_instance.id = $${instanceIdParamIndex}
       WHERE wmm_agent.deal_id = d.id
         AND wmm_agent.direction = 'OUTBOUND'
-        AND (
-          LOWER(COALESCE(wmm_agent.instance_name, '')) = LOWER(agent_interaction_instance.instance_name)
-          OR LOWER(COALESCE(wmm_agent.sender_name, '')) = LOWER(agent_interaction_instance.assigned_user_name)
-          OR LOWER(REGEXP_REPLACE(COALESCE(wmm_agent.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.display_label, ''), '^xp\\s+', '', 'i'))
-          OR LOWER(REGEXP_REPLACE(COALESCE(wmm_agent.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE(COALESCE(agent_interaction_instance.assigned_user_name, ''), '^xp\\s+', '', 'i'))
-        )
+        AND ${whatsappMonitorMessageMatchesInstanceSql("wmm_agent", "agent_interaction_instance")}
         ${period ? `AND ${activityPeriodRangeSql("wmm_agent.created_at", period)}` : ""}
     )
   `;
 }
 
-function unreadConversationSql() {
+function unreadConversationSql(scopedInstanceIdParamIndex?: number) {
+  const instanceJoin = scopedInstanceIdParamIndex
+    ? `JOIN whatsapp_instances selected_unread_instance ON selected_unread_instance.id = $${scopedInstanceIdParamIndex}`
+    : "";
+  const instanceScope = scopedInstanceIdParamIndex
+    ? `
+      AND (
+        d.whatsapp_jid LIKE '%@g.us'
+        OR ${whatsappMonitorMessageMatchesInstanceSql("unread_msg", "selected_unread_instance")}
+      )
+    `
+    : "";
+
   return `
     (
       COALESCE(conversation_reads.force_unread, false)
       OR EXISTS (
         SELECT 1
         FROM whatsapp_monitor_messages unread_msg
+        ${instanceJoin}
         WHERE unread_msg.deal_id = d.id
           AND unread_msg.direction = 'INBOUND'
+          ${instanceScope}
           AND (
             conversation_reads.last_read_at IS NULL
             OR unread_msg.created_at > conversation_reads.last_read_at
@@ -1003,10 +1131,12 @@ export async function listWhatsappMonitorConversations(
 
   params.push(user.id);
   const userIdParamIndex = params.length;
+  let scopedInstanceIdParamIndex: number | undefined;
 
   if (filters.instanceId) {
     params.push(filters.instanceId);
     const instanceIdParamIndex = params.length;
+    scopedInstanceIdParamIndex = instanceIdParamIndex;
     where.push(`
       EXISTS (
         SELECT 1
@@ -1091,7 +1221,7 @@ export async function listWhatsappMonitorConversations(
   }
 
   if (filters.status === "unread") {
-    where.push(unreadConversationSql());
+    where.push(unreadConversationSql(scopedInstanceIdParamIndex));
   }
 
   if (filters.status === "risk") {
@@ -1146,7 +1276,7 @@ export async function listWhatsappMonitorConversations(
     )
     SELECT conversation_rows.*
     FROM (
-      ${conversationBaseSelectSql(userIdParamIndex)}
+      ${conversationBaseSelectSql(userIdParamIndex, scopedInstanceIdParamIndex)}
       WHERE d.id IN (SELECT id FROM candidate_deals)
     ) conversation_rows
     ORDER BY COALESCE(conversation_rows.last_activity_at, conversation_rows.created_at) DESC, conversation_rows.id DESC
@@ -1317,9 +1447,23 @@ export async function getWhatsappMonitorConversation(
     `);
   }
 
+  let scopedInstanceIdParamIndex: number | undefined;
+  if (options.instanceId) {
+    conversationParams.push(options.instanceId);
+    scopedInstanceIdParamIndex = conversationParams.length;
+    accessWhere.push(`
+      AND EXISTS (
+        SELECT 1
+        FROM whatsapp_instances wif
+        WHERE wif.id = $${scopedInstanceIdParamIndex}
+          AND ${conversationMatchesInstanceSql("wif")}
+      )
+    `);
+  }
+
   const conversationResult = await pool.query(
     `
-    ${conversationBaseSelectSql(2)}
+    ${conversationBaseSelectSql(2, scopedInstanceIdParamIndex)}
     WHERE d.id = $1
       AND ${monitorableWhatsappJidSql("d.whatsapp_jid")}
       ${accessWhere.join("\n")}
@@ -1355,19 +1499,35 @@ export async function getWhatsappMonitorConversation(
   // Fast read path with flat table and automated fallback
   if (process.env.WHATSAPP_FAST_READ !== "off") {
     let cursorSql = "";
-    const fastParams: unknown[] = [linkedDealIds, queryLimit];
+    const fastParams: unknown[] = [linkedDealIds];
+    const fastInstanceJoin = options.instanceId
+      ? (() => {
+        fastParams.push(options.instanceId);
+        return `JOIN whatsapp_instances selected_filter_instance ON selected_filter_instance.id = $${fastParams.length}`;
+      })()
+      : "";
+    const fastInstanceScope = options.instanceId
+      ? `
+        AND (
+          wmm.remote_jid LIKE '%@g.us'
+          OR ${whatsappMonitorMessageMatchesInstanceSql("wmm", "selected_filter_instance")}
+        )
+      `
+      : "";
 
     if (cursor) {
       fastParams.push(cursor.createdAt, cursor.id);
-      const timeIdx = 3;
-      const idIdx = 4;
+      const timeIdx = fastParams.length - 1;
+      const idIdx = fastParams.length;
       if (mode === "before") {
-        cursorSql = `AND (created_at < $${timeIdx}::timestamptz OR (created_at = $${timeIdx}::timestamptz AND id < $${idIdx}::uuid))`;
+        cursorSql = `AND (wmm.created_at < $${timeIdx}::timestamptz OR (wmm.created_at = $${timeIdx}::timestamptz AND wmm.id < $${idIdx}::uuid))`;
       } else if (mode === "after") {
-        cursorSql = `AND (created_at > $${timeIdx}::timestamptz OR (created_at = $${timeIdx}::timestamptz AND id > $${idIdx}::uuid))`;
+        cursorSql = `AND (wmm.created_at > $${timeIdx}::timestamptz OR (wmm.created_at = $${timeIdx}::timestamptz AND wmm.id > $${idIdx}::uuid))`;
       }
     }
 
+    fastParams.push(queryLimit);
+    const fastLimitParamIndex = fastParams.length;
     const orderDir = mode === "after" ? "ASC" : "DESC";
 
     const fast = await pool.query(
@@ -1395,11 +1555,13 @@ export async function getWhatsappMonitorConversation(
         wmm.source,
         wmm.created_at
       FROM whatsapp_monitor_messages wmm
+      ${fastInstanceJoin}
       WHERE wmm.deal_id = ANY($1::uuid[])
         AND wmm.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${fastInstanceScope}
         ${cursorSql}
       ORDER BY wmm.created_at ${orderDir}, wmm.id ${orderDir}
-      LIMIT $2
+      LIMIT $${fastLimitParamIndex}
       `,
       fastParams,
     );
@@ -1481,6 +1643,20 @@ export async function getWhatsappMonitorConversation(
   const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
 
   const activityParams: unknown[] = [linkedDealIds];
+  const activityInstanceJoin = options.instanceId
+    ? (() => {
+      activityParams.push(options.instanceId);
+      return `JOIN whatsapp_instances selected_filter_instance ON selected_filter_instance.id = $${activityParams.length}`;
+    })()
+    : "";
+  const activityInstanceScope = options.instanceId
+    ? `
+      AND (
+        COALESCE(da_base.metadata ->> 'remoteJid', '') LIKE '%@g.us'
+        OR ${dealActivityMatchesInstanceSql("da_base", "selected_filter_instance")}
+      )
+    `
+    : "";
   const activityCursorSql = messageCursorConditionSql("da_base", cursor, mode, activityParams);
   activityParams.push(queryLimit);
   const activityLimitParamIndex = activityParams.length;
@@ -1507,9 +1683,11 @@ export async function getWhatsappMonitorConversation(
     FROM (
       SELECT da_base.*
       FROM deal_activities da_base
+      ${activityInstanceJoin}
       WHERE da_base.deal_id = ANY($1::uuid[])
         AND da_base.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
         AND da_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${activityInstanceScope}
         ${activityCursorSql}
       ORDER BY da_base.created_at ${orderDirection}, da_base.id ${orderDirection}
       LIMIT $${activityLimitParamIndex}

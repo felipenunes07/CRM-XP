@@ -542,45 +542,7 @@ export function MessagesPage() {
         };
 
         if (msg.dealId === selectedConversationIdRef.current) {
-          queryClient.setQueryData(["whatsapp-monitor-conversation", msg.dealId], (old: any) => {
-            if (!old) return old;
-            
-            const newMsg: WhatsappMonitorMessage = {
-              id: msg.messageId,
-              dealId: msg.dealId,
-              direction: msg.direction,
-              senderName: msg.senderName,
-              senderJid: null,
-              senderProfilePictureUrl: null,
-              content: msg.content,
-              createdAt: msg.createdAt,
-              remoteJid: null,
-              isGroup: false,
-              metadata: {
-                messageId: msg.messageId,
-              },
-              risk: null,
-            };
-
-            if (old.pages) {
-              const [latestPage, ...olderPages] = old.pages;
-              
-              const exists = latestPage.messages.some((m: any) => m.id === newMsg.id || m.metadata?.messageId === newMsg.id);
-              if (exists) return old;
-
-              return {
-                ...old,
-                pages: [
-                  {
-                    ...latestPage,
-                    messages: [...latestPage.messages, newMsg],
-                  },
-                  ...olderPages,
-                ],
-              };
-            }
-            return old;
-          });
+          queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversation", msg.dealId] });
         }
 
         queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
@@ -811,6 +773,7 @@ export function MessagesPage() {
     [conversationsQuery.data],
   );
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
+  const detailInstanceId = activeAgentId === "all" ? undefined : activeAgentId;
 
   useEffect(() => {
     if (activeAgentId === "all") {
@@ -865,6 +828,10 @@ export function MessagesPage() {
   }, [selectedConversationId]);
 
   const selectedConversation = filteredConversations.find((conversation) => conversation.id === selectedConversationId) ?? null;
+  const conversationDetailQueryKey = useMemo(
+    () => ["whatsapp-monitor-conversation", selectedConversationId, detailInstanceId ?? "all"] as const,
+    [detailInstanceId, selectedConversationId],
+  );
   // When selectedConversationId changes, remove the old cached conversation detail
   // so stale messages from a different chat are never shown
   const prevSelectedConversationIdRef = useRef<string | null>(null);
@@ -877,10 +844,11 @@ export function MessagesPage() {
   }, [selectedConversationId, queryClient]);
 
   const conversationDetailQuery = useInfiniteQuery({
-    queryKey: ["whatsapp-monitor-conversation", selectedConversationId],
+    queryKey: conversationDetailQueryKey,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       api.whatsappMonitorConversation(token!, selectedConversationId!, {
+        instanceId: detailInstanceId,
         limit: 20,
         before: pageParam ?? undefined,
       }),
@@ -957,7 +925,7 @@ export function MessagesPage() {
           conversations: old.conversations.map(applyReadState),
         };
       });
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], (old: any) => {
+      queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversation", updated.id] }, (old: any) => {
         if (!old?.pages) {
           return old ? { ...old, ...updated } : old;
         }
@@ -976,7 +944,7 @@ export function MessagesPage() {
       api.sendWhatsappMonitorReply(token!, id, { messageText }),
     onSuccess: (updated) => {
       setReplyText("");
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+      queryClient.setQueryData(conversationDetailQueryKey, {
         pages: [updated],
         pageParams: [null],
       });
@@ -997,7 +965,7 @@ export function MessagesPage() {
       fileName?: string;
     }) => api.sendWhatsappMonitorMediaReply(token!, id, { mediaBase64, mediaType, fileName }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(["whatsapp-monitor-conversation", updated.id], {
+      queryClient.setQueryData(conversationDetailQueryKey, {
         pages: [updated],
         pageParams: [null],
       });
@@ -1035,6 +1003,7 @@ export function MessagesPage() {
         return;
       }
       api.whatsappMonitorConversation(token, selectedConversationId, {
+        instanceId: detailInstanceId,
         after: newestCursor,
         limit: 100,
       }).then((updated) => {
@@ -1042,7 +1011,7 @@ export function MessagesPage() {
           return;
         }
 
-        queryClient.setQueryData(["whatsapp-monitor-conversation", selectedConversationId], (old: any) => {
+        queryClient.setQueryData(conversationDetailQueryKey, (old: any) => {
           if (!old?.pages?.length) {
             return { pages: [updated], pageParams: [null] };
           }
@@ -1075,7 +1044,7 @@ export function MessagesPage() {
     }, CHAT_REFRESH_MS);
 
     return () => window.clearInterval(interval);
-  }, [detail?.pageInfo.nextCursor, detailMatchesSelection, queryClient, selectedConversationId, token]);
+  }, [conversationDetailQueryKey, detail?.pageInfo.nextCursor, detailInstanceId, detailMatchesSelection, queryClient, selectedConversationId, token]);
 
   useEffect(() => {
     const element = chatBodyRef.current;

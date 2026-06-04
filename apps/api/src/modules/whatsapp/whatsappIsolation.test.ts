@@ -1008,6 +1008,103 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("wmm_agent.direction = 'OUTBOUND'");
   });
 
+  it("keeps selected private-agent filters tied to the owning instance before using message fallbacks", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations(
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      {
+        instanceId: "00000000-0000-0000-0000-000000000001",
+      },
+    );
+
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).toContain("d.whatsapp_jid NOT LIKE '%@g.us'");
+    expect(listSql).toContain("d.whatsapp_instance_id = wif.id");
+    expect(listSql).toContain("d.whatsapp_instance_id IS NULL");
+    expect(listSql).toContain("FROM whatsapp_monitor_messages wmm_inst");
+  });
+
+  it("passes the selected instance into conversation detail and scopes monitor reads", async () => {
+    const selectedInstanceId = "00000000-0000-0000-0000-000000000001";
+
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "deal-1",
+            title: "Cliente",
+            customer_display_name: "Cliente",
+            whatsapp_jid: "5511999998888@s.whatsapp.net",
+            whatsapp_instance_id: selectedInstanceId,
+            instance_name: "tamires",
+            instance_display_label: "Tamires",
+            stage_name: "Contato Inicial",
+            last_message_at: "2026-05-21T12:00:00.000Z",
+            event_count: 0,
+            inbound_count: 0,
+            unread_after_read: 0,
+            marked_unread: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await getWhatsappMonitorConversation(
+      "deal-1",
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      { instanceId: selectedInstanceId } as any,
+    );
+
+    const conversationCall = mocks.query.mock.calls[0];
+    expect(conversationCall).toBeDefined();
+    expect(conversationCall![1]).toContain(selectedInstanceId);
+    expect(String(conversationCall![0])).toContain("selected_filter_instance");
+
+    const fastReadCall = mocks.query.mock.calls.find(call => String(call[0]).includes("FROM whatsapp_monitor_messages wmm"));
+    expect(fastReadCall).toBeDefined();
+    expect(String(fastReadCall![0])).toContain("LOWER(COALESCE(wmm.instance_name, ''))");
+    expect(fastReadCall![1]).toContain(selectedInstanceId);
+  });
+
+  it("hydrates group display names from incoming messages before stale numeric chat profiles", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+    const incomingNameIndex = listSql.indexOf("incoming_profile.chat_display_name");
+    const chatProfileNameIndex = listSql.indexOf("chat_profile.display_name");
+
+    expect(listSql).toContain("CASE WHEN d.whatsapp_jid LIKE '%@g.us'");
+    expect(incomingNameIndex).toBeGreaterThanOrEqual(0);
+    expect(chatProfileNameIndex).toBeGreaterThanOrEqual(0);
+    expect(incomingNameIndex).toBeLessThan(chatProfileNameIndex);
+  });
+
   it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {
     const groupJid = "120363409565036327@g.us";
     // The list query is mocked, so we assert (a) the SQL sources the group
