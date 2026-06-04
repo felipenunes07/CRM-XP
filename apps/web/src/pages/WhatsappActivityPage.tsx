@@ -11,6 +11,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ArrowDown, ArrowUp, BarChart3, Clock3, Download, MessageCircle, RefreshCw, Search, Smartphone, TrendingDown, TrendingUp, Users, UserCheck, Calendar, Copy, Check, ChevronDown, ChevronUp, Award, ShoppingBag, DollarSign, Package } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { ReportLoadingScreen } from "../components/ReportLoadingScreen";
 
 type ActivityWindowDays = 1 | 7 | 14 | 30;
 type ActivityTab = "overview" | "conversations" | "agents" | "daily-summary";
@@ -695,6 +696,7 @@ function ActivityChart({
 export function WhatsappActivityPage() {
   const { token } = useAuth();
   const [days, setDays] = useState<ActivityWindowDays>(7);
+  const [showInitialLoader, setShowInitialLoader] = useState(true);
   const [selectedAgentId, setSelectedAgentId] = useState("all");
   const [activeTab, setActiveTab] = useState<ActivityTab>("overview");
   const [selectedCellKey, setSelectedCellKey] = useState<string | null>(null);
@@ -912,11 +914,7 @@ export function WhatsappActivityPage() {
     setSelectedCellKey(null);
   }, [selectedAgentId, days]);
 
-  if (reportQuery.isLoading) {
-    return <div className="page-loading">Carregando relatorios...</div>;
-  }
-
-  if (reportQuery.isError || !report) {
+  if (reportQuery.isError || (!report && !reportQuery.isLoading)) {
     return (
       <div className="whatsapp-activity-page">
         <div className="activity-report-header">
@@ -931,6 +929,16 @@ export function WhatsappActivityPage() {
         </div>
         <div className="activity-empty">Nao foi possivel carregar o relatorio agora.</div>
       </div>
+    );
+  }
+
+  if (showInitialLoader || !report) {
+    const isFetching = reportQuery.isLoading;
+    return (
+      <ReportLoadingScreen
+        isLoading={isFetching}
+        onFinished={() => setShowInitialLoader(false)}
+      />
     );
   }
 

@@ -36,6 +36,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { api, API_BASE_URL } from "../lib/api";
 import { buildMessageTimelineItems } from "./messagesPage.helpers";
+import { PhoneLoadingScreen } from "../components/PhoneLoadingScreen";
 
 function initials(name: string) {
   return name
@@ -452,6 +453,39 @@ function detectMediaType(file: File): "image" | "video" | "audio" | "document" {
   return "document";
 }
 
+function ConversationSkeletonRow() {
+  return (
+    <div className="conversation-skeleton-row">
+      <div className="conversation-skeleton-avatar"></div>
+      <div className="conversation-skeleton-copy">
+        <div className="conversation-skeleton-line title"></div>
+        <div className="conversation-skeleton-line subtitle"></div>
+      </div>
+      <div className="conversation-skeleton-line time"></div>
+    </div>
+  );
+}
+
+function ChatSkeleton() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", width: "100%", padding: "1rem" }}>
+      <div className="chat-skeleton-bubble inbound" style={{ width: "45%" }}>
+        <div className="chat-skeleton-line" style={{ width: "80%" }}></div>
+        <div className="chat-skeleton-line" style={{ width: "60%" }}></div>
+      </div>
+      <div className="chat-skeleton-bubble outbound" style={{ width: "50%" }}>
+        <div className="chat-skeleton-line" style={{ width: "90%" }}></div>
+        <div className="chat-skeleton-line" style={{ width: "70%" }}></div>
+      </div>
+      <div className="chat-skeleton-bubble inbound" style={{ width: "60%" }}>
+        <div className="chat-skeleton-line" style={{ width: "85%" }}></div>
+        <div className="chat-skeleton-line" style={{ width: "95%" }}></div>
+        <div className="chat-skeleton-line" style={{ width: "40%" }}></div>
+      </div>
+    </div>
+  );
+}
+
 export function MessagesPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
@@ -459,6 +493,7 @@ export function MessagesPage() {
   const urlDealId = searchParams.get("dealId");
 
   const [activeAgentId, setActiveAgentIdRaw] = useState<string>("all");
+  const [showInitialLoader, setShowInitialLoader] = useState(true);
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
 
   // When switching agents, clear the selected conversation so no chat is pre-selected
@@ -1119,12 +1154,18 @@ export function MessagesPage() {
 
   const commonEmojis = ["😊", "😂", "👍", "🙏", "❤️", "🔥", "🚀", "✅", "⚠️", "❌"];
 
-  if (agentsQuery.isLoading || conversationsQuery.isLoading) {
-    return <div className="page-loading">Carregando monitoramento de WhatsApp...</div>;
-  }
-
   if (agentsQuery.isError || conversationsQuery.isError) {
     return <div className="page-error">Nao foi possivel carregar as conversas monitoradas.</div>;
+  }
+
+  if (showInitialLoader) {
+    const isFetching = agentsQuery.isLoading || conversationsQuery.isLoading;
+    return (
+      <PhoneLoadingScreen
+        isLoading={isFetching}
+        onFinished={() => setShowInitialLoader(false)}
+      />
+    );
   }
 
   return (
@@ -1257,29 +1298,41 @@ export function MessagesPage() {
           <SearchBox value={conversationSearch} onChange={setConversationSearch} placeholder="Pesquisar" />
 
           <div className="wa-list">
-            {filteredConversations.map((conversation) => (
-              <ConversationRow
-                key={conversation.id}
-                conversation={conversation}
-                active={conversation.id === selectedConversationId}
-                onClick={() => openConversation(conversation)}
-              />
-            ))}
+            {conversationsQuery.isLoading || (conversationsQuery.isFetching && !filteredConversations.length) ? (
+              <>
+                <ConversationSkeletonRow />
+                <ConversationSkeletonRow />
+                <ConversationSkeletonRow />
+                <ConversationSkeletonRow />
+                <ConversationSkeletonRow />
+              </>
+            ) : (
+              <>
+                {filteredConversations.map((conversation) => (
+                  <ConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    active={conversation.id === selectedConversationId}
+                    onClick={() => openConversation(conversation)}
+                  />
+                ))}
 
-            {conversationsQuery.hasNextPage ? (
-              <div className="wa-load-more-row">
-                <button
-                  type="button"
-                  className="wa-load-more-button"
-                  disabled={conversationsQuery.isFetchingNextPage}
-                  onClick={() => void conversationsQuery.fetchNextPage()}
-                >
-                  {conversationsQuery.isFetchingNextPage ? "Carregando..." : "Carregar conversas antigas"}
-                </button>
-              </div>
-            ) : null}
+                {conversationsQuery.hasNextPage ? (
+                  <div className="wa-load-more-row">
+                    <button
+                      type="button"
+                      className="wa-load-more-button"
+                      disabled={conversationsQuery.isFetchingNextPage}
+                      onClick={() => void conversationsQuery.fetchNextPage()}
+                    >
+                      {conversationsQuery.isFetchingNextPage ? "Carregando..." : "Carregar conversas antigas"}
+                    </button>
+                  </div>
+                ) : null}
 
-            {!filteredConversations.length ? <div className="wa-empty-list">Nenhuma conversa encontrada.</div> : null}
+                {!filteredConversations.length ? <div className="wa-empty-list">Nenhuma conversa encontrada.</div> : null}
+              </>
+            )}
           </div>
         </aside>
 
@@ -1360,7 +1413,7 @@ export function MessagesPage() {
                 }}
               >
                 {conversationDetailQuery.isLoading ? (
-                  <div className="wa-empty-chat">Carregando conversa...</div>
+                  <ChatSkeleton />
                 ) : timelineItems.length ? (
                   <>
                     {conversationDetailQuery.hasNextPage ? (
