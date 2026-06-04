@@ -2029,4 +2029,10 @@ export const migrations = [
   WHERE NULLIF(wim.chat_profile_picture_url, '') IS NOT NULL
      OR NULLIF(wim.sender_profile_picture_url, '') IS NOT NULL;
   `,
+  `
+  -- Add video_url to campaigns
+  ALTER TABLE public.whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS video_url TEXT;
+  `,
 ];
+

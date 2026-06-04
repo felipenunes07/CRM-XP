@@ -30,6 +30,7 @@ export interface CreateWhatsappCampaignInput {
   messageText: string;
   messageType?: WhatsappCampaignMessageType;
   carouselData?: CarouselSlide[] | null;
+  videoUrl?: string | null;
   filtersSnapshot?: Record<string, unknown>;
   groupIds: string[];
   overrideRecentBlock?: boolean;
@@ -80,6 +81,7 @@ interface DispatchRecipientContext {
   messageText: string;
   messageType: WhatsappCampaignMessageType;
   carouselData: CarouselSlide[] | null;
+  videoUrl: string | null;
   sourceName: string;
   sourceCode: string | null;
   createdByUserId: string;
@@ -308,6 +310,7 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     messageText: String(row.message_text ?? ""),
     messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
     carouselData: row.carousel_data && Array.isArray(row.carousel_data) ? (row.carousel_data as CarouselSlide[]) : null,
+    videoUrl: row.video_url ? String(row.video_url) : null,
     minDelaySeconds: Number(row.min_delay_seconds ?? 0),
     maxDelaySeconds: Number(row.max_delay_seconds ?? 0),
     overrideRecentBlock: Boolean(row.override_recent_block),
@@ -883,6 +886,7 @@ export async function createWhatsappCampaign(
 
     const messageType = input.messageType ?? "TEXT";
     const carouselData = input.carouselData ?? null;
+    const videoUrl = input.videoUrl ?? null;
 
     const campaignInsert = await campaignClient.query(
       `
@@ -898,6 +902,7 @@ export async function createWhatsappCampaign(
           message_text,
           message_type,
           carousel_data,
+          video_url,
           filters_snapshot,
           min_delay_seconds,
           max_delay_seconds,
@@ -905,7 +910,7 @@ export async function createWhatsappCampaign(
           created_by_user_id,
           created_by_name
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14, $15, $16, $17)
         RETURNING id, created_at
       `,
       [
@@ -919,6 +924,7 @@ export async function createWhatsappCampaign(
         trimmedMessage,
         messageType,
         carouselData ? JSON.stringify(carouselData) : null,
+        videoUrl,
         JSON.stringify(input.filtersSnapshot ?? {}),
         minDelaySeconds,
         maxDelaySeconds,
@@ -1156,6 +1162,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           wc.message_text,
           wc.message_type,
           wc.carousel_data,
+          wc.video_url,
           wc.template_id,
           wc.created_by_user_id,
           wc.created_by_name,
@@ -1244,6 +1251,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       messageText: String(row.message_text),
       messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
       carouselData,
+      videoUrl: row.video_url ? String(row.video_url) : null,
       sourceName: String(row.source_name ?? ""),
       sourceCode: row.source_code ? String(row.source_code) : null,
       createdByUserId: String(row.created_by_user_id ?? ""),

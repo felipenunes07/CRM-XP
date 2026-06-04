@@ -463,8 +463,9 @@ const whatsappCampaignCreateSchema = z.object({
   savedSegmentId: z.string().uuid().nullable().optional(),
   whatsappInstanceId: z.string().uuid().nullable().optional(),
   messageText: z.string().min(1),
-  messageType: z.enum(["TEXT", "CAROUSEL"]).optional(),
+  messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO"]).optional(),
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
+  videoUrl: z.string().nullable().optional(),
   filtersSnapshot: z.record(z.unknown()).optional(),
   groupIds: z.array(z.string().uuid()).min(1),
   overrideRecentBlock: z.boolean().optional(),
@@ -1336,23 +1337,24 @@ export function createApp() {
 
   app.post("/api/messages/test", async (request, response, next) => {
     try {
-      const { messageText, messageType, carouselData, whatsappInstanceId } = request.body;
+      const { messageText, messageType, carouselData, videoUrl, whatsappInstanceId } = request.body;
       const testNumber = "5511911279702@s.whatsapp.net";
       
       logger.info("📱 Test message request received", { 
         messageType, 
         hasCarousel: !!carouselData, 
         carouselSlides: carouselData?.length || 0,
+        hasVideo: !!videoUrl,
         instanceId: whatsappInstanceId,
         messageLength: messageText?.length || 0
       });
 
-      if (!messageText && messageType !== "CAROUSEL") {
+      if (!messageText && messageType !== "CAROUSEL" && messageType !== "VIDEO") {
         throw new HttpError(400, "Mensagem de texto é obrigatória");
       }
 
       // Import services
-      const { sendUazapiCarouselMessage, sendUazapiTextMessage } = await import("./modules/whatsapp/uazapiService.js");
+      const { sendUazapiCarouselMessage, sendUazapiTextMessage, sendUazapiVideoMessage } = await import("./modules/whatsapp/uazapiService.js");
       const { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } = await import("./modules/whatsapp/evolutionService.js");
       
       // Get WhatsApp instance if specified
@@ -1409,10 +1411,14 @@ export function createApp() {
 
       let result: any;
       
-      // Validate carousel support
+      // Validate carousel/video support
       if (messageType === "CAROUSEL" && carouselData?.length) {
         if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
           throw new HttpError(400, "Carrossel só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
+        }
+      } else if (messageType === "VIDEO" && videoUrl) {
+        if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
+          throw new HttpError(400, "Vídeo só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
         }
       }
       
@@ -1424,6 +1430,14 @@ export function createApp() {
             { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
             testNumber,
             carouselData
+          );
+        } else if (instanceConfig?.provider === "UAZAPI" && messageType === "VIDEO" && videoUrl) {
+          logger.info("🎥 Sending video test via UazAPI");
+          result = await sendUazapiVideoMessage(
+            { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
+            testNumber,
+            videoUrl,
+            messageText
           );
         } else if (instanceConfig?.provider === "UAZAPI") {
           logger.info("💬 Sending text test via UazAPI");

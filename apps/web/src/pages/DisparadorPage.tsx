@@ -416,6 +416,15 @@ export function CampaignPerformancePanel({
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           <div style={{ border: "1px solid #e4e4e7", borderRadius: "8px", background: "#fff", padding: "1rem" }}>
             <h5 style={{ margin: "0 0 0.6rem 0", fontSize: "0.88rem", color: "#18181b" }}>Mensagem enviada</h5>
+            {campaign.messageType === "VIDEO" && campaign.videoUrl && (
+              <div style={{ marginBottom: "0.75rem" }}>
+                <video
+                  src={campaign.videoUrl}
+                  controls
+                  style={{ width: "100%", maxHeight: "150px", borderRadius: "6px", backgroundColor: "#000" }}
+                />
+              </div>
+            )}
             <div
               style={{
                 background: "#f8fafc",
@@ -556,15 +565,8 @@ export function DisparadorPage() {
     { text: "", image: "", buttons: [{ id: "btn1", text: "", type: "url" }] },
   ]);
   const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
-
-  // Helper function to format file size
-  function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  }
+  const [videoUrl, setVideoUrl] = useState("");
+  const [uploadingVideo, setUploadingVideo] = useState(false);
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
     if (!selectedSenderIds.length) return "EVOLUTION";
@@ -696,6 +698,7 @@ export function DisparadorPage() {
         messageText,
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
+        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : null,
         filtersSnapshot: {
           quickFilter,
           search,
@@ -749,6 +752,7 @@ export function DisparadorPage() {
         messageText: messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
+        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : undefined,
         whatsappInstanceId: selectedSenderIds[0] || undefined
       };
       
@@ -890,18 +894,24 @@ export function DisparadorPage() {
     () => filterCampaignRecipients(selectedCampaignDetail?.recipients ?? [], campaignPerformanceFilter),
     [campaignPerformanceFilter, selectedCampaignDetail?.recipients],
   );
-  const hasMessage = Boolean(messageText.trim());
+  const hasMessage = campaignMessageType === "CAROUSEL"
+    ? true
+    : campaignMessageType === "VIDEO"
+      ? Boolean(videoUrl)
+      : Boolean(messageText.trim());
   const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
     ? "Criando campanha..."
     : selectedGroupCount > 0
       ? `Disparar para ${formatNumber(selectedGroupCount)} grupos`
       : "Selecione grupos para disparar";
-  const composeHelperText = !hasMessage
-    ? "Escreva ou escolha a mensagem final para liberar o disparo."
-    : selectedGroupCount === 0
-      ? "Selecione os grupos abaixo para habilitar o disparo."
-      : `Delay configurado entre ${minDelaySeconds}s e ${maxDelaySeconds}s por envio.`;
+  const composeHelperText = campaignMessageType === "VIDEO" && !videoUrl
+    ? "Selecione ou insira um arquivo/URL de vídeo para liberar o disparo."
+    : !hasMessage
+      ? "Escreva ou escolha a mensagem final para liberar o disparo."
+      : selectedGroupCount === 0
+        ? "Selecione os grupos abaixo para habilitar o disparo."
+        : `Delay configurado entre ${minDelaySeconds}s e ${maxDelaySeconds}s por envio.`;
 
 
 
@@ -1938,6 +1948,14 @@ export function DisparadorPage() {
                           >
                             Carrossel
                           </button>
+                          <button
+                            type="button"
+                            className={`ghost-button${campaignMessageType === "VIDEO" ? " active" : ""}`}
+                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "VIDEO" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "VIDEO" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                            onClick={() => setCampaignMessageType("VIDEO")}
+                          >
+                            Vídeo
+                          </button>
                         </div>
                       ) : (
                         <div style={{ 
@@ -1953,20 +1971,140 @@ export function DisparadorPage() {
                         }}>
                           <Info size={16} />
                           <div>
-                            <strong>Carrossel indisponível:</strong> Selecione uma instância UazAPI no passo "Remetentes" para usar carrosséis com imagens e botões.
+                            <strong>Carrossel e Vídeo indisponíveis:</strong> Selecione uma instância UazAPI no passo "Remetentes" para enviar carrosséis ou vídeos.
                           </div>
                         </div>
                       )}
 
                       <label className="whatsapp-message-field">
-                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : " (Versão A)"}</span>
+                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : " (Versão A)"}</span>
                         <textarea
-                          rows={campaignMessageType === "CAROUSEL" ? 4 : 8}
+                          rows={campaignMessageType === "CAROUSEL" || campaignMessageType === "VIDEO" ? 4 : 8}
                           value={messageText}
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
                         />
                       </label>
+
+                      {campaignMessageType === "VIDEO" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Arquivo de Vídeo</span>
+                          
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>URL do Vídeo ou Selecionar Arquivo:</label>
+                            
+                            <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <input
+                                type="text"
+                                className="wp-search-input"
+                                style={{ flex: 1, background: "#fff" }}
+                                placeholder="Insira a URL do vídeo (ex: https://site.com/video.mp4) ou selecione um arquivo..."
+                                value={videoUrl}
+                                onChange={(e) => setVideoUrl(e.target.value)}
+                                disabled={uploadingVideo}
+                              />
+                              
+                              <label
+                                className="ghost-button"
+                                style={{
+                                  padding: "8px 16px",
+                                  borderRadius: "8px",
+                                  fontSize: "0.82rem",
+                                  fontWeight: 650,
+                                  background: uploadingVideo ? "#e2e8f0" : "#3b82f6",
+                                  color: uploadingVideo ? "#94a3b8" : "#fff",
+                                  border: "1px solid var(--line)",
+                                  cursor: uploadingVideo ? "not-allowed" : "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px"
+                                }}
+                              >
+                                {uploadingVideo ? (
+                                  <>
+                                    <LoaderCircle className="animate-spin" size={16} />
+                                    Processando...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Paperclip size={16} />
+                                    Selecionar Arquivo
+                                  </>
+                                )}
+                                <input
+                                  type="file"
+                                  accept="video/*"
+                                  style={{ display: "none" }}
+                                  disabled={uploadingVideo}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    
+                                    // Limit to 16MB
+                                    if (file.size > 16 * 1024 * 1024) {
+                                      alert("Erro: O vídeo deve ter no máximo 16MB.");
+                                      return;
+                                    }
+                                    
+                                    setUploadingVideo(true);
+                                    try {
+                                      const reader = new FileReader();
+                                      reader.onload = (event) => {
+                                        const base64 = event.target?.result as string;
+                                        setVideoUrl(base64);
+                                        setUploadingVideo(false);
+                                      };
+                                      reader.onerror = () => {
+                                        alert("Erro ao ler arquivo de vídeo.");
+                                        setUploadingVideo(false);
+                                      };
+                                      reader.readAsDataURL(file);
+                                    } catch (err) {
+                                      console.error(err);
+                                      alert("Erro ao processar vídeo.");
+                                      setUploadingVideo(false);
+                                    }
+                                  }}
+                                />
+                              </label>
+                            </div>
+                            
+                            {videoUrl && (
+                              <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span style={{ fontSize: "0.78rem", color: "#64748b", wordBreak: "break-all" }}>
+                                    {videoUrl.startsWith("data:") ? "🎥 Vídeo carregado do computador (Base64)" : `🔗 ${videoUrl}`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setVideoUrl("")}
+                                    style={{
+                                      background: "none",
+                                      border: "none",
+                                      color: "#ef4444",
+                                      fontSize: "0.78rem",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "4px"
+                                    }}
+                                  >
+                                    <Trash2 size={14} /> Remover
+                                  </button>
+                                </div>
+                                {videoUrl.startsWith("data:") || videoUrl.match(/\.(mp4|webm|ogg)/i) || videoUrl.includes("http") ? (
+                                  <video
+                                    src={videoUrl}
+                                    controls
+                                    style={{ width: "100%", maxHeight: "200px", borderRadius: "6px", backgroundColor: "#000" }}
+                                  />
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
 
                       {campaignMessageType === "CAROUSEL" && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
@@ -2418,7 +2556,49 @@ export function DisparadorPage() {
                             backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"100\" height=\"100\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cpath d=\"M0 0h100v100H0z\" fill=\"%23e5ddd5\"/%3E%3Cpath d=\"M20 20l5 5-5 5m20-10l5 5-5 5\" stroke=\"%23d1c7b8\" stroke-width=\"0.5\" fill=\"none\" opacity=\"0.3\"/%3E%3C/svg%3E')",
                             backgroundSize: "100px 100px"
                           }}>
-                            {campaignMessageType === "TEXT" ? (
+                            {campaignMessageType === "VIDEO" ? (
+                              <div className="wp-preview-bubble" style={{
+                                background: "#d9fdd3",
+                                padding: "6px",
+                                borderRadius: "8px",
+                                maxWidth: "85%",
+                                marginLeft: "auto",
+                                marginBottom: "8px",
+                                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                position: "relative",
+                                color: "#1a1a1a"
+                              }}>
+                                {videoUrl ? (
+                                  <video 
+                                    src={videoUrl} 
+                                    controls 
+                                    style={{ width: "100%", maxHeight: "150px", borderRadius: "6px", backgroundColor: "#000", display: "block" }} 
+                                  />
+                                ) : (
+                                  <div style={{ width: "100%", height: "120px", borderRadius: "6px", backgroundColor: "#475569", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.78rem" }}>
+                                    [Sem Vídeo Selecionado]
+                                  </div>
+                                )}
+                                {messageText && (
+                                  <div style={{ padding: "6px 6px 2px 6px", fontSize: "0.85rem", lineHeight: "1.4", wordWrap: "break-word" }}>
+                                    {messageText}
+                                  </div>
+                                )}
+                                <div className="wp-preview-bubble-meta" style={{
+                                  fontSize: "0.65rem",
+                                  color: "#667781",
+                                  textAlign: "right",
+                                  marginTop: "4px",
+                                  paddingRight: "6px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "flex-end",
+                                  gap: "4px"
+                                }}>
+                                  Agora <CheckCheck size={12} style={{ color: "#53bdeb" }} />
+                                </div>
+                              </div>
+                            ) : campaignMessageType === "TEXT" ? (
                               <>
                                 {messageText && (
                                   <div className="wp-preview-bubble" style={{
@@ -2749,16 +2929,16 @@ export function DisparadorPage() {
                       <button
                         type="button"
                         onClick={() => sendTestMessageMutation.mutate()}
-                        disabled={sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL")}
+                        disabled={sendTestMessageMutation.isPending || !hasMessage}
                         style={{
                           padding: "1rem 1.5rem",
-                          background: sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL") ? "#94a3b8" : "#3b82f6",
+                          background: sendTestMessageMutation.isPending || !hasMessage ? "#94a3b8" : "#3b82f6",
                           color: "#fff",
                           border: "none",
                           borderRadius: "12px",
                           fontSize: "0.9rem",
                           fontWeight: 700,
-                          cursor: sendTestMessageMutation.isPending || (!hasMessage && campaignMessageType !== "CAROUSEL") ? "not-allowed" : "pointer",
+                          cursor: sendTestMessageMutation.isPending || !hasMessage ? "not-allowed" : "pointer",
                           display: "flex",
                           alignItems: "center",
                           gap: "8px",
@@ -2767,14 +2947,14 @@ export function DisparadorPage() {
                           whiteSpace: "nowrap"
                         }}
                         onMouseEnter={(e) => {
-                          if (!sendTestMessageMutation.isPending && (hasMessage || campaignMessageType === "CAROUSEL")) {
+                          if (!sendTestMessageMutation.isPending && hasMessage) {
                             e.currentTarget.style.background = "#2563eb";
                             e.currentTarget.style.transform = "translateY(-2px)";
                             e.currentTarget.style.boxShadow = "0 6px 16px rgba(59, 130, 246, 0.4)";
                           }
                         }}
                         onMouseLeave={(e) => {
-                          if (!sendTestMessageMutation.isPending && (hasMessage || campaignMessageType === "CAROUSEL")) {
+                          if (!sendTestMessageMutation.isPending && hasMessage) {
                             e.currentTarget.style.background = "#3b82f6";
                             e.currentTarget.style.transform = "translateY(0)";
                             e.currentTarget.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.3)";
