@@ -75,6 +75,7 @@ const WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION = "v2";
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
 const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
+let whatsappActivityReportRefreshPromise: Promise<void> | null = null;
 
 type WhatsappConversationCursor = {
   lastActivityAt: string;
@@ -2485,6 +2486,30 @@ function reportHasCurrentActivity(report: WhatsappAgentActivityReport) {
   );
 }
 
+function scheduleWhatsappActivityReportRefresh(days: number, reason: string) {
+  const refreshDays = Math.max(2, Math.min(31, Math.floor(days) || 2));
+  if (whatsappActivityReportRefreshPromise) {
+    logger.info("whatsapp activity rollup refresh already running", { reason, refreshDays });
+    return;
+  }
+
+  logger.info("scheduled whatsapp activity rollup refresh from report request", { reason, refreshDays });
+  whatsappActivityReportRefreshPromise = refreshWhatsappActivityRollups(refreshDays)
+    .then((result) => {
+      logger.info("finished background whatsapp activity rollup refresh", { reason, refreshDays, ...result });
+    })
+    .catch((error) => {
+      logger.warn("failed background whatsapp activity rollup refresh", {
+        reason,
+        refreshDays,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    })
+    .finally(() => {
+      whatsappActivityReportRefreshPromise = null;
+    });
+}
+
 export async function getWhatsappAgentActivityReport(
   user: JwtUser,
   daysInput = 7,
@@ -2570,7 +2595,8 @@ export async function getWhatsappAgentActivityReport(
     );
 
   const queryActivityEventsDirectly = () => {
-    const directParams: unknown[] = [startDate, endDate];
+    const directStartDate = days > 1 ? pivotDate : startDate;
+    const directParams: unknown[] = [directStartDate, endDate];
     const directWhere: string[] = ["TRUE"];
 
     if (user.role === "SELLER") {
@@ -2821,13 +2847,13 @@ export async function getWhatsappAgentActivityReport(
       const lastUpdate = lastUpdateRes.rows[0]?.last_update;
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
       if (!lastUpdate || new Date(lastUpdate) < fiveMinutesAgo) {
-        logger.info("proactively refreshing whatsapp activity rollups (data stale or missing for today)", {
+        logger.info("scheduling whatsapp activity rollup refresh (data stale or missing for today)", {
           lastUpdate,
         });
-        await refreshWhatsappActivityRollups(days * 2);
+        scheduleWhatsappActivityReportRefresh(days * 2, "stale-or-missing-today");
       }
     } catch (error) {
-      logger.warn("failed to proactively refresh whatsapp activity rollups during report request", {
+      logger.warn("failed to inspect whatsapp activity rollup freshness during report request", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -2854,18 +2880,9 @@ export async function getWhatsappAgentActivityReport(
 
   let activityRows = result.rows;
   if (!hasReportableCurrentActivityRows(activityRows, endDate)) {
-    try {
-      await refreshWhatsappActivityRollups(days * 2);
-      const refreshed = await queryActivityRollups();
-      activityRows = refreshed.rows;
-    } catch (error) {
-      logger.warn("failed to refresh empty whatsapp activity rollups during report request", {
-        days,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    scheduleWhatsappActivityReportRefresh(days * 2, "no-current-activity-in-report");
   }
-  if (!hasReportableCurrentActivityRows(activityRows, endDate)) {
+  if (!hasReportableCurrentActivityRows(activityRows, endDate) && (days <= 1 || activityRows.length === 0)) {
     try {
       const direct = await queryActivityEventsDirectly();
       if (hasReportableCurrentActivityRows(direct.rows, endDate)) {

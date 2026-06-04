@@ -2015,10 +2015,21 @@ export function createApp() {
   });
 
   app.get("/api/whatsapp-monitor/activity-report", async (request, response, next) => {
+    const startedAt = Date.now();
     try {
       const query = whatsappActivityReportQuerySchema.parse(request.query);
-      response.json(await getWhatsappAgentActivityReport(request.user!, query.days));
+      const report = await getWhatsappAgentActivityReport(request.user!, query.days);
+      response.json(report);
+      logWhatsappMonitorEndpointTiming("activity-report", startedAt, {
+        days: query.days ?? 7,
+        agents: report.agents.length,
+        cells: report.hourlyCells.length,
+      });
     } catch (error) {
+      logWhatsappMonitorEndpointTiming("activity-report", startedAt, {
+        failed: true,
+        error: String(error),
+      });
       next(error);
     }
   });
