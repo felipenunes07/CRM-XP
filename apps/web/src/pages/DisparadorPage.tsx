@@ -576,10 +576,10 @@ export function DisparadorPage() {
 
   // Reset message type when provider changes
   useEffect(() => {
-    if (selectedSenderProvider !== "UAZAPI") {
+    if (selectedSenderProvider !== "UAZAPI" && campaignMessageType === "CAROUSEL") {
       setCampaignMessageType("TEXT");
     }
-  }, [selectedSenderProvider]);
+  }, [selectedSenderProvider, campaignMessageType]);
 
   // Auto-select all active senders when loaded
   useEffect(() => {
@@ -1929,17 +1929,17 @@ export function DisparadorPage() {
                         </select>
                       </label>
 
-                      {selectedSenderProvider === "UAZAPI" ? (
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                          <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>Tipo de envio:</span>
-                          <button
-                            type="button"
-                            className={`ghost-button${campaignMessageType === "TEXT" ? " active" : ""}`}
-                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "TEXT" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "TEXT" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
-                            onClick={() => setCampaignMessageType("TEXT")}
-                          >
-                            Texto
-                          </button>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>Tipo de envio:</span>
+                        <button
+                          type="button"
+                          className={`ghost-button${campaignMessageType === "TEXT" ? " active" : ""}`}
+                          style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "TEXT" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "TEXT" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                          onClick={() => setCampaignMessageType("TEXT")}
+                        >
+                          Texto
+                        </button>
+                        {selectedSenderProvider === "UAZAPI" ? (
                           <button
                             type="button"
                             className={`ghost-button${campaignMessageType === "CAROUSEL" ? " active" : ""}`}
@@ -1948,33 +1948,16 @@ export function DisparadorPage() {
                           >
                             Carrossel
                           </button>
-                          <button
-                            type="button"
-                            className={`ghost-button${campaignMessageType === "VIDEO" ? " active" : ""}`}
-                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "VIDEO" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "VIDEO" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
-                            onClick={() => setCampaignMessageType("VIDEO")}
-                          >
-                            Vídeo
-                          </button>
-                        </div>
-                      ) : (
-                        <div style={{ 
-                          padding: "0.75rem 1rem", 
-                          background: "#fef3c7", 
-                          border: "1px solid #fbbf24", 
-                          borderRadius: "8px",
-                          fontSize: "0.82rem",
-                          color: "#92400e",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px"
-                        }}>
-                          <Info size={16} />
-                          <div>
-                            <strong>Carrossel e Vídeo indisponíveis:</strong> Selecione uma instância UazAPI no passo "Remetentes" para enviar carrosséis ou vídeos.
-                          </div>
-                        </div>
-                      )}
+                        ) : null}
+                        <button
+                          type="button"
+                          className={`ghost-button${campaignMessageType === "VIDEO" ? " active" : ""}`}
+                          style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "VIDEO" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "VIDEO" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                          onClick={() => setCampaignMessageType("VIDEO")}
+                        >
+                          Vídeo
+                        </button>
+                      </div>
 
                       <label className="whatsapp-message-field">
                         <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : " (Versão A)"}</span>

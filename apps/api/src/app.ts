@@ -1411,14 +1411,10 @@ export function createApp() {
 
       let result: any;
       
-      // Validate carousel/video support
+      // Validate carousel support
       if (messageType === "CAROUSEL" && carouselData?.length) {
         if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
           throw new HttpError(400, "Carrossel só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
-        }
-      } else if (messageType === "VIDEO" && videoUrl) {
-        if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
-          throw new HttpError(400, "Vídeo só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
         }
       }
       
@@ -1447,19 +1443,53 @@ export function createApp() {
             messageText
           );
         } else if (instanceConfig?.provider === "EVOLUTION") {
-          logger.info("💬 Sending text test via Evolution instance");
-          result = await sendWhatsappInstanceTextMessage(
-            {
-              instanceName: instanceConfig.instanceName,
-              evolutionBaseUrl: instanceConfig.evolutionBaseUrl,
-              evolutionApiKey: instanceConfig.evolutionApiKey
-            },
-            testNumber,
-            messageText
-          );
+          if (messageType === "VIDEO" && videoUrl) {
+            logger.info("🎥 Sending video test via Evolution instance");
+            const { sendWhatsappInstanceMediaMessage } = await import("./modules/whatsapp/evolutionService.js");
+            result = await sendWhatsappInstanceMediaMessage(
+              {
+                instanceName: instanceConfig.instanceName,
+                evolutionBaseUrl: instanceConfig.evolutionBaseUrl,
+                evolutionApiKey: instanceConfig.evolutionApiKey
+              },
+              testNumber,
+              videoUrl,
+              "video",
+              "video.mp4",
+              messageText
+            );
+          } else {
+            logger.info("💬 Sending text test via Evolution instance");
+            result = await sendWhatsappInstanceTextMessage(
+              {
+                instanceName: instanceConfig.instanceName,
+                evolutionBaseUrl: instanceConfig.evolutionBaseUrl,
+                evolutionApiKey: instanceConfig.evolutionApiKey
+              },
+              testNumber,
+              messageText
+            );
+          }
         } else {
-          logger.info("💬 Sending text test via default Evolution");
-          result = await sendWhatsappTextMessage(testNumber, messageText);
+          if (messageType === "VIDEO" && videoUrl) {
+            logger.info("🎥 Sending video test via default Evolution");
+            const { sendWhatsappInstanceMediaMessage } = await import("./modules/whatsapp/evolutionService.js");
+            result = await sendWhatsappInstanceMediaMessage(
+              {
+                instanceName: env.EVOLUTION_INSTANCE_NAME,
+                evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+                evolutionApiKey: env.EVOLUTION_API_KEY
+              },
+              testNumber,
+              videoUrl,
+              "video",
+              "video.mp4",
+              messageText
+            );
+          } else {
+            logger.info("💬 Sending text test via default Evolution");
+            result = await sendWhatsappTextMessage(testNumber, messageText);
+          }
         }
       } catch (sendError: any) {
         logger.error("❌ Error sending message", { 

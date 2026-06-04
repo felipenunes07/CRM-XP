@@ -58,19 +58,35 @@ export async function sendWhatsappInstanceMediaMessage(
   fileName?: string,
   caption?: string,
 ) {
+  let mimeTypeStr = "";
+  if (mediaBase64.startsWith("data:")) {
+    const match = mediaBase64.match(/^data:([^;]+);base64,/);
+    if (match && match[1]) {
+      mimeTypeStr = match[1];
+    }
+  }
+  if (!mimeTypeStr) {
+    if (mediaType === "video") {
+      mimeTypeStr = "video/mp4";
+    } else if (mediaType === "image") {
+      mimeTypeStr = "image/png";
+    } else if (mediaType === "audio") {
+      mimeTypeStr = "audio/mp3";
+    } else {
+      mimeTypeStr = "application/octet-stream";
+    }
+  }
+
+  const defaultFileName = fileName || (mediaType === "video" ? "video.mp4" : mediaType === "image" ? "image.png" : "file");
+
   const payload: any = {
     number: formatEvolutionSendTextTarget(destinationJid),
     mediatype: mediaType,
+    mimetype: mimeTypeStr,
     media: mediaBase64,
+    fileName: defaultFileName,
+    caption: caption ?? "",
   };
-
-  if (caption) {
-    payload.caption = caption;
-  }
-
-  if (fileName) {
-    payload.fileName = fileName;
-  }
 
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
 }
