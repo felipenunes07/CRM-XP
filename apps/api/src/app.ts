@@ -1890,6 +1890,7 @@ export function createApp() {
   });
 
   const whatsappMonitorConversationDetailQuerySchema = z.object({
+    instanceId: z.string().uuid().optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     before: z.string().optional(),
     after: z.string().optional(),

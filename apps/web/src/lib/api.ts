@@ -835,12 +835,16 @@ export const api = {
     token: string,
     id: string,
     query: {
+      instanceId?: string;
       limit?: number;
       before?: string;
       after?: string;
     } = {},
   ) {
     const search = new URLSearchParams();
+    if (query.instanceId) {
+      search.set("instanceId", query.instanceId);
+    }
     if (query.limit) {
       search.set("limit", String(query.limit));
     }
