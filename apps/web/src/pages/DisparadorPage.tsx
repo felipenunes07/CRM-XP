@@ -16,7 +16,7 @@ import type {
 import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDateTime, formatNumber, formatPercent } from "../lib/format";
+import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
 
 type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
