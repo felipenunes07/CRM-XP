@@ -1,9 +1,13 @@
 import type { PoolClient } from "pg";
 import type {
+  WhatsappCampaignAttributedMessage,
   CarouselSlide,
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
   WhatsappCampaignMessageType,
+  WhatsappCampaignPerformance,
+  WhatsappCampaignPerformanceDiagnosis,
+  WhatsappCampaignRecipientPerformance,
   WhatsappCampaignProgress,
   WhatsappCampaignRecipient,
   WhatsappCampaignRecipientStatus,
@@ -15,6 +19,8 @@ import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { getWhatsappGroupsByIds } from "./whatsappGroupService.js";
 import { computeRecentBlock, randomDelaySeconds } from "./whatsappCore.js";
+
+export const WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS = 7;
 
 export interface CreateWhatsappCampaignInput {
   name: string;
@@ -54,6 +60,16 @@ interface CampaignProgressRow {
   estimated_finish_at: string | null;
 }
 
+interface CampaignPerformanceRecipientRow {
+  recipient_id: string;
+  first_response_at: string | null;
+  response_count: number;
+  first_order_at: string | null;
+  orders_count: number;
+  pieces: number;
+  revenue: number;
+}
+
 interface DispatchRecipientContext {
   recipientId: string;
   campaignId: string;
@@ -77,6 +93,180 @@ interface DispatchRecipientContext {
     baseUrl: string;
     token: string;
   } | null;
+}
+
+function toIsoStringOrNull(value: unknown) {
+  return value ? new Date(String(value)).toISOString() : null;
+}
+
+function numericValue(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function ratio(numerator: number, denominator: number) {
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+export function isWithinWhatsappCampaignAttributionWindow(
+  sentAt: string | Date | null | undefined,
+  eventAt: string | Date | null | undefined,
+  windowDays = WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS,
+) {
+  if (!sentAt || !eventAt) {
+    return false;
+  }
+
+  const sentMs = new Date(sentAt).getTime();
+  const eventMs = new Date(eventAt).getTime();
+
+  if (!Number.isFinite(sentMs) || !Number.isFinite(eventMs)) {
+    return false;
+  }
+
+  return eventMs >= sentMs && eventMs < sentMs + windowDays * 24 * 60 * 60 * 1000;
+}
+
+export function shouldCurrentCampaignKeepAttribution(input: {
+  currentSentAt: string | Date | null | undefined;
+  eventAt: string | Date | null | undefined;
+  newerSentAt?: string | Date | null;
+  windowDays?: number;
+}) {
+  if (!isWithinWhatsappCampaignAttributionWindow(input.currentSentAt, input.eventAt, input.windowDays)) {
+    return false;
+  }
+
+  if (!input.newerSentAt) {
+    return true;
+  }
+
+  const currentSentMs = new Date(input.currentSentAt as string | Date).getTime();
+  const eventMs = new Date(input.eventAt as string | Date).getTime();
+  const newerSentMs = new Date(input.newerSentAt).getTime();
+
+  if (!Number.isFinite(currentSentMs) || !Number.isFinite(eventMs) || !Number.isFinite(newerSentMs)) {
+    return true;
+  }
+
+  return !(newerSentMs > currentSentMs && newerSentMs <= eventMs);
+}
+
+export interface WhatsappCampaignAttributionIdentity {
+  customerId?: string | null;
+  customerCode?: string | null;
+  jid?: string | null;
+}
+
+export interface WhatsappCampaignAttributionRecipient extends WhatsappCampaignAttributionIdentity {
+  id: string;
+  sentAt: string | Date | null;
+}
+
+export interface WhatsappCampaignAttributionEvent extends WhatsappCampaignAttributionIdentity {
+  eventAt: string | Date | null;
+}
+
+function normalizedDigits(value: string | null | undefined) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+export function whatsappCampaignIdentityMatches(
+  left: WhatsappCampaignAttributionIdentity,
+  right: WhatsappCampaignAttributionIdentity,
+) {
+  if (left.customerId && right.customerId && left.customerId === right.customerId) {
+    return true;
+  }
+
+  if (left.customerCode && right.customerCode && left.customerCode.toLowerCase() === right.customerCode.toLowerCase()) {
+    return true;
+  }
+
+  if (left.jid && right.jid) {
+    if (left.jid.toLowerCase() === right.jid.toLowerCase()) {
+      return true;
+    }
+
+    const leftDigits = normalizedDigits(left.jid);
+    const rightDigits = normalizedDigits(right.jid);
+    return Boolean(leftDigits && leftDigits === rightDigits);
+  }
+
+  return false;
+}
+
+export function pickMostRecentWhatsappCampaignAttribution(
+  recipients: WhatsappCampaignAttributionRecipient[],
+  event: WhatsappCampaignAttributionEvent,
+  windowDays = WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS,
+) {
+  return recipients
+    .filter((recipient) =>
+      whatsappCampaignIdentityMatches(recipient, event) &&
+      isWithinWhatsappCampaignAttributionWindow(recipient.sentAt, event.eventAt, windowDays),
+    )
+    .sort((left, right) => new Date(right.sentAt as string | Date).getTime() - new Date(left.sentAt as string | Date).getTime())[0] ?? null;
+}
+
+export function buildWhatsappCampaignDiagnosis(input: {
+  sentRecipients: number;
+  blockedRecipients: number;
+  failedRecipients: number;
+  responseRate: number;
+  purchaseRate: number;
+  purchasedRecipients: number;
+}): WhatsappCampaignPerformanceDiagnosis {
+  const attemptedRecipients = input.sentRecipients + input.failedRecipients + input.blockedRecipients;
+  const deliveryIssueRate = attemptedRecipients > 0
+    ? (input.failedRecipients + input.blockedRecipients) / attemptedRecipients
+    : 0;
+
+  if (attemptedRecipients === 0) {
+    return {
+      tone: "neutral",
+      title: "Campanha sem envios concluídos",
+      description: "Ainda não há volume de envio suficiente para avaliar resposta ou venda.",
+    };
+  }
+
+  if (deliveryIssueRate >= 0.25) {
+    return {
+      tone: "danger",
+      title: "Base ou bloqueio limitaram a campanha",
+      description: "Uma parte relevante do público ficou bloqueada ou falhou antes de chegar ao atendimento.",
+    };
+  }
+
+  if (input.responseRate >= 0.2 && input.purchaseRate >= 0.08 && input.purchasedRecipients > 0) {
+    return {
+      tone: "success",
+      title: "Campanha performou bem",
+      description: "O público respondeu e uma parte relevante converteu em compra dentro da janela de atribuição.",
+    };
+  }
+
+  if (input.responseRate >= 0.2 && input.purchaseRate < 0.08) {
+    return {
+      tone: "warning",
+      title: "Boa resposta, baixa conversão",
+      description: "A mensagem gerou conversa, mas oferta, preço, estoque ou follow-up podem ter travado a compra.",
+    };
+  }
+
+  if (input.sentRecipients >= 10 && input.responseRate < 0.08) {
+    return {
+      tone: "warning",
+      title: "Público ou mensagem não engajaram",
+      description: "O disparo chegou ao público, mas poucas pessoas responderam dentro da janela de acompanhamento.",
+    };
+  }
+
+  return {
+    tone: "neutral",
+    title: "Performance em observação",
+    description: "A campanha tem poucos sinais conclusivos; acompanhe respostas e compras nos próximos dias.",
+  };
 }
 
 function mapProgress(row: Partial<CampaignProgressRow>): WhatsappCampaignProgress {
@@ -161,8 +351,418 @@ function mapRecipientRow(row: Record<string, unknown>): WhatsappCampaignRecipien
       row.response_payload && typeof row.response_payload === "object"
         ? (row.response_payload as Record<string, unknown>)
         : null,
+    responded: Boolean(row.responded),
+    firstResponseAt: toIsoStringOrNull(row.first_response_at),
+    responseCount: numericValue(row.response_count),
+    purchased: Boolean(row.purchased),
+    firstOrderAt: toIsoStringOrNull(row.first_order_at),
+    ordersCount: numericValue(row.orders_count),
+    pieces: numericValue(row.pieces),
+    revenue: numericValue(row.revenue),
     createdAt: new Date(String(row.created_at)).toISOString(),
     updatedAt: new Date(String(row.updated_at)).toISOString(),
+  };
+}
+
+function blankRecipientPerformance(recipientId: string): WhatsappCampaignRecipientPerformance {
+  return {
+    recipientId,
+    responded: false,
+    firstResponseAt: null,
+    responseCount: 0,
+    purchased: false,
+    firstOrderAt: null,
+    ordersCount: 0,
+    pieces: 0,
+    revenue: 0,
+  };
+}
+
+function mapRecipientPerformance(row: CampaignPerformanceRecipientRow): WhatsappCampaignRecipientPerformance {
+  const responseCount = numericValue(row.response_count);
+  const ordersCount = numericValue(row.orders_count);
+
+  return {
+    recipientId: String(row.recipient_id),
+    responded: responseCount > 0,
+    firstResponseAt: toIsoStringOrNull(row.first_response_at),
+    responseCount,
+    purchased: ordersCount > 0,
+    firstOrderAt: toIsoStringOrNull(row.first_order_at),
+    ordersCount,
+    pieces: numericValue(row.pieces),
+    revenue: numericValue(row.revenue),
+  };
+}
+
+function mergeRecipientPerformance(
+  recipient: WhatsappCampaignRecipient,
+  performance: WhatsappCampaignRecipientPerformance,
+): WhatsappCampaignRecipient {
+  return {
+    ...recipient,
+    responded: performance.responded,
+    firstResponseAt: performance.firstResponseAt,
+    responseCount: performance.responseCount,
+    purchased: performance.purchased,
+    firstOrderAt: performance.firstOrderAt,
+    ordersCount: performance.ordersCount,
+    pieces: performance.pieces,
+    revenue: performance.revenue,
+  };
+}
+
+function mapAttributedMessage(row: Record<string, unknown>): WhatsappCampaignAttributedMessage {
+  return {
+    id: String(row.id),
+    recipientId: row.recipient_id ? String(row.recipient_id) : null,
+    campaignId: String(row.campaign_id),
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    customerCode: row.customer_code ? String(row.customer_code) : null,
+    customerDisplayName: row.customer_display_name ? String(row.customer_display_name) : null,
+    jid: row.jid ? String(row.jid) : null,
+    direction: String(row.direction) as WhatsappCampaignAttributedMessage["direction"],
+    source: String(row.source) as WhatsappCampaignAttributedMessage["source"],
+    senderName: row.sender_name ? String(row.sender_name) : null,
+    content: String(row.content ?? ""),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  };
+}
+
+const eventIdentityMatchSql = (eventAlias: string, recipientAlias: string) => `
+  (
+    (${eventAlias}.customer_id IS NOT NULL AND ${recipientAlias}.customer_id IS NOT NULL AND ${eventAlias}.customer_id = ${recipientAlias}.customer_id)
+    OR (${eventAlias}.customer_code IS NOT NULL AND ${recipientAlias}.customer_code IS NOT NULL AND LOWER(${eventAlias}.customer_code) = LOWER(${recipientAlias}.customer_code))
+    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND (
+      LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid)
+      OR (
+        regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') <> ''
+        AND regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') = regexp_replace(${recipientAlias}.jid, '\\D', '', 'g')
+      )
+    ))
+  )
+`;
+
+const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
+  (
+    (${orderAlias}.customer_id IS NOT NULL AND ${recipientAlias}.customer_id IS NOT NULL AND ${orderAlias}.customer_id = ${recipientAlias}.customer_id)
+    OR (${orderAlias}.customer_code IS NOT NULL AND ${recipientAlias}.customer_code IS NOT NULL AND LOWER(${orderAlias}.customer_code) = LOWER(${recipientAlias}.customer_code))
+  )
+`;
+
+async function getWhatsappCampaignPerformance(campaignId: string): Promise<WhatsappCampaignPerformance> {
+  const [recipientsResult, inboundResult, purchaseResult, outboundResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT id, status
+        FROM whatsapp_campaign_recipients
+        WHERE campaign_id = $1
+      `,
+      [campaignId],
+    ),
+    pool.query(
+      `
+        WITH campaign_recipients AS (
+          SELECT
+            id,
+            campaign_id,
+            customer_id,
+            customer_code,
+            customer_display_name,
+            jid,
+            sent_at
+          FROM whatsapp_campaign_recipients
+          WHERE campaign_id = $1
+            AND status = 'SENT'
+            AND sent_at IS NOT NULL
+        ),
+        campaign_scope AS (
+          SELECT
+            MIN(sent_at) AS first_sent_at,
+            MAX(sent_at) + ($2::int * INTERVAL '1 day') AS last_window_at
+          FROM campaign_recipients
+        ),
+        inbound_candidates AS (
+          SELECT
+            COALESCE(NULLIF(da.metadata ->> 'messageId', ''), da.id::text) AS event_key,
+            da.id::text AS id,
+            da.created_at,
+            COALESCE(NULLIF(da.content, ''), '[Mensagem sem texto]') AS content,
+            da.actor_name AS sender_name,
+            COALESCE(NULLIF(da.metadata ->> 'remoteJid', ''), d.whatsapp_jid) AS event_jid,
+            d.customer_id,
+            d.customer_code,
+            0 AS source_priority,
+            'deal_activities' AS source
+          FROM deal_activities da
+          JOIN deals d ON d.id = da.deal_id
+          CROSS JOIN campaign_scope cs
+          WHERE da.activity_type = 'WHATSAPP_RECEIVED'
+            AND cs.first_sent_at IS NOT NULL
+            AND da.created_at >= cs.first_sent_at
+            AND da.created_at < cs.last_window_at
+
+          UNION ALL
+
+          SELECT
+            wim.message_id AS event_key,
+            wim.id::text AS id,
+            wim.created_at,
+            COALESCE(NULLIF(wim.message_text, ''), '[Mensagem sem texto]') AS content,
+            COALESCE(NULLIF(wim.participant_name, ''), NULLIF(wim.sender_name, '')) AS sender_name,
+            wim.remote_jid AS event_jid,
+            NULL::uuid AS customer_id,
+            NULL::text AS customer_code,
+            1 AS source_priority,
+            'whatsapp_incoming_messages' AS source
+          FROM whatsapp_incoming_messages wim
+          CROSS JOIN campaign_scope cs
+          WHERE COALESCE(wim.from_me, false) = false
+            AND cs.first_sent_at IS NOT NULL
+            AND wim.created_at >= cs.first_sent_at
+            AND wim.created_at < cs.last_window_at
+        ),
+        inbound_events AS (
+          SELECT DISTINCT ON (event_key)
+            event_key,
+            id,
+            created_at,
+            content,
+            sender_name,
+            event_jid,
+            customer_id,
+            customer_code,
+            source
+          FROM inbound_candidates
+          WHERE COALESCE(event_key, '') <> ''
+          ORDER BY event_key, source_priority ASC, created_at ASC
+        ),
+        attributed_messages AS (
+          SELECT DISTINCT ON (event_key)
+            e.event_key,
+            e.id,
+            r.id AS recipient_id,
+            r.campaign_id,
+            r.customer_id,
+            r.customer_code,
+            r.customer_display_name,
+            r.jid,
+            'INBOUND'::text AS direction,
+            e.source,
+            e.sender_name,
+            e.content,
+            e.created_at
+          FROM inbound_events e
+          JOIN campaign_recipients r
+            ON e.created_at >= r.sent_at
+           AND e.created_at < r.sent_at + ($2::int * INTERVAL '1 day')
+           AND ${eventIdentityMatchSql("e", "r")}
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM whatsapp_campaign_recipients newer
+            WHERE newer.status = 'SENT'
+              AND newer.sent_at IS NOT NULL
+              AND newer.sent_at > r.sent_at
+              AND newer.sent_at <= e.created_at
+              AND newer.id <> r.id
+              AND ${eventIdentityMatchSql("e", "newer")}
+          )
+          ORDER BY e.event_key, r.sent_at DESC, r.id
+        )
+        SELECT *
+        FROM attributed_messages
+        ORDER BY created_at ASC, id ASC
+      `,
+      [campaignId, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+    ),
+    pool.query(
+      `
+        WITH campaign_recipients AS (
+          SELECT
+            id,
+            customer_id,
+            customer_code,
+            jid,
+            sent_at
+          FROM whatsapp_campaign_recipients
+          WHERE campaign_id = $1
+            AND status = 'SENT'
+            AND sent_at IS NOT NULL
+        ),
+        campaign_scope AS (
+          SELECT
+            MIN(sent_at)::date AS first_sent_date,
+            (MAX(sent_at) + ($2::int * INTERVAL '1 day'))::date AS last_window_date
+          FROM campaign_recipients
+        ),
+        order_totals AS (
+          SELECT
+            o.id,
+            o.customer_id,
+            o.customer_code,
+            o.order_date,
+            o.total_amount,
+            COALESCE(SUM(oi.quantity), 0) AS pieces
+          FROM orders o
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          CROSS JOIN campaign_scope cs
+          WHERE cs.first_sent_date IS NOT NULL
+            AND o.order_date >= cs.first_sent_date
+            AND o.order_date <= cs.last_window_date
+          GROUP BY o.id, o.customer_id, o.customer_code, o.order_date, o.total_amount
+        ),
+        attributed_orders AS (
+          SELECT DISTINCT ON (o.id)
+            o.id,
+            r.id AS recipient_id,
+            o.order_date,
+            o.total_amount,
+            o.pieces
+          FROM order_totals o
+          JOIN campaign_recipients r
+            ON o.order_date >= r.sent_at::date
+           AND o.order_date <= (r.sent_at + ($2::int * INTERVAL '1 day'))::date
+           AND ${orderIdentityMatchSql("o", "r")}
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM whatsapp_campaign_recipients newer
+            WHERE newer.status = 'SENT'
+              AND newer.sent_at IS NOT NULL
+              AND newer.sent_at > r.sent_at
+              AND newer.sent_at::date <= o.order_date
+              AND newer.id <> r.id
+              AND ${orderIdentityMatchSql("o", "newer")}
+          )
+          ORDER BY o.id, r.sent_at DESC, r.id
+        )
+        SELECT
+          recipient_id,
+          MIN(order_date)::text AS first_order_at,
+          COUNT(*)::int AS orders_count,
+          COALESCE(SUM(pieces), 0)::numeric(14,2) AS pieces,
+          COALESCE(SUM(total_amount), 0)::numeric(14,2) AS revenue
+        FROM attributed_orders
+        GROUP BY recipient_id
+      `,
+      [campaignId, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+    ),
+    pool.query(
+      `
+        SELECT
+          ml.id::text AS id,
+          r.id AS recipient_id,
+          ml.campaign_id,
+          ml.customer_id,
+          COALESCE(r.customer_code, c.customer_code) AS customer_code,
+          COALESCE(r.customer_display_name, c.display_name) AS customer_display_name,
+          COALESCE(r.jid, ml.destination) AS jid,
+          'OUTBOUND'::text AS direction,
+          'message_logs'::text AS source,
+          ml.sent_by_name AS sender_name,
+          ml.message AS content,
+          ml.created_at
+        FROM message_logs ml
+        LEFT JOIN customers c ON c.id = ml.customer_id
+        LEFT JOIN whatsapp_campaign_recipients r
+          ON r.campaign_id = ml.campaign_id
+         AND (
+           r.group_id = ml.whatsapp_group_id
+           OR (ml.customer_id IS NOT NULL AND r.customer_id = ml.customer_id)
+           OR (ml.destination IS NOT NULL AND LOWER(r.jid) = LOWER(ml.destination))
+         )
+        WHERE ml.campaign_id = $1
+          AND ml.status = 'SENT'
+        ORDER BY ml.created_at ASC, ml.id ASC
+      `,
+      [campaignId],
+    ),
+  ]);
+
+  const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
+  const recipientStatusRows = recipientsResult.rows.map((row) => ({
+    id: String(row.id),
+    status: String(row.status) as WhatsappCampaignRecipientStatus,
+  }));
+
+  for (const recipient of recipientStatusRows) {
+    recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
+  }
+
+  for (const row of inboundResult.rows) {
+    const recipientId = String(row.recipient_id);
+    const current = recipientPerformance.get(recipientId) ?? blankRecipientPerformance(recipientId);
+    current.responseCount += 1;
+    current.responded = true;
+    const createdAt = toIsoStringOrNull(row.created_at);
+    if (createdAt && (!current.firstResponseAt || createdAt < current.firstResponseAt)) {
+      current.firstResponseAt = createdAt;
+    }
+    recipientPerformance.set(recipientId, current);
+  }
+
+  for (const row of purchaseResult.rows as CampaignPerformanceRecipientRow[]) {
+    const purchasePerformance = mapRecipientPerformance({
+      recipient_id: String(row.recipient_id),
+      first_response_at: null,
+      response_count: 0,
+      first_order_at: row.first_order_at,
+      orders_count: row.orders_count,
+      pieces: row.pieces,
+      revenue: row.revenue,
+    });
+    const current = recipientPerformance.get(purchasePerformance.recipientId) ?? blankRecipientPerformance(purchasePerformance.recipientId);
+    current.purchased = purchasePerformance.purchased;
+    current.firstOrderAt = purchasePerformance.firstOrderAt;
+    current.ordersCount = purchasePerformance.ordersCount;
+    current.pieces = purchasePerformance.pieces;
+    current.revenue = purchasePerformance.revenue;
+    recipientPerformance.set(purchasePerformance.recipientId, current);
+  }
+
+  const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
+  const blockedRecipients = recipientStatusRows.filter((row) => row.status === "BLOCKED_RECENT").length;
+  const failedRecipients = recipientStatusRows.filter((row) => row.status === "FAILED").length;
+  const skippedRecipients = recipientStatusRows.filter((row) => row.status === "SKIPPED").length;
+  const performanceRecipients = Array.from(recipientPerformance.values());
+  const respondedRecipients = performanceRecipients.filter((recipient) => recipient.responded).length;
+  const purchasedRecipients = performanceRecipients.filter((recipient) => recipient.purchased).length;
+  const responseRate = ratio(respondedRecipients, sentRecipients);
+  const purchaseRate = ratio(purchasedRecipients, sentRecipients);
+  const inboundMessages = inboundResult.rows.map((row) => mapAttributedMessage(row));
+  const outboundMessages = outboundResult.rows.map((row) => mapAttributedMessage(row));
+
+  const messages = [...outboundMessages, ...inboundMessages]
+    .sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime())
+    .slice(0, 500);
+
+  return {
+    attributionWindowDays: WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS,
+    totalRecipients: recipientStatusRows.length,
+    eligibleRecipients: sentRecipients,
+    sentRecipients,
+    blockedRecipients,
+    failedRecipients,
+    skippedRecipients,
+    respondedRecipients,
+    notRespondedRecipients: Math.max(0, sentRecipients - respondedRecipients),
+    purchasedRecipients,
+    responseRate,
+    purchaseRate,
+    orderCount: performanceRecipients.reduce((sum, recipient) => sum + recipient.ordersCount, 0),
+    pieces: performanceRecipients.reduce((sum, recipient) => sum + recipient.pieces, 0),
+    revenue: performanceRecipients.reduce((sum, recipient) => sum + recipient.revenue, 0),
+    sentMessages: outboundMessages.length,
+    receivedMessages: inboundMessages.length,
+    diagnosis: buildWhatsappCampaignDiagnosis({
+      sentRecipients,
+      blockedRecipients,
+      failedRecipients,
+      responseRate,
+      purchaseRate,
+      purchasedRecipients,
+    }),
+    recipients: performanceRecipients,
+    messages,
   };
 }
 
@@ -432,7 +1032,7 @@ export async function getWhatsappCampaignDetail(
   limit = 100,
   offset = 0,
 ): Promise<WhatsappCampaignDetail | null> {
-  const [campaignResult, recipientsResult, totalRecipientsResult] = await Promise.all([
+  const [campaignResult, recipientsResult, totalRecipientsResult, performance] = await Promise.all([
     queryCampaignRows(undefined, campaignId),
     pool.query(
       `
@@ -445,6 +1045,7 @@ export async function getWhatsappCampaignDetail(
       [campaignId, limit, offset],
     ),
     pool.query("SELECT COUNT(*)::int AS total FROM whatsapp_campaign_recipients WHERE campaign_id = $1", [campaignId]),
+    getWhatsappCampaignPerformance(campaignId),
   ]);
 
   const campaignRow = campaignResult.rows[0];
@@ -454,10 +1055,20 @@ export async function getWhatsappCampaignDetail(
 
   const totalRecipients = Number(totalRecipientsResult.rows[0]?.total ?? 0);
   const base = mapCampaignRow(campaignRow);
+  const performanceByRecipientId = new Map(
+    performance.recipients.map((recipient) => [recipient.recipientId, recipient]),
+  );
 
   return {
     ...base,
-    recipients: recipientsResult.rows.map((row) => mapRecipientRow(row)),
+    recipients: recipientsResult.rows.map((row) => {
+      const recipient = mapRecipientRow(row);
+      return mergeRecipientPerformance(
+        recipient,
+        performanceByRecipientId.get(recipient.id) ?? blankRecipientPerformance(recipient.id),
+      );
+    }),
+    performance,
     recipientsPage: {
       total: totalRecipients,
       offset,

@@ -33,6 +33,9 @@ interface RefreshProfileCandidate {
 }
 
 const PROFILE_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const INSTANCE_AVATAR_CACHE_MS = 60_000;
+
+let activeInstanceAvatarCache: { expiresAt: number; urls: Set<string> } | null = null;
 
 function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
@@ -131,9 +134,38 @@ async function getEvolutionInstanceConfig(instanceName: string | null | undefine
   };
 }
 
-async function getInstanceOwnAvatarUrl(instanceName: string | null | undefined): Promise<string | null> {
+async function getActiveInstanceAvatarUrls(): Promise<Set<string>> {
+  if (activeInstanceAvatarCache && activeInstanceAvatarCache.expiresAt > Date.now()) {
+    return activeInstanceAvatarCache.urls;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT profile_picture_url
+    FROM whatsapp_instances
+    WHERE status = 'ACTIVE'
+      AND NULLIF(profile_picture_url, '') IS NOT NULL
+    `,
+  );
+
+  const urls = new Set(
+    result.rows
+      .map((row) => row.profile_picture_url)
+      .filter((url): url is string => typeof url === "string" && url.trim().length > 0),
+  );
+
+  activeInstanceAvatarCache = {
+    expiresAt: Date.now() + INSTANCE_AVATAR_CACHE_MS,
+    urls,
+  };
+
+  return urls;
+}
+
+async function getInstanceAvatarUrls(instanceName: string | null | undefined): Promise<Set<string>> {
+  const urls = new Set(await getActiveInstanceAvatarUrls());
   if (!instanceName) {
-    return null;
+    return urls;
   }
 
   const result = await pool.query(
@@ -141,13 +173,35 @@ async function getInstanceOwnAvatarUrl(instanceName: string | null | undefined):
     SELECT profile_picture_url
     FROM whatsapp_instances
     WHERE LOWER(instance_name) = LOWER($1)
+      AND NULLIF(profile_picture_url, '') IS NOT NULL
     LIMIT 1
     `,
     [instanceName],
   );
 
-  const url = result.rows[0]?.profile_picture_url;
-  return url ? String(url) : null;
+  const ownUrl = result.rows[0]?.profile_picture_url;
+  if (typeof ownUrl === "string" && ownUrl.trim()) {
+    urls.add(ownUrl);
+  }
+
+  return urls;
+}
+
+function sanitizePictureWithInstanceAvatars(
+  url: string | null | undefined,
+  instanceAvatarUrls: Set<string>,
+): string | null {
+  if (!url) {
+    return null;
+  }
+  return instanceAvatarUrls.has(url) ? null : url;
+}
+
+export async function sanitizeWhatsappProfilePictureUrl(
+  url: string | null | undefined,
+  instanceName?: string | null,
+): Promise<string | null> {
+  return sanitizePictureWithInstanceAvatars(url, await getInstanceAvatarUrls(instanceName));
 }
 
 async function fetchEvolutionJson(
@@ -358,17 +412,12 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
   const config = await getEvolutionInstanceConfig(context.instanceName);
   const instanceName = config?.instanceName ?? context.instanceName ?? "";
 
-  // Guard against assigning the seller's own avatar (the instance owner's photo)
-  // to a customer. This happens when remoteJid/senderJid is an unresolved @lid
-  // and Evolution returns the instance owner's picture. We drop any picture that
-  // matches the instance's own avatar so the client never inherits the seller's
-  // photo.
-  const ownAvatarUrl = await getInstanceOwnAvatarUrl(instanceName);
+  // Guard against assigning any active seller/instance avatar to a customer.
+  // Evolution can return an owner's picture for unresolved @lid contacts, and
+  // the bad value may come from another active instance, not only this one.
+  const instanceAvatarUrls = await getInstanceAvatarUrls(instanceName);
   const sanitizePicture = (url: string | null | undefined): string | null => {
-    if (!url) {
-      return null;
-    }
-    return ownAvatarUrl && url === ownAvatarUrl ? null : url;
+    return sanitizePictureWithInstanceAvatars(url, instanceAvatarUrls);
   };
 
   const metadata: WhatsappChatMetadata = {
@@ -386,7 +435,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
     const cachedChat = await getCachedChatProfile(instanceName, context.remoteJid);
     if (cachedChat) {
       metadata.chatDisplayName ??= cachedChat.displayName;
-      metadata.chatProfilePictureUrl ??= cachedChat.profilePictureUrl;
+      metadata.chatProfilePictureUrl ??= sanitizePicture(cachedChat.profilePictureUrl);
     }
 
     if (config && (!cachedChat || !isFresh(cachedChat.lastSyncedAt) || !cachedChat.profilePictureUrl)) {
@@ -394,7 +443,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
         const groupInfo = await fetchEvolutionGroupInfo(config, context.remoteJid);
         if (groupInfo) {
           metadata.chatDisplayName = groupInfo.displayName ?? metadata.chatDisplayName;
-          metadata.chatProfilePictureUrl = groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl;
+          metadata.chatProfilePictureUrl = sanitizePicture(groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl);
           await upsertChatProfile(instanceName, context.remoteJid, {
             displayName: metadata.chatDisplayName,
             profilePictureUrl: metadata.chatProfilePictureUrl,
@@ -435,7 +484,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
     const cachedSender = await getCachedParticipantProfile(instanceName, context.senderJid);
     if (cachedSender) {
       metadata.senderName ??= cachedSender.displayName;
-      metadata.senderProfilePictureUrl ??= cachedSender.profilePictureUrl;
+      metadata.senderProfilePictureUrl ??= sanitizePicture(cachedSender.profilePictureUrl);
     }
 
     if (config && (!cachedSender || !isFresh(cachedSender.lastSyncedAt) || !cachedSender.profilePictureUrl)) {
@@ -473,9 +522,13 @@ export async function refreshWhatsappChatProfile(
   const resolvedInstanceName = config?.instanceName ?? instanceName ?? "";
   const isGroup = remoteJid.endsWith("@g.us");
   const cachedChat = await getCachedChatProfile(resolvedInstanceName, remoteJid);
+  const instanceAvatarUrls = await getInstanceAvatarUrls(resolvedInstanceName);
+  const sanitizePicture = (url: string | null | undefined): string | null => {
+    return sanitizePictureWithInstanceAvatars(url, instanceAvatarUrls);
+  };
   const metadata: WhatsappChatMetadata = {
     chatDisplayName: cachedChat?.displayName ?? null,
-    chatProfilePictureUrl: cachedChat?.profilePictureUrl ?? null,
+    chatProfilePictureUrl: sanitizePicture(cachedChat?.profilePictureUrl),
     senderName: null,
     senderProfilePictureUrl: null,
   };
@@ -483,16 +536,6 @@ export async function refreshWhatsappChatProfile(
   if (!config) {
     return metadata;
   }
-
-  const ownAvatarUrl = await getInstanceOwnAvatarUrl(resolvedInstanceName);
-  const sanitizePicture = (url: string | null | undefined): string | null => {
-    if (!url) {
-      return null;
-    }
-    return ownAvatarUrl && url === ownAvatarUrl ? null : url;
-  };
-
-  metadata.chatProfilePictureUrl = sanitizePicture(metadata.chatProfilePictureUrl);
 
   if (isGroup) {
     const groupInfo = await fetchEvolutionGroupInfo(config, remoteJid);
