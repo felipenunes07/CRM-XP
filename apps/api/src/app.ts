@@ -172,7 +172,7 @@ const adminUserSchema = z.object({
   role: z.enum(["admin", "vendas", "financeiro", "operacional", "viewer", "ADMIN", "MANAGER", "SELLER"]),
   isActive: z.boolean().default(true),
   permissionOverrides: z.array(userPermissionOverrideSchema).default([]),
-  password: z.string().min(6).optional(),
+  password: z.string().min(6).or(z.literal("")).optional(),
 });
 
 const adminUserStatusSchema = z.object({
