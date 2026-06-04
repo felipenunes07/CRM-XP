@@ -404,6 +404,16 @@ describe("whatsappMonitorCore", () => {
 
     expect(
       chooseWhatsappConversationContactName({
+        remoteJid: "120363024604307554@g.us",
+        isGroup: true,
+        chatDisplayName: "CL602 - Cliente Final",
+        customerDisplayName: "218257369903149",
+        title: "218257369903149",
+      }),
+    ).toBe("CL602 - Cliente Final");
+
+    expect(
+      chooseWhatsappConversationContactName({
         remoteJid: "5511998595698@s.whatsapp.net",
         isGroup: false,
         chatDisplayName: "XP Thais",

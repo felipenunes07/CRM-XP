@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
+  monitorQuery: vi.fn(),
   redisGet: vi.fn(),
   redisSet: vi.fn(),
   resolveMetadata: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("../../db/client.js", () => ({
   whatsappMonitorPool: {
     query: (sql: unknown, params: unknown) => {
       const sqlStr = String(sql ?? "");
+      mocks.monitorQuery(sql, params);
       if (sqlStr.includes("FROM whatsapp_monitor_messages") && !sqlStr.includes("deals")) {
         return Promise.resolve({ rows: [] });
       }
@@ -141,6 +143,7 @@ describe("whatsapp activity report classification", () => {
 describe("whatsapp conversation isolation", () => {
   beforeEach(() => {
     mocks.query.mockReset();
+    mocks.monitorQuery.mockReset();
     mocks.redisGet.mockReset();
     mocks.redisSet.mockReset();
     mocks.resolveMetadata.mockReset();
@@ -1031,6 +1034,7 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("d.whatsapp_instance_id = wif.id");
     expect(listSql).toContain("d.whatsapp_instance_id IS NULL");
     expect(listSql).toContain("FROM whatsapp_monitor_messages wmm_inst");
+    expect(listSql).toContain("LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER(COALESCE(wif.instance_name, ''))");
   });
 
   it("passes the selected instance into conversation detail and scopes monitor reads", async () => {
@@ -1077,9 +1081,13 @@ describe("whatsapp conversation isolation", () => {
     expect(conversationCall![1]).toContain(selectedInstanceId);
     expect(String(conversationCall![0])).toContain("selected_filter_instance");
 
-    const fastReadCall = mocks.query.mock.calls.find(call => String(call[0]).includes("FROM whatsapp_monitor_messages wmm"));
+    const fastReadCall = mocks.monitorQuery.mock.calls.find(call =>
+      String(call[0]).includes("FROM whatsapp_monitor_messages wmm") &&
+      String(call[0]).includes("wmm.message_id")
+    );
     expect(fastReadCall).toBeDefined();
     expect(String(fastReadCall![0])).toContain("LOWER(COALESCE(wmm.instance_name, ''))");
+    expect(String(fastReadCall![0])).toContain("wmm.remote_jid = ANY");
     expect(fastReadCall![1]).toContain(selectedInstanceId);
   });
 
@@ -1096,13 +1104,71 @@ describe("whatsapp conversation isolation", () => {
     const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
+    const sourceNameIndex = listSql.indexOf("NULLIF(wg.source_name, '')");
     const incomingNameIndex = listSql.indexOf("incoming_profile.chat_display_name");
     const chatProfileNameIndex = listSql.indexOf("chat_profile.display_name");
 
     expect(listSql).toContain("CASE WHEN d.whatsapp_jid LIKE '%@g.us'");
+    expect(listSql).toContain("LEFT JOIN whatsapp_groups wg");
+    expect(listSql).toContain("NULLIF(wg.source_name, '')");
+    expect(sourceNameIndex).toBeGreaterThanOrEqual(0);
     expect(incomingNameIndex).toBeGreaterThanOrEqual(0);
     expect(chatProfileNameIndex).toBeGreaterThanOrEqual(0);
+    expect(sourceNameIndex).toBeLessThan(incomingNameIndex);
     expect(incomingNameIndex).toBeLessThan(chatProfileNameIndex);
+  });
+
+  it("rejects group monitor rows whose raw provider remote belongs to a private chat", async () => {
+    const selectedInstanceId = "00000000-0000-0000-0000-000000000001";
+    const groupJid = "120363024604307554@g.us";
+
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "deal-group",
+            title: "218257369903149",
+            customer_display_name: "218257369903149",
+            whatsapp_jid: groupJid,
+            whatsapp_instance_id: selectedInstanceId,
+            instance_name: "tamires",
+            instance_display_label: "Tamires",
+            stage_name: "Contato Inicial",
+            last_message_at: "2026-06-03T18:36:19.000Z",
+            event_count: 0,
+            inbound_count: 0,
+            unread_after_read: 0,
+            marked_unread: false,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await getWhatsappMonitorConversation(
+      "deal-group",
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      { instanceId: selectedInstanceId } as any,
+    );
+
+    const fastReadCall = mocks.monitorQuery.mock.calls.find(call =>
+      String(call[0]).includes("FROM whatsapp_monitor_messages wmm") &&
+      String(call[0]).includes("wmm.message_id")
+    );
+    expect(fastReadCall).toBeDefined();
+    const fastSql = String(fastReadCall![0]);
+
+    expect(fastSql).toContain("wmm.remote_jid = ANY");
+    expect(fastSql).toContain("wmm.media_json #>> '{key,remoteJid}'");
+    expect(fastSql).toContain("COALESCE(");
+    expect(fastReadCall![1]).toContainEqual([groupJid]);
   });
 
   it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {

@@ -316,8 +316,15 @@ function whatsappMonitorMessageMatchesInstanceSql(messageAlias: string, instance
   `;
 }
 
+function whatsappMonitorMessageStrictlyMatchesInstanceSql(messageAlias: string, instanceAlias: string) {
+  return `
+    LOWER(COALESCE(${messageAlias}.instance_name, '')) = LOWER(COALESCE(${instanceAlias}.instance_name, ''))
+  `;
+}
+
 function conversationMatchesInstanceSql(instanceAlias: string) {
   const messageMatchesInstance = whatsappMonitorMessageMatchesInstanceSql("wmm_inst", instanceAlias);
+  const strictMessageMatchesInstance = whatsappMonitorMessageStrictlyMatchesInstanceSql("wmm_inst", instanceAlias);
   return `
     (
       (
@@ -342,12 +349,73 @@ function conversationMatchesInstanceSql(instanceAlias: string) {
               SELECT 1
               FROM whatsapp_monitor_messages wmm_inst
               WHERE wmm_inst.deal_id = d.id
-                AND ${messageMatchesInstance}
+                AND ${strictMessageMatchesInstance}
             )
           )
         )
       )
     )
+  `;
+}
+
+function whatsappMonitorRawRemoteJidSql(messageAlias: string) {
+  return `
+    NULLIF(
+      COALESCE(
+        ${messageAlias}.media_json #>> '{key,remoteJid}',
+        ${messageAlias}.media_json ->> 'remoteJid'
+      ),
+      ''
+    )
+  `;
+}
+
+function whatsappMonitorConversationRemoteScopeSql(messageAlias: string, aliasesParamIndex: number, isGroup: boolean) {
+  const rawRemoteJid = whatsappMonitorRawRemoteJidSql(messageAlias);
+
+  if (isGroup) {
+    return `
+      AND ${messageAlias}.remote_jid = ANY($${aliasesParamIndex}::text[])
+      AND COALESCE(${rawRemoteJid}, ${messageAlias}.remote_jid) = ANY($${aliasesParamIndex}::text[])
+    `;
+  }
+
+  return `
+    AND (
+      ${messageAlias}.remote_jid = ANY($${aliasesParamIndex}::text[])
+      OR ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
+    )
+    AND COALESCE(${rawRemoteJid}, ${messageAlias}.remote_jid, '') NOT LIKE '%@g.us'
+  `;
+}
+
+function dealActivityRawRemoteJidSql(activityAlias: string) {
+  return `
+    NULLIF(
+      COALESCE(
+        ${activityAlias}.metadata ->> 'remoteJid',
+        ${activityAlias}.metadata #>> '{providerPayload,key,remoteJid}'
+      ),
+      ''
+    )
+  `;
+}
+
+function dealActivityConversationRemoteScopeSql(activityAlias: string, aliasesParamIndex: number, isGroup: boolean) {
+  const rawRemoteJid = dealActivityRawRemoteJidSql(activityAlias);
+
+  if (isGroup) {
+    return `
+      AND ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
+    `;
+  }
+
+  return `
+    AND (
+      ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
+      OR ${rawRemoteJid} IS NULL
+    )
+    AND COALESCE(${rawRemoteJid}, '') NOT LIKE '%@g.us'
   `;
 }
 
@@ -843,6 +911,7 @@ function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdPar
       COALESCE(selected_filter_instance.display_label, wi.display_label, d.assigned_to_name, latest_whatsapp.sender_name) AS agent_name,
       CASE WHEN d.whatsapp_jid LIKE '%@g.us'
         THEN COALESCE(
+          NULLIF(wg.source_name, ''),
           NULLIF(latest_whatsapp.media_json ->> 'chatDisplayName', ''),
           NULLIF(incoming_profile.chat_display_name, ''),
           NULLIF(chat_profile.display_name, '')
@@ -928,6 +997,8 @@ function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdPar
       ORDER BY wja.updated_at DESC
       LIMIT 1
     ) conversation_alias ON true
+    LEFT JOIN whatsapp_groups wg
+      ON wg.jid = COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)
     ${conversationProfileJoinSql()}
     ${conversationSafeProfileJoinSql()}
   `;
@@ -1485,7 +1556,14 @@ export async function getWhatsappMonitorConversation(
     : conversation.remoteJid
       ? [conversation.remoteJid]
       : [];
-  const linkedDealIds = await getLinkedWhatsappConversationDealIds(dealId, conversation.instanceName, remoteJidAliases);
+  const scopedRemoteJidAliases = Array.from(
+    new Set(
+      (conversation.isGroup
+        ? [conversation.remoteJid, ...remoteJidAliases].filter((alias): alias is string => Boolean(alias?.endsWith("@g.us")))
+        : [conversation.remoteJid, ...remoteJidAliases].filter((alias): alias is string => Boolean(alias && !alias.endsWith("@g.us"))))
+    ),
+  );
+  const linkedDealIds = await getLinkedWhatsappConversationDealIds(dealId, conversation.instanceName, scopedRemoteJidAliases);
 
   const cursor = decodeCursor<WhatsappMessageCursor>(options.after ?? options.before);
   const mode: "before" | "after" | "latest" = options.after && cursor ? "after" : options.before && cursor ? "before" : "latest";
@@ -1500,6 +1578,11 @@ export async function getWhatsappMonitorConversation(
   if (process.env.WHATSAPP_FAST_READ !== "off") {
     let cursorSql = "";
     const fastParams: unknown[] = [linkedDealIds];
+    fastParams.push(scopedRemoteJidAliases);
+    const fastRemoteAliasesParamIndex = fastParams.length;
+    const fastConversationRemoteScope = scopedRemoteJidAliases.length
+      ? whatsappMonitorConversationRemoteScopeSql("wmm", fastRemoteAliasesParamIndex, conversation.isGroup)
+      : "";
     const fastInstanceJoin = options.instanceId
       ? (() => {
         fastParams.push(options.instanceId);
@@ -1558,6 +1641,7 @@ export async function getWhatsappMonitorConversation(
       ${fastInstanceJoin}
       WHERE wmm.deal_id = ANY($1::uuid[])
         AND wmm.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${fastConversationRemoteScope}
         ${fastInstanceScope}
         ${cursorSql}
       ORDER BY wmm.created_at ${orderDir}, wmm.id ${orderDir}
@@ -1643,6 +1727,11 @@ export async function getWhatsappMonitorConversation(
   const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
 
   const activityParams: unknown[] = [linkedDealIds];
+  activityParams.push(scopedRemoteJidAliases);
+  const activityRemoteAliasesParamIndex = activityParams.length;
+  const activityConversationRemoteScope = scopedRemoteJidAliases.length
+    ? dealActivityConversationRemoteScopeSql("da_base", activityRemoteAliasesParamIndex, conversation.isGroup)
+    : "";
   const activityInstanceJoin = options.instanceId
     ? (() => {
       activityParams.push(options.instanceId);
@@ -1687,6 +1776,7 @@ export async function getWhatsappMonitorConversation(
       WHERE da_base.deal_id = ANY($1::uuid[])
         AND da_base.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
         AND da_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+        ${activityConversationRemoteScope}
         ${activityInstanceScope}
         ${activityCursorSql}
       ORDER BY da_base.created_at ${orderDirection}, da_base.id ${orderDirection}

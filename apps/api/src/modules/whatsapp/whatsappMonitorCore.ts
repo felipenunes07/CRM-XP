@@ -724,7 +724,9 @@ export function chooseWhatsappConversationContactName(input: {
 }) {
   const remoteJid = input.remoteJid;
   const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
-  const candidates = [input.customerDisplayName, input.title, input.chatDisplayName]
+  const candidates = (isGroup
+    ? [input.chatDisplayName, input.customerDisplayName, input.title]
+    : [input.customerDisplayName, input.title, input.chatDisplayName])
     .map((candidate) => readString(candidate))
     .filter((candidate): candidate is string => Boolean(candidate));
 
