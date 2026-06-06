@@ -524,8 +524,31 @@ function conversationSafeProfileJoinSql() {
       SELECT candidate.url AS profile_picture_url
       FROM (
         VALUES
-          -- Permanent re-hosted avatar (Supabase Storage) always wins when present.
-          (chat_profile.cached_picture_url, 0),
+          -- Permanent re-hosted avatar wins, EXCEPT: never show the agent's own
+          -- photo for a 1:1 contact. We check the cached ORIGINAL source URL
+          -- against active instance avatars (the cached endpoint URL can't be
+          -- matched directly) plus the agent display-name guard. Groups always
+          -- use the cached group icon.
+          (
+            CASE
+              WHEN d.whatsapp_jid LIKE '%@g.us' THEN chat_profile.cached_picture_url
+              WHEN chat_profile.cached_picture_url IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM whatsapp_instances wi_self
+                  WHERE wi_self.status = 'ACTIVE'
+                    AND wi_self.profile_picture_url IS NOT NULL
+                    AND split_part(wi_self.profile_picture_url, '?', 1) = split_part(COALESCE(chat_profile.cached_source_url, ''), '?', 1)
+                )
+                AND NOT (
+                  LOWER(COALESCE(chat_profile.display_name, '')) = LOWER(COALESCE(selected_filter_instance.display_label, wi.display_label, d.assigned_to_name, ''))
+                  OR LOWER(REGEXP_REPLACE(COALESCE(chat_profile.display_name, ''), '^xp\s+', '', 'i')) =
+                     LOWER(REGEXP_REPLACE(COALESCE(selected_filter_instance.assigned_user_name, wi.assigned_user_name, d.assigned_to_name, ''), '^xp\s+', '', 'i'))
+                )
+                THEN chat_profile.cached_picture_url
+              ELSE NULL
+            END,
+            0
+          ),
           (
             CASE
               WHEN d.whatsapp_jid NOT LIKE '%@g.us'
@@ -919,7 +942,7 @@ function conversationProfileJoinSql() {
 
   return `
     LEFT JOIN LATERAL (
-      SELECT wcp.display_name, wcp.profile_picture_url, wcp.cached_picture_url
+      SELECT wcp.display_name, wcp.profile_picture_url, wcp.cached_picture_url, wcp.cached_source_url
       FROM whatsapp_chat_profiles wcp
       WHERE ${profileJidMatch("wcp")}
         AND (
