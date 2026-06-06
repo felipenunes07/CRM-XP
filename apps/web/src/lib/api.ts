@@ -77,7 +77,7 @@ export interface ChartAnnotation {
 import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
-export const API_REQUEST_TIMEOUT_MS = 15_000;
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 export class ApiAuthError extends Error {
   status = 401;
