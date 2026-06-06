@@ -16,6 +16,7 @@ import {
   areWhatsappJidsEqual,
   extractEvolutionFromMeFlag,
   normalizeWhatsappPhoneJidCandidate,
+  isWhatsappFallbackDisplayName,
   type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
@@ -958,6 +959,39 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
               [resolvedRemoteJid, dealId]
             );
             logger.info("evolution webhook upgraded deal JID from LID to phone", { dealId, oldJid: currentDealJid, newJid: resolvedRemoteJid });
+          }
+
+          // Upgrade group name/title if it's currently fallback or corrupted by individual client name
+          if (context.isGroup && chatDisplayName && !isWhatsappFallbackDisplayName(chatDisplayName, resolvedRemoteJid)) {
+            await pool.query(
+              `
+              UPDATE deals 
+              SET 
+                title = CASE 
+                  WHEN title IS NULL 
+                       OR title = '' 
+                       OR title = whatsapp_jid 
+                       OR title LIKE 'Grupo%' 
+                       OR title LIKE '[GRUPO]%' 
+                       OR LOWER(title) = LOWER($1)
+                    THEN $2 
+                    ELSE title 
+                  END,
+                customer_display_name = CASE 
+                  WHEN customer_display_name IS NULL 
+                       OR customer_display_name = '' 
+                       OR customer_display_name = whatsapp_jid 
+                       OR customer_display_name LIKE 'Grupo%' 
+                       OR customer_display_name LIKE '[GRUPO]%' 
+                       OR LOWER(customer_display_name) = LOWER($1)
+                    THEN $2 
+                    ELSE customer_display_name 
+                  END,
+                last_activity_at = NOW()
+              WHERE id = $3
+              `,
+              [senderName ?? "", chatDisplayName, dealId]
+            );
           }
 
           await insertDealActivity({

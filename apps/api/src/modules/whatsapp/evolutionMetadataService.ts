@@ -106,14 +106,14 @@ async function getEvolutionInstanceConfig(instanceName: string | null | undefine
       `
       SELECT instance_name, evolution_base_url, evolution_api_key
       FROM whatsapp_instances
-      WHERE instance_name = $1
+      WHERE LOWER(instance_name) = LOWER($1)
         AND status = 'ACTIVE'
       LIMIT 1
       `,
       [normalizedName],
     );
 
-    const row = result.rows[0];
+    const row = result?.rows?.[0];
     if (row?.evolution_base_url && row?.evolution_api_key) {
       return {
         instanceName: String(row.instance_name),
@@ -149,7 +149,7 @@ async function getActiveInstanceAvatarUrls(): Promise<Set<string>> {
   );
 
   const urls = new Set(
-    result.rows
+    (result?.rows ?? [])
       .map((row) => row.profile_picture_url)
       .filter((url): url is string => typeof url === "string" && url.trim().length > 0),
   );
@@ -179,7 +179,7 @@ async function getInstanceAvatarUrls(instanceName: string | null | undefined): P
     [instanceName],
   );
 
-  const ownUrl = result.rows[0]?.profile_picture_url;
+  const ownUrl = result?.rows?.[0]?.profile_picture_url;
   if (typeof ownUrl === "string" && ownUrl.trim()) {
     urls.add(ownUrl);
   }
@@ -299,7 +299,7 @@ async function getCachedChatProfile(instanceName: string, remoteJid: string): Pr
     [instanceName, remoteJid],
   );
 
-  const row = result.rows[0];
+  const row = result?.rows?.[0];
   if (!row) {
     return null;
   }
@@ -323,7 +323,7 @@ async function getCachedParticipantProfile(instanceName: string, participantJid:
     [instanceName, participantJid],
   );
 
-  const row = result.rows[0];
+  const row = result?.rows?.[0];
   if (!row) {
     return null;
   }
@@ -432,6 +432,17 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
   }
 
   try {
+    if (context.isGroup && !metadata.chatDisplayName) {
+      const groupResult = await pool.query(
+        "SELECT source_name FROM whatsapp_groups WHERE jid = $1 LIMIT 1",
+        [context.remoteJid]
+      );
+      const groupName = groupResult?.rows?.[0]?.source_name;
+      if (groupName) {
+        metadata.chatDisplayName = groupName;
+      }
+    }
+
     const cachedChat = await getCachedChatProfile(instanceName, context.remoteJid);
     if (cachedChat) {
       metadata.chatDisplayName ??= cachedChat.displayName;
@@ -450,6 +461,12 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
             isGroup: true,
             rawProfile: groupInfo.rawProfile,
           });
+        } else if (!cachedChat) {
+          await upsertChatProfile(instanceName, context.remoteJid, {
+            displayName: metadata.chatDisplayName,
+            profilePictureUrl: null,
+            isGroup: true,
+          });
         }
       } else {
         const profilePictureUrl = sanitizePicture(await fetchEvolutionProfilePicture(config, context.remoteJid));
@@ -464,7 +481,7 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
 
     if (!cachedChat && !config) {
       await upsertChatProfile(instanceName, context.remoteJid, {
-        displayName: metadata.chatDisplayName ?? context.senderName,
+        displayName: metadata.chatDisplayName ?? (context.isGroup ? null : context.senderName),
         profilePictureUrl: metadata.chatProfilePictureUrl,
         isGroup: context.isGroup,
       });
@@ -573,7 +590,7 @@ export async function refreshWhatsappInstanceProfiles() {
   `);
 
   let refreshed = 0;
-  for (const row of result.rows) {
+  for (const row of (result?.rows ?? [])) {
     const config: EvolutionInstanceConfig = {
       instanceName: String(row.instance_name),
       baseUrl: String(row.evolution_base_url),
@@ -680,7 +697,7 @@ export async function refreshMissingWhatsappMonitorProfiles(limit = 60) {
     [limit],
   );
 
-  const candidates: RefreshProfileCandidate[] = result.rows.map((row) => ({
+  const candidates: RefreshProfileCandidate[] = (result?.rows ?? []).map((row) => ({
     remoteJid: String(row.remote_jid),
     instanceName: row.instance_name ? String(row.instance_name) : null,
     displayName: row.display_name ? String(row.display_name) : null,

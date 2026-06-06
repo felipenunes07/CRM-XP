@@ -685,10 +685,12 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
   const unreadState = computeWhatsappUnreadState(Number(row.unread_after_read ?? 0), markedUnread);
 
   const profilePictureUrl = optionalString(row.profile_picture_url);
-  if (remoteJid && isProfilePictureUrlExpired(profilePictureUrl)) {
+  const lastProfileSynced = row.last_profile_synced_at ? new Date(String(row.last_profile_synced_at)) : null;
+  const isProfileStale = !lastProfileSynced || (Date.now() - lastProfileSynced.getTime() > 24 * 60 * 60 * 1000);
+  if (remoteJid && (isProfilePictureUrlExpired(profilePictureUrl) || (profilePictureUrl === null && isProfileStale))) {
     import("./evolutionMetadataService.js").then((m) => {
       m.refreshWhatsappChatProfile(remoteJid, row.instance_name ? String(row.instance_name) : null)
-        .catch((err) => logger.warn("Failed to refresh expired whatsapp profile picture in background", { remoteJid, error: String(err) }));
+        .catch((err) => logger.warn("Failed to refresh expired or missing whatsapp profile picture in background", { remoteJid, error: String(err) }));
     }).catch(() => {});
   }
 
@@ -934,6 +936,7 @@ function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdPar
       END AS chat_display_name,
       incoming_inbound_profile.inbound_sender_name AS inbound_sender_name,
       safe_profile.profile_picture_url AS profile_picture_url,
+      chat_profile.last_synced_at AS last_profile_synced_at,
       CASE
         WHEN d.whatsapp_jid LIKE '%@g.us'
           THEN COALESCE(group_latest_message.content, latest_whatsapp.content)
