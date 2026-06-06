@@ -524,6 +524,8 @@ function conversationSafeProfileJoinSql() {
       SELECT candidate.url AS profile_picture_url
       FROM (
         VALUES
+          -- Permanent re-hosted avatar (Supabase Storage) always wins when present.
+          (chat_profile.cached_picture_url, 0),
           (
             CASE
               WHEN d.whatsapp_jid NOT LIKE '%@g.us'
@@ -917,7 +919,7 @@ function conversationProfileJoinSql() {
 
   return `
     LEFT JOIN LATERAL (
-      SELECT wcp.display_name, wcp.profile_picture_url
+      SELECT wcp.display_name, wcp.profile_picture_url, wcp.cached_picture_url
       FROM whatsapp_chat_profiles wcp
       WHERE ${profileJidMatch("wcp")}
         AND (

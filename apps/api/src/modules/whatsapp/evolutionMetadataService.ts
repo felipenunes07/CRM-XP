@@ -6,6 +6,7 @@ import {
   isWhatsappFallbackDisplayName,
   type EvolutionMessageContext,
 } from "./whatsappMonitorCore.js";
+import { cacheChatProfileAvatar } from "./whatsappAvatarCache.js";
 
 interface EvolutionInstanceConfig {
   instanceName: string;
@@ -375,6 +376,10 @@ async function upsertChatProfile(
       JSON.stringify(input.rawProfile ?? {}),
     ],
   );
+
+  // Best-effort: re-host the (ephemeral) WhatsApp picture in our own storage so
+  // it stops expiring. Fire-and-forget; failures leave the original URL intact.
+  void cacheChatProfileAvatar(instanceName, remoteJid, input.profilePictureUrl);
 }
 
 async function upsertParticipantProfile(

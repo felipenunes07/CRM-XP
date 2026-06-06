@@ -95,6 +95,7 @@ import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
 import { login, verifyToken } from "./modules/platform/authService.js";
 import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
 import { subscribeMonitorMessages } from "./modules/whatsapp/whatsappMonitorBus.js";
+import { getAvatarBytes } from "./modules/whatsapp/whatsappAvatarCache.js";
 import {
   createAdminUser,
   createPasswordResetLink,
@@ -668,6 +669,23 @@ export function createApp() {
       unsubscribe();
       response.end();
     });
+  });
+
+  // Public avatar endpoint: serves re-hosted WhatsApp profile pictures stored in
+  // Postgres (whatsapp_avatars). Must be public — <img> tags cannot send the JWT.
+  app.get("/api/whatsapp-monitor/avatar/:key", async (request, response, next) => {
+    try {
+      const avatar = await getAvatarBytes(String(request.params.key));
+      if (!avatar) {
+        response.status(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", avatar.contentType);
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      response.end(avatar.bytes);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use("/api", requireAuth);

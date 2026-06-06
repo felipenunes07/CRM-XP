@@ -2174,5 +2174,42 @@ export const migrations = [
   EXCEPTION WHEN others THEN NULL;
   END $$;
   `,
+  `
+  -- PERF (conversation list): the candidate_deals CTE in
+  -- listWhatsappMonitorConversations orders by AND range-filters on
+  -- COALESCE(last_activity_at, created_at). A plain column index on
+  -- last_activity_at cannot serve that COALESCE expression, so the planner
+  -- full-scanned + sorted the entire deals table on every Messages load and
+  -- on every 2-min background poll (limit 100) -> multi-second / timeout.
+  -- This expression index matches the ORDER BY / range predicate exactly,
+  -- partial on whatsapp_jid IS NOT NULL (mirrors monitorableWhatsappJidSql),
+  -- letting the planner do an index scan + LIMIT. Added as its OWN migration
+  -- element so databases already past the previous version pick it up on deploy.
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_monitor_sort
+      ON public.deals ((COALESCE(last_activity_at, created_at)) DESC, id DESC)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+  `,
+  `
+  -- Chatwoot-style avatar caching, fully self-hosted on Postgres: store the
+  -- raw image bytes here and serve them from /api/whatsapp-monitor/avatar/:key
+  -- so the chat avatar stops breaking when the ephemeral WhatsApp CDN URL expires.
+  CREATE TABLE IF NOT EXISTS whatsapp_avatars (
+    storage_key TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    bytes BYTEA NOT NULL,
+    source_url TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  DO $$ BEGIN
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_picture_url TEXT;
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_source_url TEXT;
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_at TIMESTAMPTZ;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+  `,
 ];
 
