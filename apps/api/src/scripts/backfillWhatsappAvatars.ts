@@ -1,69 +1,104 @@
 /**
- * One-off backfill: re-host every WhatsApp profile picture in Postgres
- * (whatsapp_avatars) so avatars stop breaking when the ephemeral CDN URL
- * expires.
+ * One-off backfill: re-host WhatsApp avatars (and group names) in Postgres,
+ * using the CONNECTED instances to fetch them — NOT the instance stored on the
+ * row (which may be a dead/test instance like "teste" that returns 404).
  *
- * Strategy per profile:
- *   1) try the stored profile_picture_url (works while still valid, e.g. 1:1);
- *   2) if that fails (expired -> 403, common for groups), fetch a FRESH url
- *      from the Evolution API via refreshWhatsappChatProfile, then cache that.
+ * For each JID without a cached avatar it tries every ACTIVE instance until one
+ * returns the picture (groups: only the member instance answers; 1:1: any
+ * connected instance can fetch the public picture). The result is written to a
+ * UNIVERSAL profile row (instance_name = '') so the conversation read always
+ * matches it, regardless of which instance the conversation resolves to.
  *
- * Run on the server (needs DATABASE_URL + EVOLUTION_* env + network):
+ * Run on the server (needs DATABASE_URL + at least one connected instance):
  *   npx tsx apps/api/src/scripts/backfillWhatsappAvatars.ts
  */
 import { pool } from "../db/client.js";
 import { refreshWhatsappChatProfile } from "../modules/whatsapp/evolutionMetadataService.js";
 import { cacheChatProfileAvatar } from "../modules/whatsapp/whatsappAvatarCache.js";
 
-async function main() {
-  const { rows } = await pool.query(
-    `SELECT instance_name, remote_jid, profile_picture_url
-       FROM whatsapp_chat_profiles
-      WHERE cached_picture_url IS NULL
-        AND remote_jid IS NOT NULL`,
+async function getActiveInstances(): Promise<string[]> {
+  const r = await pool.query(
+    `SELECT instance_name
+       FROM whatsapp_instances
+      WHERE status = 'ACTIVE'
+        AND (provider = 'EVOLUTION' OR provider IS NULL)
+        AND NULLIF(evolution_base_url, '') IS NOT NULL
+        AND NULLIF(evolution_api_key, '') IS NOT NULL
+      ORDER BY is_default DESC, instance_name ASC`,
   );
+  return r.rows.map((x) => String(x.instance_name)).filter(Boolean);
+}
 
-  console.log(`backfill: ${rows.length} perfis candidatos`);
-  let ok = 0;
-  let freshOk = 0;
-  let fail = 0;
+async function upsertUniversal(jid: string, cachedUrl: string | null, displayName: string | null) {
+  const isGroup = jid.endsWith("@g.us");
+  await pool.query(
+    `INSERT INTO whatsapp_chat_profiles
+       (instance_name, remote_jid, display_name, cached_picture_url, cached_at, is_group, last_synced_at)
+     VALUES ('', $1, $2, $3, NOW(), $4, NOW())
+     ON CONFLICT (instance_name, remote_jid) DO UPDATE SET
+       cached_picture_url = COALESCE(EXCLUDED.cached_picture_url, whatsapp_chat_profiles.cached_picture_url),
+       display_name = COALESCE(NULLIF(whatsapp_chat_profiles.display_name, ''), EXCLUDED.display_name),
+       cached_at = NOW()`,
+    [jid, displayName, cachedUrl, isGroup],
+  );
+}
 
+async function main() {
+  const instances = await getActiveInstances();
+  console.log("Instancias ativas usadas para puxar avatar/nome:", instances);
+  if (!instances.length) {
+    console.log("Nenhuma instancia conectada (evolution_base_url/api_key). Abortando.");
+    await pool.end();
+    return;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT DISTINCT remote_jid
+       FROM whatsapp_chat_profiles
+      WHERE cached_picture_url IS NULL AND remote_jid IS NOT NULL`,
+  );
+  console.log(`JIDs sem avatar: ${rows.length}`);
+
+  let comFoto = 0;
+  let semFoto = 0;
   for (const row of rows) {
-    const instance = String(row.instance_name ?? "");
     const jid = String(row.remote_jid);
+    let cachedUrl: string | null = null;
+    let displayName: string | null = null;
 
-    // 1) try the stored URL
-    let url = await cacheChatProfileAvatar(instance, jid, row.profile_picture_url ?? null);
-
-    // 2) stored URL missing/expired -> fetch a fresh one from Evolution
-    if (!url) {
+    for (const inst of instances) {
       try {
-        const meta = await refreshWhatsappChatProfile(jid, instance || null);
-        url = await cacheChatProfileAvatar(instance, jid, meta.chatProfilePictureUrl ?? null);
-        if (url) {
-          freshOk++;
+        const meta = await refreshWhatsappChatProfile(jid, inst);
+        if (meta.chatDisplayName && !displayName) {
+          displayName = meta.chatDisplayName;
+        }
+        if (meta.chatProfilePictureUrl) {
+          cachedUrl = await cacheChatProfileAvatar(inst, jid, meta.chatProfilePictureUrl);
+          if (cachedUrl) {
+            break;
+          }
         }
       } catch {
-        // ignore, counted as fail below
+        // instance is not a member / not connected -> try the next one
       }
+    }
+
+    await upsertUniversal(jid, cachedUrl, displayName);
+    if (cachedUrl) {
+      comFoto++;
     } else {
-      ok++;
+      semFoto++;
     }
-
-    if (!url) {
-      fail++;
-    }
-
-    if ((ok + freshOk + fail) % 25 === 0) {
-      console.log(`  progresso: ok=${ok} fresh=${freshOk} fail=${fail} / ${rows.length}`);
+    if ((comFoto + semFoto) % 25 === 0) {
+      console.log(`  progresso: com_foto=${comFoto} sem_foto=${semFoto} / ${rows.length}`);
     }
   }
 
-  console.log(`backfill concluido: ok=${ok} fresh=${freshOk} fail=${fail} total=${rows.length}`);
+  console.log(`Concluido: com_foto=${comFoto} sem_foto=${semFoto} total=${rows.length}`);
   await pool.end();
 }
 
-main().catch((error) => {
-  console.error("backfill falhou:", error);
+main().catch((e) => {
+  console.error("backfill falhou:", e);
   process.exit(1);
 });
