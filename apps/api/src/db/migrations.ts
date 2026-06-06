@@ -2090,6 +2090,22 @@ export const migrations = [
   EXCEPTION WHEN others THEN NULL;
   END $$;
 
+  -- PERF (conversation list): the candidate_deals CTE in
+  -- listWhatsappMonitorConversations orders by AND range-filters on
+  -- COALESCE(last_activity_at, created_at). A plain column index on
+  -- last_activity_at (above) CANNOT serve that COALESCE expression, so the
+  -- planner full-scanned + sorted the entire deals table on every Messages
+  -- load and on every 2-min background poll (limit 100). This expression
+  -- index matches the ORDER BY / range predicate exactly and is partial on
+  -- whatsapp_jid IS NOT NULL (mirroring monitorableWhatsappJidSql), letting
+  -- the planner do an index scan + LIMIT instead of a sort of all deals.
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_monitor_sort
+      ON public.deals ((COALESCE(last_activity_at, created_at)) DESC, id DESC)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
   DO $$ BEGIN
     CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
       ON public.whatsapp_monitor_messages (deal_id, created_at DESC, id DESC);
