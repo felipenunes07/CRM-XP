@@ -919,6 +919,9 @@ describe("whatsapp conversation isolation", () => {
         dealMatchCount += 1;
         return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
       }
+      if (sql.includes("d.whatsapp_jid = $1") && sql.includes("pipeline_stages")) {
+        return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
+      }
       if (sql.includes("INSERT INTO deal_activities")) {
         activityInsertCount += 1;
         return { rows: [] };

@@ -2366,8 +2366,26 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
   const dealWhere = [monitorableWhatsappJidSql("d.whatsapp_jid")];
 
   if (user.role === "SELLER") {
-    params.push(user.name);
-    dealWhere.push(`d.assigned_to_name = $${params.length}`);
+    params.push(user.id, user.name);
+    const userIdParamIndex = params.length - 1;
+    const userNameParamIndex = params.length;
+    dealWhere.push(`
+      (
+        d.assigned_to = $${userIdParamIndex}::uuid
+        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
+        OR EXISTS (
+          SELECT 1
+          FROM whatsapp_instances wi_user
+          WHERE (
+              wi_user.assigned_user_id = $${userIdParamIndex}::uuid
+              OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($${userNameParamIndex})
+              OR LOWER(wi_user.instance_name) = LOWER($${userNameParamIndex})
+              OR LOWER(wi_user.display_label) = LOWER($${userNameParamIndex})
+            )
+            AND ${conversationMatchesInstanceSql("wi_user")}
+        )
+      )
+    `);
   }
 
   const whereSql = dealWhere.join(" AND ");
@@ -3642,7 +3660,12 @@ export async function getWhatsappDailySummaryReport(
         OR EXISTS (
           SELECT 1 FROM whatsapp_instances wi_sub
           WHERE wi_sub.id = d.whatsapp_instance_id
-            AND (wi_sub.assigned_user_id = $2 OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3))
+            AND (
+              wi_sub.assigned_user_id = $2
+              OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3)
+              OR LOWER(wi_sub.instance_name) = LOWER($3)
+              OR LOWER(wi_sub.display_label) = LOWER($3)
+            )
         )
       )
     `);
@@ -3656,7 +3679,12 @@ export async function getWhatsappDailySummaryReport(
               wi_sub.id = d.whatsapp_instance_id
               OR LOWER(COALESCE(wi_sub.instance_name, '')) = LOWER(COALESCE(wmm.instance_name, ''))
             )
-            AND (wi_sub.assigned_user_id = $2 OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3))
+            AND (
+              wi_sub.assigned_user_id = $2
+              OR LOWER(COALESCE(wi_sub.assigned_user_name, '')) = LOWER($3)
+              OR LOWER(wi_sub.instance_name) = LOWER($3)
+              OR LOWER(wi_sub.display_label) = LOWER($3)
+            )
         )
       )
     `);
