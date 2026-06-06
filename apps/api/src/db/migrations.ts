@@ -2047,13 +2047,11 @@ export const migrations = [
   `
   -- =====================================================================
   -- Performance indexes for /api/whatsapp-monitor/conversations
-  -- These were only in supabase/migrations before and never ran on the
-  -- Easypanel production database. Without them the list query does full
-  -- sequential scans and takes 15+ seconds.
+  -- Each index is wrapped in its own exception-safe block so one failure
+  -- does not prevent the rest from being created.
   -- =====================================================================
 
-  -- Ensure the whatsapp_monitor_messages table exists (it may have been
-  -- created only via supabase/migrations, not in this migration system).
+  -- Ensure the whatsapp_monitor_messages table exists
   CREATE TABLE IF NOT EXISTS public.whatsapp_monitor_messages (
     id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     deal_id           uuid NOT NULL,
@@ -2072,76 +2070,93 @@ export const migrations = [
     CONSTRAINT uq_wmm_deal_msg_source UNIQUE (deal_id, message_id, source)
   );
 
-  -- Ensure whatsapp_groups table exists (used in profile joins)
-  CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    jid VARCHAR(200) NOT NULL UNIQUE,
-    source_name VARCHAR(300),
-    instance_name VARCHAR(100),
-    raw_payload JSONB DEFAULT '{}'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  );
-
-  -- 1. Deals: ORDER BY last_activity_at DESC, id DESC (candidate_deals CTE)
-  CREATE INDEX IF NOT EXISTS idx_deals_last_activity_at_desc
-    ON public.deals (last_activity_at DESC NULLS LAST, id DESC);
-
-  -- 2. whatsapp_monitor_messages: LATERAL latest message per deal
-  CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
-    ON public.whatsapp_monitor_messages (deal_id, created_at DESC, id DESC);
-
-  -- 3. whatsapp_monitor_messages: instance-scoped queries
-  CREATE INDEX IF NOT EXISTS idx_wmm_instance_deal_created
-    ON public.whatsapp_monitor_messages (
-      (lower(coalesce(instance_name, ''))),
-      deal_id,
-      created_at DESC,
-      id DESC
+  -- Ensure whatsapp_groups table exists
+  DO $$ BEGIN
+    CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      jid VARCHAR(200) NOT NULL UNIQUE,
+      source_name VARCHAR(300),
+      instance_name VARCHAR(100),
+      raw_payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 4. whatsapp_monitor_messages: direction + instance filter
-  CREATE INDEX IF NOT EXISTS idx_wmm_instance_direction_created_deal
-    ON public.whatsapp_monitor_messages (
-      (lower(coalesce(instance_name, ''))),
-      direction,
-      created_at DESC,
-      deal_id
-    );
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_last_activity_at_desc
+      ON public.deals (last_activity_at DESC NULLS LAST, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 5. whatsapp_monitor_messages: unread count subquery
-  CREATE INDEX IF NOT EXISTS idx_wmm_direction_created
-    ON public.whatsapp_monitor_messages (
-      direction,
-      created_at DESC,
-      deal_id
-    );
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
+      ON public.whatsapp_monitor_messages (deal_id, created_at DESC, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 6. whatsapp_monitor_messages: remote_jid lookup
-  CREATE INDEX IF NOT EXISTS idx_wmm_remote_instance_created
-    ON public.whatsapp_monitor_messages (
-      remote_jid,
-      (lower(coalesce(instance_name, ''))),
-      created_at DESC,
-      id DESC
-    )
-    WHERE remote_jid IS NOT NULL;
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_instance_deal_created
+      ON public.whatsapp_monitor_messages (
+        (lower(coalesce(instance_name, ''))),
+        deal_id, created_at DESC, id DESC
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 7. whatsapp_incoming_messages: profile LATERAL joins (remote_jid + created_at)
-  CREATE INDEX IF NOT EXISTS idx_wim_remote_jid_created
-    ON public.whatsapp_incoming_messages (remote_jid, created_at DESC, id DESC);
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_instance_direction_created_deal
+      ON public.whatsapp_monitor_messages (
+        (lower(coalesce(instance_name, ''))),
+        direction, created_at DESC, deal_id
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 8. whatsapp_jid_aliases: canonical JID resolution
-  CREATE INDEX IF NOT EXISTS idx_wja_instance_alias
-    ON public.whatsapp_jid_aliases ((lower(instance_name)), alias_jid);
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_direction_created
+      ON public.whatsapp_monitor_messages (
+        direction, created_at DESC, deal_id
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  CREATE INDEX IF NOT EXISTS idx_wja_instance_canonical
-    ON public.whatsapp_jid_aliases ((lower(instance_name)), canonical_jid);
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_remote_instance_created
+      ON public.whatsapp_monitor_messages (
+        remote_jid,
+        (lower(coalesce(instance_name, ''))),
+        created_at DESC, id DESC
+      )
+      WHERE remote_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
 
-  -- 9. deals: whatsapp_jid for conversation matching
-  CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid
-    ON public.deals (whatsapp_jid)
-    WHERE whatsapp_jid IS NOT NULL;
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wim_remote_jid_created
+      ON public.whatsapp_incoming_messages (remote_jid, created_at DESC, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wja_instance_alias
+      ON public.whatsapp_jid_aliases ((lower(instance_name)), alias_jid);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wja_instance_canonical
+      ON public.whatsapp_jid_aliases ((lower(instance_name)), canonical_jid);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid
+      ON public.deals (whatsapp_jid)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
   `,
 ];
 
