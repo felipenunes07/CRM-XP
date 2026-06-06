@@ -1435,6 +1435,25 @@ export async function purgeOldEventsData() {
       [env.WHATSAPP_INCOMING_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
     );
 
+    // Biggest table: the flat monitor message store that feeds the conversation
+    // list/thread. Was NOT purged before, so it grew unbounded. The UI only
+    // shows the last WHATSAPP_MONITOR_HISTORY_DAYS (90) anyway, so trimming
+    // older rows with the same retention loses nothing visible.
+    results.monitorMessages = await deleteInBatches(
+      "whatsapp_monitor_messages",
+      `
+      DELETE FROM whatsapp_monitor_messages
+      WHERE ctid IN (
+        SELECT ctid
+        FROM whatsapp_monitor_messages
+        WHERE created_at < NOW() - ($1::int * INTERVAL '1 day')
+        ORDER BY created_at
+        LIMIT $2::int
+      )
+      `,
+      [env.WHATSAPP_INCOMING_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
     results.whatsappActivities = await deleteInBatches(
       "deal_activities_whatsapp",
       `
