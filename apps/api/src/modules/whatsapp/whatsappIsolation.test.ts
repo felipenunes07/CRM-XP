@@ -165,14 +165,37 @@ describe("whatsapp conversation isolation", () => {
     mocks.refreshRollups.mockResolvedValue({ refreshed: true, deleted: 0, inserted: 1 });
   });
 
-  it("refreshes empty activity rollups before returning the heatmap report", async () => {
+  it("schedules empty activity rollup refresh and uses direct fallback for the heatmap report", async () => {
     const today = localTodayKey();
     let rollupQueryCount = 0;
+    let directQueryCount = 0;
+    const currentRow = {
+      agent_id: "user-amanda",
+      agent_name: "Amanda (Amanda)",
+      instance_name: "amanda",
+      display_label: "Amanda",
+      phone_number: "+55 11 91234-5678",
+      profile_picture_url: null,
+      remote_jid: "5511999998888@s.whatsapp.net",
+      chat_name: "Cliente Exemplo",
+      local_date: today,
+      local_hour: 13,
+      sent_messages: 2,
+      received_messages: 1,
+      response_count: 1,
+      response_seconds_total: 180,
+      last_message_at: `${today}T16:00:00.000Z`,
+    };
 
     mocks.query.mockImplementation(async (sqlStr) => {
       const sql = String(sqlStr);
 
-      if (sql.includes("FROM whatsapp_instances wi")) {
+      if (sql.includes("monitor_rows") && sql.includes("FROM whatsapp_monitor_messages wmm")) {
+        directQueryCount += 1;
+        return { rows: [currentRow] };
+      }
+
+      if (sql.includes("FROM whatsapp_instances wi\n")) {
         return {
           rows: [
             {
@@ -192,29 +215,7 @@ describe("whatsapp conversation isolation", () => {
 
       if (sql.includes("FROM whatsapp_activity_rollups war")) {
         rollupQueryCount += 1;
-        return rollupQueryCount === 1
-          ? { rows: [] }
-          : {
-              rows: [
-                {
-                  agent_id: "user-amanda",
-                  agent_name: "Amanda (Amanda)",
-                  instance_name: "amanda",
-                  display_label: "Amanda",
-                  phone_number: "+55 11 91234-5678",
-                  profile_picture_url: null,
-                  remote_jid: "5511999998888@s.whatsapp.net",
-                  chat_name: "Cliente Exemplo",
-                  local_date: today,
-                  local_hour: 13,
-                  sent_messages: 2,
-                  received_messages: 1,
-                  response_count: 1,
-                  response_seconds_total: 180,
-                  last_message_at: `${today}T16:00:00.000Z`,
-                },
-              ],
-            };
+        return { rows: [] };
       }
 
       return { rows: [] };
@@ -228,7 +229,8 @@ describe("whatsapp conversation isolation", () => {
     } as any);
 
     expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
-    expect(rollupQueryCount).toBe(2);
+    expect(rollupQueryCount).toBe(1);
+    expect(directQueryCount).toBe(1);
     expect(report.hourlyCells).toHaveLength(1);
     expect(report.hourlyCells[0]).toMatchObject({
       date: today,
@@ -238,7 +240,7 @@ describe("whatsapp conversation isolation", () => {
     });
   });
 
-  it("refreshes stale rollups when the report end date has no activity", async () => {
+  it("returns stale rollups quickly while scheduling refresh when the end date has no activity", async () => {
     const today = localTodayKey();
     const yesterday = localDateKeyDaysAgo(1);
     let rollupQueryCount = 0;
@@ -261,24 +263,6 @@ describe("whatsapp conversation isolation", () => {
       last_message_at: `${yesterday}T18:00:00.000Z`,
     };
 
-    const freshRow = {
-      agent_id: "user-amanda",
-      agent_name: "Amanda (Amanda)",
-      instance_name: "amanda",
-      display_label: "Amanda",
-      phone_number: "+55 11 91234-5678",
-      profile_picture_url: null,
-      remote_jid: "5511999998888@s.whatsapp.net",
-      chat_name: "Cliente Hoje",
-      local_date: today,
-      local_hour: 13,
-      sent_messages: 2,
-      received_messages: 1,
-      response_count: 1,
-      response_seconds_total: 180,
-      last_message_at: `${today}T16:00:00.000Z`,
-    };
-
     mocks.query.mockImplementation(async (sqlStr) => {
       const sql = String(sqlStr);
 
@@ -302,9 +286,7 @@ describe("whatsapp conversation isolation", () => {
 
       if (sql.includes("FROM whatsapp_activity_rollups war")) {
         rollupQueryCount += 1;
-        return rollupQueryCount === 1
-          ? { rows: [staleRow] }
-          : { rows: [staleRow, freshRow] };
+        return { rows: [staleRow] };
       }
 
       return { rows: [] };
@@ -318,8 +300,9 @@ describe("whatsapp conversation isolation", () => {
     } as any);
 
     expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
-    expect(rollupQueryCount).toBe(2);
-    expect(report.hourlyCells.some((cell) => cell.date === today && cell.sentMessages === 2)).toBe(true);
+    expect(rollupQueryCount).toBe(1);
+    expect(report.hourlyCells.some((cell) => cell.date === yesterday && cell.sentMessages === 4)).toBe(true);
+    expect(report.hourlyCells.some((cell) => cell.date === today && cell.sentMessages === 2)).toBe(false);
   });
 
   it("counts group attendances in the formatted daily WhatsApp summary", async () => {

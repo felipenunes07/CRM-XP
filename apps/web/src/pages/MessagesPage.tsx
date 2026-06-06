@@ -38,6 +38,8 @@ import { api, API_BASE_URL } from "../lib/api";
 import { buildMessageTimelineItems } from "./messagesPage.helpers";
 import { PhoneLoadingScreen } from "../components/PhoneLoadingScreen";
 
+const brokenWhatsappAvatarUrls = new Set<string>();
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -264,15 +266,27 @@ function AgentAvatar({
   imageUrl?: string | null;
   group?: boolean;
 }) {
+  const [imageFailed, setImageFailed] = useState(() => Boolean(imageUrl && brokenWhatsappAvatarUrls.has(imageUrl)));
+
+  useEffect(() => {
+    setImageFailed(Boolean(imageUrl && brokenWhatsappAvatarUrls.has(imageUrl)));
+  }, [imageUrl]);
+
+  const visibleImageUrl = imageUrl && !imageFailed ? imageUrl : undefined;
+
   return (
     <span className="wa-avatar">
-      {imageUrl ? (
+      {visibleImageUrl ? (
         <img
-          src={imageUrl}
+          src={visibleImageUrl}
           alt=""
           loading="lazy"
           onError={(event) => {
+            if (imageUrl) {
+              brokenWhatsappAvatarUrls.add(imageUrl);
+            }
             event.currentTarget.style.display = "none";
+            setImageFailed(true);
           }}
         />
       ) : null}

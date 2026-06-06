@@ -124,6 +124,16 @@ export function AdminUsersPage() {
   const [showTemporaryPassword, setShowTemporaryPassword] = useState(false);
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => {
+        setToastMessage(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const usersQuery = useQuery({
     queryKey: ["admin-users"],
@@ -157,6 +167,7 @@ export function AdminUsersPage() {
     setResetLink(null);
     setTemporaryPassword("");
     setPasswordSaved(false);
+    setToastMessage(null);
     setDraft(selectedUser ? draftFromUser(selectedUser) : emptyDraft());
   }, [selectedUser?.id]);
 
@@ -175,6 +186,10 @@ export function AdminUsersPage() {
       if (savedUser) {
         setSelectedId(savedUser.id);
       }
+      setToastMessage(selectedId === "new" ? "Acesso criado com sucesso!" : "Alterações salvas com sucesso!");
+    },
+    onError: (err: any) => {
+      setToastMessage(`Erro ao salvar: ${err.message}`);
     },
   });
 
@@ -183,8 +198,12 @@ export function AdminUsersPage() {
       if (!token) throw new Error("Sessao ausente");
       return api.setUserActive(token, input.id, input.isActive);
     },
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setToastMessage(variables.isActive ? "Usuário ativado com sucesso!" : "Usuário desativado com sucesso!");
+    },
+    onError: (err: any) => {
+      setToastMessage(`Erro ao alterar status: ${err.message}`);
     },
   });
 
@@ -195,6 +214,10 @@ export function AdminUsersPage() {
     },
     onSuccess: (result) => {
       setResetLink(result.actionLink);
+      setToastMessage("Link de recuperação gerado!");
+    },
+    onError: (err: any) => {
+      setToastMessage(`Erro ao resetar senha: ${err.message}`);
     },
   });
 
@@ -206,6 +229,10 @@ export function AdminUsersPage() {
     },
     onSuccess: () => {
       setPasswordSaved(true);
+      setToastMessage("Nova senha salva com sucesso!");
+    },
+    onError: (err: any) => {
+      setToastMessage(`Erro ao salvar nova senha: ${err.message}`);
     },
   });
 
@@ -571,6 +598,14 @@ export function AdminUsersPage() {
           </footer>
         </form>
       </div>
+      {toastMessage ? (
+        <div className="idea-canvas-toast" style={{ background: "rgba(47, 157, 103, 0.96)" }}>
+          <span>{toastMessage}</span>
+          <button type="button" className="ghost-button icon-only" onClick={() => setToastMessage(null)} style={{ color: "white" }}>
+            Fechar
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
