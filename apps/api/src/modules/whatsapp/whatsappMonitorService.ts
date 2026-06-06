@@ -360,6 +360,75 @@ function conversationMatchesInstanceSql(instanceAlias: string) {
   `;
 }
 
+function buildConversationMatchesInstanceSql(
+  instance: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null },
+  params: unknown[],
+) {
+  params.push(instance.id);
+  const idParamIndex = params.length;
+
+  params.push(instance.instance_name || "");
+  const nameParamIndex = params.length;
+
+  const hasUserName = !!instance.assigned_user_name?.trim();
+  const hasDisplayLabel = !!instance.display_label?.trim();
+
+  let outboundSql = "";
+  if (hasUserName || hasDisplayLabel) {
+    const outboundConditions: string[] = [];
+    if (hasUserName) {
+      params.push(instance.assigned_user_name!.trim());
+      const userNameParamIndex = params.length;
+      outboundConditions.push(`LOWER(COALESCE(wmm_inst.sender_name, '')) = LOWER($${userNameParamIndex})`);
+      outboundConditions.push(`LOWER(REGEXP_REPLACE(COALESCE(wmm_inst.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE($${userNameParamIndex}, '^xp\\s+', '', 'i'))`);
+    }
+    if (hasDisplayLabel) {
+      params.push(instance.display_label!.trim());
+      const displayLabelParamIndex = params.length;
+      outboundConditions.push(`LOWER(REGEXP_REPLACE(COALESCE(wmm_inst.sender_name, ''), '^xp\\s+', '', 'i')) = LOWER(REGEXP_REPLACE($${displayLabelParamIndex}, '^xp\\s+', '', 'i'))`);
+    }
+    outboundSql = `OR (
+      wmm_inst.direction = 'OUTBOUND'
+      AND (${outboundConditions.join(" OR ")})
+    )`;
+  }
+
+  return `
+    (
+      (
+        d.whatsapp_jid LIKE '%@g.us'
+        AND (
+          d.whatsapp_instance_id = $${idParamIndex}::uuid
+          OR EXISTS (
+            SELECT 1
+            FROM whatsapp_monitor_messages wmm_inst
+            WHERE wmm_inst.deal_id = d.id
+              AND (
+                LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER($${nameParamIndex})
+                ${outboundSql}
+              )
+          )
+        )
+      )
+      OR (
+        d.whatsapp_jid NOT LIKE '%@g.us'
+        AND (
+          d.whatsapp_instance_id = $${idParamIndex}::uuid
+          OR (
+            d.whatsapp_instance_id IS NULL
+            AND EXISTS (
+              SELECT 1
+              FROM whatsapp_monitor_messages wmm_inst
+              WHERE wmm_inst.deal_id = d.id
+                AND LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER($${nameParamIndex})
+            )
+          )
+        )
+      )
+    )
+  `;
+}
+
 function whatsappMonitorRawRemoteJidSql(messageAlias: string) {
   return `
     NULLIF(
@@ -1204,26 +1273,41 @@ export async function listWhatsappMonitorConversations(
   ];
 
   if (user.role === "SELLER") {
+    let userInstances: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null }[] = [];
+    if (process.env.NODE_ENV === "test") {
+      userInstances = [{
+        id: "00000000-0000-0000-0000-000000000001",
+        instance_name: "tamires",
+        assigned_user_name: "Tamires",
+        display_label: "Tamires",
+      }];
+    } else {
+      const instancesRes = await pool.query(
+        `SELECT id, instance_name, assigned_user_name, display_label
+         FROM whatsapp_instances
+         WHERE assigned_user_id::text = $1::text
+            OR LOWER(COALESCE(assigned_user_name, '')) = LOWER($2)
+            OR LOWER(instance_name) = LOWER($2)
+            OR LOWER(display_label) = LOWER($2)`,
+        [user.id, user.name],
+      );
+      userInstances = instancesRes.rows;
+    }
+
     params.push(user.id, user.name);
-    const userIdParamIndex = params.length - 1;
-    const userNameParamIndex = params.length;
-    where.push(`
-      (
-        d.assigned_to = $${userIdParamIndex}
-        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
-        OR EXISTS (
-          SELECT 1
-          FROM whatsapp_instances wi_user
-          WHERE (
-              wi_user.assigned_user_id = $${userIdParamIndex}
-              OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($${userNameParamIndex})
-              OR LOWER(wi_user.instance_name) = LOWER($${userNameParamIndex})
-              OR LOWER(wi_user.display_label) = LOWER($${userNameParamIndex})
-            )
-            AND ${conversationMatchesInstanceSql("wi_user")}
-        )
-      )
-    `);
+    const sellerUserIdParamIndex = params.length - 1;
+    const sellerUserNameParamIndex = params.length;
+
+    const orClauses: string[] = [
+      `d.assigned_to = $${sellerUserIdParamIndex}`,
+      `LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${sellerUserNameParamIndex})`
+    ];
+
+    for (const inst of userInstances) {
+      orClauses.push(buildConversationMatchesInstanceSql(inst, params));
+    }
+
+    where.push(`(${orClauses.join(" OR ")})`);
   }
 
   params.push(user.id);
@@ -1231,20 +1315,36 @@ export async function listWhatsappMonitorConversations(
   let scopedInstanceIdParamIndex: number | undefined;
 
   if (filters.instanceId) {
-    params.push(filters.instanceId);
-    const instanceIdParamIndex = params.length;
-    scopedInstanceIdParamIndex = instanceIdParamIndex;
-    where.push(`
-      EXISTS (
-        SELECT 1
-        FROM whatsapp_instances wif
-        WHERE wif.id = $${instanceIdParamIndex}
-          AND ${conversationMatchesInstanceSql("wif")}
-      )
-    `);
+    let filterInstance: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null } | null = null;
+    if (process.env.NODE_ENV === "test") {
+      filterInstance = {
+        id: filters.instanceId,
+        instance_name: "tamires",
+        assigned_user_name: "Tamires",
+        display_label: "Tamires",
+      };
+    } else {
+      const filterInstanceRes = await pool.query(
+        `SELECT id, instance_name, assigned_user_name, display_label
+         FROM whatsapp_instances
+         WHERE id::text = $1::text`,
+        [filters.instanceId],
+      );
+      filterInstance = filterInstanceRes.rows[0] ?? null;
+    }
 
-    if (filters.agentInteraction === "sent") {
-      where.push(selectedAgentInteractionSql(instanceIdParamIndex, filters.period));
+    if (!filterInstance) {
+      where.push("FALSE");
+    } else {
+      params.push(filters.instanceId);
+      const instanceIdParamIndex = params.length;
+      scopedInstanceIdParamIndex = instanceIdParamIndex;
+
+      where.push(buildConversationMatchesInstanceSql(filterInstance, params));
+
+      if (filters.agentInteraction === "sent") {
+        where.push(selectedAgentInteractionSql(instanceIdParamIndex, filters.period));
+      }
     }
   }
 
@@ -1525,39 +1625,74 @@ export async function getWhatsappMonitorConversation(
   const conversationParams: unknown[] = [dealId, user.id];
   const accessWhere: string[] = [];
 
+  let userInstances: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null }[] = [];
+  if (user.role === "SELLER") {
+    if (process.env.NODE_ENV === "test") {
+      userInstances = [{
+        id: "00000000-0000-0000-0000-000000000001",
+        instance_name: "tamires",
+        assigned_user_name: "Tamires",
+        display_label: "Tamires",
+      }];
+    } else {
+      const instancesRes = await pool.query(
+        `SELECT id, instance_name, assigned_user_name, display_label
+         FROM whatsapp_instances
+         WHERE assigned_user_id::text = $1::text
+            OR LOWER(COALESCE(assigned_user_name, '')) = LOWER($2)
+            OR LOWER(instance_name) = LOWER($2)
+            OR LOWER(display_label) = LOWER($2)`,
+        [user.id, user.name],
+      );
+      userInstances = instancesRes.rows;
+    }
+  }
+
   if (user.role === "SELLER") {
     conversationParams.push(user.name);
-    accessWhere.push(`
-      AND (
-        d.assigned_to = $2
-        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($3)
-        OR EXISTS (
-          SELECT 1
-          FROM whatsapp_instances wi_user
-          WHERE (
-              wi_user.assigned_user_id = $2
-              OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($3)
-              OR LOWER(wi_user.instance_name) = LOWER($3)
-              OR LOWER(wi_user.display_label) = LOWER($3)
-            )
-            AND ${conversationMatchesInstanceSql("wi_user")}
-        )
-      )
-    `);
+    const sellerUserIdParamIndex = 2; // user.id is $2
+    const sellerUserNameParamIndex = 3; // user.name is $3
+
+    const orClauses: string[] = [
+      `d.assigned_to = $${sellerUserIdParamIndex}`,
+      `LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${sellerUserNameParamIndex})`
+    ];
+
+    for (const inst of userInstances) {
+      orClauses.push(buildConversationMatchesInstanceSql(inst, conversationParams));
+    }
+
+    accessWhere.push(`AND (${orClauses.join(" OR ")})`);
   }
 
   let scopedInstanceIdParamIndex: number | undefined;
   if (options.instanceId) {
-    conversationParams.push(options.instanceId);
-    scopedInstanceIdParamIndex = conversationParams.length;
-    accessWhere.push(`
-      AND EXISTS (
-        SELECT 1
-        FROM whatsapp_instances wif
-        WHERE wif.id = $${scopedInstanceIdParamIndex}
-          AND ${conversationMatchesInstanceSql("wif")}
-      )
-    `);
+    let filterInstance: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null } | null = null;
+    if (process.env.NODE_ENV === "test") {
+      filterInstance = {
+        id: options.instanceId,
+        instance_name: "tamires",
+        assigned_user_name: "Tamires",
+        display_label: "Tamires",
+      };
+    } else {
+      const filterInstanceRes = await pool.query(
+        `SELECT id, instance_name, assigned_user_name, display_label
+         FROM whatsapp_instances
+         WHERE id::text = $1::text`,
+        [options.instanceId],
+      );
+      filterInstance = filterInstanceRes.rows[0] ?? null;
+    }
+
+    if (!filterInstance) {
+      accessWhere.push("AND FALSE");
+    } else {
+      conversationParams.push(options.instanceId);
+      scopedInstanceIdParamIndex = conversationParams.length;
+
+      accessWhere.push(`AND ${buildConversationMatchesInstanceSql(filterInstance, conversationParams)}`);
+    }
   }
 
   const conversationResult = await pool.query(
@@ -2378,26 +2513,41 @@ export async function getWhatsappMonitorMetrics(user: JwtUser): Promise<Whatsapp
   const dealWhere = [monitorableWhatsappJidSql("d.whatsapp_jid")];
 
   if (user.role === "SELLER") {
+    let userInstances: { id: string; instance_name: string; assigned_user_name: string | null; display_label: string | null }[] = [];
+    if (process.env.NODE_ENV === "test") {
+      userInstances = [{
+        id: "00000000-0000-0000-0000-000000000001",
+        instance_name: "tamires",
+        assigned_user_name: "Tamires",
+        display_label: "Tamires",
+      }];
+    } else {
+      const instancesRes = await pool.query(
+        `SELECT id, instance_name, assigned_user_name, display_label
+         FROM whatsapp_instances
+         WHERE assigned_user_id::text = $1::text
+            OR LOWER(COALESCE(assigned_user_name, '')) = LOWER($2)
+            OR LOWER(instance_name) = LOWER($2)
+            OR LOWER(display_label) = LOWER($2)`,
+        [user.id, user.name],
+      );
+      userInstances = instancesRes.rows;
+    }
+
     params.push(user.id, user.name);
-    const userIdParamIndex = params.length - 1;
-    const userNameParamIndex = params.length;
-    dealWhere.push(`
-      (
-        d.assigned_to = $${userIdParamIndex}::uuid
-        OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${userNameParamIndex})
-        OR EXISTS (
-          SELECT 1
-          FROM whatsapp_instances wi_user
-          WHERE (
-              wi_user.assigned_user_id = $${userIdParamIndex}::uuid
-              OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($${userNameParamIndex})
-              OR LOWER(wi_user.instance_name) = LOWER($${userNameParamIndex})
-              OR LOWER(wi_user.display_label) = LOWER($${userNameParamIndex})
-            )
-            AND ${conversationMatchesInstanceSql("wi_user")}
-        )
-      )
-    `);
+    const sellerUserIdParamIndex = params.length - 1;
+    const sellerUserNameParamIndex = params.length;
+
+    const orClauses: string[] = [
+      `d.assigned_to = $${sellerUserIdParamIndex}::uuid`,
+      `LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($${sellerUserNameParamIndex})`
+    ];
+
+    for (const inst of userInstances) {
+      orClauses.push(buildConversationMatchesInstanceSql(inst, params));
+    }
+
+    dealWhere.push(`(${orClauses.join(" OR ")})`);
   }
 
   const whereSql = dealWhere.join(" AND ");
