@@ -35,6 +35,7 @@ import {
   mapWhatsappActivityToMessage,
   median,
   mergeWhatsappMonitorMessages,
+  isProfilePictureUrlExpired,
 } from "./whatsappMonitorCore.js";
 import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.js";
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
@@ -682,6 +683,14 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
   const markedUnread = Boolean(row.marked_unread);
   const unreadState = computeWhatsappUnreadState(Number(row.unread_after_read ?? 0), markedUnread);
 
+  const profilePictureUrl = optionalString(row.profile_picture_url);
+  if (remoteJid && isProfilePictureUrlExpired(profilePictureUrl)) {
+    import("./evolutionMetadataService.js").then((m) => {
+      m.refreshWhatsappChatProfile(remoteJid, row.instance_name ? String(row.instance_name) : null)
+        .catch((err) => logger.warn("Failed to refresh expired whatsapp profile picture in background", { remoteJid, error: String(err) }));
+    }).catch(() => {});
+  }
+
   return {
     id: String(row.id),
     dealId: String(row.id),
@@ -690,7 +699,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
     contactPhone: formatWhatsappJidPhone(remoteJid),
     remoteJid,
     isGroup,
-    profilePictureUrl: optionalString(row.profile_picture_url),
+    profilePictureUrl,
     whatsappInstanceId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
     instanceName: row.instance_name ? String(row.instance_name) : null,
     agentName: row.agent_name ? String(row.agent_name) : null,
@@ -1103,6 +1112,8 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
       (
         wi.assigned_user_id = $1
         OR LOWER(COALESCE(wi.assigned_user_name, '')) = LOWER($2)
+        OR LOWER(wi.instance_name) = LOWER($2)
+        OR LOWER(wi.display_label) = LOWER($2)
         OR EXISTS (
           SELECT 1
           FROM deals d
@@ -1193,6 +1204,8 @@ export async function listWhatsappMonitorConversations(
           WHERE (
               wi_user.assigned_user_id = $${userIdParamIndex}
               OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($${userNameParamIndex})
+              OR LOWER(wi_user.instance_name) = LOWER($${userNameParamIndex})
+              OR LOWER(wi_user.display_label) = LOWER($${userNameParamIndex})
             )
             AND ${conversationMatchesInstanceSql("wi_user")}
         )
@@ -1511,6 +1524,8 @@ export async function getWhatsappMonitorConversation(
           WHERE (
               wi_user.assigned_user_id = $2
               OR LOWER(COALESCE(wi_user.assigned_user_name, '')) = LOWER($3)
+              OR LOWER(wi_user.instance_name) = LOWER($3)
+              OR LOWER(wi_user.display_label) = LOWER($3)
             )
             AND ${conversationMatchesInstanceSql("wi_user")}
         )

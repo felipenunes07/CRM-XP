@@ -669,6 +669,10 @@ export async function refreshMissingWhatsappMonitorProfiles(limit = 60) {
         wcp.profile_picture_url IS NULL
         OR wcp.display_name IS NULL
         OR wcp.display_name = ''
+        OR (
+          wcp.profile_picture_url LIKE '%oe=%'
+          AND to_timestamp(('x' || lpad(substring(wcp.profile_picture_url from '[?&]oe=([0-9a-fA-F]+)'), 8, '0'))::bit(32)::bigint) < NOW() + INTERVAL '2 hours'
+        )
       )
     ORDER BY d.whatsapp_jid
     LIMIT $1

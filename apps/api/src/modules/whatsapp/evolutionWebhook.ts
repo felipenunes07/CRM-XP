@@ -51,13 +51,37 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
     [instanceName],
   );
 
-  return result.rows[0] ? {
-    id: String(result.rows[0].id),
-    displayLabel: result.rows[0].display_label ? String(result.rows[0].display_label) : null,
-    phoneNumber: result.rows[0].phone_number ? String(result.rows[0].phone_number) : null,
-    assignedUserId: result.rows[0].assigned_user_id ? String(result.rows[0].assigned_user_id) : null,
-    assignedUserName: result.rows[0].assigned_user_name ? String(result.rows[0].assigned_user_name) : null,
-  } : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  let assignedUserId = row.assigned_user_id ? String(row.assigned_user_id) : null;
+  let assignedUserName = row.assigned_user_name ? String(row.assigned_user_name) : null;
+
+  if (!assignedUserId) {
+    const userResult = await pool.query(
+      `
+      SELECT id, name
+      FROM users
+      WHERE LOWER(name) = LOWER($1)
+      LIMIT 1
+      `,
+      [instanceName],
+    );
+    if (userResult.rows[0]) {
+      assignedUserId = String(userResult.rows[0].id);
+      assignedUserName = String(userResult.rows[0].name);
+    }
+  }
+
+  return {
+    id: String(row.id),
+    displayLabel: row.display_label ? String(row.display_label) : null,
+    phoneNumber: row.phone_number ? String(row.phone_number) : null,
+    assignedUserId,
+    assignedUserName,
+  };
 }
 
 async function findAgentByParticipantJid(participantJid: string | null) {
@@ -727,6 +751,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
                 AND (
                   d.assigned_to = $4::uuid
                   OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)
+                  OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($7)
                 )
               )
             )

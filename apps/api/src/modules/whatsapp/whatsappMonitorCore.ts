@@ -724,9 +724,13 @@ export function chooseWhatsappConversationContactName(input: {
 }) {
   const remoteJid = input.remoteJid;
   const isGroup = input.isGroup ?? Boolean(remoteJid?.endsWith("@g.us"));
-  const candidates = (isGroup
-    ? [input.chatDisplayName, input.customerDisplayName, input.title]
-    : [input.customerDisplayName, input.title, input.chatDisplayName])
+
+  if (isGroup) {
+    const chatName = readString(input.chatDisplayName);
+    return chatName || formatWhatsappJidPhone(remoteJid);
+  }
+
+  const candidates = [input.customerDisplayName, input.title, input.chatDisplayName]
     .map((candidate) => readString(candidate))
     .filter((candidate): candidate is string => Boolean(candidate));
 
@@ -735,7 +739,7 @@ export function chooseWhatsappConversationContactName(input: {
       continue;
     }
 
-    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+    if (looksLikeAgentOwnedPrivateName(candidate, input)) {
       continue;
     }
 
@@ -743,7 +747,7 @@ export function chooseWhatsappConversationContactName(input: {
   }
 
   for (const candidate of candidates) {
-    if (!isGroup && looksLikeAgentOwnedPrivateName(candidate, input)) {
+    if (looksLikeAgentOwnedPrivateName(candidate, input)) {
       continue;
     }
 
@@ -1012,3 +1016,29 @@ export function areWhatsappJidsEqual(
 
   return digitsA === digitsB;
 }
+
+export function isProfilePictureUrlExpired(url: string | null | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    const oe = parsedUrl.searchParams.get("oe");
+    if (!oe) {
+      return false;
+    }
+
+    const expirationTimestampSec = parseInt(oe, 16);
+    if (isNaN(expirationTimestampSec)) {
+      return false;
+    }
+
+    const currentTimestampSec = Math.floor(Date.now() / 1000);
+    // Refresh 1 hour before expiration
+    return currentTimestampSec >= expirationTimestampSec - 3600;
+  } catch {
+    return false;
+  }
+}
+
