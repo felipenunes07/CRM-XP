@@ -2034,5 +2034,15 @@ export const migrations = [
   ALTER TABLE public.whatsapp_campaigns
     ADD COLUMN IF NOT EXISTS video_url TEXT;
   `,
+  `
+  -- Ensure last_synced_at columns exist on profile tables.
+  -- The original CREATE TABLE IF NOT EXISTS may have been a no-op if the table
+  -- already existed from an earlier migration without these columns.
+  ALTER TABLE public.whatsapp_chat_profiles
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
+
+  ALTER TABLE public.whatsapp_participant_profiles
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
+  `,
 ];
 
