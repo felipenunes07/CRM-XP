@@ -1,53 +1,65 @@
 /**
- * One-off backfill: re-host every existing WhatsApp profile picture in Supabase
- * Storage so avatars stop breaking when the ephemeral CDN URL expires.
+ * One-off backfill: re-host every WhatsApp profile picture in Postgres
+ * (whatsapp_avatars) so avatars stop breaking when the ephemeral CDN URL
+ * expires.
  *
- * Run on the server (needs DATABASE_URL + SUPABASE_* env + network):
+ * Strategy per profile:
+ *   1) try the stored profile_picture_url (works while still valid, e.g. 1:1);
+ *   2) if that fails (expired -> 403, common for groups), fetch a FRESH url
+ *      from the Evolution API via refreshWhatsappChatProfile, then cache that.
+ *
+ * Run on the server (needs DATABASE_URL + EVOLUTION_* env + network):
  *   npx tsx apps/api/src/scripts/backfillWhatsappAvatars.ts
  */
 import { pool } from "../db/client.js";
-import {
-  cacheChatProfileAvatar,
-  isCacheableAvatarUrl,
-} from "../modules/whatsapp/whatsappAvatarCache.js";
+import { refreshWhatsappChatProfile } from "../modules/whatsapp/evolutionMetadataService.js";
+import { cacheChatProfileAvatar } from "../modules/whatsapp/whatsappAvatarCache.js";
 
 async function main() {
   const { rows } = await pool.query(
     `SELECT instance_name, remote_jid, profile_picture_url
        FROM whatsapp_chat_profiles
-      WHERE NULLIF(profile_picture_url, '') IS NOT NULL
-        AND (
-          cached_picture_url IS NULL
-          OR cached_source_url IS DISTINCT FROM profile_picture_url
-        )`,
+      WHERE cached_picture_url IS NULL
+        AND remote_jid IS NOT NULL`,
   );
 
   console.log(`backfill: ${rows.length} perfis candidatos`);
   let ok = 0;
+  let freshOk = 0;
   let fail = 0;
-  let skip = 0;
 
   for (const row of rows) {
-    if (!isCacheableAvatarUrl(row.profile_picture_url)) {
-      skip++;
-      continue;
-    }
-    const url = await cacheChatProfileAvatar(
-      String(row.instance_name ?? ""),
-      String(row.remote_jid),
-      String(row.profile_picture_url),
-    );
-    if (url) {
-      ok++;
+    const instance = String(row.instance_name ?? "");
+    const jid = String(row.remote_jid);
+
+    // 1) try the stored URL
+    let url = await cacheChatProfileAvatar(instance, jid, row.profile_picture_url ?? null);
+
+    // 2) stored URL missing/expired -> fetch a fresh one from Evolution
+    if (!url) {
+      try {
+        const meta = await refreshWhatsappChatProfile(jid, instance || null);
+        url = await cacheChatProfileAvatar(instance, jid, meta.chatProfilePictureUrl ?? null);
+        if (url) {
+          freshOk++;
+        }
+      } catch {
+        // ignore, counted as fail below
+      }
     } else {
+      ok++;
+    }
+
+    if (!url) {
       fail++;
     }
-    if ((ok + fail) % 25 === 0) {
-      console.log(`  progresso: ok=${ok} fail=${fail} skip=${skip} / ${rows.length}`);
+
+    if ((ok + freshOk + fail) % 25 === 0) {
+      console.log(`  progresso: ok=${ok} fresh=${freshOk} fail=${fail} / ${rows.length}`);
     }
   }
 
-  console.log(`backfill concluido: ok=${ok} fail=${fail} skip=${skip} total=${rows.length}`);
+  console.log(`backfill concluido: ok=${ok} fresh=${freshOk} fail=${fail} total=${rows.length}`);
   await pool.end();
 }
 

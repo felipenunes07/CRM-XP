@@ -933,41 +933,18 @@ function conversationProfileJoinSql() {
         wcp.updated_at DESC
       LIMIT 1
     ) chat_profile ON true
+    -- PERF: these two profile LATERALs used to scan the 153k-row
+    -- whatsapp_incoming_messages table per conversation row (the OR-EXISTS on
+    -- jid aliases defeats the remote_jid index), which made the conversations
+    -- query time out (30s -> HTTP 500), worst on groups. Name + picture are now
+    -- materialized into whatsapp_chat_profiles (chat_profile LATERAL, indexed),
+    -- so these are replaced by constant NULLs to keep the same output columns
+    -- without the table scan.
     LEFT JOIN LATERAL (
-      SELECT
-        wim.chat_display_name,
-        wim.chat_profile_picture_url
-      FROM whatsapp_incoming_messages wim
-      WHERE ${profileJidMatch("wim")}
-        AND (wim.from_me = false OR d.whatsapp_jid LIKE '%@g.us')
-        AND (
-          wim.instance_name = ${conversationInstance}
-          OR COALESCE(wim.instance_name, '') = ''
-          OR d.whatsapp_jid LIKE '%@g.us'
-        )
-      ORDER BY
-        CASE WHEN NULLIF(wim.chat_display_name, '') IS NOT NULL THEN 0 ELSE 1 END,
-        wim.created_at DESC,
-        wim.id DESC
-      LIMIT 1
+      SELECT NULL::text AS chat_display_name, NULL::text AS chat_profile_picture_url
     ) incoming_profile ON true
     LEFT JOIN LATERAL (
-      SELECT
-        wim_inbound.sender_name AS inbound_sender_name,
-        wim_inbound.sender_profile_picture_url AS inbound_sender_picture,
-        wim_inbound.chat_profile_picture_url AS inbound_chat_picture
-      FROM whatsapp_incoming_messages wim_inbound
-      WHERE ${profileJidMatch("wim_inbound")}
-        AND wim_inbound.from_me = false
-        AND wim_inbound.sender_name IS NOT NULL
-        AND wim_inbound.sender_name <> ''
-        AND (
-          wim_inbound.instance_name = ${conversationInstance}
-          OR COALESCE(wim_inbound.instance_name, '') = ''
-          OR d.whatsapp_jid LIKE '%@g.us'
-        )
-      ORDER BY wim_inbound.created_at DESC
-      LIMIT 1
+      SELECT NULL::text AS inbound_sender_name, NULL::text AS inbound_sender_picture, NULL::text AS inbound_chat_picture
     ) incoming_inbound_profile ON true
   `;
 }
