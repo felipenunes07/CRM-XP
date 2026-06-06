@@ -152,7 +152,7 @@ async function getActiveInstanceAvatarUrls(): Promise<Set<string>> {
     (result?.rows ?? [])
       .map((row) => row.profile_picture_url)
       .filter((url): url is string => typeof url === "string" && url.trim().length > 0)
-      .map((url) => url.split("?")[0]),
+      .map((url) => url.split("?")[0] as string),
   );
 
   activeInstanceAvatarCache = {
@@ -182,7 +182,7 @@ async function getInstanceAvatarUrls(instanceName: string | null | undefined): P
 
   const ownUrl = result?.rows?.[0]?.profile_picture_url;
   if (typeof ownUrl === "string" && ownUrl.trim()) {
-    urls.add(ownUrl.split("?")[0]);
+    urls.add(ownUrl.split("?")[0] as string);
   }
 
   return urls;
@@ -195,7 +195,7 @@ function sanitizePictureWithInstanceAvatars(
   if (!url) {
     return null;
   }
-  const cleanUrl = url.split("?")[0];
+  const cleanUrl = url.split("?")[0] as string;
   return instanceAvatarUrls.has(cleanUrl) ? null : url;
 }
 
