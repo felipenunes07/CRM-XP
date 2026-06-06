@@ -211,8 +211,10 @@ async function fetchEvolutionJson(
   path: string,
   init: RequestInit = {},
 ): Promise<Record<string, unknown> | null> {
+  const signal = init.signal ?? AbortSignal.timeout(6000);
   const response = await fetch(`${stripTrailingSlash(config.baseUrl)}${path}`, {
     ...init,
+    signal,
     headers: {
       "content-type": "application/json",
       apikey: config.apiKey,

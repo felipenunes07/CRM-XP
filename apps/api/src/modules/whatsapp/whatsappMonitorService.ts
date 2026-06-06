@@ -662,7 +662,7 @@ function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
   };
 }
 
-function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConversation {
+function mapConversationRow(row: Record<string, unknown>, skipRefresh = false): WhatsappMonitorConversation {
   const remoteJid = row.canonical_whatsapp_jid
     ? String(row.canonical_whatsapp_jid)
     : row.whatsapp_jid
@@ -690,7 +690,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
   const profilePictureUrl = optionalString(row.profile_picture_url);
   const lastProfileSynced = row.last_profile_synced_at ? new Date(String(row.last_profile_synced_at)) : null;
   const isProfileStale = !lastProfileSynced || (Date.now() - lastProfileSynced.getTime() > 24 * 60 * 60 * 1000);
-  if (remoteJid && (isProfilePictureUrlExpired(profilePictureUrl) || (profilePictureUrl === null && isProfileStale))) {
+  if (remoteJid && !skipRefresh && (isProfilePictureUrlExpired(profilePictureUrl) || (profilePictureUrl === null && isProfileStale))) {
     import("./evolutionMetadataService.js").then((m) => {
       m.refreshWhatsappChatProfile(remoteJid, (row.instance_name || row.user_active_instance_name) ? String(row.instance_name || row.user_active_instance_name) : null)
         .catch((err) => logger.warn("Failed to refresh expired or missing whatsapp profile picture in background", { remoteJid, error: String(err) }));
@@ -1395,7 +1395,7 @@ export async function listWhatsappMonitorConversations(
     : null;
 
   return {
-    conversations: pageRows.map(mapConversationRow),
+    conversations: pageRows.map((row) => mapConversationRow(row, true)),
     pageInfo: {
       hasNextPage: rows.length > limit,
       nextCursor: rows.length > limit ? nextCursor : null,
@@ -1578,7 +1578,7 @@ export async function getWhatsappMonitorConversation(
     throw new HttpError(404, "Conversa de WhatsApp nao encontrada.");
   }
 
-  const conversation = mapConversationRow(conversationResult.rows[0]);
+  const conversation = mapConversationRow(conversationResult.rows[0], false);
   const conversationAliases = conversation.remoteJid
     ? await getWhatsappConversationAliases(conversation.instanceName || "", conversation.remoteJid)
     : [];
