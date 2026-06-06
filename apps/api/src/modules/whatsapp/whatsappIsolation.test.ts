@@ -920,6 +920,7 @@ describe("whatsapp conversation isolation", () => {
         return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
       }
       if (sql.includes("d.whatsapp_jid = $1") && sql.includes("pipeline_stages")) {
+        dealMatchCount += 1;
         return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
       }
       if (sql.includes("INSERT INTO deal_activities")) {

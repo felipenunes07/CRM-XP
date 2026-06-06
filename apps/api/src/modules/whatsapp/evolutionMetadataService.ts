@@ -151,7 +151,8 @@ async function getActiveInstanceAvatarUrls(): Promise<Set<string>> {
   const urls = new Set(
     (result?.rows ?? [])
       .map((row) => row.profile_picture_url)
-      .filter((url): url is string => typeof url === "string" && url.trim().length > 0),
+      .filter((url): url is string => typeof url === "string" && url.trim().length > 0)
+      .map((url) => url.split("?")[0]),
   );
 
   activeInstanceAvatarCache = {
@@ -181,7 +182,7 @@ async function getInstanceAvatarUrls(instanceName: string | null | undefined): P
 
   const ownUrl = result?.rows?.[0]?.profile_picture_url;
   if (typeof ownUrl === "string" && ownUrl.trim()) {
-    urls.add(ownUrl);
+    urls.add(ownUrl.split("?")[0]);
   }
 
   return urls;
@@ -194,7 +195,8 @@ function sanitizePictureWithInstanceAvatars(
   if (!url) {
     return null;
   }
-  return instanceAvatarUrls.has(url) ? null : url;
+  const cleanUrl = url.split("?")[0];
+  return instanceAvatarUrls.has(cleanUrl) ? null : url;
 }
 
 export async function sanitizeWhatsappProfilePictureUrl(
@@ -416,15 +418,18 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
   // Evolution can return an owner's picture for unresolved @lid contacts, and
   // the bad value may come from another active instance, not only this one.
   const instanceAvatarUrls = await getInstanceAvatarUrls(instanceName);
-  const sanitizePicture = (url: string | null | undefined): string | null => {
+  const sanitizePicture = (url: string | null | undefined, isGroupChat = false): string | null => {
+    if (isGroupChat) {
+      return url ?? null;
+    }
     return sanitizePictureWithInstanceAvatars(url, instanceAvatarUrls);
   };
 
   const metadata: WhatsappChatMetadata = {
     chatDisplayName: context.chatDisplayName,
-    chatProfilePictureUrl: sanitizePicture(context.chatProfilePictureUrl),
+    chatProfilePictureUrl: sanitizePicture(context.chatProfilePictureUrl, context.isGroup),
     senderName: context.senderName,
-    senderProfilePictureUrl: sanitizePicture(context.senderProfilePictureUrl),
+    senderProfilePictureUrl: sanitizePicture(context.senderProfilePictureUrl, false),
   };
 
   if (!context.remoteJid) {
@@ -540,12 +545,15 @@ export async function refreshWhatsappChatProfile(
   const isGroup = remoteJid.endsWith("@g.us");
   const cachedChat = await getCachedChatProfile(resolvedInstanceName, remoteJid);
   const instanceAvatarUrls = await getInstanceAvatarUrls(resolvedInstanceName);
-  const sanitizePicture = (url: string | null | undefined): string | null => {
+  const sanitizePicture = (url: string | null | undefined, isGroupChat = false): string | null => {
+    if (isGroupChat) {
+      return url ?? null;
+    }
     return sanitizePictureWithInstanceAvatars(url, instanceAvatarUrls);
   };
   const metadata: WhatsappChatMetadata = {
     chatDisplayName: cachedChat?.displayName ?? null,
-    chatProfilePictureUrl: sanitizePicture(cachedChat?.profilePictureUrl),
+    chatProfilePictureUrl: sanitizePicture(cachedChat?.profilePictureUrl, isGroup),
     senderName: null,
     senderProfilePictureUrl: null,
   };
@@ -558,7 +566,7 @@ export async function refreshWhatsappChatProfile(
     const groupInfo = await fetchEvolutionGroupInfo(config, remoteJid);
     if (groupInfo) {
       metadata.chatDisplayName = groupInfo.displayName ?? metadata.chatDisplayName;
-      metadata.chatProfilePictureUrl = sanitizePicture(groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl);
+      metadata.chatProfilePictureUrl = sanitizePicture(groupInfo.profilePictureUrl ?? metadata.chatProfilePictureUrl, true);
       await upsertChatProfile(resolvedInstanceName, remoteJid, {
         displayName: metadata.chatDisplayName,
         profilePictureUrl: metadata.chatProfilePictureUrl,
@@ -570,7 +578,7 @@ export async function refreshWhatsappChatProfile(
   }
 
   const profilePictureUrl = await fetchEvolutionProfilePicture(config, remoteJid);
-  metadata.chatProfilePictureUrl = sanitizePicture(profilePictureUrl ?? metadata.chatProfilePictureUrl);
+  metadata.chatProfilePictureUrl = sanitizePicture(profilePictureUrl ?? metadata.chatProfilePictureUrl, false);
   await upsertChatProfile(resolvedInstanceName, remoteJid, {
     displayName: metadata.chatDisplayName,
     profilePictureUrl: metadata.chatProfilePictureUrl,

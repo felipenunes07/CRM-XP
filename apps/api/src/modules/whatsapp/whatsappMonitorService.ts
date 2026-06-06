@@ -495,12 +495,15 @@ function conversationSafeProfileJoinSql() {
           )
       ) AS candidate(url, priority)
       WHERE NULLIF(candidate.url, '') IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1
-          FROM whatsapp_instances wi_avatar
-          WHERE wi_avatar.status = 'ACTIVE'
-            AND wi_avatar.profile_picture_url IS NOT NULL
-            AND wi_avatar.profile_picture_url = candidate.url
+        AND (
+          d.whatsapp_jid LIKE '%@g.us'
+          OR NOT EXISTS (
+            SELECT 1
+            FROM whatsapp_instances wi_avatar
+            WHERE wi_avatar.status = 'ACTIVE'
+              AND wi_avatar.profile_picture_url IS NOT NULL
+              AND split_part(wi_avatar.profile_picture_url, '?', 1) = split_part(candidate.url, '?', 1)
+          )
         )
       ORDER BY candidate.priority ASC
       LIMIT 1
@@ -689,7 +692,7 @@ function mapConversationRow(row: Record<string, unknown>): WhatsappMonitorConver
   const isProfileStale = !lastProfileSynced || (Date.now() - lastProfileSynced.getTime() > 24 * 60 * 60 * 1000);
   if (remoteJid && (isProfilePictureUrlExpired(profilePictureUrl) || (profilePictureUrl === null && isProfileStale))) {
     import("./evolutionMetadataService.js").then((m) => {
-      m.refreshWhatsappChatProfile(remoteJid, row.instance_name ? String(row.instance_name) : null)
+      m.refreshWhatsappChatProfile(remoteJid, (row.instance_name || row.user_active_instance_name) ? String(row.instance_name || row.user_active_instance_name) : null)
         .catch((err) => logger.warn("Failed to refresh expired or missing whatsapp profile picture in background", { remoteJid, error: String(err) }));
     }).catch(() => {});
   }
@@ -847,7 +850,7 @@ function conversationProfileJoinSql() {
 
   return `
     LEFT JOIN LATERAL (
-      SELECT wcp.display_name, wcp.profile_picture_url
+      SELECT wcp.display_name, wcp.profile_picture_url, wcp.last_synced_at
       FROM whatsapp_chat_profiles wcp
       WHERE ${profileJidMatch("wcp")}
         AND (
@@ -921,6 +924,7 @@ function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdPar
       COALESCE(selected_filter_instance.instance_name, wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_name,
       COALESCE(selected_filter_instance.display_label, wi.display_label, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance') AS instance_display_label,
       COALESCE(selected_filter_instance.display_label, wi.display_label, d.assigned_to_name, latest_whatsapp.sender_name) AS agent_name,
+      user_active_instance.user_active_instance_name AS user_active_instance_name,
       CASE WHEN d.whatsapp_jid LIKE '%@g.us'
         THEN COALESCE(
           NULLIF(wg.source_name, ''),
@@ -1012,6 +1016,14 @@ function conversationBaseSelectSql(userIdParamIndex: number, scopedInstanceIdPar
     ) conversation_alias ON true
     LEFT JOIN whatsapp_groups wg
       ON wg.jid = COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)
+    LEFT JOIN LATERAL (
+      SELECT wi_user.instance_name AS user_active_instance_name
+      FROM whatsapp_instances wi_user
+      WHERE wi_user.assigned_user_id::text = $${userIdParamIndex}::text
+        AND wi_user.status = 'ACTIVE'
+      ORDER BY wi_user.is_default DESC, wi_user.id DESC
+      LIMIT 1
+    ) user_active_instance ON true
     ${conversationProfileJoinSql()}
     ${conversationSafeProfileJoinSql()}
   `;
