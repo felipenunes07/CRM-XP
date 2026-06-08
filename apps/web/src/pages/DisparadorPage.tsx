@@ -854,6 +854,18 @@ export function DisparadorPage() {
     },
   });
 
+  const skipRecipientMutation = useMutation({
+    mutationFn: ({ campaignId, recipientId }: { campaignId: string; recipientId: string }) =>
+      api.skipWhatsappCampaignRecipient(token!, campaignId, recipientId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+      ]);
+    },
+  });
+
   const sendTestMessageMutation = useMutation({
     mutationFn: () => {
       const preparedVideoUrl = campaignMessageType === "VIDEO" ? videoUrl.trim() : undefined;
@@ -3413,7 +3425,7 @@ export function DisparadorPage() {
                           key={recipient.id}
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "1fr auto 1fr auto",
+                            gridTemplateColumns: "1.2fr auto 1fr auto auto",
                             alignItems: "center",
                             gap: "12px",
                             padding: "0.75rem 1rem",
@@ -3490,6 +3502,48 @@ export function DisparadorPage() {
                               <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
                                 {recipientLiveLabel(recipient)}
                               </span>
+                            )}
+                          </div>
+
+                          {/* Col 5: Skip button */}
+                          <div style={{ display: "flex", justifyContent: "center", width: "24px" }}>
+                            {recipient.status === "PENDING" ? (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Deseja cancelar o envio para ${displayName}?`)) {
+                                    skipRecipientMutation.mutate({
+                                      campaignId: recipient.campaignId,
+                                      recipientId: recipient.id,
+                                    });
+                                  }
+                                }}
+                                disabled={skipRecipientMutation.isPending}
+                                title="Cancelar envio para este contato"
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "#fca5a5",
+                                  cursor: "pointer",
+                                  padding: "4px",
+                                  borderRadius: "4px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "all 0.15s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)";
+                                  e.currentTarget.style.color = "#ef4444";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "#fca5a5";
+                                }}
+                              >
+                                <X size={16} />
+                              </button>
+                            ) : (
+                              <div style={{ width: "24px" }} />
                             )}
                           </div>
                         </div>

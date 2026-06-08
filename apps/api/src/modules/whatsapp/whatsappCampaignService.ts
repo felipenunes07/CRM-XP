@@ -1151,6 +1151,30 @@ export async function cancelWhatsappCampaign(campaignId: string) {
   return getWhatsappCampaignDetail(campaignId, 100, 0);
 }
 
+export async function skipWhatsappCampaignRecipient(campaignId: string, recipientId: string) {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaign_recipients
+      SET
+        status = 'SKIPPED',
+        skipped_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+        AND campaign_id = $2
+        AND status = 'PENDING'
+      RETURNING id
+    `,
+    [recipientId, campaignId],
+  );
+
+  if (!result.rows[0]) {
+    throw new HttpError(400, "Destinatario nao encontrado ou ja foi processado.");
+  }
+
+  await refreshWhatsappCampaignStatus(campaignId);
+  return { skipped: true, recipientId };
+}
+
 export async function claimRecipientForDispatch(recipientId: string): Promise<DispatchRecipientContext | null> {
   const client = await pool.connect();
 

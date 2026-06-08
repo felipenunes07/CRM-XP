@@ -118,6 +118,7 @@ import {
   createWhatsappCampaign,
   getWhatsappCampaignDetail,
   listWhatsappCampaigns,
+  skipWhatsappCampaignRecipient,
 } from "./modules/whatsapp/whatsappCampaignService.js";
 import { ensureEvolutionConfigured, sendWhatsappTextMessage } from "./modules/whatsapp/evolutionService.js";
 import { refreshMissingWhatsappMonitorProfiles } from "./modules/whatsapp/evolutionMetadataService.js";
@@ -1728,6 +1729,24 @@ export function createApp() {
       }
 
       response.json(await cancelWhatsappCampaign(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/recipients/:recipientId/skip", async (request, response, next) => {
+    try {
+      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para alterar esta campanha.");
+      }
+
+      response.json(await skipWhatsappCampaignRecipient(String(request.params.id), String(request.params.recipientId)));
     } catch (error) {
       next(error);
     }

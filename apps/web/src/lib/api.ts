@@ -773,6 +773,11 @@ export const api = {
       method: "POST",
     }, token);
   },
+  skipWhatsappCampaignRecipient(token: string, id: string, recipientId: string) {
+    return request<{ skipped: boolean; recipientId: string }>(`/api/whatsapp-campaigns/${id}/recipients/${recipientId}/skip`, {
+      method: "POST",
+    }, token);
+  },
 
   whatsappMonitorConversations(
     token: string,
