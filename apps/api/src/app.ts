@@ -480,7 +480,7 @@ const whatsappCampaignListQuerySchema = z.object({
 });
 
 const whatsappCampaignDetailQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).optional(),
+  limit: z.coerce.number().int().positive().max(5000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
 });
 
