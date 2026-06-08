@@ -1003,7 +1003,7 @@ export function DisparadorPage() {
         const rightTime = right.scheduledFor ? new Date(right.scheduledFor).getTime() : 0;
         return leftTime - rightTime;
       })
-      .slice(0, 8);
+      .slice(0, 200);
   }, [liveCampaign]);
   const selectedCampaignDetail = selectedCampaignQuery.data ?? null;
   const selectedCampaignPerformanceRecipients = useMemo(
@@ -3198,6 +3198,313 @@ export function DisparadorPage() {
               Nova Campanha
             </button>
           </div>
+
+          {/* ── LIVE DISPATCH PANEL ── */}
+          {liveCampaign && liveCampaignIsRunning && (() => {
+            const progress = liveCampaign.progress;
+            const totalR = progress.totalRecipients || 1;
+            const completedCount = progress.sentCount + progress.failedCount + progress.blockedRecentCount + progress.skippedCount;
+            const overallPct = Math.round((completedCount / totalR) * 100);
+            return (
+              <div style={{
+                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
+                borderRadius: "16px",
+                padding: "1.5rem",
+                color: "#fff",
+                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+              }}>
+                {/* Panel Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{
+                      width: "40px", height: "40px", borderRadius: "12px",
+                      background: "linear-gradient(135deg, #10b981, #059669)",
+                      display: "grid", placeItems: "center",
+                    }}>
+                      <Send size={18} style={{ color: "#fff" }} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
+                        🚀 Disparo em andamento
+                      </h3>
+                      <span style={{ fontSize: "0.82rem", color: "#94a3b8" }}>
+                        {liveCampaign.name}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {nextDispatchCountdown && (
+                      <div style={{
+                        background: "rgba(16, 185, 129, 0.15)",
+                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        borderRadius: "8px",
+                        padding: "6px 14px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}>
+                        <Clock3 size={14} style={{ color: "#10b981" }} />
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981", fontFamily: "monospace" }}>
+                          {nextDispatchCountdown}
+                        </span>
+                        <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>próximo envio</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Tem certeza que deseja PAUSAR (cancelar) esta campanha? Os envios pendentes serão cancelados.")) {
+                          cancelCampaignMutation.mutate(liveCampaign.id);
+                        }
+                      }}
+                      disabled={cancelCampaignMutation.isPending}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "8px 16px",
+                        background: "rgba(239, 68, 68, 0.15)",
+                        border: "1px solid rgba(239, 68, 68, 0.4)",
+                        borderRadius: "8px",
+                        color: "#fca5a5",
+                        fontSize: "0.85rem",
+                        fontWeight: 650,
+                        cursor: cancelCampaignMutation.isPending ? "not-allowed" : "pointer",
+                        opacity: cancelCampaignMutation.isPending ? 0.6 : 1,
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {cancelCampaignMutation.isPending ? (
+                        <><LoaderCircle size={14} className="spin" /> Pausando...</>
+                      ) : (
+                        <><XCircle size={14} /> Pausar Campanha</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Overall Progress Bar */}
+                <div style={{ marginBottom: "1.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
+                      Progresso geral: {formatNumber(completedCount)} de {formatNumber(totalR)} processados
+                    </span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981" }}>
+                      {overallPct}%
+                    </span>
+                  </div>
+                  <div style={{
+                    width: "100%", height: "10px",
+                    background: "rgba(255,255,255,0.08)",
+                    borderRadius: "9999px", overflow: "hidden",
+                  }}>
+                    <div style={{
+                      width: `${overallPct}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg, #10b981, #34d399)",
+                      borderRadius: "9999px",
+                      transition: "width 0.5s ease",
+                    }} />
+                  </div>
+                  <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      ✅ Enviados: <strong style={{ color: "#10b981" }}>{formatNumber(progress.sentCount)}</strong>
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      ⏳ Pendentes: <strong style={{ color: "#f59e0b" }}>{formatNumber(progress.pendingCount)}</strong>
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                      ❌ Falhas: <strong style={{ color: "#ef4444" }}>{formatNumber(progress.failedCount)}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Recipients List with per-recipient countdown */}
+                <div style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  borderRadius: "12px",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    padding: "0.75rem 1rem",
+                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#e2e8f0" }}>
+                      Destinatários ({formatNumber(liveRecipients.length)} exibidos)
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: "420px", overflowY: "auto" }}>
+                    {liveRecipients.map((recipient) => {
+                      const isGroup = recipient.jid.endsWith("@g.us") || recipient.jid.includes("-");
+                      const displayName = recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || (isGroup ? "Grupo" : "Cliente");
+
+                      // Calculate individual countdown in seconds
+                      let countdownSeconds: number | null = null;
+                      let countdownLabel: string | null = null;
+                      if (recipient.status === "PENDING" && recipient.scheduledFor) {
+                        const targetMs = new Date(recipient.scheduledFor).getTime();
+                        const diffMs = Math.max(0, targetMs - nowMs);
+                        countdownSeconds = Math.ceil(diffMs / 1000);
+                        if (countdownSeconds > 0) {
+                          const mins = Math.floor(countdownSeconds / 60);
+                          const secs = countdownSeconds % 60;
+                          countdownLabel = mins > 0
+                            ? `${mins}m ${String(secs).padStart(2, "0")}s`
+                            : `${secs}s`;
+                        } else {
+                          countdownLabel = "Enviando em breve...";
+                        }
+                      }
+
+                      // Individual progress percentage based on scheduled time
+                      let recipientBarPct = 0;
+                      let recipientBarColor = "#475569";
+                      if (recipient.status === "SENT") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#10b981";
+                      } else if (recipient.status === "FAILED") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#ef4444";
+                      } else if (recipient.status === "SENDING") {
+                        recipientBarPct = 90;
+                        recipientBarColor = "#3b82f6";
+                      } else if (recipient.status === "BLOCKED_RECENT" || recipient.status === "SKIPPED") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#f59e0b";
+                      } else if (recipient.status === "PENDING" && countdownSeconds !== null) {
+                        // Show how close we are to dispatch — use an inverse approach
+                        // If max delay is ~300s, map countdown to a progress
+                        const maxExpected = Math.max(maxDelaySeconds, 300);
+                        recipientBarPct = Math.min(95, Math.max(5, Math.round(((maxExpected - countdownSeconds) / maxExpected) * 100)));
+                        recipientBarColor = "#f59e0b";
+                      }
+
+                      // Status badge
+                      let statusBadgeBg = "rgba(255,255,255,0.08)";
+                      let statusBadgeColor = "#94a3b8";
+                      let statusBadgeText: string = recipient.status;
+                      if (recipient.status === "SENT") {
+                        statusBadgeBg = "rgba(16, 185, 129, 0.2)";
+                        statusBadgeColor = "#34d399";
+                        statusBadgeText = "ENVIADO";
+                      } else if (recipient.status === "SENDING") {
+                        statusBadgeBg = "rgba(59, 130, 246, 0.2)";
+                        statusBadgeColor = "#93c5fd";
+                        statusBadgeText = "ENVIANDO";
+                      } else if (recipient.status === "PENDING") {
+                        statusBadgeBg = "rgba(245, 158, 11, 0.15)";
+                        statusBadgeColor = "#fbbf24";
+                        statusBadgeText = "AGUARDANDO";
+                      } else if (recipient.status === "FAILED") {
+                        statusBadgeBg = "rgba(239, 68, 68, 0.2)";
+                        statusBadgeColor = "#fca5a5";
+                        statusBadgeText = "FALHA";
+                      } else if (recipient.status === "BLOCKED_RECENT") {
+                        statusBadgeBg = "rgba(245, 158, 11, 0.2)";
+                        statusBadgeColor = "#fbbf24";
+                        statusBadgeText = "BLOQUEADO";
+                      } else if (recipient.status === "SKIPPED") {
+                        statusBadgeBg = "rgba(148, 163, 184, 0.2)";
+                        statusBadgeColor = "#94a3b8";
+                        statusBadgeText = "PULADO";
+                      }
+
+                      return (
+                        <div
+                          key={recipient.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr auto 1fr auto",
+                            alignItems: "center",
+                            gap: "12px",
+                            padding: "0.75rem 1rem",
+                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                            transition: "background 0.15s",
+                          }}
+                        >
+                          {/* Col 1: Name + JID */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+                            <span style={{ fontSize: "0.88rem", fontWeight: 650, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {displayName}
+                            </span>
+                            <span style={{ fontSize: "0.7rem", color: "#64748b", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {recipient.jid}
+                            </span>
+                          </div>
+
+                          {/* Col 2: Status badge */}
+                          <span style={{
+                            display: "inline-flex", alignItems: "center",
+                            padding: "3px 10px", borderRadius: "9999px",
+                            fontSize: "0.68rem", fontWeight: 700,
+                            textTransform: "uppercase", letterSpacing: "0.04em",
+                            background: statusBadgeBg, color: statusBadgeColor,
+                            whiteSpace: "nowrap",
+                          }}>
+                            {statusBadgeText}
+                          </span>
+
+                          {/* Col 3: Progress bar */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{
+                              width: "100%", height: "6px",
+                              background: "rgba(255,255,255,0.06)",
+                              borderRadius: "9999px", overflow: "hidden",
+                            }}>
+                              <div style={{
+                                width: `${recipientBarPct}%`,
+                                height: "100%",
+                                background: recipientBarColor,
+                                borderRadius: "9999px",
+                                transition: "width 0.5s ease",
+                              }} />
+                            </div>
+                          </div>
+
+                          {/* Col 4: Countdown / Time info */}
+                          <div style={{ textAlign: "right", minWidth: "90px" }}>
+                            {recipient.status === "PENDING" && countdownLabel ? (
+                              <span style={{
+                                fontSize: "0.85rem",
+                                fontWeight: 700,
+                                color: countdownSeconds !== null && countdownSeconds <= 10 ? "#fbbf24" : "#94a3b8",
+                                fontFamily: "monospace",
+                                display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px",
+                              }}>
+                                <Clock3 size={12} />
+                                {countdownLabel}
+                              </span>
+                            ) : recipient.status === "SENDING" ? (
+                              <span style={{ fontSize: "0.82rem", color: "#93c5fd", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                                <LoaderCircle size={12} className="spin" />
+                                Enviando...
+                              </span>
+                            ) : recipient.status === "SENT" ? (
+                              <span style={{ fontSize: "0.78rem", color: "#34d399" }}>
+                                ✓ Enviado
+                              </span>
+                            ) : recipient.status === "FAILED" ? (
+                              <span style={{ fontSize: "0.78rem", color: "#fca5a5" }}>
+                                ✕ Falha
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                                {recipientLiveLabel(recipient)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {liveRecipients.length === 0 && (
+                      <div style={{ padding: "2rem", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                        Nenhum destinatário encontrado.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Table Area */}
           <div className="z-table-wrapper" style={{ border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
