@@ -155,6 +155,7 @@ import {
   deleteWhatsappInstance,
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
+import { assertSupportedOutboundVideo } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -604,7 +605,7 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "20mb" }));
+  app.use(express.json({ limit: "100mb" }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -1515,7 +1516,10 @@ export function createApp() {
           stack: sendError.stack,
           responsePayload: sendError.responsePayload
         });
-        throw new HttpError(500, `Erro ao enviar mensagem: ${sendError.message}`);
+        const providerStatusCode = Number(sendError.statusCode ?? 500);
+        const isVideoValidationError = String(sendError.message ?? "").includes("Formato de video invalido");
+        const statusCode = isVideoValidationError || (providerStatusCode >= 400 && providerStatusCode < 500) ? 400 : 500;
+        throw new HttpError(statusCode, `Erro ao enviar mensagem: ${sendError.message}`);
       }
 
       logger.info("✅ Test message sent successfully");
@@ -1686,6 +1690,18 @@ export function createApp() {
   app.post("/api/whatsapp-campaigns", async (request, response, next) => {
     try {
       const payload = whatsappCampaignCreateSchema.parse(request.body);
+      if (payload.messageType === "VIDEO") {
+        if (!payload.videoUrl?.trim()) {
+          throw new HttpError(400, "Video MP4 e obrigatorio para campanhas de video.");
+        }
+
+        try {
+          assertSupportedOutboundVideo(payload.videoUrl);
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error));
+        }
+      }
+
       // Only enforce Evolution config when not using a specific instance
       if (!payload.whatsappInstanceId) {
         ensureEvolutionConfigured();

@@ -13,7 +13,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
@@ -42,6 +42,56 @@ const campaignPerformanceFilters: Array<{ value: CampaignPerformanceFilter; labe
   { value: "PURCHASED", label: "Compraram" },
   { value: "ISSUES", label: "Bloqueios/Falhas" },
 ];
+
+export const WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;
+const WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL = "64MB";
+const unsupportedVideoUrlExtensionPattern = /\.(mov|qt|webm|ogg|ogv|avi|mkv|wmv|flv|3gp|m4v)(?:[?#].*)?$/i;
+
+type DisparadorVideoFileLike = Pick<File, "name" | "size" | "type">;
+
+function isMp4FileName(fileName: string) {
+  return fileName.trim().toLowerCase().endsWith(".mp4");
+}
+
+function getDataUrlMimeType(value: string) {
+  const match = value.match(/^data:([^;,]+)(?:;[^,]*)*;base64,/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+export function validateDisparadorVideoFile(file: DisparadorVideoFileLike) {
+  if (file.size > WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES) {
+    return `Erro: O vídeo deve ter no máximo ${WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL}.`;
+  }
+
+  const mimeType = file.type.trim().toLowerCase();
+  if (mimeType && mimeType !== "video/mp4") {
+    return "Erro: Apenas arquivos MP4 são aceitos para envio de vídeo no WhatsApp.";
+  }
+
+  if (!isMp4FileName(file.name)) {
+    return "Erro: Apenas arquivos .mp4 são aceitos para envio de vídeo no WhatsApp.";
+  }
+
+  return null;
+}
+
+function validateDisparadorVideoSource(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Selecione um arquivo MP4 ou informe uma URL de vídeo MP4.";
+  }
+
+  const dataUrlMimeType = getDataUrlMimeType(trimmed);
+  if (dataUrlMimeType && dataUrlMimeType !== "video/mp4") {
+    return "Erro: Apenas vídeos MP4 (video/mp4) são aceitos.";
+  }
+
+  if (!dataUrlMimeType && unsupportedVideoUrlExtensionPattern.test(trimmed)) {
+    return "Erro: URLs de vídeo precisam apontar para arquivo MP4.";
+  }
+
+  return null;
+}
 
 
 
@@ -566,6 +616,8 @@ export function DisparadorPage() {
   ]);
   const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
+  const [videoFileName, setVideoFileName] = useState("");
+  const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
@@ -573,6 +625,14 @@ export function DisparadorPage() {
     const sender = senders.find(s => s.id === selectedSenderIds[0]);
     return sender?.provider ?? "EVOLUTION";
   }, [selectedSenderIds, senders]);
+
+  const isLocalVideoFile = videoUrl.startsWith("data:");
+  const videoInputDisplayValue = isLocalVideoFile
+    ? `Arquivo selecionado: ${videoFileName || "video.mp4"}`
+    : videoUrl;
+  const videoDisplayLabel = isLocalVideoFile
+    ? `${videoFileName || "video.mp4"}${videoFileSize ? ` (${formatFileSize(videoFileSize)})` : ""}`
+    : videoUrl;
 
   // Reset message type when provider changes
   useEffect(() => {
@@ -689,8 +749,16 @@ export function DisparadorPage() {
 
 
   const createCampaignMutation = useMutation({
-    mutationFn: () =>
-      api.createWhatsappCampaign(token!, {
+    mutationFn: () => {
+      const preparedVideoUrl = campaignMessageType === "VIDEO" ? videoUrl.trim() : null;
+      if (campaignMessageType === "VIDEO") {
+        const validationError = validateDisparadorVideoSource(preparedVideoUrl ?? "");
+        if (validationError) {
+          throw new Error(validationError);
+        }
+      }
+
+      return api.createWhatsappCampaign(token!, {
         name: campaignName.trim() || `Disparo ${new Date().toLocaleDateString("pt-BR")}`,
         templateId: selectedTemplateId || null,
         savedSegmentId: savedSegmentId || null,
@@ -698,7 +766,7 @@ export function DisparadorPage() {
         messageText,
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
-        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : null,
+        videoUrl: preparedVideoUrl,
         filtersSnapshot: {
           quickFilter,
           search,
@@ -710,12 +778,16 @@ export function DisparadorPage() {
         overrideRecentBlock,
         minDelaySeconds,
         maxDelaySeconds,
-      }),
+      });
+    },
     onSuccess: async (campaign) => {
       setSelectedCampaignId(campaign?.id ?? null);
       setSelectedGroupIds([]);
       await invalidateWhatsappQueries();
       setActiveTab("HISTORY");
+    },
+    onError: (error: any) => {
+      alert(`Erro ao criar campanha: ${error?.message || error}`);
     },
   });
 
@@ -748,11 +820,19 @@ export function DisparadorPage() {
 
   const sendTestMessageMutation = useMutation({
     mutationFn: () => {
+      const preparedVideoUrl = campaignMessageType === "VIDEO" ? videoUrl.trim() : undefined;
+      if (campaignMessageType === "VIDEO") {
+        const validationError = validateDisparadorVideoSource(preparedVideoUrl ?? "");
+        if (validationError) {
+          throw new Error(validationError);
+        }
+      }
+
       const payload = {
         messageText: messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
-        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : undefined,
+        videoUrl: preparedVideoUrl,
         whatsappInstanceId: selectedSenderIds[0] || undefined
       };
       
@@ -897,7 +977,7 @@ export function DisparadorPage() {
   const hasMessage = campaignMessageType === "CAROUSEL"
     ? true
     : campaignMessageType === "VIDEO"
-      ? Boolean(videoUrl)
+      ? Boolean(videoUrl.trim())
       : Boolean(messageText.trim());
   const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
@@ -1974,16 +2054,21 @@ export function DisparadorPage() {
                           <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Arquivo de Vídeo</span>
                           
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>URL do Vídeo ou Selecionar Arquivo:</label>
+                            <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>URL do Vídeo MP4 ou Selecionar Arquivo:</label>
                             
                             <div style={{ display: "flex", gap: "0.5rem" }}>
                               <input
                                 type="text"
                                 className="wp-search-input"
                                 style={{ flex: 1, background: "#fff" }}
-                                placeholder="Insira a URL do vídeo (ex: https://site.com/video.mp4) ou selecione um arquivo..."
-                                value={videoUrl}
-                                onChange={(e) => setVideoUrl(e.target.value)}
+                                placeholder={`Insira uma URL .mp4 ou selecione um MP4 até ${WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL}`}
+                                value={videoInputDisplayValue}
+                                onChange={(e) => {
+                                  setVideoUrl(e.target.value);
+                                  setVideoFileName("");
+                                  setVideoFileSize(null);
+                                }}
+                                readOnly={isLocalVideoFile}
                                 disabled={uploadingVideo}
                               />
                               
@@ -2016,16 +2101,17 @@ export function DisparadorPage() {
                                 )}
                                 <input
                                   type="file"
-                                  accept="video/*"
+                                  accept="video/mp4,.mp4"
                                   style={{ display: "none" }}
                                   disabled={uploadingVideo}
                                   onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
                                     
-                                    // Limit to 16MB
-                                    if (file.size > 16 * 1024 * 1024) {
-                                      alert("Erro: O vídeo deve ter no máximo 16MB.");
+                                    const validationError = validateDisparadorVideoFile(file);
+                                    if (validationError) {
+                                      alert(validationError);
+                                      e.currentTarget.value = "";
                                       return;
                                     }
                                     
@@ -2035,6 +2121,8 @@ export function DisparadorPage() {
                                       reader.onload = (event) => {
                                         const base64 = event.target?.result as string;
                                         setVideoUrl(base64);
+                                        setVideoFileName(file.name);
+                                        setVideoFileSize(file.size);
                                         setUploadingVideo(false);
                                       };
                                       reader.onerror = () => {
@@ -2055,12 +2143,17 @@ export function DisparadorPage() {
                             {videoUrl && (
                               <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: "0.78rem", color: "#64748b", wordBreak: "break-all" }}>
-                                    {videoUrl.startsWith("data:") ? "🎥 Vídeo carregado do computador (Base64)" : `🔗 ${videoUrl}`}
+                                  <span style={{ fontSize: "0.78rem", color: "#64748b", wordBreak: "break-word", display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <Film size={14} />
+                                    {isLocalVideoFile ? `MP4 carregado: ${videoDisplayLabel}` : videoDisplayLabel}
                                   </span>
                                   <button
                                     type="button"
-                                    onClick={() => setVideoUrl("")}
+                                    onClick={() => {
+                                      setVideoUrl("");
+                                      setVideoFileName("");
+                                      setVideoFileSize(null);
+                                    }}
                                     style={{
                                       background: "none",
                                       border: "none",
@@ -2076,11 +2169,12 @@ export function DisparadorPage() {
                                     <Trash2 size={14} /> Remover
                                   </button>
                                 </div>
-                                {videoUrl.startsWith("data:") || videoUrl.match(/\.(mp4|webm|ogg)/i) || videoUrl.includes("http") ? (
+                                {videoUrl.startsWith("data:") || videoUrl.match(/\.mp4(?:[?#].*)?$/i) || videoUrl.includes("http") ? (
                                   <video
                                     src={videoUrl}
                                     controls
-                                    style={{ width: "100%", maxHeight: "200px", borderRadius: "6px", backgroundColor: "#000" }}
+                                    preload="metadata"
+                                    style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: "360px", objectFit: "contain", borderRadius: "8px", backgroundColor: "#111827" }}
                                   />
                                 ) : null}
                               </div>
@@ -2542,24 +2636,29 @@ export function DisparadorPage() {
                             {campaignMessageType === "VIDEO" ? (
                               <div className="wp-preview-bubble" style={{
                                 background: "#d9fdd3",
-                                padding: "6px",
+                                padding: "4px",
                                 borderRadius: "8px",
-                                maxWidth: "85%",
+                                maxWidth: "88%",
                                 marginLeft: "auto",
                                 marginBottom: "8px",
                                 boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
                                 position: "relative",
+                                overflow: "hidden",
                                 color: "#1a1a1a"
                               }}>
                                 {videoUrl ? (
-                                  <video 
-                                    src={videoUrl} 
-                                    controls 
-                                    style={{ width: "100%", maxHeight: "150px", borderRadius: "6px", backgroundColor: "#000", display: "block" }} 
-                                  />
+                                  <div style={{ width: "100%", aspectRatio: "16 / 9", borderRadius: "7px", overflow: "hidden", backgroundColor: "#111827" }}>
+                                    <video
+                                      src={videoUrl}
+                                      controls
+                                      preload="metadata"
+                                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                    />
+                                  </div>
                                 ) : (
-                                  <div style={{ width: "100%", height: "120px", borderRadius: "6px", backgroundColor: "#475569", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.78rem" }}>
-                                    [Sem Vídeo Selecionado]
+                                  <div style={{ width: "190px", aspectRatio: "16 / 9", borderRadius: "7px", backgroundColor: "#111827", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#cbd5e1", fontSize: "0.76rem", gap: "6px" }}>
+                                    <Film size={20} />
+                                    MP4 não selecionado
                                   </div>
                                 )}
                                 {messageText && (

@@ -1,4 +1,5 @@
 import { logger } from "../../lib/logger.js";
+import { OUTBOUND_VIDEO_FILE_NAME, OUTBOUND_VIDEO_MIME_TYPE, assertSupportedOutboundVideo } from "./whatsappMedia.js";
 
 export interface UazapiInstanceConfig {
   baseUrl: string;
@@ -70,10 +71,14 @@ export async function sendUazapiVideoMessage(
   videoUrl: string,
   caption?: string,
 ) {
+  assertSupportedOutboundVideo(videoUrl);
+
   return requestUazapi(config, "/send/media", "POST", {
     number: stripJidToNumber(destinationJid),
     file: videoUrl,
     type: "video",
+    mimetype: OUTBOUND_VIDEO_MIME_TYPE,
+    filename: OUTBOUND_VIDEO_FILE_NAME,
     caption: caption ?? "",
   });
 }

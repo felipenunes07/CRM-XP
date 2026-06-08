@@ -1,6 +1,7 @@
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
+import { getOutboundMediaFileName, getOutboundMediaMimeType } from "./whatsappMedia.js";
 
 export interface EvolutionInstanceConfig {
   instanceName: string;
@@ -58,26 +59,8 @@ export async function sendWhatsappInstanceMediaMessage(
   fileName?: string,
   caption?: string,
 ) {
-  let mimeTypeStr = "";
-  if (mediaBase64.startsWith("data:")) {
-    const match = mediaBase64.match(/^data:([^;]+);base64,/);
-    if (match && match[1]) {
-      mimeTypeStr = match[1];
-    }
-  }
-  if (!mimeTypeStr) {
-    if (mediaType === "video") {
-      mimeTypeStr = "video/mp4";
-    } else if (mediaType === "image") {
-      mimeTypeStr = "image/png";
-    } else if (mediaType === "audio") {
-      mimeTypeStr = "audio/mp3";
-    } else {
-      mimeTypeStr = "application/octet-stream";
-    }
-  }
-
-  const defaultFileName = fileName || (mediaType === "video" ? "video.mp4" : mediaType === "image" ? "image.png" : "file");
+  const mimeTypeStr = getOutboundMediaMimeType(mediaBase64, mediaType);
+  const defaultFileName = getOutboundMediaFileName(mediaType, fileName);
 
   const payload: any = {
     number: formatEvolutionSendTextTarget(destinationJid),

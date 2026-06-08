@@ -5,6 +5,8 @@ import {
   CampaignPerformancePanel,
   campaignPerformanceFilterCount,
   filterCampaignRecipients,
+  validateDisparadorVideoFile,
+  WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES,
 } from "./DisparadorPage";
 
 vi.mock("../hooks/useAuth", () => ({
@@ -240,5 +242,37 @@ describe("Disparador campaign performance", () => {
     );
 
     expect(markup).toContain("Nenhum cliente encontrado neste filtro.");
+  });
+});
+
+describe("Disparador video upload validation", () => {
+  it("accepts MP4 files up to the configured max size", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mp4",
+        size: WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES,
+        type: "video/mp4",
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects QuickTime files with a clear MP4-only message", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mov",
+        size: 1024,
+        type: "video/quicktime",
+      }),
+    ).toContain("MP4");
+  });
+
+  it("rejects files above the configured max size", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mp4",
+        size: WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES + 1,
+        type: "video/mp4",
+      }),
+    ).toContain("64MB");
   });
 });
