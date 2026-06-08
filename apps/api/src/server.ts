@@ -6,11 +6,13 @@ import { logger } from "./lib/logger.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
 import { startDailySyncScheduler } from "./modules/platform/syncService.js";
 import { runMigrations } from "./db/runMigrations.js";
+import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 
 async function main() {
   await runMigrations();
   await bootstrapPlatform();
   const scheduler = startDailySyncScheduler();
+  const whatsappWorker = startWhatsappDispatchWorker();
   const app = createApp();
   const server = createServer(app);
   server.listen(env.PORT, () => {
@@ -21,6 +23,9 @@ async function main() {
     logger.info("shutting down api server");
     server.close(async () => {
       await scheduler.close();
+      if (whatsappWorker && typeof whatsappWorker.close === "function") {
+        await whatsappWorker.close();
+      }
       await redis.quit();
       await pool.end();
       process.exit(0);

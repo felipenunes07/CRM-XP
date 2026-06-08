@@ -468,7 +468,64 @@ const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
 `;
 
 async function getWhatsappCampaignPerformance(campaignId: string): Promise<WhatsappCampaignPerformance> {
-  const [recipientsResult, inboundResult, purchaseResult, outboundResult] = await Promise.all([
+  const recipientsResult = await pool.query(
+    `
+      SELECT id, status
+      FROM whatsapp_campaign_recipients
+      WHERE campaign_id = $1
+    `,
+    [campaignId],
+  );
+
+  const recipientStatusRows = recipientsResult.rows.map((row) => ({
+    id: String(row.id),
+    status: String(row.status) as WhatsappCampaignRecipientStatus,
+  }));
+
+  const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
+
+  if (sentRecipients === 0) {
+    const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
+    for (const recipient of recipientStatusRows) {
+      recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
+    }
+    const blockedRecipients = recipientStatusRows.filter((row) => row.status === "BLOCKED_RECENT").length;
+    const failedRecipients = recipientStatusRows.filter((row) => row.status === "FAILED").length;
+    const skippedRecipients = recipientStatusRows.filter((row) => row.status === "SKIPPED").length;
+    const performanceRecipients = Array.from(recipientPerformance.values());
+
+    return {
+      attributionWindowDays: WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS,
+      totalRecipients: recipientStatusRows.length,
+      eligibleRecipients: 0,
+      sentRecipients: 0,
+      blockedRecipients,
+      failedRecipients,
+      skippedRecipients,
+      respondedRecipients: 0,
+      notRespondedRecipients: 0,
+      purchasedRecipients: 0,
+      responseRate: 0,
+      purchaseRate: 0,
+      orderCount: 0,
+      pieces: 0,
+      revenue: 0,
+      sentMessages: 0,
+      receivedMessages: 0,
+      diagnosis: buildWhatsappCampaignDiagnosis({
+        sentRecipients: 0,
+        blockedRecipients,
+        failedRecipients,
+        responseRate: 0,
+        purchaseRate: 0,
+        purchasedRecipients: 0,
+      }),
+      recipients: performanceRecipients,
+      messages: [],
+    };
+  }
+
+  const [inboundResult, purchaseResult, outboundResult] = await Promise.all([
     pool.query(
       `
         SELECT id, status
@@ -696,11 +753,6 @@ async function getWhatsappCampaignPerformance(campaignId: string): Promise<Whats
   ]);
 
   const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
-  const recipientStatusRows = recipientsResult.rows.map((row) => ({
-    id: String(row.id),
-    status: String(row.status) as WhatsappCampaignRecipientStatus,
-  }));
-
   for (const recipient of recipientStatusRows) {
     recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
   }
@@ -736,7 +788,6 @@ async function getWhatsappCampaignPerformance(campaignId: string): Promise<Whats
     recipientPerformance.set(purchasePerformance.recipientId, current);
   }
 
-  const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
   const blockedRecipients = recipientStatusRows.filter((row) => row.status === "BLOCKED_RECENT").length;
   const failedRecipients = recipientStatusRows.filter((row) => row.status === "FAILED").length;
   const skippedRecipients = recipientStatusRows.filter((row) => row.status === "SKIPPED").length;

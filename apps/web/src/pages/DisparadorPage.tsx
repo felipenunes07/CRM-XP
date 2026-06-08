@@ -3219,28 +3219,29 @@ export function DisparadorPage() {
             const overallPct = Math.round((completedCount / totalR) * 100);
             return (
               <div style={{
-                background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-                borderRadius: "16px",
+                background: "#ffffff",
+                borderRadius: "12px",
                 padding: "1.5rem",
-                color: "#fff",
-                boxShadow: "0 8px 32px rgba(0, 0, 0, 0.25)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
+                color: "#18181b",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.02)",
+                border: "1px solid #e4e4e7",
+                marginBottom: "1.5rem",
               }}>
                 {/* Panel Header */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     <div style={{
-                      width: "40px", height: "40px", borderRadius: "12px",
-                      background: "linear-gradient(135deg, #10b981, #059669)",
+                      width: "40px", height: "40px", borderRadius: "10px",
+                      background: "#ecfdf5",
                       display: "grid", placeItems: "center",
                     }}>
-                      <Send size={18} style={{ color: "#fff" }} />
+                      <Send size={18} style={{ color: "#10b981" }} />
                     </div>
                     <div>
-                      <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, color: "#18181b" }}>
                         🚀 Disparo em andamento
                       </h3>
-                      <span style={{ fontSize: "0.82rem", color: "#94a3b8" }}>
+                      <span style={{ fontSize: "0.82rem", color: "#71717a" }}>
                         {liveCampaign.name}
                       </span>
                     </div>
@@ -3248,17 +3249,17 @@ export function DisparadorPage() {
                   <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                     {nextDispatchCountdown && (
                       <div style={{
-                        background: "rgba(16, 185, 129, 0.15)",
-                        border: "1px solid rgba(16, 185, 129, 0.3)",
+                        background: "#ecfdf5",
+                        border: "1px solid #a7f3d0",
                         borderRadius: "8px",
                         padding: "6px 14px",
                         display: "flex", alignItems: "center", gap: "6px",
                       }}>
-                        <Clock3 size={14} style={{ color: "#10b981" }} />
-                        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981", fontFamily: "monospace" }}>
+                        <Clock3 size={14} style={{ color: "#047857" }} />
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#047857", fontFamily: "monospace" }}>
                           {nextDispatchCountdown}
                         </span>
-                        <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>próximo envio</span>
+                        <span style={{ fontSize: "0.72rem", color: "#71717a" }}>próximo envio</span>
                       </div>
                     )}
                     <button
@@ -3272,15 +3273,25 @@ export function DisparadorPage() {
                       style={{
                         display: "flex", alignItems: "center", gap: "6px",
                         padding: "8px 16px",
-                        background: "rgba(239, 68, 68, 0.15)",
-                        border: "1px solid rgba(239, 68, 68, 0.4)",
+                        background: "rgba(239, 68, 68, 0.06)",
+                        border: "1px solid rgba(239, 68, 68, 0.15)",
                         borderRadius: "8px",
-                        color: "#fca5a5",
+                        color: "#dc2626",
                         fontSize: "0.85rem",
                         fontWeight: 650,
                         cursor: cancelCampaignMutation.isPending ? "not-allowed" : "pointer",
                         opacity: cancelCampaignMutation.isPending ? 0.6 : 1,
                         transition: "all 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!cancelCampaignMutation.isPending) {
+                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!cancelCampaignMutation.isPending) {
+                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.06)";
+                        }
                       }}
                     >
                       {cancelCampaignMutation.isPending ? (
@@ -3295,7 +3306,7 @@ export function DisparadorPage() {
                 {/* Overall Progress Bar */}
                 <div style={{ marginBottom: "1.25rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                    <span style={{ fontSize: "0.82rem", color: "#cbd5e1" }}>
+                    <span style={{ fontSize: "0.82rem", color: "#3f3f46", fontWeight: 500 }}>
                       Progresso geral: {formatNumber(completedCount)} de {formatNumber(totalR)} processados
                     </span>
                     <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981" }}>
@@ -3304,7 +3315,7 @@ export function DisparadorPage() {
                   </div>
                   <div style={{
                     width: "100%", height: "10px",
-                    background: "rgba(255,255,255,0.08)",
+                    background: "#f4f4f5",
                     borderRadius: "9999px", overflow: "hidden",
                   }}>
                     <div style={{
@@ -3316,31 +3327,32 @@ export function DisparadorPage() {
                     }} />
                   </div>
                   <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      ✅ Enviados: <strong style={{ color: "#10b981" }}>{formatNumber(progress.sentCount)}</strong>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ✅ Enviados: <strong style={{ color: "#16a34a" }}>{formatNumber(progress.sentCount)}</strong>
                     </span>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      ⏳ Pendentes: <strong style={{ color: "#f59e0b" }}>{formatNumber(progress.pendingCount)}</strong>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ⏳ Pendentes: <strong style={{ color: "#d97706" }}>{formatNumber(progress.pendingCount)}</strong>
                     </span>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      ❌ Falhas: <strong style={{ color: "#ef4444" }}>{formatNumber(progress.failedCount)}</strong>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ❌ Falhas: <strong style={{ color: "#dc2626" }}>{formatNumber(progress.failedCount)}</strong>
                     </span>
                   </div>
                 </div>
 
                 {/* Recipients List with per-recipient countdown */}
                 <div style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "#ffffff",
+                  border: "1px solid #e4e4e7",
                   borderRadius: "12px",
                   overflow: "hidden",
                 }}>
                   <div style={{
+                    background: "#f8fafc",
                     padding: "0.75rem 1rem",
-                    borderBottom: "1px solid rgba(255,255,255,0.08)",
+                    borderBottom: "1px solid #e4e4e7",
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                   }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#e2e8f0" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#18181b" }}>
                       Destinatários ({formatNumber(liveRecipients.length)} exibidos)
                     </span>
                   </div>
@@ -3367,9 +3379,9 @@ export function DisparadorPage() {
                         }
                       }
 
-                      // Individual progress percentage based on scheduled time
+                      // Individual progress percentage
                       let recipientBarPct = 0;
-                      let recipientBarColor = "#475569";
+                      let recipientBarColor = "#e4e4e7";
                       if (recipient.status === "SENT") {
                         recipientBarPct = 100;
                         recipientBarColor = "#10b981";
@@ -3377,46 +3389,43 @@ export function DisparadorPage() {
                         recipientBarPct = 100;
                         recipientBarColor = "#ef4444";
                       } else if (recipient.status === "SENDING") {
-                        recipientBarPct = 90;
+                        recipientBarPct = 50;
                         recipientBarColor = "#3b82f6";
-                      } else if (recipient.status === "BLOCKED_RECENT" || recipient.status === "SKIPPED") {
+                      } else if (recipient.status === "BLOCKED_RECENT") {
                         recipientBarPct = 100;
                         recipientBarColor = "#f59e0b";
-                      } else if (recipient.status === "PENDING" && countdownSeconds !== null) {
-                        // Show how close we are to dispatch — use an inverse approach
-                        // If max delay is ~300s, map countdown to a progress
-                        const maxExpected = Math.max(maxDelaySeconds, 300);
-                        recipientBarPct = Math.min(95, Math.max(5, Math.round(((maxExpected - countdownSeconds) / maxExpected) * 100)));
-                        recipientBarColor = "#f59e0b";
+                      } else if (recipient.status === "SKIPPED") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#71717a";
                       }
 
                       // Status badge
-                      let statusBadgeBg = "rgba(255,255,255,0.08)";
-                      let statusBadgeColor = "#94a3b8";
+                      let statusBadgeBg = "#f4f4f5";
+                      let statusBadgeColor = "#52525b";
                       let statusBadgeText: string = recipient.status;
                       if (recipient.status === "SENT") {
-                        statusBadgeBg = "rgba(16, 185, 129, 0.2)";
-                        statusBadgeColor = "#34d399";
+                        statusBadgeBg = "#ecfdf5";
+                        statusBadgeColor = "#047857";
                         statusBadgeText = "ENVIADO";
                       } else if (recipient.status === "SENDING") {
-                        statusBadgeBg = "rgba(59, 130, 246, 0.2)";
-                        statusBadgeColor = "#93c5fd";
+                        statusBadgeBg = "#eff6ff";
+                        statusBadgeColor = "#1d4ed8";
                         statusBadgeText = "ENVIANDO";
                       } else if (recipient.status === "PENDING") {
-                        statusBadgeBg = "rgba(245, 158, 11, 0.15)";
-                        statusBadgeColor = "#fbbf24";
+                        statusBadgeBg = "#fffbeb";
+                        statusBadgeColor = "#b45309";
                         statusBadgeText = "AGUARDANDO";
                       } else if (recipient.status === "FAILED") {
-                        statusBadgeBg = "rgba(239, 68, 68, 0.2)";
-                        statusBadgeColor = "#fca5a5";
+                        statusBadgeBg = "#fef2f2";
+                        statusBadgeColor = "#b91c1c";
                         statusBadgeText = "FALHA";
                       } else if (recipient.status === "BLOCKED_RECENT") {
-                        statusBadgeBg = "rgba(245, 158, 11, 0.2)";
-                        statusBadgeColor = "#fbbf24";
+                        statusBadgeBg = "#fff7ed";
+                        statusBadgeColor = "#c2410c";
                         statusBadgeText = "BLOQUEADO";
                       } else if (recipient.status === "SKIPPED") {
-                        statusBadgeBg = "rgba(148, 163, 184, 0.2)";
-                        statusBadgeColor = "#94a3b8";
+                        statusBadgeBg = "#f4f4f5";
+                        statusBadgeColor = "#52525b";
                         statusBadgeText = "PULADO";
                       }
 
@@ -3429,16 +3438,22 @@ export function DisparadorPage() {
                             alignItems: "center",
                             gap: "12px",
                             padding: "0.75rem 1rem",
-                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                            borderBottom: "1px solid #f1f5f9",
                             transition: "background 0.15s",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#f8fafc";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
                           }}
                         >
                           {/* Col 1: Name + JID */}
                           <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
-                            <span style={{ fontSize: "0.88rem", fontWeight: 650, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: "0.88rem", fontWeight: 650, color: "#18181b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {displayName}
                             </span>
-                            <span style={{ fontSize: "0.7rem", color: "#64748b", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: "0.7rem", color: "#71717a", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {recipient.jid}
                             </span>
                           </div>
@@ -3459,7 +3474,7 @@ export function DisparadorPage() {
                           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                             <div style={{
                               width: "100%", height: "6px",
-                              background: "rgba(255,255,255,0.06)",
+                              background: "#f1f5f9",
                               borderRadius: "9999px", overflow: "hidden",
                             }}>
                               <div style={{
@@ -3478,7 +3493,7 @@ export function DisparadorPage() {
                               <span style={{
                                 fontSize: "0.85rem",
                                 fontWeight: 700,
-                                color: countdownSeconds !== null && countdownSeconds <= 10 ? "#fbbf24" : "#94a3b8",
+                                color: countdownSeconds !== null && countdownSeconds <= 10 ? "#b45309" : "#71717a",
                                 fontFamily: "monospace",
                                 display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px",
                               }}>
@@ -3486,20 +3501,20 @@ export function DisparadorPage() {
                                 {countdownLabel}
                               </span>
                             ) : recipient.status === "SENDING" ? (
-                              <span style={{ fontSize: "0.82rem", color: "#93c5fd", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                              <span style={{ fontSize: "0.82rem", color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
                                 <LoaderCircle size={12} className="spin" />
                                 Enviando...
                               </span>
                             ) : recipient.status === "SENT" ? (
-                              <span style={{ fontSize: "0.78rem", color: "#34d399" }}>
+                              <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: 600 }}>
                                 ✓ Enviado
                               </span>
                             ) : recipient.status === "FAILED" ? (
-                              <span style={{ fontSize: "0.78rem", color: "#fca5a5" }}>
+                              <span style={{ fontSize: "0.78rem", color: "#dc2626", fontWeight: 600 }}>
                                 ✕ Falha
                               </span>
                             ) : (
-                              <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                              <span style={{ fontSize: "0.78rem", color: "#71717a" }}>
                                 {recipientLiveLabel(recipient)}
                               </span>
                             )}
@@ -3522,7 +3537,7 @@ export function DisparadorPage() {
                                 style={{
                                   background: "none",
                                   border: "none",
-                                  color: "#fca5a5",
+                                  color: "#a1a1aa",
                                   cursor: "pointer",
                                   padding: "4px",
                                   borderRadius: "4px",
@@ -3532,12 +3547,12 @@ export function DisparadorPage() {
                                   transition: "all 0.15s",
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.15)";
-                                  e.currentTarget.style.color = "#ef4444";
+                                  e.currentTarget.style.backgroundColor = "#fef2f2";
+                                  e.currentTarget.style.color = "#dc2626";
                                 }}
                                 onMouseLeave={(e) => {
                                   e.currentTarget.style.backgroundColor = "transparent";
-                                  e.currentTarget.style.color = "#fca5a5";
+                                  e.currentTarget.style.color = "#a1a1aa";
                                 }}
                               >
                                 <X size={16} />
@@ -3550,7 +3565,7 @@ export function DisparadorPage() {
                       );
                     })}
                     {liveRecipients.length === 0 && (
-                      <div style={{ padding: "2rem", textAlign: "center", color: "#64748b", fontSize: "0.85rem" }}>
+                      <div style={{ padding: "2rem", textAlign: "center", color: "#71717a", fontSize: "0.85rem" }}>
                         Nenhum destinatário encontrado.
                       </div>
                     )}
