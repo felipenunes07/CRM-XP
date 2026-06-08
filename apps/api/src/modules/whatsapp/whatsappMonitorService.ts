@@ -1462,15 +1462,23 @@ export async function listWhatsappMonitorConversations(
   const conversationsResult = await pool.query(
     `
     WITH candidate_deals AS (
-      SELECT
-        d.id,
-        COALESCE(d.last_activity_at, d.created_at) AS sort_last_activity_at
-      FROM deals d
-      LEFT JOIN whatsapp_conversation_reads conversation_reads
-        ON conversation_reads.deal_id = d.id
-        AND conversation_reads.user_id = $${userIdParamIndex}
-      WHERE ${where.join(" AND ")}
-      ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC
+      SELECT id, sort_last_activity_at
+      FROM (
+        SELECT
+          d.id,
+          COALESCE(d.last_activity_at, d.created_at) AS sort_last_activity_at,
+          ROW_NUMBER() OVER (
+            PARTITION BY CASE WHEN d.whatsapp_jid LIKE '%@g.us' THEN d.whatsapp_jid ELSE d.id::text END
+            ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC
+          ) AS rn
+        FROM deals d
+        LEFT JOIN whatsapp_conversation_reads conversation_reads
+          ON conversation_reads.deal_id = d.id
+          AND conversation_reads.user_id = $${userIdParamIndex}
+        WHERE ${where.join(" AND ")}
+      ) ranked
+      WHERE rn = 1
+      ORDER BY sort_last_activity_at DESC, id DESC
       LIMIT $${queryLimitParamIndex}
     )
     SELECT conversation_rows.*

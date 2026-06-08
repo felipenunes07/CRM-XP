@@ -886,6 +886,24 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).not.toMatch(/FROM whatsapp_incoming_messages wim_inst/);
   });
 
+  it("deduplicates candidate group deals by group JID via ROW_NUMBER partition query", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).toContain("PARTITION BY CASE WHEN d.whatsapp_jid LIKE '%@g.us' THEN d.whatsapp_jid ELSE d.id::text END");
+    expect(listSql).toContain("rn = 1");
+  });
+
   it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
     let webhookInsertCount = 0;
     let dealMatchCount = 0;
