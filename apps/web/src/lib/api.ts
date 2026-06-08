@@ -776,6 +776,11 @@ export const api = {
       method: "POST",
     }, token);
   },
+  resumeWhatsappCampaign(token: string, id: string) {
+    return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/resume`, {
+      method: "POST",
+    }, token);
+  },
   skipWhatsappCampaignRecipient(token: string, id: string, recipientId: string) {
     return request<{ skipped: boolean; recipientId: string }>(`/api/whatsapp-campaigns/${id}/recipients/${recipientId}/skip`, {
       method: "POST",

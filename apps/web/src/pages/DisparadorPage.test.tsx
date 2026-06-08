@@ -4,6 +4,7 @@ import type { WhatsappCampaignDetail, WhatsappCampaignRecipient } from "@olist-c
 import {
   CampaignPerformancePanel,
   campaignPerformanceFilterCount,
+  campaignHasDuePendingRecipients,
   filterCampaignRecipients,
   validateDisparadorVideoFile,
   WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES,
@@ -274,5 +275,32 @@ describe("Disparador video upload validation", () => {
         type: "video/mp4",
       }),
     ).toContain("64MB");
+  });
+});
+
+describe("Disparador live campaign recovery", () => {
+  it("detects a running campaign with a pending recipient past its scheduled time", () => {
+    const runningCampaign: WhatsappCampaignDetail = {
+      ...campaign,
+      status: "QUEUED",
+      progress: {
+        ...campaign.progress,
+        pendingCount: 1,
+        remainingCount: 1,
+        nextScheduledAt: "2026-06-08T14:00:00.000Z",
+      },
+      recipients: [
+        {
+          ...baseRecipient,
+          status: "PENDING",
+          scheduledFor: "2026-06-08T14:00:00.000Z",
+          sentAt: null,
+          lastAttemptAt: null,
+        },
+      ],
+    };
+
+    expect(campaignHasDuePendingRecipients(runningCampaign, Date.parse("2026-06-08T14:00:31.000Z"))).toBe(true);
+    expect(campaignHasDuePendingRecipients(runningCampaign, Date.parse("2026-06-08T13:59:59.000Z"))).toBe(false);
   });
 });

@@ -57,4 +57,31 @@ describe("sendWhatsappInstanceMediaMessage", () => {
       caption: "Legenda",
     });
   });
+
+  it("preserves WhatsApp group chat ids for campaign video sends", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ key: { id: "message-1" } }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendWhatsappInstanceMediaMessage(
+      instance,
+      "120363123456789@g.us",
+      "data:video/mp4;base64,AAAA",
+      "video",
+      "clip.mp4",
+      "",
+    );
+
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const requestBody = JSON.parse(String(requestInit.body));
+    expect(requestBody).toMatchObject({
+      number: "120363123456789@g.us",
+      mediatype: "video",
+      mimetype: "video/mp4",
+      fileName: "video.mp4",
+      caption: "",
+    });
+  });
 });

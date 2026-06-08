@@ -49,6 +49,12 @@ export interface CreateWhatsappCampaignResult {
   enqueuedJobs: EnqueuedRecipientJob[];
 }
 
+export interface ListDueWhatsappCampaignRecipientJobsOptions {
+  campaignId?: string;
+  limit?: number;
+  now?: Date;
+}
+
 interface CampaignProgressRow {
   total_recipients: number;
   pending_count: number;
@@ -1083,6 +1089,54 @@ export async function createWhatsappCampaign(
   }
 }
 
+export async function listDueWhatsappCampaignRecipientJobs(
+  options: ListDueWhatsappCampaignRecipientJobsOptions = {},
+): Promise<EnqueuedRecipientJob[]> {
+  const now = options.now ?? new Date();
+  const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 25), 100));
+  const params: Array<string | number> = [now.toISOString()];
+  const campaignFilter = options.campaignId
+    ? (() => {
+        params.push(options.campaignId!);
+        return `AND r.campaign_id = $${params.length}`;
+      })()
+    : "";
+
+  params.push(limit);
+
+  const result = await pool.query(
+    `
+      SELECT
+        r.id,
+        r.campaign_id,
+        r.scheduled_for
+      FROM whatsapp_campaign_recipients r
+      JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+      WHERE r.status = 'PENDING'
+        AND r.scheduled_for IS NOT NULL
+        AND r.scheduled_for <= $1::timestamptz
+        AND wc.status IN ('QUEUED', 'IN_PROGRESS')
+        AND wc.cancelled_at IS NULL
+        ${campaignFilter}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM whatsapp_campaign_recipients active
+          WHERE active.campaign_id = r.campaign_id
+            AND active.status = 'SENDING'
+        )
+      ORDER BY r.scheduled_for ASC, r.created_at ASC
+      LIMIT $${params.length}
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => ({
+    recipientId: String(row.id),
+    campaignId: String(row.campaign_id),
+    delayMs: 0,
+  }));
+}
+
 export async function listWhatsappCampaigns(limit = 20): Promise<WhatsappCampaignListItem[]> {
   const result = await queryCampaignRows(limit);
   return result.rows.map((row) => mapCampaignRow(row));
@@ -1532,6 +1586,31 @@ export async function markRecipientFailed(
   }
 
   await refreshWhatsappCampaignStatus(context.campaignId);
+}
+
+export async function markRecipientDispatchClaimFailed(recipientId: string, errorMessage: string) {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaign_recipients
+      SET
+        status = 'FAILED',
+        failed_at = NOW(),
+        last_error = $2,
+        provider_status = 'FAILED',
+        updated_at = NOW()
+      WHERE id = $1
+        AND status = 'PENDING'
+      RETURNING campaign_id
+    `,
+    [recipientId, errorMessage.slice(0, 500)],
+  );
+
+  const campaignId = result.rows[0]?.campaign_id ? String(result.rows[0].campaign_id) : null;
+  if (campaignId) {
+    await refreshWhatsappCampaignStatus(campaignId);
+  }
+
+  return { failed: Boolean(campaignId), recipientId };
 }
 
 export async function refreshWhatsappCampaignStatus(campaignId: string) {

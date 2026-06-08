@@ -13,12 +13,17 @@ export interface UazapiCarouselSlide {
 }
 
 /**
- * Strip JID suffix to get a plain phone number for UazAPI.
+ * Uazapi accepts group chat IDs as-is, while user JIDs are converted to phone numbers.
  * E.g. "5511999999999@s.whatsapp.net" → "5511999999999"
  */
-function stripJidToNumber(jid: string): string {
-  const [num] = jid.split("@");
-  return (num ?? jid).replace(/\D/g, "");
+function formatUazapiDestination(jid: string): string {
+  const trimmed = jid.trim();
+  if (trimmed.endsWith("@g.us")) {
+    return trimmed;
+  }
+
+  const [num] = trimmed.split("@");
+  return (num ?? trimmed).replace(/\D/g, "");
 }
 
 export async function sendUazapiTextMessage(
@@ -27,7 +32,7 @@ export async function sendUazapiTextMessage(
   messageText: string,
 ) {
   return requestUazapi(config, "/send/text", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     text: messageText,
   });
 }
@@ -39,8 +44,9 @@ export async function sendUazapiImageMessage(
   caption?: string,
 ) {
   return requestUazapi(config, "/send/image", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     image: imageUrl,
+    text: caption ?? "",
     caption: caption ?? "",
   });
 }
@@ -51,7 +57,7 @@ export async function sendUazapiCarouselMessage(
   carouselSlides: UazapiCarouselSlide[],
 ) {
   return requestUazapi(config, "/send/carousel", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     carousel: carouselSlides.map((slide) => ({
       text: slide.text,
       image: slide.image,
@@ -74,7 +80,8 @@ export async function sendUazapiVideoMessage(
   assertSupportedOutboundVideo(videoUrl);
 
   return requestUazapi(config, "/send/media", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
+    text: caption ?? "",
     file: videoUrl,
     type: "video",
     mimetype: OUTBOUND_VIDEO_MIME_TYPE,

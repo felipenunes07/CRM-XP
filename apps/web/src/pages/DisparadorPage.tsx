@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment, type SyntheticEvent } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CarouselSlide,
@@ -290,6 +290,21 @@ export function filterCampaignRecipients(recipients: WhatsappCampaignRecipient[]
   return recipients;
 }
 
+export function campaignHasDuePendingRecipients(campaign: WhatsappCampaignDetail | null | undefined, nowMs: number) {
+  if (!campaign || !["QUEUED", "IN_PROGRESS"].includes(campaign.status)) {
+    return false;
+  }
+
+  return campaign.recipients.some((recipient) => {
+    if (recipient.status !== "PENDING" || !recipient.scheduledFor) {
+      return false;
+    }
+
+    const scheduledMs = new Date(recipient.scheduledFor).getTime();
+    return Number.isFinite(scheduledMs) && scheduledMs <= nowMs;
+  });
+}
+
 function campaignDiagnosisColors(tone: WhatsappCampaignDetail["performance"]["diagnosis"]["tone"]) {
   if (tone === "success") {
     return { background: "#f0fdf4", border: "#bbf7d0", color: "#166534" };
@@ -543,6 +558,7 @@ export function DisparadorPage() {
   const { token, user } = auth;
   const canImport = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
   const queryClient = useQueryClient();
+  const resumeAttemptByCampaignRef = useRef<Record<string, number>>({});
 
 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
@@ -746,7 +762,7 @@ export function DisparadorPage() {
     queryFn: () => api.whatsappCampaigns(token!, 20),
     enabled: Boolean(token),
     refetchInterval: (query) =>
-      query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 5000 : false,
+      query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 10000 : false,
   });
 
   const selectedCampaignQuery = useQuery({
@@ -754,7 +770,7 @@ export function DisparadorPage() {
     queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0 }),
     enabled: Boolean(token && selectedCampaignId),
     refetchInterval: (query) =>
-      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 3000 : false,
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
   });
 
   useEffect(() => {
@@ -841,7 +857,7 @@ export function DisparadorPage() {
     queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0, excludePerformance: true }),
     enabled: Boolean(token && activeCampaignId),
     refetchInterval: (query) =>
-      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 1500 : false,
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
   });
 
   const cancelCampaignMutation = useMutation({
@@ -849,6 +865,17 @@ export function DisparadorPage() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+      ]);
+    },
+  });
+
+  const resumeCampaignMutation = useMutation({
+    mutationFn: (campaignId: string) => api.resumeWhatsappCampaign(token!, campaignId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
       ]);
     },
@@ -1018,6 +1045,25 @@ export function DisparadorPage() {
       .slice(0, 200);
   }, [liveCampaign]);
   const selectedCampaignDetail = selectedCampaignQuery.data ?? null;
+
+  useEffect(() => {
+    if (!token || !liveCampaign || resumeCampaignMutation.isPending) {
+      return;
+    }
+
+    if (!campaignHasDuePendingRecipients(liveCampaign, nowMs)) {
+      return;
+    }
+
+    const lastAttemptMs = resumeAttemptByCampaignRef.current[liveCampaign.id] ?? 0;
+    if (nowMs - lastAttemptMs < 15_000) {
+      return;
+    }
+
+    resumeAttemptByCampaignRef.current[liveCampaign.id] = nowMs;
+    resumeCampaignMutation.mutate(liveCampaign.id);
+  }, [liveCampaign, nowMs, resumeCampaignMutation, token]);
+
   const selectedCampaignPerformanceRecipients = useMemo(
     () => filterCampaignRecipients(selectedCampaignDetail?.recipients ?? [], campaignPerformanceFilter),
     [campaignPerformanceFilter, selectedCampaignDetail?.recipients],

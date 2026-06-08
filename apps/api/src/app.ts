@@ -143,7 +143,7 @@ import {
   sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
 } from "./modules/whatsapp/whatsappMonitorService.js";
-import { enqueueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
+import { enqueueWhatsappCampaignRecipients, resumeDueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
 import {
   getPipelineSummary,
   createDeal,
@@ -1720,6 +1720,27 @@ export function createApp() {
       await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);
       const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0);
       response.status(201).json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/resume", async (request, response, next) => {
+    try {
+      const campaignId = String(request.params.id);
+      const detail = await getWhatsappCampaignDetail(campaignId, 1, 0, true);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para retomar esta campanha.");
+      }
+
+      await resumeDueWhatsappCampaignRecipients(campaignId, 1);
+      const updatedDetail = await getWhatsappCampaignDetail(campaignId, 100, 0, true);
+      response.json(updatedDetail);
     } catch (error) {
       next(error);
     }
