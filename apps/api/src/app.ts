@@ -464,7 +464,7 @@ const whatsappCampaignCreateSchema = z.object({
   templateId: z.string().uuid().nullable().optional(),
   savedSegmentId: z.string().uuid().nullable().optional(),
   whatsappInstanceId: z.string().uuid().nullable().optional(),
-  messageText: z.string().min(1),
+  messageText: z.string().optional().default(""),
   messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO"]).optional(),
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
   videoUrl: z.string().nullable().optional(),

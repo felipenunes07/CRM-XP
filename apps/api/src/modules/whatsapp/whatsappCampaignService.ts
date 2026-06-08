@@ -110,6 +110,20 @@ function ratio(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : 0;
 }
 
+export function normalizeWhatsappCampaignMessageText(input: {
+  messageText: string;
+  messageType?: WhatsappCampaignMessageType;
+}) {
+  const trimmedMessage = input.messageText.trim();
+  const messageType = input.messageType ?? "TEXT";
+
+  if (!trimmedMessage && messageType !== "VIDEO") {
+    throw new HttpError(400, "A mensagem final nao pode ficar vazia.");
+  }
+
+  return trimmedMessage;
+}
+
 export function isWithinWhatsappCampaignAttributionWindow(
   sentAt: string | Date | null | undefined,
   eventAt: string | Date | null | undefined,
@@ -828,17 +842,13 @@ export async function createWhatsappCampaign(
   user: JwtUser,
 ): Promise<CreateWhatsappCampaignResult> {
   const trimmedName = input.name.trim();
-  const trimmedMessage = input.messageText.trim();
+  const trimmedMessage = normalizeWhatsappCampaignMessageText(input);
   const uniqueGroupIds = [...new Set(input.groupIds)];
   const minDelaySeconds = input.minDelaySeconds ?? env.WHATSAPP_MIN_DELAY_SECONDS;
   const maxDelaySeconds = input.maxDelaySeconds ?? env.WHATSAPP_MAX_DELAY_SECONDS;
 
   if (!trimmedName) {
     throw new HttpError(400, "Defina um nome para a campanha.");
-  }
-
-  if (!trimmedMessage) {
-    throw new HttpError(400, "A mensagem final nao pode ficar vazia.");
   }
 
   if (!uniqueGroupIds.length) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useState, Fragment, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CarouselSlide,
@@ -618,6 +618,7 @@ export function DisparadorPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFileName, setVideoFileName] = useState("");
   const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
+  const [videoOrientation, setVideoOrientation] = useState<"UNKNOWN" | "VERTICAL" | "LANDSCAPE">("UNKNOWN");
   const [uploadingVideo, setUploadingVideo] = useState(false);
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
@@ -633,6 +634,41 @@ export function DisparadorPage() {
   const videoDisplayLabel = isLocalVideoFile
     ? `${videoFileName || "video.mp4"}${videoFileSize ? ` (${formatFileSize(videoFileSize)})` : ""}`
     : videoUrl;
+  const isVerticalVideoPreview = videoOrientation !== "LANDSCAPE";
+  const videoStageStyle = {
+    width: "100%",
+    minHeight: isVerticalVideoPreview ? "420px" : "260px",
+    maxHeight: "560px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "10px",
+    background: "#0f172a",
+    overflow: "hidden",
+  } as const;
+  const videoElementStyle = {
+    width: isVerticalVideoPreview ? "min(100%, 320px)" : "100%",
+    height: isVerticalVideoPreview ? "min(62vh, 540px)" : "auto",
+    maxHeight: "560px",
+    aspectRatio: isVerticalVideoPreview ? "9 / 16" : "16 / 9",
+    objectFit: "contain",
+    borderRadius: isVerticalVideoPreview ? "10px" : "0",
+    backgroundColor: "#000",
+    display: "block",
+  } as const;
+  const phoneVideoStyle = {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    display: "block",
+    backgroundColor: "#000",
+  } as const;
+
+  function handleVideoMetadata(event: SyntheticEvent<HTMLVideoElement>) {
+    const element = event.currentTarget;
+    if (element.videoWidth > 0 && element.videoHeight > 0) {
+      setVideoOrientation(element.videoHeight > element.videoWidth ? "VERTICAL" : "LANDSCAPE");
+    }
+  }
 
   // Reset message type when provider changes
   useEffect(() => {
@@ -829,7 +865,7 @@ export function DisparadorPage() {
       }
 
       const payload = {
-        messageText: messageText || "Mensagem de teste",
+        messageText: campaignMessageType === "VIDEO" ? messageText.trim() : messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
         videoUrl: preparedVideoUrl,
@@ -2067,6 +2103,7 @@ export function DisparadorPage() {
                                   setVideoUrl(e.target.value);
                                   setVideoFileName("");
                                   setVideoFileSize(null);
+                                  setVideoOrientation("UNKNOWN");
                                 }}
                                 readOnly={isLocalVideoFile}
                                 disabled={uploadingVideo}
@@ -2123,6 +2160,7 @@ export function DisparadorPage() {
                                         setVideoUrl(base64);
                                         setVideoFileName(file.name);
                                         setVideoFileSize(file.size);
+                                        setVideoOrientation("UNKNOWN");
                                         setUploadingVideo(false);
                                       };
                                       reader.onerror = () => {
@@ -2153,6 +2191,7 @@ export function DisparadorPage() {
                                       setVideoUrl("");
                                       setVideoFileName("");
                                       setVideoFileSize(null);
+                                      setVideoOrientation("UNKNOWN");
                                     }}
                                     style={{
                                       background: "none",
@@ -2170,12 +2209,15 @@ export function DisparadorPage() {
                                   </button>
                                 </div>
                                 {videoUrl.startsWith("data:") || videoUrl.match(/\.mp4(?:[?#].*)?$/i) || videoUrl.includes("http") ? (
-                                  <video
-                                    src={videoUrl}
-                                    controls
-                                    preload="metadata"
-                                    style={{ width: "100%", aspectRatio: "16 / 9", maxHeight: "360px", objectFit: "contain", borderRadius: "8px", backgroundColor: "#111827" }}
-                                  />
+                                  <div style={videoStageStyle}>
+                                    <video
+                                      src={videoUrl}
+                                      controls
+                                      preload="metadata"
+                                      onLoadedMetadata={handleVideoMetadata}
+                                      style={videoElementStyle}
+                                    />
+                                  </div>
                                 ) : null}
                               </div>
                             )}
@@ -2647,16 +2689,24 @@ export function DisparadorPage() {
                                 color: "#1a1a1a"
                               }}>
                                 {videoUrl ? (
-                                  <div style={{ width: "100%", aspectRatio: "16 / 9", borderRadius: "7px", overflow: "hidden", backgroundColor: "#111827" }}>
+                                  <div style={{
+                                    width: isVerticalVideoPreview ? "min(100%, 150px)" : "100%",
+                                    aspectRatio: isVerticalVideoPreview ? "9 / 16" : "16 / 9",
+                                    marginLeft: isVerticalVideoPreview ? "auto" : undefined,
+                                    borderRadius: "7px",
+                                    overflow: "hidden",
+                                    backgroundColor: "#111827",
+                                  }}>
                                     <video
                                       src={videoUrl}
                                       controls
                                       preload="metadata"
-                                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                      onLoadedMetadata={handleVideoMetadata}
+                                      style={phoneVideoStyle}
                                     />
                                   </div>
                                 ) : (
-                                  <div style={{ width: "190px", aspectRatio: "16 / 9", borderRadius: "7px", backgroundColor: "#111827", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#cbd5e1", fontSize: "0.76rem", gap: "6px" }}>
+                                  <div style={{ width: "150px", aspectRatio: "9 / 16", marginLeft: "auto", borderRadius: "7px", backgroundColor: "#111827", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#cbd5e1", fontSize: "0.76rem", gap: "6px" }}>
                                     <Film size={20} />
                                     MP4 não selecionado
                                   </div>

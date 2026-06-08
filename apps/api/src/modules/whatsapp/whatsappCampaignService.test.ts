@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildWhatsappCampaignDiagnosis,
   isWithinWhatsappCampaignAttributionWindow,
+  normalizeWhatsappCampaignMessageText,
   pickMostRecentWhatsappCampaignAttribution,
   shouldCurrentCampaignKeepAttribution,
   whatsappCampaignIdentityMatches,
@@ -72,5 +73,15 @@ describe("whatsapp campaign attribution", () => {
     ).toMatchObject({
       tone: "danger",
     });
+  });
+});
+
+describe("normalizeWhatsappCampaignMessageText", () => {
+  it("allows video campaigns without a caption", () => {
+    expect(normalizeWhatsappCampaignMessageText({ messageText: "", messageType: "VIDEO" })).toBe("");
+  });
+
+  it("still requires text for non-video campaigns", () => {
+    expect(() => normalizeWhatsappCampaignMessageText({ messageText: "", messageType: "TEXT" })).toThrow("mensagem");
   });
 });
