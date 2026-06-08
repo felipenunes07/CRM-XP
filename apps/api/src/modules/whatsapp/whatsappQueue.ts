@@ -8,6 +8,7 @@ import {
   markRecipientDispatchClaimFailed,
   markRecipientFailed,
   markRecipientSent,
+  recoverWhatsappCampaignDispatchClaimFailures,
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
@@ -179,6 +180,15 @@ export async function enqueueWhatsappCampaignRecipients(recipientJobs: EnqueuedR
 }
 
 export async function resumeDueWhatsappCampaignRecipients(campaignId?: string, limit = 1) {
+  const recovered = await recoverWhatsappCampaignDispatchClaimFailures({ campaignId, limit });
+  if (recovered.recovered > 0) {
+    logger.info("recovered whatsapp campaign dispatch claim failures", {
+      campaignId,
+      recovered: recovered.recovered,
+      campaignIds: recovered.campaignIds,
+    });
+  }
+
   const dueJobs = await listDueWhatsappCampaignRecipientJobs({ campaignId, limit });
   let started = 0;
 

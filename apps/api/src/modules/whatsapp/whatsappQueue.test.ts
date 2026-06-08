@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   markRecipientDispatchClaimFailed: vi.fn(),
   markRecipientFailed: vi.fn(),
   markRecipientSent: vi.fn(),
+  recoverWhatsappCampaignDispatchClaimFailures: vi.fn(),
   sendWhatsappInstanceMediaMessage: vi.fn(),
   sendWhatsappInstanceTextMessage: vi.fn(),
   sendWhatsappTextMessage: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock("./whatsappCampaignService.js", () => ({
   markRecipientDispatchClaimFailed: mocks.markRecipientDispatchClaimFailed,
   markRecipientFailed: mocks.markRecipientFailed,
   markRecipientSent: mocks.markRecipientSent,
+  recoverWhatsappCampaignDispatchClaimFailures: mocks.recoverWhatsappCampaignDispatchClaimFailures,
 }));
 
 vi.mock("./evolutionService.js", () => ({
@@ -77,6 +79,7 @@ describe("resumeDueWhatsappCampaignRecipients", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     Object.values(mocks).forEach((mock) => mock.mockReset());
+    mocks.recoverWhatsappCampaignDispatchClaimFailures.mockResolvedValue({ recovered: 0, campaignIds: [] });
   });
 
   afterEach(() => {
@@ -109,6 +112,10 @@ describe("resumeDueWhatsappCampaignRecipients", () => {
       "data:video/mp4;base64,AAAA",
       "",
     );
+    expect(mocks.recoverWhatsappCampaignDispatchClaimFailures).toHaveBeenCalledWith({
+      campaignId: "campaign-1",
+      limit: 1,
+    });
     expect(mocks.markRecipientSent).toHaveBeenCalledWith(
       expect.objectContaining({ recipientId: "recipient-uaz" }),
       providerPayload,

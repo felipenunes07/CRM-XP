@@ -55,6 +55,11 @@ export interface ListDueWhatsappCampaignRecipientJobsOptions {
   now?: Date;
 }
 
+export interface RecoverWhatsappCampaignDispatchFailuresOptions {
+  campaignId?: string;
+  limit?: number;
+}
+
 interface CampaignProgressRow {
   total_recipients: number;
   pending_count: number;
@@ -1137,6 +1142,72 @@ export async function listDueWhatsappCampaignRecipientJobs(
   }));
 }
 
+export async function recoverWhatsappCampaignDispatchClaimFailures(
+  options: RecoverWhatsappCampaignDispatchFailuresOptions = {},
+) {
+  const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 25), 100));
+  const params: Array<string | number> = ["FOR UPDATE cannot be applied to the nullable side of an outer join%", limit];
+  const campaignFilter = options.campaignId
+    ? (() => {
+        params.push(options.campaignId!);
+        return `AND r.campaign_id = $${params.length}`;
+      })()
+    : "";
+
+  const result = await pool.query(
+    `
+      WITH candidate AS (
+        SELECT r.id
+        FROM whatsapp_campaign_recipients r
+        JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+        WHERE r.status = 'FAILED'
+          AND r.last_error LIKE $1
+          AND wc.cancelled_at IS NULL
+          ${campaignFilter}
+        ORDER BY r.updated_at ASC, r.created_at ASC
+        LIMIT $2
+      ),
+      recovered AS (
+        UPDATE whatsapp_campaign_recipients r
+        SET
+          status = 'PENDING',
+          failed_at = NULL,
+          last_error = NULL,
+          provider_status = NULL,
+          scheduled_for = COALESCE(r.scheduled_for, NOW()),
+          updated_at = NOW()
+        FROM candidate c
+        WHERE r.id = c.id
+        RETURNING r.campaign_id
+      ),
+      campaign_update AS (
+        UPDATE whatsapp_campaigns wc
+        SET
+          status = CASE
+            WHEN wc.status = 'COMPLETED' THEN 'IN_PROGRESS'
+            ELSE wc.status
+          END,
+          finished_at = NULL,
+          updated_at = NOW()
+        WHERE wc.id IN (SELECT DISTINCT campaign_id FROM recovered)
+        RETURNING wc.id
+      )
+      SELECT
+        COUNT(*)::int AS recovered_count,
+        (SELECT COUNT(*)::int FROM campaign_update) AS updated_campaign_count,
+        COALESCE(ARRAY_AGG(DISTINCT campaign_id::text), ARRAY[]::text[]) AS campaign_ids
+      FROM recovered
+    `,
+    params,
+  );
+
+  const row = result.rows[0] ?? {};
+  return {
+    recovered: Number(row.recovered_count ?? 0),
+    campaignIds: Array.isArray(row.campaign_ids) ? row.campaign_ids.map(String) : [],
+  };
+}
+
 export async function listWhatsappCampaigns(limit = 20): Promise<WhatsappCampaignListItem[]> {
   const result = await queryCampaignRows(limit);
   return result.rows.map((row) => mapCampaignRow(row));
@@ -1311,7 +1382,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
         JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
         LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id AND wi.status = 'ACTIVE'
         WHERE r.id = $1
-        FOR UPDATE
+        FOR UPDATE OF r
       `,
       [recipientId],
     );
