@@ -84,4 +84,82 @@ describe("sendWhatsappInstanceMediaMessage", () => {
       caption: "",
     });
   });
+
+  it("surfaces nested Evolution provider errors instead of generic Bad Request", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        status: 400,
+        error: "Bad Request",
+        response: {
+          message: ["SessionError: No sessions"],
+        },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendWhatsappInstanceMediaMessage(
+        instance,
+        "120363123456789@g.us",
+        "data:video/mp4;base64,AAAA",
+        "video",
+        "clip.mp4",
+        "",
+      ),
+    ).rejects.toThrow("SessionError: No sessions");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries media sends with the legacy mediaMessage payload when Evolution rejects the v2 payload", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          status: 400,
+          error: "Bad Request",
+          response: {
+            message: [["instance requires property mediaMessage"]],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ key: { id: "message-legacy" }, status: "PENDING" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendWhatsappInstanceMediaMessage(
+        instance,
+        "120363123456789@g.us",
+        "data:video/mp4;base64,AAAA",
+        "video",
+        "clip.mp4",
+        "Legenda",
+      ),
+    ).resolves.toMatchObject({ key: { id: "message-legacy" } });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [, legacyRequestInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    const legacyBody = JSON.parse(String(legacyRequestInit.body));
+    expect(legacyBody).toMatchObject({
+      number: "120363123456789@g.us",
+      mediaMessage: {
+        mediaType: "video",
+        mimetype: "video/mp4",
+        fileName: "video.mp4",
+        caption: "Legenda",
+        media: "data:video/mp4;base64,AAAA",
+      },
+      options: {
+        delay: 0,
+        presence: "composing",
+      },
+    });
+  });
 });

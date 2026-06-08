@@ -61,9 +61,10 @@ export async function sendWhatsappInstanceMediaMessage(
 ) {
   const mimeTypeStr = getOutboundMediaMimeType(mediaBase64, mediaType);
   const defaultFileName = getOutboundMediaFileName(mediaType, fileName);
+  const number = formatEvolutionSendTextTarget(destinationJid);
 
-  const payload: any = {
-    number: formatEvolutionSendTextTarget(destinationJid),
+  const payload = {
+    number,
     mediatype: mediaType,
     mimetype: mimeTypeStr,
     media: mediaBase64,
@@ -71,7 +72,34 @@ export async function sendWhatsappInstanceMediaMessage(
     caption: caption ?? "",
   };
 
-  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+  try {
+    return await requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+  } catch (error) {
+    if (!shouldRetryEvolutionLegacyMediaPayload(error)) {
+      throw error;
+    }
+
+    logger.warn("Evolution sendMedia v2 payload rejected; retrying legacy mediaMessage payload", {
+      instanceName: instance.instanceName,
+      statusCode: (error as { statusCode?: unknown }).statusCode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", {
+      number,
+      mediaMessage: {
+        mediaType,
+        mimetype: mimeTypeStr,
+        fileName: defaultFileName,
+        caption: caption ?? "",
+        media: mediaBase64,
+      },
+      options: {
+        delay: 0,
+        presence: "composing",
+      },
+    });
+  }
 }
 
 export async function markWhatsappMessagesAsRead(instance: EvolutionInstanceConfig, readMessages: EvolutionMessageKey[]) {
@@ -162,12 +190,7 @@ async function requestEvolution(baseUrl: string, apiKey: string, path: string, m
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message =
-      typeof payload.message === "string"
-        ? payload.message
-        : typeof payload.error === "string"
-          ? payload.error
-          : `Evolution API respondeu com status ${response.status}`;
+    const message = extractEvolutionErrorMessage(payload, response.status);
 
     throw Object.assign(new Error(message), {
       responsePayload: payload,
@@ -176,4 +199,56 @@ async function requestEvolution(baseUrl: string, apiKey: string, path: string, m
   }
 
   return payload;
+}
+
+function collectProviderMessages(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectProviderMessages(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      ...collectProviderMessages(record.message),
+      ...collectProviderMessages(record.error),
+      ...collectProviderMessages(record.details),
+      ...collectProviderMessages(record.response),
+    ];
+  }
+
+  return [];
+}
+
+function extractEvolutionErrorMessage(payload: Record<string, unknown>, status: number) {
+  const messages = collectProviderMessages(payload);
+  const specificMessages = messages.filter((message) => !/^bad request$/i.test(message));
+  const selected = specificMessages.length ? specificMessages : messages;
+  const unique = Array.from(new Set(selected));
+  return unique.slice(0, 3).join("; ") || `Evolution API respondeu com status ${status}`;
+}
+
+function shouldRetryEvolutionLegacyMediaPayload(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const statusCode = Number((error as { statusCode?: unknown }).statusCode);
+  if (statusCode !== 400) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/session|sessao|not found|not.*group|not.*participant|forbidden|unauthorized|permission|permiss/i.test(message)) {
+    return false;
+  }
+
+  return (
+    /^bad request$/i.test(message) ||
+    /mediaMessage|required property|requires property|property.*media|mediatype|mimetype|fileName/i.test(message)
+  );
 }

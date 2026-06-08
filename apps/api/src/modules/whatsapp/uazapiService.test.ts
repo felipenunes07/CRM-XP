@@ -63,4 +63,22 @@ describe("sendUazapiVideoMessage", () => {
       file: "data:video/mp4;base64,AAAA",
     });
   });
+
+  it("surfaces nested UazAPI provider errors instead of generic Bad Request", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: "Bad Request",
+        response: {
+          message: ["invalid group jid"],
+        },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      sendUazapiVideoMessage(config, "120363123456789@g.us", "data:video/mp4;base64,AAAA", ""),
+    ).rejects.toThrow("invalid group jid");
+  });
 });

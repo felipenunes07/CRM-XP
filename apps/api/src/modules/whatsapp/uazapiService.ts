@@ -114,12 +114,7 @@ export async function requestUazapi(
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message =
-      typeof payload.message === "string"
-        ? payload.message
-        : typeof payload.error === "string"
-          ? payload.error
-          : `UazAPI respondeu com status ${response.status}`;
+    const message = extractUazapiErrorMessage(payload, response.status);
 
     throw Object.assign(new Error(message), {
       responsePayload: payload,
@@ -128,4 +123,35 @@ export async function requestUazapi(
   }
 
   return payload;
+}
+
+function collectProviderMessages(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectProviderMessages(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      ...collectProviderMessages(record.message),
+      ...collectProviderMessages(record.error),
+      ...collectProviderMessages(record.details),
+      ...collectProviderMessages(record.response),
+    ];
+  }
+
+  return [];
+}
+
+function extractUazapiErrorMessage(payload: Record<string, unknown>, status: number) {
+  const messages = collectProviderMessages(payload);
+  const specificMessages = messages.filter((message) => !/^bad request$/i.test(message));
+  const selected = specificMessages.length ? specificMessages : messages;
+  const unique = Array.from(new Set(selected));
+  return unique.slice(0, 3).join("; ") || `UazAPI respondeu com status ${status}`;
 }
