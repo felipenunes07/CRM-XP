@@ -450,13 +450,7 @@ const eventIdentityMatchSql = (eventAlias: string, recipientAlias: string) => `
   (
     (${eventAlias}.customer_id IS NOT NULL AND ${recipientAlias}.customer_id IS NOT NULL AND ${eventAlias}.customer_id = ${recipientAlias}.customer_id)
     OR (${eventAlias}.customer_code IS NOT NULL AND ${recipientAlias}.customer_code IS NOT NULL AND LOWER(${eventAlias}.customer_code) = LOWER(${recipientAlias}.customer_code))
-    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND (
-      LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid)
-      OR (
-        regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') <> ''
-        AND regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') = regexp_replace(${recipientAlias}.jid, '\\D', '', 'g')
-      )
-    ))
+    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid))
   )
 `;
 
@@ -467,7 +461,7 @@ const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
   )
 `;
 
-async function getWhatsappCampaignPerformance(campaignId: string): Promise<WhatsappCampaignPerformance> {
+async function getWhatsappCampaignPerformance(campaignId: string, excludePerformance = false): Promise<WhatsappCampaignPerformance> {
   const recipientsResult = await pool.query(
     `
       SELECT id, status
@@ -484,7 +478,7 @@ async function getWhatsappCampaignPerformance(campaignId: string): Promise<Whats
 
   const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
 
-  if (sentRecipients === 0) {
+  if (sentRecipients === 0 || excludePerformance) {
     const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
     for (const recipient of recipientStatusRows) {
       recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
@@ -1098,6 +1092,7 @@ export async function getWhatsappCampaignDetail(
   campaignId: string,
   limit = 100,
   offset = 0,
+  excludePerformance = false,
 ): Promise<WhatsappCampaignDetail | null> {
   const [campaignResult, recipientsResult, totalRecipientsResult, performance] = await Promise.all([
     queryCampaignRows(undefined, campaignId),
@@ -1112,7 +1107,7 @@ export async function getWhatsappCampaignDetail(
       [campaignId, limit, offset],
     ),
     pool.query("SELECT COUNT(*)::int AS total FROM whatsapp_campaign_recipients WHERE campaign_id = $1", [campaignId]),
-    getWhatsappCampaignPerformance(campaignId),
+    getWhatsappCampaignPerformance(campaignId, excludePerformance),
   ]);
 
   const campaignRow = campaignResult.rows[0];

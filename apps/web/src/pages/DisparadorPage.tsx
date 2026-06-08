@@ -838,7 +838,7 @@ export function DisparadorPage() {
 
   const activeCampaignQuery = useQuery({
     queryKey: ["whatsapp-campaign-live", activeCampaignId],
-    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0 }),
+    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0, excludePerformance: true }),
     enabled: Boolean(token && activeCampaignId),
     refetchInterval: (query) =>
       query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 1500 : false,

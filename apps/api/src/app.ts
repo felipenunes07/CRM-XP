@@ -483,6 +483,10 @@ const whatsappCampaignListQuerySchema = z.object({
 const whatsappCampaignDetailQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(5000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  excludePerformance: z.preprocess(
+    (val) => val === "true" || val === true,
+    z.boolean(),
+  ).optional(),
 });
 
 function parseClassificationList(value?: string) {
@@ -1678,7 +1682,12 @@ export function createApp() {
   app.get("/api/whatsapp-campaigns/:id", async (request, response, next) => {
     try {
       const query = whatsappCampaignDetailQuerySchema.parse(request.query);
-      const detail = await getWhatsappCampaignDetail(String(request.params.id), query.limit ?? 100, query.offset ?? 0);
+      const detail = await getWhatsappCampaignDetail(
+        String(request.params.id),
+        query.limit ?? 100,
+        query.offset ?? 0,
+        query.excludePerformance,
+      );
       if (!detail) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }

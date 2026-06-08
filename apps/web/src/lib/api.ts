@@ -731,13 +731,16 @@ export const api = {
   whatsappCampaigns(token: string, limit = 20) {
     return request<WhatsappCampaignListItem[]>(`/api/whatsapp-campaigns?limit=${limit}`, {}, token);
   },
-  whatsappCampaign(token: string, id: string, query: { limit?: number; offset?: number } = {}) {
+  whatsappCampaign(token: string, id: string, query: { limit?: number; offset?: number; excludePerformance?: boolean } = {}) {
     const search = new URLSearchParams();
     if (query.limit !== undefined) {
       search.set("limit", String(query.limit));
     }
     if (query.offset !== undefined) {
       search.set("offset", String(query.offset));
+    }
+    if (query.excludePerformance !== undefined) {
+      search.set("excludePerformance", String(query.excludePerformance));
     }
     return request<WhatsappCampaignDetail>(
       `/api/whatsapp-campaigns/${id}${search.toString() ? `?${search.toString()}` : ""}`,

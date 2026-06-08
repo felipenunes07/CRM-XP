@@ -101,6 +101,7 @@ export async function requestUazapi(
       token: config.token,
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30000),
   });
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
