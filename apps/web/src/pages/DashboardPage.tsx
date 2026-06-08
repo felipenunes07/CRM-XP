@@ -18,7 +18,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Target, Users, Zap } from "lucide-react";
+import { Download, Target, Users, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { AgendaItem, PortfolioTrendPoint, TrendRangeSelection } from "@olist-crm/shared";
 import { ContactQueueCard } from "../components/ContactQueueCard";
@@ -416,6 +416,140 @@ const AnnotationModal = ({
   );
 };
 
+const DownloadAttentionModal = ({
+  isOpen,
+  onClose,
+  onDownload,
+  count,
+  isDownloading,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onDownload: () => void;
+  count: number;
+  isDownloading: boolean;
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="modal-overlay" style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+      backdropFilter: "blur(4px)"
+    }}>
+      <div className="panel" style={{
+        width: "100%",
+        maxWidth: "480px",
+        margin: "1rem",
+        padding: "2rem",
+        boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+        borderRadius: "24px",
+        textAlign: "center"
+      }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "-1rem", marginRight: "-1rem" }}>
+          <button 
+            type="button" 
+            onClick={onClose} 
+            style={{ 
+              background: "none", 
+              border: "none", 
+              fontSize: "1.5rem", 
+              cursor: "pointer", 
+              color: "#94a3b8",
+              padding: "0.5rem" 
+            }}
+          >
+            &times;
+          </button>
+        </div>
+
+        <div style={{ 
+          fontSize: "3rem", 
+          marginBottom: "1rem",
+        }}>
+          📥
+        </div>
+
+        <h3 style={{ margin: "0 0 0.75rem 0", fontSize: "1.5rem", fontWeight: 700, color: "#1e293b" }}>
+          Exportar Clientes em Atenção
+        </h3>
+
+        <p style={{ margin: "0 0 1.5rem 0", fontSize: "0.95rem", color: "#64748b", lineHeight: "1.6" }}>
+          Deseja baixar a lista de todos os <strong>{count}</strong> clientes em status de <strong>Atenção</strong>? 
+          O arquivo será exportado em formato CSV, ideal para Excel, Google Sheets e ferramentas de BI.
+        </p>
+
+        <div style={{ 
+          backgroundColor: "#f8fafc", 
+          border: "1px solid #e2e8f0", 
+          borderRadius: "16px", 
+          padding: "1rem", 
+          marginBottom: "2rem", 
+          textAlign: "left",
+          fontSize: "0.85rem",
+          color: "#475569"
+        }}>
+          <strong style={{ display: "block", marginBottom: "0.5rem", color: "#334155" }}>Dados incluídos no arquivo:</strong>
+          • Código e Nome do cliente<br />
+          • Status e Prioridade<br />
+          • Total gasto e ticket médio<br />
+          • Última compra e dias de inatividade<br />
+          • Região (Cidade/Estado)
+        </div>
+
+        <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ 
+              padding: "0.85rem 1.5rem", 
+              borderRadius: "14px", 
+              border: "1px solid #e2e8f0", 
+              backgroundColor: "#ffffff", 
+              color: "#64748b", 
+              fontWeight: 600, 
+              cursor: "pointer",
+              flex: 1
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onDownload}
+            disabled={isDownloading}
+            style={{
+              padding: "0.85rem 1.5rem",
+              borderRadius: "14px",
+              border: "none",
+              backgroundColor: isDownloading ? "#cbd5e1" : "#2956d7",
+              color: "white",
+              fontWeight: 600,
+              cursor: isDownloading ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px"
+            }}
+          >
+            {isDownloading ? "Gerando..." : "Baixar Planilha"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 function InactivityTooltip({
   active,
   payload,
@@ -779,6 +913,8 @@ export function DashboardPage() {
   const [hoveredFullScreenAnnotation, setHoveredFullScreenAnnotation] = useState<HoveredAnnotationState | null>(null);
   const [fsBottomChartHeight, setFsBottomChartHeight] = useState(240);
   const [isDraggingFsResize, setIsDraggingFsResize] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [downloadingAttention, setDownloadingAttention] = useState(false);
 
   const suppressNextTrendClickRef = useRef(false);
   const fsContainerRef = useRef<HTMLDivElement>(null);
@@ -1081,6 +1217,71 @@ export function DashboardPage() {
       } catch (error) {
         alert("Erro ao remover anotação.");
       }
+    }
+  };
+
+  const downloadAttentionCustomers = async () => {
+    if (downloadingAttention || !token) return;
+    setDownloadingAttention(true);
+    try {
+      const data = await api.customers(token, { status: "ATTENTION" });
+      if (!data || data.length === 0) {
+        alert("Nenhum cliente em status de Atenção foi encontrado para download.");
+        return;
+      }
+
+      const headers = [
+        "Código",
+        "Nome",
+        "Status",
+        "Total de Pedidos",
+        "Total Gasto",
+        "Ticket Médio",
+        "Última Compra",
+        "Dias Inativo",
+        "Média Dias Entre Pedidos",
+        "Rótulos",
+        "Estado",
+        "Cidade",
+        "Prioridade"
+      ];
+
+      const csvLines = [
+        "\uFEFF" + headers.join(";"),
+        ...data.map((row) =>
+          [
+            row.customerCode || "",
+            row.displayName || "",
+            row.status === "ACTIVE" ? "Ativo" : row.status === "ATTENTION" ? "Atenção" : "Inativo",
+            row.totalOrders || 0,
+            row.totalSpent || 0,
+            row.avgTicket || 0,
+            row.lastPurchaseAt || "",
+            row.daysSinceLastPurchase !== null && row.daysSinceLastPurchase !== undefined ? row.daysSinceLastPurchase : "",
+            row.avgDaysBetweenOrders !== null && row.avgDaysBetweenOrders !== undefined ? Math.round(row.avgDaysBetweenOrders) : "",
+            row.labels.map((l) => l.name).join(", "),
+            row.state || "",
+            row.city || "",
+            row.priorityScore || 0,
+          ]
+            .map((val) => `"${String(val).replace(/"/g, '""')}"`)
+            .join(";")
+        ),
+      ];
+
+      const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `clientes_em_atencao_${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setIsDownloadModalOpen(false);
+    } catch (err: any) {
+      console.error("Erro ao baixar clientes em atenção:", err);
+      alert(`Erro ao exportar clientes: ${err.message || err}`);
+    } finally {
+      setDownloadingAttention(false);
     }
   };
 
@@ -1455,6 +1656,7 @@ export function DashboardPage() {
           badge={formatShare(metrics.statusCounts.ATTENTION, metrics.totalCustomers)}
           helper={tx("Clientes pedindo monitoramento", "需要持续跟进的客户")}
           tone="warning"
+          onClick={() => setIsDownloadModalOpen(true)}
         />
         <StatCard
           title={tx("Clientes inativos", "沉默客户")}
@@ -2582,6 +2784,14 @@ export function DashboardPage() {
                 <p>{hoveredFullScreenAnnotation.annotation.description}</p>
               </div>
             ) : null}
+
+            <DownloadAttentionModal
+              isOpen={isDownloadModalOpen}
+              onClose={() => setIsDownloadModalOpen(false)}
+              onDownload={downloadAttentionCustomers}
+              count={metrics.statusCounts.ATTENTION ?? 0}
+              isDownloading={downloadingAttention}
+            />
           </div>
         </div>
       )}

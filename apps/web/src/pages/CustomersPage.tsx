@@ -1,7 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Download, ShieldAlert, TrendingUp } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, ShieldAlert, TrendingUp } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
@@ -119,72 +119,6 @@ export function CustomersPage() {
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
-
-  const [downloadingAttention, setDownloadingAttention] = useState(false);
-
-  const downloadAttentionCustomers = async () => {
-    if (downloadingAttention || !token) return;
-    setDownloadingAttention(true);
-    try {
-      const data = await api.customers(token, { status: "ATTENTION" });
-      if (!data || data.length === 0) {
-        alert("Nenhum cliente em status de Atenção foi encontrado para download.");
-        return;
-      }
-
-      const headers = [
-        "Código",
-        "Nome",
-        "Status",
-        "Total de Pedidos",
-        "Total Gasto",
-        "Ticket Médio",
-        "Última Compra",
-        "Dias Inativo",
-        "Média Dias Entre Pedidos",
-        "Rótulos",
-        "Estado",
-        "Cidade",
-        "Prioridade"
-      ];
-
-      const csvLines = [
-        "\uFEFF" + headers.join(";"),
-        ...data.map((row) =>
-          [
-            row.customerCode || "",
-            row.displayName || "",
-            row.status === "ACTIVE" ? "Ativo" : row.status === "ATTENTION" ? "Atenção" : "Inativo",
-            row.totalOrders || 0,
-            row.totalSpent || 0,
-            row.avgTicket || 0,
-            row.lastPurchaseAt || "",
-            row.daysSinceLastPurchase !== null && row.daysSinceLastPurchase !== undefined ? row.daysSinceLastPurchase : "",
-            row.avgDaysBetweenOrders !== null && row.avgDaysBetweenOrders !== undefined ? Math.round(row.avgDaysBetweenOrders) : "",
-            row.labels.map((l) => l.name).join(", "),
-            row.state || "",
-            row.city || "",
-            row.priorityScore || 0,
-          ]
-            .map((val) => `"${String(val).replace(/"/g, '""')}"`)
-            .join(";")
-        ),
-      ];
-
-      const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `clientes_em_atencao_${new Date().toISOString().split("T")[0]}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      console.error("Erro ao baixar clientes em atenção:", err);
-      alert(`Erro ao exportar clientes: ${err.message || err}`);
-    } finally {
-      setDownloadingAttention(false);
-    }
-  };
 
   const labelsQuery = useQuery({
     queryKey: ["customer-labels"],
@@ -502,18 +436,6 @@ export function CustomersPage() {
 
       {state.activeView === "portfolio" ? (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", margin: "1rem 0" }}>
-            <button
-              type="button"
-              className="ghost-button small"
-              onClick={downloadAttentionCustomers}
-              disabled={downloadingAttention}
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
-            >
-              <Download size={16} />
-              {downloadingAttention ? "Baixando..." : "Baixar Clientes em Atenção (CSV)"}
-            </button>
-          </div>
           {customersQuery.isLoading ? <div className="page-loading">Carregando clientes...</div> : null}
           {customersQuery.isError ? <div className="page-error">Falha ao carregar a carteira.</div> : null}
           {customersQuery.data ? <CustomerTable customers={customersQuery.data} /> : null}
