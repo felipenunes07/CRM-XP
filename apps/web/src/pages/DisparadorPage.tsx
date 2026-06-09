@@ -2213,13 +2213,26 @@ export function DisparadorPage() {
                                     setUploadingVideo(true);
                                     try {
                                       const reader = new FileReader();
-                                      reader.onload = (event) => {
+                                      reader.onload = async (event) => {
                                         const base64 = event.target?.result as string;
-                                        setVideoUrl(base64);
                                         setVideoFileName(file.name);
                                         setVideoFileSize(file.size);
                                         setVideoOrientation("UNKNOWN");
-                                        setUploadingVideo(false);
+                                        try {
+                                          // Hospeda o vídeo e usa a URL — evita o timeout/Bad Request
+                                          // que o base64 inline causa no disparo.
+                                          const { url } = await api.uploadCampaignVideo(token!, {
+                                            fileBase64: base64,
+                                            fileName: file.name,
+                                          });
+                                          setVideoUrl(url);
+                                        } catch (uploadErr) {
+                                          // Se o hosting falhar, cai no base64 (comportamento antigo).
+                                          console.warn("Upload de vídeo para o backend falhou, usando base64 inline:", uploadErr);
+                                          setVideoUrl(base64);
+                                        } finally {
+                                          setUploadingVideo(false);
+                                        }
                                       };
                                       reader.onerror = () => {
                                         alert("Erro ao ler arquivo de vídeo.");

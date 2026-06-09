@@ -320,7 +320,10 @@ function normalizeWebhookMessages(payload: EvolutionWebhookPayload): EvolutionMe
   return [data as EvolutionMessageLike];
 }
 
-export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
+export async function handleEvolutionWebhook(
+  payload: EvolutionWebhookPayload,
+  provider: string = "evolution",
+) {
   const event = payload.event ?? "";
   const instance = payload.instance ?? "unknown";
 
@@ -407,7 +410,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
           messageId,
         });
 
-        idempotencyKey = `evolution:${messageId}:${resolvedRemoteJid}`;
+        idempotencyKey = `${provider}:${messageId}:${resolvedRemoteJid}`;
         try {
           await pool.query(
             `
@@ -419,7 +422,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             ON CONFLICT (idempotency_key) DO NOTHING
             `,
             [
-              "evolution",
+              provider,
               event,
               idempotencyKey,
               messageId,
@@ -438,7 +441,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         continue;
       }
 
-      idempotencyKey = `evolution:${messageId}:${resolvedRemoteJid}`;
+      idempotencyKey = `${provider}:${messageId}:${resolvedRemoteJid}`;
 
       // Insert event into webhook_events table for idempotency
       const insertEvent = await pool.query(
@@ -452,7 +455,7 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         RETURNING id
         `,
         [
-          "evolution",
+          provider,
           event,
           idempotencyKey,
           messageId,
