@@ -470,3 +470,61 @@ O sistema agora está:
 **Data:** 09/06/2026  
 **Autor:** Kiro AI  
 **Versão:** 1.0 (Final)
+
+
+---
+
+## 🔧 Build Fix (Atualização)
+
+### ⚠️ Erros de TypeScript Encontrados Durante Deploy
+
+Durante o build, foram encontrados 3 erros de TypeScript que foram **CORRIGIDOS**:
+
+#### Erro 1: Propriedades Incorretas
+```
+error TS2353: Object literal may only specify known properties, 
+and 'baseUrl' does not exist in type 'EvolutionInstanceConfig'.
+```
+
+**Causa:** Nomes de propriedades incorretos no objeto de configuração.
+
+**Correção:**
+- `baseUrl` → `evolutionBaseUrl` ✅
+- `apiKey` → `evolutionApiKey` ✅
+
+#### Erro 2: Tipo Indefinido
+```
+error TS2339: Property 'id' does not exist on type '{}'.
+```
+
+**Causa:** Variável `result` declarada sem tipo explícito.
+
+**Correção:** Adicionado tipo `Record<string, any>`
+
+#### Erro 3: Acesso a Propriedades
+```
+error TS2339: Property 'id' does not exist on type '{}'.
+```
+
+**Causa:** TypeScript não conseguia inferir tipo de `result.key.id`.
+
+**Correção:** Adicionado type casting `(result as any)?.key?.id`
+
+### ✅ Build Agora Compila com Sucesso!
+
+```bash
+> @olist-crm/api@0.1.0 build
+> npm run build -w @olist-crm/shared && tsc -p tsconfig.json
+
+Exit Code: 0  ✅ SUCCESS
+```
+
+**Arquivo modificado:** `apps/api/src/app.ts` (linhas ~1654, ~1667, ~1677-1678)
+
+**Documentação completa:** Veja `BUILD_FIX_TYPESCRIPT_ERRORS.md` para detalhes técnicos.
+
+---
+
+**Status Final:** ✅ **TODAS AS CORREÇÕES IMPLEMENTADAS E BUILD FUNCIONANDO!**
+
+Pronto para deploy em produção! 🚀
