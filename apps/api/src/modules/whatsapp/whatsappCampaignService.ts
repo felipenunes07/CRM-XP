@@ -570,7 +570,6 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           JOIN deals d ON d.id = da.deal_id
           CROSS JOIN campaign_scope cs
           WHERE da.activity_type = 'WHATSAPP_RECEIVED'
-            AND LOWER(COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid, '')) NOT LIKE '%@g.us'
             AND cs.first_sent_at IS NOT NULL
             AND da.created_at >= cs.first_sent_at
             AND da.created_at < cs.last_window_at
@@ -591,7 +590,6 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           FROM whatsapp_incoming_messages wim
           CROSS JOIN campaign_scope cs
           WHERE COALESCE(wim.from_me, false) = false
-            AND LOWER(COALESCE(wim.remote_jid, '')) NOT LIKE '%@g.us'
             AND cs.first_sent_at IS NOT NULL
             AND wim.created_at >= cs.first_sent_at
             AND wim.created_at < cs.last_window_at
@@ -631,6 +629,11 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             ON e.created_at >= r.sent_at
            AND e.created_at < r.sent_at + ($2::int * INTERVAL '1 day')
            AND ${eventIdentityMatchSql("e", "r")}
+           AND (
+             (r.jid LIKE '%@g.us' AND e.event_jid LIKE '%@g.us')
+             OR
+             (r.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us')
+           )
           WHERE NOT EXISTS (
             SELECT 1
             FROM whatsapp_campaign_recipients newer
@@ -640,6 +643,11 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
               AND newer.sent_at <= e.created_at
               AND newer.id <> r.id
               AND ${eventIdentityMatchSql("e", "newer")}
+              AND (
+                (newer.jid LIKE '%@g.us' AND e.event_jid LIKE '%@g.us')
+                OR
+                (newer.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us')
+              )
           )
           ORDER BY e.event_key, r.sent_at DESC, r.id
         )
