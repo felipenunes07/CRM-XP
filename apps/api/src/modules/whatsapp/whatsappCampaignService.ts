@@ -328,6 +328,7 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     id: String(row.id),
     name: String(row.name ?? ""),
     status: String(row.status) as WhatsappCampaignStatus,
+    whatsappInstanceId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
     templateId: row.template_id ? String(row.template_id) : null,
     templateTitle: row.template_title ? String(row.template_title) : null,
     savedSegmentId: row.saved_segment_id ? String(row.saved_segment_id) : null,
