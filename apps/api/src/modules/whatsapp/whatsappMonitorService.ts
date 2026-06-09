@@ -1632,6 +1632,50 @@ export async function getWhatsappMonitorConversation(
   user: JwtUser,
   options: ConversationDetailOptions = {},
 ): Promise<WhatsappMonitorConversationDetail> {
+  let resolvedDealId = dealId;
+  if (typeof dealId === "string" && dealId.includes("@")) {
+    const dealRes = await pool.query(
+      `SELECT id FROM deals WHERE whatsapp_jid = $1 ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
+      [dealId]
+    );
+    if (dealRes.rows[0]) {
+      resolvedDealId = String(dealRes.rows[0].id);
+    } else {
+      const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
+      const stageId = stageMatch.rows[0]?.id;
+      if (!stageId) {
+        throw new HttpError(400, "Nenhum estágio de pipeline configurado para criar a conversa.");
+      }
+
+      const userInstanceRes = await pool.query(
+        `SELECT id FROM whatsapp_instances WHERE assigned_user_id::text = $1::text AND status = 'ACTIVE' ORDER BY is_default DESC, id DESC LIMIT 1`,
+        [user.id]
+      );
+      const instanceId = userInstanceRes.rows[0]?.id || null;
+
+      const recipientRes = await pool.query(
+        `SELECT customer_display_name, source_name FROM whatsapp_campaign_recipients WHERE jid = $1 ORDER BY created_at DESC LIMIT 1`,
+        [dealId]
+      );
+      const displayName = recipientRes.rows[0]?.customer_display_name || recipientRes.rows[0]?.source_name || dealId.split("@")[0] || "Cliente WhatsApp";
+
+      const newDeal = await pool.query(
+        `
+        INSERT INTO deals (
+          title, customer_display_name, stage_id, whatsapp_instance_id,
+          whatsapp_jid, expected_value, priority, last_activity_at,
+          assigned_to, assigned_to_name
+        )
+        VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', NOW(), $6, $7)
+        RETURNING id
+        `,
+        [displayName, displayName, stageId, instanceId, dealId, user.id, user.name]
+      );
+      resolvedDealId = String(newDeal.rows[0].id);
+    }
+  }
+
+  dealId = resolvedDealId;
   const conversationParams: unknown[] = [dealId, user.id];
   const accessWhere: string[] = [];
 

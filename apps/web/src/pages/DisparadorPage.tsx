@@ -3975,13 +3975,25 @@ export function DisparadorPage() {
                                           );
                                           
                                           // Converter para o formato do MiniChat
-                                          const realMessages: MiniChatMessage[] = conversationData.messages.map(msg => ({
+                                          let realMessages: MiniChatMessage[] = conversationData.messages.map(msg => ({
                                             id: msg.id,
                                             content: msg.content || "(mensagem sem texto)",
                                             direction: msg.direction === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
                                             timestamp: msg.createdAt,
                                             status: msg.direction === "OUTBOUND" ? "sent" : undefined
                                           }));
+
+                                          // Garantir que a mensagem da campanha apareça como primeira mensagem se não houver registros de envio
+                                          const hasOutbound = realMessages.some(msg => msg.direction === "OUTBOUND");
+                                          if (!hasOutbound && selectedCampaignQuery.data.messageText) {
+                                            realMessages.unshift({
+                                              id: "campaign-msg",
+                                              content: selectedCampaignQuery.data.messageText,
+                                              direction: "OUTBOUND",
+                                              timestamp: recipient.sentAt || selectedCampaignQuery.data.createdAt,
+                                              status: "sent"
+                                            });
+                                          }
                                           
                                           setMiniChatMessages(realMessages);
                                         } catch (error) {

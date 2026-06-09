@@ -628,11 +628,10 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           JOIN campaign_recipients r
             ON e.created_at >= r.sent_at
            AND e.created_at < r.sent_at + ($2::int * INTERVAL '1 day')
-           AND ${eventIdentityMatchSql("e", "r")}
            AND (
-             (r.jid LIKE '%@g.us' AND e.event_jid LIKE '%@g.us')
+             (r.jid LIKE '%@g.us' AND LOWER(e.event_jid) = LOWER(r.jid))
              OR
-             (r.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us')
+             (r.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us' AND ${eventIdentityMatchSql("e", "r")})
            )
           WHERE NOT EXISTS (
             SELECT 1
@@ -642,11 +641,10 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
               AND newer.sent_at > r.sent_at
               AND newer.sent_at <= e.created_at
               AND newer.id <> r.id
-              AND ${eventIdentityMatchSql("e", "newer")}
               AND (
-                (newer.jid LIKE '%@g.us' AND e.event_jid LIKE '%@g.us')
+                (newer.jid LIKE '%@g.us' AND LOWER(e.event_jid) = LOWER(newer.jid))
                 OR
-                (newer.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us')
+                (newer.jid NOT LIKE '%@g.us' AND e.event_jid NOT LIKE '%@g.us' AND ${eventIdentityMatchSql("e", "newer")})
               )
           )
           ORDER BY e.event_key, r.sent_at DESC, r.id

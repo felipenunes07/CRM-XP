@@ -1,18 +1,7 @@
-import pg from "pg";
-const { Pool } = pg;
+import { migrations } from "../apps/api/src/db/migrations.js";
 
-const connectionString = "postgres://postgres:postgres@localhost:5432/olist_crm";
-const pool = new Pool({ connectionString });
-
-async function main() {
-  try {
-    const deals = await pool.query("SELECT id, title, whatsapp_jid, customer_display_name FROM deals LIMIT 20");
-    console.log("Deals in local db:", deals.rows);
-  } catch (err) {
-    console.error(err);
-  } finally {
-    await pool.end();
-  }
-}
-
-main();
+console.log("Total migrations in migrations.ts:", migrations.length);
+migrations.forEach((m, idx) => {
+  const lines = m.trim().split("\n");
+  console.log(`Migration ${idx + 1}: ${lines[0]} ${lines[1] ? '(...) ' + lines[1].substring(0, 40) : ''}`);
+});
