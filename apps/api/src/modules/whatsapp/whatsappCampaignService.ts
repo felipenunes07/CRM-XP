@@ -533,14 +533,6 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
   const [inboundResult, purchaseResult, outboundResult] = await Promise.all([
     pool.query(
       `
-        SELECT id, status
-        FROM whatsapp_campaign_recipients
-        WHERE campaign_id = $1
-      `,
-      [campaignId],
-    ),
-    pool.query(
-      `
         WITH campaign_recipients AS (
           SELECT
             id,
