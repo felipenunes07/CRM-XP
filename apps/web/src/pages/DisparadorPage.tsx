@@ -3964,30 +3964,36 @@ export function DisparadorPage() {
                                         setMiniChatMessages([]);
                                         
                                         try {
-                                          await new Promise(resolve => setTimeout(resolve, 800));
-                                          
-                                          const mockMessages: MiniChatMessage[] = [
+                                          // Buscar mensagens REAIS da API do WhatsApp Monitor
+                                          const conversationData = await api.whatsappMonitorConversation(
+                                            token!,
+                                            recipient.jid,
                                             {
-                                              id: "1",
-                                              content: selectedCampaignQuery.data.messageText || "Mensagem da campanha",
-                                              direction: "OUTBOUND",
-                                              timestamp: recipient.sentAt || new Date().toISOString(),
-                                              status: "sent"
+                                              instanceId: selectedCampaignQuery.data.whatsappInstanceId || undefined,
+                                              limit: 100
                                             }
-                                          ];
+                                          );
                                           
-                                          if (recipient.responded && recipient.firstResponseAt) {
-                                            mockMessages.push({
-                                              id: "2",
-                                              content: "Obrigado pela mensagem! Tenho interesse.",
-                                              direction: "INBOUND",
-                                              timestamp: recipient.firstResponseAt,
-                                            });
-                                          }
+                                          // Converter para o formato do MiniChat
+                                          const realMessages: MiniChatMessage[] = conversationData.messages.map(msg => ({
+                                            id: msg.id,
+                                            content: msg.body || msg.text || msg.caption || "(mensagem sem texto)",
+                                            direction: msg.fromMe ? "OUTBOUND" : "INBOUND",
+                                            timestamp: msg.timestamp,
+                                            status: msg.fromMe ? "sent" : undefined
+                                          }));
                                           
-                                          setMiniChatMessages(mockMessages);
+                                          setMiniChatMessages(realMessages);
                                         } catch (error) {
                                           console.error("Erro ao carregar mensagens:", error);
+                                          // Fallback: mostrar pelo menos a mensagem da campanha
+                                          setMiniChatMessages([{
+                                            id: "campaign-msg",
+                                            content: selectedCampaignQuery.data.messageText || "Mensagem da campanha",
+                                            direction: "OUTBOUND",
+                                            timestamp: recipient.sentAt || selectedCampaignQuery.data.createdAt,
+                                            status: "sent"
+                                          }]);
                                         } finally {
                                           setMiniChatLoading(false);
                                         }
@@ -4037,27 +4043,41 @@ export function DisparadorPage() {
       messages={miniChatMessages}
       loading={miniChatLoading}
       onSendMessage={async (message: string) => {
-        // TODO: Implementar envio real de mensagem via API
-        console.log("Enviando mensagem:", message);
-        const newMessage: MiniChatMessage = {
-          id: `msg-${Date.now()}`,
-          content: message,
-          direction: "OUTBOUND",
-          timestamp: new Date().toISOString(),
-          status: "sent"
-        };
-        setMiniChatMessages(prev => [...prev, newMessage]);
-        
-        // Simular resposta automática (remover em produção)
-        setTimeout(() => {
-          const autoReply: MiniChatMessage = {
-            id: `msg-${Date.now()}-reply`,
-            content: "Obrigado pela sua mensagem! Entraremos em contato em breve.",
-            direction: "INBOUND",
+        if (!miniChatRecipient || !selectedCampaignQuery.data) {
+          alert("Erro: informações da campanha não disponíveis");
+          return;
+        }
+
+        try {
+          // Enviar mensagem pela MESMA instância WhatsApp da campanha
+          const instanceId = selectedCampaignQuery.data.whatsappInstanceId;
+          
+          if (!instanceId) {
+            alert("Erro: Instância WhatsApp da campanha não encontrada");
+            return;
+          }
+
+          // Chamar API para enviar mensagem
+          await api.sendWhatsappMessage(token!, {
+            instanceId: instanceId,
+            jid: miniChatRecipient.jid,
+            message: message
+          });
+
+          // Adicionar mensagem enviada ao chat
+          const newMessage: MiniChatMessage = {
+            id: `msg-${Date.now()}`,
+            content: message,
+            direction: "OUTBOUND",
             timestamp: new Date().toISOString(),
+            status: "sent"
           };
-          setMiniChatMessages(prev => [...prev, autoReply]);
-        }, 2000);
+          
+          setMiniChatMessages(prev => [...prev, newMessage]);
+        } catch (error: any) {
+          console.error("Erro ao enviar mensagem:", error);
+          alert(`Erro ao enviar mensagem: ${error?.message || "Erro desconhecido"}`);
+        }
       }}
     />
 

@@ -556,6 +556,12 @@ export const api = {
       body: JSON.stringify(input),
     }, token);
   },
+  sendWhatsappMessage(token: string, input: { instanceId: string; jid: string; message: string }) {
+    return request<{ success: boolean; messageId: string }>("/api/whatsapp/send-message", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
   listIdeas(token: string) {
     return request<IdeaBoardItem[]>("/api/ideas", {}, token);
   },

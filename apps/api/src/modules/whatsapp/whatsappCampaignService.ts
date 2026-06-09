@@ -569,6 +569,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           JOIN deals d ON d.id = da.deal_id
           CROSS JOIN campaign_scope cs
           WHERE da.activity_type = 'WHATSAPP_RECEIVED'
+            AND LOWER(COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid, '')) NOT LIKE '%@g.us'
             AND cs.first_sent_at IS NOT NULL
             AND da.created_at >= cs.first_sent_at
             AND da.created_at < cs.last_window_at
@@ -589,6 +590,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           FROM whatsapp_incoming_messages wim
           CROSS JOIN campaign_scope cs
           WHERE COALESCE(wim.from_me, false) = false
+            AND LOWER(COALESCE(wim.remote_jid, '')) NOT LIKE '%@g.us'
             AND cs.first_sent_at IS NOT NULL
             AND wim.created_at >= cs.first_sent_at
             AND wim.created_at < cs.last_window_at
@@ -754,6 +756,22 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
     recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
   }
 
+  // DEBUG: Log inbound messages being attributed
+  if (inboundResult.rows.length > 0) {
+    console.log('🔍 [BADGE DEBUG] Inbound messages attributed to campaign:', {
+      campaignId,
+      totalInboundMessages: inboundResult.rows.length,
+      sampleMessages: inboundResult.rows.slice(0, 5).map((row: any) => ({
+        recipientId: row.recipient_id,
+        customerName: row.customer_display_name,
+        jid: row.jid,
+        content: String(row.content || '').substring(0, 50),
+        source: row.source,
+        createdAt: row.created_at,
+      })),
+    });
+  }
+
   for (const row of inboundResult.rows) {
     const recipientId = String(row.recipient_id);
     const current = recipientPerformance.get(recipientId) ?? blankRecipientPerformance(recipientId);
@@ -847,45 +865,26 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
         })()
       : "";
 
+  // SUPER OTIMIZAÇÃO: Usa tabela de cache para resposta instantânea!
+  // Ao invés de calcular tudo em tempo real, busca do cache que é atualizado por trigger
   return pool.query(
     `
-      WITH selected_campaigns AS (
-        SELECT wc.*
-        FROM whatsapp_campaigns wc
-        ${where}
-        ORDER BY wc.created_at DESC
-        ${limitSql}
-      ),
-      recipient_progress AS (
-        SELECT
-          campaign_id,
-          COUNT(*)::int AS total_recipients,
-          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_count,
-          COUNT(*) FILTER (WHERE status = 'BLOCKED_RECENT')::int AS blocked_recent_count,
-          COUNT(*) FILTER (WHERE status = 'SENDING')::int AS sending_count,
-          COUNT(*) FILTER (WHERE status = 'SENT')::int AS sent_count,
-          COUNT(*) FILTER (WHERE status = 'FAILED')::int AS failed_count,
-          COUNT(*) FILTER (WHERE status = 'SKIPPED')::int AS skipped_count,
-          MIN(scheduled_for) FILTER (WHERE status = 'PENDING') AS next_scheduled_at,
-          MAX(scheduled_for) FILTER (WHERE status IN ('PENDING', 'SENDING')) AS estimated_finish_at
-        FROM whatsapp_campaign_recipients
-        WHERE campaign_id IN (SELECT id FROM selected_campaigns)
-        GROUP BY campaign_id
-      )
       SELECT
-        sc.*,
-        COALESCE(rp.total_recipients, 0) AS total_recipients,
-        COALESCE(rp.pending_count, 0) AS pending_count,
-        COALESCE(rp.blocked_recent_count, 0) AS blocked_recent_count,
-        COALESCE(rp.sending_count, 0) AS sending_count,
-        COALESCE(rp.sent_count, 0) AS sent_count,
-        COALESCE(rp.failed_count, 0) AS failed_count,
-        COALESCE(rp.skipped_count, 0) AS skipped_count,
-        rp.next_scheduled_at,
-        rp.estimated_finish_at
-      FROM selected_campaigns sc
-      LEFT JOIN recipient_progress rp ON rp.campaign_id = sc.id
-      ORDER BY sc.created_at DESC
+        wc.*,
+        COALESCE(cache.total_recipients, 0) AS total_recipients,
+        COALESCE(cache.pending_count, 0) AS pending_count,
+        COALESCE(cache.blocked_recent_count, 0) AS blocked_recent_count,
+        COALESCE(cache.sending_count, 0) AS sending_count,
+        COALESCE(cache.sent_count, 0) AS sent_count,
+        COALESCE(cache.failed_count, 0) AS failed_count,
+        COALESCE(cache.skipped_count, 0) AS skipped_count,
+        cache.next_scheduled_at,
+        cache.estimated_finish_at
+      FROM whatsapp_campaigns wc
+      LEFT JOIN whatsapp_campaign_stats_cache cache ON cache.campaign_id = wc.id
+      ${where}
+      ORDER BY wc.created_at DESC
+      ${limitSql}
     `,
     params,
   );

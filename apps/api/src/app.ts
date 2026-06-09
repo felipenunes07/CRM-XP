@@ -1618,6 +1618,70 @@ export function createApp() {
     }
   });
 
+  // Endpoint para enviar mensagem WhatsApp real (usado no mini chat)
+  app.post("/api/whatsapp/send-message", async (request, response, next) => {
+    try {
+      const { instanceId, jid, message } = request.body;
+      
+      if (!instanceId || !jid || !message) {
+        throw new HttpError(400, "instanceId, jid e message são obrigatórios");
+      }
+
+      logger.info("📱 Sending WhatsApp message", { instanceId, jid, messageLength: message.length });
+
+      // Buscar configuração da instância
+      const instanceResult = await pool.query(
+        `SELECT 
+          provider, 
+          instance_name AS evolution_instance_name, 
+          evolution_base_url, 
+          evolution_api_key, 
+          uazapi_base_url, 
+          uazapi_token,
+          display_label
+        FROM whatsapp_instances 
+        WHERE id = $1 AND status = 'ACTIVE'`,
+        [instanceId]
+      );
+      
+      if (!instanceResult.rows[0]) {
+        throw new HttpError(404, "Instância WhatsApp não encontrada ou inativa");
+      }
+
+      const instance = instanceResult.rows[0];
+      const { sendUazapiTextMessage } = await import("./modules/whatsapp/uazapiService.js");
+      const { sendWhatsappInstanceTextMessage } = await import("./modules/whatsapp/evolutionService.js");
+      
+      let result;
+      
+      if (instance.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
+        result = await sendUazapiTextMessage(
+          { baseUrl: String(instance.uazapi_base_url), token: String(instance.uazapi_token) },
+          jid,
+          message
+        );
+      } else if (instance.evolution_instance_name && instance.evolution_base_url && instance.evolution_api_key) {
+        result = await sendWhatsappInstanceTextMessage(
+          {
+            instanceName: String(instance.evolution_instance_name),
+            baseUrl: String(instance.evolution_base_url),
+            apiKey: String(instance.evolution_api_key)
+          },
+          jid,
+          message
+        );
+      } else {
+        throw new HttpError(500, "Configuração da instância WhatsApp inválida");
+      }
+
+      logger.info("✅ WhatsApp message sent successfully", { messageId: result?.key?.id });
+      response.json({ success: true, messageId: result?.key?.id || `msg-${Date.now()}` });
+    } catch (error: any) {
+      logger.error("❌ Send WhatsApp message error", { error: error.message, stack: error.stack });
+      next(error);
+    }
+  });
+
   app.get("/api/ideas", async (request, response, next) => {
     try {
       response.json(await listIdeas(request.user!));
