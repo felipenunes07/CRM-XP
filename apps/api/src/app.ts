@@ -1652,7 +1652,7 @@ export function createApp() {
       const { sendUazapiTextMessage } = await import("./modules/whatsapp/uazapiService.js");
       const { sendWhatsappInstanceTextMessage } = await import("./modules/whatsapp/evolutionService.js");
       
-      let result;
+      let result: Record<string, any>;
       
       if (instance.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
         result = await sendUazapiTextMessage(
@@ -1664,8 +1664,8 @@ export function createApp() {
         result = await sendWhatsappInstanceTextMessage(
           {
             instanceName: String(instance.evolution_instance_name),
-            baseUrl: String(instance.evolution_base_url),
-            apiKey: String(instance.evolution_api_key)
+            evolutionBaseUrl: String(instance.evolution_base_url),
+            evolutionApiKey: String(instance.evolution_api_key)
           },
           jid,
           message
@@ -1675,7 +1675,7 @@ export function createApp() {
       }
 
       logger.info("✅ WhatsApp message sent successfully", { messageId: result?.key?.id });
-      response.json({ success: true, messageId: result?.key?.id || `msg-${Date.now()}` });
+      response.json({ success: true, messageId: (result as any)?.key?.id || `msg-${Date.now()}` });
     } catch (error: any) {
       logger.error("❌ Send WhatsApp message error", { error: error.message, stack: error.stack });
       next(error);
