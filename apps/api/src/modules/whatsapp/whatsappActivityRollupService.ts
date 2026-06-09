@@ -92,7 +92,13 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
         last_message_at,
         updated_at
       )
-      WITH monitor_messages AS (
+      WITH clean_instances AS (
+        SELECT *,
+          regexp_replace(phone_number, '\\D', '', 'g') AS clean_phone
+        FROM whatsapp_instances
+        WHERE phone_number IS NOT NULL
+      ),
+      monitor_messages AS (
         SELECT
           0 AS source_priority,
           wmm.id::text AS source_id,
@@ -145,7 +151,8 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
         SELECT * FROM activity_messages
       ),
       deduped_source AS (
-        SELECT *
+        SELECT *,
+          regexp_replace(sender_jid, '\\D', '', 'g') AS clean_sender_jid
         FROM (
           SELECT
             source_messages.*,
@@ -195,15 +202,14 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
         ) wi_base ON true
         LEFT JOIN LATERAL (
           SELECT wi_match.*
-          FROM whatsapp_instances wi_match
+          FROM clean_instances wi_match
           WHERE src.activity_type = 'WHATSAPP_SENT'
             AND src.sender_jid IS NOT NULL
-            AND wi_match.phone_number IS NOT NULL
-            AND LENGTH(regexp_replace(src.sender_jid, '\D', '', 'g')) >= 10
-            AND LENGTH(regexp_replace(wi_match.phone_number, '\D', '', 'g')) >= 10
+            AND LENGTH(src.clean_sender_jid) >= 10
+            AND LENGTH(wi_match.clean_phone) >= 10
             AND (
-              RIGHT(regexp_replace(src.sender_jid, '\D', '', 'g'), 11) = RIGHT(regexp_replace(wi_match.phone_number, '\D', '', 'g'), 11)
-              OR RIGHT(regexp_replace(src.sender_jid, '\D', '', 'g'), 10) = RIGHT(regexp_replace(wi_match.phone_number, '\D', '', 'g'), 10)
+              RIGHT(src.clean_sender_jid, 11) = RIGHT(wi_match.clean_phone, 11)
+              OR RIGHT(src.clean_sender_jid, 10) = RIGHT(wi_match.clean_phone, 10)
             )
           ORDER BY
             CASE WHEN wi_match.status = 'ACTIVE' THEN 0 ELSE 1 END,

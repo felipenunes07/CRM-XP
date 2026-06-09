@@ -3087,72 +3087,86 @@ export async function getWhatsappAgentActivityReport(
 
     return pool.query(
       `
-      WITH monitor_rows AS (
+      WITH raw_monitor_rows AS (
         SELECT
           ('monitor:' || wmm.id::text) AS id,
           COALESCE(NULLIF(wmm.message_id, ''), wmm.id::text) AS message_key,
           0 AS source_priority,
-          COALESCE(u.id::text, 'instance:' || wi_base.id, 'sem-agente') AS agent_id,
-          COALESCE(
-            CASE
-              WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name) IS NOT NULL
-                THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name) || ')'
-              ELSE COALESCE(u.name, wi_base.display_label, wi_base.instance_name)
-            END,
-            'Sem agente'
-          ) AS agent_name,
-          wi_base.instance_name,
-          wi_base.display_label,
-          wi_base.phone_number,
-          wi_base.profile_picture_url,
-          CASE
-            WHEN wmm.direction = 'OUTBOUND' THEN 'WHATSAPP_SENT'
-            ELSE 'WHATSAPP_RECEIVED'
-          END AS activity_type,
+          wmm.direction,
           wmm.created_at,
+          wmm.instance_name AS wmm_instance_name,
+          d.whatsapp_instance_id AS deal_instance_id,
+          d.assigned_to AS deal_assigned_to,
+          d.assigned_to_name AS deal_assigned_to_name,
           COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid) AS remote_jid,
-          COALESCE(NULLIF(wmm.media_json ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
-          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', wmm.created_at), 'YYYY-MM-DD') AS local_date,
-          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', wmm.created_at))::int AS local_hour
+          COALESCE(NULLIF(wmm.media_json ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name
         FROM whatsapp_monitor_messages wmm
         JOIN deals d ON d.id = wmm.deal_id
-        LEFT JOIN LATERAL (
-          SELECT wi_match.*
-          FROM whatsapp_instances wi_match
-          WHERE LOWER(wi_match.instance_name) = LOWER(COALESCE(wmm.instance_name, ''))
-            OR wi_match.id = d.whatsapp_instance_id
-          ORDER BY
-            CASE
-              WHEN LOWER(wi_match.instance_name) = LOWER(COALESCE(wmm.instance_name, '')) THEN 0
-              WHEN wi_match.id = d.whatsapp_instance_id THEN 1
-              ELSE 2
-            END
-          LIMIT 1
-        ) wi_base ON true
-        LEFT JOIN LATERAL (
-          SELECT user_match.*
-          FROM users user_match
-          WHERE user_match.id = wi_base.assigned_user_id
-            OR user_match.id = d.assigned_to
-            OR LOWER(user_match.name) = LOWER(wi_base.assigned_user_name)
-            OR LOWER(user_match.name) = LOWER(d.assigned_to_name)
-          ORDER BY
-            CASE
-              WHEN user_match.id = wi_base.assigned_user_id THEN 0
-              WHEN user_match.id = d.assigned_to THEN 1
-              ELSE 2
-            END
-          LIMIT 1
-        ) u ON true
         WHERE wmm.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
           AND wmm.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
           AND ${monitorableWhatsappJidSql("COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)")}
       ),
-      activity_rows AS (
+      raw_activity_rows AS (
         SELECT
           ('activity:' || da.id::text) AS id,
           COALESCE(NULLIF(da.metadata ->> 'messageId', ''), NULLIF(da.metadata ->> 'providerMessageId', ''), da.id::text) AS message_key,
           1 AS source_priority,
+          da.activity_type,
+          da.created_at,
+          da.actor_user_id AS da_actor_user_id,
+          da.actor_name AS da_actor_name,
+          da.metadata ->> 'instance' AS da_instance_name,
+          d.whatsapp_instance_id AS deal_instance_id,
+          d.assigned_to AS deal_assigned_to,
+          d.assigned_to_name AS deal_assigned_to_name,
+          COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
+          COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name
+        FROM deal_activities da
+        JOIN deals d ON d.id = da.deal_id
+        WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+          AND da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND ${monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)")}
+      ),
+      deduped_raw AS (
+        SELECT *
+        FROM (
+          SELECT
+            unioned.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY unioned.remote_jid, unioned.message_key
+              ORDER BY unioned.source_priority ASC, unioned.created_at ASC, unioned.id ASC
+            ) AS row_rank
+          FROM (
+            SELECT
+              id, message_key, source_priority, created_at, remote_jid, chat_name,
+              deal_instance_id, deal_assigned_to, deal_assigned_to_name,
+              wmm_instance_name, NULL AS da_instance_name,
+              NULL::uuid AS da_actor_user_id, NULL AS da_actor_name,
+              CASE WHEN direction = 'OUTBOUND' THEN 'WHATSAPP_SENT' ELSE 'WHATSAPP_RECEIVED' END AS activity_type
+            FROM raw_monitor_rows
+            UNION ALL
+            SELECT
+              id, message_key, source_priority, created_at, remote_jid, chat_name,
+              deal_instance_id, deal_assigned_to, deal_assigned_to_name,
+              NULL AS wmm_instance_name, da_instance_name,
+              da_actor_user_id, da_actor_name,
+              activity_type
+            FROM raw_activity_rows
+          ) unioned
+        ) ranked
+        WHERE row_rank = 1
+      ),
+      joined_rows AS (
+        SELECT
+          dr_inner.id,
+          dr_inner.message_key,
+          dr_inner.activity_type,
+          dr_inner.created_at,
+          dr_inner.remote_jid,
+          dr_inner.chat_name,
+          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', dr_inner.created_at), 'YYYY-MM-DD') AS local_date,
+          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', dr_inner.created_at))::int AS local_hour,
           COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
           COALESCE(
             CASE
@@ -3165,23 +3179,16 @@ export async function getWhatsappAgentActivityReport(
           COALESCE(wi_base.instance_name, wi.instance_name) AS instance_name,
           COALESCE(wi_base.display_label, wi.display_label) AS display_label,
           COALESCE(wi_base.phone_number, wi.phone_number) AS phone_number,
-          COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) AS profile_picture_url,
-          da.activity_type,
-          da.created_at,
-          COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid) AS remote_jid,
-          COALESCE(NULLIF(da.metadata ->> 'chatDisplayName', ''), d.customer_display_name, d.title) AS chat_name,
-          TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at), 'YYYY-MM-DD') AS local_date,
-          EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', da.created_at))::int AS local_hour
-        FROM deal_activities da
-        JOIN deals d ON d.id = da.deal_id
+          COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) AS profile_picture_url
+        FROM deduped_raw dr_inner
         LEFT JOIN LATERAL (
           SELECT wi_match.*
           FROM whatsapp_instances wi_match
-          WHERE wi_match.id = d.whatsapp_instance_id
-            OR LOWER(wi_match.instance_name) = LOWER(COALESCE(da.metadata ->> 'instance', ''))
+          WHERE wi_match.id = dr_inner.deal_instance_id
+            OR LOWER(wi_match.instance_name) = LOWER(COALESCE(dr_inner.wmm_instance_name, dr_inner.da_instance_name, ''))
           ORDER BY
             CASE
-              WHEN wi_match.id = d.whatsapp_instance_id THEN 0
+              WHEN wi_match.id = dr_inner.deal_instance_id THEN 0
               ELSE 1
             END
           LIMIT 1
@@ -3189,16 +3196,16 @@ export async function getWhatsappAgentActivityReport(
         LEFT JOIN LATERAL (
           SELECT user_match.*
           FROM users user_match
-          WHERE user_match.id = da.actor_user_id
-            OR user_match.id = d.assigned_to
+          WHERE user_match.id = dr_inner.da_actor_user_id
+            OR user_match.id = dr_inner.deal_assigned_to
             OR user_match.id = wi_base.assigned_user_id
-            OR LOWER(user_match.name) = LOWER(da.actor_name)
-            OR LOWER(user_match.name) = LOWER(d.assigned_to_name)
-            OR LOWER(user_match.name) = LOWER(wi_base.assigned_user_name)
+            OR LOWER(user_match.name) = LOWER(COALESCE(dr_inner.da_actor_name, ''))
+            OR LOWER(user_match.name) = LOWER(COALESCE(dr_inner.deal_assigned_to_name, ''))
+            OR LOWER(user_match.name) = LOWER(COALESCE(wi_base.assigned_user_name, ''))
           ORDER BY
             CASE
-              WHEN user_match.id = da.actor_user_id THEN 0
-              WHEN user_match.id = d.assigned_to THEN 1
+              WHEN user_match.id = dr_inner.da_actor_user_id THEN 0
+              WHEN user_match.id = dr_inner.deal_assigned_to THEN 1
               WHEN user_match.id = wi_base.assigned_user_id THEN 2
               ELSE 3
             END
@@ -3207,58 +3214,20 @@ export async function getWhatsappAgentActivityReport(
         LEFT JOIN LATERAL (
           SELECT wi_match.*
           FROM whatsapp_instances wi_match
-          WHERE wi_match.id = d.whatsapp_instance_id
+          WHERE wi_match.id = dr_inner.deal_instance_id
             OR wi_match.assigned_user_id = u.id
           ORDER BY
             CASE
-              WHEN wi_match.id = d.whatsapp_instance_id THEN 0
+              WHEN wi_match.id = dr_inner.deal_instance_id THEN 0
               WHEN wi_match.assigned_user_id = u.id THEN 1
               ELSE 2
             END
           LIMIT 1
         ) wi ON true
-        WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-          AND da.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
-          AND da.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
-          AND ${monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)")}
-      ),
-      deduped_rows AS (
-        SELECT *
-        FROM (
-          SELECT
-            unioned.*,
-            ROW_NUMBER() OVER (
-              PARTITION BY unioned.remote_jid, unioned.message_key
-              ORDER BY unioned.source_priority ASC, unioned.created_at ASC, unioned.id ASC
-            ) AS row_rank
-          FROM (
-            SELECT * FROM monitor_rows
-            UNION ALL
-            SELECT * FROM activity_rows
-          ) unioned
-        ) ranked
-        WHERE row_rank = 1
-      ),
-      event_rows AS (
-        SELECT
-          id,
-          agent_id,
-          agent_name,
-          instance_name,
-          display_label,
-          phone_number,
-          profile_picture_url,
-          activity_type,
-          created_at,
-          remote_jid,
-          chat_name,
-          local_date,
-          local_hour
-        FROM deduped_rows
       ),
       sequenced AS (
         SELECT
-          event_rows.*,
+          joined_rows.*,
           MAX(created_at) FILTER (WHERE activity_type = 'WHATSAPP_RECEIVED') OVER (
             PARTITION BY agent_id, remote_jid
             ORDER BY created_at, id
@@ -3269,7 +3238,7 @@ export async function getWhatsappAgentActivityReport(
             ORDER BY created_at, id
             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
           ) AS last_outbound_at
-        FROM event_rows
+        FROM joined_rows
       )
       SELECT
         agent_id,
