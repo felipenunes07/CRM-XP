@@ -747,7 +747,7 @@ export function DashboardPage() {
     refetchOnWindowFocus: true,
   });
 
-  const [selectedBucket, setSelectedBucket] = useState<BucketLabel | null>(null);
+  const [selectedBuckets, setSelectedBuckets] = useState<BucketLabel[]>([]);
   const [chartView, setChartView] = useState<ChartView>("inactivity");
   const [screensSoldPeriodMode, setScreensSoldPeriodMode] = useState<"comparative" | "continuous">("comparative");
   const [selectedSaleMonth, setSelectedSaleMonth] = useState<string | null>(null);
@@ -799,14 +799,14 @@ export function DashboardPage() {
   });
 
   const filteredCustomersQuery = useQuery({
-    queryKey: ["dashboard-bucket-customers", selectedBucket],
+    queryKey: ["dashboard-bucket-customers", selectedBuckets],
     queryFn: () =>
       api.customers(token!, {
-        ...(selectedBucket ? bucketFilters[selectedBucket] : {}),
+        daysInactiveRanges: selectedBuckets.join(","),
         sortBy: "priority",
         limit: 120,
       }),
-    enabled: Boolean(token && selectedBucket),
+    enabled: Boolean(token && selectedBuckets.length > 0),
   });
 
   const priorityCustomersQuery = useQuery({
@@ -816,7 +816,7 @@ export function DashboardPage() {
         sortBy: "priority",
         limit: 120,
       }),
-    enabled: Boolean(token && !selectedBucket && !selectedSaleMonth),
+    enabled: Boolean(token && selectedBuckets.length === 0 && !selectedSaleMonth),
   });
 
   const salesCustomersQuery = useQuery({
@@ -931,7 +931,7 @@ export function DashboardPage() {
           
           // Atualizar as outras queries também
           agendaQuery.refetch();
-          if (selectedBucket) {
+          if (selectedBuckets.length > 0) {
             filteredCustomersQuery.refetch();
           } else if (!selectedSaleMonth) {
             priorityCustomersQuery.refetch();
@@ -951,7 +951,7 @@ export function DashboardPage() {
       clearInterval(checkInterval);
       clearTimeout(timeout);
     };
-  }, [isSyncing, token, selectedBucket, selectedSaleMonth]);
+  }, [isSyncing, token, selectedBuckets, selectedSaleMonth]);
 
   useEffect(() => {
     if (!isTrendFullScreen) {
@@ -1202,13 +1202,13 @@ export function DashboardPage() {
   const isSalesTableActive = chartView === "screensSold" && Boolean(selectedSaleMonth);
   const tableCustomers = isSalesTableActive 
     ? (salesCustomersQuery.data ?? []) 
-    : selectedBucket ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
+    : selectedBuckets.length > 0 ? (filteredCustomersQuery.data ?? []) : (priorityCustomersQuery.data ?? []);
   const tableQueryLoading = isSalesTableActive
     ? salesCustomersQuery.isLoading
-    : selectedBucket ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
+    : selectedBuckets.length > 0 ? filteredCustomersQuery.isLoading : priorityCustomersQuery.isLoading;
   const tableQueryError = isSalesTableActive
     ? salesCustomersQuery.isError
-    : selectedBucket ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
+    : selectedBuckets.length > 0 ? filteredCustomersQuery.isError : priorityCustomersQuery.isError;
   const fullScreenAnnotationTooltipPosition = hoveredFullScreenAnnotation
     ? getFullScreenAnnotationTooltipPosition(hoveredFullScreenAnnotation.mouseX, hoveredFullScreenAnnotation.mouseY)
     : null;
@@ -1228,7 +1228,7 @@ export function DashboardPage() {
       await api.syncData(token!, "direct");
       await dashboardQuery.refetch();
       await agendaQuery.refetch();
-      if (selectedBucket) {
+      if (selectedBuckets.length > 0) {
         await filteredCustomersQuery.refetch();
       } else if (!selectedSaleMonth) {
         await priorityCustomersQuery.refetch();
@@ -1245,7 +1245,7 @@ export function DashboardPage() {
   function handleChangeChartView(nextView: ChartView) {
     setChartView(nextView);
     if (nextView === "trend") {
-      setSelectedBucket(null);
+      setSelectedBuckets([]);
     }
   }
 
@@ -1589,7 +1589,11 @@ export function DashboardPage() {
                       if (!label || !(label in bucketFilters)) {
                         return;
                       }
-                      setSelectedBucket((current) => (current === label ? null : (label as BucketLabel)));
+                      setSelectedBuckets((current) =>
+                        current.includes(label as BucketLabel)
+                          ? current.filter((b) => b !== label)
+                          : [...current, label as BucketLabel]
+                      );
                     }}
                     margin={{ top: 32, right: 8, left: 0, bottom: 0 }}
                   >
@@ -1604,17 +1608,17 @@ export function DashboardPage() {
                         className="chart-bar-label"
                       />
                       {metrics.inactivityBuckets.map((bucket) => (
-                        <Cell key={bucket.label} fill={bucketColor(bucket.label, selectedBucket === bucket.label)} />
+                        <Cell key={bucket.label} fill={bucketColor(bucket.label as BucketLabel, selectedBuckets.includes(bucket.label as BucketLabel))} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              {selectedBucket ? (
+              {selectedBuckets.length > 0 ? (
                 <div className="inline-actions">
-                  <span className="tag">{tx("Filtro ativo:", "当前筛选：")} {selectedBucket}</span>
-                  <button className="ghost-button" type="button" onClick={() => setSelectedBucket(null)}>
-                    {tx("Limpar filtro", "清除筛选")}
+                  <span className="tag">{tx("Filtros ativos:", "当前筛选：")} {selectedBuckets.join(", ")}</span>
+                  <button className="ghost-button" type="button" onClick={() => setSelectedBuckets([])}>
+                    {tx("Limpar filtros", "清除筛选")}
                   </button>
                 </div>
               ) : null}
@@ -2072,19 +2076,19 @@ export function DashboardPage() {
               <p className="eyebrow">
                 {isSalesTableActive 
                   ? tx("Clientes que compraram no mês", "Customers who bought in the month")
-                  : selectedBucket ? tx("Clientes filtrados pelo grafico", "按图表筛选的客户") : tx("Fila por prioridade", "优先级队列")}
+                  : selectedBuckets.length > 0 ? tx("Clientes filtrados pelo grafico", "按图表筛选 de clientes") : tx("Fila por prioridade", "优先级队列")}
               </p>
               <h3>
                 {isSalesTableActive
                   ? tx(`Clientes com compras em ${selectedSaleMonth!.split("-").reverse().join("/")}`, `Purchased in ${selectedSaleMonth}`)
-                  : selectedBucket ? tx(`Clientes na faixa ${selectedBucket}`, `区间 ${selectedBucket} 的客户`) : tx("Clientes para o time abordar agora", "团队当前优先联系的客户")}
+                  : selectedBuckets.length > 0 ? tx(`Clientes nas faixas ${selectedBuckets.join(", ")}`, `区间 ${selectedBuckets.join(", ")} 的 clientes`) : tx("Clientes para o time abordar agora", "团队当前优先联系 the clients")}
               </h3>
               <p className="panel-subcopy">
                 {isSalesTableActive
                   ? tx(`Exibindo clientes ${selectedPrefix ? `da categoria ${selectedPrefix} ` : ""}que compraram no mês selecionado no gráfico.`, `Showing customers who bought in the selected month.`)
-                  : selectedBucket
-                    ? tx("A selecao do grafico mostra apenas clientes da faixa escolhida.", "图表筛选后，这里只显示所选区间内的客户。")
-                    : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格也支持按列排序和调整列宽。")}
+                  : selectedBuckets.length > 0
+                    ? tx("A selecao do grafico mostra apenas clientes das faixas escolhidas.", "图表筛选后，这里只显示所选区间内的客户。")
+                    : tx("Ordenacao base por prioridade comercial; a tabela tambem permite ordenar por coluna e ajustar larguras.", "列表默认按商业优先级排序，表格 também permite ordenar por coluna e ajustar larguras.")}
               </p>
             </div>
           </div>

@@ -1005,6 +1005,33 @@ export const api = {
   whatsappInstances(token: string) {
     return request<WhatsappInstanceItem[]>("/api/whatsapp-instances", {}, token);
   },
+  // Hosts a campaign video and returns a public URL. Uses a dedicated fetch with
+  // a long timeout (uploads can take a while) instead of the shared 15s request().
+  async uploadCampaignVideo(
+    token: string,
+    input: { fileBase64: string; fileName?: string; contentType?: string },
+  ): Promise<{ url: string }> {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/messages/upload-video`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? `Falha no upload do vídeo (status ${response.status})`);
+      }
+      return (await response.json()) as { url: string };
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  },
   createWhatsappInstance(token: string, input: {
     provider?: WhatsappInstanceProvider;
     instanceName: string;

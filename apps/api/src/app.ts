@@ -188,6 +188,7 @@ const customerQuerySchema = z.object({
   status: z.string().optional(),
   minDaysInactive: z.coerce.number().optional(),
   maxDaysInactive: z.coerce.number().optional(),
+  daysInactiveRanges: z.string().optional(),
   minAvgTicket: z.coerce.number().optional(),
   minTotalSpent: z.coerce.number().optional(),
   minFrequencyDrop: z.coerce.number().optional(),
@@ -603,7 +604,7 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "20mb" }));
+  app.use(express.json({ limit: "60mb" }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -896,6 +897,7 @@ export function createApp() {
           labels: query.labels?.split(",").filter(Boolean),
           excludeLabels: query.excludeLabels?.split(",").filter(Boolean),
           isAmbassador: query.isAmbassador,
+          daysInactiveRanges: query.daysInactiveRanges?.split(",").filter(Boolean),
         }),
       );
     } catch (error) {
@@ -1330,6 +1332,76 @@ export function createApp() {
     try {
       await deleteMessageTemplate(request.params.id);
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Uploads a campaign video to Supabase Storage and returns a public URL.
+  // Sending video by URL (instead of inline base64) is what prevents the
+  // provider-side "operation was aborted due to timeout" / "Bad Request"
+  // failures, since Evolution/UazAPI download the file themselves.
+  app.post("/api/messages/upload-video", async (request, response, next) => {
+    try {
+      const { fileBase64, fileName, contentType } = (request.body ?? {}) as {
+        fileBase64?: string;
+        fileName?: string;
+        contentType?: string;
+      };
+
+      if (!fileBase64 || typeof fileBase64 !== "string") {
+        throw new HttpError(400, "fileBase64 é obrigatório");
+      }
+
+      const { isSupabaseAdminConfigured, createSupabaseAdminClient } = await import(
+        "./modules/platform/supabaseAdmin.js"
+      );
+
+      if (!isSupabaseAdminConfigured()) {
+        throw new HttpError(
+          503,
+          "Storage de vídeo não configurado. Defina SUPABASE_SERVICE_ROLE_KEY no backend e crie o bucket público para hospedar vídeos por URL.",
+        );
+      }
+
+      // Accept both a data URL ("data:video/mp4;base64,AAAA...") and raw base64.
+      let base64 = fileBase64;
+      let mime = contentType || "video/mp4";
+      if (fileBase64.startsWith("data:")) {
+        const match = fileBase64.match(/^data:([^;]+);base64,(.*)$/s);
+        if (match && match[1] && match[2]) {
+          mime = match[1];
+          base64 = match[2];
+        }
+      }
+
+      const buffer = Buffer.from(base64, "base64");
+      if (!buffer.length) {
+        throw new HttpError(400, "Arquivo de vídeo inválido ou vazio");
+      }
+
+      const admin = createSupabaseAdminClient();
+      const bucket = "whatsapp-media";
+      const safeExt =
+        fileName && fileName.includes(".")
+          ? fileName.split(".").pop()!.replace(/[^a-zA-Z0-9]/g, "").slice(0, 5) || "mp4"
+          : "mp4";
+      const objectPath = `videos/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
+
+      const { error: uploadError } = await admin.storage
+        .from(bucket)
+        .upload(objectPath, buffer, { contentType: mime, upsert: false });
+
+      if (uploadError) {
+        throw new HttpError(
+          500,
+          `Falha ao subir vídeo para o storage (bucket "${bucket}"): ${uploadError.message}`,
+        );
+      }
+
+      const { data: pub } = admin.storage.from(bucket).getPublicUrl(objectPath);
+      logger.info("🎥 Vídeo de campanha hospedado no storage", { objectPath, bucket });
+      response.json({ url: pub.publicUrl });
     } catch (error) {
       next(error);
     }

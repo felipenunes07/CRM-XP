@@ -2032,10 +2032,24 @@ export function DisparadorPage() {
                                     setUploadingVideo(true);
                                     try {
                                       const reader = new FileReader();
-                                      reader.onload = (event) => {
+                                      reader.onload = async (event) => {
                                         const base64 = event.target?.result as string;
-                                        setVideoUrl(base64);
-                                        setUploadingVideo(false);
+                                        try {
+                                          // Prefer hosting the video and sending its URL — this avoids the
+                                          // provider-side timeout / "Bad Request" caused by inline base64.
+                                          const { url } = await api.uploadCampaignVideo(token!, {
+                                            fileBase64: base64,
+                                            fileName: file.name,
+                                            contentType: file.type || "video/mp4",
+                                          });
+                                          setVideoUrl(url);
+                                        } catch (uploadErr) {
+                                          // Storage not configured / upload failed → fall back to base64.
+                                          console.warn("Upload de vídeo para storage falhou, usando base64 inline:", uploadErr);
+                                          setVideoUrl(base64);
+                                        } finally {
+                                          setUploadingVideo(false);
+                                        }
                                       };
                                       reader.onerror = () => {
                                         alert("Erro ao ler arquivo de vídeo.");

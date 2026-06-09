@@ -12,12 +12,20 @@ export interface UazapiCarouselSlide {
 }
 
 /**
- * Strip JID suffix to get a plain phone number for UazAPI.
- * E.g. "5511999999999@s.whatsapp.net" → "5511999999999"
+ * Normalize a JID into the value UazAPI expects in the `number` field.
+ * - Group JIDs (e.g. "120363...@g.us") MUST be kept intact: stripping the
+ *   "@g.us" suffix turns a group id into a bogus phone number and UazAPI
+ *   rejects the request with "Bad Request".
+ * - Personal JIDs (e.g. "5511999999999@s.whatsapp.net") become the bare
+ *   phone number digits.
  */
 function stripJidToNumber(jid: string): string {
-  const [num] = jid.split("@");
-  return (num ?? jid).replace(/\D/g, "");
+  const trimmed = (jid ?? "").trim();
+  if (trimmed.endsWith("@g.us")) {
+    return trimmed;
+  }
+  const [num] = trimmed.split("@");
+  return (num ?? trimmed).replace(/\D/g, "");
 }
 
 export async function sendUazapiTextMessage(
