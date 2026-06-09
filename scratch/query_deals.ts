@@ -1,7 +1,25 @@
-import { migrations } from "../apps/api/src/db/migrations.js";
+import { pool } from "../apps/api/src/db/client.js";
 
-console.log("Total migrations in migrations.ts:", migrations.length);
-migrations.forEach((m, idx) => {
-  const lines = m.trim().split("\n");
-  console.log(`Migration ${idx + 1}: ${lines[0]} ${lines[1] ? '(...) ' + lines[1].substring(0, 40) : ''}`);
-});
+async function main() {
+  try {
+    const result = await pool.query(
+      `SELECT column_name, data_type, is_nullable, column_default 
+       FROM information_schema.columns 
+       WHERE table_name = 'deals'`
+    );
+    console.log("Deals table columns:");
+    result.rows.forEach(col => {
+      if (col.is_nullable === 'NO' && col.column_default === null) {
+        console.log(`❌ Required column without default: ${col.column_name} (${col.data_type})`);
+      } else {
+        console.log(`  ${col.column_name} (${col.data_type}) - Nullable: ${col.is_nullable}, Default: ${col.column_default}`);
+      }
+    });
+  } catch (error) {
+    console.error("Error:", error);
+  } finally {
+    await pool.end();
+  }
+}
+
+main();
