@@ -1632,6 +1632,7 @@ export async function getWhatsappMonitorConversation(
   user: JwtUser,
   options: ConversationDetailOptions = {},
 ): Promise<WhatsappMonitorConversationDetail> {
+  // Resolve JID to Deal ID and update whatsapp_instance_id if needed
   let resolvedDealId = dealId;
   if (typeof dealId === "string" && dealId.includes("@")) {
     const dealRes = await pool.query(
