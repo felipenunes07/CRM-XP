@@ -1844,6 +1844,25 @@ export function createApp() {
     }
   });
 
+  app.delete("/api/whatsapp-campaigns/:id", async (request, response, next) => {
+    try {
+      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para excluir esta campanha.");
+      }
+
+      await pool.query(`DELETE FROM whatsapp_campaigns WHERE id = $1`, [String(request.params.id)]);
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/whatsapp-campaigns/:id/recipients/:recipientId/skip", async (request, response, next) => {
     try {
       const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
