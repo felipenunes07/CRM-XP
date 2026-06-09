@@ -199,14 +199,18 @@ export function buildWhere(filters: FilterLike) {
       } else {
         const parts = range.split("-");
         if (parts.length === 2) {
-          const minVal = parseInt(parts[0], 10);
-          const maxVal = parseInt(parts[1], 10);
-          if (!isNaN(minVal) && !isNaN(maxVal)) {
-            params.push(minVal);
-            const minIdx = params.length;
-            params.push(maxVal);
-            const maxIdx = params.length;
-            rangeClauses.push(`COALESCE(s.days_since_last_purchase, 9999) BETWEEN $${minIdx} AND $${maxIdx}`);
+          const first = parts[0];
+          const second = parts[1];
+          if (first !== undefined && second !== undefined) {
+            const minVal = parseInt(first, 10);
+            const maxVal = parseInt(second, 10);
+            if (!isNaN(minVal) && !isNaN(maxVal)) {
+              params.push(minVal);
+              const minIdx = params.length;
+              params.push(maxVal);
+              const maxIdx = params.length;
+              rangeClauses.push(`COALESCE(s.days_since_last_purchase, 9999) BETWEEN $${minIdx} AND $${maxIdx}`);
+            }
           }
         }
       }
