@@ -776,6 +776,11 @@ export const api = {
       method: "POST",
     }, token);
   },
+  deleteCampaign(token: string, id: string) {
+    return request<void>(`/api/whatsapp-campaigns/${id}`, {
+      method: "DELETE",
+    }, token);
+  },
   resumeWhatsappCampaign(token: string, id: string) {
     return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/resume`, {
       method: "POST",

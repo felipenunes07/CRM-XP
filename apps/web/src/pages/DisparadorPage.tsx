@@ -17,6 +17,8 @@ import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, A
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
+import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
+import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 
 type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
@@ -425,16 +427,40 @@ export function CampaignPerformancePanel({
                   <th>RESPOSTA</th>
                   <th>COMPRA</th>
                   <th style={{ textAlign: "right" }}>RECEITA</th>
+                  <th style={{ textAlign: "center" }}>AÇÕES</th>
                 </tr>
               </thead>
               <tbody>
                 {recipients.length ? recipients.map((recipient) => (
                   <tr key={recipient.id}>
                     <td>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                        <strong style={{ color: "#18181b", fontSize: "0.84rem" }}>
-                          {recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || "Cliente WhatsApp"}
-                        </strong>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                            {recipient.status === "SENT" && <CheckCircle2 size={14} style={{ color: "#10b981" }} />}
+                            {recipient.status === "FAILED" && <XCircle size={14} style={{ color: "#ef4444" }} />}
+                            {recipient.status === "SENDING" && <LoaderCircle size={14} style={{ color: "#3b82f6" }} className="spin" />}
+                            {recipient.status === "PENDING" && <Clock3 size={14} style={{ color: "#f59e0b" }} />}
+                            <strong style={{ color: "#18181b", fontSize: "0.84rem" }}>
+                              {recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || "Cliente WhatsApp"}
+                            </strong>
+                          </div>
+                          {recipient.responded && (
+                            <span style={{ 
+                              background: "#dcfce7", 
+                              color: "#166534", 
+                              padding: "2px 6px", 
+                              borderRadius: "4px",
+                              fontSize: "0.68rem",
+                              fontWeight: 700,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px"
+                            }}>
+                              💬 Respondeu
+                            </span>
+                          )}
+                        </div>
                         <span style={{ color: "#71717a", fontSize: "0.72rem", fontFamily: "monospace" }}>{recipient.jid}</span>
                       </div>
                     </td>
@@ -465,10 +491,78 @@ export function CampaignPerformancePanel({
                     <td style={{ textAlign: "right" }}>
                       <strong style={{ color: "#18181b", fontSize: "0.84rem" }}>{formatCurrency(recipient.revenue)}</strong>
                     </td>
+                    <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setMiniChatRecipient(recipient);
+                          setMiniChatOpen(true);
+                          setMiniChatLoading(true);
+                          setMiniChatMessages([]);
+                          
+                          try {
+                            // Buscar mensagens do histórico (simulado por enquanto)
+                            // TODO: Implementar API real para buscar mensagens
+                            await new Promise(resolve => setTimeout(resolve, 800));
+                            
+                            // Mensagens mock - substituir por chamada real à API
+                            const mockMessages: MiniChatMessage[] = [
+                              {
+                                id: "1",
+                                content: campaign.messageText || "Mensagem da campanha",
+                                direction: "OUTBOUND",
+                                timestamp: recipient.sentAt || new Date().toISOString(),
+                                status: "sent"
+                              }
+                            ];
+                            
+                            if (recipient.responded && recipient.firstResponseAt) {
+                              mockMessages.push({
+                                id: "2",
+                                content: "Obrigado pela mensagem! Tenho interesse.",
+                                direction: "INBOUND",
+                                timestamp: recipient.firstResponseAt,
+                              });
+                            }
+                            
+                            setMiniChatMessages(mockMessages);
+                          } catch (error) {
+                            console.error("Erro ao carregar mensagens:", error);
+                          } finally {
+                            setMiniChatLoading(false);
+                          }
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          padding: "6px 12px",
+                          background: recipient.responded ? "#dcfce7" : "#eff6ff",
+                          border: recipient.responded ? "1px solid #86efac" : "1px solid #bfdbfe",
+                          borderRadius: "6px",
+                          color: recipient.responded ? "#166534" : "#1e40af",
+                          fontSize: "0.75rem",
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          transition: "all 0.15s"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "scale(1.05)";
+                          e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "scale(1)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
+                      >
+                        <Smartphone size={14} />
+                        Ver Chat
+                      </button>
+                    </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "#71717a" }}>
+                    <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "#71717a" }}>
                       Nenhum cliente encontrado neste filtro.
                     </td>
                   </tr>
@@ -581,6 +675,12 @@ export function DisparadorPage() {
   const [campaignPerformanceFilter, setCampaignPerformanceFilter] = useState<CampaignPerformanceFilter>("ALL");
   const [attemptedAutoImport, setAttemptedAutoImport] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // Mini Chat States
+  const [miniChatOpen, setMiniChatOpen] = useState(false);
+  const [miniChatRecipient, setMiniChatRecipient] = useState<WhatsappCampaignRecipient | null>(null);
+  const [miniChatMessages, setMiniChatMessages] = useState<MiniChatMessage[]>([]);
+  const [miniChatLoading, setMiniChatLoading] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"NEW_CAMPAIGN" | "HISTORY">("NEW_CAMPAIGN");
   const [currentStep, setCurrentStep] = useState(1); // Start at step 1 (Criação)
@@ -3667,7 +3767,7 @@ export function DisparadorPage() {
                       statusBg = "#fef2f2";
                       statusColor = "#991b1b";
                       statusBorder = "#fecaca";
-                      statusText = "CANCELLED";
+                      statusText = "CANCELADO";
                     } else if (campaign.status === "IN_PROGRESS") {
                       statusBg = "#eff6ff";
                       statusColor = "#1e40af";
@@ -3680,8 +3780,21 @@ export function DisparadorPage() {
                       statusText = "NA FILA";
                     }
 
-                    // Progress bar color
-                    const progressBarColor = campaign.status === "CANCELLED" ? "#ef4444" : "#10b981";
+                    // Progress bar color - CORES CORRETAS baseadas no status real
+                    const { sentCount, failedCount, totalRecipients } = campaign.progress;
+                    let progressBarColor = "#e4e4e7"; // Cinza padrão
+                    
+                    if (campaign.status === "CANCELLED") {
+                      progressBarColor = "#71717a"; // Cinza para cancelado
+                    } else if (failedCount === 0 && sentCount > 0) {
+                      progressBarColor = "#10b981"; // Verde - tudo certo
+                    } else if (failedCount > sentCount || (totalRecipients > 0 && failedCount / totalRecipients > 0.5)) {
+                      progressBarColor = "#ef4444"; // Vermelho - mais falhas que sucessos
+                    } else if (failedCount > 0) {
+                      progressBarColor = "#f59e0b"; // Laranja - tem falhas mas mais sucessos
+                    } else if (sentCount > 0) {
+                      progressBarColor = "#10b981"; // Verde - enviando bem
+                    }
 
                     return (
                       <Fragment key={campaign.id}>
@@ -3790,6 +3903,48 @@ export function DisparadorPage() {
                                   boxShadow: "0 4px 12px rgba(0,0,0,0.02)"
                                 }}
                               >
+                                {/* Delete Campaign Button */}
+                                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "1rem" }}>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm(`Tem certeza que deseja EXCLUIR a campanha "${campaign.name}"? Esta ação não pode ser desfeita.`)) {
+                                        try {
+                                          await api.deleteCampaign(token!, campaign.id);
+                                          queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] });
+                                          setSelectedCampaignId(null);
+                                          alert("Campanha excluída com sucesso!");
+                                        } catch (error: any) {
+                                          alert(`Erro ao excluir campanha: ${error?.message || error}`);
+                                        }
+                                      }
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "6px",
+                                      padding: "0.5rem 1rem",
+                                      background: "#fef2f2",
+                                      border: "1px solid #fecaca",
+                                      borderRadius: "8px",
+                                      color: "#dc2626",
+                                      fontSize: "0.85rem",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                      transition: "all 0.2s"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = "#fee2e2";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = "#fef2f2";
+                                    }}
+                                  >
+                                    <Trash2 size={16} />
+                                    Excluir Campanha
+                                  </button>
+                                </div>
+
                                 {selectedCampaignQuery.isLoading ? (
                                   <div style={{ textAlign: "center", padding: "2rem", color: "#71717a" }}>
                                     <LoaderCircle size={24} className="spin" style={{ margin: "0 auto 8px" }} />
@@ -3856,6 +4011,49 @@ export function DisparadorPage() {
         </div>
       )}
     </div>
+
+    {/* Mini Chat Drawer */}
+    <MiniChatDrawer
+      open={miniChatOpen}
+      onClose={() => {
+        setMiniChatOpen(false);
+        setMiniChatRecipient(null);
+        setMiniChatMessages([]);
+      }}
+      recipientId={miniChatRecipient?.id || ""}
+      customerName={miniChatRecipient?.customerDisplayName || miniChatRecipient?.customerCode || "Cliente"}
+      customerPhone={miniChatRecipient?.jid.split("@")[0] || ""}
+      jid={miniChatRecipient?.jid || ""}
+      messages={miniChatMessages}
+      loading={miniChatLoading}
+      onSendMessage={async (message: string) => {
+        // TODO: Implementar envio real de mensagem via API
+        console.log("Enviando mensagem:", message);
+        const newMessage: MiniChatMessage = {
+          id: `msg-${Date.now()}`,
+          content: message,
+          direction: "OUTBOUND",
+          timestamp: new Date().toISOString(),
+          status: "sent"
+        };
+        setMiniChatMessages(prev => [...prev, newMessage]);
+        
+        // Simular resposta automática (remover em produção)
+        setTimeout(() => {
+          const autoReply: MiniChatMessage = {
+            id: `msg-${Date.now()}-reply`,
+            content: "Obrigado pela sua mensagem! Entraremos em contato em breve.",
+            direction: "INBOUND",
+            timestamp: new Date().toISOString(),
+          };
+          setMiniChatMessages(prev => [...prev, autoReply]);
+        }, 2000);
+      }}
+    />
+
+    {/* Campaign Creation Progress */}
+    <CampaignCreationProgress isCreating={createCampaignMutation.isPending} />
+  </div>
   );
 }
 
