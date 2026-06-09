@@ -126,6 +126,7 @@ export interface CustomerFilters {
   status?: CustomerListItem["status"][];
   minDaysInactive?: number;
   maxDaysInactive?: number;
+  daysInactiveRanges?: string[];
   minAvgTicket?: number;
   minTotalSpent?: number;
   minFrequencyDrop?: number;
@@ -185,6 +186,34 @@ export function buildWhere(filters: FilterLike) {
   }
   if (filters.maxDaysInactive !== undefined) {
     push((index) => `COALESCE(s.days_since_last_purchase, 0) <= $${index}`, filters.maxDaysInactive);
+  }
+  if (filters.daysInactiveRanges?.length) {
+    const rangeClauses: string[] = [];
+    filters.daysInactiveRanges.forEach((range) => {
+      if (range.endsWith("+")) {
+        const minVal = parseInt(range.slice(0, -1), 10);
+        if (!isNaN(minVal)) {
+          params.push(minVal);
+          rangeClauses.push(`COALESCE(s.days_since_last_purchase, 9999) >= $${params.length}`);
+        }
+      } else {
+        const parts = range.split("-");
+        if (parts.length === 2) {
+          const minVal = parseInt(parts[0], 10);
+          const maxVal = parseInt(parts[1], 10);
+          if (!isNaN(minVal) && !isNaN(maxVal)) {
+            params.push(minVal);
+            const minIdx = params.length;
+            params.push(maxVal);
+            const maxIdx = params.length;
+            rangeClauses.push(`COALESCE(s.days_since_last_purchase, 9999) BETWEEN $${minIdx} AND $${maxIdx}`);
+          }
+        }
+      }
+    });
+    if (rangeClauses.length) {
+      clauses.push(`(${rangeClauses.join(" OR ")})`);
+    }
   }
   if (filters.minAvgTicket !== undefined) {
     push((index) => `s.avg_ticket >= $${index}`, filters.minAvgTicket);

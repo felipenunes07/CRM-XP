@@ -1200,6 +1200,36 @@ export async function recoverWhatsappCampaignDispatchClaimFailures(
   };
 }
 
+/**
+ * Reseta destinatários presos em SENDING há mais de `staleMinutes` minutos
+ * (ex.: o processo reiniciou no meio de um envio, ou o envio travou). Sem isso,
+ * um único destinatário travado em SENDING congela a campanha inteira pra sempre,
+ * porque listDueWhatsappCampaignRecipientJobs ignora qualquer campanha que tenha
+ * algum destinatário em SENDING. Volta o registro para PENDING para que o rescue
+ * o processe de novo.
+ */
+export async function resetStaleSendingRecipients(staleMinutes = 5): Promise<number> {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaign_recipients r
+      SET
+        status = 'PENDING',
+        scheduled_for = COALESCE(r.scheduled_for, NOW()),
+        last_attempt_at = NULL,
+        updated_at = NOW()
+      FROM whatsapp_campaigns wc
+      WHERE wc.id = r.campaign_id
+        AND r.status = 'SENDING'
+        AND r.last_attempt_at IS NOT NULL
+        AND r.last_attempt_at < NOW() - ($1 || ' minutes')::interval
+        AND wc.cancelled_at IS NULL
+        AND wc.status IN ('QUEUED', 'IN_PROGRESS')
+    `,
+    [String(Math.max(1, Math.floor(staleMinutes)))],
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function listWhatsappCampaigns(limit = 20): Promise<WhatsappCampaignListItem[]> {
   const result = await queryCampaignRows(limit);
   return result.rows.map((row) => mapCampaignRow(row));

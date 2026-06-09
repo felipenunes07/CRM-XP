@@ -108,7 +108,9 @@ export async function requestUazapi(
       token: config.token,
     },
     body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(30000),
+    // 30s era insuficiente para enviar vídeo (o upload do base64 + processamento
+    // no provedor passava disso e abortava com "operation was aborted due to timeout").
+    signal: AbortSignal.timeout(120000),
   });
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;

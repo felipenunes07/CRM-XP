@@ -1,5 +1,8 @@
 import cors from "cors";
 import express from "express";
+import { promises as fsPromises } from "node:fs";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { CustomerStatus, EventType, EventSeverity } from "@olist-crm/shared";
 import { env, webOrigins } from "./lib/env.js";
@@ -156,6 +159,7 @@ import {
   deleteWhatsappInstance,
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
+import { handleUazapiWebhook } from "./modules/whatsapp/uazapiWebhook.js";
 import { assertSupportedOutboundVideo } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
@@ -612,6 +616,20 @@ export function createApp() {
   );
   app.use(express.json({ limit: "100mb" }));
 
+  // Diretório onde os vídeos de campanha enviados do computador são hospedados,
+  // servido publicamente em /media/campaign-videos. Mandar a URL (em vez de base64
+  // inline) pros provedores elimina o timeout e o "Bad Request" no disparo.
+  const campaignMediaDir = path.join(process.cwd(), "uploads", "campaign-media");
+  app.use(
+    "/media/campaign-videos",
+    express.static(campaignMediaDir, {
+      maxAge: "7d",
+      setHeaders(res) {
+        res.setHeader("Content-Type", "video/mp4");
+      },
+    }),
+  );
+
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
     const redisPing = await redis.ping();
@@ -636,6 +654,18 @@ export function createApp() {
   app.post("/api/webhooks/evolution", async (request, response, next) => {
     try {
       const result = await handleEvolutionWebhook(request.body);
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // uazapi webhook — public endpoint (no auth required). Translates uazapi's
+  // payload into the Evolution shape so uazapi instances feed the same
+  // communication/messages pipeline (private chats, groups, media, contacts).
+  app.post("/api/webhooks/uazapi", async (request, response, next) => {
+    try {
+      const result = await handleUazapiWebhook(request.body);
       response.json(result);
     } catch (error) {
       next(error);
@@ -1354,6 +1384,56 @@ export function createApp() {
     try {
       await deleteMessageTemplate(request.params.id);
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Recebe um vídeo MP4 (base64), salva no disco do backend e devolve uma URL
+  // pública. O disparo passa a mandar essa URL pros provedores em vez do base64
+  // gigante — é o que elimina de vez o timeout e o "Bad Request" no vídeo.
+  app.post("/api/messages/upload-video", async (request, response, next) => {
+    try {
+      const { fileBase64, fileName } = (request.body ?? {}) as {
+        fileBase64?: string;
+        fileName?: string;
+      };
+
+      if (!fileBase64 || typeof fileBase64 !== "string") {
+        throw new HttpError(400, "fileBase64 é obrigatório");
+      }
+
+      // Aceita tanto data URL ("data:video/mp4;base64,AAAA") quanto base64 puro.
+      let base64 = fileBase64;
+      let mime = "video/mp4";
+      if (fileBase64.startsWith("data:")) {
+        const match = fileBase64.match(/^data:([^;]+);base64,(.*)$/s);
+        if (match && match[1] && match[2]) {
+          mime = match[1];
+          base64 = match[2];
+        }
+      }
+
+      if (mime !== "video/mp4") {
+        throw new HttpError(400, "Formato inválido. Envie um vídeo MP4 (video/mp4).");
+      }
+
+      const buffer = Buffer.from(base64, "base64");
+      if (!buffer.length) {
+        throw new HttpError(400, "Arquivo de vídeo inválido ou vazio.");
+      }
+      if (buffer.length > 64 * 1024 * 1024) {
+        throw new HttpError(413, "Vídeo muito grande. Máximo 64MB.");
+      }
+
+      const objectName = `${Date.now()}-${randomUUID()}.mp4`;
+      await fsPromises.mkdir(campaignMediaDir, { recursive: true });
+      await fsPromises.writeFile(path.join(campaignMediaDir, objectName), buffer);
+
+      const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+      const url = `${base}/media/campaign-videos/${objectName}`;
+      logger.info("🎥 Vídeo de campanha hospedado", { objectName, bytes: buffer.length, sourceName: fileName ?? null });
+      response.json({ url });
     } catch (error) {
       next(error);
     }

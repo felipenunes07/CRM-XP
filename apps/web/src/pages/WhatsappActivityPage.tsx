@@ -14,7 +14,7 @@ import { api } from "../lib/api";
 import { ReportLoadingScreen } from "../components/ReportLoadingScreen";
 
 type ActivityWindowDays = 1 | 7 | 14 | 30;
-type ActivityTab = "overview" | "conversations" | "agents" | "daily-summary";
+type ActivityTab = "overview" | "conversations" | "agents" | "daily-summary" | "whatsapp-dispatch-report";
 
 const windowOptions: ActivityWindowDays[] = [1, 7, 14, 30];
 const tabs: Array<{ id: ActivityTab; label: string }> = [
@@ -22,6 +22,7 @@ const tabs: Array<{ id: ActivityTab; label: string }> = [
   { id: "conversations", label: "Conversas" },
   { id: "agents", label: "Agentes" },
   { id: "daily-summary", label: "Resumo do Dia" },
+  { id: "whatsapp-dispatch-report", label: "Disparos / CLs" },
 ];
 
 const EMPTY_SUMMARY = {
@@ -953,17 +954,21 @@ export function WhatsappActivityPage() {
               ? "Conversas"
               : activeTab === "agents"
               ? "Visão Geral de Agentes"
-              : "Resumo do Dia"}
+              : activeTab === "daily-summary"
+              ? "Resumo do Dia"
+              : "Disparos / CLs"}
           </h1>
           <span>
             {activeTab === "agents"
               ? "Acompanhe desempenho por agente e clique em uma vendedora para filtrar."
               : activeTab === "daily-summary"
               ? "Acompanhe os principais acontecimentos comerciais consolidados do dia."
+              : activeTab === "whatsapp-dispatch-report"
+              ? "Selecione clientes por inatividade, filtre e copie seus códigos (CLs) ou relatórios formatados."
               : "Acompanhe o atendimento por hora, agente e tipo de conversa."}
           </span>
         </div>
-        {activeTab !== "daily-summary" && (
+        {activeTab !== "daily-summary" && activeTab !== "whatsapp-dispatch-report" && (
           <div className="activity-actions">
             <button
               type="button"
@@ -1413,6 +1418,10 @@ export function WhatsappActivityPage() {
 
       {activeTab === "daily-summary" ? (
         <DailySummaryTab token={token!} />
+      ) : null}
+
+      {activeTab === "whatsapp-dispatch-report" ? (
+        <WhatsappDispatchReportTab token={token!} />
       ) : null}
     </div>
   );
@@ -2062,6 +2071,383 @@ function DailySummaryTab({ token }: { token: string }) {
             <p className="muted" style={{ margin: 0, fontStyle: "italic", fontSize: "0.875rem" }}>Nenhum cliente recuperado registrado nesta data.</p>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function WhatsappDispatchReportTab({ token }: { token: string }) {
+  const [selectedRanges, setSelectedRanges] = useState<string[]>(["31-59", "60-89"]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [includeDaysInactive, setIncludeDaysInactive] = useState(true);
+  const [includeOrderStats, setIncludeOrderStats] = useState(true);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState<Record<string, boolean>>({});
+  
+  const [copyClsSuccess, setCopyClsSuccess] = useState(false);
+  const [copyWhatsAppSuccess, setCopyWhatsAppSuccess] = useState(false);
+
+  const customersQuery = useQuery({
+    queryKey: ["dispatch-report-customers", selectedRanges],
+    queryFn: () =>
+      api.customers(token, {
+        daysInactiveRanges: selectedRanges.join(","),
+        sortBy: "priority",
+        limit: 500,
+      }),
+    enabled: Boolean(token && selectedRanges.length > 0),
+  });
+
+  const customers = customersQuery.data ?? [];
+
+  // Reset selected ids when query loads new customers
+  useEffect(() => {
+    if (customersQuery.data) {
+      const initial: Record<string, boolean> = {};
+      customersQuery.data.forEach((c) => {
+        initial[c.id] = true;
+      });
+      setSelectedCustomerIds(initial);
+    }
+  }, [customersQuery.data]);
+
+  const filteredCustomers = useMemo(() => {
+    if (!searchTerm.trim()) return customers;
+    const term = searchTerm.toLowerCase();
+    return customers.filter((c) => 
+      c.displayName.toLowerCase().includes(term) ||
+      c.customerCode.toLowerCase().includes(term)
+    );
+  }, [customers, searchTerm]);
+
+  const selectedCustomers = useMemo(() => {
+    return filteredCustomers.filter((c) => selectedCustomerIds[c.id] !== false);
+  }, [filteredCustomers, selectedCustomerIds]);
+
+  const totalSelectedCount = selectedCustomers.length;
+
+  const formattedWhatsAppText = useMemo(() => {
+    if (selectedCustomers.length === 0) return "";
+    let header = `*Lista de Clientes para Contato (${selectedCustomers.length} clientes)*\n\n`;
+    const body = selectedCustomers
+      .map((c) => {
+        const code = c.customerCode ? `*${c.customerCode}*` : "";
+        const name = c.displayName || "Cliente sem nome";
+        let line = `- ${code} - ${name}`;
+        if (includeDaysInactive && c.daysSinceLastPurchase !== null && c.daysSinceLastPurchase !== undefined) {
+          line += ` | ${c.daysSinceLastPurchase} dias sem comprar`;
+        }
+        if (includeOrderStats) {
+          const ticket = Number(c.avgTicket ?? 0);
+          line += ` | Média: R$ ${ticket.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        return line;
+      })
+      .join("\n");
+    return header + body;
+  }, [selectedCustomers, includeDaysInactive, includeOrderStats]);
+
+  function handleToggleRange(rangeId: string) {
+    setSelectedRanges((current) =>
+      current.includes(rangeId)
+        ? current.filter((r) => r !== rangeId)
+        : [...current, rangeId]
+    );
+  }
+
+  function handleSelectAllRanges() {
+    setSelectedRanges(["31-59", "60-89", "90-179", "180+", "0-14", "15-30"]);
+  }
+
+  function handleResetToAttentionOnly() {
+    setSelectedRanges(["31-59", "60-89"]);
+  }
+
+  function handleToggleAllCustomers(checked: boolean) {
+    const next: Record<string, boolean> = {};
+    filteredCustomers.forEach((c) => {
+      next[c.id] = checked;
+    });
+    setSelectedCustomerIds(next);
+  }
+
+  function handleToggleCustomer(id: string) {
+    setSelectedCustomerIds((prev) => ({
+      ...prev,
+      [id]: prev[id] === false ? true : false,
+    }));
+  }
+
+  function handleCopyCls() {
+    const codes = selectedCustomers.map((c) => c.customerCode).filter(Boolean);
+    if (codes.length === 0) {
+      alert("Nenhum cliente selecionado.");
+      return;
+    }
+    const text = codes.join(", ");
+    navigator.clipboard.writeText(text);
+    setCopyClsSuccess(true);
+    setTimeout(() => setCopyClsSuccess(false), 2000);
+  }
+
+  function handleCopyWhatsApp() {
+    if (!formattedWhatsAppText) {
+      alert("Nenhum cliente selecionado.");
+      return;
+    }
+    navigator.clipboard.writeText(formattedWhatsAppText);
+    setCopyWhatsAppSuccess(true);
+    setTimeout(() => setCopyWhatsAppSuccess(false), 2000);
+  }
+
+  const rangeButtons = [
+    { id: "0-14", label: "Ativo 1 (0-14 dias)", color: "rgba(16, 185, 129, 0.08)", activeColor: "#10b981" },
+    { id: "15-30", label: "Ativo 2 (15-30 dias)", color: "rgba(16, 185, 129, 0.08)", activeColor: "#10b981" },
+    { id: "31-59", label: "Atenção 1 (31-59 dias)", color: "rgba(245, 158, 11, 0.08)", activeColor: "#f59e0b" },
+    { id: "60-89", label: "Atenção 2 (60-89 dias)", color: "rgba(245, 158, 11, 0.08)", activeColor: "#f59e0b" },
+    { id: "90-179", label: "Inativo 1 (90-179 dias)", color: "rgba(239, 68, 68, 0.08)", activeColor: "#ef4444" },
+    { id: "180+", label: "Inativo 2 (180+ dias)", color: "rgba(220, 38, 38, 0.08)", activeColor: "#dc2626" },
+  ];
+
+  return (
+    <div className="daily-summary-tab animate-in" style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+      {/* Filters Panel */}
+      <div className="panel" style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>Seleção de Faixas de Clientes</h3>
+          <p className="muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
+            Selecione uma ou mais faixas de inatividade para carregar os clientes correspondentes.
+          </p>
+        </div>
+        
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center" }}>
+          {rangeButtons.map((btn) => {
+            const isSelected = selectedRanges.includes(btn.id);
+            return (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => handleToggleRange(btn.id)}
+                style={{
+                  padding: "0.5rem 1rem",
+                  borderRadius: "20px",
+                  border: isSelected ? `2px solid ${btn.activeColor}` : "1px solid var(--border-color)",
+                  background: isSelected ? btn.color : "transparent",
+                  color: isSelected ? btn.activeColor : "var(--text-muted)",
+                  fontSize: "0.875rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <span style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  backgroundColor: btn.activeColor
+                }} />
+                {btn.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <button
+            type="button"
+            className="premium-button ghost"
+            onClick={handleSelectAllRanges}
+            style={{ fontSize: "0.825rem", padding: "0.4rem 0.8rem" }}
+          >
+            Selecionar Todos
+          </button>
+          <button
+            type="button"
+            className="premium-button ghost"
+            onClick={handleResetToAttentionOnly}
+            style={{ fontSize: "0.825rem", padding: "0.4rem 0.8rem" }}
+          >
+            Apenas Atenção (Padrão)
+          </button>
+        </div>
+      </div>
+
+      {/* Main Grid: Selector & Markdown Preview */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "2rem" }}>
+        
+        {/* Left Panel: Customer List Selector */}
+        <div className="panel" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem" }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 600 }}>Seleção de Clientes</h3>
+              <p className="muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
+                Filtrando {filteredCustomers.length} clientes. Desmarque os que não devem ser incluídos.
+              </p>
+            </div>
+          </div>
+
+          {/* Search bar */}
+          <div className="activity-search-bar" style={{ display: "flex", alignItems: "center", gap: "0.5rem", border: "1px solid var(--border-color)", borderRadius: "8px", padding: "0.5rem 0.75rem", background: "rgba(0,0,0,0.01)" }}>
+            <Search className="muted" size={18} />
+            <input
+              type="text"
+              placeholder="Buscar por nome ou código (CL)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ border: "none", outline: "none", width: "100%", background: "transparent", fontSize: "0.9rem" }}
+            />
+          </div>
+
+          {/* Select all checkboxes bar */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.75rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={filteredCustomers.length > 0 && filteredCustomers.every(c => selectedCustomerIds[c.id] !== false)}
+                onChange={(e) => handleToggleAllCustomers(e.target.checked)}
+                style={{ accentColor: "var(--primary)", cursor: "pointer" }}
+              />
+              Marcar/Desmarcar Todos
+            </label>
+            <span className="muted" style={{ fontSize: "0.825rem" }}>
+              Selecionados: <strong>{totalSelectedCount}</strong> / {filteredCustomers.length}
+            </span>
+          </div>
+
+          {/* Customers Scrollable List */}
+          {customersQuery.isLoading ? (
+            <div className="page-loading" style={{ padding: "2rem" }}>Carregando contatos...</div>
+          ) : filteredCustomers.length === 0 ? (
+            <div className="muted" style={{ textAlign: "center", padding: "2rem", fontStyle: "italic" }}>
+              Nenhum cliente correspondente encontrado.
+            </div>
+          ) : (
+            <div style={{ maxHeight: "350px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.6rem", paddingRight: "4px" }}>
+              {filteredCustomers.map((c) => {
+                const isChecked = selectedCustomerIds[c.id] !== false;
+                const inactiveText = c.daysSinceLastPurchase !== null ? `${c.daysSinceLastPurchase} dias` : "--";
+                return (
+                  <label
+                    key={c.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "0.6rem 0.8rem",
+                      borderRadius: "8px",
+                      border: "1px solid var(--border-color)",
+                      background: isChecked ? "rgba(40, 126, 231, 0.02)" : "transparent",
+                      cursor: "pointer",
+                      fontSize: "0.875rem",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleToggleCustomer(c.id)}
+                        style={{ accentColor: "var(--primary)", cursor: "pointer" }}
+                      />
+                      <div>
+                        <strong style={{ display: "block" }}>{c.customerCode} - {c.displayName}</strong>
+                        <span className="muted" style={{ fontSize: "0.75rem" }}>
+                          Última compra: {c.lastPurchaseAt ? c.lastPurchaseAt.split("-").reverse().join("/") : "Nunca"} | Média: R$ {c.avgTicket.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: "0.75rem",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontWeight: 600,
+                      background: c.status === "ACTIVE" ? "rgba(16, 185, 129, 0.12)" : c.status === "ATTENTION" ? "rgba(245, 158, 11, 0.12)" : "rgba(239, 68, 68, 0.12)",
+                      color: c.status === "ACTIVE" ? "#10b981" : c.status === "ATTENTION" ? "#f59e0b" : "#ef4444",
+                    }}>
+                      {inactiveText}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Right Panel: Markdown Preview & Formatted Copy */}
+        <div className="panel" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 600 }}>Visualização e Cópia</h3>
+            <p className="muted" style={{ margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
+              Copie a lista simplificada de códigos para o disparador ou gere a mensagem para o grupo.
+            </p>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+            <button
+              type="button"
+              className={`premium-button ${copyClsSuccess ? "success" : "primary"}`}
+              onClick={handleCopyCls}
+              style={{ flex: "1 1 200px", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+            >
+              {copyClsSuccess ? <Check size={18} /> : <Copy size={18} />}
+              {copyClsSuccess ? "Códigos Copiados! ✅" : "Copiar Apenas CLs 📋"}
+            </button>
+
+            <button
+              type="button"
+              className={`premium-button ${copyWhatsAppSuccess ? "success" : "primary"}`}
+              onClick={handleCopyWhatsApp}
+              style={{ flex: "1 1 200px", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", background: "var(--success)" }}
+            >
+              {copyWhatsAppSuccess ? <Check size={18} /> : <Copy size={18} />}
+              {copyWhatsAppSuccess ? "Copiado! ✅" : "Copiar para WhatsApp 📱"}
+            </button>
+          </div>
+
+          {/* WhatsApp copy toggles */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", borderTop: "1px solid var(--border-color)", paddingTop: "1rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={includeDaysInactive}
+                onChange={(e) => setIncludeDaysInactive(e.target.checked)}
+                style={{ width: "1rem", height: "1rem", cursor: "pointer", accentColor: "var(--primary)" }}
+              />
+              Incluir Dias Inativo
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer", fontSize: "0.85rem", fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={includeOrderStats}
+                onChange={(e) => setIncludeOrderStats(e.target.checked)}
+                style={{ width: "1rem", height: "1rem", cursor: "pointer", accentColor: "var(--primary)" }}
+              />
+              Incluir Média de Ticket
+            </label>
+          </div>
+
+          {/* Formatted Text Box */}
+          <div
+            style={{
+              background: "rgba(0, 0, 0, 0.02)",
+              border: "1px solid var(--border-color)",
+              borderRadius: "12px",
+              padding: "1.25rem",
+              maxHeight: "300px",
+              overflowY: "auto",
+              fontFamily: "monospace",
+              whiteSpace: "pre-wrap",
+              fontSize: "0.85rem",
+              color: "var(--text-color)",
+              lineHeight: 1.45,
+            }}
+          >
+            {formattedWhatsAppText || "Nenhum cliente selecionado para visualizar."}
+          </div>
+        </div>
+
       </div>
     </div>
   );

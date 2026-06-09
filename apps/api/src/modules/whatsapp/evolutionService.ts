@@ -63,11 +63,23 @@ export async function sendWhatsappInstanceMediaMessage(
   const defaultFileName = getOutboundMediaFileName(mediaType, fileName);
   const number = formatEvolutionSendTextTarget(destinationJid);
 
+  // Evolution's `media` field accepts EITHER a public URL OR raw base64 — but
+  // NOT a data URL. A value like "data:video/mp4;base64,AAAA..." must have its
+  // "data:...;base64," prefix removed, otherwise Evolution responds "Bad Request".
+  // Plain http(s) URLs are passed through unchanged.
+  let mediaPayloadValue = mediaBase64;
+  if (mediaBase64.startsWith("data:")) {
+    const commaIdx = mediaBase64.indexOf(",");
+    if (commaIdx !== -1) {
+      mediaPayloadValue = mediaBase64.slice(commaIdx + 1);
+    }
+  }
+
   const payload = {
     number,
     mediatype: mediaType,
     mimetype: mimeTypeStr,
-    media: mediaBase64,
+    media: mediaPayloadValue,
     fileName: defaultFileName,
     caption: caption ?? "",
   };
@@ -92,7 +104,7 @@ export async function sendWhatsappInstanceMediaMessage(
         mimetype: mimeTypeStr,
         fileName: defaultFileName,
         caption: caption ?? "",
-        media: mediaBase64,
+        media: mediaPayloadValue,
       },
       options: {
         delay: 0,

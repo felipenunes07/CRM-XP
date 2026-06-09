@@ -9,6 +9,7 @@ import {
   markRecipientFailed,
   markRecipientSent,
   recoverWhatsappCampaignDispatchClaimFailures,
+  resetStaleSendingRecipients,
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
@@ -180,6 +181,13 @@ export async function enqueueWhatsappCampaignRecipients(recipientJobs: EnqueuedR
 }
 
 export async function resumeDueWhatsappCampaignRecipients(campaignId?: string, limit = 1) {
+  // Auto-cura: destrava destinatários presos em SENDING (processo reiniciado/travado
+  // no meio do envio). Sem isso, um único SENDING preso congela a campanha inteira.
+  const unstuck = await resetStaleSendingRecipients(5);
+  if (unstuck > 0) {
+    logger.warn("reset stale SENDING whatsapp recipients", { count: unstuck });
+  }
+
   const recovered = await recoverWhatsappCampaignDispatchClaimFailures({ campaignId, limit });
   if (recovered.recovered > 0) {
     logger.info("recovered whatsapp campaign dispatch claim failures", {
