@@ -1635,11 +1635,17 @@ export async function getWhatsappMonitorConversation(
   let resolvedDealId = dealId;
   if (typeof dealId === "string" && dealId.includes("@")) {
     const dealRes = await pool.query(
-      `SELECT id FROM deals WHERE whatsapp_jid = $1 ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
+      `SELECT id, whatsapp_instance_id FROM deals WHERE whatsapp_jid = $1 ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
       [dealId]
     );
     if (dealRes.rows[0]) {
       resolvedDealId = String(dealRes.rows[0].id);
+      if (!dealRes.rows[0].whatsapp_instance_id && options.instanceId) {
+        await pool.query(
+          `UPDATE deals SET whatsapp_instance_id = $1::uuid, updated_at = NOW() WHERE id = $2::uuid`,
+          [options.instanceId, resolvedDealId]
+        );
+      }
     } else {
       const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
       const stageId = stageMatch.rows[0]?.id;
@@ -1647,11 +1653,14 @@ export async function getWhatsappMonitorConversation(
         throw new HttpError(400, "Nenhum estágio de pipeline configurado para criar a conversa.");
       }
 
-      const userInstanceRes = await pool.query(
-        `SELECT id FROM whatsapp_instances WHERE assigned_user_id::text = $1::text AND status = 'ACTIVE' ORDER BY is_default DESC, id DESC LIMIT 1`,
-        [user.id]
-      );
-      const instanceId = userInstanceRes.rows[0]?.id || null;
+      let instanceId = options.instanceId || null;
+      if (!instanceId) {
+        const userInstanceRes = await pool.query(
+          `SELECT id FROM whatsapp_instances WHERE assigned_user_id::text = $1::text AND status = 'ACTIVE' ORDER BY is_default DESC, id DESC LIMIT 1`,
+          [user.id]
+        );
+        instanceId = userInstanceRes.rows[0]?.id || null;
+      }
 
       const recipientRes = await pool.query(
         `SELECT customer_display_name, source_name FROM whatsapp_campaign_recipients WHERE jid = $1 ORDER BY created_at DESC LIMIT 1`,
