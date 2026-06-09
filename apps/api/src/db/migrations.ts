@@ -2912,5 +2912,319 @@ export const migrations = [
       END;
     END IF;
   END $$;
+  `,
+  `
+  -- Migration 42: Add missing stats columns to whatsapp_campaign_stats_cache
+  DO $$
+  BEGIN
+    ALTER TABLE whatsapp_campaign_stats_cache ADD COLUMN IF NOT EXISTS responded_count INT NOT NULL DEFAULT 0;
+    ALTER TABLE whatsapp_campaign_stats_cache ADD COLUMN IF NOT EXISTS purchased_count INT NOT NULL DEFAULT 0;
+    ALTER TABLE whatsapp_campaign_stats_cache ADD COLUMN IF NOT EXISTS total_revenue NUMERIC(14,2) NOT NULL DEFAULT 0;
+    ALTER TABLE whatsapp_campaign_stats_cache ADD COLUMN IF NOT EXISTS cached_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+  EXCEPTION WHEN others THEN
+    NULL;
+  END $$;
+
+  -- Re-trigger a full stats refresh for all campaigns to populate the new columns
+  DO $$
+  DECLARE
+    campaign_record RECORD;
+  BEGIN
+    IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'refresh_campaign_stats_cache') THEN
+      FOR campaign_record IN 
+        SELECT DISTINCT campaign_id 
+        FROM whatsapp_campaign_recipients
+      LOOP
+        DELETE FROM whatsapp_campaign_stats_cache WHERE campaign_id = campaign_record.campaign_id;
+        
+        INSERT INTO whatsapp_campaign_stats_cache (
+          campaign_id,
+          total_recipients,
+          pending_count,
+          blocked_recent_count,
+          sending_count,
+          sent_count,
+          failed_count,
+          skipped_count,
+          responded_count,
+          purchased_count,
+          total_revenue,
+          cached_at
+        )
+        SELECT
+          r.campaign_id,
+          COUNT(*) AS total_recipients,
+          COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+          COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+          COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+          COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+          COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+          COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+          
+          COUNT(DISTINCT r.id) FILTER (
+            WHERE r.status = 'SENT' 
+              AND r.sent_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1 
+                FROM whatsapp_incoming_messages wim
+                WHERE COALESCE(wim.from_me, false) = false
+                  AND wim.created_at >= r.sent_at
+                  AND wim.created_at < r.sent_at + INTERVAL '7 days'
+                  AND (
+                    LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                    OR EXISTS (
+                      SELECT 1 FROM whatsapp_jid_aliases wja1
+                      JOIN whatsapp_jid_aliases wja2 
+                        ON wja1.canonical_jid = wja2.canonical_jid 
+                       AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                      WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(wim.remote_jid, ''))
+                        AND LOWER(wja2.alias_jid) = LOWER(COALESCE(r.jid, ''))
+                    )
+                  )
+              )
+          ) AS responded_count,
+          
+          COUNT(DISTINCT r.id) FILTER (
+            WHERE r.status = 'SENT'
+              AND r.sent_at IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM orders o
+                WHERE o.order_date >= r.sent_at::date
+                  AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                  AND (
+                    (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                    OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                  )
+              )
+          ) AS purchased_count,
+          
+          COALESCE(SUM(
+            CASE 
+              WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+                (
+                  SELECT COALESCE(SUM(o.total_amount), 0)
+                  FROM orders o
+                  WHERE o.order_date >= r.sent_at::date
+                    AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                    AND (
+                      (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                      OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                    )
+                )
+              ELSE 0
+            END
+          ), 0) AS total_revenue,
+          
+          NOW() AS cached_at
+        FROM whatsapp_campaign_recipients r
+        WHERE r.campaign_id = campaign_record.campaign_id
+        GROUP BY r.campaign_id;
+      END LOOP;
+    END IF;
+  END $$;
+  `,
+  `
+  -- Migration 43: Ensure stats cache function and trigger are correctly created and bound
+  -- and recalculate statistics
+  CREATE OR REPLACE FUNCTION refresh_campaign_stats_cache()
+  RETURNS TRIGGER AS $body$
+  BEGIN
+    DELETE FROM whatsapp_campaign_stats_cache 
+    WHERE campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id);
+    
+    INSERT INTO whatsapp_campaign_stats_cache (
+      campaign_id,
+      total_recipients,
+      pending_count,
+      blocked_recent_count,
+      sending_count,
+      sent_count,
+      failed_count,
+      skipped_count,
+      responded_count,
+      purchased_count,
+      total_revenue,
+      cached_at
+    )
+    SELECT
+      r.campaign_id,
+      COUNT(*) AS total_recipients,
+      COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+      COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+      COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+      COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+      
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT' 
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1 
+            FROM whatsapp_incoming_messages wim
+            WHERE COALESCE(wim.from_me, false) = false
+              AND wim.created_at >= r.sent_at
+              AND wim.created_at < r.sent_at + INTERVAL '7 days'
+              AND (
+                LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                OR EXISTS (
+                  SELECT 1 FROM whatsapp_jid_aliases wja1
+                  JOIN whatsapp_jid_aliases wja2 
+                    ON wja1.canonical_jid = wja2.canonical_jid 
+                   AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                  WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(wim.remote_jid, ''))
+                    AND LOWER(wja2.alias_jid) = LOWER(COALESCE(r.jid, ''))
+                )
+              )
+          )
+      ) AS responded_count,
+      
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT'
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM orders o
+            WHERE o.order_date >= r.sent_at::date
+              AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+              AND (
+                (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+              )
+          )
+      ) AS purchased_count,
+      
+      COALESCE(SUM(
+        CASE 
+          WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+            (
+              SELECT COALESCE(SUM(o.total_amount), 0)
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+          ELSE 0
+        END
+      ), 0) AS total_revenue,
+      
+      NOW() AS cached_at
+    FROM whatsapp_campaign_recipients r
+    WHERE r.campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id)
+    GROUP BY r.campaign_id;
+    
+    RETURN NEW;
+  END;
+  $body$ LANGUAGE plpgsql;
+
+  -- Ensure trigger is correctly bound to the function
+  DROP TRIGGER IF EXISTS trigger_update_campaign_stats ON whatsapp_campaign_recipients;
+  DROP TRIGGER IF EXISTS trg_refresh_campaign_stats_cache ON whatsapp_campaign_recipients;
+  
+  CREATE TRIGGER trg_refresh_campaign_stats_cache
+    AFTER INSERT OR UPDATE OR DELETE ON whatsapp_campaign_recipients
+    FOR EACH ROW
+    EXECUTE FUNCTION refresh_campaign_stats_cache();
+
+  -- Recalculate statistics
+  DO $$
+  DECLARE
+    campaign_record RECORD;
+  BEGIN
+    FOR campaign_record IN 
+      SELECT DISTINCT campaign_id 
+      FROM whatsapp_campaign_recipients
+    LOOP
+      DELETE FROM whatsapp_campaign_stats_cache WHERE campaign_id = campaign_record.campaign_id;
+      
+      INSERT INTO whatsapp_campaign_stats_cache (
+        campaign_id,
+        total_recipients,
+        pending_count,
+        blocked_recent_count,
+        sending_count,
+        sent_count,
+        failed_count,
+        skipped_count,
+        responded_count,
+        purchased_count,
+        total_revenue,
+        cached_at
+      )
+      SELECT
+        r.campaign_id,
+        COUNT(*) AS total_recipients,
+        COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+        COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+        COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+        COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT' 
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1 
+              FROM whatsapp_incoming_messages wim
+              WHERE COALESCE(wim.from_me, false) = false
+                AND wim.created_at >= r.sent_at
+                AND wim.created_at < r.sent_at + INTERVAL '7 days'
+                AND (
+                  LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                  OR EXISTS (
+                    SELECT 1 FROM whatsapp_jid_aliases wja1
+                    JOIN whatsapp_jid_aliases wja2 
+                      ON wja1.canonical_jid = wja2.canonical_jid 
+                     AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                    WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(wim.remote_jid, ''))
+                      AND LOWER(wja2.alias_jid) = LOWER(COALESCE(r.jid, ''))
+                  )
+                )
+            )
+        ) AS responded_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT'
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+        ) AS purchased_count,
+        
+        COALESCE(SUM(
+          CASE 
+            WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+              (
+                SELECT COALESCE(SUM(o.total_amount), 0)
+                FROM orders o
+                WHERE o.order_date >= r.sent_at::date
+                  AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                  AND (
+                    (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                    OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                  )
+              )
+            ELSE 0
+          END
+        ), 0) AS total_revenue,
+        
+        NOW() AS cached_at
+      FROM whatsapp_campaign_recipients r
+      WHERE r.campaign_id = campaign_record.campaign_id
+      GROUP BY r.campaign_id;
+    END LOOP;
+  END $$;
   `
 ];
