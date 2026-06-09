@@ -3706,7 +3706,7 @@ export function DisparadorPage() {
           })()}
 
           {/* Table Area */}
-          {campaignsQuery.isLoading ? (
+          {campaignsQuery.isPending ? (
             <CampaignTableSkeleton />
           ) : (
             <div className="z-table-wrapper" style={{ border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>

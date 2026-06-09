@@ -881,11 +881,14 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
         COALESCE(cache.skipped_count, 0) AS skipped_count,
         cache.next_scheduled_at,
         cache.estimated_finish_at
-      FROM whatsapp_campaigns wc
+      FROM (
+        SELECT * FROM whatsapp_campaigns
+        ${where.replace(/wc\./g, "")}
+        ORDER BY created_at DESC
+        ${limitSql}
+      ) wc
       LEFT JOIN whatsapp_campaign_stats_cache cache ON cache.campaign_id = wc.id
-      ${where}
       ORDER BY wc.created_at DESC
-      ${limitSql}
     `,
     params,
   );
