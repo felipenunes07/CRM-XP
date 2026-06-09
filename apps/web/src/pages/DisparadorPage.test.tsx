@@ -213,6 +213,18 @@ describe("Disparador campaign performance", () => {
     expect(campaignPerformanceFilterCount("ISSUES", campaign)).toBe("1");
   });
 
+  it("filters responded, non-responded and purchased campaign recipients", () => {
+    expect(filterCampaignRecipients(campaign.recipients, "RESPONDED").map((recipient) => recipient.id)).toEqual(["recipient-2"]);
+    expect(filterCampaignRecipients(campaign.recipients, "NO_RESPONSE").map((recipient) => recipient.id)).toEqual(["recipient-1"]);
+    expect(filterCampaignRecipients(campaign.recipients, "PURCHASED").map((recipient) => recipient.id)).toEqual(["recipient-2"]);
+  });
+
+  it("builds filter counts from campaign performance totals", () => {
+    expect(campaignPerformanceFilterCount("RESPONDED", campaign)).toBe("1");
+    expect(campaignPerformanceFilterCount("NO_RESPONSE", campaign)).toBe("1");
+    expect(campaignPerformanceFilterCount("ISSUES", campaign)).toBe("1");
+  });
+
   it("renders performance cards, filters and attributed messages", () => {
     const markup = renderToStaticMarkup(
       <CampaignPerformancePanel
@@ -220,6 +232,7 @@ describe("Disparador campaign performance", () => {
         activeFilter="ALL"
         recipients={campaign.recipients}
         onFilterChange={() => undefined}
+        onOpenMiniChat={() => undefined}
       />,
     );
 
@@ -239,6 +252,7 @@ describe("Disparador campaign performance", () => {
         activeFilter="PURCHASED"
         recipients={[]}
         onFilterChange={() => undefined}
+        onOpenMiniChat={() => undefined}
       />,
     );
 

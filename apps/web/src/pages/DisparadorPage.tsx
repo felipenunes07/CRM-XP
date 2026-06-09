@@ -19,6 +19,7 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
+import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
 
 type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
@@ -328,11 +329,13 @@ export function CampaignPerformancePanel({
   activeFilter,
   recipients,
   onFilterChange,
+  onOpenMiniChat,
 }: {
   campaign: WhatsappCampaignDetail;
   activeFilter: CampaignPerformanceFilter;
   recipients: WhatsappCampaignRecipient[];
   onFilterChange: (filter: CampaignPerformanceFilter) => void;
+  onOpenMiniChat: (recipient: WhatsappCampaignRecipient) => void;
 }) {
   const performance = campaign.performance;
   const diagnosisColors = campaignDiagnosisColors(performance.diagnosis.tone);
@@ -494,43 +497,8 @@ export function CampaignPerformancePanel({
                     <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
                       <button
                         type="button"
-                        onClick={async () => {
-                          setMiniChatRecipient(recipient);
-                          setMiniChatOpen(true);
-                          setMiniChatLoading(true);
-                          setMiniChatMessages([]);
-                          
-                          try {
-                            // Buscar mensagens do histórico (simulado por enquanto)
-                            // TODO: Implementar API real para buscar mensagens
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                            
-                            // Mensagens mock - substituir por chamada real à API
-                            const mockMessages: MiniChatMessage[] = [
-                              {
-                                id: "1",
-                                content: campaign.messageText || "Mensagem da campanha",
-                                direction: "OUTBOUND",
-                                timestamp: recipient.sentAt || new Date().toISOString(),
-                                status: "sent"
-                              }
-                            ];
-                            
-                            if (recipient.responded && recipient.firstResponseAt) {
-                              mockMessages.push({
-                                id: "2",
-                                content: "Obrigado pela mensagem! Tenho interesse.",
-                                direction: "INBOUND",
-                                timestamp: recipient.firstResponseAt,
-                              });
-                            }
-                            
-                            setMiniChatMessages(mockMessages);
-                          } catch (error) {
-                            console.error("Erro ao carregar mensagens:", error);
-                          } finally {
-                            setMiniChatLoading(false);
-                          }
+                        onClick={() => {
+                          onOpenMiniChat(recipient);
                         }}
                         style={{
                           display: "inline-flex",
@@ -861,6 +829,8 @@ export function DisparadorPage() {
     queryKey: ["whatsapp-campaigns"],
     queryFn: () => api.whatsappCampaigns(token!, 20),
     enabled: Boolean(token),
+    staleTime: 30000, // Cache por 30 segundos
+    refetchOnWindowFocus: false, // Não refetch ao voltar para a aba
     refetchInterval: (query) =>
       query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 10000 : false,
   });
@@ -1274,6 +1244,7 @@ export function DisparadorPage() {
 
 
   return (
+    <>
     <div className="page-stack">
       {/* ── TOP NAV SEGMENTED CONTROL TABS ── */}
       <div className="z-tabs" style={{ marginBottom: "1.5rem" }}>
@@ -3735,19 +3706,22 @@ export function DisparadorPage() {
           })()}
 
           {/* Table Area */}
-          <div className="z-table-wrapper" style={{ border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
-            <table className="z-table">
-              <thead>
-                <tr>
-                  <th style={{ padding: "1rem 1.5rem" }}>CAMPANHA</th>
-                  <th style={{ padding: "1rem 1.5rem" }}>STATUS</th>
-                  <th style={{ padding: "1rem 1.5rem" }}>PROGRESSO GERAL</th>
-                  <th style={{ padding: "1rem 1.5rem", textAlign: "right" }}>AÇÕES</th>
-                </tr>
-              </thead>
-              <tbody>
-                {campaignsQuery.data && campaignsQuery.data.length > 0 ? (
-                  campaignsQuery.data.map((campaign) => {
+          {campaignsQuery.isLoading ? (
+            <CampaignTableSkeleton />
+          ) : (
+            <div className="z-table-wrapper" style={{ border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>
+              <table className="z-table">
+                <thead>
+                  <tr>
+                    <th style={{ padding: "1rem 1.5rem" }}>CAMPANHA</th>
+                    <th style={{ padding: "1rem 1.5rem" }}>STATUS</th>
+                    <th style={{ padding: "1rem 1.5rem" }}>PROGRESSO GERAL</th>
+                    <th style={{ padding: "1rem 1.5rem", textAlign: "right" }}>AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaignsQuery.data && campaignsQuery.data.length > 0 ? (
+                    campaignsQuery.data.map((campaign) => {
                     const isExpanded = selectedCampaignId === campaign.id;
                     const completionRatio = campaign.progress.completionRatio;
                     const pct = Math.round(completionRatio * 100);
@@ -3983,6 +3957,41 @@ export function DisparadorPage() {
                                       activeFilter={campaignPerformanceFilter}
                                       recipients={selectedCampaignPerformanceRecipients}
                                       onFilterChange={setCampaignPerformanceFilter}
+                                      onOpenMiniChat={async (recipient) => {
+                                        setMiniChatRecipient(recipient);
+                                        setMiniChatOpen(true);
+                                        setMiniChatLoading(true);
+                                        setMiniChatMessages([]);
+                                        
+                                        try {
+                                          await new Promise(resolve => setTimeout(resolve, 800));
+                                          
+                                          const mockMessages: MiniChatMessage[] = [
+                                            {
+                                              id: "1",
+                                              content: selectedCampaignQuery.data.messageText || "Mensagem da campanha",
+                                              direction: "OUTBOUND",
+                                              timestamp: recipient.sentAt || new Date().toISOString(),
+                                              status: "sent"
+                                            }
+                                          ];
+                                          
+                                          if (recipient.responded && recipient.firstResponseAt) {
+                                            mockMessages.push({
+                                              id: "2",
+                                              content: "Obrigado pela mensagem! Tenho interesse.",
+                                              direction: "INBOUND",
+                                              timestamp: recipient.firstResponseAt,
+                                            });
+                                          }
+                                          
+                                          setMiniChatMessages(mockMessages);
+                                        } catch (error) {
+                                          console.error("Erro ao carregar mensagens:", error);
+                                        } finally {
+                                          setMiniChatLoading(false);
+                                        }
+                                      }}
                                     />
                                     
                                   </div>
@@ -4008,6 +4017,7 @@ export function DisparadorPage() {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
     </div>
@@ -4053,7 +4063,7 @@ export function DisparadorPage() {
 
     {/* Campaign Creation Progress */}
     <CampaignCreationProgress isCreating={createCampaignMutation.isPending} />
-  </div>
+    </>
   );
 }
 
