@@ -50,7 +50,17 @@ BEGIN
               WHERE COALESCE(wim.from_me, false) = false
                 AND wim.created_at >= r.sent_at
                 AND wim.created_at < r.sent_at + INTERVAL '7 days'
-                AND LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                AND (
+                  LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                  OR EXISTS (
+                    SELECT 1 FROM whatsapp_jid_aliases wja1
+                    JOIN whatsapp_jid_aliases wja2 
+                      ON wja1.canonical_jid = wja2.canonical_jid 
+                     AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                    WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(wim.remote_jid, ''))
+                      AND LOWER(wja2.alias_jid) = LOWER(COALESCE(r.jid, ''))
+                  )
+                )
             )
         ) AS responded_count,
         
@@ -142,7 +152,17 @@ BEGIN
                 WHERE COALESCE(wim.from_me, false) = false
                   AND wim.created_at >= r.sent_at
                   AND wim.created_at < r.sent_at + INTERVAL '7 days'
-                  AND LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                  AND (
+                    LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+                    OR EXISTS (
+                      SELECT 1 FROM whatsapp_jid_aliases wja1
+                      JOIN whatsapp_jid_aliases wja2 
+                        ON wja1.canonical_jid = wja2.canonical_jid 
+                       AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                      WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(wim.remote_jid, ''))
+                        AND LOWER(wja2.alias_jid) = LOWER(COALESCE(r.jid, ''))
+                    )
+                  )
               )
           ) AS responded_count,
           

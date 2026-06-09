@@ -1635,10 +1635,40 @@ export async function getWhatsappMonitorConversation(
   // Resolve JID to Deal ID and update whatsapp_instance_id if needed
   let resolvedDealId = dealId;
   if (typeof dealId === "string" && dealId.includes("@")) {
-    const dealRes = await pool.query(
-      `SELECT id, whatsapp_instance_id FROM deals WHERE whatsapp_jid = $1 ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
+    // 1. Obter todos os aliases do JID
+    const aliasesRes = await pool.query(
+      `SELECT DISTINCT canonical_jid, alias_jid 
+       FROM whatsapp_jid_aliases 
+       WHERE alias_jid = $1 OR canonical_jid = $1`,
       [dealId]
     );
+    const jids = Array.from(new Set([
+      dealId,
+      ...aliasesRes.rows.map(r => r.canonical_jid),
+      ...aliasesRes.rows.map(r => r.alias_jid)
+    ]));
+
+    // 2. Buscar negócios pelos JIDs associados
+    let dealRes = await pool.query(
+      `SELECT id, whatsapp_instance_id, whatsapp_jid FROM deals WHERE whatsapp_jid = ANY($1::text[]) ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
+      [jids]
+    );
+
+    // 3. Fallback: Buscar negócio pelo customer_id se o destinatário da campanha possuir um
+    if (!dealRes.rows[0]) {
+      const recipientRes = await pool.query(
+        `SELECT customer_id FROM whatsapp_campaign_recipients WHERE jid = $1 ORDER BY created_at DESC LIMIT 1`,
+        [dealId]
+      );
+      const customerId = recipientRes.rows[0]?.customer_id;
+      if (customerId) {
+        dealRes = await pool.query(
+          `SELECT id, whatsapp_instance_id, whatsapp_jid FROM deals WHERE customer_id = $1 ORDER BY last_activity_at DESC, created_at DESC LIMIT 1`,
+          [customerId]
+        );
+      }
+    }
+
     if (dealRes.rows[0]) {
       resolvedDealId = String(dealRes.rows[0].id);
       if (!dealRes.rows[0].whatsapp_instance_id && options.instanceId) {
@@ -1664,22 +1694,23 @@ export async function getWhatsappMonitorConversation(
       }
 
       const recipientRes = await pool.query(
-        `SELECT customer_display_name, source_name FROM whatsapp_campaign_recipients WHERE jid = $1 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT customer_display_name, source_name, customer_id FROM whatsapp_campaign_recipients WHERE jid = $1 ORDER BY created_at DESC LIMIT 1`,
         [dealId]
       );
       const displayName = recipientRes.rows[0]?.customer_display_name || recipientRes.rows[0]?.source_name || dealId.split("@")[0] || "Cliente WhatsApp";
+      const customerId = recipientRes.rows[0]?.customer_id || null;
 
       const newDeal = await pool.query(
         `
         INSERT INTO deals (
           title, customer_display_name, stage_id, whatsapp_instance_id,
           whatsapp_jid, expected_value, priority, last_activity_at,
-          assigned_to, assigned_to_name
+          assigned_to, assigned_to_name, customer_id
         )
-        VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', NOW(), $6, $7)
+        VALUES ($1, $2, $3, $4, $5, 0, 'MEDIUM', NOW(), $6, $7, $8)
         RETURNING id
         `,
-        [displayName, displayName, stageId, instanceId, dealId, user.id, user.name]
+        [displayName, displayName, stageId, instanceId, dealId, user.id, user.name, customerId]
       );
       resolvedDealId = String(newDeal.rows[0].id);
     }

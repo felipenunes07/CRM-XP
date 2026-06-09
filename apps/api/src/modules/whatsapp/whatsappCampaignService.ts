@@ -460,9 +460,15 @@ function mapAttributedMessage(row: Record<string, unknown>): WhatsappCampaignAtt
 
 const eventIdentityMatchSql = (eventAlias: string, recipientAlias: string) => `
   (
-    (${eventAlias}.customer_id IS NOT NULL AND ${recipientAlias}.customer_id IS NOT NULL AND ${eventAlias}.customer_id = ${recipientAlias}.customer_id)
-    OR (${eventAlias}.customer_code IS NOT NULL AND ${recipientAlias}.customer_code IS NOT NULL AND LOWER(${eventAlias}.customer_code) = LOWER(${recipientAlias}.customer_code))
-    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid))
+    LOWER(COALESCE(${eventAlias}.event_jid, '')) = LOWER(COALESCE(${recipientAlias}.jid, ''))
+    OR EXISTS (
+      SELECT 1 FROM whatsapp_jid_aliases wja1
+      JOIN whatsapp_jid_aliases wja2 
+        ON wja1.canonical_jid = wja2.canonical_jid 
+       AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+      WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(${eventAlias}.event_jid, ''))
+        AND LOWER(wja2.alias_jid) = LOWER(COALESCE(${recipientAlias}.jid, ''))
+    )
   )
 `;
 
