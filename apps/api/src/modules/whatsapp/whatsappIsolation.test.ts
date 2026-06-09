@@ -886,6 +886,24 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).not.toMatch(/FROM whatsapp_incoming_messages wim_inst/);
   });
 
+  it("deduplicates candidate group deals by group JID via ROW_NUMBER partition query", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+
+    await listWhatsappMonitorConversations({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any);
+
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    expect(listCall).toBeDefined();
+    const listSql = String(listCall![0]);
+
+    expect(listSql).toContain("PARTITION BY CASE WHEN d.whatsapp_jid LIKE '%@g.us' THEN d.whatsapp_jid ELSE d.id::text END");
+    expect(listSql).toContain("rn = 1");
+  });
+
   it("deduplicates the same group message arriving from multiple Evolution instances", async () => {
     let webhookInsertCount = 0;
     let dealMatchCount = 0;
@@ -916,6 +934,10 @@ describe("whatsapp conversation isolation", () => {
         };
       }
       if (sql.includes("existing_message_deal") || sql.includes("remote_jid_deal")) {
+        dealMatchCount += 1;
+        return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
+      }
+      if (sql.includes("d.whatsapp_jid = $1") && sql.includes("pipeline_stages")) {
         dealMatchCount += 1;
         return { rows: [{ id: "deal-group", whatsapp_instance_id: "instance-amanda" }] };
       }
@@ -1012,12 +1034,11 @@ describe("whatsapp conversation isolation", () => {
     const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
-
     expect(listSql).toContain("d.whatsapp_jid NOT LIKE '%@g.us'");
-    expect(listSql).toContain("d.whatsapp_instance_id = wif.id");
+    expect(listSql).toContain("d.whatsapp_instance_id = $3::uuid");
     expect(listSql).toContain("d.whatsapp_instance_id IS NULL");
     expect(listSql).toContain("FROM whatsapp_monitor_messages wmm_inst");
-    expect(listSql).toContain("LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER(COALESCE(wif.instance_name, ''))");
+    expect(listSql).toContain("LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER($4)");
   });
 
   it("passes the selected instance into conversation detail and scopes monitor reads", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, Fragment } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment, type SyntheticEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CarouselSlide,
@@ -13,7 +13,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
@@ -42,6 +42,56 @@ const campaignPerformanceFilters: Array<{ value: CampaignPerformanceFilter; labe
   { value: "PURCHASED", label: "Compraram" },
   { value: "ISSUES", label: "Bloqueios/Falhas" },
 ];
+
+export const WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES = 64 * 1024 * 1024;
+const WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL = "64MB";
+const unsupportedVideoUrlExtensionPattern = /\.(mov|qt|webm|ogg|ogv|avi|mkv|wmv|flv|3gp|m4v)(?:[?#].*)?$/i;
+
+type DisparadorVideoFileLike = Pick<File, "name" | "size" | "type">;
+
+function isMp4FileName(fileName: string) {
+  return fileName.trim().toLowerCase().endsWith(".mp4");
+}
+
+function getDataUrlMimeType(value: string) {
+  const match = value.match(/^data:([^;,]+)(?:;[^,]*)*;base64,/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+export function validateDisparadorVideoFile(file: DisparadorVideoFileLike) {
+  if (file.size > WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES) {
+    return `Erro: O vídeo deve ter no máximo ${WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL}.`;
+  }
+
+  const mimeType = file.type.trim().toLowerCase();
+  if (mimeType && mimeType !== "video/mp4") {
+    return "Erro: Apenas arquivos MP4 são aceitos para envio de vídeo no WhatsApp.";
+  }
+
+  if (!isMp4FileName(file.name)) {
+    return "Erro: Apenas arquivos .mp4 são aceitos para envio de vídeo no WhatsApp.";
+  }
+
+  return null;
+}
+
+function validateDisparadorVideoSource(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "Selecione um arquivo MP4 ou informe uma URL de vídeo MP4.";
+  }
+
+  const dataUrlMimeType = getDataUrlMimeType(trimmed);
+  if (dataUrlMimeType && dataUrlMimeType !== "video/mp4") {
+    return "Erro: Apenas vídeos MP4 (video/mp4) são aceitos.";
+  }
+
+  if (!dataUrlMimeType && unsupportedVideoUrlExtensionPattern.test(trimmed)) {
+    return "Erro: URLs de vídeo precisam apontar para arquivo MP4.";
+  }
+
+  return null;
+}
 
 
 
@@ -238,6 +288,21 @@ export function filterCampaignRecipients(recipients: WhatsappCampaignRecipient[]
   }
 
   return recipients;
+}
+
+export function campaignHasDuePendingRecipients(campaign: WhatsappCampaignDetail | null | undefined, nowMs: number) {
+  if (!campaign || !["QUEUED", "IN_PROGRESS"].includes(campaign.status)) {
+    return false;
+  }
+
+  return campaign.recipients.some((recipient) => {
+    if (recipient.status !== "PENDING" || !recipient.scheduledFor) {
+      return false;
+    }
+
+    const scheduledMs = new Date(recipient.scheduledFor).getTime();
+    return Number.isFinite(scheduledMs) && scheduledMs <= nowMs;
+  });
 }
 
 function campaignDiagnosisColors(tone: WhatsappCampaignDetail["performance"]["diagnosis"]["tone"]) {
@@ -493,6 +558,7 @@ export function DisparadorPage() {
   const { token, user } = auth;
   const canImport = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
   const queryClient = useQueryClient();
+  const resumeAttemptByCampaignRef = useRef<Record<string, number>>({});
 
 
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("ALL");
@@ -566,6 +632,9 @@ export function DisparadorPage() {
   ]);
   const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
   const [videoUrl, setVideoUrl] = useState("");
+  const [videoFileName, setVideoFileName] = useState("");
+  const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
+  const [videoOrientation, setVideoOrientation] = useState<"UNKNOWN" | "VERTICAL" | "LANDSCAPE">("UNKNOWN");
   const [uploadingVideo, setUploadingVideo] = useState(false);
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
@@ -573,6 +642,49 @@ export function DisparadorPage() {
     const sender = senders.find(s => s.id === selectedSenderIds[0]);
     return sender?.provider ?? "EVOLUTION";
   }, [selectedSenderIds, senders]);
+
+  const isLocalVideoFile = videoUrl.startsWith("data:");
+  const videoInputDisplayValue = isLocalVideoFile
+    ? `Arquivo selecionado: ${videoFileName || "video.mp4"}`
+    : videoUrl;
+  const videoDisplayLabel = isLocalVideoFile
+    ? `${videoFileName || "video.mp4"}${videoFileSize ? ` (${formatFileSize(videoFileSize)})` : ""}`
+    : videoUrl;
+  const isVerticalVideoPreview = videoOrientation !== "LANDSCAPE";
+  const videoStageStyle = {
+    width: "100%",
+    minHeight: isVerticalVideoPreview ? "420px" : "260px",
+    maxHeight: "560px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "10px",
+    background: "#0f172a",
+    overflow: "hidden",
+  } as const;
+  const videoElementStyle = {
+    width: isVerticalVideoPreview ? "min(100%, 320px)" : "100%",
+    height: isVerticalVideoPreview ? "min(62vh, 540px)" : "auto",
+    maxHeight: "560px",
+    aspectRatio: isVerticalVideoPreview ? "9 / 16" : "16 / 9",
+    objectFit: "contain",
+    borderRadius: isVerticalVideoPreview ? "10px" : "0",
+    backgroundColor: "#000",
+    display: "block",
+  } as const;
+  const phoneVideoStyle = {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    display: "block",
+    backgroundColor: "#000",
+  } as const;
+
+  function handleVideoMetadata(event: SyntheticEvent<HTMLVideoElement>) {
+    const element = event.currentTarget;
+    if (element.videoWidth > 0 && element.videoHeight > 0) {
+      setVideoOrientation(element.videoHeight > element.videoWidth ? "VERTICAL" : "LANDSCAPE");
+    }
+  }
 
   // Reset message type when provider changes
   useEffect(() => {
@@ -650,7 +762,7 @@ export function DisparadorPage() {
     queryFn: () => api.whatsappCampaigns(token!, 20),
     enabled: Boolean(token),
     refetchInterval: (query) =>
-      query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 5000 : false,
+      query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 10000 : false,
   });
 
   const selectedCampaignQuery = useQuery({
@@ -658,7 +770,7 @@ export function DisparadorPage() {
     queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0 }),
     enabled: Boolean(token && selectedCampaignId),
     refetchInterval: (query) =>
-      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 3000 : false,
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
   });
 
   useEffect(() => {
@@ -689,8 +801,16 @@ export function DisparadorPage() {
 
 
   const createCampaignMutation = useMutation({
-    mutationFn: () =>
-      api.createWhatsappCampaign(token!, {
+    mutationFn: () => {
+      const preparedVideoUrl = campaignMessageType === "VIDEO" ? videoUrl.trim() : null;
+      if (campaignMessageType === "VIDEO") {
+        const validationError = validateDisparadorVideoSource(preparedVideoUrl ?? "");
+        if (validationError) {
+          throw new Error(validationError);
+        }
+      }
+
+      return api.createWhatsappCampaign(token!, {
         name: campaignName.trim() || `Disparo ${new Date().toLocaleDateString("pt-BR")}`,
         templateId: selectedTemplateId || null,
         savedSegmentId: savedSegmentId || null,
@@ -698,7 +818,7 @@ export function DisparadorPage() {
         messageText,
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
-        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : null,
+        videoUrl: preparedVideoUrl,
         filtersSnapshot: {
           quickFilter,
           search,
@@ -710,12 +830,16 @@ export function DisparadorPage() {
         overrideRecentBlock,
         minDelaySeconds,
         maxDelaySeconds,
-      }),
+      });
+    },
     onSuccess: async (campaign) => {
       setSelectedCampaignId(campaign?.id ?? null);
       setSelectedGroupIds([]);
       await invalidateWhatsappQueries();
       setActiveTab("HISTORY");
+    },
+    onError: (error: any) => {
+      alert(`Erro ao criar campanha: ${error?.message || error}`);
     },
   });
 
@@ -730,10 +854,10 @@ export function DisparadorPage() {
 
   const activeCampaignQuery = useQuery({
     queryKey: ["whatsapp-campaign-live", activeCampaignId],
-    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0 }),
+    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0, excludePerformance: true }),
     enabled: Boolean(token && activeCampaignId),
     refetchInterval: (query) =>
-      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 1500 : false,
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
   });
 
   const cancelCampaignMutation = useMutation({
@@ -746,13 +870,44 @@ export function DisparadorPage() {
     },
   });
 
+  const resumeCampaignMutation = useMutation({
+    mutationFn: (campaignId: string) => api.resumeWhatsappCampaign(token!, campaignId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+      ]);
+    },
+  });
+
+  const skipRecipientMutation = useMutation({
+    mutationFn: ({ campaignId, recipientId }: { campaignId: string; recipientId: string }) =>
+      api.skipWhatsappCampaignRecipient(token!, campaignId, recipientId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+      ]);
+    },
+  });
+
   const sendTestMessageMutation = useMutation({
     mutationFn: () => {
+      const preparedVideoUrl = campaignMessageType === "VIDEO" ? videoUrl.trim() : undefined;
+      if (campaignMessageType === "VIDEO") {
+        const validationError = validateDisparadorVideoSource(preparedVideoUrl ?? "");
+        if (validationError) {
+          throw new Error(validationError);
+        }
+      }
+
       const payload = {
-        messageText: messageText || "Mensagem de teste",
+        messageText: campaignMessageType === "VIDEO" ? messageText.trim() : messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
-        videoUrl: campaignMessageType === "VIDEO" ? videoUrl : undefined,
+        videoUrl: preparedVideoUrl,
         whatsappInstanceId: selectedSenderIds[0] || undefined
       };
       
@@ -887,9 +1042,28 @@ export function DisparadorPage() {
         const rightTime = right.scheduledFor ? new Date(right.scheduledFor).getTime() : 0;
         return leftTime - rightTime;
       })
-      .slice(0, 8);
+      .slice(0, 200);
   }, [liveCampaign]);
   const selectedCampaignDetail = selectedCampaignQuery.data ?? null;
+
+  useEffect(() => {
+    if (!token || !liveCampaign || resumeCampaignMutation.isPending) {
+      return;
+    }
+
+    if (!campaignHasDuePendingRecipients(liveCampaign, nowMs)) {
+      return;
+    }
+
+    const lastAttemptMs = resumeAttemptByCampaignRef.current[liveCampaign.id] ?? 0;
+    if (nowMs - lastAttemptMs < 15_000) {
+      return;
+    }
+
+    resumeAttemptByCampaignRef.current[liveCampaign.id] = nowMs;
+    resumeCampaignMutation.mutate(liveCampaign.id);
+  }, [liveCampaign, nowMs, resumeCampaignMutation, token]);
+
   const selectedCampaignPerformanceRecipients = useMemo(
     () => filterCampaignRecipients(selectedCampaignDetail?.recipients ?? [], campaignPerformanceFilter),
     [campaignPerformanceFilter, selectedCampaignDetail?.recipients],
@@ -897,7 +1071,7 @@ export function DisparadorPage() {
   const hasMessage = campaignMessageType === "CAROUSEL"
     ? true
     : campaignMessageType === "VIDEO"
-      ? Boolean(videoUrl)
+      ? Boolean(videoUrl.trim())
       : Boolean(messageText.trim());
   const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
@@ -1974,16 +2148,22 @@ export function DisparadorPage() {
                           <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Arquivo de Vídeo</span>
                           
                           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                            <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>URL do Vídeo ou Selecionar Arquivo:</label>
+                            <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>URL do Vídeo MP4 ou Selecionar Arquivo:</label>
                             
                             <div style={{ display: "flex", gap: "0.5rem" }}>
                               <input
                                 type="text"
                                 className="wp-search-input"
                                 style={{ flex: 1, background: "#fff" }}
-                                placeholder="Insira a URL do vídeo (ex: https://site.com/video.mp4) ou selecione um arquivo..."
-                                value={videoUrl}
-                                onChange={(e) => setVideoUrl(e.target.value)}
+                                placeholder={`Insira uma URL .mp4 ou selecione um MP4 até ${WHATSAPP_VIDEO_MAX_FILE_SIZE_LABEL}`}
+                                value={videoInputDisplayValue}
+                                onChange={(e) => {
+                                  setVideoUrl(e.target.value);
+                                  setVideoFileName("");
+                                  setVideoFileSize(null);
+                                  setVideoOrientation("UNKNOWN");
+                                }}
+                                readOnly={isLocalVideoFile}
                                 disabled={uploadingVideo}
                               />
                               
@@ -2016,40 +2196,30 @@ export function DisparadorPage() {
                                 )}
                                 <input
                                   type="file"
-                                  accept="video/*"
+                                  accept="video/mp4,.mp4"
                                   style={{ display: "none" }}
                                   disabled={uploadingVideo}
                                   onChange={async (e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
                                     
-                                    // Limit to 16MB
-                                    if (file.size > 16 * 1024 * 1024) {
-                                      alert("Erro: O vídeo deve ter no máximo 16MB.");
+                                    const validationError = validateDisparadorVideoFile(file);
+                                    if (validationError) {
+                                      alert(validationError);
+                                      e.currentTarget.value = "";
                                       return;
                                     }
                                     
                                     setUploadingVideo(true);
                                     try {
                                       const reader = new FileReader();
-                                      reader.onload = async (event) => {
+                                      reader.onload = (event) => {
                                         const base64 = event.target?.result as string;
-                                        try {
-                                          // Prefer hosting the video and sending its URL — this avoids the
-                                          // provider-side timeout / "Bad Request" caused by inline base64.
-                                          const { url } = await api.uploadCampaignVideo(token!, {
-                                            fileBase64: base64,
-                                            fileName: file.name,
-                                            contentType: file.type || "video/mp4",
-                                          });
-                                          setVideoUrl(url);
-                                        } catch (uploadErr) {
-                                          // Storage not configured / upload failed → fall back to base64.
-                                          console.warn("Upload de vídeo para storage falhou, usando base64 inline:", uploadErr);
-                                          setVideoUrl(base64);
-                                        } finally {
-                                          setUploadingVideo(false);
-                                        }
+                                        setVideoUrl(base64);
+                                        setVideoFileName(file.name);
+                                        setVideoFileSize(file.size);
+                                        setVideoOrientation("UNKNOWN");
+                                        setUploadingVideo(false);
                                       };
                                       reader.onerror = () => {
                                         alert("Erro ao ler arquivo de vídeo.");
@@ -2069,12 +2239,18 @@ export function DisparadorPage() {
                             {videoUrl && (
                               <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.75rem", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
                                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                  <span style={{ fontSize: "0.78rem", color: "#64748b", wordBreak: "break-all" }}>
-                                    {videoUrl.startsWith("data:") ? "🎥 Vídeo carregado do computador (Base64)" : `🔗 ${videoUrl}`}
+                                  <span style={{ fontSize: "0.78rem", color: "#64748b", wordBreak: "break-word", display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <Film size={14} />
+                                    {isLocalVideoFile ? `MP4 carregado: ${videoDisplayLabel}` : videoDisplayLabel}
                                   </span>
                                   <button
                                     type="button"
-                                    onClick={() => setVideoUrl("")}
+                                    onClick={() => {
+                                      setVideoUrl("");
+                                      setVideoFileName("");
+                                      setVideoFileSize(null);
+                                      setVideoOrientation("UNKNOWN");
+                                    }}
                                     style={{
                                       background: "none",
                                       border: "none",
@@ -2090,12 +2266,16 @@ export function DisparadorPage() {
                                     <Trash2 size={14} /> Remover
                                   </button>
                                 </div>
-                                {videoUrl.startsWith("data:") || videoUrl.match(/\.(mp4|webm|ogg)/i) || videoUrl.includes("http") ? (
-                                  <video
-                                    src={videoUrl}
-                                    controls
-                                    style={{ width: "100%", maxHeight: "200px", borderRadius: "6px", backgroundColor: "#000" }}
-                                  />
+                                {videoUrl.startsWith("data:") || videoUrl.match(/\.mp4(?:[?#].*)?$/i) || videoUrl.includes("http") ? (
+                                  <div style={videoStageStyle}>
+                                    <video
+                                      src={videoUrl}
+                                      controls
+                                      preload="metadata"
+                                      onLoadedMetadata={handleVideoMetadata}
+                                      style={videoElementStyle}
+                                    />
+                                  </div>
                                 ) : null}
                               </div>
                             )}
@@ -2556,24 +2736,37 @@ export function DisparadorPage() {
                             {campaignMessageType === "VIDEO" ? (
                               <div className="wp-preview-bubble" style={{
                                 background: "#d9fdd3",
-                                padding: "6px",
+                                padding: "4px",
                                 borderRadius: "8px",
-                                maxWidth: "85%",
+                                maxWidth: "88%",
                                 marginLeft: "auto",
                                 marginBottom: "8px",
                                 boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
                                 position: "relative",
+                                overflow: "hidden",
                                 color: "#1a1a1a"
                               }}>
                                 {videoUrl ? (
-                                  <video 
-                                    src={videoUrl} 
-                                    controls 
-                                    style={{ width: "100%", maxHeight: "150px", borderRadius: "6px", backgroundColor: "#000", display: "block" }} 
-                                  />
+                                  <div style={{
+                                    width: isVerticalVideoPreview ? "min(100%, 150px)" : "100%",
+                                    aspectRatio: isVerticalVideoPreview ? "9 / 16" : "16 / 9",
+                                    marginLeft: isVerticalVideoPreview ? "auto" : undefined,
+                                    borderRadius: "7px",
+                                    overflow: "hidden",
+                                    backgroundColor: "#111827",
+                                  }}>
+                                    <video
+                                      src={videoUrl}
+                                      controls
+                                      preload="metadata"
+                                      onLoadedMetadata={handleVideoMetadata}
+                                      style={phoneVideoStyle}
+                                    />
+                                  </div>
                                 ) : (
-                                  <div style={{ width: "100%", height: "120px", borderRadius: "6px", backgroundColor: "#475569", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "0.78rem" }}>
-                                    [Sem Vídeo Selecionado]
+                                  <div style={{ width: "150px", aspectRatio: "9 / 16", marginLeft: "auto", borderRadius: "7px", backgroundColor: "#111827", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#cbd5e1", fontSize: "0.76rem", gap: "6px" }}>
+                                    <Film size={20} />
+                                    MP4 não selecionado
                                   </div>
                                 )}
                                 {messageText && (
@@ -3063,6 +3256,370 @@ export function DisparadorPage() {
               Nova Campanha
             </button>
           </div>
+
+          {/* ── LIVE DISPATCH PANEL ── */}
+          {liveCampaign && liveCampaignIsRunning && (() => {
+            const progress = liveCampaign.progress;
+            const totalR = progress.totalRecipients || 1;
+            const completedCount = progress.sentCount + progress.failedCount + progress.blockedRecentCount + progress.skippedCount;
+            const overallPct = Math.round((completedCount / totalR) * 100);
+            return (
+              <div style={{
+                background: "#ffffff",
+                borderRadius: "12px",
+                padding: "1.5rem",
+                color: "#18181b",
+                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.02)",
+                border: "1px solid #e4e4e7",
+                marginBottom: "1.5rem",
+              }}>
+                {/* Panel Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{
+                      width: "40px", height: "40px", borderRadius: "10px",
+                      background: "#ecfdf5",
+                      display: "grid", placeItems: "center",
+                    }}>
+                      <Send size={18} style={{ color: "#10b981" }} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, color: "#18181b" }}>
+                        🚀 Disparo em andamento
+                      </h3>
+                      <span style={{ fontSize: "0.82rem", color: "#71717a" }}>
+                        {liveCampaign.name}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    {nextDispatchCountdown && (
+                      <div style={{
+                        background: "#ecfdf5",
+                        border: "1px solid #a7f3d0",
+                        borderRadius: "8px",
+                        padding: "6px 14px",
+                        display: "flex", alignItems: "center", gap: "6px",
+                      }}>
+                        <Clock3 size={14} style={{ color: "#047857" }} />
+                        <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#047857", fontFamily: "monospace" }}>
+                          {nextDispatchCountdown}
+                        </span>
+                        <span style={{ fontSize: "0.72rem", color: "#71717a" }}>próximo envio</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm("Tem certeza que deseja PAUSAR (cancelar) esta campanha? Os envios pendentes serão cancelados.")) {
+                          cancelCampaignMutation.mutate(liveCampaign.id);
+                        }
+                      }}
+                      disabled={cancelCampaignMutation.isPending}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "8px 16px",
+                        background: "rgba(239, 68, 68, 0.06)",
+                        border: "1px solid rgba(239, 68, 68, 0.15)",
+                        borderRadius: "8px",
+                        color: "#dc2626",
+                        fontSize: "0.85rem",
+                        fontWeight: 650,
+                        cursor: cancelCampaignMutation.isPending ? "not-allowed" : "pointer",
+                        opacity: cancelCampaignMutation.isPending ? 0.6 : 1,
+                        transition: "all 0.2s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!cancelCampaignMutation.isPending) {
+                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!cancelCampaignMutation.isPending) {
+                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.06)";
+                        }
+                      }}
+                    >
+                      {cancelCampaignMutation.isPending ? (
+                        <><LoaderCircle size={14} className="spin" /> Pausando...</>
+                      ) : (
+                        <><XCircle size={14} /> Pausar Campanha</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Overall Progress Bar */}
+                <div style={{ marginBottom: "1.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span style={{ fontSize: "0.82rem", color: "#3f3f46", fontWeight: 500 }}>
+                      Progresso geral: {formatNumber(completedCount)} de {formatNumber(totalR)} processados
+                    </span>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#10b981" }}>
+                      {overallPct}%
+                    </span>
+                  </div>
+                  <div style={{
+                    width: "100%", height: "10px",
+                    background: "#f4f4f5",
+                    borderRadius: "9999px", overflow: "hidden",
+                  }}>
+                    <div style={{
+                      width: `${overallPct}%`,
+                      height: "100%",
+                      background: "linear-gradient(90deg, #10b981, #34d399)",
+                      borderRadius: "9999px",
+                      transition: "width 0.5s ease",
+                    }} />
+                  </div>
+                  <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ✅ Enviados: <strong style={{ color: "#16a34a" }}>{formatNumber(progress.sentCount)}</strong>
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ⏳ Pendentes: <strong style={{ color: "#d97706" }}>{formatNumber(progress.pendingCount)}</strong>
+                    </span>
+                    <span style={{ fontSize: "0.75rem", color: "#71717a" }}>
+                      ❌ Falhas: <strong style={{ color: "#dc2626" }}>{formatNumber(progress.failedCount)}</strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Recipients List with per-recipient countdown */}
+                <div style={{
+                  background: "#ffffff",
+                  border: "1px solid #e4e4e7",
+                  borderRadius: "12px",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    background: "#f8fafc",
+                    padding: "0.75rem 1rem",
+                    borderBottom: "1px solid #e4e4e7",
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                  }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#18181b" }}>
+                      Destinatários ({formatNumber(liveRecipients.length)} exibidos)
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: "420px", overflowY: "auto" }}>
+                    {liveRecipients.map((recipient) => {
+                      const isGroup = recipient.jid.endsWith("@g.us") || recipient.jid.includes("-");
+                      const displayName = recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || (isGroup ? "Grupo" : "Cliente");
+
+                      // Calculate individual countdown in seconds
+                      let countdownSeconds: number | null = null;
+                      let countdownLabel: string | null = null;
+                      if (recipient.status === "PENDING" && recipient.scheduledFor) {
+                        const targetMs = new Date(recipient.scheduledFor).getTime();
+                        const diffMs = Math.max(0, targetMs - nowMs);
+                        countdownSeconds = Math.ceil(diffMs / 1000);
+                        if (countdownSeconds > 0) {
+                          const mins = Math.floor(countdownSeconds / 60);
+                          const secs = countdownSeconds % 60;
+                          countdownLabel = mins > 0
+                            ? `${mins}m ${String(secs).padStart(2, "0")}s`
+                            : `${secs}s`;
+                        } else {
+                          countdownLabel = "Enviando em breve...";
+                        }
+                      }
+
+                      // Individual progress percentage
+                      let recipientBarPct = 0;
+                      let recipientBarColor = "#e4e4e7";
+                      if (recipient.status === "SENT") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#10b981";
+                      } else if (recipient.status === "FAILED") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#ef4444";
+                      } else if (recipient.status === "SENDING") {
+                        recipientBarPct = 50;
+                        recipientBarColor = "#3b82f6";
+                      } else if (recipient.status === "BLOCKED_RECENT") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#f59e0b";
+                      } else if (recipient.status === "SKIPPED") {
+                        recipientBarPct = 100;
+                        recipientBarColor = "#71717a";
+                      }
+
+                      // Status badge
+                      let statusBadgeBg = "#f4f4f5";
+                      let statusBadgeColor = "#52525b";
+                      let statusBadgeText: string = recipient.status;
+                      if (recipient.status === "SENT") {
+                        statusBadgeBg = "#ecfdf5";
+                        statusBadgeColor = "#047857";
+                        statusBadgeText = "ENVIADO";
+                      } else if (recipient.status === "SENDING") {
+                        statusBadgeBg = "#eff6ff";
+                        statusBadgeColor = "#1d4ed8";
+                        statusBadgeText = "ENVIANDO";
+                      } else if (recipient.status === "PENDING") {
+                        statusBadgeBg = "#fffbeb";
+                        statusBadgeColor = "#b45309";
+                        statusBadgeText = "AGUARDANDO";
+                      } else if (recipient.status === "FAILED") {
+                        statusBadgeBg = "#fef2f2";
+                        statusBadgeColor = "#b91c1c";
+                        statusBadgeText = "FALHA";
+                      } else if (recipient.status === "BLOCKED_RECENT") {
+                        statusBadgeBg = "#fff7ed";
+                        statusBadgeColor = "#c2410c";
+                        statusBadgeText = "BLOQUEADO";
+                      } else if (recipient.status === "SKIPPED") {
+                        statusBadgeBg = "#f4f4f5";
+                        statusBadgeColor = "#52525b";
+                        statusBadgeText = "PULADO";
+                      }
+
+                      return (
+                        <div
+                          key={recipient.id}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1.2fr auto 1fr auto auto",
+                            alignItems: "center",
+                            gap: "12px",
+                            padding: "0.75rem 1rem",
+                            borderBottom: "1px solid #f1f5f9",
+                            transition: "background 0.15s",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = "#f8fafc";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = "transparent";
+                          }}
+                        >
+                          {/* Col 1: Name + JID */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+                            <span style={{ fontSize: "0.88rem", fontWeight: 650, color: "#18181b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {displayName}
+                            </span>
+                            <span style={{ fontSize: "0.7rem", color: "#71717a", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {recipient.jid}
+                            </span>
+                          </div>
+
+                          {/* Col 2: Status badge */}
+                          <span style={{
+                            display: "inline-flex", alignItems: "center",
+                            padding: "3px 10px", borderRadius: "9999px",
+                            fontSize: "0.68rem", fontWeight: 700,
+                            textTransform: "uppercase", letterSpacing: "0.04em",
+                            background: statusBadgeBg, color: statusBadgeColor,
+                            whiteSpace: "nowrap",
+                          }}>
+                            {statusBadgeText}
+                          </span>
+
+                          {/* Col 3: Progress bar */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{
+                              width: "100%", height: "6px",
+                              background: "#f1f5f9",
+                              borderRadius: "9999px", overflow: "hidden",
+                            }}>
+                              <div style={{
+                                width: `${recipientBarPct}%`,
+                                height: "100%",
+                                background: recipientBarColor,
+                                borderRadius: "9999px",
+                                transition: "width 0.5s ease",
+                              }} />
+                            </div>
+                          </div>
+
+                          {/* Col 4: Countdown / Time info */}
+                          <div style={{ textAlign: "right", minWidth: "90px" }}>
+                            {recipient.status === "PENDING" && countdownLabel ? (
+                              <span style={{
+                                fontSize: "0.85rem",
+                                fontWeight: 700,
+                                color: countdownSeconds !== null && countdownSeconds <= 10 ? "#b45309" : "#71717a",
+                                fontFamily: "monospace",
+                                display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px",
+                              }}>
+                                <Clock3 size={12} />
+                                {countdownLabel}
+                              </span>
+                            ) : recipient.status === "SENDING" ? (
+                              <span style={{ fontSize: "0.82rem", color: "#2563eb", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "4px" }}>
+                                <LoaderCircle size={12} className="spin" />
+                                Enviando...
+                              </span>
+                            ) : recipient.status === "SENT" ? (
+                              <span style={{ fontSize: "0.78rem", color: "#16a34a", fontWeight: 600 }}>
+                                ✓ Enviado
+                              </span>
+                            ) : recipient.status === "FAILED" ? (
+                              <span style={{ fontSize: "0.78rem", color: "#dc2626", fontWeight: 600 }}>
+                                ✕ Falha
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: "0.78rem", color: "#71717a" }}>
+                                {recipientLiveLabel(recipient)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Col 5: Skip button */}
+                          <div style={{ display: "flex", justifyContent: "center", width: "24px" }}>
+                            {recipient.status === "PENDING" ? (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Deseja cancelar o envio para ${displayName}?`)) {
+                                    skipRecipientMutation.mutate({
+                                      campaignId: recipient.campaignId,
+                                      recipientId: recipient.id,
+                                    });
+                                  }
+                                }}
+                                disabled={skipRecipientMutation.isPending}
+                                title="Cancelar envio para este contato"
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: "#a1a1aa",
+                                  cursor: "pointer",
+                                  padding: "4px",
+                                  borderRadius: "4px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  transition: "all 0.15s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = "#fef2f2";
+                                  e.currentTarget.style.color = "#dc2626";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = "transparent";
+                                  e.currentTarget.style.color = "#a1a1aa";
+                                }}
+                              >
+                                <X size={16} />
+                              </button>
+                            ) : (
+                              <div style={{ width: "24px" }} />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {liveRecipients.length === 0 && (
+                      <div style={{ padding: "2rem", textAlign: "center", color: "#71717a", fontSize: "0.85rem" }}>
+                        Nenhum destinatário encontrado.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Table Area */}
           <div className="z-table-wrapper" style={{ border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", boxShadow: "0 4px 20px rgba(0,0,0,0.02)" }}>

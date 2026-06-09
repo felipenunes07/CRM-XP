@@ -77,7 +77,7 @@ export interface ChartAnnotation {
 import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
-export const API_REQUEST_TIMEOUT_MS = 15_000;
+export const API_REQUEST_TIMEOUT_MS = 30_000;
 
 export class ApiAuthError extends Error {
   status = 401;
@@ -731,13 +731,16 @@ export const api = {
   whatsappCampaigns(token: string, limit = 20) {
     return request<WhatsappCampaignListItem[]>(`/api/whatsapp-campaigns?limit=${limit}`, {}, token);
   },
-  whatsappCampaign(token: string, id: string, query: { limit?: number; offset?: number } = {}) {
+  whatsappCampaign(token: string, id: string, query: { limit?: number; offset?: number; excludePerformance?: boolean } = {}) {
     const search = new URLSearchParams();
     if (query.limit !== undefined) {
       search.set("limit", String(query.limit));
     }
     if (query.offset !== undefined) {
       search.set("offset", String(query.offset));
+    }
+    if (query.excludePerformance !== undefined) {
+      search.set("excludePerformance", String(query.excludePerformance));
     }
     return request<WhatsappCampaignDetail>(
       `/api/whatsapp-campaigns/${id}${search.toString() ? `?${search.toString()}` : ""}`,
@@ -770,6 +773,16 @@ export const api = {
   },
   cancelWhatsappCampaign(token: string, id: string) {
     return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/cancel`, {
+      method: "POST",
+    }, token);
+  },
+  resumeWhatsappCampaign(token: string, id: string) {
+    return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/resume`, {
+      method: "POST",
+    }, token);
+  },
+  skipWhatsappCampaignRecipient(token: string, id: string, recipientId: string) {
+    return request<{ skipped: boolean; recipientId: string }>(`/api/whatsapp-campaigns/${id}/recipients/${recipientId}/skip`, {
       method: "POST",
     }, token);
   },

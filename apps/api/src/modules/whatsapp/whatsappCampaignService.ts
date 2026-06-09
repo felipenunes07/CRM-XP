@@ -49,6 +49,17 @@ export interface CreateWhatsappCampaignResult {
   enqueuedJobs: EnqueuedRecipientJob[];
 }
 
+export interface ListDueWhatsappCampaignRecipientJobsOptions {
+  campaignId?: string;
+  limit?: number;
+  now?: Date;
+}
+
+export interface RecoverWhatsappCampaignDispatchFailuresOptions {
+  campaignId?: string;
+  limit?: number;
+}
+
 interface CampaignProgressRow {
   total_recipients: number;
   pending_count: number;
@@ -108,6 +119,20 @@ function numericValue(value: unknown) {
 
 function ratio(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : 0;
+}
+
+export function normalizeWhatsappCampaignMessageText(input: {
+  messageText: string;
+  messageType?: WhatsappCampaignMessageType;
+}) {
+  const trimmedMessage = input.messageText.trim();
+  const messageType = input.messageType ?? "TEXT";
+
+  if (!trimmedMessage && messageType !== "VIDEO") {
+    throw new HttpError(400, "A mensagem final nao pode ficar vazia.");
+  }
+
+  return trimmedMessage;
 }
 
 export function isWithinWhatsappCampaignAttributionWindow(
@@ -436,13 +461,7 @@ const eventIdentityMatchSql = (eventAlias: string, recipientAlias: string) => `
   (
     (${eventAlias}.customer_id IS NOT NULL AND ${recipientAlias}.customer_id IS NOT NULL AND ${eventAlias}.customer_id = ${recipientAlias}.customer_id)
     OR (${eventAlias}.customer_code IS NOT NULL AND ${recipientAlias}.customer_code IS NOT NULL AND LOWER(${eventAlias}.customer_code) = LOWER(${recipientAlias}.customer_code))
-    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND (
-      LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid)
-      OR (
-        regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') <> ''
-        AND regexp_replace(${eventAlias}.event_jid, '\\D', '', 'g') = regexp_replace(${recipientAlias}.jid, '\\D', '', 'g')
-      )
-    ))
+    OR (${eventAlias}.event_jid IS NOT NULL AND ${recipientAlias}.jid IS NOT NULL AND LOWER(${eventAlias}.event_jid) = LOWER(${recipientAlias}.jid))
   )
 `;
 
@@ -453,8 +472,65 @@ const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
   )
 `;
 
-async function getWhatsappCampaignPerformance(campaignId: string): Promise<WhatsappCampaignPerformance> {
-  const [recipientsResult, inboundResult, purchaseResult, outboundResult] = await Promise.all([
+async function getWhatsappCampaignPerformance(campaignId: string, excludePerformance = false): Promise<WhatsappCampaignPerformance> {
+  const recipientsResult = await pool.query(
+    `
+      SELECT id, status
+      FROM whatsapp_campaign_recipients
+      WHERE campaign_id = $1
+    `,
+    [campaignId],
+  );
+
+  const recipientStatusRows = recipientsResult.rows.map((row) => ({
+    id: String(row.id),
+    status: String(row.status) as WhatsappCampaignRecipientStatus,
+  }));
+
+  const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
+
+  if (sentRecipients === 0 || excludePerformance) {
+    const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
+    for (const recipient of recipientStatusRows) {
+      recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
+    }
+    const blockedRecipients = recipientStatusRows.filter((row) => row.status === "BLOCKED_RECENT").length;
+    const failedRecipients = recipientStatusRows.filter((row) => row.status === "FAILED").length;
+    const skippedRecipients = recipientStatusRows.filter((row) => row.status === "SKIPPED").length;
+    const performanceRecipients = Array.from(recipientPerformance.values());
+
+    return {
+      attributionWindowDays: WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS,
+      totalRecipients: recipientStatusRows.length,
+      eligibleRecipients: 0,
+      sentRecipients: 0,
+      blockedRecipients,
+      failedRecipients,
+      skippedRecipients,
+      respondedRecipients: 0,
+      notRespondedRecipients: 0,
+      purchasedRecipients: 0,
+      responseRate: 0,
+      purchaseRate: 0,
+      orderCount: 0,
+      pieces: 0,
+      revenue: 0,
+      sentMessages: 0,
+      receivedMessages: 0,
+      diagnosis: buildWhatsappCampaignDiagnosis({
+        sentRecipients: 0,
+        blockedRecipients,
+        failedRecipients,
+        responseRate: 0,
+        purchaseRate: 0,
+        purchasedRecipients: 0,
+      }),
+      recipients: performanceRecipients,
+      messages: [],
+    };
+  }
+
+  const [inboundResult, purchaseResult, outboundResult] = await Promise.all([
     pool.query(
       `
         SELECT id, status
@@ -682,11 +758,6 @@ async function getWhatsappCampaignPerformance(campaignId: string): Promise<Whats
   ]);
 
   const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
-  const recipientStatusRows = recipientsResult.rows.map((row) => ({
-    id: String(row.id),
-    status: String(row.status) as WhatsappCampaignRecipientStatus,
-  }));
-
   for (const recipient of recipientStatusRows) {
     recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
   }
@@ -722,7 +793,6 @@ async function getWhatsappCampaignPerformance(campaignId: string): Promise<Whats
     recipientPerformance.set(purchasePerformance.recipientId, current);
   }
 
-  const sentRecipients = recipientStatusRows.filter((row) => row.status === "SENT").length;
   const blockedRecipients = recipientStatusRows.filter((row) => row.status === "BLOCKED_RECENT").length;
   const failedRecipients = recipientStatusRows.filter((row) => row.status === "FAILED").length;
   const skippedRecipients = recipientStatusRows.filter((row) => row.status === "SKIPPED").length;
@@ -828,17 +898,13 @@ export async function createWhatsappCampaign(
   user: JwtUser,
 ): Promise<CreateWhatsappCampaignResult> {
   const trimmedName = input.name.trim();
-  const trimmedMessage = input.messageText.trim();
+  const trimmedMessage = normalizeWhatsappCampaignMessageText(input);
   const uniqueGroupIds = [...new Set(input.groupIds)];
   const minDelaySeconds = input.minDelaySeconds ?? env.WHATSAPP_MIN_DELAY_SECONDS;
   const maxDelaySeconds = input.maxDelaySeconds ?? env.WHATSAPP_MAX_DELAY_SECONDS;
 
   if (!trimmedName) {
     throw new HttpError(400, "Defina um nome para a campanha.");
-  }
-
-  if (!trimmedMessage) {
-    throw new HttpError(400, "A mensagem final nao pode ficar vazia.");
   }
 
   if (!uniqueGroupIds.length) {
@@ -1028,6 +1094,120 @@ export async function createWhatsappCampaign(
   }
 }
 
+export async function listDueWhatsappCampaignRecipientJobs(
+  options: ListDueWhatsappCampaignRecipientJobsOptions = {},
+): Promise<EnqueuedRecipientJob[]> {
+  const now = options.now ?? new Date();
+  const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 25), 100));
+  const params: Array<string | number> = [now.toISOString()];
+  const campaignFilter = options.campaignId
+    ? (() => {
+        params.push(options.campaignId!);
+        return `AND r.campaign_id = $${params.length}`;
+      })()
+    : "";
+
+  params.push(limit);
+
+  const result = await pool.query(
+    `
+      SELECT
+        r.id,
+        r.campaign_id,
+        r.scheduled_for
+      FROM whatsapp_campaign_recipients r
+      JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+      WHERE r.status = 'PENDING'
+        AND r.scheduled_for IS NOT NULL
+        AND r.scheduled_for <= $1::timestamptz
+        AND wc.status IN ('QUEUED', 'IN_PROGRESS')
+        AND wc.cancelled_at IS NULL
+        ${campaignFilter}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM whatsapp_campaign_recipients active
+          WHERE active.campaign_id = r.campaign_id
+            AND active.status = 'SENDING'
+        )
+      ORDER BY r.scheduled_for ASC, r.created_at ASC
+      LIMIT $${params.length}
+    `,
+    params,
+  );
+
+  return result.rows.map((row) => ({
+    recipientId: String(row.id),
+    campaignId: String(row.campaign_id),
+    delayMs: 0,
+  }));
+}
+
+export async function recoverWhatsappCampaignDispatchClaimFailures(
+  options: RecoverWhatsappCampaignDispatchFailuresOptions = {},
+) {
+  const limit = Math.max(1, Math.min(Math.floor(options.limit ?? 25), 100));
+  const params: Array<string | number> = ["FOR UPDATE cannot be applied to the nullable side of an outer join%", limit];
+  const campaignFilter = options.campaignId
+    ? (() => {
+        params.push(options.campaignId!);
+        return `AND r.campaign_id = $${params.length}`;
+      })()
+    : "";
+
+  const result = await pool.query(
+    `
+      WITH candidate AS (
+        SELECT r.id
+        FROM whatsapp_campaign_recipients r
+        JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+        WHERE r.status = 'FAILED'
+          AND r.last_error LIKE $1
+          AND wc.cancelled_at IS NULL
+          ${campaignFilter}
+        ORDER BY r.updated_at ASC, r.created_at ASC
+        LIMIT $2
+      ),
+      recovered AS (
+        UPDATE whatsapp_campaign_recipients r
+        SET
+          status = 'PENDING',
+          failed_at = NULL,
+          last_error = NULL,
+          provider_status = NULL,
+          scheduled_for = COALESCE(r.scheduled_for, NOW()),
+          updated_at = NOW()
+        FROM candidate c
+        WHERE r.id = c.id
+        RETURNING r.campaign_id
+      ),
+      campaign_update AS (
+        UPDATE whatsapp_campaigns wc
+        SET
+          status = CASE
+            WHEN wc.status = 'COMPLETED' THEN 'IN_PROGRESS'
+            ELSE wc.status
+          END,
+          finished_at = NULL,
+          updated_at = NOW()
+        WHERE wc.id IN (SELECT DISTINCT campaign_id FROM recovered)
+        RETURNING wc.id
+      )
+      SELECT
+        COUNT(*)::int AS recovered_count,
+        (SELECT COUNT(*)::int FROM campaign_update) AS updated_campaign_count,
+        COALESCE(ARRAY_AGG(DISTINCT campaign_id::text), ARRAY[]::text[]) AS campaign_ids
+      FROM recovered
+    `,
+    params,
+  );
+
+  const row = result.rows[0] ?? {};
+  return {
+    recovered: Number(row.recovered_count ?? 0),
+    campaignIds: Array.isArray(row.campaign_ids) ? row.campaign_ids.map(String) : [],
+  };
+}
+
 export async function listWhatsappCampaigns(limit = 20): Promise<WhatsappCampaignListItem[]> {
   const result = await queryCampaignRows(limit);
   return result.rows.map((row) => mapCampaignRow(row));
@@ -1037,6 +1217,7 @@ export async function getWhatsappCampaignDetail(
   campaignId: string,
   limit = 100,
   offset = 0,
+  excludePerformance = false,
 ): Promise<WhatsappCampaignDetail | null> {
   const [campaignResult, recipientsResult, totalRecipientsResult, performance] = await Promise.all([
     queryCampaignRows(undefined, campaignId),
@@ -1051,7 +1232,7 @@ export async function getWhatsappCampaignDetail(
       [campaignId, limit, offset],
     ),
     pool.query("SELECT COUNT(*)::int AS total FROM whatsapp_campaign_recipients WHERE campaign_id = $1", [campaignId]),
-    getWhatsappCampaignPerformance(campaignId),
+    getWhatsappCampaignPerformance(campaignId, excludePerformance),
   ]);
 
   const campaignRow = campaignResult.rows[0];
@@ -1141,6 +1322,30 @@ export async function cancelWhatsappCampaign(campaignId: string) {
   return getWhatsappCampaignDetail(campaignId, 100, 0);
 }
 
+export async function skipWhatsappCampaignRecipient(campaignId: string, recipientId: string) {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaign_recipients
+      SET
+        status = 'SKIPPED',
+        skipped_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+        AND campaign_id = $2
+        AND status = 'PENDING'
+      RETURNING id
+    `,
+    [recipientId, campaignId],
+  );
+
+  if (!result.rows[0]) {
+    throw new HttpError(400, "Destinatario nao encontrado ou ja foi processado.");
+  }
+
+  await refreshWhatsappCampaignStatus(campaignId);
+  return { skipped: true, recipientId };
+}
+
 export async function claimRecipientForDispatch(recipientId: string): Promise<DispatchRecipientContext | null> {
   const client = await pool.connect();
 
@@ -1177,7 +1382,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
         JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
         LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id AND wi.status = 'ACTIVE'
         WHERE r.id = $1
-        FOR UPDATE
+        FOR UPDATE OF r
       `,
       [recipientId],
     );
@@ -1452,6 +1657,31 @@ export async function markRecipientFailed(
   }
 
   await refreshWhatsappCampaignStatus(context.campaignId);
+}
+
+export async function markRecipientDispatchClaimFailed(recipientId: string, errorMessage: string) {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaign_recipients
+      SET
+        status = 'FAILED',
+        failed_at = NOW(),
+        last_error = $2,
+        provider_status = 'FAILED',
+        updated_at = NOW()
+      WHERE id = $1
+        AND status = 'PENDING'
+      RETURNING campaign_id
+    `,
+    [recipientId, errorMessage.slice(0, 500)],
+  );
+
+  const campaignId = result.rows[0]?.campaign_id ? String(result.rows[0].campaign_id) : null;
+  if (campaignId) {
+    await refreshWhatsappCampaignStatus(campaignId);
+  }
+
+  return { failed: Boolean(campaignId), recipientId };
 }
 
 export async function refreshWhatsappCampaignStatus(campaignId: string) {

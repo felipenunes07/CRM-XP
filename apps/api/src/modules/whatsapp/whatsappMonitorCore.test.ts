@@ -424,6 +424,26 @@ describe("whatsappMonitorCore", () => {
         instanceLabel: "XP AMANDA",
       }),
     ).toBe("XP Thais");
+
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "120363024604307554@g.us",
+        isGroup: true,
+        chatDisplayName: "Grupo 120363024604307554",
+        customerDisplayName: "Felipe",
+        title: "Felipe",
+      }),
+    ).toBe("Grupo 120363024604307554");
+
+    expect(
+      chooseWhatsappConversationContactName({
+        remoteJid: "120363024604307554@g.us",
+        isGroup: true,
+        chatDisplayName: null,
+        customerDisplayName: "Felipe",
+        title: "Felipe",
+      }),
+    ).toBe("Grupo 120363024604307554");
   });
 
   it("prefers customer/title names over seller-like chat profile names", () => {

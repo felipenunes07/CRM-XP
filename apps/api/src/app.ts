@@ -95,6 +95,7 @@ import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
 import { login, verifyToken } from "./modules/platform/authService.js";
 import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
 import { subscribeMonitorMessages } from "./modules/whatsapp/whatsappMonitorBus.js";
+import { getAvatarBytes } from "./modules/whatsapp/whatsappAvatarCache.js";
 import {
   createAdminUser,
   createPasswordResetLink,
@@ -117,6 +118,7 @@ import {
   createWhatsappCampaign,
   getWhatsappCampaignDetail,
   listWhatsappCampaigns,
+  skipWhatsappCampaignRecipient,
 } from "./modules/whatsapp/whatsappCampaignService.js";
 import { ensureEvolutionConfigured, sendWhatsappTextMessage } from "./modules/whatsapp/evolutionService.js";
 import { refreshMissingWhatsappMonitorProfiles } from "./modules/whatsapp/evolutionMetadataService.js";
@@ -141,7 +143,7 @@ import {
   sendWhatsappMonitorReply,
   setWhatsappConversationReadState,
 } from "./modules/whatsapp/whatsappMonitorService.js";
-import { enqueueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
+import { enqueueWhatsappCampaignRecipients, resumeDueWhatsappCampaignRecipients } from "./modules/whatsapp/whatsappQueue.js";
 import {
   getPipelineSummary,
   createDeal,
@@ -154,6 +156,7 @@ import {
   deleteWhatsappInstance,
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
+import { assertSupportedOutboundVideo } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -188,7 +191,6 @@ const customerQuerySchema = z.object({
   status: z.string().optional(),
   minDaysInactive: z.coerce.number().optional(),
   maxDaysInactive: z.coerce.number().optional(),
-  daysInactiveRanges: z.string().optional(),
   minAvgTicket: z.coerce.number().optional(),
   minTotalSpent: z.coerce.number().optional(),
   minFrequencyDrop: z.coerce.number().optional(),
@@ -463,7 +465,7 @@ const whatsappCampaignCreateSchema = z.object({
   templateId: z.string().uuid().nullable().optional(),
   savedSegmentId: z.string().uuid().nullable().optional(),
   whatsappInstanceId: z.string().uuid().nullable().optional(),
-  messageText: z.string().min(1),
+  messageText: z.string().optional().default(""),
   messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO"]).optional(),
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
   videoUrl: z.string().nullable().optional(),
@@ -479,8 +481,12 @@ const whatsappCampaignListQuerySchema = z.object({
 });
 
 const whatsappCampaignDetailQuerySchema = z.object({
-  limit: z.coerce.number().int().positive().max(200).optional(),
+  limit: z.coerce.number().int().positive().max(5000).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  excludePerformance: z.preprocess(
+    (val) => val === "true" || val === true,
+    z.boolean(),
+  ).optional(),
 });
 
 function parseClassificationList(value?: string) {
@@ -604,7 +610,7 @@ export function createApp() {
       credentials: true,
     }),
   );
-  app.use(express.json({ limit: "60mb" }));
+  app.use(express.json({ limit: "100mb" }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -669,6 +675,23 @@ export function createApp() {
       unsubscribe();
       response.end();
     });
+  });
+
+  // Public avatar endpoint: serves re-hosted WhatsApp profile pictures stored in
+  // Postgres (whatsapp_avatars). Must be public — <img> tags cannot send the JWT.
+  app.get("/api/whatsapp-monitor/avatar/:key", async (request, response, next) => {
+    try {
+      const avatar = await getAvatarBytes(String(request.params.key));
+      if (!avatar) {
+        response.status(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", avatar.contentType);
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      response.end(avatar.bytes);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use("/api", requireAuth);
@@ -897,7 +920,6 @@ export function createApp() {
           labels: query.labels?.split(",").filter(Boolean),
           excludeLabels: query.excludeLabels?.split(",").filter(Boolean),
           isAmbassador: query.isAmbassador,
-          daysInactiveRanges: query.daysInactiveRanges?.split(",").filter(Boolean),
         }),
       );
     } catch (error) {
@@ -1337,76 +1359,6 @@ export function createApp() {
     }
   });
 
-  // Uploads a campaign video to Supabase Storage and returns a public URL.
-  // Sending video by URL (instead of inline base64) is what prevents the
-  // provider-side "operation was aborted due to timeout" / "Bad Request"
-  // failures, since Evolution/UazAPI download the file themselves.
-  app.post("/api/messages/upload-video", async (request, response, next) => {
-    try {
-      const { fileBase64, fileName, contentType } = (request.body ?? {}) as {
-        fileBase64?: string;
-        fileName?: string;
-        contentType?: string;
-      };
-
-      if (!fileBase64 || typeof fileBase64 !== "string") {
-        throw new HttpError(400, "fileBase64 é obrigatório");
-      }
-
-      const { isSupabaseAdminConfigured, createSupabaseAdminClient } = await import(
-        "./modules/platform/supabaseAdmin.js"
-      );
-
-      if (!isSupabaseAdminConfigured()) {
-        throw new HttpError(
-          503,
-          "Storage de vídeo não configurado. Defina SUPABASE_SERVICE_ROLE_KEY no backend e crie o bucket público para hospedar vídeos por URL.",
-        );
-      }
-
-      // Accept both a data URL ("data:video/mp4;base64,AAAA...") and raw base64.
-      let base64 = fileBase64;
-      let mime = contentType || "video/mp4";
-      if (fileBase64.startsWith("data:")) {
-        const match = fileBase64.match(/^data:([^;]+);base64,(.*)$/s);
-        if (match && match[1] && match[2]) {
-          mime = match[1];
-          base64 = match[2];
-        }
-      }
-
-      const buffer = Buffer.from(base64, "base64");
-      if (!buffer.length) {
-        throw new HttpError(400, "Arquivo de vídeo inválido ou vazio");
-      }
-
-      const admin = createSupabaseAdminClient();
-      const bucket = "whatsapp-media";
-      const safeExt =
-        fileName && fileName.includes(".")
-          ? fileName.split(".").pop()!.replace(/[^a-zA-Z0-9]/g, "").slice(0, 5) || "mp4"
-          : "mp4";
-      const objectPath = `videos/${Date.now()}-${Math.random().toString(36).slice(2)}.${safeExt}`;
-
-      const { error: uploadError } = await admin.storage
-        .from(bucket)
-        .upload(objectPath, buffer, { contentType: mime, upsert: false });
-
-      if (uploadError) {
-        throw new HttpError(
-          500,
-          `Falha ao subir vídeo para o storage (bucket "${bucket}"): ${uploadError.message}`,
-        );
-      }
-
-      const { data: pub } = admin.storage.from(bucket).getPublicUrl(objectPath);
-      logger.info("🎥 Vídeo de campanha hospedado no storage", { objectPath, bucket });
-      response.json({ url: pub.publicUrl });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.post("/api/messages/test", async (request, response, next) => {
     try {
       const { messageText, messageType, carouselData, videoUrl, whatsappInstanceId } = request.body;
@@ -1569,7 +1521,10 @@ export function createApp() {
           stack: sendError.stack,
           responsePayload: sendError.responsePayload
         });
-        throw new HttpError(500, `Erro ao enviar mensagem: ${sendError.message}`);
+        const providerStatusCode = Number(sendError.statusCode ?? 500);
+        const isVideoValidationError = String(sendError.message ?? "").includes("Formato de video invalido");
+        const statusCode = isVideoValidationError || (providerStatusCode >= 400 && providerStatusCode < 500) ? 400 : 500;
+        throw new HttpError(statusCode, `Erro ao enviar mensagem: ${sendError.message}`);
       }
 
       logger.info("✅ Test message sent successfully");
@@ -1727,7 +1682,12 @@ export function createApp() {
   app.get("/api/whatsapp-campaigns/:id", async (request, response, next) => {
     try {
       const query = whatsappCampaignDetailQuerySchema.parse(request.query);
-      const detail = await getWhatsappCampaignDetail(String(request.params.id), query.limit ?? 100, query.offset ?? 0);
+      const detail = await getWhatsappCampaignDetail(
+        String(request.params.id),
+        query.limit ?? 100,
+        query.offset ?? 0,
+        query.excludePerformance,
+      );
       if (!detail) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }
@@ -1740,6 +1700,18 @@ export function createApp() {
   app.post("/api/whatsapp-campaigns", async (request, response, next) => {
     try {
       const payload = whatsappCampaignCreateSchema.parse(request.body);
+      if (payload.messageType === "VIDEO") {
+        if (!payload.videoUrl?.trim()) {
+          throw new HttpError(400, "Video MP4 e obrigatorio para campanhas de video.");
+        }
+
+        try {
+          assertSupportedOutboundVideo(payload.videoUrl);
+        } catch (error) {
+          throw new HttpError(400, error instanceof Error ? error.message : String(error));
+        }
+      }
+
       // Only enforce Evolution config when not using a specific instance
       if (!payload.whatsappInstanceId) {
         ensureEvolutionConfigured();
@@ -1748,6 +1720,27 @@ export function createApp() {
       await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);
       const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0);
       response.status(201).json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/resume", async (request, response, next) => {
+    try {
+      const campaignId = String(request.params.id);
+      const detail = await getWhatsappCampaignDetail(campaignId, 1, 0, true);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para retomar esta campanha.");
+      }
+
+      await resumeDueWhatsappCampaignRecipients(campaignId, 1);
+      const updatedDetail = await getWhatsappCampaignDetail(campaignId, 100, 0, true);
+      response.json(updatedDetail);
     } catch (error) {
       next(error);
     }
@@ -1766,6 +1759,24 @@ export function createApp() {
       }
 
       response.json(await cancelWhatsappCampaign(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/recipients/:recipientId/skip", async (request, response, next) => {
+    try {
+      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
+      if (!detail) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para alterar esta campanha.");
+      }
+
+      response.json(await skipWhatsappCampaignRecipient(String(request.params.id), String(request.params.recipientId)));
     } catch (error) {
       next(error);
     }

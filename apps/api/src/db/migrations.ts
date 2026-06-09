@@ -2034,5 +2034,182 @@ export const migrations = [
   ALTER TABLE public.whatsapp_campaigns
     ADD COLUMN IF NOT EXISTS video_url TEXT;
   `,
+  `
+  -- Ensure last_synced_at columns exist on profile tables.
+  -- The original CREATE TABLE IF NOT EXISTS may have been a no-op if the table
+  -- already existed from an earlier migration without these columns.
+  ALTER TABLE public.whatsapp_chat_profiles
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
+
+  ALTER TABLE public.whatsapp_participant_profiles
+    ADD COLUMN IF NOT EXISTS last_synced_at TIMESTAMPTZ;
+  `,
+  `
+  -- =====================================================================
+  -- Performance indexes for /api/whatsapp-monitor/conversations
+  -- Each index is wrapped in its own exception-safe block so one failure
+  -- does not prevent the rest from being created.
+  -- =====================================================================
+
+  -- Ensure the whatsapp_monitor_messages table exists
+  CREATE TABLE IF NOT EXISTS public.whatsapp_monitor_messages (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    deal_id           uuid NOT NULL,
+    message_id        varchar(200) NOT NULL,
+    remote_jid        varchar(200),
+    instance_name     varchar(100),
+    direction         varchar(10) NOT NULL,
+    from_me           boolean NOT NULL DEFAULT false,
+    sender_name       varchar(200),
+    sender_jid        varchar(200),
+    sender_pic_url    text,
+    content           text NOT NULL DEFAULT '',
+    media_json        jsonb,
+    source            varchar(20) NOT NULL,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT uq_wmm_deal_msg_source UNIQUE (deal_id, message_id, source)
+  );
+
+  -- Ensure whatsapp_groups table exists
+  DO $$ BEGIN
+    CREATE TABLE IF NOT EXISTS public.whatsapp_groups (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      jid VARCHAR(200) NOT NULL UNIQUE,
+      source_name VARCHAR(300),
+      instance_name VARCHAR(100),
+      raw_payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_last_activity_at_desc
+      ON public.deals (last_activity_at DESC NULLS LAST, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  -- PERF (conversation list): the candidate_deals CTE in
+  -- listWhatsappMonitorConversations orders by AND range-filters on
+  -- COALESCE(last_activity_at, created_at). A plain column index on
+  -- last_activity_at (above) CANNOT serve that COALESCE expression, so the
+  -- planner full-scanned + sorted the entire deals table on every Messages
+  -- load and on every 2-min background poll (limit 100). This expression
+  -- index matches the ORDER BY / range predicate exactly and is partial on
+  -- whatsapp_jid IS NOT NULL (mirroring monitorableWhatsappJidSql), letting
+  -- the planner do an index scan + LIMIT instead of a sort of all deals.
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_monitor_sort
+      ON public.deals ((COALESCE(last_activity_at, created_at)) DESC, id DESC)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_deal_created
+      ON public.whatsapp_monitor_messages (deal_id, created_at DESC, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_instance_deal_created
+      ON public.whatsapp_monitor_messages (
+        (lower(coalesce(instance_name, ''))),
+        deal_id, created_at DESC, id DESC
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_instance_direction_created_deal
+      ON public.whatsapp_monitor_messages (
+        (lower(coalesce(instance_name, ''))),
+        direction, created_at DESC, deal_id
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_direction_created
+      ON public.whatsapp_monitor_messages (
+        direction, created_at DESC, deal_id
+      );
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wmm_remote_instance_created
+      ON public.whatsapp_monitor_messages (
+        remote_jid,
+        (lower(coalesce(instance_name, ''))),
+        created_at DESC, id DESC
+      )
+      WHERE remote_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wim_remote_jid_created
+      ON public.whatsapp_incoming_messages (remote_jid, created_at DESC, id DESC);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wja_instance_alias
+      ON public.whatsapp_jid_aliases ((lower(instance_name)), alias_jid);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_wja_instance_canonical
+      ON public.whatsapp_jid_aliases ((lower(instance_name)), canonical_jid);
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_whatsapp_jid
+      ON public.deals (whatsapp_jid)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+  `,
+  `
+  -- PERF (conversation list): the candidate_deals CTE in
+  -- listWhatsappMonitorConversations orders by AND range-filters on
+  -- COALESCE(last_activity_at, created_at). A plain column index on
+  -- last_activity_at cannot serve that COALESCE expression, so the planner
+  -- full-scanned + sorted the entire deals table on every Messages load and
+  -- on every 2-min background poll (limit 100) -> multi-second / timeout.
+  -- This expression index matches the ORDER BY / range predicate exactly,
+  -- partial on whatsapp_jid IS NOT NULL (mirrors monitorableWhatsappJidSql),
+  -- letting the planner do an index scan + LIMIT. Added as its OWN migration
+  -- element so databases already past the previous version pick it up on deploy.
+  DO $$ BEGIN
+    CREATE INDEX IF NOT EXISTS idx_deals_monitor_sort
+      ON public.deals ((COALESCE(last_activity_at, created_at)) DESC, id DESC)
+      WHERE whatsapp_jid IS NOT NULL;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+  `,
+  `
+  -- Chatwoot-style avatar caching, fully self-hosted on Postgres: store the
+  -- raw image bytes here and serve them from /api/whatsapp-monitor/avatar/:key
+  -- so the chat avatar stops breaking when the ephemeral WhatsApp CDN URL expires.
+  CREATE TABLE IF NOT EXISTS whatsapp_avatars (
+    storage_key TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    bytes BYTEA NOT NULL,
+    source_url TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  DO $$ BEGIN
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_picture_url TEXT;
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_source_url TEXT;
+    ALTER TABLE whatsapp_chat_profiles ADD COLUMN IF NOT EXISTS cached_at TIMESTAMPTZ;
+  EXCEPTION WHEN others THEN NULL;
+  END $$;
+  `,
 ];
 

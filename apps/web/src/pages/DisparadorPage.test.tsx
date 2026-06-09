@@ -4,7 +4,10 @@ import type { WhatsappCampaignDetail, WhatsappCampaignRecipient } from "@olist-c
 import {
   CampaignPerformancePanel,
   campaignPerformanceFilterCount,
+  campaignHasDuePendingRecipients,
   filterCampaignRecipients,
+  validateDisparadorVideoFile,
+  WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES,
 } from "./DisparadorPage";
 
 vi.mock("../hooks/useAuth", () => ({
@@ -240,5 +243,64 @@ describe("Disparador campaign performance", () => {
     );
 
     expect(markup).toContain("Nenhum cliente encontrado neste filtro.");
+  });
+});
+
+describe("Disparador video upload validation", () => {
+  it("accepts MP4 files up to the configured max size", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mp4",
+        size: WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES,
+        type: "video/mp4",
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects QuickTime files with a clear MP4-only message", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mov",
+        size: 1024,
+        type: "video/quicktime",
+      }),
+    ).toContain("MP4");
+  });
+
+  it("rejects files above the configured max size", () => {
+    expect(
+      validateDisparadorVideoFile({
+        name: "campanha.mp4",
+        size: WHATSAPP_VIDEO_MAX_FILE_SIZE_BYTES + 1,
+        type: "video/mp4",
+      }),
+    ).toContain("64MB");
+  });
+});
+
+describe("Disparador live campaign recovery", () => {
+  it("detects a running campaign with a pending recipient past its scheduled time", () => {
+    const runningCampaign: WhatsappCampaignDetail = {
+      ...campaign,
+      status: "QUEUED",
+      progress: {
+        ...campaign.progress,
+        pendingCount: 1,
+        remainingCount: 1,
+        nextScheduledAt: "2026-06-08T14:00:00.000Z",
+      },
+      recipients: [
+        {
+          ...baseRecipient,
+          status: "PENDING",
+          scheduledFor: "2026-06-08T14:00:00.000Z",
+          sentAt: null,
+          lastAttemptAt: null,
+        },
+      ],
+    };
+
+    expect(campaignHasDuePendingRecipients(runningCampaign, Date.parse("2026-06-08T14:00:31.000Z"))).toBe(true);
+    expect(campaignHasDuePendingRecipients(runningCampaign, Date.parse("2026-06-08T13:59:59.000Z"))).toBe(false);
   });
 });

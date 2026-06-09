@@ -16,6 +16,7 @@ import {
   areWhatsappJidsEqual,
   extractEvolutionFromMeFlag,
   normalizeWhatsappPhoneJidCandidate,
+  isWhatsappFallbackDisplayName,
   type EvolutionMessageContact,
   type EvolutionMessageMedia,
   type EvolutionMessageLike,
@@ -51,13 +52,37 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
     [instanceName],
   );
 
-  return result.rows[0] ? {
-    id: String(result.rows[0].id),
-    displayLabel: result.rows[0].display_label ? String(result.rows[0].display_label) : null,
-    phoneNumber: result.rows[0].phone_number ? String(result.rows[0].phone_number) : null,
-    assignedUserId: result.rows[0].assigned_user_id ? String(result.rows[0].assigned_user_id) : null,
-    assignedUserName: result.rows[0].assigned_user_name ? String(result.rows[0].assigned_user_name) : null,
-  } : null;
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  let assignedUserId = row.assigned_user_id ? String(row.assigned_user_id) : null;
+  let assignedUserName = row.assigned_user_name ? String(row.assigned_user_name) : null;
+
+  if (!assignedUserId) {
+    const userResult = await pool.query(
+      `
+      SELECT id, name
+      FROM users
+      WHERE LOWER(name) = LOWER($1)
+      LIMIT 1
+      `,
+      [instanceName],
+    );
+    if (userResult.rows[0]) {
+      assignedUserId = String(userResult.rows[0].id);
+      assignedUserName = String(userResult.rows[0].name);
+    }
+  }
+
+  return {
+    id: String(row.id),
+    displayLabel: row.display_label ? String(row.display_label) : null,
+    phoneNumber: row.phone_number ? String(row.phone_number) : null,
+    assignedUserId,
+    assignedUserName,
+  };
 }
 
 async function findAgentByParticipantJid(participantJid: string | null) {
@@ -635,202 +660,290 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
         ],
       );
 
-      const dealMatch = await pool.query(
-        `
-        WITH existing_message_deal AS (
-          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id, d.whatsapp_jid
-          FROM deal_activities da
-          JOIN deals d ON d.id = da.deal_id
-          WHERE da.metadata ->> 'messageId' = $1
-          UNION ALL
-          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id, d.whatsapp_jid
-          FROM deal_activities da
-          JOIN deals d ON d.id = da.deal_id
-          WHERE da.metadata ->> 'providerMessageId' = $1
-          ORDER BY created_at DESC, activity_id DESC
-          LIMIT 1
-        ),
-        remote_jid_deal AS (
-          SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, d.whatsapp_jid
+
+
+      let matchedDeals: Array<{ id: string; whatsapp_instance_id: string | null; whatsapp_jid: string | null }> = [];
+
+      if (context.isGroup) {
+        // For groups, find ALL open deals with this whatsapp_jid
+        const groupDeals = await pool.query(
+          `
+          SELECT d.id, d.whatsapp_instance_id, d.whatsapp_jid
           FROM deals d
-          LEFT JOIN LATERAL (
-            SELECT wja.canonical_jid
-            FROM whatsapp_jid_aliases wja
-            WHERE LOWER(wja.instance_name) = LOWER($7)
-              AND wja.alias_jid = d.whatsapp_jid
-            ORDER BY wja.updated_at DESC
-            LIMIT 1
-          ) deal_alias ON true
           JOIN pipeline_stages ps ON ps.id = d.stage_id
           WHERE ps.is_won = false AND ps.is_lost = false
-            AND (
-              d.whatsapp_jid = $2
-              OR d.whatsapp_jid = ANY($6::text[])
-              OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = $2
-              OR COALESCE(deal_alias.canonical_jid, d.whatsapp_jid) = ANY($6::text[])
-              OR (
-                -- Se um é LID e o outro é telefone real, verificamos se há algum mapeamento histórico
-                -- que ligue os dois na tabela whatsapp_incoming_messages.
-                (
-                  (d.whatsapp_jid LIKE '%@lid' AND $2 LIKE '%@s.whatsapp.net')
-                  OR (d.whatsapp_jid LIKE '%@s.whatsapp.net' AND $2 LIKE '%@lid')
+            AND d.whatsapp_jid = $1
+          `,
+          [resolvedRemoteJid]
+        );
+        matchedDeals = groupDeals.rows.map(row => ({
+          id: String(row.id),
+          whatsapp_instance_id: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
+          whatsapp_jid: row.whatsapp_jid ? String(row.whatsapp_jid) : null
+        }));
+      } else {
+        const dealMatch = await pool.query(
+          `
+          WITH existing_message_deal AS (
+            SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id, d.whatsapp_jid
+            FROM deal_activities da
+            JOIN deals d ON d.id = da.deal_id
+            WHERE da.metadata ->> 'messageId' = $1
+            UNION ALL
+            SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id, d.whatsapp_jid
+            FROM deal_activities da
+            JOIN deals d ON d.id = da.deal_id
+            WHERE da.metadata ->> 'providerMessageId' = $1
+            ORDER BY created_at DESC, activity_id DESC
+            LIMIT 1
+          ),
+          remote_jid_deal AS (
+            SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, d.whatsapp_jid
+            FROM deals d
+            LEFT JOIN LATERAL (
+              SELECT COALESCE(ARRAY_AGG(DISTINCT assoc_jid) FILTER (WHERE assoc_jid IS NOT NULL), '{}'::text[]) AS associated_jids
+              FROM (
+                SELECT wja.canonical_jid AS assoc_jid
+                FROM whatsapp_jid_aliases wja
+                WHERE LOWER(wja.instance_name) = LOWER($7)
+                  AND wja.alias_jid = d.whatsapp_jid
+                UNION ALL
+                SELECT wja.alias_jid AS assoc_jid
+                FROM whatsapp_jid_aliases wja
+                WHERE LOWER(wja.instance_name) = LOWER($7)
+                  AND wja.canonical_jid = d.whatsapp_jid
+              ) assoc
+            ) deal_aliases ON true
+            JOIN pipeline_stages ps ON ps.id = d.stage_id
+            WHERE ps.is_won = false AND ps.is_lost = false
+              AND (
+                d.whatsapp_jid = $2
+                OR d.whatsapp_jid = ANY($6::text[])
+                OR $2 = ANY(deal_aliases.associated_jids)
+                OR $6::text[] && deal_aliases.associated_jids
+                OR (
+                  -- Se um é LID e o outro é telefone real, verificamos se há algum mapeamento histórico
+                  -- que ligue os dois na tabela whatsapp_incoming_messages.
+                  (
+                    (d.whatsapp_jid LIKE '%@lid' AND $2 LIKE '%@s.whatsapp.net')
+                    OR (d.whatsapp_jid LIKE '%@s.whatsapp.net' AND $2 LIKE '%@lid')
+                  )
+                  AND EXISTS (
+                    SELECT 1
+                    FROM whatsapp_incoming_messages wim
+                    WHERE (wim.remote_jid = d.whatsapp_jid OR wim.participant_jid = d.whatsapp_jid OR wim.remote_jid = $2 OR wim.participant_jid = $2)
+                      AND (
+                        COALESCE(
+                          wim.raw_payload -> 'key' ->> 'participantPn',
+                          wim.raw_payload -> 'key' ->> 'remoteJidPn',
+                          wim.raw_payload ->> 'participantPn',
+                          wim.raw_payload ->> 'remoteJidPn'
+                        ) IN ($2, d.whatsapp_jid, regexp_replace($2, '@s.whatsapp.net', ''), regexp_replace(d.whatsapp_jid, '@s.whatsapp.net', ''))
+                      )
+                  )
                 )
-                AND EXISTS (
-                  SELECT 1
-                  FROM whatsapp_incoming_messages wim
-                  WHERE (wim.remote_jid = d.whatsapp_jid OR wim.participant_jid = d.whatsapp_jid OR wim.remote_jid = $2 OR wim.participant_jid = $2)
-                    AND (
-                      COALESCE(
-                        wim.raw_payload -> 'key' ->> 'participantPn',
-                        wim.raw_payload -> 'key' ->> 'remoteJidPn',
-                        wim.raw_payload ->> 'participantPn',
-                        wim.raw_payload ->> 'remoteJidPn'
-                      ) IN ($2, d.whatsapp_jid, regexp_replace($2, '@s.whatsapp.net', ''), regexp_replace(d.whatsapp_jid, '@s.whatsapp.net', ''))
-                    )
-                )
-              )
-              OR (
-                $2 NOT LIKE '%@g.us'
-                AND d.whatsapp_jid NOT LIKE '%@g.us'
-                AND (
-                  regexp_replace(d.whatsapp_jid, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
-                  OR (
-                    length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 10
-                    AND length(regexp_replace($2, '\\D', '', 'g')) >= 10
-                    AND (
-                      CASE
-                        WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
-                          substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
-                        WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
-                          substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
-                        ELSE
-                          right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 10)
-                      END
-                    ) = (
-                      CASE
-                        WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 13 AND substring(regexp_replace($2, '\\D', '', 'g') from 5 for 1) = '9') THEN
-                          substring(regexp_replace($2, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
-                        WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 11 AND substring(regexp_replace($2, '\\D', '', 'g') from 3 for 1) = '9') THEN
-                          substring(regexp_replace($2, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
-                        ELSE
-                          right(regexp_replace($2, '\\D', '', 'g'), 10)
-                      END
+                OR (
+                  $2 NOT LIKE '%@g.us'
+                  AND d.whatsapp_jid NOT LIKE '%@g.us'
+                  AND (
+                    regexp_replace(d.whatsapp_jid, '\\D', '', 'g') = regexp_replace($2, '\\D', '', 'g')
+                    OR (
+                      length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) >= 10
+                      AND length(regexp_replace($2, '\\D', '', 'g')) >= 10
+                      AND (
+                        CASE
+                          WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                            substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                          WHEN (length(regexp_replace(d.whatsapp_jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                            substring(regexp_replace(d.whatsapp_jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 8)
+                          ELSE
+                            right(regexp_replace(d.whatsapp_jid, '\\D', '', 'g'), 10)
+                        END
+                      ) = (
+                        CASE
+                          WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 13 AND substring(regexp_replace($2, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                            substring(regexp_replace($2, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
+                          WHEN (length(regexp_replace($2, '\\D', '', 'g')) = 11 AND substring(regexp_replace($2, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                            substring(regexp_replace($2, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($2, '\\D', '', 'g'), 8)
+                          ELSE
+                            right(regexp_replace($2, '\\D', '', 'g'), 10)
+                        END
+                      )
                     )
                   )
                 )
               )
-            )
-            AND (
-              d.whatsapp_instance_id = $3::uuid
-              OR (
-                d.whatsapp_instance_id IS NULL
-                AND (
-                  d.assigned_to = $4::uuid
-                  OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)
+              AND (
+                d.whatsapp_instance_id = $3::uuid
+                OR (
+                  d.whatsapp_instance_id IS NULL
+                  AND (
+                    d.assigned_to = $4::uuid
+                    OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)
+                    OR LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($7)
+                  )
                 )
               )
-            )
-          ORDER BY
-            CASE WHEN d.whatsapp_instance_id = $3::uuid THEN 0 ELSE 1 END ASC,
-            d.last_activity_at DESC
+            ORDER BY
+              CASE WHEN d.whatsapp_instance_id = $3::uuid THEN 0 ELSE 1 END ASC,
+              d.last_activity_at DESC
+            LIMIT 1
+          )
+          SELECT id, whatsapp_instance_id, whatsapp_jid
+          FROM (
+            SELECT id, whatsapp_instance_id, last_activity_at, whatsapp_jid, 0 AS match_priority
+            FROM existing_message_deal
+            UNION ALL
+            SELECT id, whatsapp_instance_id, last_activity_at, whatsapp_jid, 1 AS match_priority
+            FROM remote_jid_deal
+          ) matched_deals
+          ORDER BY match_priority ASC, last_activity_at DESC NULLS LAST
           LIMIT 1
-        )
-        SELECT id, whatsapp_instance_id, whatsapp_jid
-        FROM (
-          SELECT id, whatsapp_instance_id, last_activity_at, whatsapp_jid, 0 AS match_priority
-          FROM existing_message_deal
-          UNION ALL
-          SELECT id, whatsapp_instance_id, last_activity_at, whatsapp_jid, 1 AS match_priority
-          FROM remote_jid_deal
-        ) matched_deals
-        ORDER BY match_priority ASC, last_activity_at DESC NULLS LAST
-        LIMIT 1
-        `,
-        [
-          messageId,
-          resolvedRemoteJid,
-          instanceDetails?.id ?? null,
-          instanceDetails?.assignedUserId ?? null,
-          instanceDetails?.assignedUserName ?? "",
-          context.remoteJidAliases,
-          instanceName,
-        ],
-      );
+          `,
+          [
+            messageId,
+            resolvedRemoteJid,
+            instanceDetails?.id ?? null,
+            instanceDetails?.assignedUserId ?? null,
+            instanceDetails?.assignedUserName ?? "",
+            context.remoteJidAliases,
+            instanceName,
+          ],
+        );
+
+        if (dealMatch.rows[0]) {
+          matchedDeals = [{
+            id: String(dealMatch.rows[0].id),
+            whatsapp_instance_id: dealMatch.rows[0].whatsapp_instance_id ? String(dealMatch.rows[0].whatsapp_instance_id) : null,
+            whatsapp_jid: dealMatch.rows[0].whatsapp_jid ? String(dealMatch.rows[0].whatsapp_jid) : null
+          }];
+        }
+      }
 
       let dealId: string | null = null;
 
-      if (dealMatch.rows[0]) {
-        dealId = String(dealMatch.rows[0].id);
-        const currentDealJid = dealMatch.rows[0].whatsapp_jid;
-        await upsertWhatsappJidAliases({
-          instanceName,
-          canonicalJid: String(currentDealJid ?? resolvedRemoteJid),
-          aliases: [currentDealJid, resolvedRemoteJid, context.providerRemoteJid, context.remoteJidAlt, ...context.remoteJidAliases],
-          source: "deal-match",
-        });
-
-        // Upgrade JID if deal has LID, but we resolved a real phone JID
-        if (
-          currentDealJid &&
-          currentDealJid.endsWith("@lid") &&
-          resolvedRemoteJid.endsWith("@s.whatsapp.net")
-        ) {
-          await pool.query(
-            "UPDATE deals SET whatsapp_jid = $1, last_activity_at = NOW() WHERE id = $2",
-            [resolvedRemoteJid, dealId]
-          );
-          logger.info("evolution webhook upgraded deal JID from LID to phone", { dealId, oldJid: currentDealJid, newJid: resolvedRemoteJid });
-        }
-
-        await insertDealActivity({
-          dealId,
-          activityType,
-          actorUserId,
-          actorName,
-          content: messageContent,
-          metadata,
-          createdAt: context.createdAt,
-        });
-
-        // Messaging Intelligence: Detect and create event
-        const monitorMessage: WhatsappMonitorMessage = {
-          id: String(messageId),
-          dealId,
-          direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
-          senderName: activitySenderName,
-          senderJid: activitySenderJid,
-          senderProfilePictureUrl,
-          content: messageContent,
-          createdAt: context.createdAt,
-          remoteJid: resolvedRemoteJid,
-          isGroup: context.isGroup,
-          metadata,
-          risk: detectWhatsappMessageRisk(messageContent),
-        };
-
-        createEventFromMessage(monitorMessage, dealId).catch((err) => {
-          logger.warn("failed to create message event from webhook", {
-            dealId,
-            messageId,
-            error: err.message,
+      if (matchedDeals.length > 0) {
+        for (const dm of matchedDeals) {
+          dealId = dm.id;
+          const currentDealJid = dm.whatsapp_jid;
+          await upsertWhatsappJidAliases({
+            instanceName,
+            canonicalJid: String(currentDealJid ?? resolvedRemoteJid),
+            aliases: [currentDealJid, resolvedRemoteJid, context.providerRemoteJid, context.remoteJidAlt, ...context.remoteJidAliases],
+            source: "deal-match",
           });
-        });
 
-        // Backfill whatsapp_instance_id if missing on the deal
-        if (!dealMatch.rows[0].whatsapp_instance_id && instanceName) {
-          if (instanceDetails) {
+          // Upgrade JID if deal has LID, but we resolved a real phone JID
+          if (
+            currentDealJid &&
+            currentDealJid.endsWith("@lid") &&
+            resolvedRemoteJid.endsWith("@s.whatsapp.net")
+          ) {
             await pool.query(
-              "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
-              [instanceDetails.id, dealId],
+              "UPDATE deals SET whatsapp_jid = $1, last_activity_at = NOW() WHERE id = $2",
+              [resolvedRemoteJid, dealId]
             );
-            logger.info("evolution webhook backfilled instance on deal", { dealId, instanceId: instanceDetails.id });
+            logger.info("evolution webhook upgraded deal JID from LID to phone", { dealId, oldJid: currentDealJid, newJid: resolvedRemoteJid });
+          }
+
+          // Upgrade group name/title if it's currently fallback or corrupted by individual client name
+          if (context.isGroup && chatDisplayName && !isWhatsappFallbackDisplayName(chatDisplayName, resolvedRemoteJid)) {
+            await pool.query(
+              `
+              UPDATE deals 
+              SET 
+                title = CASE 
+                  WHEN title IS NULL 
+                       OR title = '' 
+                       OR title = whatsapp_jid 
+                       OR title LIKE 'Grupo%' 
+                       OR title LIKE '[GRUPO]%' 
+                       OR LOWER(title) = LOWER($1)
+                    THEN $2 
+                    ELSE title 
+                  END,
+                customer_display_name = CASE 
+                  WHEN customer_display_name IS NULL 
+                       OR customer_display_name = '' 
+                       OR customer_display_name = whatsapp_jid 
+                       OR customer_display_name LIKE 'Grupo%' 
+                       OR customer_display_name LIKE '[GRUPO]%' 
+                       OR LOWER(customer_display_name) = LOWER($1)
+                    THEN $2 
+                    ELSE customer_display_name 
+                  END,
+                last_activity_at = NOW()
+              WHERE id = $3
+              `,
+              [senderName ?? "", chatDisplayName, dealId]
+            );
+          }
+
+          await insertDealActivity({
+            dealId,
+            activityType,
+            actorUserId,
+            actorName,
+            content: messageContent,
+            metadata,
+            createdAt: context.createdAt,
+          });
+
+          // Messaging Intelligence: Detect and create event
+          const monitorMessage: WhatsappMonitorMessage = {
+            id: String(messageId),
+            dealId,
+            direction: activityType === "WHATSAPP_SENT" ? "OUTBOUND" : "INBOUND",
+            senderName: activitySenderName,
+            senderJid: activitySenderJid,
+            senderProfilePictureUrl,
+            content: messageContent,
+            createdAt: context.createdAt,
+            remoteJid: resolvedRemoteJid,
+            isGroup: context.isGroup,
+            metadata,
+            risk: detectWhatsappMessageRisk(messageContent),
+          };
+
+          createEventFromMessage(monitorMessage, dealId).catch((err) => {
+            logger.warn("failed to create message event from webhook", {
+              dealId,
+              messageId,
+              error: err.message,
+            });
+          });
+
+          // Backfill whatsapp_instance_id if missing on the deal
+          if (!dm.whatsapp_instance_id && instanceName) {
+            if (instanceDetails) {
+              await pool.query(
+                "UPDATE deals SET whatsapp_instance_id = $1, last_activity_at = NOW() WHERE id = $2",
+                [instanceDetails.id, dealId],
+              );
+              logger.info("evolution webhook backfilled instance on deal", { dealId, instanceId: instanceDetails.id });
+            } else {
+              await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+            }
           } else {
             await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
           }
-        } else {
-          await pool.query("UPDATE deals SET last_activity_at = NOW() WHERE id = $1", [dealId]);
+          logger.info("evolution webhook linked message to deal", { dealId, remoteJid: resolvedRemoteJid });
+
+          await recordMonitorMessage({
+            dealId,
+            messageId,
+            remoteJid: resolvedRemoteJid,
+            instanceName,
+            fromMe: isFromMe,
+            senderName: activitySenderName ?? senderName,
+            senderJid: activitySenderJid,
+            senderPicUrl: senderProfilePictureUrl,
+            content: messageContent,
+            mediaJson: media ?? null,
+            source: "incoming",
+            createdAt: context.createdAt,
+          });
         }
-        logger.info("evolution webhook linked message to deal", { dealId, remoteJid: resolvedRemoteJid });
       } else {
         const stageMatch = await pool.query("SELECT id FROM pipeline_stages ORDER BY sort_order ASC LIMIT 1");
         if (stageMatch.rows[0]) {
@@ -898,24 +1011,22 @@ export async function handleEvolutionWebhook(payload: EvolutionWebhookPayload) {
             });
           });
           logger.info("evolution webhook auto-created deal", { dealId: newDealId, remoteJid: resolvedRemoteJid });
-        }
-      }
 
-      if (dealId) {
-        await recordMonitorMessage({
-          dealId,
-          messageId,
-          remoteJid: resolvedRemoteJid,
-          instanceName,
-          fromMe: isFromMe,
-          senderName: activitySenderName ?? senderName,
-          senderJid: activitySenderJid,
-          senderPicUrl: senderProfilePictureUrl,
-          content: messageContent,
-          mediaJson: media ?? null,
-          source: "incoming",
-          createdAt: context.createdAt,
-        });
+          await recordMonitorMessage({
+            dealId: newDealId,
+            messageId,
+            remoteJid: resolvedRemoteJid,
+            instanceName,
+            fromMe: isFromMe,
+            senderName: activitySenderName ?? senderName,
+            senderJid: activitySenderJid,
+            senderPicUrl: senderProfilePictureUrl,
+            content: messageContent,
+            mediaJson: media ?? null,
+            source: "incoming",
+            createdAt: context.createdAt,
+          });
+        }
       }
 
       // Update status of the webhook event to processed

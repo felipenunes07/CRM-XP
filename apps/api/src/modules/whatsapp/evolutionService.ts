@@ -1,6 +1,7 @@
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
+import { getOutboundMediaFileName, getOutboundMediaMimeType } from "./whatsappMedia.js";
 
 export interface EvolutionInstanceConfig {
   instanceName: string;
@@ -58,49 +59,47 @@ export async function sendWhatsappInstanceMediaMessage(
   fileName?: string,
   caption?: string,
 ) {
-  let mimeTypeStr = "";
-  if (mediaBase64.startsWith("data:")) {
-    const match = mediaBase64.match(/^data:([^;]+);base64,/);
-    if (match && match[1]) {
-      mimeTypeStr = match[1];
-    }
-  }
-  if (!mimeTypeStr) {
-    if (mediaType === "video") {
-      mimeTypeStr = "video/mp4";
-    } else if (mediaType === "image") {
-      mimeTypeStr = "image/png";
-    } else if (mediaType === "audio") {
-      mimeTypeStr = "audio/mp3";
-    } else {
-      mimeTypeStr = "application/octet-stream";
-    }
-  }
+  const mimeTypeStr = getOutboundMediaMimeType(mediaBase64, mediaType);
+  const defaultFileName = getOutboundMediaFileName(mediaType, fileName);
+  const number = formatEvolutionSendTextTarget(destinationJid);
 
-  const defaultFileName = fileName || (mediaType === "video" ? "video.mp4" : mediaType === "image" ? "image.png" : "file");
-
-  // Evolution's `media` field accepts EITHER a public URL OR raw base64 — but
-  // NOT a data URL. A value like "data:video/mp4;base64,AAAA..." must have its
-  // "data:...;base64," prefix removed, otherwise Evolution fails to decode it
-  // and responds with "Bad Request". Plain http(s) URLs are passed through.
-  let mediaPayload = mediaBase64;
-  if (mediaBase64.startsWith("data:")) {
-    const commaIdx = mediaBase64.indexOf(",");
-    if (commaIdx !== -1) {
-      mediaPayload = mediaBase64.slice(commaIdx + 1);
-    }
-  }
-
-  const payload: any = {
-    number: formatEvolutionSendTextTarget(destinationJid),
+  const payload = {
+    number,
     mediatype: mediaType,
     mimetype: mimeTypeStr,
-    media: mediaPayload,
+    media: mediaBase64,
     fileName: defaultFileName,
     caption: caption ?? "",
   };
 
-  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+  try {
+    return await requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", payload);
+  } catch (error) {
+    if (!shouldRetryEvolutionLegacyMediaPayload(error)) {
+      throw error;
+    }
+
+    logger.warn("Evolution sendMedia v2 payload rejected; retrying legacy mediaMessage payload", {
+      instanceName: instance.instanceName,
+      statusCode: (error as { statusCode?: unknown }).statusCode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendMedia/${encodeURIComponent(instance.instanceName)}`, "POST", {
+      number,
+      mediaMessage: {
+        mediaType,
+        mimetype: mimeTypeStr,
+        fileName: defaultFileName,
+        caption: caption ?? "",
+        media: mediaBase64,
+      },
+      options: {
+        delay: 0,
+        presence: "composing",
+      },
+    });
+  }
 }
 
 export async function markWhatsappMessagesAsRead(instance: EvolutionInstanceConfig, readMessages: EvolutionMessageKey[]) {
@@ -191,12 +190,7 @@ async function requestEvolution(baseUrl: string, apiKey: string, path: string, m
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message =
-      typeof payload.message === "string"
-        ? payload.message
-        : typeof payload.error === "string"
-          ? payload.error
-          : `Evolution API respondeu com status ${response.status}`;
+    const message = extractEvolutionErrorMessage(payload, response.status);
 
     throw Object.assign(new Error(message), {
       responsePayload: payload,
@@ -205,4 +199,56 @@ async function requestEvolution(baseUrl: string, apiKey: string, path: string, m
   }
 
   return payload;
+}
+
+function collectProviderMessages(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectProviderMessages(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      ...collectProviderMessages(record.message),
+      ...collectProviderMessages(record.error),
+      ...collectProviderMessages(record.details),
+      ...collectProviderMessages(record.response),
+    ];
+  }
+
+  return [];
+}
+
+function extractEvolutionErrorMessage(payload: Record<string, unknown>, status: number) {
+  const messages = collectProviderMessages(payload);
+  const specificMessages = messages.filter((message) => !/^bad request$/i.test(message));
+  const selected = specificMessages.length ? specificMessages : messages;
+  const unique = Array.from(new Set(selected));
+  return unique.slice(0, 3).join("; ") || `Evolution API respondeu com status ${status}`;
+}
+
+function shouldRetryEvolutionLegacyMediaPayload(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const statusCode = Number((error as { statusCode?: unknown }).statusCode);
+  if (statusCode !== 400) {
+    return false;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  if (/session|sessao|not found|not.*group|not.*participant|forbidden|unauthorized|permission|permiss/i.test(message)) {
+    return false;
+  }
+
+  return (
+    /^bad request$/i.test(message) ||
+    /mediaMessage|required property|requires property|property.*media|mediatype|mimetype|fileName/i.test(message)
+  );
 }

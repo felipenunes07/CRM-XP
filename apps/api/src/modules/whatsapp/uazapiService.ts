@@ -1,4 +1,5 @@
 import { logger } from "../../lib/logger.js";
+import { OUTBOUND_VIDEO_FILE_NAME, OUTBOUND_VIDEO_MIME_TYPE, assertSupportedOutboundVideo } from "./whatsappMedia.js";
 
 export interface UazapiInstanceConfig {
   baseUrl: string;
@@ -12,18 +13,15 @@ export interface UazapiCarouselSlide {
 }
 
 /**
- * Normalize a JID into the value UazAPI expects in the `number` field.
- * - Group JIDs (e.g. "120363...@g.us") MUST be kept intact: stripping the
- *   "@g.us" suffix turns a group id into a bogus phone number and UazAPI
- *   rejects the request with "Bad Request".
- * - Personal JIDs (e.g. "5511999999999@s.whatsapp.net") become the bare
- *   phone number digits.
+ * Uazapi accepts group chat IDs as-is, while user JIDs are converted to phone numbers.
+ * E.g. "5511999999999@s.whatsapp.net" → "5511999999999"
  */
-function stripJidToNumber(jid: string): string {
-  const trimmed = (jid ?? "").trim();
+function formatUazapiDestination(jid: string): string {
+  const trimmed = jid.trim();
   if (trimmed.endsWith("@g.us")) {
     return trimmed;
   }
+
   const [num] = trimmed.split("@");
   return (num ?? trimmed).replace(/\D/g, "");
 }
@@ -34,7 +32,7 @@ export async function sendUazapiTextMessage(
   messageText: string,
 ) {
   return requestUazapi(config, "/send/text", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     text: messageText,
   });
 }
@@ -46,8 +44,9 @@ export async function sendUazapiImageMessage(
   caption?: string,
 ) {
   return requestUazapi(config, "/send/image", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     image: imageUrl,
+    text: caption ?? "",
     caption: caption ?? "",
   });
 }
@@ -58,7 +57,7 @@ export async function sendUazapiCarouselMessage(
   carouselSlides: UazapiCarouselSlide[],
 ) {
   return requestUazapi(config, "/send/carousel", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
     carousel: carouselSlides.map((slide) => ({
       text: slide.text,
       image: slide.image,
@@ -78,10 +77,15 @@ export async function sendUazapiVideoMessage(
   videoUrl: string,
   caption?: string,
 ) {
+  assertSupportedOutboundVideo(videoUrl);
+
   return requestUazapi(config, "/send/media", "POST", {
-    number: stripJidToNumber(destinationJid),
+    number: formatUazapiDestination(destinationJid),
+    text: caption ?? "",
     file: videoUrl,
     type: "video",
+    mimetype: OUTBOUND_VIDEO_MIME_TYPE,
+    filename: OUTBOUND_VIDEO_FILE_NAME,
     caption: caption ?? "",
   });
 }
@@ -104,17 +108,13 @@ export async function requestUazapi(
       token: config.token,
     },
     body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30000),
   });
 
   const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
 
   if (!response.ok) {
-    const message =
-      typeof payload.message === "string"
-        ? payload.message
-        : typeof payload.error === "string"
-          ? payload.error
-          : `UazAPI respondeu com status ${response.status}`;
+    const message = extractUazapiErrorMessage(payload, response.status);
 
     throw Object.assign(new Error(message), {
       responsePayload: payload,
@@ -123,4 +123,35 @@ export async function requestUazapi(
   }
 
   return payload;
+}
+
+function collectProviderMessages(value: unknown): string[] {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectProviderMessages(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return [
+      ...collectProviderMessages(record.message),
+      ...collectProviderMessages(record.error),
+      ...collectProviderMessages(record.details),
+      ...collectProviderMessages(record.response),
+    ];
+  }
+
+  return [];
+}
+
+function extractUazapiErrorMessage(payload: Record<string, unknown>, status: number) {
+  const messages = collectProviderMessages(payload);
+  const specificMessages = messages.filter((message) => !/^bad request$/i.test(message));
+  const selected = specificMessages.length ? specificMessages : messages;
+  const unique = Array.from(new Set(selected));
+  return unique.slice(0, 3).join("; ") || `UazAPI respondeu com status ${status}`;
 }

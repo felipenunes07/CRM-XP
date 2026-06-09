@@ -4,8 +4,11 @@ import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import {
   claimRecipientForDispatch,
+  listDueWhatsappCampaignRecipientJobs,
+  markRecipientDispatchClaimFailed,
   markRecipientFailed,
   markRecipientSent,
+  recoverWhatsappCampaignDispatchClaimFailures,
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
@@ -31,6 +34,9 @@ const queue = queueEnabled && connection
   : null;
 
 const localTimers = new Set<ReturnType<typeof setTimeout>>();
+const localScheduledRecipientIds = new Set<string>();
+const directDispatchRecipientIds = new Set<string>();
+const WHATSAPP_DISPATCH_RESCUE_INTERVAL_MS = 10_000;
 
 function extractProviderMessageId(payload: Record<string, unknown>) {
   if (payload.key && typeof payload.key === "object" && payload.key !== null) {
@@ -42,7 +48,27 @@ function extractProviderMessageId(payload: Record<string, unknown>) {
 }
 
 async function processRecipientDispatch(recipientId: string) {
-  const context = await claimRecipientForDispatch(recipientId);
+  let context;
+
+  try {
+    context = await claimRecipientForDispatch(recipientId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("whatsapp recipient dispatch claim failed", {
+      recipientId,
+      error: message,
+    });
+
+    await markRecipientDispatchClaimFailed(recipientId, message).catch((markError) => {
+      logger.error("failed to mark whatsapp recipient claim error", {
+        recipientId,
+        error: String(markError),
+      });
+    });
+
+    return { sent: false, failed: true, claimFailed: true };
+  }
+
   if (!context) {
     return { skipped: true };
   }
@@ -113,6 +139,11 @@ export async function enqueueWhatsappCampaignRecipients(recipientJobs: EnqueuedR
 
   if (!queue) {
     recipientJobs.forEach((job) => {
+      if (localScheduledRecipientIds.has(job.recipientId)) {
+        return;
+      }
+
+      localScheduledRecipientIds.add(job.recipientId);
       const timer = setTimeout(() => {
         void processRecipientDispatch(job.recipientId)
           .catch((error) => {
@@ -123,6 +154,7 @@ export async function enqueueWhatsappCampaignRecipients(recipientJobs: EnqueuedR
           })
           .finally(() => {
             localTimers.delete(timer);
+            localScheduledRecipientIds.delete(job.recipientId);
           });
       }, Math.max(0, job.delayMs));
 
@@ -147,13 +179,83 @@ export async function enqueueWhatsappCampaignRecipients(recipientJobs: EnqueuedR
   );
 }
 
+export async function resumeDueWhatsappCampaignRecipients(campaignId?: string, limit = 1) {
+  const recovered = await recoverWhatsappCampaignDispatchClaimFailures({ campaignId, limit });
+  if (recovered.recovered > 0) {
+    logger.info("recovered whatsapp campaign dispatch claim failures", {
+      campaignId,
+      recovered: recovered.recovered,
+      campaignIds: recovered.campaignIds,
+    });
+  }
+
+  const dueJobs = await listDueWhatsappCampaignRecipientJobs({ campaignId, limit });
+  let started = 0;
+
+  for (const job of dueJobs) {
+    if (directDispatchRecipientIds.has(job.recipientId)) {
+      continue;
+    }
+
+    directDispatchRecipientIds.add(job.recipientId);
+    started += 1;
+
+    const timer = setTimeout(() => {
+      void processRecipientDispatch(job.recipientId)
+        .catch((error) => {
+          logger.error("resumed whatsapp recipient dispatch failed", {
+            recipientId: job.recipientId,
+            campaignId: job.campaignId,
+            error: String(error),
+          });
+        })
+        .finally(() => {
+          directDispatchRecipientIds.delete(job.recipientId);
+          localTimers.delete(timer);
+        });
+    }, 0);
+
+    timer.unref?.();
+    localTimers.add(timer);
+  }
+
+  if (started > 0) {
+    logger.info("resumed due whatsapp campaign recipients", {
+      campaignId,
+      candidates: dueJobs.length,
+      started,
+    });
+  }
+
+  return {
+    candidates: dueJobs.length,
+    started,
+  };
+}
+
+function startDueRecipientRescueLoop() {
+  const interval = setInterval(() => {
+    resumeDueWhatsappCampaignRecipients(undefined, 1).catch((error) => {
+      logger.error("whatsapp due recipient rescue failed", { error: String(error) });
+    });
+  }, WHATSAPP_DISPATCH_RESCUE_INTERVAL_MS);
+
+  interval.unref?.();
+  return interval;
+}
+
 export function startWhatsappDispatchWorker() {
+  const rescueInterval = startDueRecipientRescueLoop();
+
   if (!queueEnabled || !connection) {
     logger.info("whatsapp dispatch worker running in local timer mode without Redis");
     return {
       async close() {
+        clearInterval(rescueInterval);
         localTimers.forEach((timer) => clearTimeout(timer));
         localTimers.clear();
+        localScheduledRecipientIds.clear();
+        directDispatchRecipientIds.clear();
       },
     };
   }
@@ -186,5 +288,15 @@ export function startWhatsappDispatchWorker() {
     });
   });
 
-  return worker;
+  worker.on("error", (error) => {
+    logger.error("whatsapp dispatch worker error", { error: String(error) });
+  });
+
+  return {
+    async close() {
+      clearInterval(rescueInterval);
+      await worker.close();
+      directDispatchRecipientIds.clear();
+    },
+  };
 }

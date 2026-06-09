@@ -1,7 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, ShieldAlert, TrendingUp } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, Download, ShieldAlert, TrendingUp } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
@@ -119,6 +119,104 @@ export function CustomersPage() {
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
+
+  const [downloadingFiltered, setDownloadingFiltered] = useState(false);
+
+  const getDownloadInfo = () => {
+    const status = state.portfolioFilters.status;
+    if (status === "ACTIVE") {
+      return {
+        label: "Baixar Clientes Ativos (CSV)",
+        filename: `clientes_ativos_${new Date().toISOString().split("T")[0]}.csv`,
+      };
+    }
+    if (status === "ATTENTION") {
+      return {
+        label: "Baixar Clientes em Atenção (CSV)",
+        filename: `clientes_em_atencao_${new Date().toISOString().split("T")[0]}.csv`,
+      };
+    }
+    if (status === "INACTIVE") {
+      return {
+        label: "Baixar Clientes Inativos (CSV)",
+        filename: `clientes_inativos_${new Date().toISOString().split("T")[0]}.csv`,
+      };
+    }
+    return {
+      label: "Baixar Clientes Filtrados (CSV)",
+      filename: `carteira_clientes_filtrada_${new Date().toISOString().split("T")[0]}.csv`,
+    };
+  };
+
+  const { label: downloadButtonLabel, filename: downloadFilename } = getDownloadInfo();
+
+  const downloadFilteredCustomers = async () => {
+    if (downloadingFiltered || !token) return;
+    setDownloadingFiltered(true);
+    try {
+      const queryParams = {
+        ...customerQueryParams,
+        limit: 100000,
+      };
+      const data = await api.customers(token, queryParams);
+      if (!data || data.length === 0) {
+        alert("Nenhum cliente encontrado com os filtros atuais para download.");
+        return;
+      }
+
+      const headers = [
+        "Código",
+        "Nome",
+        "Status",
+        "Total de Pedidos",
+        "Total Gasto",
+        "Ticket Médio",
+        "Última Compra",
+        "Dias Inativo",
+        "Média Dias Entre Pedidos",
+        "Rótulos",
+        "Estado",
+        "Cidade",
+        "Prioridade"
+      ];
+
+      const csvLines = [
+        "\uFEFF" + headers.join(";"),
+        ...data.map((row) =>
+          [
+            row.customerCode || "",
+            row.displayName || "",
+            row.status === "ACTIVE" ? "Ativo" : row.status === "ATTENTION" ? "Atenção" : "Inativo",
+            row.totalOrders || 0,
+            row.totalSpent || 0,
+            row.avgTicket || 0,
+            row.lastPurchaseAt || "",
+            row.daysSinceLastPurchase !== null && row.daysSinceLastPurchase !== undefined ? row.daysSinceLastPurchase : "",
+            row.avgDaysBetweenOrders !== null && row.avgDaysBetweenOrders !== undefined ? Math.round(row.avgDaysBetweenOrders) : "",
+            row.labels.map((l) => l.name).join(", "),
+            row.state || "",
+            row.city || "",
+            row.priorityScore || 0,
+          ]
+            .map((val) => `"${String(val).replace(/"/g, '""')}"`)
+            .join(";")
+        ),
+      ];
+
+      const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = downloadFilename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error("Erro ao baixar clientes filtrados:", err);
+      alert(`Erro ao exportar clientes: ${err.message || err}`);
+    } finally {
+      setDownloadingFiltered(false);
+    }
+  };
 
   const labelsQuery = useQuery({
     queryKey: ["customer-labels"],
@@ -436,6 +534,18 @@ export function CustomersPage() {
 
       {state.activeView === "portfolio" ? (
         <>
+          <div style={{ display: "flex", justifyContent: "flex-end", margin: "1rem 0" }}>
+            <button
+              type="button"
+              className="ghost-button small"
+              onClick={downloadFilteredCustomers}
+              disabled={downloadingFiltered}
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+            >
+              <Download size={16} />
+              {downloadingFiltered ? "Baixando..." : downloadButtonLabel}
+            </button>
+          </div>
           {customersQuery.isLoading ? <div className="page-loading">Carregando clientes...</div> : null}
           {customersQuery.isError ? <div className="page-error">Falha ao carregar a carteira.</div> : null}
           {customersQuery.data ? <CustomerTable customers={customersQuery.data} /> : null}
