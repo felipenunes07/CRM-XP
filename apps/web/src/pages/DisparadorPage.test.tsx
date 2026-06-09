@@ -81,6 +81,7 @@ const campaign: WhatsappCampaignDetail = {
   id: "campaign-1",
   name: "Campanha Junho",
   status: "COMPLETED",
+  whatsappInstanceId: null,
   templateId: null,
   templateTitle: null,
   savedSegmentId: null,

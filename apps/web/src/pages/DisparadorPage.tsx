@@ -3977,10 +3977,10 @@ export function DisparadorPage() {
                                           // Converter para o formato do MiniChat
                                           const realMessages: MiniChatMessage[] = conversationData.messages.map(msg => ({
                                             id: msg.id,
-                                            content: msg.body || msg.text || msg.caption || "(mensagem sem texto)",
-                                            direction: msg.fromMe ? "OUTBOUND" : "INBOUND",
-                                            timestamp: msg.timestamp,
-                                            status: msg.fromMe ? "sent" : undefined
+                                            content: msg.content || "(mensagem sem texto)",
+                                            direction: msg.direction === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
+                                            timestamp: msg.createdAt,
+                                            status: msg.direction === "OUTBOUND" ? "sent" : undefined
                                           }));
                                           
                                           setMiniChatMessages(realMessages);

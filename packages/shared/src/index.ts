@@ -1604,6 +1604,7 @@ export interface WhatsappCampaignListItem {
   id: string;
   name: string;
   status: WhatsappCampaignStatus;
+  whatsappInstanceId: string | null;
   templateId: string | null;
   templateTitle: string | null;
   savedSegmentId: string | null;
