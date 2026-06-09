@@ -849,7 +849,14 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
 
   return pool.query(
     `
-      WITH recipient_progress AS (
+      WITH selected_campaigns AS (
+        SELECT wc.*
+        FROM whatsapp_campaigns wc
+        ${where}
+        ORDER BY wc.created_at DESC
+        ${limitSql}
+      ),
+      recipient_progress AS (
         SELECT
           campaign_id,
           COUNT(*)::int AS total_recipients,
@@ -862,10 +869,11 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
           MIN(scheduled_for) FILTER (WHERE status = 'PENDING') AS next_scheduled_at,
           MAX(scheduled_for) FILTER (WHERE status IN ('PENDING', 'SENDING')) AS estimated_finish_at
         FROM whatsapp_campaign_recipients
+        WHERE campaign_id IN (SELECT id FROM selected_campaigns)
         GROUP BY campaign_id
       )
       SELECT
-        wc.*,
+        sc.*,
         COALESCE(rp.total_recipients, 0) AS total_recipients,
         COALESCE(rp.pending_count, 0) AS pending_count,
         COALESCE(rp.blocked_recent_count, 0) AS blocked_recent_count,
@@ -875,11 +883,9 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
         COALESCE(rp.skipped_count, 0) AS skipped_count,
         rp.next_scheduled_at,
         rp.estimated_finish_at
-      FROM whatsapp_campaigns wc
-      LEFT JOIN recipient_progress rp ON rp.campaign_id = wc.id
-      ${where}
-      ORDER BY wc.created_at DESC
-      ${limitSql}
+      FROM selected_campaigns sc
+      LEFT JOIN recipient_progress rp ON rp.campaign_id = sc.id
+      ORDER BY sc.created_at DESC
     `,
     params,
   );
