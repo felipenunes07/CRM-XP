@@ -1833,7 +1833,7 @@ export async function getWhatsappMonitorConversation(
   const queryLimit = messageLimit + 1;
 
   // Fast read path with flat table and automated fallback
-  if (process.env.WHATSAPP_FAST_READ !== "off") {
+  if (process.env.WHATSAPP_FAST_READ !== "off" && !conversation.isGroup) {
     let cursorSql = "";
     const fastParams: unknown[] = [linkedDealIds];
     fastParams.push(scopedRemoteJidAliases);
