@@ -8,32 +8,27 @@ const pool = new Pool({
 async function run() {
   console.log("=== CHECKING MESSAGES IN JUNE 2026 ===");
   try {
-    const monitorRes = await pool.query(`
-      SELECT DATE(created_at) as date, direction, COUNT(*)::int as count
-      FROM whatsapp_monitor_messages
-      WHERE created_at >= '2026-06-01'
-      GROUP BY DATE(created_at), direction
-      ORDER BY date DESC
+    const campaignsRes = await pool.query(`
+      SELECT id, name, status, created_at
+      FROM whatsapp_campaigns
+      ORDER BY created_at DESC
+      LIMIT 10
     `);
-    console.log("whatsapp_monitor_messages in June:");
-    console.table(monitorRes.rows);
+    console.log("whatsapp_campaigns count:", campaignsRes.rows.length);
+    console.table(campaignsRes.rows);
   } catch (err) {
-    console.error("Error checking monitor messages:", err.message);
+    console.error("Error checking campaigns:", err.message);
   }
 
   try {
-    const activitiesRes = await pool.query(`
-      SELECT DATE(created_at) as date, activity_type, COUNT(*)::int as count
-      FROM deal_activities
-      WHERE created_at >= '2026-06-01'
-        AND activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-      GROUP BY DATE(created_at), activity_type
-      ORDER BY date DESC
-    `);
-    console.log("deal_activities in June:");
-    console.table(activitiesRes.rows);
+    const customersCount = await pool.query("SELECT COUNT(*)::int as count FROM customers");
+    const groupsCount = await pool.query("SELECT COUNT(*)::int as count FROM whatsapp_groups");
+    const recipientsCount = await pool.query("SELECT COUNT(*)::int as count FROM whatsapp_campaign_recipients");
+    console.log("Customers Count:", customersCount.rows[0].count);
+    console.log("WhatsApp Groups Count:", groupsCount.rows[0].count);
+    console.log("Recipients Count:", recipientsCount.rows[0].count);
   } catch (err) {
-    console.error("Error checking deal activities:", err.message);
+    console.error("Error checking counts:", err.message);
   }
 
   try {
