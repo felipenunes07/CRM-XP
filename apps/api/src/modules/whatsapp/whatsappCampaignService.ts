@@ -608,7 +608,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND da.created_at >= cs.first_sent_at
             AND da.created_at < cs.last_window_at
-            AND ($3::uuid IS NULL OR d.whatsapp_instance_id = $3::uuid)
+            AND ($3::uuid IS NULL OR d.whatsapp_instance_id IS NULL OR d.whatsapp_instance_id = $3::uuid)
 
           UNION ALL
 
@@ -629,7 +629,17 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND wim.created_at >= cs.first_sent_at
             AND wim.created_at < cs.last_window_at
-            AND ($4::text IS NULL OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($4::text))
+            -- Exclui apenas mensagens comprovadamente de OUTRA instância registrada.
+            -- Instância ausente ou não cadastrada no CRM (ex.: a uazapi manda no
+            -- payload um nome diferente do registrado) continua contando.
+            AND (
+              $4::text IS NULL
+              OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($4::text)
+              OR NOT EXISTS (
+                SELECT 1 FROM whatsapp_instances wi_check
+                WHERE LOWER(wi_check.instance_name) = LOWER(COALESCE(wim.instance_name, ''))
+              )
+            )
         ),
         inbound_events AS (
           SELECT DISTINCT ON (event_key)
@@ -1893,6 +1903,20 @@ export async function getWhatsappCampaignRecipientChat(
       ? `OR regexp_replace(split_part(COALESCE(${column}, ''), '@', 1), '[^0-9]', '', 'g') = $2`
       : "";
 
+  // Mesma regra "suave" da atribuição do badge: só exclui mensagens que são
+  // comprovadamente de OUTRA instância registrada no CRM.
+  const instanceParam = `$${digits ? 3 : 2}`;
+  const softInstanceSql = `
+    AND (
+      ${instanceParam}::text IS NULL
+      OR LOWER(COALESCE(instance_name, '')) = LOWER(${instanceParam}::text)
+      OR NOT EXISTS (
+        SELECT 1 FROM whatsapp_instances wi_check
+        WHERE LOWER(wi_check.instance_name) = LOWER(COALESCE(instance_name, ''))
+      )
+    )
+  `;
+
   const [logsResult, incomingResult, monitorResult, activitiesResult] = await Promise.all([
     // Envios da campanha e do mini chat registrados em message_logs
     pool.query(
@@ -1915,7 +1939,7 @@ export async function getWhatsappCampaignRecipientChat(
                'whatsapp_incoming_messages' AS source, NULLIF(message_id, '') AS message_key
         FROM whatsapp_incoming_messages
         WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
-          AND ($${digits ? 3 : 2}::text IS NULL OR LOWER(COALESCE(instance_name, '')) = LOWER($${digits ? 3 : 2}::text))
+          ${softInstanceSql}
         ORDER BY created_at DESC
         LIMIT 300
       `,
@@ -1928,7 +1952,7 @@ export async function getWhatsappCampaignRecipientChat(
                'whatsapp_monitor_messages' AS source, NULLIF(message_id, '') AS message_key
         FROM whatsapp_monitor_messages
         WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
-          AND ($${digits ? 3 : 2}::text IS NULL OR LOWER(COALESCE(instance_name, '')) = LOWER($${digits ? 3 : 2}::text))
+          ${softInstanceSql}
         ORDER BY created_at DESC
         LIMIT 300
       `,
@@ -1945,7 +1969,7 @@ export async function getWhatsappCampaignRecipientChat(
         JOIN deals d ON d.id = da.deal_id
         WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
           AND (LOWER(COALESCE(d.whatsapp_jid, '')) = ANY($1::text[]) ${digitsMatchSql("d.whatsapp_jid")})
-          AND ($${digits ? 3 : 2}::uuid IS NULL OR d.whatsapp_instance_id = $${digits ? 3 : 2}::uuid)
+          AND ($${digits ? 3 : 2}::uuid IS NULL OR d.whatsapp_instance_id IS NULL OR d.whatsapp_instance_id = $${digits ? 3 : 2}::uuid)
         ORDER BY da.created_at DESC
         LIMIT 300
       `,

@@ -8,12 +8,47 @@ import { startDailySyncScheduler } from "./modules/platform/syncService.js";
 import { runMigrations } from "./db/runMigrations.js";
 import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
+import { configureUazapiWebhook } from "./modules/whatsapp/uazapiService.js";
+
+/**
+ * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
+ * Sem o webhook apontado para cá, respostas de clientes nunca entram no banco
+ * (mini chat vazio e "Respondeu" zerado nas campanhas uazapi).
+ */
+function configureUazapiWebhooksAtStartup() {
+  const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+  const webhookUrl = `${base}/api/webhooks/uazapi`;
+
+  void pool
+    .query(
+      `SELECT instance_name, uazapi_base_url, uazapi_token
+       FROM whatsapp_instances
+       WHERE provider = 'UAZAPI' AND status = 'ACTIVE'
+         AND uazapi_base_url IS NOT NULL AND uazapi_token IS NOT NULL`,
+    )
+    .then(async (result) => {
+      for (const row of result.rows) {
+        const outcome = await configureUazapiWebhook(
+          { baseUrl: String(row.uazapi_base_url), token: String(row.uazapi_token) },
+          webhookUrl,
+        );
+        logger.info("uazapi webhook startup configuration", {
+          instance: String(row.instance_name),
+          configured: outcome.configured,
+        });
+      }
+    })
+    .catch((error) => {
+      logger.warn("uazapi webhook startup configuration failed", { error: String(error) });
+    });
+}
 
 async function main() {
   await runMigrations();
   await bootstrapPlatform();
   const scheduler = startDailySyncScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
+  configureUazapiWebhooksAtStartup();
 
   // Start WhatsApp Activity Rollup background refresh
   let rollupInterval: NodeJS.Timeout | undefined;
