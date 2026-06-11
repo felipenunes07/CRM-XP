@@ -13,7 +13,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, ShoppingBag, Package, Banknote } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
@@ -342,24 +342,47 @@ export function CampaignPerformancePanel({
   const recentMessages = performance.messages.slice(-120);
 
   const funnelStats = [
-    { label: "Publico", value: formatNumber(performance.totalRecipients), detail: `${formatNumber(performance.eligibleRecipients)} elegiveis` },
-    { label: "Enviados", value: formatNumber(performance.sentRecipients), detail: `${formatPercent(performance.responseRate)} resposta` },
-    { label: "Responderam", value: formatNumber(performance.respondedRecipients), detail: `${formatNumber(performance.notRespondedRecipients)} sem resposta` },
-    { label: "Compraram", value: formatNumber(performance.purchasedRecipients), detail: `${formatPercent(performance.purchaseRate)} conversao` },
-    { label: "Pecas", value: formatNumber(performance.pieces), detail: `${formatNumber(performance.orderCount)} pedidos` },
-    { label: "Receita", value: formatCurrency(performance.revenue), detail: `${formatNumber(performance.receivedMessages)} recebidas` },
+    { label: "Público", value: formatNumber(performance.totalRecipients), detail: `${formatNumber(performance.eligibleRecipients)} elegíveis`, icon: Users, accent: "#6366f1", soft: "#eef2ff" },
+    { label: "Enviados", value: formatNumber(performance.sentRecipients), detail: `${formatPercent(performance.responseRate)} de resposta`, icon: Send, accent: "#0ea5e9", soft: "#f0f9ff" },
+    { label: "Responderam", value: formatNumber(performance.respondedRecipients), detail: `${formatNumber(performance.notRespondedRecipients)} sem resposta`, icon: MessageCircle, accent: "#10b981", soft: "#ecfdf5" },
+    { label: "Compraram", value: formatNumber(performance.purchasedRecipients), detail: `${formatPercent(performance.purchaseRate)} de conversão`, icon: ShoppingBag, accent: "#f59e0b", soft: "#fffbeb" },
+    { label: "Peças", value: formatNumber(performance.pieces), detail: `${formatNumber(performance.orderCount)} pedidos`, icon: Package, accent: "#8b5cf6", soft: "#f5f3ff" },
+    { label: "Receita", value: formatCurrency(performance.revenue), detail: `${formatNumber(performance.receivedMessages)} msgs recebidas`, icon: Banknote, accent: "#059669", soft: "#ecfdf5" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <div className="wp-progress-stats-grid" style={{ marginTop: 0 }}>
-        {funnelStats.map((stat) => (
-          <div className="wp-stat-box" key={stat.label}>
-            <span className="wp-stat-box-label">{stat.label}</span>
-            <strong className="wp-stat-box-value">{stat.value}</strong>
-            <span style={{ color: "#71717a", fontSize: "0.74rem", fontWeight: 500 }}>{stat.detail}</span>
-          </div>
-        ))}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.75rem" }}>
+        {funnelStats.map((stat) => {
+          const StatIcon = stat.icon;
+          return (
+            <div
+              key={stat.label}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e4e4e7",
+                borderRadius: "14px",
+                padding: "0.9rem 1rem",
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.5rem",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                borderTop: `3px solid ${stat.accent}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                  {stat.label}
+                </span>
+                <span style={{ width: "28px", height: "28px", borderRadius: "8px", background: stat.soft, display: "grid", placeItems: "center", flexShrink: 0 }}>
+                  <StatIcon size={15} style={{ color: stat.accent }} />
+                </span>
+              </div>
+              <strong style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{stat.value}</strong>
+              <span style={{ color: "#71717a", fontSize: "0.74rem", fontWeight: 500 }}>{stat.detail}</span>
+            </div>
+          );
+        })}
       </div>
 
       <div
@@ -578,28 +601,34 @@ export function CampaignPerformancePanel({
               </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.55rem", maxHeight: "430px", overflowY: "auto", paddingRight: "2px" }}>
-              {recentMessages.length ? recentMessages.map((message) => (
-                <article
-                  key={`${message.source}-${message.id}`}
-                  style={{
-                    border: "1px solid #e4e4e7",
-                    borderRadius: "8px",
-                    padding: "0.7rem 0.8rem",
-                    background: message.direction === "INBOUND" ? "#f0fdf4" : "#f8fafc",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.35rem" }}>
-                    <strong style={{ fontSize: "0.76rem", color: message.direction === "INBOUND" ? "#166534" : "#334155" }}>
-                      {message.direction === "INBOUND" ? "Recebida" : "Enviada"}
-                    </strong>
-                    <span style={{ color: "#71717a", fontSize: "0.68rem", whiteSpace: "nowrap" }}>{formatDateTime(message.createdAt)}</span>
-                  </div>
-                  <p style={{ margin: 0, color: "#18181b", fontSize: "0.8rem", lineHeight: 1.42 }}>{truncateText(message.content, 180)}</p>
-                  <span style={{ display: "block", color: "#71717a", fontSize: "0.68rem", marginTop: "0.35rem" }}>
-                    {message.customerDisplayName || message.customerCode || message.jid || message.senderName || "Contato da campanha"}
-                  </span>
-                </article>
-              )) : (
+              {recentMessages.length ? recentMessages.map((message) => {
+                const inbound = message.direction === "INBOUND";
+                return (
+                  <article
+                    key={`${message.source}-${message.id}`}
+                    style={{
+                      alignSelf: inbound ? "flex-start" : "flex-end",
+                      maxWidth: "88%",
+                      border: `1px solid ${inbound ? "#bbf7d0" : "#e4e4e7"}`,
+                      borderRadius: inbound ? "12px 12px 12px 4px" : "12px 12px 4px 12px",
+                      padding: "0.6rem 0.8rem",
+                      background: inbound ? "#f0fdf4" : "#f8fafc",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", marginBottom: "0.3rem" }}>
+                      <strong style={{ fontSize: "0.72rem", color: inbound ? "#166534" : "#334155", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                        {inbound ? <><MessageCircle size={11} /> Recebida</> : <><Send size={11} /> Enviada</>}
+                      </strong>
+                      <span style={{ color: "#71717a", fontSize: "0.68rem", whiteSpace: "nowrap" }}>{formatDateTime(message.createdAt)}</span>
+                    </div>
+                    <p style={{ margin: 0, color: "#18181b", fontSize: "0.8rem", lineHeight: 1.42 }}>{truncateText(message.content, 180)}</p>
+                    <span style={{ display: "block", color: "#71717a", fontSize: "0.68rem", marginTop: "0.3rem" }}>
+                      {message.customerDisplayName || message.customerCode || message.jid || message.senderName || "Contato da campanha"}
+                    </span>
+                  </article>
+                );
+              }) : (
                 <div style={{ color: "#71717a", fontSize: "0.82rem", padding: "1rem", textAlign: "center", border: "1px dashed #d4d4d8", borderRadius: "8px" }}>
                   Nenhuma mensagem atribuida a esta campanha ainda.
                 </div>
@@ -638,6 +667,8 @@ export function DisparadorPage() {
   const [messageText, setMessageText] = useState("");
   const [overrideRecentBlock, setOverrideRecentBlock] = useState(false);
   const [minDelaySeconds, setMinDelaySeconds] = useState(183);
+  const [dispatchMode, setDispatchMode] = useState<"NOW" | "SCHEDULED">("NOW");
+  const [scheduledStartAtLocal, setScheduledStartAtLocal] = useState("");
   const [maxDelaySeconds, setMaxDelaySeconds] = useState(304);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [campaignPerformanceFilter, setCampaignPerformanceFilter] = useState<CampaignPerformanceFilter>("ALL");
@@ -839,8 +870,10 @@ export function DisparadorPage() {
     queryKey: ["whatsapp-campaign", selectedCampaignId],
     queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0 }),
     enabled: Boolean(token && selectedCampaignId),
+    staleTime: 5000,
+    refetchOnWindowFocus: false,
     refetchInterval: (query) =>
-      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 10000 : false,
   });
 
   useEffect(() => {
@@ -900,6 +933,10 @@ export function DisparadorPage() {
         overrideRecentBlock,
         minDelaySeconds,
         maxDelaySeconds,
+        scheduledStartAt:
+          dispatchMode === "SCHEDULED" && scheduledStartAtLocal
+            ? new Date(scheduledStartAtLocal).toISOString()
+            : null,
       });
     },
     onSuccess: async (campaign) => {
@@ -3250,16 +3287,98 @@ export function DisparadorPage() {
                     </div>
                   </div>
 
+                  {/* AGENDAMENTO */}
+                  <div style={{
+                    marginTop: "1.5rem",
+                    background: "#fff",
+                    border: "1px solid var(--line)",
+                    borderRadius: "16px",
+                    padding: "1.25rem 1.5rem",
+                  }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "0.95rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px", color: "#18181b" }}>
+                      <Clock3 size={16} />
+                      Quando disparar?
+                    </h4>
+                    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => setDispatchMode("NOW")}
+                        style={{
+                          flex: "1 1 200px",
+                          padding: "0.9rem 1rem",
+                          borderRadius: "12px",
+                          border: dispatchMode === "NOW" ? "2px solid #10b981" : "1px solid var(--line)",
+                          background: dispatchMode === "NOW" ? "#ecfdf5" : "#fff",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <strong style={{ display: "block", fontSize: "0.9rem", color: dispatchMode === "NOW" ? "#047857" : "#18181b" }}>
+                          🚀 Disparar agora
+                        </strong>
+                        <span style={{ fontSize: "0.78rem", color: "#71717a" }}>Os envios começam imediatamente.</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDispatchMode("SCHEDULED")}
+                        style={{
+                          flex: "1 1 200px",
+                          padding: "0.9rem 1rem",
+                          borderRadius: "12px",
+                          border: dispatchMode === "SCHEDULED" ? "2px solid #6366f1" : "1px solid var(--line)",
+                          background: dispatchMode === "SCHEDULED" ? "#eef2ff" : "#fff",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <strong style={{ display: "block", fontSize: "0.9rem", color: dispatchMode === "SCHEDULED" ? "#4338ca" : "#18181b" }}>
+                          📅 Agendar
+                        </strong>
+                        <span style={{ fontSize: "0.78rem", color: "#71717a" }}>Escolha o dia e horário do início.</span>
+                      </button>
+                    </div>
+                    {dispatchMode === "SCHEDULED" && (
+                      <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                        <input
+                          type="datetime-local"
+                          value={scheduledStartAtLocal}
+                          min={new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16)}
+                          onChange={(event) => setScheduledStartAtLocal(event.target.value)}
+                          style={{
+                            padding: "0.7rem 0.9rem",
+                            borderRadius: "10px",
+                            border: "1px solid var(--line)",
+                            fontSize: "0.9rem",
+                            fontFamily: "inherit",
+                          }}
+                        />
+                        {scheduledStartAtLocal ? (
+                          <span style={{ fontSize: "0.82rem", color: "#4338ca", fontWeight: 600 }}>
+                            Início agendado para {new Date(scheduledStartAtLocal).toLocaleString("pt-BR")}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "0.82rem", color: "#b45309" }}>
+                            Escolha data e horário para liberar o botão de agendamento.
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="whatsapp-wizard-nav" style={{ justifyContent: "center", border: "none", marginTop: "1.5rem" }}>
                     <button
                       className="primary-button"
                       type="button"
                       onClick={() => createCampaignMutation.mutate()}
-                      disabled={createCampaignMutation.isPending || !isReadyToDispatch}
+                      disabled={
+                        createCampaignMutation.isPending ||
+                        !isReadyToDispatch ||
+                        (dispatchMode === "SCHEDULED" && !scheduledStartAtLocal)
+                      }
                       style={{ padding: "1rem 2.5rem", fontSize: "1rem" }}
                     >
                       {createCampaignMutation.isPending ? <LoaderCircle size={18} className="spin" /> : <Send size={18} />}
-                      {dispatchButtonLabel}
+                      {dispatchMode === "SCHEDULED" ? "Agendar campanha" : dispatchButtonLabel}
                     </button>
                   </div>
                 </article>
@@ -3754,6 +3873,17 @@ export function DisparadorPage() {
                       statusText = "NA FILA";
                     }
 
+                    const isScheduledForFuture =
+                      campaign.status === "QUEUED" &&
+                      campaign.scheduledStartAt &&
+                      new Date(campaign.scheduledStartAt).getTime() > Date.now();
+                    if (isScheduledForFuture) {
+                      statusBg = "#eef2ff";
+                      statusColor = "#4338ca";
+                      statusBorder = "#c7d2fe";
+                      statusText = "AGENDADA";
+                    }
+
                     // Progress bar color - CORES CORRETAS baseadas no status real
                     const { sentCount, failedCount, totalRecipients } = campaign.progress;
                     let progressBarColor = "#e4e4e7"; // Cinza padrão
@@ -3781,6 +3911,11 @@ export function DisparadorPage() {
                               <span style={{ fontSize: "0.78rem", color: "#71717a" }}>
                                 Criado em {formatDateTime(campaign.createdAt)}
                               </span>
+                              {isScheduledForFuture && (
+                                <span style={{ fontSize: "0.78rem", color: "#4338ca", fontWeight: 600 }}>
+                                  📅 Início agendado: {formatDateTime(campaign.scheduledStartAt)}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td style={{ padding: "1.25rem 1.5rem" }}>
@@ -3964,16 +4099,13 @@ export function DisparadorPage() {
                                         setMiniChatMessages([]);
                                         
                                         try {
-                                          // Buscar mensagens REAIS da API do WhatsApp Monitor
-                                          const conversationData = await api.whatsappMonitorConversation(
+                                          // Conversa agregada de todas as fontes (mesma base do badge "Respondeu")
+                                          const conversationData = await api.whatsappCampaignRecipientChat(
                                             token!,
-                                            recipient.jid,
-                                            {
-                                              instanceId: selectedCampaignQuery.data.whatsappInstanceId || undefined,
-                                              limit: 100
-                                            }
+                                            selectedCampaignQuery.data.id,
+                                            recipient.id,
                                           );
-                                          
+
                                           // Converter para o formato do MiniChat
                                           let realMessages: MiniChatMessage[] = conversationData.messages.map(msg => ({
                                             id: msg.id,
@@ -4073,7 +4205,8 @@ export function DisparadorPage() {
           await api.sendWhatsappMessage(token!, {
             instanceId: instanceId,
             jid: miniChatRecipient.jid,
-            message: message
+            message: message,
+            campaignId: selectedCampaignQuery.data.id
           });
 
           // Adicionar mensagem enviada ao chat

@@ -119,7 +119,9 @@ import {
 import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
+  getWhatsappCampaignAccess,
   getWhatsappCampaignDetail,
+  getWhatsappCampaignRecipientChat,
   listWhatsappCampaigns,
   skipWhatsappCampaignRecipient,
 } from "./modules/whatsapp/whatsappCampaignService.js";
@@ -478,6 +480,7 @@ const whatsappCampaignCreateSchema = z.object({
   overrideRecentBlock: z.boolean().optional(),
   minDelaySeconds: z.number().int().min(1).optional(),
   maxDelaySeconds: z.number().int().min(1).optional(),
+  scheduledStartAt: z.string().nullable().optional(),
 });
 
 const whatsappCampaignListQuerySchema = z.object({
@@ -1621,8 +1624,8 @@ export function createApp() {
   // Endpoint para enviar mensagem WhatsApp real (usado no mini chat)
   app.post("/api/whatsapp/send-message", async (request, response, next) => {
     try {
-      const { instanceId, jid, message } = request.body;
-      
+      const { instanceId, jid, message, campaignId } = request.body;
+
       if (!instanceId || !jid || !message) {
         throw new HttpError(400, "instanceId, jid e message são obrigatórios");
       }
@@ -1675,6 +1678,20 @@ export function createApp() {
       }
 
       logger.info("✅ WhatsApp message sent successfully", { messageId: result?.key?.id });
+
+      // Persiste o envio para o histórico do mini chat sobreviver ao reload
+      await pool
+        .query(
+          `
+            INSERT INTO message_logs (destination, message, status, campaign_id, sent_by_user_id, sent_by_name)
+            VALUES ($1, $2, 'SENT', $3, $4, $5)
+          `,
+          [jid, message, campaignId ?? null, request.user?.id ?? null, request.user?.name ?? null],
+        )
+        .catch((logError) => {
+          logger.warn("failed to persist mini chat message log", { error: String(logError) });
+        });
+
       response.json({ success: true, messageId: (result as any)?.key?.id || `msg-${Date.now()}` });
     } catch (error: any) {
       logger.error("❌ Send WhatsApp message error", { error: error.message, stack: error.stack });
@@ -1862,7 +1879,30 @@ export function createApp() {
       }
       const created = await createWhatsappCampaign(payload, request.user!);
       await enqueueWhatsappCampaignRecipients(created.enqueuedJobs);
-      const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0);
+
+      // Garante que respostas de instâncias uazapi cheguem ao CRM: aponta o
+      // webhook da instância para /api/webhooks/uazapi (idempotente, não bloqueia).
+      if (payload.whatsappInstanceId) {
+        void (async () => {
+          const instanceResult = await pool.query(
+            `SELECT provider, uazapi_base_url, uazapi_token FROM whatsapp_instances WHERE id = $1`,
+            [payload.whatsappInstanceId],
+          );
+          const instance = instanceResult.rows[0];
+          if (instance?.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
+            const { configureUazapiWebhook } = await import("./modules/whatsapp/uazapiService.js");
+            const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+            await configureUazapiWebhook(
+              { baseUrl: String(instance.uazapi_base_url), token: String(instance.uazapi_token) },
+              `${base}/api/webhooks/uazapi`,
+            );
+          }
+        })().catch((error) => {
+          logger.warn("uazapi webhook auto-config failed", { error: String(error) });
+        });
+      }
+
+      const detail = await getWhatsappCampaignDetail(created.campaignId, 100, 0, true);
       response.status(201).json(detail);
     } catch (error) {
       next(error);
@@ -1872,13 +1912,13 @@ export function createApp() {
   app.post("/api/whatsapp-campaigns/:id/resume", async (request, response, next) => {
     try {
       const campaignId = String(request.params.id);
-      const detail = await getWhatsappCampaignDetail(campaignId, 1, 0, true);
-      if (!detail) {
+      const access = await getWhatsappCampaignAccess(campaignId);
+      if (!access) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }
 
       const user = request.user!;
-      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
         throw new HttpError(403, "Voce nao tem permissao para retomar esta campanha.");
       }
 
@@ -1892,13 +1932,13 @@ export function createApp() {
 
   app.post("/api/whatsapp-campaigns/:id/cancel", async (request, response, next) => {
     try {
-      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
-      if (!detail) {
+      const access = await getWhatsappCampaignAccess(String(request.params.id));
+      if (!access) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }
 
       const user = request.user!;
-      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
         throw new HttpError(403, "Voce nao tem permissao para cancelar esta campanha.");
       }
 
@@ -1910,13 +1950,13 @@ export function createApp() {
 
   app.delete("/api/whatsapp-campaigns/:id", async (request, response, next) => {
     try {
-      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
-      if (!detail) {
+      const access = await getWhatsappCampaignAccess(String(request.params.id));
+      if (!access) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }
 
       const user = request.user!;
-      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
         throw new HttpError(403, "Voce nao tem permissao para excluir esta campanha.");
       }
 
@@ -1929,17 +1969,32 @@ export function createApp() {
 
   app.post("/api/whatsapp-campaigns/:id/recipients/:recipientId/skip", async (request, response, next) => {
     try {
-      const detail = await getWhatsappCampaignDetail(String(request.params.id), 1, 0);
-      if (!detail) {
+      const access = await getWhatsappCampaignAccess(String(request.params.id));
+      if (!access) {
         throw new HttpError(404, "Campanha nao encontrada.");
       }
 
       const user = request.user!;
-      if (!["ADMIN", "MANAGER"].includes(user.role) && detail.createdByUserId !== user.id) {
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
         throw new HttpError(403, "Voce nao tem permissao para alterar esta campanha.");
       }
 
       response.json(await skipWhatsappCampaignRecipient(String(request.params.id), String(request.params.recipientId)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Conversa completa de um destinatário (mesmas fontes da atribuição do badge
+  // "Respondeu", então o mini chat sempre mostra o que foi contado como resposta)
+  app.get("/api/whatsapp-campaigns/:id/recipients/:recipientId/chat", async (request, response, next) => {
+    try {
+      response.json({
+        messages: await getWhatsappCampaignRecipientChat(
+          String(request.params.id),
+          String(request.params.recipientId),
+        ),
+      });
     } catch (error) {
       next(error);
     }

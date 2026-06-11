@@ -96,6 +96,7 @@ const campaign: WhatsappCampaignDetail = {
   createdByUserId: "user-1",
   createdByName: "Admin",
   createdAt: "2026-06-01T12:00:00.000Z",
+  scheduledStartAt: null,
   startedAt: "2026-06-01T12:00:00.000Z",
   finishedAt: "2026-06-01T12:10:00.000Z",
   cancelledAt: null,
@@ -237,7 +238,7 @@ describe("Disparador campaign performance", () => {
       />,
     );
 
-    expect(markup).toContain("Publico");
+    expect(markup).toContain("Público");
     expect(markup).toContain("Responderam");
     expect(markup).toContain("Compraram");
     expect(markup).toContain("Nao responderam");

@@ -1619,11 +1619,21 @@ export interface WhatsappCampaignListItem {
   createdByUserId: string;
   createdByName: string;
   createdAt: string;
+  scheduledStartAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   cancelledAt: string | null;
   filtersSnapshot: Record<string, unknown>;
   progress: WhatsappCampaignProgress;
+}
+
+export interface WhatsappCampaignRecipientChatMessage {
+  id: string;
+  direction: WhatsappCampaignAttributedMessageDirection;
+  content: string;
+  senderName: string | null;
+  source: string;
+  createdAt: string;
 }
 
 export interface WhatsappCampaignDetail extends WhatsappCampaignListItem {

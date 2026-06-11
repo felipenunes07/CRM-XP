@@ -3226,5 +3226,125 @@ export const migrations = [
       GROUP BY r.campaign_id;
     END LOOP;
   END $$;
+  `,
+  `
+  -- Migration 44: agendamento de campanhas + trigger de cache leve + índices de performance
+  ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS scheduled_start_at TIMESTAMPTZ;
+
+  -- O trigger da Migration 43 recalculava responded/purchased/revenue com EXISTS
+  -- sobre whatsapp_incoming_messages e orders PARA CADA LINHA alterada de
+  -- destinatário — criar/disparar uma campanha de N contatos rodava o cálculo
+  -- pesado N vezes. O cache só é lido para contagens de status, então o trigger
+  -- volta a ser apenas contagens + hints de agenda (barato e indexável).
+  CREATE OR REPLACE FUNCTION refresh_campaign_stats_cache()
+  RETURNS TRIGGER AS $body$
+  BEGIN
+    INSERT INTO whatsapp_campaign_stats_cache (
+      campaign_id,
+      total_recipients,
+      pending_count,
+      blocked_recent_count,
+      sending_count,
+      sent_count,
+      failed_count,
+      skipped_count,
+      next_scheduled_at,
+      estimated_finish_at,
+      updated_at
+    )
+    SELECT
+      campaign_id,
+      COUNT(*)::int,
+      COUNT(*) FILTER (WHERE status = 'PENDING')::int,
+      COUNT(*) FILTER (WHERE status = 'BLOCKED_RECENT')::int,
+      COUNT(*) FILTER (WHERE status = 'SENDING')::int,
+      COUNT(*) FILTER (WHERE status = 'SENT')::int,
+      COUNT(*) FILTER (WHERE status = 'FAILED')::int,
+      COUNT(*) FILTER (WHERE status = 'SKIPPED')::int,
+      MIN(scheduled_for) FILTER (WHERE status = 'PENDING'),
+      MAX(scheduled_for) FILTER (WHERE status IN ('PENDING', 'SENDING')),
+      NOW()
+    FROM whatsapp_campaign_recipients
+    WHERE campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id)
+    GROUP BY campaign_id
+    ON CONFLICT (campaign_id) DO UPDATE SET
+      total_recipients = EXCLUDED.total_recipients,
+      pending_count = EXCLUDED.pending_count,
+      blocked_recent_count = EXCLUDED.blocked_recent_count,
+      sending_count = EXCLUDED.sending_count,
+      sent_count = EXCLUDED.sent_count,
+      failed_count = EXCLUDED.failed_count,
+      skipped_count = EXCLUDED.skipped_count,
+      next_scheduled_at = EXCLUDED.next_scheduled_at,
+      estimated_finish_at = EXCLUDED.estimated_finish_at,
+      updated_at = NOW();
+
+    RETURN NEW;
+  END;
+  $body$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trigger_update_campaign_stats ON whatsapp_campaign_recipients;
+  DROP TRIGGER IF EXISTS trg_refresh_campaign_stats_cache ON whatsapp_campaign_recipients;
+
+  CREATE TRIGGER trg_refresh_campaign_stats_cache
+    AFTER INSERT OR UPDATE OR DELETE ON whatsapp_campaign_recipients
+    FOR EACH ROW
+    EXECUTE FUNCTION refresh_campaign_stats_cache();
+
+  -- Índices para a query de atribuição de respostas/compra das campanhas
+  CREATE INDEX IF NOT EXISTS idx_wcr_campaign_status
+    ON whatsapp_campaign_recipients (campaign_id, status);
+  CREATE INDEX IF NOT EXISTS idx_wim_inbound_created
+    ON whatsapp_incoming_messages (created_at)
+    WHERE COALESCE(from_me, false) = false;
+  CREATE INDEX IF NOT EXISTS idx_wim_remote_jid_lower
+    ON whatsapp_incoming_messages (LOWER(remote_jid));
+  CREATE INDEX IF NOT EXISTS idx_da_whatsapp_received_created
+    ON deal_activities (created_at)
+    WHERE activity_type = 'WHATSAPP_RECEIVED';
+  CREATE INDEX IF NOT EXISTS idx_ml_campaign_id
+    ON message_logs (campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_wja_alias_jid_lower
+    ON whatsapp_jid_aliases (LOWER(alias_jid));
+
+  -- Recalcula o cache uma única vez com a versão leve
+  INSERT INTO whatsapp_campaign_stats_cache (
+    campaign_id,
+    total_recipients,
+    pending_count,
+    blocked_recent_count,
+    sending_count,
+    sent_count,
+    failed_count,
+    skipped_count,
+    next_scheduled_at,
+    estimated_finish_at,
+    updated_at
+  )
+  SELECT
+    campaign_id,
+    COUNT(*)::int,
+    COUNT(*) FILTER (WHERE status = 'PENDING')::int,
+    COUNT(*) FILTER (WHERE status = 'BLOCKED_RECENT')::int,
+    COUNT(*) FILTER (WHERE status = 'SENDING')::int,
+    COUNT(*) FILTER (WHERE status = 'SENT')::int,
+    COUNT(*) FILTER (WHERE status = 'FAILED')::int,
+    COUNT(*) FILTER (WHERE status = 'SKIPPED')::int,
+    MIN(scheduled_for) FILTER (WHERE status = 'PENDING'),
+    MAX(scheduled_for) FILTER (WHERE status IN ('PENDING', 'SENDING')),
+    NOW()
+  FROM whatsapp_campaign_recipients
+  GROUP BY campaign_id
+  ON CONFLICT (campaign_id) DO UPDATE SET
+    total_recipients = EXCLUDED.total_recipients,
+    pending_count = EXCLUDED.pending_count,
+    blocked_recent_count = EXCLUDED.blocked_recent_count,
+    sending_count = EXCLUDED.sending_count,
+    sent_count = EXCLUDED.sent_count,
+    failed_count = EXCLUDED.failed_count,
+    skipped_count = EXCLUDED.skipped_count,
+    next_scheduled_at = EXCLUDED.next_scheduled_at,
+    estimated_finish_at = EXCLUDED.estimated_finish_at,
+    updated_at = NOW();
   `
 ];

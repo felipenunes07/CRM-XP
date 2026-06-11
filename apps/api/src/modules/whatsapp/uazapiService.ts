@@ -90,6 +90,63 @@ export async function sendUazapiVideoMessage(
   });
 }
 
+/**
+ * Aponta o webhook da instância uazapi para o CRM, para que as respostas dos
+ * clientes cheguem em /api/webhooks/uazapi. Sem isso, mensagens recebidas em
+ * instâncias uazapi nunca entram no CRM (mini chat e badge "Respondeu" ficam
+ * sem dados). uazapi mudou o shape desse endpoint entre versões, então tenta
+ * os formatos conhecidos até um aceitar.
+ */
+export async function configureUazapiWebhook(config: UazapiInstanceConfig, webhookUrl: string) {
+  const attempts: Array<{ path: string; method: string; body: Record<string, unknown> }> = [
+    {
+      path: "/webhook",
+      method: "POST",
+      body: {
+        enabled: true,
+        url: webhookUrl,
+        events: ["messages"],
+        excludeMessages: [],
+      },
+    },
+    {
+      path: "/webhook",
+      method: "PUT",
+      body: {
+        enabled: true,
+        url: webhookUrl,
+        events: ["messages"],
+      },
+    },
+    {
+      path: "/instance/updateWebhook",
+      method: "POST",
+      body: {
+        enabled: true,
+        url: webhookUrl,
+        events: ["messages"],
+      },
+    },
+  ];
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      const result = await requestUazapi(config, attempt.path, attempt.method, attempt.body);
+      logger.info("uazapi webhook configured", { path: attempt.path, webhookUrl });
+      return { configured: true, via: attempt.path, result };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  logger.warn("uazapi webhook configuration failed on all known endpoints", {
+    webhookUrl,
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  return { configured: false, error: lastError instanceof Error ? lastError.message : String(lastError) };
+}
+
 export async function requestUazapi(
   config: UazapiInstanceConfig,
   path: string,

@@ -1,4 +1,4 @@
-import type { PoolClient } from "pg";
+﻿import type { PoolClient } from "pg";
 import type {
   WhatsappCampaignAttributedMessage,
   CarouselSlide,
@@ -36,6 +36,7 @@ export interface CreateWhatsappCampaignInput {
   overrideRecentBlock?: boolean;
   minDelaySeconds?: number;
   maxDelaySeconds?: number;
+  scheduledStartAt?: string | null;
 }
 
 export interface EnqueuedRecipientJob {
@@ -252,8 +253,8 @@ export function buildWhatsappCampaignDiagnosis(input: {
   if (attemptedRecipients === 0) {
     return {
       tone: "neutral",
-      title: "Campanha sem envios concluídos",
-      description: "Ainda não há volume de envio suficiente para avaliar resposta ou venda.",
+      title: "Campanha sem envios concluÃ­dos",
+      description: "Ainda nÃ£o hÃ¡ volume de envio suficiente para avaliar resposta ou venda.",
     };
   }
 
@@ -261,7 +262,7 @@ export function buildWhatsappCampaignDiagnosis(input: {
     return {
       tone: "danger",
       title: "Base ou bloqueio limitaram a campanha",
-      description: "Uma parte relevante do público ficou bloqueada ou falhou antes de chegar ao atendimento.",
+      description: "Uma parte relevante do pÃºblico ficou bloqueada ou falhou antes de chegar ao atendimento.",
     };
   }
 
@@ -269,30 +270,30 @@ export function buildWhatsappCampaignDiagnosis(input: {
     return {
       tone: "success",
       title: "Campanha performou bem",
-      description: "O público respondeu e uma parte relevante converteu em compra dentro da janela de atribuição.",
+      description: "O pÃºblico respondeu e uma parte relevante converteu em compra dentro da janela de atribuiÃ§Ã£o.",
     };
   }
 
   if (input.responseRate >= 0.2 && input.purchaseRate < 0.08) {
     return {
       tone: "warning",
-      title: "Boa resposta, baixa conversão",
-      description: "A mensagem gerou conversa, mas oferta, preço, estoque ou follow-up podem ter travado a compra.",
+      title: "Boa resposta, baixa conversÃ£o",
+      description: "A mensagem gerou conversa, mas oferta, preÃ§o, estoque ou follow-up podem ter travado a compra.",
     };
   }
 
   if (input.sentRecipients >= 10 && input.responseRate < 0.08) {
     return {
       tone: "warning",
-      title: "Público ou mensagem não engajaram",
-      description: "O disparo chegou ao público, mas poucas pessoas responderam dentro da janela de acompanhamento.",
+      title: "PÃºblico ou mensagem nÃ£o engajaram",
+      description: "O disparo chegou ao pÃºblico, mas poucas pessoas responderam dentro da janela de acompanhamento.",
     };
   }
 
   return {
     tone: "neutral",
-    title: "Performance em observação",
-    description: "A campanha tem poucos sinais conclusivos; acompanhe respostas e compras nos próximos dias.",
+    title: "Performance em observaÃ§Ã£o",
+    description: "A campanha tem poucos sinais conclusivos; acompanhe respostas e compras nos prÃ³ximos dias.",
   };
 }
 
@@ -343,6 +344,7 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     createdByUserId: String(row.created_by_user_id ?? ""),
     createdByName: String(row.created_by_name ?? ""),
     createdAt: new Date(String(row.created_at)).toISOString(),
+    scheduledStartAt: row.scheduled_start_at ? new Date(String(row.scheduled_start_at)).toISOString() : null,
     startedAt: row.started_at ? new Date(String(row.started_at)).toISOString() : null,
     finishedAt: row.finished_at ? new Date(String(row.finished_at)).toISOString() : null,
     cancelledAt: row.cancelled_at ? new Date(String(row.cancelled_at)).toISOString() : null,
@@ -461,10 +463,15 @@ function mapAttributedMessage(row: Record<string, unknown>): WhatsappCampaignAtt
 const eventIdentityMatchSql = (eventAlias: string, recipientAlias: string) => `
   (
     LOWER(COALESCE(${eventAlias}.event_jid, '')) = LOWER(COALESCE(${recipientAlias}.jid, ''))
+    OR (
+      NULLIF(regexp_replace(split_part(COALESCE(${eventAlias}.event_jid, ''), '@', 1), '[^0-9]', '', 'g'), '') IS NOT NULL
+      AND regexp_replace(split_part(COALESCE(${eventAlias}.event_jid, ''), '@', 1), '[^0-9]', '', 'g')
+        = regexp_replace(split_part(COALESCE(${recipientAlias}.jid, ''), '@', 1), '[^0-9]', '', 'g')
+    )
     OR EXISTS (
       SELECT 1 FROM whatsapp_jid_aliases wja1
-      JOIN whatsapp_jid_aliases wja2 
-        ON wja1.canonical_jid = wja2.canonical_jid 
+      JOIN whatsapp_jid_aliases wja2
+        ON wja1.canonical_jid = wja2.canonical_jid
        AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
       WHERE LOWER(wja1.alias_jid) = LOWER(COALESCE(${eventAlias}.event_jid, ''))
         AND LOWER(wja2.alias_jid) = LOWER(COALESCE(${recipientAlias}.jid, ''))
@@ -480,14 +487,36 @@ const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
 `;
 
 async function getWhatsappCampaignPerformance(campaignId: string, excludePerformance = false): Promise<WhatsappCampaignPerformance> {
-  const recipientsResult = await pool.query(
-    `
-      SELECT id, status
-      FROM whatsapp_campaign_recipients
-      WHERE campaign_id = $1
-    `,
-    [campaignId],
-  );
+  const [recipientsResult, campaignInstanceResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT id, status
+        FROM whatsapp_campaign_recipients
+        WHERE campaign_id = $1
+      `,
+      [campaignId],
+    ),
+    pool.query(
+      `
+        SELECT wc.whatsapp_instance_id, wi.instance_name
+        FROM whatsapp_campaigns wc
+        LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id
+        WHERE wc.id = $1
+      `,
+      [campaignId],
+    ),
+  ]);
+
+  // Quando a campanha foi disparada por uma instÃ¢ncia especÃ­fica, sÃ³ contam como
+  // resposta mensagens recebidas NAQUELA instÃ¢ncia. Sem esse filtro, qualquer
+  // conversa do cliente com outro nÃºmero da empresa (ex.: atendente) dentro da
+  // janela marcava "Respondeu" sem existir resposta no chat do disparo.
+  const campaignInstanceId = campaignInstanceResult.rows[0]?.whatsapp_instance_id
+    ? String(campaignInstanceResult.rows[0].whatsapp_instance_id)
+    : null;
+  const campaignInstanceName = campaignInstanceResult.rows[0]?.instance_name
+    ? String(campaignInstanceResult.rows[0].instance_name)
+    : null;
 
   const recipientStatusRows = recipientsResult.rows.map((row) => ({
     id: String(row.id),
@@ -579,6 +608,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND da.created_at >= cs.first_sent_at
             AND da.created_at < cs.last_window_at
+            AND ($3::uuid IS NULL OR d.whatsapp_instance_id = $3::uuid)
 
           UNION ALL
 
@@ -599,6 +629,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND wim.created_at >= cs.first_sent_at
             AND wim.created_at < cs.last_window_at
+            AND ($4::text IS NULL OR LOWER(COALESCE(wim.instance_name, '')) = LOWER($4::text))
         ),
         inbound_events AS (
           SELECT DISTINCT ON (event_key)
@@ -659,7 +690,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
         FROM attributed_messages
         ORDER BY created_at ASC, id ASC
       `,
-      [campaignId, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+      [campaignId, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS, campaignInstanceId, campaignInstanceName],
     ),
     pool.query(
       `
@@ -771,7 +802,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
 
   // DEBUG: Log inbound messages being attributed
   if (inboundResult.rows.length > 0) {
-    console.log('🔍 [BADGE DEBUG] Inbound messages attributed to campaign:', {
+    console.log('ðŸ” [BADGE DEBUG] Inbound messages attributed to campaign:', {
       campaignId,
       totalInboundMessages: inboundResult.rows.length,
       sampleMessages: inboundResult.rows.slice(0, 5).map((row: any) => ({
@@ -878,8 +909,8 @@ async function queryCampaignRows(limit?: number, campaignId?: string) {
         })()
       : "";
 
-  // SUPER OTIMIZAÇÃO: Usa tabela de cache para resposta instantânea!
-  // Ao invés de calcular tudo em tempo real, busca do cache que é atualizado por trigger
+  // SUPER OTIMIZAÃ‡ÃƒO: Usa tabela de cache para resposta instantÃ¢nea!
+  // Ao invÃ©s de calcular tudo em tempo real, busca do cache que Ã© atualizado por trigger
   return pool.query(
     `
       SELECT
@@ -926,6 +957,19 @@ export async function createWhatsappCampaign(
 
   if (minDelaySeconds > maxDelaySeconds) {
     throw new HttpError(400, "O intervalo minimo nao pode ser maior do que o maximo.");
+  }
+
+  let scheduledStartAt: Date | null = null;
+  if (input.scheduledStartAt) {
+    const parsed = new Date(input.scheduledStartAt);
+    if (!Number.isFinite(parsed.getTime())) {
+      throw new HttpError(400, "Data de agendamento invalida.");
+    }
+    if (parsed.getTime() > Date.now() + 60 * 24 * 60 * 60 * 1000) {
+      throw new HttpError(400, "O agendamento nao pode passar de 60 dias.");
+    }
+    // Agendamento no passado vira disparo imediato
+    scheduledStartAt = parsed.getTime() > Date.now() ? parsed : null;
   }
 
   const [groups, templateResult, savedSegmentResult, whatsappInstanceResult] = await Promise.all([
@@ -987,9 +1031,10 @@ export async function createWhatsappCampaign(
           max_delay_seconds,
           override_recent_block,
           created_by_user_id,
-          created_by_name
+          created_by_name,
+          scheduled_start_at
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14, $15, $16, $17)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14, $15, $16, $17, $18::timestamptz)
         RETURNING id, created_at
       `,
       [
@@ -1010,12 +1055,15 @@ export async function createWhatsappCampaign(
         Boolean(input.overrideRecentBlock),
         user.id,
         user.name,
+        scheduledStartAt ? scheduledStartAt.toISOString() : null,
       ],
     );
 
     const campaignRow = campaignInsert.rows[0];
     const campaignId = String(campaignRow.id);
     const createdAt = new Date(String(campaignRow.created_at));
+    // Campanha agendada: a fila de envio começa no horário escolhido em vez de agora.
+    const dispatchBaseTime = scheduledStartAt ?? createdAt;
 
     let activeRecipientIndex = 0;
     let cumulativeDelaySeconds = 0;
@@ -1032,7 +1080,7 @@ export async function createWhatsappCampaign(
           cumulativeDelaySeconds += randomDelaySeconds(minDelaySeconds, maxDelaySeconds);
         }
 
-        const scheduledDate = new Date(createdAt.getTime() + cumulativeDelaySeconds * 1000);
+        const scheduledDate = new Date(dispatchBaseTime.getTime() + cumulativeDelaySeconds * 1000);
         scheduledFor = scheduledDate.toISOString();
         delayMs = Math.max(0, scheduledDate.getTime() - Date.now());
         activeRecipientIndex += 1;
@@ -1222,11 +1270,11 @@ export async function recoverWhatsappCampaignDispatchClaimFailures(
 }
 
 /**
- * Reseta destinatários presos em SENDING há mais de `staleMinutes` minutos
+ * Reseta destinatÃ¡rios presos em SENDING hÃ¡ mais de `staleMinutes` minutos
  * (ex.: o processo reiniciou no meio de um envio, ou o envio travou). Sem isso,
- * um único destinatário travado em SENDING congela a campanha inteira pra sempre,
+ * um Ãºnico destinatÃ¡rio travado em SENDING congela a campanha inteira pra sempre,
  * porque listDueWhatsappCampaignRecipientJobs ignora qualquer campanha que tenha
- * algum destinatário em SENDING. Volta o registro para PENDING para que o rescue
+ * algum destinatÃ¡rio em SENDING. Volta o registro para PENDING para que o rescue
  * o processe de novo.
  */
 export async function resetStaleSendingRecipients(staleMinutes = 5): Promise<number> {
@@ -1725,6 +1773,225 @@ export async function markRecipientDispatchClaimFailed(recipientId: string, erro
   }
 
   return { failed: Boolean(campaignId), recipientId };
+}
+
+export interface WhatsappCampaignAccessInfo {
+  id: string;
+  name: string;
+  status: WhatsappCampaignStatus;
+  createdByUserId: string;
+  whatsappInstanceId: string | null;
+}
+
+/**
+ * Consulta leve usada apenas para checagem de existÃªncia/permissÃ£o. Os endpoints
+ * de cancelar/excluir/pular usavam getWhatsappCampaignDetail, que roda a query
+ * pesada de performance sÃ³ para validar o dono da campanha.
+ */
+export async function getWhatsappCampaignAccess(campaignId: string): Promise<WhatsappCampaignAccessInfo | null> {
+  const result = await pool.query(
+    `
+      SELECT id, name, status, created_by_user_id, whatsapp_instance_id
+      FROM whatsapp_campaigns
+      WHERE id = $1
+    `,
+    [campaignId],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ""),
+    status: String(row.status) as WhatsappCampaignStatus,
+    createdByUserId: String(row.created_by_user_id ?? ""),
+    whatsappInstanceId: row.whatsapp_instance_id ? String(row.whatsapp_instance_id) : null,
+  };
+}
+
+export interface WhatsappCampaignRecipientChatMessage {
+  id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  content: string;
+  senderName: string | null;
+  source: string;
+  createdAt: string;
+}
+
+function chatJidCandidates(jid: string): { jids: string[]; digits: string | null } {
+  const lowered = jid.trim().toLowerCase();
+  if (!lowered) {
+    return { jids: [], digits: null };
+  }
+
+  if (lowered.endsWith("@g.us")) {
+    return { jids: [lowered], digits: null };
+  }
+
+  const digits = lowered.split("@")[0]?.replace(/\D/g, "") ?? "";
+  if (!digits) {
+    return { jids: [lowered], digits: null };
+  }
+
+  return {
+    jids: Array.from(new Set([lowered, `${digits}@s.whatsapp.net`, `${digits}@c.us`, digits])),
+    digits,
+  };
+}
+
+/**
+ * Conversa completa de um destinatÃ¡rio da campanha, agregando TODAS as fontes
+ * onde mensagens dele podem estar (logs de envio da campanha, webhook
+ * uazapi/evolution, monitor e atividades de negÃ³cio). Ã‰ a mesma base usada na
+ * atribuiÃ§Ã£o do badge "Respondeu", entÃ£o badge e mini chat ficam consistentes.
+ */
+export async function getWhatsappCampaignRecipientChat(
+  campaignId: string,
+  recipientId: string,
+): Promise<WhatsappCampaignRecipientChatMessage[]> {
+  const recipientResult = await pool.query(
+    `
+      SELECT r.jid, r.customer_id, wc.whatsapp_instance_id, wi.instance_name
+      FROM whatsapp_campaign_recipients r
+      JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+      LEFT JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id
+      WHERE r.id = $1 AND r.campaign_id = $2
+    `,
+    [recipientId, campaignId],
+  );
+
+  const recipient = recipientResult.rows[0];
+  if (!recipient) {
+    throw new HttpError(404, "Destinatario nao encontrado nesta campanha.");
+  }
+
+  const { jids, digits } = chatJidCandidates(String(recipient.jid ?? ""));
+  if (!jids.length) {
+    return [];
+  }
+
+  const instanceName = recipient.instance_name ? String(recipient.instance_name) : null;
+  const instanceId = recipient.whatsapp_instance_id ? String(recipient.whatsapp_instance_id) : null;
+
+  // Inclui aliases registrados (ex.: @lid) do mesmo contato.
+  const aliasResult = await pool.query(
+    `
+      SELECT DISTINCT LOWER(wja2.alias_jid) AS jid
+      FROM whatsapp_jid_aliases wja1
+      JOIN whatsapp_jid_aliases wja2 ON wja1.canonical_jid = wja2.canonical_jid
+      WHERE LOWER(wja1.alias_jid) = ANY($1::text[])
+    `,
+    [jids],
+  );
+  const allJids = Array.from(new Set([...jids, ...aliasResult.rows.map((row) => String(row.jid))]));
+
+  const digitsMatchSql = (column: string) =>
+    digits
+      ? `OR regexp_replace(split_part(COALESCE(${column}, ''), '@', 1), '[^0-9]', '', 'g') = $2`
+      : "";
+
+  const [logsResult, incomingResult, monitorResult, activitiesResult] = await Promise.all([
+    // Envios da campanha e do mini chat registrados em message_logs
+    pool.query(
+      `
+        SELECT id::text AS id, message AS content, sent_by_name AS sender_name, created_at,
+               'message_logs' AS source, NULL::text AS message_key
+        FROM message_logs
+        WHERE status = 'SENT'
+          AND (LOWER(COALESCE(destination, '')) = ANY($1::text[]) ${digitsMatchSql("destination")})
+        ORDER BY created_at DESC
+        LIMIT 300
+      `,
+      digits ? [allJids, digits] : [allJids],
+    ),
+    pool.query(
+      `
+        SELECT id::text AS id, COALESCE(NULLIF(message_text, ''), '[Mensagem sem texto]') AS content,
+               COALESCE(NULLIF(participant_name, ''), NULLIF(sender_name, '')) AS sender_name,
+               created_at, COALESCE(from_me, false) AS from_me,
+               'whatsapp_incoming_messages' AS source, NULLIF(message_id, '') AS message_key
+        FROM whatsapp_incoming_messages
+        WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
+          AND ($${digits ? 3 : 2}::text IS NULL OR LOWER(COALESCE(instance_name, '')) = LOWER($${digits ? 3 : 2}::text))
+        ORDER BY created_at DESC
+        LIMIT 300
+      `,
+      digits ? [allJids, digits, instanceName] : [allJids, instanceName],
+    ),
+    pool.query(
+      `
+        SELECT id::text AS id, COALESCE(NULLIF(content, ''), '[Mensagem sem texto]') AS content,
+               sender_name, created_at, COALESCE(from_me, false) AS from_me,
+               'whatsapp_monitor_messages' AS source, NULLIF(message_id, '') AS message_key
+        FROM whatsapp_monitor_messages
+        WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
+          AND ($${digits ? 3 : 2}::text IS NULL OR LOWER(COALESCE(instance_name, '')) = LOWER($${digits ? 3 : 2}::text))
+        ORDER BY created_at DESC
+        LIMIT 300
+      `,
+      digits ? [allJids, digits, instanceName] : [allJids, instanceName],
+    ),
+    pool.query(
+      `
+        SELECT da.id::text AS id, COALESCE(NULLIF(da.content, ''), '[Mensagem sem texto]') AS content,
+               da.actor_name AS sender_name, da.created_at,
+               (da.activity_type = 'WHATSAPP_SENT') AS from_me,
+               'deal_activities' AS source,
+               NULLIF(da.metadata ->> 'messageId', '') AS message_key
+        FROM deal_activities da
+        JOIN deals d ON d.id = da.deal_id
+        WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
+          AND (LOWER(COALESCE(d.whatsapp_jid, '')) = ANY($1::text[]) ${digitsMatchSql("d.whatsapp_jid")})
+          AND ($${digits ? 3 : 2}::uuid IS NULL OR d.whatsapp_instance_id = $${digits ? 3 : 2}::uuid)
+        ORDER BY da.created_at DESC
+        LIMIT 300
+      `,
+      digits ? [allJids, digits, instanceId] : [allJids, instanceId],
+    ),
+  ]);
+
+  const seenKeys = new Set<string>();
+  const messages: WhatsappCampaignRecipientChatMessage[] = [];
+
+  const pushRow = (row: Record<string, unknown>, direction: "INBOUND" | "OUTBOUND") => {
+    const messageKey = row.message_key ? `key:${String(row.message_key)}` : null;
+    const createdAt = new Date(String(row.created_at)).toISOString();
+    const content = String(row.content ?? "");
+    // Dedupe entre fontes: primeiro pelo id do provedor, senÃ£o por direÃ§Ã£o+texto+minuto
+    const fallbackKey = `fb:${direction}:${content}:${createdAt.slice(0, 16)}`;
+    const key = messageKey ?? fallbackKey;
+    if (seenKeys.has(key) || (messageKey && seenKeys.has(fallbackKey))) {
+      return;
+    }
+    seenKeys.add(key);
+    seenKeys.add(fallbackKey);
+    messages.push({
+      id: `${String(row.source)}-${String(row.id)}`,
+      direction,
+      content,
+      senderName: row.sender_name ? String(row.sender_name) : null,
+      source: String(row.source),
+      createdAt,
+    });
+  };
+
+  for (const row of logsResult.rows) {
+    pushRow(row, "OUTBOUND");
+  }
+  for (const row of incomingResult.rows) {
+    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+  }
+  for (const row of monitorResult.rows) {
+    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+  }
+  for (const row of activitiesResult.rows) {
+    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+  }
+
+  return messages.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());
 }
 
 export async function refreshWhatsappCampaignStatus(campaignId: string) {

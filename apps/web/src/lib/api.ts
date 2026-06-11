@@ -556,7 +556,7 @@ export const api = {
       body: JSON.stringify(input),
     }, token);
   },
-  sendWhatsappMessage(token: string, input: { instanceId: string; jid: string; message: string }) {
+  sendWhatsappMessage(token: string, input: { instanceId: string; jid: string; message: string; campaignId?: string | null }) {
     return request<{ success: boolean; messageId: string }>("/api/whatsapp/send-message", {
       method: "POST",
       body: JSON.stringify(input),
@@ -770,12 +770,23 @@ export const api = {
       overrideRecentBlock?: boolean;
       minDelaySeconds?: number;
       maxDelaySeconds?: number;
+      scheduledStartAt?: string | null;
     },
   ) {
     return request<WhatsappCampaignDetail>("/api/whatsapp-campaigns", {
       method: "POST",
       body: JSON.stringify(input),
     }, token);
+  },
+  whatsappCampaignRecipientChat(token: string, campaignId: string, recipientId: string) {
+    return request<{ messages: Array<{
+      id: string;
+      direction: "INBOUND" | "OUTBOUND";
+      content: string;
+      senderName: string | null;
+      source: string;
+      createdAt: string;
+    }> }>(`/api/whatsapp-campaigns/${campaignId}/recipients/${recipientId}/chat`, {}, token);
   },
   cancelWhatsappCampaign(token: string, id: string) {
     return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/cancel`, {
