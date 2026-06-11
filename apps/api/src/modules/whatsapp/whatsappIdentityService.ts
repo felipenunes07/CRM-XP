@@ -80,6 +80,13 @@ export async function upsertWhatsappJidAliases(input: {
     return;
   }
 
+  const isGroup = canonicalJid.endsWith("@g.us");
+  const filteredAliases = aliases.filter((j) => isGroup ? j.endsWith("@g.us") : !j.endsWith("@g.us"));
+
+  if (filteredAliases.length < 2) {
+    return;
+  }
+
   await pool.query(
     `
     INSERT INTO whatsapp_jid_aliases (
@@ -110,7 +117,7 @@ export async function upsertWhatsappJidAliases(input: {
       last_seen_at = NOW(),
       updated_at = NOW()
     `,
-    [instanceName, canonicalJid, aliases, input.source ?? "webhook"],
+    [instanceName, canonicalJid, filteredAliases, input.source ?? "webhook"],
   );
 }
 
@@ -125,6 +132,11 @@ export async function resolveWhatsappConversationIdentity(
     context.remoteJidAlt,
     ...context.remoteJidAliases,
   ]);
+  if (context.isGroup) {
+    aliases = aliases.filter((j) => j.endsWith("@g.us"));
+  } else {
+    aliases = aliases.filter((j) => !j.endsWith("@g.us"));
+  }
   let canonicalJid = chooseCanonicalWhatsappJid(aliases, context.remoteJid);
 
   try {
@@ -173,10 +185,18 @@ export async function getWhatsappConversationAliases(
   }
 
   const knownRows = await readKnownAliasRows(instanceName, [remoteJid]);
+  const isGroup = remoteJid.endsWith("@g.us");
+  const filteredRows = knownRows.filter((row) => {
+    const aliasIsGroup = row.aliasJid.endsWith("@g.us");
+    const canonicalIsGroup = row.canonicalJid.endsWith("@g.us");
+    return isGroup
+      ? (aliasIsGroup && canonicalIsGroup)
+      : (!aliasIsGroup && !canonicalIsGroup);
+  });
   const aliases = uniqueJids([
     remoteJid,
-    ...knownRows.map((row) => row.aliasJid),
-    ...knownRows.map((row) => row.canonicalJid),
+    ...filteredRows.map((row) => row.aliasJid),
+    ...filteredRows.map((row) => row.canonicalJid),
   ]);
   const canonicalJid = chooseCanonicalWhatsappJid(aliases, remoteJid) ?? remoteJid;
 

@@ -550,6 +550,10 @@ export function extractEvolutionMessageContext(
     : fromMe
       ? null
       : remoteJid;
+  const rawAliases = [remoteJid, providerRemoteJid, remoteJidAlt, privatePhoneJid];
+  const remoteJidAliases = isGroup
+    ? uniqueStrings(rawAliases.filter((j) => j?.endsWith("@g.us")))
+    : uniqueStrings(rawAliases);
   const senderName =
     readString(message.pushName) ??
     pickString(rawMessage, ["participantName", "senderName", "notifyName", "verifiedBizName", "name"]);
@@ -557,8 +561,8 @@ export function extractEvolutionMessageContext(
   return {
     remoteJid,
     providerRemoteJid,
-    remoteJidAlt,
-    remoteJidAliases: uniqueStrings([remoteJid, providerRemoteJid, remoteJidAlt, privatePhoneJid]),
+    remoteJidAlt: isGroup ? null : remoteJidAlt,
+    remoteJidAliases,
     messageId: readString(key.id) ?? pickString(rawMessage, ["id", "messageId"]),
     instanceName: instanceName ?? null,
     isGroup,

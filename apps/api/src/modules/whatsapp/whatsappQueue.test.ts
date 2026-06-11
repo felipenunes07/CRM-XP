@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   markRecipientFailed: vi.fn(),
   markRecipientSent: vi.fn(),
   recoverWhatsappCampaignDispatchClaimFailures: vi.fn(),
+  resetStaleSendingRecipients: vi.fn(),
   sendWhatsappInstanceMediaMessage: vi.fn(),
   sendWhatsappInstanceTextMessage: vi.fn(),
   sendWhatsappTextMessage: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("./whatsappCampaignService.js", () => ({
   markRecipientFailed: mocks.markRecipientFailed,
   markRecipientSent: mocks.markRecipientSent,
   recoverWhatsappCampaignDispatchClaimFailures: mocks.recoverWhatsappCampaignDispatchClaimFailures,
+  resetStaleSendingRecipients: mocks.resetStaleSendingRecipients,
 }));
 
 vi.mock("./evolutionService.js", () => ({
@@ -80,6 +82,7 @@ describe("resumeDueWhatsappCampaignRecipients", () => {
     vi.useFakeTimers();
     Object.values(mocks).forEach((mock) => mock.mockReset());
     mocks.recoverWhatsappCampaignDispatchClaimFailures.mockResolvedValue({ recovered: 0, campaignIds: [] });
+    mocks.resetStaleSendingRecipients.mockResolvedValue(0);
   });
 
   afterEach(() => {

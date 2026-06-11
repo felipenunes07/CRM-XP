@@ -2334,7 +2334,7 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_jid_lower 
   ON whatsapp_incoming_messages(LOWER(COALESCE(remote_jid, '')));
   `,
-  `
+    `
   -- Migration 40: Fix group campaign stats cache trigger logic
   -- Redefines refresh_campaign_stats_cache() to fix JID matching and recounts all campaign stats.
   DO $$
@@ -2506,28 +2506,15 @@ export const migrations = [
                 ELSE 0
               END
             ), 0) AS total_revenue,
-  -- Índices de performance
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_created_at 
-  ON whatsapp_campaigns(created_at DESC);
-
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaign_recipients_campaign_status 
-  ON whatsapp_campaign_recipients(campaign_id, status) 
-  INCLUDE (scheduled_for);
-
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaign_recipients_pending_schedule 
-  ON whatsapp_campaign_recipients(campaign_id, scheduled_for) 
-  WHERE status = 'PENDING';
-
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_status 
-  ON whatsapp_campaigns(status) 
-  WHERE status IN ('QUEUED', 'IN_PROGRESS');
-
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_campaigns_cancelled 
-  ON whatsapp_campaigns(cancelled_at) 
-  WHERE cancelled_at IS NOT NULL;
-
-  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_jid_lower 
-  ON whatsapp_incoming_messages(LOWER(COALESCE(remote_jid, '')));
+            
+            NOW() AS cached_at
+          FROM whatsapp_campaign_recipients r
+          WHERE r.campaign_id = campaign_record.campaign_id
+          GROUP BY r.campaign_id;
+        END LOOP;
+      END;
+    END IF;
+  END $$;
   `,
   `
   -- Migration 40: Fix group campaign stats cache trigger logic
@@ -3226,16 +3213,456 @@ export const migrations = [
       GROUP BY r.campaign_id;
     END LOOP;
   END $$;
+    `,
+  `
+  -- Migration 44: Fix Badge "Respondeu" - Filter Group Messages
+  -- Issue: Messages from WhatsApp groups (@g.us) were being counted as individual responses
+  -- Solution: Add filter to exclude group messages from response attribution
+
+  -- Drop existing trigger and function
+  DROP TRIGGER IF EXISTS trg_refresh_campaign_stats_cache ON whatsapp_campaign_recipients;
+  DROP FUNCTION IF EXISTS refresh_campaign_stats_cache();
+
+  -- Recreate function with group message filter
+  CREATE OR REPLACE FUNCTION refresh_campaign_stats_cache()
+  RETURNS TRIGGER AS $$
+  BEGIN
+    -- Clear cache for this campaign
+    DELETE FROM whatsapp_campaign_stats_cache 
+    WHERE campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id);
+    
+    -- Recalculate and insert fresh stats
+    INSERT INTO whatsapp_campaign_stats_cache (
+      campaign_id,
+      total_recipients,
+      pending_count,
+      blocked_recent_count,
+      sending_count,
+      sent_count,
+      failed_count,
+      skipped_count,
+      responded_count,
+      purchased_count,
+      total_revenue,
+      cached_at
+    )
+    SELECT
+      r.campaign_id,
+      COUNT(*) AS total_recipients,
+      COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+      COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+      COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+      COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+      
+      -- Count recipients with responses (FIXED: exclude group messages)
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT' 
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1 
+            FROM whatsapp_incoming_messages wim
+            WHERE COALESCE(wim.from_me, false) = false
+              -- ✅ FIX: Exclude group messages
+              AND LOWER(COALESCE(wim.remote_jid, '')) NOT LIKE '%@g.us'
+              AND wim.created_at >= r.sent_at
+              AND wim.created_at < r.sent_at + INTERVAL '7 days'
+              AND LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+          )
+      ) AS responded_count,
+      
+      -- Count recipients with purchases
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT'
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM orders o
+            WHERE o.order_date >= r.sent_at::date
+              AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+              AND (
+                (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+              )
+          )
+      ) AS purchased_count,
+      
+      -- Calculate total revenue from attributed orders
+      COALESCE(SUM(
+        CASE 
+          WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+            (
+              SELECT COALESCE(SUM(o.total_amount), 0)
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+          ELSE 0
+        END
+      ), 0) AS total_revenue,
+      
+      NOW() AS cached_at
+    FROM whatsapp_campaign_recipients r
+    WHERE r.campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id)
+    GROUP BY r.campaign_id;
+    
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  -- Recreate trigger
+  CREATE TRIGGER trg_refresh_campaign_stats_cache
+  AFTER INSERT OR UPDATE OR DELETE ON whatsapp_campaign_recipients
+  FOR EACH ROW
+  EXECUTE FUNCTION refresh_campaign_stats_cache();
+
+  -- Force refresh all existing campaign caches with the new logic
+  DO $$
+  DECLARE
+    campaign_record RECORD;
+  BEGIN
+    FOR campaign_record IN 
+      SELECT DISTINCT campaign_id 
+      FROM whatsapp_campaign_recipients
+    LOOP
+      DELETE FROM whatsapp_campaign_stats_cache 
+      WHERE campaign_id = campaign_record.campaign_id;
+      
+      INSERT INTO whatsapp_campaign_stats_cache (
+        campaign_id,
+        total_recipients,
+        pending_count,
+        blocked_recent_count,
+        sending_count,
+        sent_count,
+        failed_count,
+        skipped_count,
+        responded_count,
+        purchased_count,
+        total_revenue,
+        cached_at
+      )
+      SELECT
+        r.campaign_id,
+        COUNT(*) AS total_recipients,
+        COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+        COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+        COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+        COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT' 
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1 
+              FROM whatsapp_incoming_messages wim
+              WHERE COALESCE(wim.from_me, false) = false
+                AND LOWER(COALESCE(wim.remote_jid, '')) NOT LIKE '%@g.us'
+                AND wim.created_at >= r.sent_at
+                AND wim.created_at < r.sent_at + INTERVAL '7 days'
+                AND LOWER(COALESCE(wim.remote_jid, '')) = LOWER(COALESCE(r.jid, ''))
+            )
+        ) AS responded_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT'
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+        ) AS purchased_count,
+        
+        COALESCE(SUM(
+          CASE 
+            WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+              (
+                SELECT COALESCE(SUM(o.total_amount), 0)
+                FROM orders o
+                WHERE o.order_date >= r.sent_at::date
+                  AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                  AND (
+                    (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                    OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                  )
+              )
+            ELSE 0
+          END
+        ), 0) AS total_revenue,
+        
+        NOW() AS cached_at
+      FROM whatsapp_campaign_recipients r
+      WHERE r.campaign_id = campaign_record.campaign_id
+      GROUP BY r.campaign_id;
+    END LOOP;
+    
+    RAISE NOTICE 'Successfully refreshed % campaign caches', 
+      (SELECT COUNT(DISTINCT campaign_id) FROM whatsapp_campaign_recipients);
+  END $$;
+
+  -- Create index on remote_jid for faster filtering (if not exists)
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_incoming_remote_jid_lower 
+    ON whatsapp_incoming_messages(LOWER(COALESCE(remote_jid, '')));
+
+  COMMENT ON FUNCTION refresh_campaign_stats_cache() IS 
+    'Calculates campaign statistics with GROUP MESSAGE FILTER to prevent incorrect response attribution. 
+     Updated 2026-06-09 to exclude @g.us messages from response counts.';
   `,
   `
-  -- Migration 44: agendamento de campanhas + trigger de cache leve + índices de performance
+  -- Migration 45: Clean up WhatsApp JID aliases and isolate group campaigns in stats trigger
+  -- Clean up polluted group/private JID cross-associations
+  DELETE FROM whatsapp_jid_aliases 
+  WHERE (canonical_jid LIKE '%@g.us' AND alias_jid NOT LIKE '%@g.us')
+     OR (canonical_jid NOT LIKE '%@g.us' AND alias_jid LIKE '%@g.us');
+
+  -- Recreate trigger function with partition matching logic
+  CREATE OR REPLACE FUNCTION refresh_campaign_stats_cache()
+  RETURNS TRIGGER AS $$
+  BEGIN
+    -- Clear cache for this campaign
+    DELETE FROM whatsapp_campaign_stats_cache 
+    WHERE campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id);
+    
+    -- Recalculate and insert fresh stats
+    INSERT INTO whatsapp_campaign_stats_cache (
+      campaign_id,
+      total_recipients,
+      pending_count,
+      blocked_recent_count,
+      sending_count,
+      sent_count,
+      failed_count,
+      skipped_count,
+      responded_count,
+      purchased_count,
+      total_revenue,
+      cached_at
+    )
+    SELECT
+      r.campaign_id,
+      COUNT(*) AS total_recipients,
+      COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+      COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+      COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+      COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+      COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+      
+      -- Count recipients with responses
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT' 
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1 
+            FROM whatsapp_incoming_messages wim
+            WHERE COALESCE(wim.from_me, false) = false
+              AND wim.created_at >= r.sent_at
+              AND wim.created_at < r.sent_at + INTERVAL '7 days'
+              AND (
+                -- Case 1: Recipient JID ends with @g.us (group campaign), match group directly
+                (r.jid LIKE '%@g.us' AND wim.remote_jid LIKE '%@g.us' AND LOWER(wim.remote_jid) = LOWER(r.jid))
+                OR
+                -- Case 2: Recipient is a phone JID, match via clean individual-only aliases
+                (
+                  r.jid NOT LIKE '%@g.us' 
+                  AND wim.remote_jid NOT LIKE '%@g.us'
+                  AND (
+                    LOWER(wim.remote_jid) = LOWER(r.jid)
+                    OR EXISTS (
+                      SELECT 1 FROM whatsapp_jid_aliases wja1
+                      JOIN whatsapp_jid_aliases wja2 
+                        ON wja1.canonical_jid = wja2.canonical_jid 
+                       AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                      WHERE LOWER(wja1.alias_jid) = LOWER(wim.remote_jid)
+                        AND LOWER(wja2.alias_jid) = LOWER(r.jid)
+                        AND wja1.alias_jid NOT LIKE '%@g.us'
+                        AND wja2.alias_jid NOT LIKE '%@g.us'
+                        AND wja1.canonical_jid NOT LIKE '%@g.us'
+                    )
+                  )
+                )
+              )
+          )
+      ) AS responded_count,
+      
+      -- Count recipients with purchases
+      COUNT(DISTINCT r.id) FILTER (
+        WHERE r.status = 'SENT'
+          AND r.sent_at IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+            FROM orders o
+            WHERE o.order_date >= r.sent_at::date
+              AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+              AND (
+                (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+              )
+          )
+      ) AS purchased_count,
+      
+      -- Calculate total revenue from attributed orders
+      COALESCE(SUM(
+        CASE 
+          WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+            (
+              SELECT COALESCE(SUM(o.total_amount), 0)
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+          ELSE 0
+        END
+      ), 0) AS total_revenue,
+      
+      NOW() AS cached_at
+    FROM whatsapp_campaign_recipients r
+    WHERE r.campaign_id = COALESCE(NEW.campaign_id, OLD.campaign_id)
+    GROUP BY r.campaign_id;
+    
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  -- Recalculate stats for all existing campaigns with the corrected partition matching logic
+  DO $$
+  DECLARE
+    campaign_record RECORD;
+  BEGIN
+    FOR campaign_record IN 
+      SELECT DISTINCT campaign_id 
+      FROM whatsapp_campaign_recipients
+    LOOP
+      DELETE FROM whatsapp_campaign_stats_cache 
+      WHERE campaign_id = campaign_record.campaign_id;
+      
+      INSERT INTO whatsapp_campaign_stats_cache (
+        campaign_id,
+        total_recipients,
+        pending_count,
+        blocked_recent_count,
+        sending_count,
+        sent_count,
+        failed_count,
+        skipped_count,
+        responded_count,
+        purchased_count,
+        total_revenue,
+        cached_at
+      )
+      SELECT
+        r.campaign_id,
+        COUNT(*) AS total_recipients,
+        COUNT(*) FILTER (WHERE r.status = 'PENDING') AS pending_count,
+        COUNT(*) FILTER (WHERE r.status = 'BLOCKED_RECENT') AS blocked_recent_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENDING') AS sending_count,
+        COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent_count,
+        COUNT(*) FILTER (WHERE r.status = 'FAILED') AS failed_count,
+        COUNT(*) FILTER (WHERE r.status = 'SKIPPED') AS skipped_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT' 
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1 
+              FROM whatsapp_incoming_messages wim
+              WHERE COALESCE(wim.from_me, false) = false
+                AND wim.created_at >= r.sent_at
+                AND wim.created_at < r.sent_at + INTERVAL '7 days'
+                AND (
+                  (r.jid LIKE '%@g.us' AND wim.remote_jid LIKE '%@g.us' AND LOWER(wim.remote_jid) = LOWER(r.jid))
+                  OR
+                  (
+                    r.jid NOT LIKE '%@g.us' 
+                    AND wim.remote_jid NOT LIKE '%@g.us'
+                    AND (
+                      LOWER(wim.remote_jid) = LOWER(r.jid)
+                      OR EXISTS (
+                        SELECT 1 FROM whatsapp_jid_aliases wja1
+                        JOIN whatsapp_jid_aliases wja2 
+                          ON wja1.canonical_jid = wja2.canonical_jid 
+                         AND LOWER(wja1.instance_name) = LOWER(wja2.instance_name)
+                        WHERE LOWER(wja1.alias_jid) = LOWER(wim.remote_jid)
+                          AND LOWER(wja2.alias_jid) = LOWER(r.jid)
+                          AND wja1.alias_jid NOT LIKE '%@g.us'
+                          AND wja2.alias_jid NOT LIKE '%@g.us'
+                          AND wja1.canonical_jid NOT LIKE '%@g.us'
+                      )
+                    )
+                  )
+                )
+            )
+        ) AS responded_count,
+        
+        COUNT(DISTINCT r.id) FILTER (
+          WHERE r.status = 'SENT'
+            AND r.sent_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+              FROM orders o
+              WHERE o.order_date >= r.sent_at::date
+                AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                AND (
+                  (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                  OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                )
+            )
+        ) AS purchased_count,
+        
+        COALESCE(SUM(
+          CASE 
+            WHEN r.status = 'SENT' AND r.sent_at IS NOT NULL THEN
+              (
+                SELECT COALESCE(SUM(o.total_amount), 0)
+                FROM orders o
+                WHERE o.order_date >= r.sent_at::date
+                  AND o.order_date <= (r.sent_at + INTERVAL '7 days')::date
+                  AND (
+                    (o.customer_id IS NOT NULL AND r.customer_id IS NOT NULL AND o.customer_id = r.customer_id)
+                    OR (o.customer_code IS NOT NULL AND r.customer_code IS NOT NULL AND LOWER(o.customer_code) = LOWER(r.customer_code))
+                  )
+              )
+            ELSE 0
+          END
+        ), 0) AS total_revenue,
+        
+        NOW() AS cached_at
+      FROM whatsapp_campaign_recipients r
+      WHERE r.campaign_id = campaign_record.campaign_id
+      GROUP BY r.campaign_id;
+    END LOOP;
+  END $$;
+
+  COMMENT ON FUNCTION refresh_campaign_stats_cache() IS
+    'Calculates campaign statistics with isolated JID matching partition logic for groups and individuals. Updated 2026-06-10.';
+  `,
+  `
+  -- Migration 46: agendamento de campanhas + trigger de cache leve + índices de performance
   ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS scheduled_start_at TIMESTAMPTZ;
 
-  -- O trigger da Migration 43 recalculava responded/purchased/revenue com EXISTS
-  -- sobre whatsapp_incoming_messages e orders PARA CADA LINHA alterada de
-  -- destinatário — criar/disparar uma campanha de N contatos rodava o cálculo
-  -- pesado N vezes. O cache só é lido para contagens de status, então o trigger
-  -- volta a ser apenas contagens + hints de agenda (barato e indexável).
+  -- Os triggers das Migrations 43-45 recalculavam responded/purchased/revenue
+  -- com EXISTS sobre whatsapp_incoming_messages e orders PARA CADA LINHA
+  -- alterada de destinatário — criar/disparar uma campanha de N contatos rodava
+  -- o cálculo pesado N vezes. O cache só é lido para contagens de status, então
+  -- o trigger volta a ser apenas contagens + hints de agenda (barato). O badge
+  -- "Respondeu" é calculado em tempo real pela API com filtro de instância.
   CREATE OR REPLACE FUNCTION refresh_campaign_stats_cache()
   RETURNS TRIGGER AS $body$
   BEGIN
