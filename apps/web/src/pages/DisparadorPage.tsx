@@ -13,7 +13,7 @@ import type {
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, ShoppingBag, Package, Banknote } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, ShoppingBag, Package, Banknote, Copy } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
@@ -340,6 +340,56 @@ export function CampaignPerformancePanel({
   const performance = campaign.performance;
   const diagnosisColors = campaignDiagnosisColors(performance.diagnosis.tone);
   const recentMessages = performance.messages.slice(-120);
+  const [respondedCopied, setRespondedCopied] = useState(false);
+
+  const formatJidPhone = (jid: string) => {
+    const digits = jid.split("@")[0]?.replace(/\D/g, "") ?? "";
+    if (!digits) return jid;
+    // 55 + DDD + número → +55 (11) 99999-9999
+    if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) {
+      const ddd = digits.slice(2, 4);
+      const rest = digits.slice(4);
+      return `+55 (${ddd}) ${rest.slice(0, rest.length - 4)}-${rest.slice(-4)}`;
+    }
+    return `+${digits}`;
+  };
+
+  const respondedRecipients = campaign.recipients.filter((recipient) => recipient.responded);
+
+  const copyRespondedList = async () => {
+    const lines = respondedRecipients.map((recipient, index) => {
+      const name = recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || "Cliente WhatsApp";
+      const phone = recipient.jid.endsWith("@g.us") ? "(grupo)" : formatJidPhone(recipient.jid);
+      const when = recipient.firstResponseAt ? ` — respondeu em ${formatDateTime(recipient.firstResponseAt)}` : "";
+      return `${index + 1}. *${name}* — ${phone}${when}`;
+    });
+
+    const text = [
+      `📣 *Clientes que responderam — ${campaign.name}*`,
+      `Disparo de ${formatDateTime(campaign.createdAt)}`,
+      "",
+      ...lines,
+      "",
+      `Total: *${respondedRecipients.length}* cliente(s). Favor dar sequência no atendimento ✅`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback para contextos sem clipboard API (http, navegadores antigos)
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+
+    setRespondedCopied(true);
+    setTimeout(() => setRespondedCopied(false), 2500);
+  };
 
   const funnelStats = [
     { label: "Público", value: formatNumber(performance.totalRecipients), detail: `${formatNumber(performance.eligibleRecipients)} elegíveis`, icon: Users, accent: "#6366f1", soft: "#eef2ff" },
@@ -436,13 +486,46 @@ export function CampaignPerformancePanel({
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.9fr)", gap: "1.25rem", alignItems: "start" }}>
         <div style={{ border: "1px solid #e4e4e7", borderRadius: "8px", overflow: "hidden", background: "#fff" }}>
-          <div style={{ padding: "0.85rem 1rem", borderBottom: "1px solid #e4e4e7", display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+          <div style={{ padding: "0.85rem 1rem", borderBottom: "1px solid #e4e4e7", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
             <div>
               <h5 style={{ margin: 0, fontSize: "0.88rem", color: "#18181b" }}>Clientes da campanha</h5>
               <p style={{ margin: "2px 0 0 0", fontSize: "0.74rem", color: "#71717a" }}>
                 {formatNumber(recipients.length)} exibidos neste filtro
               </p>
             </div>
+            <button
+              type="button"
+              onClick={copyRespondedList}
+              disabled={respondedRecipients.length === 0}
+              title="Copia a lista de quem respondeu, pronta para colar no WhatsApp das vendedoras"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "8px 14px",
+                background: respondedCopied ? "#dcfce7" : respondedRecipients.length === 0 ? "#f4f4f5" : "#10b981",
+                border: respondedCopied ? "1px solid #86efac" : "1px solid transparent",
+                borderRadius: "8px",
+                color: respondedCopied ? "#166534" : respondedRecipients.length === 0 ? "#a1a1aa" : "#ffffff",
+                fontSize: "0.78rem",
+                fontWeight: 700,
+                cursor: respondedRecipients.length === 0 ? "not-allowed" : "pointer",
+                transition: "all 0.2s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {respondedCopied ? (
+                <>
+                  <CheckCheck size={14} />
+                  Copiado! É só colar no WhatsApp
+                </>
+              ) : (
+                <>
+                  <Copy size={14} />
+                  Copiar respondidos ({formatNumber(respondedRecipients.length)})
+                </>
+              )}
+            </button>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="z-table" style={{ minWidth: "760px" }}>
