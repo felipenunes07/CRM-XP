@@ -9,6 +9,7 @@ import { runMigrations } from "./db/runMigrations.js";
 import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 import { configureUazapiWebhook } from "./modules/whatsapp/uazapiService.js";
+import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 
 /**
  * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
@@ -76,6 +77,27 @@ async function main() {
     );
   }
 
+  // WhatsApp Webhook Watchdog: also runs on the API server so the webhook
+  // config self-heals even when the worker container is down.
+  let watchdogInterval: NodeJS.Timeout | undefined;
+  if (env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_ENABLED) {
+    logger.info("api server whatsapp webhook watchdog enabled", {
+      intervalMinutes: env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES,
+    });
+
+    const runWatchdog = () => {
+      runWhatsappWebhookWatchdog().catch((error) => {
+        logger.error("api server failed whatsapp webhook watchdog", { error: String(error) });
+      });
+    };
+
+    runWatchdog();
+    watchdogInterval = setInterval(
+      runWatchdog,
+      env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES * 60 * 1000,
+    );
+  }
+
   const app = createApp();
   const server = createServer(app);
   server.listen(env.PORT, () => {
@@ -86,6 +108,9 @@ async function main() {
     logger.info("shutting down api server");
     if (rollupInterval) {
       clearInterval(rollupInterval);
+    }
+    if (watchdogInterval) {
+      clearInterval(watchdogInterval);
     }
     server.close(async () => {
       await scheduler.close();

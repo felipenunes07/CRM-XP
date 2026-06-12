@@ -10,6 +10,7 @@ import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditServic
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
+import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
 import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
 
@@ -117,7 +118,30 @@ async function main() {
     );
   }
 
-  // 7. Database Cleanup (Daily)
+  // 7. WhatsApp Webhook Watchdog: re-applies the Evolution webhook config and
+  // alerts when an instance disconnects — without this, message ingestion
+  // (heatmap/activity report) stops silently when the config is lost.
+  if (env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_ENABLED) {
+    logger.info("scheduled whatsapp webhook watchdog enabled", {
+      intervalMinutes: env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES,
+    });
+
+    const runWatchdog = () => {
+      runWhatsappWebhookWatchdog().catch((error) => {
+        logger.error("failed scheduled whatsapp webhook watchdog", { error: String(error) });
+      });
+    };
+
+    runWatchdog();
+    intervals.push(
+      setInterval(
+        runWatchdog,
+        env.WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES * 60 * 1000,
+      )
+    );
+  }
+
+  // 8. Database Cleanup (Daily)
   intervals.push(
     setInterval(
       () => {

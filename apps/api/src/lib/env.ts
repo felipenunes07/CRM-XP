@@ -74,6 +74,11 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
+  WORKER_WHATSAPP_WEBHOOK_WATCHDOG_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES: z.coerce.number().int().positive().default(10),
   WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS: z.coerce.number().int().min(2).max(120).default(3),
   WHATSAPP_ACTIVITY_ROLLUP_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(90_000),
   WHATSAPP_INCOMING_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
