@@ -485,6 +485,7 @@ const whatsappCampaignCreateSchema = z.object({
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
   menuData: whatsappMenuDataSchema.nullable().optional(),
   videoUrl: z.string().nullable().optional(),
+  autoReplyText: z.string().max(4000).nullable().optional(),
   filtersSnapshot: z.record(z.unknown()).optional(),
   groupIds: z.array(z.string().uuid()).min(1),
   overrideRecentBlock: z.boolean().optional(),

@@ -72,6 +72,7 @@ const baseContext = {
   carouselData: null,
   menuData: null,
   videoUrl: "data:video/mp4;base64,AAAA",
+  customerDisplayName: null,
   sourceName: "Grupo teste",
   sourceCode: null,
   createdByUserId: "user-1",
@@ -176,6 +177,43 @@ describe("resumeDueWhatsappCampaignRecipients", () => {
       "SENT",
     );
     expect(mocks.markRecipientFailed).not.toHaveBeenCalled();
+  });
+
+  it("replaces {nome} placeholders with the recipient customer name on dispatch", async () => {
+    const providerPayload = { key: { id: "uaz-text-1" }, status: "SENT" };
+    const uazapiInstance = { baseUrl: "https://uazapi.example", token: "uaz-token" };
+    mocks.listDueWhatsappCampaignRecipientJobs.mockResolvedValueOnce([
+      { recipientId: "recipient-nome", campaignId: "campaign-1", delayMs: 0 },
+    ]);
+    mocks.claimRecipientForDispatch.mockResolvedValueOnce({
+      ...baseContext,
+      recipientId: "recipient-nome",
+      messageText: "Oi {nome}, tudo bem?",
+      messageType: "TEXT",
+      videoUrl: null,
+      customerDisplayName: "Loja Estrela",
+      uazapiInstance,
+    });
+    mocks.sendUazapiTextMessage.mockResolvedValueOnce(providerPayload);
+    mocks.markRecipientSent.mockResolvedValueOnce(undefined);
+
+    await expect(resumeDueWhatsappCampaignRecipients("campaign-1", 1)).resolves.toEqual({
+      candidates: 1,
+      started: 1,
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mocks.sendUazapiTextMessage).toHaveBeenCalledWith(
+      uazapiInstance,
+      "120363123456789@g.us",
+      "Oi Loja Estrela, tudo bem?",
+    );
+    expect(mocks.markRecipientSent).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientId: "recipient-nome", messageText: "Oi Loja Estrela, tudo bem?" }),
+      providerPayload,
+      "uaz-text-1",
+      "SENT",
+    );
   });
 
   it("dispatches due Evolution video campaign recipients and marks them sent", async () => {

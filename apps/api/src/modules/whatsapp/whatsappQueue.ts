@@ -14,6 +14,7 @@ import {
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
 import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage, sendUazapiMenuMessage } from "./uazapiService.js";
+import { applyWhatsappMessagePlaceholders } from "./whatsappCore.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 const connection = queueEnabled
@@ -77,16 +78,24 @@ async function processRecipientDispatch(recipientId: string) {
   try {
     let payload: Record<string, unknown>;
 
+    // Personaliza placeholders como {nome} com o nome do cliente do destinatário.
+    const placeholderValues = { nome: context.customerDisplayName ?? context.sourceName };
+    const messageText = applyWhatsappMessagePlaceholders(context.messageText, placeholderValues);
+
     if (context.uazapiInstance) {
       // UazAPI provider
       if (context.messageType === "CAROUSEL" && context.carouselData?.length) {
-        payload = await sendUazapiCarouselMessage(context.uazapiInstance, context.jid, context.carouselData);
+        const personalizedSlides = context.carouselData.map((slide) => ({
+          ...slide,
+          text: applyWhatsappMessagePlaceholders(slide.text, placeholderValues),
+        }));
+        payload = await sendUazapiCarouselMessage(context.uazapiInstance, context.jid, personalizedSlides);
       } else if (context.messageType === "MENU" && context.menuData?.choices?.length) {
-        payload = await sendUazapiMenuMessage(context.uazapiInstance, context.jid, context.messageText, context.menuData);
+        payload = await sendUazapiMenuMessage(context.uazapiInstance, context.jid, messageText, context.menuData);
       } else if (context.messageType === "VIDEO" && context.videoUrl) {
-        payload = await sendUazapiVideoMessage(context.uazapiInstance, context.jid, context.videoUrl, context.messageText);
+        payload = await sendUazapiVideoMessage(context.uazapiInstance, context.jid, context.videoUrl, messageText);
       } else {
-        payload = await sendUazapiTextMessage(context.uazapiInstance, context.jid, context.messageText);
+        payload = await sendUazapiTextMessage(context.uazapiInstance, context.jid, messageText);
       }
     } else if (context.evolutionInstance) {
       // Evolution API provider
@@ -97,10 +106,10 @@ async function processRecipientDispatch(recipientId: string) {
           context.videoUrl,
           "video",
           "video.mp4",
-          context.messageText,
+          messageText,
         );
       } else {
-        payload = await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, context.messageText);
+        payload = await sendWhatsappInstanceTextMessage(context.evolutionInstance, context.jid, messageText);
       }
     } else {
       // Default Evolution fallback
@@ -115,14 +124,14 @@ async function processRecipientDispatch(recipientId: string) {
           context.videoUrl,
           "video",
           "video.mp4",
-          context.messageText,
+          messageText,
         );
       } else {
-        payload = await sendWhatsappTextMessage(context.jid, context.messageText);
+        payload = await sendWhatsappTextMessage(context.jid, messageText);
       }
     }
 
-    await markRecipientSent(context, payload, extractProviderMessageId(payload), payload.status ? String(payload.status) : null);
+    await markRecipientSent({ ...context, messageText }, payload, extractProviderMessageId(payload), payload.status ? String(payload.status) : null);
     return { sent: true };
   } catch (error) {
     const responsePayload =

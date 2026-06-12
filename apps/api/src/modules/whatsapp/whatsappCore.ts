@@ -116,6 +116,22 @@ export function randomDelaySeconds(minDelaySeconds: number, maxDelaySeconds: num
   return Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin;
 }
 
+/**
+ * Substitui placeholders como {nome} no texto de campanhas/respostas automáticas.
+ * Case-insensitive e tolerante a espaços: {nome}, {Nome}, { NOME } funcionam.
+ * Sem valor disponível, o placeholder é removido e espaços duplicados são colapsados.
+ */
+export function applyWhatsappMessagePlaceholders(
+  text: string,
+  values: { nome?: string | null },
+) {
+  const nome = String(values.nome ?? "").trim();
+  return text
+    .replace(/\{\s*nome\s*\}/gi, nome)
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/[^\S\n]+([.,!?;:])/g, "$1");
+}
+
 export function isWhatsappCampaignStatus(value: string): value is WhatsappCampaignStatus {
   return (WHATSAPP_CAMPAIGN_STATUSES as readonly string[]).includes(value);
 }

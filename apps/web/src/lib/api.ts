@@ -767,6 +767,7 @@ export const api = {
       carouselData?: CarouselSlide[] | null;
       menuData?: WhatsappMenuData | null;
       videoUrl?: string | null;
+      autoReplyText?: string | null;
       filtersSnapshot?: Record<string, unknown>;
       groupIds: string[];
       overrideRecentBlock?: boolean;

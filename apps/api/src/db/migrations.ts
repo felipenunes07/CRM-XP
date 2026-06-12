@@ -3778,5 +3778,14 @@ export const migrations = [
   -- Add menu_data (menu interativo uazapi /send/menu) to campaigns
   ALTER TABLE public.whatsapp_campaigns
     ADD COLUMN IF NOT EXISTS menu_data JSONB;
+  `,
+  `
+  -- Resposta automatica de campanha: texto configurado na campanha e
+  -- marcacao de envio unico por destinatario.
+  ALTER TABLE public.whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS auto_reply_text TEXT;
+
+  ALTER TABLE public.whatsapp_campaign_recipients
+    ADD COLUMN IF NOT EXISTS auto_reply_sent_at TIMESTAMPTZ;
   `
 ];

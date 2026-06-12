@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyWhatsappMessagePlaceholders,
   classifyWhatsappGroup,
   computeRecentBlock,
   extractWhatsappSourceCode,
@@ -66,6 +67,23 @@ describe("whatsappCore", () => {
 
       expect(result.isBlocked).toBe(false);
       expect(result.recentBlockUntil).toBe("2026-04-08T12:00:00.000Z");
+    });
+  });
+
+  describe("applyWhatsappMessagePlaceholders", () => {
+    it("replaces {nome} regardless of casing and spacing", () => {
+      expect(applyWhatsappMessagePlaceholders("Oi {nome}!", { nome: "Loja Estrela" })).toBe("Oi Loja Estrela!");
+      expect(applyWhatsappMessagePlaceholders("Oi {Nome}!", { nome: "Loja Estrela" })).toBe("Oi Loja Estrela!");
+      expect(applyWhatsappMessagePlaceholders("Oi { NOME }!", { nome: "Loja Estrela" })).toBe("Oi Loja Estrela!");
+    });
+
+    it("removes the placeholder cleanly when no name is available", () => {
+      expect(applyWhatsappMessagePlaceholders("Oi {nome}, tudo bem?", { nome: null })).toBe("Oi, tudo bem?");
+      expect(applyWhatsappMessagePlaceholders("Oi {nome} !", { nome: "" })).toBe("Oi!");
+    });
+
+    it("keeps text without placeholders untouched", () => {
+      expect(applyWhatsappMessagePlaceholders("Mensagem normal.", { nome: "Cliente" })).toBe("Mensagem normal.");
     });
   });
 

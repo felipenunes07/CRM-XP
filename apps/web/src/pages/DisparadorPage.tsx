@@ -821,6 +821,9 @@ export function DisparadorPage() {
   const [menuListButton, setMenuListButton] = useState("");
   const [menuSelectableCount, setMenuSelectableCount] = useState(1);
   const [menuImageButton, setMenuImageButton] = useState("");
+  // Resposta automática quando o cliente responder ao disparo
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyText, setAutoReplyText] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFileName, setVideoFileName] = useState("");
   const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
@@ -1025,6 +1028,7 @@ export function DisparadorPage() {
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
         menuData: campaignMessageType === "MENU" ? buildMenuData() : null,
         videoUrl: preparedVideoUrl,
+        autoReplyText: autoReplyEnabled && autoReplyText.trim() ? autoReplyText.trim() : null,
         filtersSnapshot: {
           quickFilter,
           search,
@@ -2368,7 +2372,38 @@ export function DisparadorPage() {
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
                         />
+                        <span style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "4px" }}>
+                          Dica: use <code>{"{nome}"}</code> para inserir o nome do cliente automaticamente.
+                        </span>
                       </label>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>
+                          <input
+                            type="checkbox"
+                            checked={autoReplyEnabled}
+                            onChange={(event) => setAutoReplyEnabled(event.target.checked)}
+                          />
+                          Resposta automática quando o cliente responder
+                        </label>
+                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
+                          Se o cliente responder ao disparo (mensagem, mídia ou clique em botão/enquete do menu), o sistema envia esta mensagem automaticamente — uma única vez por cliente.
+                        </span>
+                        {autoReplyEnabled && (
+                          <>
+                            <textarea
+                              rows={4}
+                              value={autoReplyText}
+                              onChange={(event) => setAutoReplyText(event.target.value)}
+                              placeholder="Ex: Oi {nome}! Que bom que respondeu 😊 Já vou te passar todos os detalhes..."
+                              style={{ width: "100%", resize: "vertical" }}
+                            />
+                            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                              Aqui também funciona o <code>{"{nome}"}</code> do cliente.
+                            </span>
+                          </>
+                        )}
+                      </div>
 
                       {campaignMessageType === "VIDEO" && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>

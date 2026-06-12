@@ -1625,6 +1625,7 @@ export interface WhatsappCampaignListItem {
   carouselData: CarouselSlide[] | null;
   menuData: WhatsappMenuData | null;
   videoUrl: string | null;
+  autoReplyText: string | null;
   minDelaySeconds: number;
   maxDelaySeconds: number;
   overrideRecentBlock: boolean;

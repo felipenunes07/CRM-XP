@@ -25,6 +25,7 @@ import { detectWhatsappMessageRisk } from "./whatsappMonitorCore.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 import { WhatsappMonitorMessage } from "@olist-crm/shared";
 import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
+import { processCampaignAutoReply } from "./whatsappAutoReply.js";
 
 /**
  * Handles MESSAGES_UPSERT events from Evolution API webhook.
@@ -662,6 +663,18 @@ export async function handleEvolutionWebhook(
           context.createdAt,
         ],
       );
+
+      // Resposta automática de campanha: cliente respondeu (mensagem, mídia ou
+      // clique em botão/enquete) a um disparo recente. Fire-and-forget para não
+      // atrasar o processamento do webhook.
+      if (!isFromMe) {
+        void processCampaignAutoReply(String(resolvedRemoteJid)).catch((error) => {
+          logger.error("campaign auto-reply processing failed", {
+            remoteJid: resolvedRemoteJid,
+            error: String(error),
+          });
+        });
+      }
 
 
 
