@@ -8,6 +8,63 @@ export interface MiniChatMessage {
   direction: "INBOUND" | "OUTBOUND";
   timestamp: string;
   status?: "sent" | "delivered" | "read" | "failed";
+  senderName?: string | null;
+  senderAvatarUrl?: string | null;
+}
+
+function SenderAvatar({
+  name,
+  avatarUrl,
+  isOutbound,
+}: {
+  name?: string | null;
+  avatarUrl?: string | null;
+  isOutbound: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  const initial = (name?.trim() || (isOutbound ? "E" : "C")).charAt(0).toUpperCase();
+
+  if (avatarUrl && !failed) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        onError={() => setFailed(true)}
+        style={{
+          width: "32px",
+          height: "32px",
+          borderRadius: "50%",
+          objectFit: "cover",
+          flexShrink: 0,
+          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.2)",
+          border: "2px solid #ffffff",
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        width: "32px",
+        height: "32px",
+        borderRadius: "50%",
+        display: "grid",
+        placeItems: "center",
+        fontSize: "0.85rem",
+        fontWeight: 700,
+        color: "#ffffff",
+        background: isOutbound
+          ? "linear-gradient(135deg, #10b981, #047857)"
+          : "linear-gradient(135deg, #f59e0b, #d97706)",
+        flexShrink: 0,
+        boxShadow: "0 1px 3px rgba(0, 0, 0, 0.2)",
+        border: "2px solid #ffffff",
+      }}
+    >
+      {initial}
+    </div>
+  );
 }
 
 interface MiniChatDrawerProps {
@@ -214,18 +271,52 @@ export function MiniChatDrawer({
                     style={{
                       display: "flex",
                       justifyContent: isOutbound ? "flex-end" : "flex-start",
+                      alignItems: "flex-end",
+                      gap: "8px",
                       animation: "fadeInUp 0.2s ease-out",
                     }}
                   >
+                    {!isOutbound && (
+                      <SenderAvatar name={message.senderName} avatarUrl={message.senderAvatarUrl} isOutbound={false} />
+                    )}
                     <div
                       style={{
-                        maxWidth: "75%",
+                        maxWidth: "72%",
                         background: isOutbound ? "#d9fdd3" : "#ffffff",
                         padding: "8px 12px",
-                        borderRadius: "8px",
+                        borderRadius: isOutbound ? "10px 10px 2px 10px" : "10px 10px 10px 2px",
                         boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
                       }}
                     >
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                        <span
+                          style={{
+                            fontSize: "0.74rem",
+                            fontWeight: 700,
+                            color: isOutbound ? "#047857" : "#b45309",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            maxWidth: "200px",
+                          }}
+                        >
+                          {message.senderName?.trim() || (isOutbound ? "Equipe" : "Cliente")}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "0.6rem",
+                            fontWeight: 700,
+                            letterSpacing: "0.04em",
+                            padding: "1px 7px",
+                            borderRadius: "999px",
+                            background: isOutbound ? "#d1fae5" : "#ffedd5",
+                            color: isOutbound ? "#047857" : "#b45309",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isOutbound ? "EQUIPE" : "CLIENTE"}
+                        </span>
+                      </div>
                       <p
                         style={{
                           margin: 0,
@@ -253,6 +344,9 @@ export function MiniChatDrawer({
                         {formatDateTime(message.timestamp)}
                       </div>
                     </div>
+                    {isOutbound && (
+                      <SenderAvatar name={message.senderName} avatarUrl={message.senderAvatarUrl} isOutbound={true} />
+                    )}
                   </div>
                 );
               })}

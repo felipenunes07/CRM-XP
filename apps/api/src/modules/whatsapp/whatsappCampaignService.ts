@@ -1901,7 +1901,8 @@ export async function getWhatsappCampaignRecipientChat(
     pool.query(
       `
         SELECT id::text AS id, message AS content, sent_by_name AS sender_name, created_at,
-               'message_logs' AS source, NULL::text AS message_key
+               'message_logs' AS source, NULL::text AS message_key,
+               NULL::text AS sender_avatar_url
         FROM message_logs
         WHERE status = 'SENT'
           AND (LOWER(COALESCE(destination, '')) = ANY($1::text[]) ${digitsMatchSql("destination")})
@@ -1915,7 +1916,8 @@ export async function getWhatsappCampaignRecipientChat(
         SELECT id::text AS id, COALESCE(NULLIF(message_text, ''), '[Mensagem sem texto]') AS content,
                COALESCE(NULLIF(participant_name, ''), NULLIF(sender_name, '')) AS sender_name,
                created_at, COALESCE(from_me, false) AS from_me,
-               'whatsapp_incoming_messages' AS source, NULLIF(message_id, '') AS message_key
+               'whatsapp_incoming_messages' AS source, NULLIF(message_id, '') AS message_key,
+               NULLIF(sender_profile_picture_url, '') AS sender_avatar_url
         FROM whatsapp_incoming_messages
         WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
         ORDER BY created_at DESC
@@ -1927,7 +1929,8 @@ export async function getWhatsappCampaignRecipientChat(
       `
         SELECT id::text AS id, COALESCE(NULLIF(content, ''), '[Mensagem sem texto]') AS content,
                sender_name, created_at, COALESCE(from_me, false) AS from_me,
-               'whatsapp_monitor_messages' AS source, NULLIF(message_id, '') AS message_key
+               'whatsapp_monitor_messages' AS source, NULLIF(message_id, '') AS message_key,
+               NULLIF(sender_pic_url, '') AS sender_avatar_url
         FROM whatsapp_monitor_messages
         WHERE (LOWER(COALESCE(remote_jid, '')) = ANY($1::text[]) ${digitsMatchSql("remote_jid")})
         ORDER BY created_at DESC
@@ -1941,7 +1944,8 @@ export async function getWhatsappCampaignRecipientChat(
                da.actor_name AS sender_name, da.created_at,
                (da.activity_type = 'WHATSAPP_SENT') AS from_me,
                'deal_activities' AS source,
-               NULLIF(da.metadata ->> 'messageId', '') AS message_key
+               NULLIF(da.metadata ->> 'messageId', '') AS message_key,
+               NULLIF(da.metadata ->> 'senderProfilePictureUrl', '') AS sender_avatar_url
         FROM deal_activities da
         JOIN deals d ON d.id = da.deal_id
         WHERE da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
@@ -1973,6 +1977,7 @@ export async function getWhatsappCampaignRecipientChat(
       direction,
       content,
       senderName: row.sender_name ? String(row.sender_name) : null,
+      senderAvatarUrl: row.sender_avatar_url ? String(row.sender_avatar_url) : null,
       source: String(row.source),
       createdAt,
     });
@@ -1989,6 +1994,30 @@ export async function getWhatsappCampaignRecipientChat(
   }
   for (const row of activitiesResult.rows) {
     pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+  }
+
+  // Mensagens da equipe sem foto própria (ex.: enviadas pelo CRM) usam a foto
+  // do perfil da instância WhatsApp da campanha.
+  if (messages.some((message) => message.direction === "OUTBOUND" && !message.senderAvatarUrl)) {
+    const instanceAvatarResult = await pool.query(
+      `
+        SELECT NULLIF(wi.profile_picture_url, '') AS profile_picture_url
+        FROM whatsapp_campaigns wc
+        JOIN whatsapp_instances wi ON wi.id = wc.whatsapp_instance_id
+        WHERE wc.id = $1
+      `,
+      [campaignId],
+    );
+    const instanceAvatarUrl = instanceAvatarResult.rows[0]?.profile_picture_url
+      ? String(instanceAvatarResult.rows[0].profile_picture_url)
+      : null;
+    if (instanceAvatarUrl) {
+      for (const message of messages) {
+        if (message.direction === "OUTBOUND" && !message.senderAvatarUrl) {
+          message.senderAvatarUrl = instanceAvatarUrl;
+        }
+      }
+    }
   }
 
   return messages.sort((left, right) => new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime());

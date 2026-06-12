@@ -4453,7 +4453,9 @@ export function DisparadorPage() {
                                             content: msg.content || "(mensagem sem texto)",
                                             direction: msg.direction === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
                                             timestamp: msg.createdAt,
-                                            status: msg.direction === "OUTBOUND" ? "sent" : undefined
+                                            status: msg.direction === "OUTBOUND" ? "sent" : undefined,
+                                            senderName: msg.senderName,
+                                            senderAvatarUrl: msg.senderAvatarUrl,
                                           }));
 
                                           // Garantir que a mensagem da campanha apareça como primeira mensagem se não houver registros de envio
@@ -4464,7 +4466,8 @@ export function DisparadorPage() {
                                               content: selectedCampaignQuery.data.messageText,
                                               direction: "OUTBOUND",
                                               timestamp: recipient.sentAt || selectedCampaignQuery.data.createdAt,
-                                              status: "sent"
+                                              status: "sent",
+                                              senderName: `${selectedCampaignQuery.data.createdByName || "Equipe"} (campanha)`,
                                             });
                                           }
                                           
@@ -4477,7 +4480,8 @@ export function DisparadorPage() {
                                             content: selectedCampaignQuery.data.messageText || "Mensagem da campanha",
                                             direction: "OUTBOUND",
                                             timestamp: recipient.sentAt || selectedCampaignQuery.data.createdAt,
-                                            status: "sent"
+                                            status: "sent",
+                                            senderName: `${selectedCampaignQuery.data.createdByName || "Equipe"} (campanha)`,
                                           }]);
                                         } finally {
                                           setMiniChatLoading(false);
@@ -4556,7 +4560,8 @@ export function DisparadorPage() {
             content: message,
             direction: "OUTBOUND",
             timestamp: new Date().toISOString(),
-            status: "sent"
+            status: "sent",
+            senderName: user?.name || "Você",
           };
           
           setMiniChatMessages(prev => [...prev, newMessage]);

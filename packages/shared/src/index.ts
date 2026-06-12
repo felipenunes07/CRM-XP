@@ -1645,6 +1645,7 @@ export interface WhatsappCampaignRecipientChatMessage {
   direction: WhatsappCampaignAttributedMessageDirection;
   content: string;
   senderName: string | null;
+  senderAvatarUrl: string | null;
   source: string;
   createdAt: string;
 }
