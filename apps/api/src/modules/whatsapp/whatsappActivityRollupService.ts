@@ -72,6 +72,9 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
       [window.startDate, window.endDate],
     );
 
+    // O filtro da janela compara created_at em UTC, mas period_date sai do fuso
+    // America/Sao_Paulo — linhas na borda caem 1 dia fora da janela deletada
+    // acima, então o upsert é obrigatório para não violar a PK e abortar tudo.
     const insertResult = await client.query(
       `
       INSERT INTO whatsapp_activity_rollups (
@@ -280,6 +283,19 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
         local_hour,
         agent_id,
         remote_jid
+      ON CONFLICT (period_date, hour, agent_id, remote_jid) DO UPDATE SET
+        agent_name = EXCLUDED.agent_name,
+        instance_name = EXCLUDED.instance_name,
+        display_label = EXCLUDED.display_label,
+        phone_number = EXCLUDED.phone_number,
+        profile_picture_url = EXCLUDED.profile_picture_url,
+        chat_name = EXCLUDED.chat_name,
+        sent_messages = EXCLUDED.sent_messages,
+        received_messages = EXCLUDED.received_messages,
+        response_count = EXCLUDED.response_count,
+        response_seconds_total = EXCLUDED.response_seconds_total,
+        last_message_at = EXCLUDED.last_message_at,
+        updated_at = EXCLUDED.updated_at
       `,
       [window.startDate, window.endDate],
     );
