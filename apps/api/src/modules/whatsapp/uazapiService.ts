@@ -12,6 +12,15 @@ export interface UazapiCarouselSlide {
   buttons: { id: string; text: string; type: string }[];
 }
 
+export interface UazapiMenuData {
+  menuType: "button" | "list" | "poll";
+  choices: string[];
+  footerText?: string | null;
+  listButton?: string | null;
+  selectableCount?: number | null;
+  imageButton?: string | null;
+}
+
 /**
  * Uazapi accepts group chat IDs as-is, while user JIDs are converted to phone numbers.
  * E.g. "5511999999999@s.whatsapp.net" → "5511999999999"
@@ -69,6 +78,35 @@ export async function sendUazapiCarouselMessage(
     })),
     mentions: "all",
   });
+}
+
+export async function sendUazapiMenuMessage(
+  config: UazapiInstanceConfig,
+  destinationJid: string,
+  messageText: string,
+  menu: UazapiMenuData,
+) {
+  const body: Record<string, unknown> = {
+    number: formatUazapiDestination(destinationJid),
+    type: menu.menuType,
+    text: messageText,
+    choices: menu.choices,
+  };
+
+  if (menu.footerText?.trim()) {
+    body.footerText = menu.footerText.trim();
+  }
+  if (menu.menuType === "list" && menu.listButton?.trim()) {
+    body.listButton = menu.listButton.trim();
+  }
+  if (menu.menuType === "poll" && menu.selectableCount) {
+    body.selectableCount = menu.selectableCount;
+  }
+  if (menu.menuType === "button" && menu.imageButton?.trim()) {
+    body.imageButton = menu.imageButton.trim();
+  }
+
+  return requestUazapi(config, "/send/menu", "POST", body);
 }
 
 export async function sendUazapiVideoMessage(

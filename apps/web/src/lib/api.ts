@@ -50,6 +50,7 @@ import type {
   WhatsappCampaignDetail,
   WhatsappCampaignListItem,
   WhatsappCampaignMessageType,
+  WhatsappMenuData,
   WhatsappGroup,
   WhatsappGroupsResponse,
   WhatsappImportSummary,
@@ -550,7 +551,7 @@ export const api = {
       method: "DELETE",
     }, token);
   },
-  sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; videoUrl?: string; whatsappInstanceId?: string }) {
+  sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; menuData?: WhatsappMenuData; videoUrl?: string; whatsappInstanceId?: string }) {
     return request<{ success: boolean; result: any }>("/api/messages/test", {
       method: "POST",
       body: JSON.stringify(input),
@@ -764,6 +765,7 @@ export const api = {
       messageText: string;
       messageType?: WhatsappCampaignMessageType;
       carouselData?: CarouselSlide[] | null;
+      menuData?: WhatsappMenuData | null;
       videoUrl?: string | null;
       filtersSnapshot?: Record<string, unknown>;
       groupIds: string[];

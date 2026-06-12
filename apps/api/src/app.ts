@@ -466,14 +466,24 @@ const carouselSlideSchema = z.object({
   })).min(1),
 });
 
+const whatsappMenuDataSchema = z.object({
+  menuType: z.enum(["button", "list", "poll"]),
+  choices: z.array(z.string().min(1)).min(1),
+  footerText: z.string().nullable().optional(),
+  listButton: z.string().nullable().optional(),
+  selectableCount: z.number().int().min(1).nullable().optional(),
+  imageButton: z.string().nullable().optional(),
+});
+
 const whatsappCampaignCreateSchema = z.object({
   name: z.string().min(1),
   templateId: z.string().uuid().nullable().optional(),
   savedSegmentId: z.string().uuid().nullable().optional(),
   whatsappInstanceId: z.string().uuid().nullable().optional(),
   messageText: z.string().optional().default(""),
-  messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO"]).optional(),
+  messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO", "MENU"]).optional(),
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
+  menuData: whatsappMenuDataSchema.nullable().optional(),
   videoUrl: z.string().nullable().optional(),
   filtersSnapshot: z.record(z.unknown()).optional(),
   groupIds: z.array(z.string().uuid()).min(1),
@@ -1444,13 +1454,15 @@ export function createApp() {
 
   app.post("/api/messages/test", async (request, response, next) => {
     try {
-      const { messageText, messageType, carouselData, videoUrl, whatsappInstanceId } = request.body;
+      const { messageText, messageType, carouselData, menuData, videoUrl, whatsappInstanceId } = request.body;
       const testNumber = "5511911279702@s.whatsapp.net";
-      
-      logger.info("📱 Test message request received", { 
-        messageType, 
-        hasCarousel: !!carouselData, 
+
+      logger.info("📱 Test message request received", {
+        messageType,
+        hasCarousel: !!carouselData,
         carouselSlides: carouselData?.length || 0,
+        hasMenu: !!menuData,
+        menuChoices: menuData?.choices?.length || 0,
         hasVideo: !!videoUrl,
         instanceId: whatsappInstanceId,
         messageLength: messageText?.length || 0
@@ -1460,8 +1472,12 @@ export function createApp() {
         throw new HttpError(400, "Mensagem de texto é obrigatória");
       }
 
+      if (messageType === "MENU" && !menuData?.choices?.length) {
+        throw new HttpError(400, "Adicione ao menos uma opção para o menu interativo.");
+      }
+
       // Import services
-      const { sendUazapiCarouselMessage, sendUazapiTextMessage, sendUazapiVideoMessage } = await import("./modules/whatsapp/uazapiService.js");
+      const { sendUazapiCarouselMessage, sendUazapiTextMessage, sendUazapiVideoMessage, sendUazapiMenuMessage } = await import("./modules/whatsapp/uazapiService.js");
       const { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } = await import("./modules/whatsapp/evolutionService.js");
       
       // Get WhatsApp instance if specified
@@ -1524,10 +1540,25 @@ export function createApp() {
           throw new HttpError(400, "Carrossel só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
         }
       }
-      
+
+      // Validate interactive menu support
+      if (messageType === "MENU") {
+        if (!instanceConfig || instanceConfig.provider !== "UAZAPI") {
+          throw new HttpError(400, "Menu interativo só é suportado com instâncias UazAPI. Por favor, selecione uma instância UazAPI ou mude para mensagem de texto.");
+        }
+      }
+
       // Send message based on provider and type
       try {
-        if (instanceConfig?.provider === "UAZAPI" && messageType === "CAROUSEL" && carouselData?.length) {
+        if (instanceConfig?.provider === "UAZAPI" && messageType === "MENU" && menuData?.choices?.length) {
+          logger.info("📋 Sending interactive menu test via UazAPI", { menuType: menuData.menuType, choices: menuData.choices.length });
+          result = await sendUazapiMenuMessage(
+            { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
+            testNumber,
+            messageText,
+            menuData
+          );
+        } else if (instanceConfig?.provider === "UAZAPI" && messageType === "CAROUSEL" && carouselData?.length) {
           logger.info("🎠 Sending carousel test via UazAPI", { slides: carouselData.length });
           result = await sendUazapiCarouselMessage(
             { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
@@ -1861,6 +1892,24 @@ export function createApp() {
   app.post("/api/whatsapp-campaigns", async (request, response, next) => {
     try {
       const payload = whatsappCampaignCreateSchema.parse(request.body);
+      if (payload.messageType === "MENU") {
+        if (!payload.menuData?.choices?.length) {
+          throw new HttpError(400, "Adicione ao menos uma opcao para o menu interativo.");
+        }
+
+        if (!payload.whatsappInstanceId) {
+          throw new HttpError(400, "Menu interativo so e suportado com instancias UazAPI.");
+        }
+
+        const menuInstanceResult = await pool.query(
+          `SELECT provider FROM whatsapp_instances WHERE id = $1`,
+          [payload.whatsappInstanceId],
+        );
+        if (menuInstanceResult.rows[0]?.provider !== "UAZAPI") {
+          throw new HttpError(400, "Menu interativo so e suportado com instancias UazAPI.");
+        }
+      }
+
       if (payload.messageType === "VIDEO") {
         if (!payload.videoUrl?.trim()) {
           throw new HttpError(400, "Video MP4 e obrigatorio para campanhas de video.");

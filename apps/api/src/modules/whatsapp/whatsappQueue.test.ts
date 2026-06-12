@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   sendUazapiCarouselMessage: vi.fn(),
   sendUazapiTextMessage: vi.fn(),
   sendUazapiVideoMessage: vi.fn(),
+  sendUazapiMenuMessage: vi.fn(),
   loggerInfo: vi.fn(),
   loggerError: vi.fn(),
 }));
@@ -54,6 +55,7 @@ vi.mock("./uazapiService.js", () => ({
   sendUazapiCarouselMessage: mocks.sendUazapiCarouselMessage,
   sendUazapiTextMessage: mocks.sendUazapiTextMessage,
   sendUazapiVideoMessage: mocks.sendUazapiVideoMessage,
+  sendUazapiMenuMessage: mocks.sendUazapiMenuMessage,
 }));
 
 const { resumeDueWhatsappCampaignRecipients } = await import("./whatsappQueue.js");
@@ -68,6 +70,7 @@ const baseContext = {
   messageText: "",
   messageType: "VIDEO",
   carouselData: null,
+  menuData: null,
   videoUrl: "data:video/mp4;base64,AAAA",
   sourceName: "Grupo teste",
   sourceCode: null,
@@ -123,6 +126,53 @@ describe("resumeDueWhatsappCampaignRecipients", () => {
       expect.objectContaining({ recipientId: "recipient-uaz" }),
       providerPayload,
       "uaz-message-1",
+      "SENT",
+    );
+    expect(mocks.markRecipientFailed).not.toHaveBeenCalled();
+  });
+
+  it("dispatches due UazAPI interactive menu campaign recipients and marks them sent", async () => {
+    const providerPayload = { key: { id: "uaz-menu-1" }, status: "SENT" };
+    const uazapiInstance = { baseUrl: "https://uazapi.example", token: "uaz-token" };
+    const menuData = {
+      menuType: "button",
+      choices: ["Quero comprar", "Falar com atendente"],
+      footerText: "Menu de serviços",
+      listButton: null,
+      selectableCount: null,
+      imageButton: null,
+    };
+    mocks.listDueWhatsappCampaignRecipientJobs.mockResolvedValueOnce([
+      { recipientId: "recipient-menu", campaignId: "campaign-1", delayMs: 0 },
+    ]);
+    mocks.claimRecipientForDispatch.mockResolvedValueOnce({
+      ...baseContext,
+      recipientId: "recipient-menu",
+      messageText: "Escolha uma opção:",
+      messageType: "MENU",
+      menuData,
+      videoUrl: null,
+      uazapiInstance,
+    });
+    mocks.sendUazapiMenuMessage.mockResolvedValueOnce(providerPayload);
+    mocks.markRecipientSent.mockResolvedValueOnce(undefined);
+
+    await expect(resumeDueWhatsappCampaignRecipients("campaign-1", 1)).resolves.toEqual({
+      candidates: 1,
+      started: 1,
+    });
+    await vi.runAllTimersAsync();
+
+    expect(mocks.sendUazapiMenuMessage).toHaveBeenCalledWith(
+      uazapiInstance,
+      "120363123456789@g.us",
+      "Escolha uma opção:",
+      menuData,
+    );
+    expect(mocks.markRecipientSent).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientId: "recipient-menu" }),
+      providerPayload,
+      "uaz-menu-1",
       "SENT",
     );
     expect(mocks.markRecipientFailed).not.toHaveBeenCalled();

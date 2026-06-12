@@ -89,6 +89,7 @@ const campaign: WhatsappCampaignDetail = {
   messageText: "Mensagem comercial da campanha",
   messageType: "TEXT",
   carouselData: null,
+  menuData: null,
   videoUrl: null,
   minDelaySeconds: 183,
   maxDelaySeconds: 304,

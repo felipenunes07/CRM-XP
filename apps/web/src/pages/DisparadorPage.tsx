@@ -12,6 +12,7 @@ import type {
   WhatsappGroupMappingStatus,
   WhatsappInstanceProvider,
   WhatsappMappingSummary,
+  WhatsappMenuType,
 } from "@olist-crm/shared";
 import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, ShoppingBag, Package, Banknote, Copy } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
@@ -813,6 +814,13 @@ export function DisparadorPage() {
     { text: "", image: "", buttons: [{ id: "btn1", text: "", type: "url" }] },
   ]);
   const [uploadingSlideIndex, setUploadingSlideIndex] = useState<number | null>(null);
+  // Menu interativo (uazapi /send/menu)
+  const [menuType, setMenuType] = useState<WhatsappMenuType>("button");
+  const [menuChoices, setMenuChoices] = useState<string[]>(["", ""]);
+  const [menuFooterText, setMenuFooterText] = useState("");
+  const [menuListButton, setMenuListButton] = useState("");
+  const [menuSelectableCount, setMenuSelectableCount] = useState(1);
+  const [menuImageButton, setMenuImageButton] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [videoFileName, setVideoFileName] = useState("");
   const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
@@ -870,10 +878,21 @@ export function DisparadorPage() {
 
   // Reset message type when provider changes
   useEffect(() => {
-    if (selectedSenderProvider !== "UAZAPI" && campaignMessageType === "CAROUSEL") {
+    if (selectedSenderProvider !== "UAZAPI" && (campaignMessageType === "CAROUSEL" || campaignMessageType === "MENU")) {
       setCampaignMessageType("TEXT");
     }
   }, [selectedSenderProvider, campaignMessageType]);
+
+  function buildMenuData() {
+    return {
+      menuType,
+      choices: menuChoices.map((choice) => choice.trim()).filter(Boolean),
+      footerText: menuFooterText.trim() || null,
+      listButton: menuType === "list" ? menuListButton.trim() || null : null,
+      selectableCount: menuType === "poll" ? menuSelectableCount : null,
+      imageButton: menuType === "button" ? menuImageButton.trim() || null : null,
+    };
+  }
 
   // Auto-select all active senders when loaded
   useEffect(() => {
@@ -1004,6 +1023,7 @@ export function DisparadorPage() {
         messageText,
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
+        menuData: campaignMessageType === "MENU" ? buildMenuData() : null,
         videoUrl: preparedVideoUrl,
         filtersSnapshot: {
           quickFilter,
@@ -1097,6 +1117,7 @@ export function DisparadorPage() {
         messageText: campaignMessageType === "VIDEO" ? messageText.trim() : messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
+        menuData: campaignMessageType === "MENU" ? buildMenuData() : undefined,
         videoUrl: preparedVideoUrl,
         whatsappInstanceId: selectedSenderIds[0] || undefined
       };
@@ -1258,11 +1279,14 @@ export function DisparadorPage() {
     () => filterCampaignRecipients(selectedCampaignDetail?.recipients ?? [], campaignPerformanceFilter),
     [campaignPerformanceFilter, selectedCampaignDetail?.recipients],
   );
+  const menuChoicesCount = menuChoices.filter((choice) => choice.trim()).length;
   const hasMessage = campaignMessageType === "CAROUSEL"
     ? true
     : campaignMessageType === "VIDEO"
       ? Boolean(videoUrl.trim())
-      : Boolean(messageText.trim());
+      : campaignMessageType === "MENU"
+        ? Boolean(messageText.trim()) && menuChoicesCount > 0
+        : Boolean(messageText.trim());
   const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
     ? "Criando campanha..."
@@ -1271,6 +1295,8 @@ export function DisparadorPage() {
       : "Selecione grupos para disparar";
   const composeHelperText = campaignMessageType === "VIDEO" && !videoUrl
     ? "Selecione ou insira um arquivo/URL de vídeo para liberar o disparo."
+    : campaignMessageType === "MENU" && menuChoicesCount === 0
+    ? "Adicione ao menos uma opção no menu interativo para liberar o disparo."
     : !hasMessage
       ? "Escreva ou escolha a mensagem final para liberar o disparo."
       : selectedGroupCount === 0
@@ -2314,6 +2340,16 @@ export function DisparadorPage() {
                             Carrossel
                           </button>
                         ) : null}
+                        {selectedSenderProvider === "UAZAPI" ? (
+                          <button
+                            type="button"
+                            className={`ghost-button${campaignMessageType === "MENU" ? " active" : ""}`}
+                            style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "MENU" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "MENU" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                            onClick={() => setCampaignMessageType("MENU")}
+                          >
+                            Menu interativo
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className={`ghost-button${campaignMessageType === "VIDEO" ? " active" : ""}`}
@@ -2325,9 +2361,9 @@ export function DisparadorPage() {
                       </div>
 
                       <label className="whatsapp-message-field">
-                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : " (Versão A)"}</span>
+                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : campaignMessageType === "MENU" ? " (texto principal do menu)" : " (Versão A)"}</span>
                         <textarea
-                          rows={campaignMessageType === "CAROUSEL" || campaignMessageType === "VIDEO" ? 4 : 8}
+                          rows={campaignMessageType === "CAROUSEL" || campaignMessageType === "VIDEO" || campaignMessageType === "MENU" ? 4 : 8}
                           value={messageText}
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
@@ -2484,6 +2520,128 @@ export function DisparadorPage() {
                               </div>
                             )}
                           </div>
+                        </div>
+                      )}
+
+                      {campaignMessageType === "MENU" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Menu Interativo</span>
+
+                          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                            <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>Formato:</span>
+                            {([
+                              { value: "button", label: "Botões" },
+                              { value: "list", label: "Lista" },
+                              { value: "poll", label: "Enquete" },
+                            ] as { value: WhatsappMenuType; label: string }[]).map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`ghost-button${menuType === option.value ? " active" : ""}`}
+                                style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: menuType === option.value ? "var(--accent)" : "#fff", color: menuType === option.value ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                                onClick={() => setMenuType(option.value)}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              Opções{menuType === "list" ? " (use [Título] para criar seções e Texto|id|descrição para detalhes)" : ""}
+                            </span>
+                            {menuChoices.map((choice, choiceIdx) => (
+                              <div key={choiceIdx} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                                <input
+                                  type="text"
+                                  className="wp-search-input"
+                                  style={{ flex: 1, background: "#fff", paddingLeft: "12px" }}
+                                  placeholder={menuType === "list" ? `Opção ${choiceIdx + 1} (ex: [Seção] ou Texto|id|descrição)` : `Opção ${choiceIdx + 1}`}
+                                  value={choice}
+                                  onChange={(event) => {
+                                    const updated = [...menuChoices];
+                                    updated[choiceIdx] = event.target.value;
+                                    setMenuChoices(updated);
+                                  }}
+                                />
+                                {menuChoices.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setMenuChoices(menuChoices.filter((_, i) => i !== choiceIdx))}
+                                    style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", display: "flex", alignItems: "center" }}
+                                    title="Remover opção"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              style={{ padding: "4px 10px", fontSize: "0.78rem", display: "flex", alignItems: "center", gap: "4px", alignSelf: "flex-start" }}
+                              onClick={() => setMenuChoices((prev) => [...prev, ""])}
+                            >
+                              <PlusCircle size={14} /> Adicionar opção
+                            </button>
+                          </div>
+
+                          {menuType !== "poll" && (
+                            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              Texto do rodapé (opcional)
+                              <input
+                                type="text"
+                                className="wp-search-input"
+                                style={{ background: "#fff", paddingLeft: "12px" }}
+                                placeholder="Ex: Menu de serviços"
+                                value={menuFooterText}
+                                onChange={(event) => setMenuFooterText(event.target.value)}
+                              />
+                            </label>
+                          )}
+
+                          {menuType === "list" && (
+                            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              Texto do botão da lista
+                              <input
+                                type="text"
+                                className="wp-search-input"
+                                style={{ background: "#fff", paddingLeft: "12px" }}
+                                placeholder="Ex: Ver opções"
+                                value={menuListButton}
+                                onChange={(event) => setMenuListButton(event.target.value)}
+                              />
+                            </label>
+                          )}
+
+                          {menuType === "poll" && (
+                            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              Máximo de opções selecionáveis
+                              <input
+                                type="number"
+                                min={1}
+                                max={Math.max(1, menuChoicesCount)}
+                                className="wp-search-input"
+                                style={{ background: "#fff", paddingLeft: "12px", maxWidth: "120px" }}
+                                value={menuSelectableCount}
+                                onChange={(event) => setMenuSelectableCount(Math.max(1, Number(event.target.value) || 1))}
+                              />
+                            </label>
+                          )}
+
+                          {menuType === "button" && (
+                            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              URL da imagem (opcional)
+                              <input
+                                type="text"
+                                className="wp-search-input"
+                                style={{ background: "#fff", paddingLeft: "12px" }}
+                                placeholder="https://exemplo.com/imagem.jpg"
+                                value={menuImageButton}
+                                onChange={(event) => setMenuImageButton(event.target.value)}
+                              />
+                            </label>
+                          )}
                         </div>
                       )}
 
@@ -2992,6 +3150,66 @@ export function DisparadorPage() {
                                   Agora <CheckCheck size={12} style={{ color: "#53bdeb" }} />
                                 </div>
                               </div>
+                            ) : campaignMessageType === "MENU" ? (
+                              <div style={{ maxWidth: "88%", marginLeft: "auto", marginBottom: "8px" }}>
+                                <div className="wp-preview-bubble" style={{
+                                  background: "#d9fdd3",
+                                  padding: "8px 12px",
+                                  borderRadius: "8px 8px 0 0",
+                                  boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                                  fontSize: "0.85rem",
+                                  lineHeight: "1.4",
+                                  color: "#1a1a1a",
+                                  wordWrap: "break-word"
+                                }}>
+                                  {menuType === "button" && menuImageButton.trim() && (
+                                    <img
+                                      src={menuImageButton.trim()}
+                                      alt=""
+                                      style={{ width: "100%", borderRadius: "6px", marginBottom: "6px", display: "block" }}
+                                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                                    />
+                                  )}
+                                  {messageText || <span style={{ color: "#94a3b8" }}>Texto principal do menu...</span>}
+                                  {menuType !== "poll" && menuFooterText.trim() && (
+                                    <div style={{ fontSize: "0.72rem", color: "#667781", marginTop: "4px" }}>{menuFooterText}</div>
+                                  )}
+                                  <div className="wp-preview-bubble-meta" style={{
+                                    fontSize: "0.65rem",
+                                    color: "#667781",
+                                    textAlign: "right",
+                                    marginTop: "4px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "flex-end",
+                                    gap: "4px"
+                                  }}>
+                                    Agora <CheckCheck size={12} style={{ color: "#53bdeb" }} />
+                                  </div>
+                                </div>
+                                {menuType === "list" ? (
+                                  <div style={{ background: "#fff", borderRadius: "0 0 8px 8px", padding: "8px 12px", textAlign: "center", fontSize: "0.8rem", fontWeight: 600, color: "#0088cc", borderTop: "1px solid #e0e0e0", boxShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>
+                                    ☰ {menuListButton.trim() || "Ver opções"}
+                                  </div>
+                                ) : menuType === "poll" ? (
+                                  <div style={{ background: "#fff", borderRadius: "0 0 8px 8px", padding: "8px 12px", display: "flex", flexDirection: "column", gap: "6px", boxShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>
+                                    {menuChoices.filter((choice) => choice.trim()).map((choice, i) => (
+                                      <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", color: "#1a1a1a" }}>
+                                        <span style={{ width: "14px", height: "14px", borderRadius: "50%", border: "2px solid #8696a0", flexShrink: 0 }} />
+                                        {choice}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                    {menuChoices.filter((choice) => choice.trim()).map((choice, i) => (
+                                      <div key={i} style={{ background: "#fff", padding: "8px 12px", textAlign: "center", fontSize: "0.8rem", fontWeight: 600, color: "#0088cc", boxShadow: "0 1px 2px rgba(0,0,0,0.1)", borderRadius: i === menuChoices.filter((c) => c.trim()).length - 1 ? "0 0 8px 8px" : "0" }}>
+                                        {choice}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             ) : campaignMessageType === "TEXT" ? (
                               <>
                                 {messageText && (
@@ -3315,6 +3533,11 @@ export function DisparadorPage() {
                             {campaignMessageType === "CAROUSEL" && (
                               <div style={{ marginTop: "4px", fontSize: "0.75rem" }}>
                                 ⚠️ O carrossel será enviado com todas as imagens e botões configurados
+                              </div>
+                            )}
+                            {campaignMessageType === "MENU" && (
+                              <div style={{ marginTop: "4px", fontSize: "0.75rem" }}>
+                                ⚠️ O menu interativo será enviado com todas as opções configuradas
                               </div>
                             )}
                           </div>

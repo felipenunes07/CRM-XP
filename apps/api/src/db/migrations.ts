@@ -3773,5 +3773,10 @@ export const migrations = [
     next_scheduled_at = EXCLUDED.next_scheduled_at,
     estimated_finish_at = EXCLUDED.estimated_finish_at,
     updated_at = NOW();
+  `,
+  `
+  -- Add menu_data (menu interativo uazapi /send/menu) to campaigns
+  ALTER TABLE public.whatsapp_campaigns
+    ADD COLUMN IF NOT EXISTS menu_data JSONB;
   `
 ];

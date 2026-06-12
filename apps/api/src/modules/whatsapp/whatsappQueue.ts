@@ -13,7 +13,7 @@ import {
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
-import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage } from "./uazapiService.js";
+import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage, sendUazapiMenuMessage } from "./uazapiService.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
 const connection = queueEnabled
@@ -81,6 +81,8 @@ async function processRecipientDispatch(recipientId: string) {
       // UazAPI provider
       if (context.messageType === "CAROUSEL" && context.carouselData?.length) {
         payload = await sendUazapiCarouselMessage(context.uazapiInstance, context.jid, context.carouselData);
+      } else if (context.messageType === "MENU" && context.menuData?.choices?.length) {
+        payload = await sendUazapiMenuMessage(context.uazapiInstance, context.jid, context.messageText, context.menuData);
       } else if (context.messageType === "VIDEO" && context.videoUrl) {
         payload = await sendUazapiVideoMessage(context.uazapiInstance, context.jid, context.videoUrl, context.messageText);
       } else {

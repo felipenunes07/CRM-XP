@@ -12,6 +12,7 @@ import type {
   WhatsappCampaignRecipient,
   WhatsappCampaignRecipientStatus,
   WhatsappCampaignStatus,
+  WhatsappMenuData,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
@@ -30,6 +31,7 @@ export interface CreateWhatsappCampaignInput {
   messageText: string;
   messageType?: WhatsappCampaignMessageType;
   carouselData?: CarouselSlide[] | null;
+  menuData?: WhatsappMenuData | null;
   videoUrl?: string | null;
   filtersSnapshot?: Record<string, unknown>;
   groupIds: string[];
@@ -93,6 +95,7 @@ interface DispatchRecipientContext {
   messageText: string;
   messageType: WhatsappCampaignMessageType;
   carouselData: CarouselSlide[] | null;
+  menuData: WhatsappMenuData | null;
   videoUrl: string | null;
   sourceName: string;
   sourceCode: string | null;
@@ -111,6 +114,19 @@ interface DispatchRecipientContext {
 
 function toIsoStringOrNull(value: unknown) {
   return value ? new Date(String(value)).toISOString() : null;
+}
+
+function parseMenuData(value: unknown): WhatsappMenuData | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.choices) || !record.choices.length) {
+    return null;
+  }
+
+  return record as unknown as WhatsappMenuData;
 }
 
 function numericValue(value: unknown) {
@@ -337,6 +353,7 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     messageText: String(row.message_text ?? ""),
     messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
     carouselData: row.carousel_data && Array.isArray(row.carousel_data) ? (row.carousel_data as CarouselSlide[]) : null,
+    menuData: parseMenuData(row.menu_data),
     videoUrl: row.video_url ? String(row.video_url) : null,
     minDelaySeconds: Number(row.min_delay_seconds ?? 0),
     maxDelaySeconds: Number(row.max_delay_seconds ?? 0),
@@ -985,6 +1002,7 @@ export async function createWhatsappCampaign(
 
     const messageType = input.messageType ?? "TEXT";
     const carouselData = input.carouselData ?? null;
+    const menuData = input.menuData ?? null;
     const videoUrl = input.videoUrl ?? null;
 
     const campaignInsert = await campaignClient.query(
@@ -1001,6 +1019,7 @@ export async function createWhatsappCampaign(
           message_text,
           message_type,
           carousel_data,
+          menu_data,
           video_url,
           filters_snapshot,
           min_delay_seconds,
@@ -1010,7 +1029,7 @@ export async function createWhatsappCampaign(
           created_by_name,
           scheduled_start_at
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12::jsonb, $13, $14, $15, $16, $17, $18::timestamptz)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13::jsonb, $14, $15, $16, $17, $18, $19::timestamptz)
         RETURNING id, created_at
       `,
       [
@@ -1024,6 +1043,7 @@ export async function createWhatsappCampaign(
         trimmedMessage,
         messageType,
         carouselData ? JSON.stringify(carouselData) : null,
+        menuData ? JSON.stringify(menuData) : null,
         videoUrl,
         JSON.stringify(input.filtersSnapshot ?? {}),
         minDelaySeconds,
@@ -1434,6 +1454,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           wc.message_text,
           wc.message_type,
           wc.carousel_data,
+          wc.menu_data,
           wc.video_url,
           wc.template_id,
           wc.created_by_user_id,
@@ -1523,6 +1544,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       messageText: String(row.message_text),
       messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
       carouselData,
+      menuData: parseMenuData(row.menu_data),
       videoUrl: row.video_url ? String(row.video_url) : null,
       sourceName: String(row.source_name ?? ""),
       sourceCode: row.source_code ? String(row.source_code) : null,
