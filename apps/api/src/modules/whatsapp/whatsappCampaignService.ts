@@ -591,7 +591,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
         -- Usado para descartar "ecos": nosso próprio texto voltando pelo webhook
         -- como se fosse mensagem recebida (from_me furado em grupos/@lid).
         campaign_sent AS (
-          SELECT DISTINCT lower(regexp_replace(trim(message), '\s+', ' ', 'g')) AS norm
+          SELECT DISTINCT lower(regexp_replace(trim(message), '\\s+', ' ', 'g')) AS norm
           FROM message_logs
           WHERE campaign_id = $1
             AND status = 'SENT'
@@ -631,7 +631,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND da.created_at < cs.last_window_at
             AND NOT EXISTS (
               SELECT 1 FROM campaign_sent cse
-              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(da.content, '')), '\s+', ' ', 'g'))
+              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(da.content, '')), '\\s+', ' ', 'g'))
             )
             AND NOT EXISTS (
               SELECT 1 FROM team_names tn
@@ -660,7 +660,7 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND wim.created_at < cs.last_window_at
             AND NOT EXISTS (
               SELECT 1 FROM campaign_sent cse
-              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(wim.message_text, '')), '\s+', ' ', 'g'))
+              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(wim.message_text, '')), '\\s+', ' ', 'g'))
             )
             AND NOT EXISTS (
               SELECT 1 FROM team_names tn

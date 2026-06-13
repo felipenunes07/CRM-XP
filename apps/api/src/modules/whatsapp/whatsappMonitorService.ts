@@ -1446,6 +1446,16 @@ export async function listWhatsappMonitorConversations(
     `);
   }
 
+  // Sort key = the real last-message time, not just the deal's last_activity_at.
+  // The deal field can lag the actual newest message (e.g. group messages where
+  // only one instance bumps its deal, or backfilled history), which made the
+  // list order disagree with the timestamp shown on each row. GREATEST keeps the
+  // newest of the deal field and the flat-table MAX (indexed by idx_wmm_deal
+  // _created, so the LATERAL below is a cheap index probe). Dedup then makes the
+  // group's most-recently-active deal win, so groups also order by real time.
+  const effectiveConversationSortSql =
+    "GREATEST(COALESCE(d.last_activity_at, d.created_at), COALESCE(last_monitor_ts.ts, to_timestamp(0)))";
+
   const conversationCursor = decodeCursor<WhatsappConversationCursor>(filters.cursor);
   if (conversationCursor?.lastActivityAt && conversationCursor.id && isValidDateString(conversationCursor.lastActivityAt)) {
     params.push(conversationCursor.lastActivityAt, conversationCursor.id);
@@ -1453,9 +1463,9 @@ export async function listWhatsappMonitorConversations(
     const idParamIndex = params.length;
     where.push(`
       (
-        COALESCE(d.last_activity_at, d.created_at) < $${lastActivityParamIndex}::timestamptz
+        ${effectiveConversationSortSql} < $${lastActivityParamIndex}::timestamptz
         OR (
-          COALESCE(d.last_activity_at, d.created_at) = $${lastActivityParamIndex}::timestamptz
+          ${effectiveConversationSortSql} = $${lastActivityParamIndex}::timestamptz
           AND d.id < $${idParamIndex}::uuid
         )
       )
@@ -1464,7 +1474,7 @@ export async function listWhatsappMonitorConversations(
 
   if (filters.updatedSince && isValidDateString(filters.updatedSince)) {
     params.push(filters.updatedSince);
-    where.push(`COALESCE(d.last_activity_at, d.updated_at, d.created_at) >= $${params.length}::timestamptz`);
+    where.push(`GREATEST(${effectiveConversationSortSql}, COALESCE(d.updated_at, to_timestamp(0))) >= $${params.length}::timestamptz`);
   }
 
   params.push(queryLimit);
@@ -1477,7 +1487,7 @@ export async function listWhatsappMonitorConversations(
       FROM (
         SELECT
           d.id,
-          COALESCE(d.last_activity_at, d.created_at) AS sort_last_activity_at,
+          ${effectiveConversationSortSql} AS sort_last_activity_at,
           -- Dedup: one conversation per chat. Groups collapse by JID and 1:1
           -- chats collapse by the canonical JID resolved via
           -- whatsapp_jid_aliases, so LID/PN variants of the same contact (and
@@ -1485,9 +1495,14 @@ export async function listWhatsappMonitorConversations(
           -- duplicated conversations. Uses idx_wja_alias_jid_lower.
           ROW_NUMBER() OVER (
             PARTITION BY LOWER(COALESCE(dedupe_alias.canonical_jid, d.whatsapp_jid))
-            ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC
+            ORDER BY ${effectiveConversationSortSql} DESC, d.id DESC
           ) AS rn
         FROM deals d
+        LEFT JOIN LATERAL (
+          SELECT MAX(wmm_sort.created_at) AS ts
+          FROM whatsapp_monitor_messages wmm_sort
+          WHERE wmm_sort.deal_id = d.id
+        ) last_monitor_ts ON true
         LEFT JOIN LATERAL (
           SELECT wja.canonical_jid
           FROM whatsapp_jid_aliases wja
@@ -1504,12 +1519,13 @@ export async function listWhatsappMonitorConversations(
       ORDER BY sort_last_activity_at DESC, id DESC
       LIMIT $${queryLimitParamIndex}
     )
-    SELECT conversation_rows.*
+    SELECT conversation_rows.*, candidate_deals.sort_last_activity_at AS effective_sort_at
     FROM (
       ${conversationBaseSelectSql(userIdParamIndex, scopedInstanceIdParamIndex)}
       WHERE d.id IN (SELECT id FROM candidate_deals)
     ) conversation_rows
-    ORDER BY COALESCE(conversation_rows.last_activity_at, conversation_rows.created_at) DESC, conversation_rows.id DESC
+    JOIN candidate_deals ON candidate_deals.id = conversation_rows.id
+    ORDER BY candidate_deals.sort_last_activity_at DESC, conversation_rows.id DESC
     `,
     params,
   );
@@ -1519,7 +1535,7 @@ export async function listWhatsappMonitorConversations(
   const lastRow = pageRows.at(-1);
   const nextCursor = lastRow
     ? encodeCursor({
-      lastActivityAt: isoDate(lastRow.last_activity_at ?? lastRow.created_at),
+      lastActivityAt: isoDate(lastRow.effective_sort_at ?? lastRow.last_activity_at ?? lastRow.created_at),
       id: String(lastRow.id),
     })
     : null;

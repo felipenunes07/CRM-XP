@@ -1,6 +1,6 @@
 import { type FormEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MessageTemplate,
   WhatsappMonitorAgent,
@@ -703,7 +703,11 @@ export function MessagesPage() {
   const lastScrolledConversationRef = useRef<string | null>(null);
   const conversationSyncSinceRef = useRef<string | null>(null);
   const conversationsEndRef = useRef<HTMLDivElement | null>(null);
+  const chatTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const chatScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+  // Set when we load OLDER messages so the scroll-to-bottom effect doesn't yank
+  // the user back down after a prepend.
+  const skipBottomScrollRef = useRef(false);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -770,9 +774,10 @@ export function MessagesPage() {
       }),
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.nextCursor ?? undefined) : undefined,
     enabled: Boolean(token),
-    // Keep the previous agent's list on screen while the new one loads, so
-    // switching agents never flashes an empty skeleton.
-    placeholderData: keepPreviousData,
+    // NOTE: no keepPreviousData here. It kept the previous agent's (or a stale
+    // prefetched) list on screen while the new one loaded, which could surface
+    // stale conversations after switching agents. A brief skeleton + the hover
+    // prefetch keeps the switch fast without ever showing the wrong list.
     refetchInterval: false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
@@ -1228,6 +1233,37 @@ export function MessagesPage() {
     return () => window.clearInterval(interval);
   }, [conversationDetailQueryKey, detail?.pageInfo.nextCursor, detailInstanceId, detailMatchesSelection, queryClient, selectedConversationId, token]);
 
+  // Load older messages when the top sentinel scrolls into view. More reliable
+  // than a scrollTop threshold, and mirrors the conversation-list infinite
+  // scroll. Captures an anchor + sets the skip flag so the restore keeps the
+  // viewport steady and the bottom-scroll effect doesn't fire.
+  useEffect(() => {
+    const sentinel = chatTopSentinelRef.current;
+    const element = chatBodyRef.current;
+    if (
+      !sentinel ||
+      !element ||
+      !conversationDetailQuery.hasNextPage ||
+      conversationDetailQuery.isFetchingNextPage
+    ) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting) && !chatScrollAnchorRef.current) {
+          chatScrollAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+          skipBottomScrollRef.current = true;
+          void conversationDetailQuery.fetchNextPage();
+        }
+      },
+      { root: element, rootMargin: "160px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [conversationDetailQuery.hasNextPage, conversationDetailQuery.isFetchingNextPage, selectedConversationId, messages.length]);
+
   // After older messages are prepended, restore the visual position so the
   // chat doesn't jump to the top of the newly loaded page.
   useLayoutEffect(() => {
@@ -1243,11 +1279,18 @@ export function MessagesPage() {
 
   useEffect(() => {
     chatScrollAnchorRef.current = null;
+    skipBottomScrollRef.current = false;
   }, [selectedConversationId]);
 
   useEffect(() => {
     const element = chatBodyRef.current;
     if (!element || !selectedConversationId) {
+      return;
+    }
+
+    // Never auto-scroll to the bottom right after loading OLDER messages.
+    if (skipBottomScrollRef.current) {
+      skipBottomScrollRef.current = false;
       return;
     }
 
@@ -1467,13 +1510,7 @@ export function MessagesPage() {
           </div>
           <SearchBox value={conversationSearch} onChange={setConversationSearch} placeholder="Pesquisar" />
 
-          <div
-            className="wa-list"
-            style={{
-              opacity: conversationsQuery.isPlaceholderData ? 0.5 : 1,
-              transition: "opacity 120ms ease",
-            }}
-          >
+          <div className="wa-list">
             {conversationsQuery.isLoading || (conversationsQuery.isFetching && !filteredConversations.length) ? (
               <>
                 <ConversationSkeletonRow />
@@ -1587,32 +1624,27 @@ export function MessagesPage() {
                   const element = event.currentTarget;
                   const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                   stickToBottomRef.current = distanceFromBottom < 160;
-
-                  if (
-                    element.scrollTop < 120 &&
-                    conversationDetailQuery.hasNextPage &&
-                    !conversationDetailQuery.isFetchingNextPage &&
-                    !chatScrollAnchorRef.current
-                  ) {
-                    chatScrollAnchorRef.current = {
-                      scrollHeight: element.scrollHeight,
-                      scrollTop: element.scrollTop,
-                    };
-                    void conversationDetailQuery.fetchNextPage();
-                  }
                 }}
               >
                 {conversationDetailQuery.isLoading ? (
                   <ChatSkeleton />
                 ) : timelineItems.length ? (
                   <>
+                    <div ref={chatTopSentinelRef} aria-hidden="true" />
                     {conversationDetailQuery.hasNextPage ? (
                       <div className="wa-load-more-row chat">
                         <button
                           type="button"
                           className="wa-load-more-button"
                           disabled={conversationDetailQuery.isFetchingNextPage}
-                          onClick={() => void conversationDetailQuery.fetchNextPage()}
+                          onClick={() => {
+                            const element = chatBodyRef.current;
+                            if (element && !chatScrollAnchorRef.current) {
+                              chatScrollAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+                              skipBottomScrollRef.current = true;
+                            }
+                            void conversationDetailQuery.fetchNextPage();
+                          }}
                         >
                           {conversationDetailQuery.isFetchingNextPage ? "Carregando..." : "Carregar mensagens antigas"}
                         </button>

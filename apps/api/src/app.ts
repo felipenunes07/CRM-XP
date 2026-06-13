@@ -1455,8 +1455,12 @@ export function createApp() {
 
   app.post("/api/messages/test", async (request, response, next) => {
     try {
-      const { messageText, messageType, carouselData, menuData, videoUrl, whatsappInstanceId } = request.body;
+      const { messageText: rawTestMessageText, messageType, carouselData, menuData, videoUrl, whatsappInstanceId } = request.body;
       const testNumber = "5511911279702@s.whatsapp.net";
+      // No teste não existe cliente real, então o {nome} é substituído por um
+      // exemplo ("Cliente") para o usuário confirmar que a variável funciona.
+      const { applyWhatsappMessagePlaceholders } = await import("./modules/whatsapp/whatsappCore.js");
+      const messageText = applyWhatsappMessagePlaceholders(String(rawTestMessageText ?? ""), { nome: "Cliente" });
 
       logger.info("📱 Test message request received", {
         messageType,

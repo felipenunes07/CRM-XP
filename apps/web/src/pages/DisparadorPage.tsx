@@ -2372,36 +2372,50 @@ export function DisparadorPage() {
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
                         />
-                        <span style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "4px" }}>
-                          Dica: use <code>{"{nome}"}</code> para inserir o nome do cliente automaticamente.
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "6px", alignSelf: "flex-start", padding: "3px 10px", borderRadius: "999px", background: "#eff6ff", border: "1px solid #dbeafe", fontSize: "0.72rem", color: "#1d4ed8", fontWeight: 600 }}>
+                          <Sparkles size={12} />
+                          Use <code style={{ background: "#dbeafe", padding: "0 4px", borderRadius: "4px" }}>{"{nome}"}</code> para o nome do cliente
                         </span>
                       </label>
 
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
-                        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>
-                          <input
-                            type="checkbox"
-                            checked={autoReplyEnabled}
-                            onChange={(event) => setAutoReplyEnabled(event.target.checked)}
-                          />
-                          Resposta automática quando o cliente responder
-                        </label>
-                        <span style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
-                          Se o cliente responder ao disparo (mensagem, mídia ou clique em botão/enquete do menu), o sistema envia esta mensagem automaticamente — uma única vez por cliente.
-                        </span>
+                      <div style={{ borderRadius: "12px", border: `1px solid ${autoReplyEnabled ? "#a7f3d0" : "var(--line)"}`, background: "#fff", overflow: "hidden", transition: "border-color 0.2s" }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", padding: "14px 16px", background: autoReplyEnabled ? "rgba(16,185,129,0.07)" : "var(--bg-soft)" }}>
+                          <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: "linear-gradient(135deg, #10b981, #047857)", display: "grid", placeItems: "center", flexShrink: 0, boxShadow: "0 2px 6px rgba(16,185,129,0.3)" }}>
+                            <MessageCircle size={19} color="#fff" />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Resposta automática</div>
+                            <div style={{ fontSize: "0.78rem", color: "var(--muted)", marginTop: "2px", lineHeight: 1.4 }}>
+                              Quando o cliente responder ao disparo (mensagem, mídia ou clique no menu), o sistema responde na hora — só uma vez por cliente.
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={autoReplyEnabled}
+                            onClick={() => setAutoReplyEnabled((value) => !value)}
+                            style={{ position: "relative", width: "44px", height: "24px", borderRadius: "999px", border: "none", cursor: "pointer", flexShrink: 0, padding: 0, marginTop: "2px", background: autoReplyEnabled ? "#10b981" : "#cbd5e1", transition: "background 0.2s" }}
+                          >
+                            <span style={{ position: "absolute", top: "2px", left: autoReplyEnabled ? "22px" : "2px", width: "20px", height: "20px", borderRadius: "50%", background: "#fff", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
+                          </button>
+                        </div>
                         {autoReplyEnabled && (
-                          <>
+                          <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--line)" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap" }}>
+                              <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#334155" }}>Mensagem que será enviada</span>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "3px 10px", borderRadius: "999px", background: "#ecfdf5", border: "1px solid #a7f3d0", fontSize: "0.72rem", color: "#047857", fontWeight: 600 }}>
+                                <Sparkles size={12} />
+                                Use <code style={{ background: "#d1fae5", padding: "0 4px", borderRadius: "4px" }}>{"{nome}"}</code> aqui também
+                              </span>
+                            </div>
                             <textarea
                               rows={4}
                               value={autoReplyText}
                               onChange={(event) => setAutoReplyText(event.target.value)}
                               placeholder="Ex: Oi {nome}! Que bom que respondeu 😊 Já vou te passar todos os detalhes..."
-                              style={{ width: "100%", resize: "vertical" }}
+                              style={{ width: "100%", resize: "vertical", padding: "10px 12px", borderRadius: "8px", border: "1px solid var(--line)", fontFamily: "inherit", fontSize: "0.88rem", lineHeight: 1.45, color: "#1a1a1a", outline: "none" }}
                             />
-                            <span style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                              Aqui também funciona o <code>{"{nome}"}</code> do cliente.
-                            </span>
-                          </>
+                          </div>
                         )}
                       </div>
 

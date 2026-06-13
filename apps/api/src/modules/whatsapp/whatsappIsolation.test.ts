@@ -853,7 +853,10 @@ describe("whatsapp conversation isolation", () => {
 
     expect(listSql).toContain("WITH candidate_deals");
     expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
-    expect(listSql).toContain("ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC");
+    // Ordering is by the effective last-message time (deal field OR newest flat
+    // message), so the list order matches the timestamp shown on each row.
+    expect(listSql).toContain("GREATEST(COALESCE(d.last_activity_at, d.created_at), COALESCE(last_monitor_ts.ts, to_timestamp(0)))");
+    expect(listSql).toContain("ORDER BY sort_last_activity_at DESC, id DESC");
     expect(listSql).toContain("WHERE d.id IN (SELECT id FROM candidate_deals)");
     expect(listSql).toContain("latest_whatsapp.direction = 'INBOUND'");
     expect(listSql).not.toContain("incoming_profile.sender_profile_picture_url");
