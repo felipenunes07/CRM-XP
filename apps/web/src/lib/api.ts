@@ -787,6 +787,7 @@ export const api = {
       direction: "INBOUND" | "OUTBOUND";
       content: string;
       senderName: string | null;
+      senderAvatarUrl: string | null;
       source: string;
       createdAt: string;
     }> }>(`/api/whatsapp-campaigns/${campaignId}/recipients/${recipientId}/chat`, {}, token);
@@ -821,6 +822,7 @@ export const api = {
       contactPhone?: string;
       period?: "today" | "yesterday" | "7d" | "30d";
       status?: "unread" | "risk";
+      group?: "groups" | "contacts";
       agentInteraction?: "sent";
       limit?: number;
       cursor?: string;
@@ -845,6 +847,9 @@ export const api = {
     }
     if (query.status) {
       search.set("status", query.status);
+    }
+    if (query.group) {
+      search.set("group", query.group);
     }
     if (query.agentInteraction) {
       search.set("agentInteraction", query.agentInteraction);

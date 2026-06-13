@@ -49,6 +49,7 @@ interface ConversationFilters {
   contactPhone?: string;
   period?: "today" | "yesterday" | "7d" | "30d";
   status?: "unread" | "risk";
+  group?: "groups" | "contacts";
   agentInteraction?: "sent";
   limit?: number;
   cursor?: string;
@@ -441,21 +442,24 @@ function whatsappMonitorRawRemoteJidSql(messageAlias: string) {
   `;
 }
 
-function whatsappMonitorConversationRemoteScopeSql(messageAlias: string, aliasesParamIndex: number, isGroup: boolean) {
+function whatsappMonitorConversationRemoteScopeSql(messageAlias: string, aliasesParamIndex: number | null, isGroup: boolean) {
   const rawRemoteJid = whatsappMonitorRawRemoteJidSql(messageAlias);
 
   if (isGroup) {
+    if (aliasesParamIndex === null) {
+      throw new Error("aliasesParamIndex e obrigatorio para conversas de grupo");
+    }
     return `
       AND ${messageAlias}.remote_jid = ANY($${aliasesParamIndex}::text[])
       AND COALESCE(${rawRemoteJid}, ${messageAlias}.remote_jid) = ANY($${aliasesParamIndex}::text[])
     `;
   }
 
+  // 1:1 chats: rows are already scoped by deal_id (linked deals of this chat),
+  // so requiring remote_jid to be in the alias set silently dropped messages
+  // stored under a LID/PN variant that was never registered in
+  // whatsapp_jid_aliases. Only group messages must be excluded here.
   return `
-    AND (
-      ${messageAlias}.remote_jid = ANY($${aliasesParamIndex}::text[])
-      OR ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
-    )
     AND COALESCE(${rawRemoteJid}, ${messageAlias}.remote_jid, '') NOT LIKE '%@g.us'
   `;
 }
@@ -472,20 +476,21 @@ function dealActivityRawRemoteJidSql(activityAlias: string) {
   `;
 }
 
-function dealActivityConversationRemoteScopeSql(activityAlias: string, aliasesParamIndex: number, isGroup: boolean) {
+function dealActivityConversationRemoteScopeSql(activityAlias: string, aliasesParamIndex: number | null, isGroup: boolean) {
   const rawRemoteJid = dealActivityRawRemoteJidSql(activityAlias);
 
   if (isGroup) {
+    if (aliasesParamIndex === null) {
+      throw new Error("aliasesParamIndex e obrigatorio para conversas de grupo");
+    }
     return `
       AND ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
     `;
   }
 
+  // Same rationale as whatsappMonitorConversationRemoteScopeSql: activities are
+  // already scoped by deal_id, so only group payloads need to be excluded.
   return `
-    AND (
-      ${rawRemoteJid} = ANY($${aliasesParamIndex}::text[])
-      OR ${rawRemoteJid} IS NULL
-    )
     AND COALESCE(${rawRemoteJid}, '') NOT LIKE '%@g.us'
   `;
 }
@@ -1419,6 +1424,12 @@ export async function listWhatsappMonitorConversations(
     where.push(activityPeriodRangeSql("COALESCE(d.last_activity_at, d.created_at)", filters.period));
   }
 
+  if (filters.group === "groups") {
+    where.push("d.whatsapp_jid LIKE '%@g.us'");
+  } else if (filters.group === "contacts") {
+    where.push("d.whatsapp_jid NOT LIKE '%@g.us'");
+  }
+
   if (filters.status === "unread") {
     where.push(unreadConversationSql(scopedInstanceIdParamIndex));
   }
@@ -1467,11 +1478,23 @@ export async function listWhatsappMonitorConversations(
         SELECT
           d.id,
           COALESCE(d.last_activity_at, d.created_at) AS sort_last_activity_at,
+          -- Dedup: one conversation per chat. Groups collapse by JID and 1:1
+          -- chats collapse by the canonical JID resolved via
+          -- whatsapp_jid_aliases, so LID/PN variants of the same contact (and
+          -- multiple deals pointing at the same chat) no longer show up as
+          -- duplicated conversations. Uses idx_wja_alias_jid_lower.
           ROW_NUMBER() OVER (
-            PARTITION BY CASE WHEN d.whatsapp_jid LIKE '%@g.us' THEN d.whatsapp_jid ELSE d.id::text END
+            PARTITION BY LOWER(COALESCE(dedupe_alias.canonical_jid, d.whatsapp_jid))
             ORDER BY COALESCE(d.last_activity_at, d.created_at) DESC, d.id DESC
           ) AS rn
         FROM deals d
+        LEFT JOIN LATERAL (
+          SELECT wja.canonical_jid
+          FROM whatsapp_jid_aliases wja
+          WHERE LOWER(wja.alias_jid) = LOWER(d.whatsapp_jid)
+          ORDER BY wja.updated_at DESC
+          LIMIT 1
+        ) dedupe_alias ON true
         LEFT JOIN whatsapp_conversation_reads conversation_reads
           ON conversation_reads.deal_id = d.id
           AND conversation_reads.user_id = $${userIdParamIndex}
@@ -1836,11 +1859,9 @@ export async function getWhatsappMonitorConversation(
   if (process.env.WHATSAPP_FAST_READ !== "off" && !conversation.isGroup) {
     let cursorSql = "";
     const fastParams: unknown[] = [linkedDealIds];
-    fastParams.push(scopedRemoteJidAliases);
-    const fastRemoteAliasesParamIndex = fastParams.length;
-    const fastConversationRemoteScope = scopedRemoteJidAliases.length
-      ? whatsappMonitorConversationRemoteScopeSql("wmm", fastRemoteAliasesParamIndex, conversation.isGroup)
-      : "";
+    // Fast path only runs for 1:1 chats; the scope no longer needs the alias
+    // array (rows are already restricted by deal_id).
+    const fastConversationRemoteScope = whatsappMonitorConversationRemoteScopeSql("wmm", null, false);
     const fastInstanceJoin = options.instanceId
       ? (() => {
         fastParams.push(options.instanceId);
@@ -1898,7 +1919,6 @@ export async function getWhatsappMonitorConversation(
       FROM whatsapp_monitor_messages wmm
       ${fastInstanceJoin}
       WHERE wmm.deal_id = ANY($1::uuid[])
-        AND wmm.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
         ${fastConversationRemoteScope}
         ${fastInstanceScope}
         ${cursorSql}
@@ -1985,11 +2005,15 @@ export async function getWhatsappMonitorConversation(
   const sourceByMessageId = new Map<string, WhatsappMessageCursor>();
 
   const activityParams: unknown[] = [linkedDealIds];
-  activityParams.push(scopedRemoteJidAliases);
-  const activityRemoteAliasesParamIndex = activityParams.length;
-  const activityConversationRemoteScope = scopedRemoteJidAliases.length
-    ? dealActivityConversationRemoteScopeSql("da_base", activityRemoteAliasesParamIndex, conversation.isGroup)
-    : "";
+  let activityConversationRemoteScope = "";
+  if (conversation.isGroup) {
+    if (scopedRemoteJidAliases.length) {
+      activityParams.push(scopedRemoteJidAliases);
+      activityConversationRemoteScope = dealActivityConversationRemoteScopeSql("da_base", activityParams.length, true);
+    }
+  } else {
+    activityConversationRemoteScope = dealActivityConversationRemoteScopeSql("da_base", null, false);
+  }
   const activityInstanceJoin = options.instanceId
     ? (() => {
       activityParams.push(options.instanceId);
@@ -2033,7 +2057,6 @@ export async function getWhatsappMonitorConversation(
       ${activityInstanceJoin}
       WHERE da_base.deal_id = ANY($1::uuid[])
         AND da_base.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')
-        AND da_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
         ${activityConversationRemoteScope}
         ${activityInstanceScope}
         ${activityCursorSql}
@@ -2098,7 +2121,6 @@ export async function getWhatsappMonitorConversation(
             wim_base.remote_jid = ANY($1::text[])
             OR wim_base.participant_jid = ANY($1::text[])
           )
-          AND wim_base.created_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
           AND (
             EXISTS (
               SELECT 1 FROM unnest($1::text[]) AS alias_jid

@@ -900,7 +900,8 @@ describe("whatsapp conversation isolation", () => {
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
 
-    expect(listSql).toContain("PARTITION BY CASE WHEN d.whatsapp_jid LIKE '%@g.us' THEN d.whatsapp_jid ELSE d.id::text END");
+    expect(listSql).toContain("PARTITION BY LOWER(COALESCE(dedupe_alias.canonical_jid, d.whatsapp_jid))");
+    expect(listSql).toContain("FROM whatsapp_jid_aliases wja");
     expect(listSql).toContain("rn = 1");
   });
 
@@ -1091,7 +1092,8 @@ describe("whatsapp conversation isolation", () => {
     );
     expect(fastReadCall).toBeDefined();
     expect(String(fastReadCall![0])).toContain("LOWER(COALESCE(wmm.instance_name, ''))");
-    expect(String(fastReadCall![0])).toContain("wmm.remote_jid = ANY");
+    // 1:1 chats are scoped by deal_id; the remote scope only excludes group rows.
+    expect(String(fastReadCall![0])).toContain("NOT LIKE '%@g.us'");
     expect(fastReadCall![1]).toContain(selectedInstanceId);
   });
 
@@ -1162,17 +1164,24 @@ describe("whatsapp conversation isolation", () => {
       { instanceId: selectedInstanceId } as any,
     );
 
+    // Groups never use the 1:1 fast read path; their history comes from
+    // deal_activities, where the raw provider remote must stay scoped to the
+    // group JID set so private-chat rows can't leak into the group thread.
     const fastReadCall = mocks.monitorQuery.mock.calls.find(call =>
       String(call[0]).includes("FROM whatsapp_monitor_messages wmm") &&
       String(call[0]).includes("wmm.message_id")
     );
-    expect(fastReadCall).toBeDefined();
-    const fastSql = String(fastReadCall![0]);
+    expect(fastReadCall).toBeUndefined();
 
-    expect(fastSql).toContain("wmm.remote_jid = ANY");
-    expect(fastSql).toContain("wmm.media_json #>> '{key,remoteJid}'");
-    expect(fastSql).toContain("COALESCE(");
-    expect(fastReadCall![1]).toContainEqual([groupJid]);
+    const activityCall = mocks.query.mock.calls.find(call =>
+      String(call[0]).includes("FROM deal_activities da_base")
+    );
+    expect(activityCall).toBeDefined();
+    const activitySql = String(activityCall![0]);
+
+    expect(activitySql).toContain("metadata ->> 'remoteJid'");
+    expect(activitySql).toContain("= ANY");
+    expect(activityCall![1]).toContainEqual([groupJid]);
   });
 
   it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {

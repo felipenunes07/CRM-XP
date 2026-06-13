@@ -1823,6 +1823,7 @@ export interface WhatsappCampaignRecipientChatMessage {
   direction: "INBOUND" | "OUTBOUND";
   content: string;
   senderName: string | null;
+  senderAvatarUrl: string | null;
   source: string;
   createdAt: string;
 }

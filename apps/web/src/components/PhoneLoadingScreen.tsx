@@ -53,26 +53,26 @@ export function PhoneLoadingScreen({ isLoading, onFinished }: PhoneLoadingScreen
     if (!isLoading) {
       // Fast forward to 100%
       const current = progressRef.current;
-      const duration = 400; // ms
-      const steps = 10;
+      const duration = 150; // ms
+      const steps = 5;
       const stepTime = duration / steps;
       const increment = (100 - current) / steps;
-      
+
       let step = 0;
       const interval = setInterval(() => {
         step++;
         if (step >= steps) {
           setProgress(100);
           clearInterval(interval);
-          
+
           // Wait to show "Ready" then fade out
           setTimeout(() => {
             setFadeOut(true);
             // Wait for fadeout animation then finish
             setTimeout(() => {
               onFinished();
-            }, 500); // matches fadeout css duration
-          }, 800);
+            }, 250); // matches fadeout css duration
+          }, 150);
         } else {
           setProgress(prev => Math.min(100, parseFloat((prev + increment).toFixed(1))));
         }

@@ -2234,6 +2234,7 @@ export function createApp() {
     contactPhone: z.string().optional(),
     period: z.enum(["today", "yesterday", "7d", "30d"]).optional(),
     status: z.enum(["unread", "risk"]).optional(),
+    group: z.enum(["groups", "contacts"]).optional(),
     agentInteraction: z.enum(["sent"]).optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
     cursor: z.string().optional(),

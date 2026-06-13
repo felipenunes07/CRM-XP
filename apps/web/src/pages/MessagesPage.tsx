@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -537,11 +537,27 @@ export function MessagesPage() {
     selectedConversationIdRef.current = selectedConversationId;
   }, [selectedConversationId]);
 
+  // PERF: invalidating the whole conversation list on every SSE message forced
+  // a refetch of every loaded page per incoming message. Instead we patch the
+  // cached list in place (bump preview + unread, move to top) and only fall
+  // back to a debounced invalidate when the conversation isn't cached yet.
+  const listInvalidateTimerRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (!token) return;
 
     const base = API_BASE_URL.replace(/\/+$/, "");
     const es = new EventSource(`${base}/api/whatsapp-monitor/stream?token=${encodeURIComponent(token)}`);
+
+    const scheduleListInvalidate = () => {
+      if (listInvalidateTimerRef.current !== null) {
+        return;
+      }
+      listInvalidateTimerRef.current = window.setTimeout(() => {
+        listInvalidateTimerRef.current = null;
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"], refetchType: "active" });
+      }, 2500);
+    };
 
     es.onmessage = (event) => {
       try {
@@ -559,7 +575,49 @@ export function MessagesPage() {
           queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversation", msg.dealId] });
         }
 
-        queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+        let patchedExisting = false;
+        queryClient.setQueriesData({ queryKey: ["whatsapp-monitor-conversations"] }, (old: any) => {
+          if (!old?.pages?.length) {
+            return old;
+          }
+
+          let target: WhatsappMonitorConversation | null = null;
+          for (const page of old.pages) {
+            const match = page.conversations.find((c: WhatsappMonitorConversation) => c.id === msg.dealId);
+            if (match) {
+              target = match;
+              break;
+            }
+          }
+
+          if (!target) {
+            return old;
+          }
+
+          patchedExisting = true;
+          const isSelected = msg.dealId === selectedConversationIdRef.current;
+          const updated: WhatsappMonitorConversation = {
+            ...target,
+            lastMessage: msg.content || target.lastMessage,
+            lastMessageAt: msg.createdAt,
+            ...(msg.direction === "INBOUND" && !isSelected
+              ? { unreadCount: target.unreadCount + 1, isUnread: true }
+              : {}),
+          };
+
+          const pages = old.pages.map((page: WhatsappMonitorConversationsResponse, index: number) => {
+            const remaining = page.conversations.filter((c) => c.id !== msg.dealId);
+            return index === 0
+              ? { ...page, conversations: [updated, ...remaining].sort(sortConversationsByActivity) }
+              : { ...page, conversations: remaining };
+          });
+
+          return { ...old, pages };
+        });
+
+        if (!patchedExisting) {
+          scheduleListInvalidate();
+        }
       } catch (err) {
         console.error("Error parsing SSE data", err);
       }
@@ -571,6 +629,10 @@ export function MessagesPage() {
 
     return () => {
       es.close();
+      if (listInvalidateTimerRef.current !== null) {
+        window.clearTimeout(listInvalidateTimerRef.current);
+        listInvalidateTimerRef.current = null;
+      }
     };
   }, [token, queryClient]);
 
@@ -612,6 +674,8 @@ export function MessagesPage() {
   const stickToBottomRef = useRef(true);
   const lastScrolledConversationRef = useRef<string | null>(null);
   const conversationSyncSinceRef = useRef<string | null>(null);
+  const conversationsEndRef = useRef<HTMLDivElement | null>(null);
+  const chatScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -645,6 +709,7 @@ export function MessagesPage() {
       debouncedContactPhoneFilter,
       periodFilter,
       statusFilter,
+      groupFilter,
       agentInteractionFilter,
     ] as const,
     [
@@ -654,6 +719,7 @@ export function MessagesPage() {
       debouncedConversationSearch,
       periodFilter,
       statusFilter,
+      groupFilter,
       agentInteractionFilter,
     ],
   );
@@ -666,6 +732,7 @@ export function MessagesPage() {
       contactPhone: debouncedContactPhoneFilter || undefined,
       period: periodFilter === "all" ? undefined : periodFilter,
       status: statusFilter === "all" ? undefined : statusFilter,
+      group: groupFilter === "all" ? undefined : groupFilter,
       agentInteraction:
         activeAgentId !== "all" && agentInteractionFilter === "sent"
           ? ("sent" as const)
@@ -678,6 +745,7 @@ export function MessagesPage() {
       debouncedConversationSearch,
       periodFilter,
       statusFilter,
+      groupFilter,
       agentInteractionFilter,
     ],
   );
@@ -786,6 +854,29 @@ export function MessagesPage() {
     () => conversationsQuery.data?.pages.flatMap((page) => page.conversations) ?? [],
     [conversationsQuery.data],
   );
+
+  // Auto-load older conversations when the end of the list scrolls into view.
+  const {
+    hasNextPage: hasMoreConversations,
+    isFetchingNextPage: isFetchingMoreConversations,
+    fetchNextPage: fetchMoreConversations,
+  } = conversationsQuery;
+
+  useEffect(() => {
+    const sentinel = conversationsEndRef.current;
+    if (!sentinel || !hasMoreConversations || isFetchingMoreConversations) {
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        void fetchMoreConversations();
+      }
+    }, { rootMargin: "240px" });
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [conversations.length, fetchMoreConversations, hasMoreConversations, isFetchingMoreConversations]);
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
   const detailInstanceId = activeAgentId === "all" ? undefined : activeAgentId;
 
@@ -1060,6 +1151,23 @@ export function MessagesPage() {
     return () => window.clearInterval(interval);
   }, [conversationDetailQueryKey, detail?.pageInfo.nextCursor, detailInstanceId, detailMatchesSelection, queryClient, selectedConversationId, token]);
 
+  // After older messages are prepended, restore the visual position so the
+  // chat doesn't jump to the top of the newly loaded page.
+  useLayoutEffect(() => {
+    const element = chatBodyRef.current;
+    const anchor = chatScrollAnchorRef.current;
+    if (!element || !anchor || conversationDetailQuery.isFetchingNextPage) {
+      return;
+    }
+
+    element.scrollTop = element.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+    chatScrollAnchorRef.current = null;
+  }, [conversationDetailQuery.isFetchingNextPage, messages.length]);
+
+  useEffect(() => {
+    chatScrollAnchorRef.current = null;
+  }, [selectedConversationId]);
+
   useEffect(() => {
     const element = chatBodyRef.current;
     if (!element || !selectedConversationId) {
@@ -1301,7 +1409,7 @@ export function MessagesPage() {
                 ))}
 
                 {conversationsQuery.hasNextPage ? (
-                  <div className="wa-load-more-row">
+                  <div className="wa-load-more-row" ref={conversationsEndRef}>
                     <button
                       type="button"
                       className="wa-load-more-button"
@@ -1393,6 +1501,19 @@ export function MessagesPage() {
                   const element = event.currentTarget;
                   const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                   stickToBottomRef.current = distanceFromBottom < 160;
+
+                  if (
+                    element.scrollTop < 120 &&
+                    conversationDetailQuery.hasNextPage &&
+                    !conversationDetailQuery.isFetchingNextPage &&
+                    !chatScrollAnchorRef.current
+                  ) {
+                    chatScrollAnchorRef.current = {
+                      scrollHeight: element.scrollHeight,
+                      scrollTop: element.scrollTop,
+                    };
+                    void conversationDetailQuery.fetchNextPage();
+                  }
                 }}
               >
                 {conversationDetailQuery.isLoading ? (
