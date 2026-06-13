@@ -456,7 +456,18 @@ export async function syncOlistIncremental() {
 
   try {
     let page = 1;
-    const updatedSince = (await getCursor("olist_v2_orders")) ?? `${env.OLIST_SYNC_START_DATE} 00:00:00`;
+    // Cursor para eficiência, mas com rede de segurança: sempre revarre os
+    // últimos OLIST_SYNC_SAFETY_DAYS dias. Se o cursor estiver adiantado (ex.:
+    // bug de fuso que o empurrou pro futuro) ou a sync tiver falhado, as vendas
+    // recentes ainda assim entram. Inserts são idempotentes (ON CONFLICT
+    // fingerprint DO NOTHING), então revarrer não duplica nada.
+    const cursorValue = await getCursor("olist_v2_orders");
+    const safetyFloor = new Date(
+      Date.now() - env.OLIST_SYNC_SAFETY_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+    const updatedSince = cursorValue
+      ? (cursorValue < safetyFloor ? cursorValue : safetyFloor)
+      : `${env.OLIST_SYNC_START_DATE} 00:00:00`;
     let totalPages = 1;
 
     do {
