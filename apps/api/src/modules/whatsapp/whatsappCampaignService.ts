@@ -587,6 +587,29 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             MAX(sent_at) + ($2::int * INTERVAL '1 day') AS last_window_at
           FROM campaign_recipients
         ),
+        -- Tudo que NÓS enviamos nesta campanha (disparo + resposta automática).
+        -- Usado para descartar "ecos": nosso próprio texto voltando pelo webhook
+        -- como se fosse mensagem recebida (from_me furado em grupos/@lid).
+        campaign_sent AS (
+          SELECT DISTINCT lower(regexp_replace(trim(message), '\s+', ' ', 'g')) AS norm
+          FROM message_logs
+          WHERE campaign_id = $1
+            AND status = 'SENT'
+            AND COALESCE(message, '') <> ''
+        ),
+        -- Nomes de qualquer número da equipe (instâncias ativas). Posts da equipe
+        -- em grupo (ex.: ranking de vendas) não são resposta do cliente.
+        team_names AS (
+          SELECT lower(trim(name)) AS name
+          FROM (
+            SELECT display_label AS name FROM whatsapp_instances WHERE status = 'ACTIVE'
+            UNION ALL
+            SELECT assigned_user_name FROM whatsapp_instances WHERE status = 'ACTIVE'
+            UNION ALL
+            SELECT instance_name FROM whatsapp_instances WHERE status = 'ACTIVE'
+          ) AS t
+          WHERE COALESCE(trim(name), '') <> '' AND length(trim(name)) >= 3
+        ),
         inbound_candidates AS (
           SELECT
             COALESCE(NULLIF(da.metadata ->> 'messageId', ''), da.id::text) AS event_key,
@@ -606,6 +629,15 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND da.created_at >= cs.first_sent_at
             AND da.created_at < cs.last_window_at
+            AND NOT EXISTS (
+              SELECT 1 FROM campaign_sent cse
+              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(da.content, '')), '\s+', ' ', 'g'))
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM team_names tn
+              WHERE tn.name = lower(trim(COALESCE(da.actor_name, '')))
+                AND COALESCE(NULLIF(da.metadata ->> 'remoteJid', ''), d.whatsapp_jid) LIKE '%@g.us'
+            )
 
           UNION ALL
 
@@ -626,6 +658,15 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
             AND cs.first_sent_at IS NOT NULL
             AND wim.created_at >= cs.first_sent_at
             AND wim.created_at < cs.last_window_at
+            AND NOT EXISTS (
+              SELECT 1 FROM campaign_sent cse
+              WHERE cse.norm = lower(regexp_replace(trim(COALESCE(wim.message_text, '')), '\s+', ' ', 'g'))
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM team_names tn
+              WHERE tn.name = lower(trim(COALESCE(NULLIF(wim.participant_name, ''), wim.sender_name, '')))
+                AND COALESCE(wim.remote_jid, '') LIKE '%@g.us'
+            )
         ),
         inbound_events AS (
           SELECT DISTINCT ON (event_key)
@@ -1961,6 +2002,38 @@ export async function getWhatsappCampaignRecipientChat(
   const seenKeys = new Set<string>();
   const messages: WhatsappCampaignRecipientChatMessage[] = [];
 
+  // Em grupos, mensagens postadas por um número da equipe (nome de perfil = rótulo
+  // de uma instância ativa) não são resposta do cliente — mesmo que o from_me do
+  // provedor tenha falhado (típico de @lid). Reclassificamos para a EQUIPE.
+  const recipientIsGroup = String(recipient.jid ?? "").toLowerCase().endsWith("@g.us");
+  const teamNames = new Set<string>();
+  if (recipientIsGroup) {
+    const teamNamesResult = await pool.query(
+      `SELECT display_label, assigned_user_name, instance_name FROM whatsapp_instances WHERE status = 'ACTIVE'`,
+    );
+    for (const teamRow of teamNamesResult.rows) {
+      for (const value of [teamRow.display_label, teamRow.assigned_user_name, teamRow.instance_name]) {
+        const normalizedName = String(value ?? "").trim().toLowerCase();
+        if (normalizedName.length >= 3) {
+          teamNames.add(normalizedName);
+        }
+      }
+    }
+  }
+
+  const resolveDirection = (row: Record<string, unknown>): "INBOUND" | "OUTBOUND" => {
+    if (row.from_me) {
+      return "OUTBOUND";
+    }
+    if (recipientIsGroup) {
+      const senderName = String(row.sender_name ?? "").trim().toLowerCase();
+      if (senderName.length >= 3 && teamNames.has(senderName)) {
+        return "OUTBOUND";
+      }
+    }
+    return "INBOUND";
+  };
+
   const normalizeContent = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
   // Conteúdos curtos/placeholder não servem para casar "eco" (gerariam falsos
   // positivos), só textos com substância (ex.: o texto da campanha).
@@ -2023,13 +2096,13 @@ export async function getWhatsappCampaignRecipientChat(
     pushRow(row, "OUTBOUND");
   }
   for (const row of incomingResult.rows) {
-    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+    pushRow(row, resolveDirection(row));
   }
   for (const row of monitorResult.rows) {
-    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+    pushRow(row, resolveDirection(row));
   }
   for (const row of activitiesResult.rows) {
-    pushRow(row, row.from_me ? "OUTBOUND" : "INBOUND");
+    pushRow(row, resolveDirection(row));
   }
 
   // Mensagens da equipe sem foto própria (ex.: enviadas pelo CRM) usam a foto

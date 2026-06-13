@@ -11035,8 +11035,14 @@ textarea {
 .wa-filter-strip {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
+  padding: 0.7rem 0.85rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--wa-line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fe 100%);
+  box-shadow: 0 1px 2px rgba(16, 30, 64, 0.04);
 }
 
 .wa-filter-button,
@@ -11046,7 +11052,7 @@ textarea {
 .wa-add-user {
   min-height: 2.65rem;
   border: 1px solid var(--wa-line);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 0.68rem 1rem;
   display: inline-flex;
   align-items: center;
@@ -11056,7 +11062,7 @@ textarea {
   color: var(--wa-text);
   font-weight: 500;
   cursor: pointer;
-  transition: 160ms ease;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
 .wa-filter-field {
@@ -11120,18 +11126,32 @@ textarea {
 }
 
 .wa-filter-button:hover,
-.wa-filter-field:focus-within,
 .wa-filter-field:hover,
 .wa-filter-select:hover,
-.wa-filter-select:focus-within,
 .wa-secondary-action:hover {
   border-color: rgba(0, 168, 132, 0.42);
   color: var(--wa-green-dark);
 }
 
+.wa-filter-field:focus-within,
+.wa-filter-select:focus-within {
+  border-color: rgba(0, 168, 132, 0.7);
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.14);
+  color: var(--wa-green-dark);
+}
+
+.wa-filter-button {
+  font-weight: 600;
+  color: var(--wa-muted);
+}
+
+.wa-filter-button:not(:disabled):hover {
+  background: rgba(0, 168, 132, 0.08);
+}
+
 .wa-filter-button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .wa-monitor-shell {
@@ -12276,13 +12296,18 @@ textarea {
 
 .whatsapp-monitor-page .wa-filter-strip {
   flex-shrink: 0;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--wa-line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7f9fe 100%);
+  box-shadow: 0 1px 2px rgba(16, 30, 64, 0.04);
 }
 
 .whatsapp-monitor-page .wa-filter-field,
 .whatsapp-monitor-page .wa-filter-select,
 .whatsapp-monitor-page .wa-filter-button {
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .whatsapp-monitor-page .wa-filter-select {
@@ -18385,7 +18410,7 @@ body:has(.whatsapp-monitor-page) .main-content {
   z-index: 90; /* Keeps it within main content, leaving sidebar visible */
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s;
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s;
 }
 
 .phone-loader-overlay.fade-out {

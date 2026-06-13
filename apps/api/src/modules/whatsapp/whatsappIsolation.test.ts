@@ -1164,24 +1164,21 @@ describe("whatsapp conversation isolation", () => {
       { instanceId: selectedInstanceId } as any,
     );
 
-    // Groups never use the 1:1 fast read path; their history comes from
-    // deal_activities, where the raw provider remote must stay scoped to the
-    // group JID set so private-chat rows can't leak into the group thread.
+    // Groups now use the flat-table fast read path too, but must keep the group
+    // alias scope on both remote_jid and the raw provider remoteJid so a
+    // private-chat row mis-stored under the group deal can't leak into the
+    // thread.
     const fastReadCall = mocks.monitorQuery.mock.calls.find(call =>
       String(call[0]).includes("FROM whatsapp_monitor_messages wmm") &&
       String(call[0]).includes("wmm.message_id")
     );
-    expect(fastReadCall).toBeUndefined();
+    expect(fastReadCall).toBeDefined();
+    const fastSql = String(fastReadCall![0]);
 
-    const activityCall = mocks.query.mock.calls.find(call =>
-      String(call[0]).includes("FROM deal_activities da_base")
-    );
-    expect(activityCall).toBeDefined();
-    const activitySql = String(activityCall![0]);
-
-    expect(activitySql).toContain("metadata ->> 'remoteJid'");
-    expect(activitySql).toContain("= ANY");
-    expect(activityCall![1]).toContainEqual([groupJid]);
+    expect(fastSql).toContain("wmm.remote_jid = ANY");
+    expect(fastSql).toContain("wmm.media_json #>> '{key,remoteJid}'");
+    expect(fastSql).toContain("COALESCE(");
+    expect(fastReadCall![1]).toContainEqual([groupJid]);
   });
 
   it("derives the group conversation preview from whatsapp_incoming_messages by JID, shared across every seller", async () => {
