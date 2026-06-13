@@ -560,15 +560,26 @@ export async function handleEvolutionWebhook(
             ? rawMsg.senderJid
             : null;
 
-      // Número real de quem enviou (campo senderPn do Baileys). Em conversas com
-      // LID/multi-dispositivo a Evolution devolve key.fromMe=false mesmo para
-      // mensagens enviadas pela própria vendedora, mas o senderPn traz o número
-      // verdadeiro do autor — usamos isso para recuperar a direção correta.
-      const senderPnJid = typeof msgKey.senderPn === "string"
-        ? msgKey.senderPn
-        : typeof rawMsg.senderPn === "string"
-          ? rawMsg.senderPn
-          : null;
+      // Número real de quem enviou a mensagem, lido de TODOS os campos que o
+      // provider pode usar. NÃO pode derivar do remoteJid (em chat privado o
+      // remoteJid é o cliente): em conversas com LID/multi-dispositivo a Evolution
+      // devolve key.fromMe=false mesmo para mensagens enviadas pela vendedora.
+      // Comparar este remetente real com o número conectado da instância recupera
+      // a direção — comportamento que existia antes do refactor de isolamento de
+      // LID (era `senderJid === instanceOwner`) e foi perdido ao tornar o senderJid
+      // dependente do próprio fromMe.
+      const actualSenderJid =
+        (typeof msgKey.senderPn === "string" && msgKey.senderPn) ||
+        (typeof msgKey.participantPn === "string" && msgKey.participantPn) ||
+        (typeof msgKey.participant === "string" && msgKey.participant) ||
+        (typeof msgKey.senderJid === "string" && msgKey.senderJid) ||
+        (typeof msgKey.participantAlt === "string" && msgKey.participantAlt) ||
+        (typeof rawMsg.senderPn === "string" && rawMsg.senderPn) ||
+        (typeof rawMsg.participant === "string" && rawMsg.participant) ||
+        (typeof rawMsg.participantPn === "string" && rawMsg.participantPn) ||
+        (typeof rawMsg.senderJid === "string" && rawMsg.senderJid) ||
+        (typeof rawMsg.sender === "string" && rawMsg.sender) ||
+        null;
 
       const messageSenderJid = payloadParticipantJid ?? context.senderJid;
       let matchedSenderAgent = null;
@@ -588,8 +599,8 @@ export async function handleEvolutionWebhook(
       // (LID) que classificava respostas das vendedoras como recebidas.
       const senderIsInstanceOwner = Boolean(
         instanceOwnerJid &&
-        senderPnJid &&
-        areWhatsappJidsEqual(senderPnJid, instanceOwnerJid)
+        actualSenderJid &&
+        areWhatsappJidsEqual(actualSenderJid, instanceOwnerJid)
       );
 
       const fallbackFromMe = Boolean(
