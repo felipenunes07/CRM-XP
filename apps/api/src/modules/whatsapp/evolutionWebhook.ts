@@ -560,6 +560,16 @@ export async function handleEvolutionWebhook(
             ? rawMsg.senderJid
             : null;
 
+      // Número real de quem enviou (campo senderPn do Baileys). Em conversas com
+      // LID/multi-dispositivo a Evolution devolve key.fromMe=false mesmo para
+      // mensagens enviadas pela própria vendedora, mas o senderPn traz o número
+      // verdadeiro do autor — usamos isso para recuperar a direção correta.
+      const senderPnJid = typeof msgKey.senderPn === "string"
+        ? msgKey.senderPn
+        : typeof rawMsg.senderPn === "string"
+          ? rawMsg.senderPn
+          : null;
+
       const messageSenderJid = payloadParticipantJid ?? context.senderJid;
       let matchedSenderAgent = null;
       if (context.isGroup && messageSenderJid) {
@@ -572,8 +582,19 @@ export async function handleEvolutionWebhook(
         areWhatsappJidsEqual(payloadParticipantJid, instanceOwnerJid)
       );
 
+      // Se quem enviou é o próprio número conectado da instância, a mensagem é
+      // de saída. Um cliente legítimo nunca aparece como remetente com o número
+      // da instância, então isso é seguro e corrige o fromMe furado da Evolution
+      // (LID) que classificava respostas das vendedoras como recebidas.
+      const senderIsInstanceOwner = Boolean(
+        instanceOwnerJid &&
+        senderPnJid &&
+        areWhatsappJidsEqual(senderPnJid, instanceOwnerJid)
+      );
+
       const fallbackFromMe = Boolean(
         isSendMessageEvent ||
+        senderIsInstanceOwner ||
         (context.isGroup && (
           isAgentSender ||
           isAgentJid ||
@@ -581,7 +602,9 @@ export async function handleEvolutionWebhook(
           Boolean(matchedSenderAgent)
         ))
       );
-      const isFromMe = explicitFromMe ?? fallbackFromMe;
+      // senderIsInstanceOwner sobrepõe até um fromMe=false explícito da Evolution,
+      // pois nesse caso o flag do provider está comprovadamente errado.
+      const isFromMe = senderIsInstanceOwner ? true : (explicitFromMe ?? fallbackFromMe);
 
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
       const actorUserId = isFromMe
