@@ -1961,10 +1961,45 @@ export async function getWhatsappCampaignRecipientChat(
   const seenKeys = new Set<string>();
   const messages: WhatsappCampaignRecipientChatMessage[] = [];
 
+  const normalizeContent = (text: string) => text.trim().replace(/\s+/g, " ").toLowerCase();
+  // Conteúdos curtos/placeholder não servem para casar "eco" (gerariam falsos
+  // positivos), só textos com substância (ex.: o texto da campanha).
+  const isMatchableContent = (normalized: string) =>
+    normalized.length >= 8 &&
+    normalized !== "[mensagem sem texto]" &&
+    normalized !== "(mensagem sem texto)";
+
+  // Pré-coleta tudo que NÓS enviamos (campanha/equipe, de qualquer fonte). Quando
+  // a instância manda o disparo, alguns provedores devolvem a própria mensagem no
+  // webhook como se fosse "recebida" (from_me não detectado). Sem isso, o envio
+  // aparece duplicado e atribuído ao CLIENTE em vez da EQUIPE.
+  const teamSentContents = new Set<string>();
+  const collectTeamSent = (rows: Array<Record<string, unknown>>, alwaysOutbound: boolean) => {
+    for (const row of rows) {
+      if (!alwaysOutbound && !row.from_me) continue;
+      const normalized = normalizeContent(String(row.content ?? ""));
+      if (isMatchableContent(normalized)) {
+        teamSentContents.add(normalized);
+      }
+    }
+  };
+  collectTeamSent(logsResult.rows, true);
+  collectTeamSent(incomingResult.rows, false);
+  collectTeamSent(monitorResult.rows, false);
+  collectTeamSent(activitiesResult.rows, false);
+
   const pushRow = (row: Record<string, unknown>, direction: "INBOUND" | "OUTBOUND") => {
+    const content = String(row.content ?? "");
+
+    // Descarta o eco da própria instância: mensagem "recebida" cujo texto é
+    // idêntico a algo que nós enviamos não é resposta do cliente, é a nossa
+    // própria mensagem voltando. Evita duplicar e atribuir ao cliente.
+    if (direction === "INBOUND" && teamSentContents.has(normalizeContent(content))) {
+      return;
+    }
+
     const messageKey = row.message_key ? `key:${String(row.message_key)}` : null;
     const createdAt = new Date(String(row.created_at)).toISOString();
-    const content = String(row.content ?? "");
     // Dedupe entre fontes: primeiro pelo id do provedor, senão por direção+texto+minuto
     const fallbackKey = `fb:${direction}:${content}:${createdAt.slice(0, 16)}`;
     const key = messageKey ?? fallbackKey;
