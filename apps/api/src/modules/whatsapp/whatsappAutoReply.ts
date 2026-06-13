@@ -142,10 +142,46 @@ async function sendAutoReplyMessage(claim: AutoReplyClaim, messageText: string) 
   return sendWhatsappTextMessage(claim.jid, messageText);
 }
 
-export async function processCampaignAutoReply(remoteJid: string) {
+/**
+ * Detecta "eco": a própria mensagem que enviamos (campanha/resposta) volta pelo
+ * webhook como se fosse recebida quando o provedor não marca from_me. Se o texto
+ * recebido bate com algo já enviado por nós para este mesmo número, NÃO é uma
+ * resposta real do cliente — então a resposta automática não deve disparar.
+ */
+async function isEchoOfOwnMessage(remoteJid: string, inboundContent: string): Promise<boolean> {
+  const normalized = inboundContent.trim().replace(/\s+/g, " ").toLowerCase();
+  if (normalized.length < 8) {
+    return false;
+  }
+
+  const digits = remoteJid.split("@")[0]?.replace(/\D/g, "") ?? "";
+  const result = await pool.query(
+    `
+      SELECT 1
+      FROM message_logs
+      WHERE status = 'SENT'
+        AND created_at >= NOW() - INTERVAL '1 day'
+        AND lower(regexp_replace(trim(message), '\\s+', ' ', 'g')) = $1
+        AND (
+          LOWER(COALESCE(destination, '')) = LOWER($2)
+          OR ($3 <> '' AND regexp_replace(split_part(COALESCE(destination, ''), '@', 1), '[^0-9]', '', 'g') = $3)
+        )
+      LIMIT 1
+    `,
+    [normalized, remoteJid, digits],
+  );
+  return result.rows.length > 0;
+}
+
+export async function processCampaignAutoReply(remoteJid: string, inboundContent = "") {
   const normalizedJid = String(remoteJid ?? "").trim();
   if (!normalizedJid) {
     return { sent: false };
+  }
+
+  // Eco da própria instância não conta como resposta do cliente.
+  if (inboundContent && (await isEchoOfOwnMessage(normalizedJid, inboundContent))) {
+    return { sent: false, echo: true };
   }
 
   const claim = await claimAutoReplyRecipient(normalizedJid);
