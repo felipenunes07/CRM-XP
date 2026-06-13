@@ -909,7 +909,13 @@ export function MessagesPage() {
     return () => observer.disconnect();
   }, [conversations.length, fetchMoreConversations, hasMoreConversations, isFetchingMoreConversations]);
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
-  const detailInstanceId = activeAgentId === "all" ? undefined : activeAgentId;
+  // The agent selection only narrows which conversations appear in the LIST.
+  // When a conversation is opened we always show the FULL customer thread, not
+  // just the selected agent's slice — otherwise a customer who talked to several
+  // agents would show only a fragment under each one (the rest looks "missing").
+  // The backend still supports instance-scoped detail reads; we just don't ask
+  // for them here.
+  const detailInstanceId: string | undefined = undefined;
 
   // Hover-prefetch: start fetching an agent's first page of conversations the
   // moment the pointer lands on it, so the click reads warm cache instead of
