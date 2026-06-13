@@ -1,10 +1,11 @@
 import { type FormEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   MessageTemplate,
   WhatsappMonitorAgent,
   WhatsappMonitorConversation,
+  WhatsappMonitorConversationDetail,
   WhatsappMonitorConversationsResponse,
   WhatsappMonitorMessage,
 } from "@olist-crm/shared";
@@ -75,6 +76,46 @@ type GroupFilter = "all" | "groups" | "contacts";
 type PeriodFilter = "all" | "today" | "yesterday" | "7d" | "30d";
 type StatusFilter = "all" | "unread" | "risk";
 type AgentInteractionFilter = "all" | "sent";
+
+interface ConversationFilterState {
+  search: string;
+  contactName: string;
+  contactPhone: string;
+  period: PeriodFilter;
+  status: StatusFilter;
+  group: GroupFilter;
+  agentInteraction: AgentInteractionFilter;
+}
+
+// Shared by the live query AND the hover-prefetch so a prefetched page lands on
+// the exact cache key the click will read — making the click feel instant.
+function conversationsQueryKey(agentId: string, f: ConversationFilterState) {
+  return [
+    "whatsapp-monitor-conversations",
+    agentId,
+    f.search,
+    f.contactName,
+    f.contactPhone,
+    f.period,
+    f.status,
+    f.group,
+    f.agentInteraction,
+  ] as const;
+}
+
+function buildConversationFilters(agentId: string, f: ConversationFilterState) {
+  const instanceId = agentId === "all" ? undefined : agentId;
+  return {
+    instanceId,
+    search: f.search || undefined,
+    contactName: f.contactName || undefined,
+    contactPhone: f.contactPhone || undefined,
+    period: f.period === "all" ? undefined : f.period,
+    status: f.status === "all" ? undefined : f.status,
+    group: f.group === "all" ? undefined : f.group,
+    agentInteraction: instanceId && f.agentInteraction === "sent" ? ("sent" as const) : undefined,
+  };
+}
 
 function metadataString(metadata: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
@@ -250,13 +291,21 @@ const AgentRow = memo(function AgentRow({
   agent,
   active,
   onSelect,
+  onPrefetch,
 }: {
   agent: WhatsappMonitorAgent;
   active: boolean;
   onSelect: (id: string) => void;
+  onPrefetch?: (id: string) => void;
 }) {
   return (
-    <button type="button" className={`wa-list-row ${active ? "active" : ""}`} onClick={() => onSelect(agent.id)}>
+    <button
+      type="button"
+      className={`wa-list-row ${active ? "active" : ""}`}
+      onClick={() => onSelect(agent.id)}
+      onMouseEnter={() => onPrefetch?.(agent.id)}
+      onFocus={() => onPrefetch?.(agent.id)}
+    >
       <AgentAvatar
         name={agent.displayLabel}
         imageUrl={agent.profilePictureUrl}
@@ -275,16 +324,44 @@ const ConversationRow = memo(function ConversationRow({
   conversation,
   active,
   onSelect,
+  onPrefetch,
 }: {
   conversation: WhatsappMonitorConversation;
   active: boolean;
   onSelect: (id: string) => void;
+  onPrefetch?: (id: string) => void;
 }) {
+  const hoverTimer = useRef<number | null>(null);
+
+  const startHover = () => {
+    if (!onPrefetch || hoverTimer.current !== null) {
+      return;
+    }
+    // Wait for the pointer to rest so sweeping the mouse over the list doesn't
+    // fire a burst of prefetches.
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = null;
+      onPrefetch(conversation.id);
+    }, 140);
+  };
+
+  const endHover = () => {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+  };
+
+  useEffect(() => endHover, []);
+
   return (
     <button
       type="button"
       className={`wa-list-row conversation ${active ? "active" : ""} ${conversation.isUnread ? "unread" : ""}`}
       onClick={() => onSelect(conversation.id)}
+      onMouseEnter={startHover}
+      onMouseLeave={endHover}
+      onFocus={() => onPrefetch?.(conversation.id)}
     >
       <AgentAvatar
         name={conversation.contactName}
@@ -651,23 +728,20 @@ export function MessagesPage() {
     staleTime: 60 * 1000,
   });
 
-  const conversationQueryKey = useMemo(
-    () => [
-      "whatsapp-monitor-conversations",
-      activeAgentId,
-      debouncedConversationSearch,
-      debouncedContactNameFilter,
-      debouncedContactPhoneFilter,
-      periodFilter,
-      statusFilter,
-      groupFilter,
-      agentInteractionFilter,
-    ] as const,
+  const filterState = useMemo<ConversationFilterState>(
+    () => ({
+      search: debouncedConversationSearch,
+      contactName: debouncedContactNameFilter,
+      contactPhone: debouncedContactPhoneFilter,
+      period: periodFilter,
+      status: statusFilter,
+      group: groupFilter,
+      agentInteraction: agentInteractionFilter,
+    }),
     [
-      activeAgentId,
+      debouncedConversationSearch,
       debouncedContactNameFilter,
       debouncedContactPhoneFilter,
-      debouncedConversationSearch,
       periodFilter,
       statusFilter,
       groupFilter,
@@ -675,30 +749,14 @@ export function MessagesPage() {
     ],
   );
 
+  const conversationQueryKey = useMemo(
+    () => conversationsQueryKey(activeAgentId, filterState),
+    [activeAgentId, filterState],
+  );
+
   const conversationFilters = useMemo(
-    () => ({
-      instanceId: activeAgentId === "all" ? undefined : activeAgentId,
-      search: debouncedConversationSearch || undefined,
-      contactName: debouncedContactNameFilter || undefined,
-      contactPhone: debouncedContactPhoneFilter || undefined,
-      period: periodFilter === "all" ? undefined : periodFilter,
-      status: statusFilter === "all" ? undefined : statusFilter,
-      group: groupFilter === "all" ? undefined : groupFilter,
-      agentInteraction:
-        activeAgentId !== "all" && agentInteractionFilter === "sent"
-          ? ("sent" as const)
-          : undefined,
-    }),
-    [
-      activeAgentId,
-      debouncedContactNameFilter,
-      debouncedContactPhoneFilter,
-      debouncedConversationSearch,
-      periodFilter,
-      statusFilter,
-      groupFilter,
-      agentInteractionFilter,
-    ],
+    () => buildConversationFilters(activeAgentId, filterState),
+    [activeAgentId, filterState],
   );
 
   const conversationsQuery = useInfiniteQuery({
@@ -712,6 +770,9 @@ export function MessagesPage() {
       }),
     getNextPageParam: (lastPage) => lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.nextCursor ?? undefined) : undefined,
     enabled: Boolean(token),
+    // Keep the previous agent's list on screen while the new one loads, so
+    // switching agents never flashes an empty skeleton.
+    placeholderData: keepPreviousData,
     refetchInterval: false,
     refetchIntervalInBackground: false,
     refetchOnMount: "always",
@@ -844,6 +905,54 @@ export function MessagesPage() {
   }, [conversations.length, fetchMoreConversations, hasMoreConversations, isFetchingMoreConversations]);
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
   const detailInstanceId = activeAgentId === "all" ? undefined : activeAgentId;
+
+  // Hover-prefetch: start fetching an agent's first page of conversations the
+  // moment the pointer lands on it, so the click reads warm cache instead of
+  // waiting on a fresh round-trip.
+  const prefetchAgentConversations = useCallback(
+    (agentId: string) => {
+      if (!token) {
+        return;
+      }
+      void queryClient.prefetchInfiniteQuery({
+        queryKey: conversationsQueryKey(agentId, filterState),
+        queryFn: ({ pageParam }) =>
+          api.whatsappMonitorConversations(token, {
+            ...buildConversationFilters(agentId, filterState),
+            limit: 25,
+            cursor: (pageParam as string | null) ?? undefined,
+          }),
+        initialPageParam: null as string | null,
+        getNextPageParam: (lastPage: WhatsappMonitorConversationsResponse) =>
+          lastPage.pageInfo.hasNextPage ? (lastPage.pageInfo.nextCursor ?? undefined) : undefined,
+        staleTime: 5000,
+      });
+    },
+    [token, queryClient, filterState],
+  );
+
+  // Hover-prefetch: warm the chat detail when the pointer rests on a row.
+  const prefetchConversationDetail = useCallback(
+    (conversationId: string) => {
+      if (!token) {
+        return;
+      }
+      void queryClient.prefetchInfiniteQuery({
+        queryKey: ["whatsapp-monitor-conversation", conversationId, detailInstanceId ?? "all"],
+        queryFn: ({ pageParam }) =>
+          api.whatsappMonitorConversation(token, conversationId, {
+            instanceId: detailInstanceId,
+            limit: 20,
+            before: (pageParam as string | null) ?? undefined,
+          }),
+        initialPageParam: null as string | null,
+        getNextPageParam: (lastPage: WhatsappMonitorConversationDetail) =>
+          lastPage.pageInfo.hasPreviousPage ? (lastPage.pageInfo.previousCursor ?? undefined) : undefined,
+        staleTime: 3000,
+      });
+    },
+    [token, queryClient, detailInstanceId],
+  );
 
   useEffect(() => {
     if (activeAgentId === "all") {
@@ -1343,6 +1452,7 @@ export function MessagesPage() {
                 agent={agent}
                 active={agent.id === activeAgentId}
                 onSelect={setActiveAgentId}
+                onPrefetch={prefetchAgentConversations}
               />
             ))}
 
@@ -1357,7 +1467,13 @@ export function MessagesPage() {
           </div>
           <SearchBox value={conversationSearch} onChange={setConversationSearch} placeholder="Pesquisar" />
 
-          <div className="wa-list">
+          <div
+            className="wa-list"
+            style={{
+              opacity: conversationsQuery.isPlaceholderData ? 0.5 : 1,
+              transition: "opacity 120ms ease",
+            }}
+          >
             {conversationsQuery.isLoading || (conversationsQuery.isFetching && !filteredConversations.length) ? (
               <>
                 <ConversationSkeletonRow />
@@ -1374,6 +1490,7 @@ export function MessagesPage() {
                     conversation={conversation}
                     active={conversation.id === selectedConversationId}
                     onSelect={openConversation}
+                    onPrefetch={prefetchConversationDetail}
                   />
                 ))}
 

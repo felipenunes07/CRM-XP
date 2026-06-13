@@ -71,8 +71,8 @@ export function PhoneLoadingScreen({ isLoading, onFinished }: PhoneLoadingScreen
             // Wait for fadeout animation then finish
             setTimeout(() => {
               onFinished();
-            }, 250); // matches fadeout css duration
-          }, 150);
+            }, 180); // matches fadeout css duration
+          }, 60);
         } else {
           setProgress(prev => Math.min(100, parseFloat((prev + increment).toFixed(1))));
         }

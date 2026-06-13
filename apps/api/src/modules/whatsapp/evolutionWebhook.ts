@@ -115,6 +115,41 @@ async function findAgentByParticipantJid(participantJid: string | null) {
   return null;
 }
 
+/**
+ * Nomes de todos os números da equipe (instâncias ativas): rótulo no CRM, nome
+ * do usuário responsável e o instance_name. Usado para reconhecer mensagens
+ * postadas pela equipe em grupos quando o JID vem como @lid e o from_me do
+ * provedor falha — caso em que uma postagem nossa (ex.: ranking de vendas) seria
+ * contada como "resposta do cliente". Cache curto evita consultar a cada mensagem.
+ */
+let teamSenderNamesCache: { names: Set<string>; expiresAt: number } | null = null;
+
+async function getTeamSenderNames(): Promise<Set<string>> {
+  const now = Date.now();
+  if (teamSenderNamesCache && teamSenderNamesCache.expiresAt > now) {
+    return teamSenderNamesCache.names;
+  }
+
+  const result = await pool.query(
+    `SELECT display_label, assigned_user_name, instance_name
+     FROM whatsapp_instances
+     WHERE status = 'ACTIVE'`,
+  );
+
+  const names = new Set<string>();
+  for (const row of result.rows) {
+    for (const value of [row.display_label, row.assigned_user_name, row.instance_name]) {
+      const normalized = String(value ?? "").trim().toLowerCase();
+      if (normalized.length >= 3) {
+        names.add(normalized);
+      }
+    }
+  }
+
+  teamSenderNamesCache = { names, expiresAt: now + 60_000 };
+  return names;
+}
+
 async function resolvePhoneJidFromLid(lidJid: string): Promise<string | null> {
   const res = await pool.query(
     `
@@ -593,6 +628,15 @@ export async function handleEvolutionWebhook(
         areWhatsappJidsEqual(payloadParticipantJid, instanceOwnerJid)
       );
 
+      // Mensagem postada num grupo por QUALQUER número da equipe (não só a
+      // instância atual). Cobre o caso do @lid sem senderPn: o nome do perfil
+      // ("XpBrasil Lili", etc.) bate com o rótulo de uma instância ativa, então
+      // é envio nosso — não pode contar como resposta do cliente.
+      const teamSenderNames = context.isGroup ? await getTeamSenderNames() : null;
+      const isKnownTeamSender = Boolean(
+        context.isGroup && cleanSenderName.length >= 3 && teamSenderNames?.has(cleanSenderName)
+      );
+
       // Se quem enviou é o próprio número conectado da instância, a mensagem é
       // de saída. Um cliente legítimo nunca aparece como remetente com o número
       // da instância, então isso é seguro e corrige o fromMe furado da Evolution
@@ -609,13 +653,16 @@ export async function handleEvolutionWebhook(
         (context.isGroup && (
           isAgentSender ||
           isAgentJid ||
+          isKnownTeamSender ||
           Boolean(instanceOwnerJid && context.senderJid && areWhatsappJidsEqual(context.senderJid, instanceOwnerJid)) ||
           Boolean(matchedSenderAgent)
         ))
       );
-      // senderIsInstanceOwner sobrepõe até um fromMe=false explícito da Evolution,
-      // pois nesse caso o flag do provider está comprovadamente errado.
-      const isFromMe = senderIsInstanceOwner ? true : (explicitFromMe ?? fallbackFromMe);
+      // senderIsInstanceOwner e isKnownTeamSender sobrepõem até um fromMe=false
+      // explícito da Evolution: nesses casos o remetente é comprovadamente da
+      // equipe (número da instância ou nome de perfil de uma instância ativa),
+      // então o flag do provider está errado (típico em grupos com @lid).
+      const isFromMe = (senderIsInstanceOwner || isKnownTeamSender) ? true : (explicitFromMe ?? fallbackFromMe);
 
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
       const actorUserId = isFromMe

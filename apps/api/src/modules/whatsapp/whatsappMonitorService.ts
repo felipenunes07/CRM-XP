@@ -1855,13 +1855,26 @@ export async function getWhatsappMonitorConversation(
   );
   const queryLimit = messageLimit + 1;
 
-  // Fast read path with flat table and automated fallback
-  if (process.env.WHATSAPP_FAST_READ !== "off" && !conversation.isGroup) {
+  // Fast read path with flat table and automated fallback. Used for BOTH 1:1
+  // and group chats: group messages are written to whatsapp_monitor_messages by
+  // the webhook too, so we serve them from the indexed flat table (idx_wmm_deal
+  // _created) instead of the multi-table deal_activities + incoming scan that
+  // could take many seconds on busy groups. If the flat table has no rows for
+  // this chat (e.g. a group from before the table existed) we fall through to
+  // the legacy path below.
+  if (process.env.WHATSAPP_FAST_READ !== "off") {
     let cursorSql = "";
     const fastParams: unknown[] = [linkedDealIds];
-    // Fast path only runs for 1:1 chats; the scope no longer needs the alias
-    // array (rows are already restricted by deal_id).
-    const fastConversationRemoteScope = whatsappMonitorConversationRemoteScopeSql("wmm", null, false);
+    // 1:1 chats are already restricted by deal_id, so they only need to exclude
+    // group rows. Groups must keep the alias scope so a private-chat row that
+    // was mis-stored under the group deal can't leak into the thread.
+    let fastConversationRemoteScope: string;
+    if (conversation.isGroup) {
+      fastParams.push(scopedRemoteJidAliases);
+      fastConversationRemoteScope = whatsappMonitorConversationRemoteScopeSql("wmm", fastParams.length, true);
+    } else {
+      fastConversationRemoteScope = whatsappMonitorConversationRemoteScopeSql("wmm", null, false);
+    }
     const fastInstanceJoin = options.instanceId
       ? (() => {
         fastParams.push(options.instanceId);
