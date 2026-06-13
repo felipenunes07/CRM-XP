@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -20,8 +20,6 @@ import {
   FileImage,
   FileText,
   FileVideo,
-  Grid3X3,
-  List,
   Menu,
   MoreVertical,
   Paperclip,
@@ -60,60 +58,12 @@ function formatTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) {
-    return "Sem atividade";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
 function riskTone(message: WhatsappMonitorMessage | WhatsappMonitorConversation) {
   if (!message.risk) {
     return "";
   }
 
   return message.risk.severity.toLocaleLowerCase("pt-BR");
-}
-
-function suggestedReplyFromMessages(messages: WhatsappMonitorMessage[]) {
-  const lastInbound = [...messages].reverse().find((message) => message.direction === "INBOUND");
-  const text = lastInbound?.content.toLocaleLowerCase("pt-BR") ?? "";
-
-  if (!lastInbound) {
-    return null;
-  }
-
-  if (text.includes("bom dia") || text.includes("boa tarde") || text.includes("boa noite") || text.includes("ola") || text.includes("oi")) {
-    return "Ola! Como posso te ajudar hoje?";
-  }
-
-  if (text.includes("prazo") || text.includes("entrega") || text.includes("chegar")) {
-    return "Vou conferir o prazo de entrega e ja te retorno.";
-  }
-
-  if (text.includes("valor") || text.includes("preco") || text.includes("orcamento") || text.includes("quanto")) {
-    return "Vou revisar os valores e te envio a melhor condicao.";
-  }
-
-  if (text.includes("pix") || text.includes("pagamento") || text.includes("boleto") || text.includes("pago")) {
-    return "Vou verificar o status do pagamento e ja te confirmo.";
-  }
-
-  if (text.includes("arquivo") || text.includes("pdf") || text.includes("documento") || text.includes("comprovante")) {
-    return "Recebi o documento. Vou analisar e te retorno.";
-  }
-
-  if (text.includes("obrigado") || text.includes("valeu") || text.includes("show") || text.includes("perfeito")) {
-    return "Disponha! Qualquer coisa estou por aqui.";
-  }
-
-  return "Obrigado pelo retorno. Vou verificar e ja te respondo.";
 }
 
 function attachmentName(message: WhatsappMonitorMessage) {
@@ -296,17 +246,17 @@ function AgentAvatar({
   );
 }
 
-function AgentRow({
+const AgentRow = memo(function AgentRow({
   agent,
   active,
-  onClick,
+  onSelect,
 }: {
   agent: WhatsappMonitorAgent;
   active: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }) {
   return (
-    <button type="button" className={`wa-list-row ${active ? "active" : ""}`} onClick={onClick}>
+    <button type="button" className={`wa-list-row ${active ? "active" : ""}`} onClick={() => onSelect(agent.id)}>
       <AgentAvatar
         name={agent.displayLabel}
         imageUrl={agent.profilePictureUrl}
@@ -319,22 +269,22 @@ function AgentRow({
       <span className={`wa-status-dot wa-status-${agent.status.toLocaleLowerCase("pt-BR")}`} />
     </button>
   );
-}
+});
 
-function ConversationRow({
+const ConversationRow = memo(function ConversationRow({
   conversation,
   active,
-  onClick,
+  onSelect,
 }: {
   conversation: WhatsappMonitorConversation;
   active: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }) {
   return (
     <button
       type="button"
       className={`wa-list-row conversation ${active ? "active" : ""} ${conversation.isUnread ? "unread" : ""}`}
-      onClick={onClick}
+      onClick={() => onSelect(conversation.id)}
     >
       <AgentAvatar
         name={conversation.contactName}
@@ -358,9 +308,9 @@ function ConversationRow({
       </span>
     </button>
   );
-}
+});
 
-function ChatMessageBubble({ message, showSender, onImageClick }: { message: WhatsappMonitorMessage; showSender: boolean; onImageClick?: (url: string) => void }) {
+const ChatMessageBubble = memo(function ChatMessageBubble({ message, showSender, onImageClick }: { message: WhatsappMonitorMessage; showSender: boolean; onImageClick?: (url: string) => void }) {
   const media = messageMedia(message);
   const contact = messageContact(message);
   const fileName = media?.fileName ?? attachmentName(message);
@@ -442,7 +392,7 @@ function ChatMessageBubble({ message, showSender, onImageClick }: { message: Wha
       </div>
     </div>
   );
-}
+});
 
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -510,11 +460,12 @@ export function MessagesPage() {
   const [showInitialLoader, setShowInitialLoader] = useState(true);
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
 
-  // When switching agents, clear the selected conversation so no chat is pre-selected
-  const setActiveAgentId = (id: string) => {
+  // When switching agents, clear the selected conversation so no chat is pre-selected.
+  // Stable identity so memoized AgentRow children don't re-render on every keystroke.
+  const setActiveAgentId = useCallback((id: string) => {
     setActiveAgentIdRaw(id);
     setSelectedConversationId(null);
-  };
+  }, []);
   const [agentSearch, setAgentSearch] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [debouncedConversationSearch, setDebouncedConversationSearch] = useState("");
@@ -850,10 +801,24 @@ export function MessagesPage() {
   }, [conversationFilters, conversationQueryKey, conversationsQuery.data, queryClient, token]);
 
   const agents = agentsQuery.data ?? [];
-  const conversations = useMemo(
-    () => conversationsQuery.data?.pages.flatMap((page) => page.conversations) ?? [],
-    [conversationsQuery.data],
-  );
+  const conversations = useMemo(() => {
+    const flat = conversationsQuery.data?.pages.flatMap((page) => page.conversations) ?? [];
+    // Safety net for the SQL dedup: with row-based cursor pagination a contact
+    // that owns multiple linked deals (LID/PN) can resurface on a later page.
+    // Collapse by canonical remoteJid (fallback to id) so the UI never shows a
+    // chat twice regardless of how pages line up.
+    const seen = new Set<string>();
+    const deduped: WhatsappMonitorConversation[] = [];
+    for (const conversation of flat) {
+      const key = (conversation.remoteJid ?? conversation.id).toLocaleLowerCase("pt-BR");
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(conversation);
+    }
+    return deduped;
+  }, [conversationsQuery.data]);
 
   // Auto-load older conversations when the end of the list scrolls into view.
   const {
@@ -1084,11 +1049,14 @@ export function MessagesPage() {
   const detail = detailPages[0];
   const detailMatchesSelection = detail && selectedConversationId && detail.id === selectedConversationId;
   const currentConversation = detailMatchesSelection ? detail : selectedConversation;
-  const messages = detailMatchesSelection ? [...detailPages].reverse().flatMap((page) => page.messages) : [];
+  // Memoized so typing in the reply box (which re-renders MessagesPage on every
+  // keystroke) doesn't rebuild the message array and re-render every bubble.
+  const messages = useMemo(
+    () => (detailMatchesSelection ? [...detailPages].reverse().flatMap((page) => page.messages) : []),
+    [detailMatchesSelection, detailPages],
+  );
   const timelineItems = useMemo(() => buildMessageTimelineItems(messages), [messages]);
   const lastMessageId = messages.at(-1)?.id ?? null;
-  const totalRisks = filteredConversations.filter((conversation) => conversation.risk).length;
-  const suggestedReply = useMemo(() => suggestedReplyFromMessages(messages), [messages]);
   const hasTopFilters =
     Boolean(contactNameFilter.trim()) ||
     Boolean(contactPhoneFilter.trim()) ||
@@ -1208,9 +1176,10 @@ export function MessagesPage() {
     readStateMutation.mutate({ id: selectedConversation.id, unread: false });
   }, [readStateMutation.isPending, selectedConversation?.id, selectedConversation?.isUnread]);
 
-  function openConversation(conversation: WhatsappMonitorConversation) {
-    setSelectedConversationId(conversation.id);
-  }
+  // Stable identity so memoized ConversationRow children don't re-render on every keystroke.
+  const openConversation = useCallback((id: string) => {
+    setSelectedConversationId(id);
+  }, []);
 
   function handleSendReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1373,7 +1342,7 @@ export function MessagesPage() {
                 key={agent.id}
                 agent={agent}
                 active={agent.id === activeAgentId}
-                onClick={() => setActiveAgentId(agent.id)}
+                onSelect={setActiveAgentId}
               />
             ))}
 
@@ -1404,7 +1373,7 @@ export function MessagesPage() {
                     key={conversation.id}
                     conversation={conversation}
                     active={conversation.id === selectedConversationId}
-                    onClick={() => openConversation(conversation)}
+                    onSelect={openConversation}
                   />
                 ))}
 
