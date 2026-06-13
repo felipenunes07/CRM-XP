@@ -49,7 +49,13 @@ async function main() {
   await bootstrapPlatform();
   const scheduler = startDailySyncScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
-  configureUazapiWebhooksAtStartup();
+  // Só (re)configura o webhook da uazapi se explicitamente habilitado. Por padrão
+  // o CRM não mexe no webhook da uazapi (UAZAPI_AUTO_CONFIGURE_WEBHOOK=false).
+  if (env.UAZAPI_AUTO_CONFIGURE_WEBHOOK) {
+    configureUazapiWebhooksAtStartup();
+  } else {
+    logger.info("uazapi webhook auto-config disabled (UAZAPI_AUTO_CONFIGURE_WEBHOOK=false)");
+  }
 
   // Start WhatsApp Activity Rollup background refresh
   let rollupInterval: NodeJS.Timeout | undefined;

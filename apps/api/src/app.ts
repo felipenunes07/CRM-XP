@@ -1936,7 +1936,9 @@ export function createApp() {
 
       // Garante que respostas de instâncias uazapi cheguem ao CRM: aponta o
       // webhook da instância para /api/webhooks/uazapi (idempotente, não bloqueia).
-      if (payload.whatsappInstanceId) {
+      // Só roda se explicitamente habilitado (UAZAPI_AUTO_CONFIGURE_WEBHOOK=true);
+      // por padrão o CRM não mexe no webhook da uazapi.
+      if (env.UAZAPI_AUTO_CONFIGURE_WEBHOOK && payload.whatsappInstanceId) {
         void (async () => {
           const instanceResult = await pool.query(
             `SELECT provider, uazapi_base_url, uazapi_token FROM whatsapp_instances WHERE id = $1`,
