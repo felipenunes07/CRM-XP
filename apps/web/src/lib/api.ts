@@ -179,15 +179,15 @@ async function request<T>(
               return request<T>(path, options, refreshedToken, true);
             }
           } catch {
-            // Fall through to sign-out below.
+            // Renovacao falhou (rede/transitorio): NAO apagar a sessao aqui.
           }
         }
 
-        import("./supabase")
-          .then(({ supabase }) => {
-            supabase.auth.signOut().catch(() => {});
-          })
-          .catch(() => {});
+        // Nunca chamamos supabase.auth.signOut() aqui: um 401 isolado (soluco do
+        // Supabase Auth, token momentaneamente expirado, etc.) nao deve destruir a
+        // sessao persistida. Apenas sinalizamos o erro; quem decide deslogar e o
+        // fluxo de autenticacao (useAuth), que so descarta a sessao apos confirmar
+        // que ela e realmente invalida.
         throw new ApiAuthError(message);
       }
       const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };

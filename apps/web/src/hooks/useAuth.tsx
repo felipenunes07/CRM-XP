@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api } from "../lib/api";
+import { api, isApiAuthError } from "../lib/api";
 import { supabase } from "../lib/supabase";
+
+const delay = (ms: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
 
 export type LegacyRole = "ADMIN" | "MANAGER" | "SELLER";
 export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
@@ -48,6 +50,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(accessToken);
     setUser(result.user);
   }, []);
+
+  /**
+   * Carrega o usuario tolerando falhas transitorias (rede, 500, timeout, cold start).
+   * Retorna "auth-error" apenas quando o backend confirma que a sessao e invalida (401),
+   * caso em que a sessao deve ser descartada. Em qualquer outra falha retorna "transient"
+   * e a sessao persistida NUNCA e apagada — assim um soluco no backend nao desloga o usuario.
+   */
+  const loadUserResilient = useCallback(
+    async (accessToken: string, attempts = 4): Promise<"ok" | "auth-error" | "transient"> => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          await loadUser(accessToken);
+          return "ok";
+        } catch (error) {
+          if (isApiAuthError(error)) {
+            return "auth-error";
+          }
+          if (attempt < attempts - 1) {
+            await delay(600 * (attempt + 1));
+          }
+        }
+      }
+      return "transient";
+    },
+    [loadUser],
+  );
 
   const clearSession = useCallback(() => {
     setToken(null);
@@ -104,35 +132,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      try {
-        if (!cancelled) {
-          await loadUser(accessToken);
-        }
-      } catch {
+      const outcome = await loadUserResilient(accessToken);
+      if (cancelled) {
+        return;
+      }
+
+      // So descarta a sessao quando o backend CONFIRMA que ela e invalida (401).
+      // Falhas transitorias mantem a sessao persistida intacta para a proxima tentativa,
+      // garantindo que o usuario nunca seja deslogado sem querer.
+      if (outcome === "auth-error") {
         await supabase.auth.signOut();
         if (!cancelled) {
           clearSession();
         }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+      }
+      if (!cancelled) {
+        setLoading(false);
       }
     }
 
     void restoreSession();
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       const accessToken = session?.access_token ?? null;
       if (!accessToken) {
-        clearSession();
-        setLoading(false);
+        // So limpa a sessao em logout explicito; ignora eventos sem token de outras causas.
+        if (event === "SIGNED_OUT") {
+          clearSession();
+          setLoading(false);
+        }
         return;
       }
 
-      void loadUser(accessToken).catch(async () => {
-        await supabase.auth.signOut();
-        clearSession();
+      void loadUserResilient(accessToken).then(async (outcome) => {
+        if (outcome === "auth-error") {
+          await supabase.auth.signOut();
+          clearSession();
+        }
       });
     });
 
