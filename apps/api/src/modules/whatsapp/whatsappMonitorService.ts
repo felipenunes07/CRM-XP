@@ -1493,9 +1493,19 @@ export async function listWhatsappMonitorConversations(
           -- whatsapp_jid_aliases, so LID/PN variants of the same contact (and
           -- multiple deals pointing at the same chat) no longer show up as
           -- duplicated conversations. Uses idx_wja_alias_jid_lower.
+          -- Representative pick order:
+          --   1) a deal that actually has a name (title/customer_display_name),
+          --      so the row never shows "Cliente sem nome" when a named sibling
+          --      exists (and the named deal is usually the real conversation,
+          --      with the received messages — thin campaign/LID deals have no
+          --      name and would otherwise win just for being newer);
+          --   2) then the most recent effective activity.
           ROW_NUMBER() OVER (
             PARTITION BY LOWER(COALESCE(dedupe_alias.canonical_jid, d.whatsapp_jid))
-            ORDER BY ${effectiveConversationSortSql} DESC, d.id DESC
+            ORDER BY
+              (CASE WHEN NULLIF(TRIM(COALESCE(d.customer_display_name, d.title, '')), '') IS NOT NULL THEN 0 ELSE 1 END),
+              ${effectiveConversationSortSql} DESC,
+              d.id DESC
           ) AS rn
         FROM deals d
         LEFT JOIN LATERAL (

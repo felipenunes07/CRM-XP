@@ -11140,6 +11140,41 @@ textarea {
   color: var(--wa-green-dark);
 }
 
+/* Segmented control: Todos / Grupos / Privados (substitui o dropdown de grupo) */
+.wa-filter-segment {
+  display: inline-flex;
+  align-items: stretch;
+  min-height: 2.65rem;
+  padding: 3px;
+  gap: 2px;
+  border: 1px solid var(--wa-line);
+  border-radius: 10px;
+  background: #eef1f7;
+}
+
+.wa-filter-segment button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--wa-muted);
+  font: inherit;
+  font-weight: 600;
+  padding: 0 0.95rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.wa-filter-segment button:hover:not(.active) {
+  color: var(--wa-green-dark);
+}
+
+.wa-filter-segment button.active {
+  background: #ffffff;
+  color: var(--wa-green-dark);
+  box-shadow: 0 1px 2px rgba(16, 30, 64, 0.12);
+}
+
 .wa-filter-button {
   font-weight: 600;
   color: var(--wa-muted);

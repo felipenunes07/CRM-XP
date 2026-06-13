@@ -28,7 +28,6 @@ import {
   Send,
   ShieldCheck,
   Smile,
-  Sparkles,
   Users,
   X,
 } from "lucide-react";
@@ -538,9 +537,11 @@ export function MessagesPage() {
   const [zoomedImageUrl, setZoomedImageUrl] = useState<string | null>(null);
 
   // When switching agents, clear the selected conversation so no chat is pre-selected.
+  // Clicking the already-active agent toggles back to "all" (every conversation),
+  // since the explicit "Todos os agentes" row was removed.
   // Stable identity so memoized AgentRow children don't re-render on every keystroke.
   const setActiveAgentId = useCallback((id: string) => {
-    setActiveAgentIdRaw(id);
+    setActiveAgentIdRaw((current) => (current === id ? "all" : id));
     setSelectedConversationId(null);
   }, []);
   const [agentSearch, setAgentSearch] = useState("");
@@ -1418,18 +1419,32 @@ export function MessagesPage() {
           </select>
           <ChevronDown size={18} aria-hidden="true" />
         </label>
-        <label className="wa-filter-select">
-          <select
-            aria-label="Filtrar grupos"
-            value={groupFilter}
-            onChange={(event) => setGroupFilter(event.target.value as GroupFilter)}
+        <div className="wa-filter-segment" role="group" aria-label="Filtrar grupos">
+          <button
+            type="button"
+            className={groupFilter === "all" ? "active" : ""}
+            aria-pressed={groupFilter === "all"}
+            onClick={() => setGroupFilter("all")}
           >
-            <option value="all">Grupo: todos</option>
-            <option value="groups">Somente grupos</option>
-            <option value="contacts">Sem grupo</option>
-          </select>
-          <ChevronDown size={18} aria-hidden="true" />
-        </label>
+            Todos
+          </button>
+          <button
+            type="button"
+            className={groupFilter === "groups" ? "active" : ""}
+            aria-pressed={groupFilter === "groups"}
+            onClick={() => setGroupFilter("groups")}
+          >
+            Grupos
+          </button>
+          <button
+            type="button"
+            className={groupFilter === "contacts" ? "active" : ""}
+            aria-pressed={groupFilter === "contacts"}
+            onClick={() => setGroupFilter("contacts")}
+          >
+            Privados
+          </button>
+        </div>
         <label className="wa-filter-select">
           <select
             aria-label="Filtrar status"
@@ -1481,20 +1496,6 @@ export function MessagesPage() {
           <SearchBox value={agentSearch} onChange={setAgentSearch} placeholder="Pesquisar" />
 
           <div className="wa-list">
-            <button
-              type="button"
-              className={`wa-list-row all-agents ${activeAgentId === "all" ? "active" : ""}`}
-              onClick={() => setActiveAgentId("all")}
-            >
-              <span className="wa-avatar synthetic">
-                <Sparkles size={18} />
-              </span>
-              <span className="wa-list-copy">
-                <strong>Todos os agentes</strong>
-                <small>{filteredConversations.length} conversas no filtro</small>
-              </span>
-            </button>
-
             {visibleAgents.map((agent) => (
               <AgentRow
                 key={agent.id}
