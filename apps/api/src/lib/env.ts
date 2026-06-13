@@ -40,6 +40,10 @@ const envSchema = z.object({
   OLIST_API_TOKEN: z.string().optional(),
   OLIST_API_BASE_URL: z.string().default("https://api.tiny.com.br/api2"),
   OLIST_SYNC_START_DATE: z.string().default("2026-01-01"),
+  // Janela de segurança (dias) que a sync incremental sempre revarre, mesmo que
+  // o cursor esteja mais recente — garante que vendas de hoje nunca fiquem de
+  // fora por cursor adiantado ou falha de sync.
+  OLIST_SYNC_SAFETY_DAYS: z.coerce.number().int().min(1).max(30).default(2),
   STARTUP_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")
