@@ -101,6 +101,10 @@ const envSchema = z.object({
   DATABASE_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(100).max(50_000).default(5_000),
   SUPABASE_DATABASE_URL: z.string().optional(),
   SUPABASE_TABLE_2026: z.string().default("f_vendas_2026"),
+  // Janela de seguranca (dias) que a sync do Supabase sempre revarre, mesmo que o
+  // cursor (maior data ja importada) esteja a frente — garante que vendas lancadas
+  // com data retroativa nunca fiquem de fora. Dedup por fingerprint evita duplicar.
+  SUPABASE_SYNC_SAFETY_DAYS: z.coerce.number().int().min(0).max(365).default(60),
   SUPABASE_URL: z.string().default(""),
   SUPABASE_ANON_KEY: z.string().default(""),
   SUPABASE_SERVICE_ROLE_KEY: z.string().default(""),

@@ -20,6 +20,13 @@ const COLUMN_ALIASES = {
   atendente: ["atendente", "seller", "vendedor", "responsavel", "usuario", "atendente_nome"],
 } as const;
 
+function subtractDaysIso(value: Date | string, days: number): string {
+  const base =
+    value instanceof Date ? new Date(value.getTime()) : new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
+}
+
 function normalizeColumnKey(value: string) {
   return value
     .normalize("NFD")
@@ -292,14 +299,20 @@ export async function importSupabase2026() {
     const lastSyncResult = await pool.query(
       "SELECT MAX(sale_date) as last_date FROM sales_raw WHERE source_system = 'supabase_2026'",
     );
-    const lastDate = lastSyncResult.rows[0]?.last_date;
+    const lastDate = lastSyncResult.rows[0]?.last_date as Date | string | null | undefined;
     const saleDateColumn = resolved.data!;
 
+    // Em vez de puxar apenas `data >= maior_data_ja_importada`, recuamos a janela
+    // SUPABASE_SYNC_SAFETY_DAYS dias. Sem isso, uma venda lancada no Supabase com
+    // data retroativa (ex.: pedido do dia 05 cadastrado depois que ja sincronizamos
+    // ate o dia 13) nunca entrava, porque o filtro a ignorava. A dedup por
+    // fingerprint (ON CONFLICT DO NOTHING) garante que reler nao gera duplicatas.
     let query = `SELECT * FROM public.${env.SUPABASE_TABLE_2026}`;
     const params: unknown[] = [];
     if (lastDate) {
+      const floorDate = subtractDaysIso(lastDate, env.SUPABASE_SYNC_SAFETY_DAYS);
       query += ` WHERE ${saleDateColumn} >= $1`;
-      params.push(lastDate);
+      params.push(floorDate);
     }
 
     const result = await remotePool.query(query, params);
