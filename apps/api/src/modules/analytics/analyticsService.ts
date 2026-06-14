@@ -288,9 +288,9 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         SELECT
           td.day,
           o.customer_id,
-          MAX(o.order_date::date) AS last_order_day
+          MAX(o.order_date) AS last_order_day
         FROM target_days td
-        JOIN orders o ON o.order_date::date <= td.day
+        JOIN orders o ON o.order_date <= td.day
         GROUP BY td.day, o.customer_id
       ),
       daily_items AS (
@@ -298,7 +298,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
           td.day,
           COALESCE(SUM(oi.quantity), 0)::int as daily_items_sold
         FROM target_days td
-        LEFT JOIN orders o ON o.order_date::date = td.day
+        LEFT JOIN orders o ON o.order_date = td.day
         LEFT JOIN order_items oi ON oi.order_id = o.id
         GROUP BY td.day
       )
@@ -372,7 +372,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         SELECT COALESCE(SUM(oi.quantity), 0)::int
         FROM orders o
         JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+        WHERE o.order_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
       ),
       NOW()
     FROM customer_snapshot
