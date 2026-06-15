@@ -1356,8 +1356,15 @@ export async function getWhatsappCampaignDetail(
   const [campaignResult, recipientsResult, totalRecipientsResult, performance] = await Promise.all([
     queryCampaignRows(undefined, campaignId),
     pool.query(
+      // NÃO usar SELECT *: a coluna response_payload (JSONB com a resposta crua do
+      // provider) chega a ~2MB por linha e ninguém no front usa. Puxá-la fazia o
+      // detalhe ler centenas de MB de TOAST e levar ~10s. Seleção explícita sem ela.
       `
-        SELECT *
+        SELECT
+          id, campaign_id, group_id, customer_id, jid, source_name, source_code,
+          classification, mapping_status, customer_code, customer_display_name,
+          status, scheduled_for, last_attempt_at, sent_at, failed_at, skipped_at,
+          last_error, provider_message_id, provider_status, created_at, updated_at
         FROM whatsapp_campaign_recipients
         WHERE campaign_id = $1
         ORDER BY created_at ASC
