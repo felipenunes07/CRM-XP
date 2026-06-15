@@ -14,6 +14,7 @@
     "create:user": "tsx src/scripts/createUser.ts",
     "import:history": "tsx src/scripts/importHistory.ts",
     "import:supabase:2026": "tsx src/scripts/importSupabase2026.ts",
+    "rebuild:readmodels": "tsx src/scripts/rebuildReadModels.ts",
     "whatsapp:rollups": "tsx src/scripts/refreshWhatsappActivityRollups.ts",
     "repair:whatsapp-identity": "tsx src/scripts/repairWhatsappIdentity.ts",
     "backfill:monitor-messages": "tsx src/scripts/backfillMonitorMessages.ts",
