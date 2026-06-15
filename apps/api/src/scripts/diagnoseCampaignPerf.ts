@@ -50,6 +50,43 @@ async function main() {
   );
   console.table(idx.rows);
 
+  console.log("\n========== BLOAT: LINHAS MORTAS vs VIVAS (a causa da lentidão) ==========");
+  const bloat = await pool.query(
+    `
+    SELECT relname AS tabela,
+           n_live_tup AS vivas,
+           n_dead_tup AS mortas,
+           CASE WHEN n_live_tup > 0
+                THEN round(n_dead_tup::numeric * 100 / n_live_tup, 0)
+                ELSE NULL END AS pct_morto,
+           to_char(last_autovacuum, 'YYYY-MM-DD HH24:MI') AS ultimo_autovacuum,
+           pg_size_pretty(pg_table_size(relid)) AS heap,
+           pg_size_pretty(pg_indexes_size(relid)) AS indices
+    FROM pg_stat_user_tables
+    WHERE relname IN (
+      'deal_activities','whatsapp_incoming_messages','whatsapp_monitor_messages',
+      'whatsapp_campaign_recipients','message_logs','orders','order_items'
+    )
+    ORDER BY n_dead_tup DESC
+    `,
+  );
+  console.table(bloat.rows);
+
+  console.log("\n========== CONFIG DO AUTOVACUUM ==========");
+  const av = await pool.query(
+    `
+    SELECT name, setting
+    FROM pg_settings
+    WHERE name IN (
+      'autovacuum','autovacuum_max_workers','autovacuum_naptime',
+      'autovacuum_vacuum_scale_factor','autovacuum_vacuum_threshold',
+      'autovacuum_vacuum_cost_limit','autovacuum_vacuum_cost_delay'
+    )
+    ORDER BY name
+    `,
+  );
+  console.table(av.rows);
+
   const camp = await pool.query(
     `
     SELECT c.id, c.name, COUNT(*) FILTER (WHERE r.status = 'SENT') AS sent

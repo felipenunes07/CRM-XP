@@ -20,6 +20,7 @@
     "backfill:monitor-messages": "tsx src/scripts/backfillMonitorMessages.ts",
     "events:reclassify": "tsx src/scripts/reclassifyMessageEvents.ts",
     "db:diagnose": "tsx src/scripts/diagnoseCampaignPerf.ts",
+    "db:vacuum": "tsx src/scripts/vacuumHotTables.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },
