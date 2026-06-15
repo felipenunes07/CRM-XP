@@ -63,6 +63,16 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   DAILY_REBUILD_HOUR: z.coerce.number().int().min(0).max(23).default(4),
+  // Limpeza de rotina dos payloads crus de auditoria (raw_payload, provider_payload,
+  // response_payload) que incham as tabelas de mensagem. NULLifica essas colunas em
+  // linhas mais antigas que PAYLOAD_RETENTION_DAYS, mantendo texto/metadados. Só toca
+  // colunas que o runtime NÃO lê. Roda 1x/dia, em lotes, sem travar escrita.
+  PAYLOAD_CLEANUP_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  PAYLOAD_CLEANUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
+  PAYLOAD_RETENTION_DAYS: z.coerce.number().int().min(7).default(90),
   WORKER_OLIST_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

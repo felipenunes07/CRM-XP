@@ -1,0 +1,160 @@
+/**
+ * Limpeza de rotina dos payloads crus que incham as tabelas de mensagem.
+ *
+ * As tabelas de WhatsApp guardam, por linha, um JSONB com o payload cru do provider
+ * (auditoria/debug). Isso cresce pra sempre e deixa as queries lentas (ex.: 21 GB em
+ * whatsapp_monitor_messages, 6,9 GB em whatsapp_incoming_messages). Este serviço
+ * NULLifica essas colunas em linhas mais antigas que a janela de retenção, mantendo
+ * texto, identidade e metadados. SÓ toca colunas que o runtime não lê:
+ *
+ *   - whatsapp_incoming_messages.raw_payload   (só usado em migrations de backfill)
+ *   - message_logs.provider_payload            (nenhuma leitura no código)
+ *   - whatsapp_campaign_recipients.response_payload (não usado no front)
+ *
+ * NÃO toca em media_json (chat) nem deal_activities.metadata (atribuição/rollup) —
+ * esses são lidos em runtime e precisam de limpeza por chave (fase 2).
+ *
+ * Observação: NULLificar gera tuplas mortas que o autovacuum recupera para REUSO
+ * (a tabela para de crescer). Para encolher o arquivo já existente de uma vez, rode
+ * pg_repack/VACUUM FULL numa janela de manutenção DEPOIS da primeira limpeza.
+ */
+import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
+
+const CLEANUP_TIMEZONE = "America/Sao_Paulo";
+const CLEANUP_CURSOR_KEY = "payload_cleanup_date";
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
+const BATCH_SIZE = 2000;
+
+type CleanupTarget = { table: string; column: string };
+
+const SAFE_TARGETS: CleanupTarget[] = [
+  { table: "whatsapp_incoming_messages", column: "raw_payload" },
+  { table: "message_logs", column: "provider_payload" },
+  { table: "whatsapp_campaign_recipients", column: "response_payload" },
+];
+
+async function clearColumnInBatches(target: CleanupTarget, retentionDays: number) {
+  let total = 0;
+  // ctid em lotes: cada iteração pega até BATCH_SIZE linhas antigas que ainda têm
+  // payload; ao setar NULL elas saem do filtro, garantindo progresso até zerar.
+  for (;;) {
+    const result = await pool.query(
+      `
+        UPDATE ${target.table}
+        SET ${target.column} = NULL
+        WHERE ctid IN (
+          SELECT ctid
+          FROM ${target.table}
+          WHERE ${target.column} IS NOT NULL
+            AND created_at < NOW() - ($1::int * INTERVAL '1 day')
+          LIMIT ${BATCH_SIZE}
+        )
+      `,
+      [retentionDays],
+    );
+    const affected = result.rowCount ?? 0;
+    total += affected;
+    if (affected < BATCH_SIZE) {
+      break;
+    }
+  }
+  return total;
+}
+
+export async function cleanupHeavyPayloads(retentionDays = env.PAYLOAD_RETENTION_DAYS) {
+  const counts: Record<string, number> = {};
+  for (const target of SAFE_TARGETS) {
+    try {
+      const cleared = await clearColumnInBatches(target, retentionDays);
+      counts[`${target.table}.${target.column}`] = cleared;
+    } catch (error) {
+      logger.error("payload cleanup failed for target", {
+        target: `${target.table}.${target.column}`,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  logger.info("payload cleanup finished", { retentionDays, counts });
+  return { retentionDays, counts };
+}
+
+function getLocalParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CLEANUP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour ?? "0"),
+  };
+}
+
+async function getCursor(key: string) {
+  const result = await pool.query("SELECT cursor_value FROM sync_cursors WHERE key = $1", [key]);
+  return (result.rows[0]?.cursor_value as string | undefined) ?? null;
+}
+
+async function setCursor(key: string, value: string) {
+  await pool.query(
+    `
+      INSERT INTO sync_cursors (key, cursor_value, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (key) DO UPDATE
+      SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
+    `,
+    [key, value],
+  );
+}
+
+export function startPayloadCleanupScheduler() {
+  if (!env.PAYLOAD_CLEANUP_ENABLED) {
+    logger.info("payload cleanup scheduler disabled");
+    return {
+      async close() {
+        return;
+      },
+    };
+  }
+
+  const check = async () => {
+    try {
+      const now = getLocalParts();
+      if (now.hour !== env.PAYLOAD_CLEANUP_HOUR) {
+        return;
+      }
+      const lastRun = await getCursor(CLEANUP_CURSOR_KEY);
+      if (lastRun === now.dateKey) {
+        return; // já rodou hoje
+      }
+
+      logger.info("payload cleanup started", { dateKey: now.dateKey, retentionDays: env.PAYLOAD_RETENTION_DAYS });
+      const result = await cleanupHeavyPayloads();
+      await setCursor(CLEANUP_CURSOR_KEY, now.dateKey);
+      logger.info("payload cleanup completed", { dateKey: now.dateKey, ...result });
+    } catch (error) {
+      logger.error("payload cleanup scheduler tick failed", { error: String(error) });
+    }
+  };
+
+  const interval = setInterval(check, CHECK_INTERVAL_MS);
+  void check();
+
+  logger.info("payload cleanup scheduler initialized", {
+    hour: env.PAYLOAD_CLEANUP_HOUR,
+    retentionDays: env.PAYLOAD_RETENTION_DAYS,
+    timezone: CLEANUP_TIMEZONE,
+  });
+
+  return {
+    async close() {
+      clearInterval(interval);
+    },
+  };
+}
