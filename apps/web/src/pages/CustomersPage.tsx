@@ -1,7 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Copy, Download, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -286,15 +286,6 @@ export function CustomersPage() {
   const createAudienceMutation = useMutation({
     mutationFn: (input: { name: string; codes: string[] }) =>
       api.createSavedSegment(token!, { name: input.name, definition: { customerCodes: input.codes } }),
-    onSuccess: (segment) => {
-      void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
-      setSelectedCreditCodes(new Set());
-      setToastMessage(`Publico "${segment.name}" criado. Abrindo o disparo de cobranca...`);
-      navigate("/disparador", { state: { savedSegmentId: segment.id, savedSegmentName: segment.name } });
-    },
-    onError: () => {
-      setToastMessage("Nao foi possivel criar o publico agora. Tente novamente.");
-    },
   });
 
   const filteredLinkedCreditRows = useMemo(
@@ -389,17 +380,29 @@ export function CustomersPage() {
     }
   };
 
-  const handleCreateAudience = () => {
+  const buildAudienceAndGo = async (destination: "dispatch" | "automation") => {
     if (!token || selectedCreditRows.length === 0 || createAudienceMutation.isPending) {
       return;
     }
     const today = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-    const suggested = `Cobranca ${today}`;
-    const name = window.prompt("Nome do publico para o disparo de cobranca:", suggested)?.trim();
+    const suggested = destination === "automation" ? `Cobranca recorrente ${today}` : `Cobranca ${today}`;
+    const name = window.prompt("Nome do publico de cobranca:", suggested)?.trim();
     if (!name) {
       return;
     }
-    createAudienceMutation.mutate({ name, codes: selectedCreditRows.map((row) => row.customerCode) });
+    try {
+      const segment = await createAudienceMutation.mutateAsync({
+        name,
+        codes: selectedCreditRows.map((row) => row.customerCode),
+      });
+      void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
+      setSelectedCreditCodes(new Set());
+      navigate(destination === "automation" ? "/automacoes" : "/disparador", {
+        state: { savedSegmentId: segment.id, savedSegmentName: segment.name },
+      });
+    } catch {
+      setToastMessage("Nao foi possivel criar o publico agora. Tente novamente.");
+    }
   };
 
   return (
@@ -859,12 +862,20 @@ export function CustomersPage() {
                     </button>
                     <button
                       type="button"
+                      className="ghost-button small"
+                      onClick={() => buildAudienceAndGo("automation")}
+                      disabled={createAudienceMutation.isPending}
+                    >
+                      <Repeat size={15} /> Cobranca automatica
+                    </button>
+                    <button
+                      type="button"
                       className="primary-button small"
-                      onClick={handleCreateAudience}
+                      onClick={() => buildAudienceAndGo("dispatch")}
                       disabled={createAudienceMutation.isPending}
                     >
                       <Send size={15} />
-                      {createAudienceMutation.isPending ? "Criando publico..." : "Criar publico e disparar cobranca"}
+                      {createAudienceMutation.isPending ? "Criando..." : "Disparar cobranca agora"}
                     </button>
                   </div>
                 </div>

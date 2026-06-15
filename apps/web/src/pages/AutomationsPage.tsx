@@ -1,7 +1,8 @@
 import "@xyflow/react/dist/style.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, DragEvent, SetStateAction } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addEdge,
@@ -853,6 +854,12 @@ function AutomationsPageInner() {
   const instancesQuery = useQuery({
     queryKey: ["whatsapp-instances"],
     queryFn: () => api.whatsappInstances(token!),
+    enabled: Boolean(token),
+  });
+
+  const savedSegmentsQuery = useQuery({
+    queryKey: ["saved-segments"],
+    queryFn: () => api.savedSegments(token!),
     enabled: Boolean(token),
   });
 
