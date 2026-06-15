@@ -1,7 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Copy, Download, Send, ShieldAlert, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, Copy, Download, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -261,6 +261,15 @@ export function CustomersPage() {
 
   const navigate = useNavigate();
   const [selectedCreditCodes, setSelectedCreditCodes] = useState<Set<string>>(() => new Set());
+  const [showCreditFilters, setShowCreditFilters] = useState(false);
+
+  const activeAdvancedCreditFilters = [
+    state.creditFilters.riskLevel,
+    state.creditFilters.operationalState,
+    state.creditFilters.onlyWithCredit,
+    state.creditFilters.onlyUnusedCredit,
+    state.creditFilters.onlyOverdue,
+  ].filter((value) => value !== "").length;
 
   const toggleCreditCode = (code: string) => {
     setSelectedCreditCodes((current) => {
@@ -523,89 +532,107 @@ export function CustomersPage() {
             Mapa com leitura espacial da carteira, ranking por cidade e filtros de estado para aproximar a experiencia do Power BI.
           </p>
         ) : (
-          <div className="filters-grid filters-grid-six">
-            <label>
-              Buscar
-              <input
-                value={state.creditFilters.search}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "search", value: event.target.value })
-                }
-                placeholder="Nome, codigo, observacao ou flag"
-              />
-            </label>
+          <div className="credit-filter-wrap">
+            <div className="credit-filter-bar">
+              <div className="credit-search-field">
+                <Search size={17} className="credit-search-icon" />
+                <input
+                  value={state.creditFilters.search}
+                  onChange={(event) =>
+                    dispatch({ type: "updateCreditFilter", key: "search", value: event.target.value })
+                  }
+                  placeholder="Buscar por nome, codigo ou observacao..."
+                />
+              </div>
 
-            <label>
-              Grau de risco
-              <select
-                value={state.creditFilters.riskLevel}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "riskLevel", value: event.target.value })
-                }
+              <button
+                type="button"
+                className={`ghost-button credit-filter-toggle ${showCreditFilters ? "active" : ""}`}
+                onClick={() => setShowCreditFilters((value) => !value)}
               >
-                <option value="">Todos</option>
-                <option value="CRITICO">Critico</option>
-                <option value="ATENCAO">Atencao</option>
-                <option value="MONITORAR">Monitorar</option>
-                <option value="OK">OK</option>
-              </select>
-            </label>
+                <SlidersHorizontal size={16} />
+                Filtros
+                {activeAdvancedCreditFilters > 0 ? (
+                  <span className="credit-filter-count">{activeAdvancedCreditFilters}</span>
+                ) : null}
+              </button>
+            </div>
 
-            <label>
-              Situacao
-              <select
-                value={state.creditFilters.operationalState}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "operationalState", value: event.target.value })
-                }
-              >
-                <option value="">Todas</option>
-                <option value="OWES">Devendo</option>
-                <option value="OVER_CREDIT">Ultrapassou credito</option>
-                <option value="UNUSED_CREDIT">Credito sem uso</option>
-                <option value="HAS_CREDIT_BALANCE">Saldo a favor</option>
-                <option value="SETTLED">Quitado</option>
-              </select>
-            </label>
+            {showCreditFilters ? (
+              <div className="filters-grid credit-advanced-filters">
+                <label>
+                  Grau de risco
+                  <select
+                    value={state.creditFilters.riskLevel}
+                    onChange={(event) =>
+                      dispatch({ type: "updateCreditFilter", key: "riskLevel", value: event.target.value })
+                    }
+                  >
+                    <option value="">Todos</option>
+                    <option value="CRITICO">Critico</option>
+                    <option value="ATENCAO">Atencao</option>
+                    <option value="MONITORAR">Monitorar</option>
+                    <option value="OK">OK</option>
+                  </select>
+                </label>
 
-            <label>
-              Com credito
-              <select
-                value={state.creditFilters.onlyWithCredit}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "onlyWithCredit", value: event.target.value })
-                }
-              >
-                <option value="">Todos</option>
-                <option value="true">So com credito</option>
-              </select>
-            </label>
+                <label>
+                  Situacao
+                  <select
+                    value={state.creditFilters.operationalState}
+                    onChange={(event) =>
+                      dispatch({ type: "updateCreditFilter", key: "operationalState", value: event.target.value })
+                    }
+                  >
+                    <option value="">Todas</option>
+                    <option value="OWES">Devendo</option>
+                    <option value="OVER_CREDIT">Ultrapassou credito</option>
+                    <option value="UNUSED_CREDIT">Credito sem uso</option>
+                    <option value="HAS_CREDIT_BALANCE">Saldo a favor</option>
+                    <option value="SETTLED">Quitado</option>
+                  </select>
+                </label>
 
-            <label>
-              Credito sem uso
-              <select
-                value={state.creditFilters.onlyUnusedCredit}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "onlyUnusedCredit", value: event.target.value })
-                }
-              >
-                <option value="">Todos</option>
-                <option value="true">So oportunidades</option>
-              </select>
-            </label>
+                <label>
+                  Com credito
+                  <select
+                    value={state.creditFilters.onlyWithCredit}
+                    onChange={(event) =>
+                      dispatch({ type: "updateCreditFilter", key: "onlyWithCredit", value: event.target.value })
+                    }
+                  >
+                    <option value="">Todos</option>
+                    <option value="true">So com credito</option>
+                  </select>
+                </label>
 
-            <label>
-              Somente vencidos
-              <select
-                value={state.creditFilters.onlyOverdue}
-                onChange={(event) =>
-                  dispatch({ type: "updateCreditFilter", key: "onlyOverdue", value: event.target.value })
-                }
-              >
-                <option value="">Todos</option>
-                <option value="true">So vencidos</option>
-              </select>
-            </label>
+                <label>
+                  Credito sem uso
+                  <select
+                    value={state.creditFilters.onlyUnusedCredit}
+                    onChange={(event) =>
+                      dispatch({ type: "updateCreditFilter", key: "onlyUnusedCredit", value: event.target.value })
+                    }
+                  >
+                    <option value="">Todos</option>
+                    <option value="true">So oportunidades</option>
+                  </select>
+                </label>
+
+                <label>
+                  Somente vencidos
+                  <select
+                    value={state.creditFilters.onlyOverdue}
+                    onChange={(event) =>
+                      dispatch({ type: "updateCreditFilter", key: "onlyOverdue", value: event.target.value })
+                    }
+                  >
+                    <option value="">Todos</option>
+                    <option value="true">So vencidos</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

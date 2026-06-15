@@ -125,14 +125,11 @@ export function CustomerCreditTable({
                 </th>
               ) : null}
               <th>Cliente</th>
-              <th>Divida / Saldo</th>
+              <th>Em aberto</th>
               <th>Crédito</th>
-              <th>Disponivel</th>
-              <th>Prazo</th>
+              <th>Vencimento</th>
               <th>Risco</th>
-              <th>Uso do credito</th>
-              <th>Acao sugerida</th>
-              {linkedOnly ? <th /> : null}
+              <th>Ação</th>
             </tr>
           </thead>
           <tbody>
@@ -214,23 +211,27 @@ export function CustomerCreditTable({
                     </div>
                   </td>
 
-                  {/* Limite */}
+                  {/* Crédito: limite + uso + disponivel num lugar so */}
                   <td>
-                    <strong>{row.creditLimit > 0 ? formatCurrency(row.creditLimit) : "—"}</strong>
+                    {row.creditLimit > 0 ? (
+                      <div className="credit-cell-credit">
+                        <strong>{formatCurrency(row.creditLimit)}</strong>
+                        <div className="credit-usage-track">
+                          <div
+                            className={`credit-usage-fill ${barColor}`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                        <span className={row.availableCreditAmount < 0 ? "credit-amount-debt" : "credit-amount-positive"}>
+                          {formatCurrency(row.availableCreditAmount)} {row.availableCreditAmount < 0 ? "excesso" : "livre"}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="credit-usage-nolimit">{row.debtAmount > 0 ? "Sem limite" : "—"}</span>
+                    )}
                   </td>
 
-                  {/* Disponível */}
-                  <td>
-                    <div className="credit-cell-amount">
-                      <strong className={row.availableCreditAmount > 0 ? "credit-amount-positive" : row.availableCreditAmount < 0 ? "credit-amount-debt" : ""}>
-                         {row.creditLimit > 0 ? formatCurrency(row.availableCreditAmount) : "—"}
-                      </strong>
-                      {row.availableCreditAmount < 0 && <span className="credit-over-label">Excesso</span>}
-                      {row.availableCreditAmount > 0 && row.creditLimit > 0 && <span>Disponível</span>}
-                    </div>
-                  </td>
-
-                  {/* Prazo (dias sem pagar) */}
+                  {/* Vencimento (dias sem pagar) */}
                   <td>
                     <div className="credit-cell-prazo">
                       <strong className={prazoTone(actualDays, row.paymentTerm)}>
@@ -265,44 +266,19 @@ export function CustomerCreditTable({
                     </span>
                   </td>
 
-                  {/* Barra de Uso */}
+                  {/* Acao: sugestao + abrir */}
                   <td>
-                    {row.creditLimit > 0 ? (
-                      <div className="credit-usage-cell">
-                        <div className="credit-usage-track">
-                          <div
-                            className={`credit-usage-fill ${barColor}`}
-                            style={{ width: `${Math.min(pct, 100)}%` }}
-                          />
-                        </div>
-                        <span className="credit-usage-label">
-                          {Math.round(pct)}%
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="credit-usage-nolimit">
-                        {row.debtAmount > 0 ? "Sem limite" : "—"}
+                    <div className="credit-cell-action-merged">
+                      <span className={`credit-action-pill tone-${action.tone}`} title={action.hint}>
+                        {action.label}
                       </span>
-                    )}
-                  </td>
-
-                  {/* Ação sugerida */}
-                  <td>
-                    <span className={`credit-action-pill tone-${action.tone}`} title={action.hint}>
-                      {action.label}
-                    </span>
-                  </td>
-
-                  {/* Link */}
-                  {linkedOnly ? (
-                    <td className="credit-cell-action">
-                      {row.customerId ? (
+                      {linkedOnly && row.customerId ? (
                         <Link className="ghost-button small" to={`/clientes/${row.customerId}`}>
                           Abrir
                         </Link>
                       ) : null}
-                    </td>
-                  ) : null}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
