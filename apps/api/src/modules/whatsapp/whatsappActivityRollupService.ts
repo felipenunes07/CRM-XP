@@ -101,6 +101,7 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           COALESCE(NULLIF(wmm.message_id, ''), wmm.id::text) AS message_key,
           0 AS source_priority,
           wmm.direction,
+          wmm.from_me,
           wmm.created_at,
           wmm.instance_name AS wmm_instance_name,
           d.whatsapp_instance_id AS deal_instance_id,
@@ -155,7 +156,11 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
               deal_instance_id, deal_assigned_to, deal_assigned_to_name,
               wmm_instance_name, NULL AS da_instance_name,
               NULL::uuid AS da_actor_user_id, NULL AS da_actor_name,
-              CASE WHEN direction = 'OUTBOUND' THEN 'WHATSAPP_SENT' ELSE 'WHATSAPP_RECEIVED' END AS activity_type
+              CASE
+                WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
+                  THEN 'WHATSAPP_SENT'
+                ELSE 'WHATSAPP_RECEIVED'
+              END AS activity_type
             FROM raw_monitor_rows
             UNION ALL
             SELECT

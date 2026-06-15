@@ -987,14 +987,32 @@ export function DisparadorPage() {
       query.state.data?.some((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status)) ? 10000 : false,
   });
 
+  // Carga rápida do painel: traz a campanha, destinatários e status SEM a
+  // atribuição pesada de respostas/compras (excludePerformance). Isso evita que
+  // o painel inteiro fique preso no spinner enquanto a query de atribuição roda.
   const selectedCampaignQuery = useQuery({
     queryKey: ["whatsapp-campaign", selectedCampaignId],
-    queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0 }),
+    queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0, excludePerformance: true }),
     enabled: Boolean(token && selectedCampaignId),
     staleTime: 5000,
     refetchOnWindowFocus: false,
     refetchInterval: (query) =>
       query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 10000 : false,
+  });
+
+  // Métricas de resposta/compra (atribuição) são caras. Carregam em segundo
+  // plano, sem bloquear o painel; se falharem/demorarem, o painel mostra um
+  // aviso em vez de travar tudo. retry: 1 evita o loop de 3 tentativas que
+  // mantinha o spinner por minutos.
+  const selectedCampaignPerformanceQuery = useQuery({
+    queryKey: ["whatsapp-campaign-performance", selectedCampaignId],
+    queryFn: () => api.whatsappCampaign(token!, selectedCampaignId!, { limit: 5000, offset: 0 }),
+    enabled: Boolean(token && selectedCampaignId),
+    staleTime: 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchInterval: (query) =>
+      query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 30000 : false,
   });
 
   useEffect(() => {
@@ -1295,9 +1313,10 @@ export function DisparadorPage() {
     resumeCampaignMutation.mutate(liveCampaign.id);
   }, [liveCampaign, nowMs, resumeCampaignMutation, token]);
 
+  const selectedCampaignPerformanceDetail = selectedCampaignPerformanceQuery.data ?? null;
   const selectedCampaignPerformanceRecipients = useMemo(
-    () => filterCampaignRecipients(selectedCampaignDetail?.recipients ?? [], campaignPerformanceFilter),
-    [campaignPerformanceFilter, selectedCampaignDetail?.recipients],
+    () => filterCampaignRecipients(selectedCampaignPerformanceDetail?.recipients ?? [], campaignPerformanceFilter),
+    [campaignPerformanceFilter, selectedCampaignPerformanceDetail?.recipients],
   );
   const menuChoicesCount = menuChoices.filter((choice) => choice.trim()).length;
   const hasMessage = campaignMessageType === "CAROUSEL"
@@ -4458,8 +4477,9 @@ export function DisparadorPage() {
                                       )}
                                     </div>
 
+                                    {selectedCampaignPerformanceQuery.data ? (
                                     <CampaignPerformancePanel
-                                      campaign={selectedCampaignQuery.data}
+                                      campaign={selectedCampaignPerformanceQuery.data}
                                       activeFilter={campaignPerformanceFilter}
                                       recipients={selectedCampaignPerformanceRecipients}
                                       onFilterChange={setCampaignPerformanceFilter}
@@ -4518,7 +4538,45 @@ export function DisparadorPage() {
                                         }
                                       }}
                                     />
-                                    
+                                    ) : selectedCampaignPerformanceQuery.isError ? (
+                                      <div style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        padding: "1.5rem",
+                                        background: "#fffbeb",
+                                        border: "1px solid #fde68a",
+                                        borderRadius: "12px",
+                                        color: "#92400e",
+                                        fontSize: "0.85rem",
+                                        textAlign: "center",
+                                      }}>
+                                        <span>Não foi possível calcular as métricas de resposta e compras agora (o cálculo demorou demais).</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => selectedCampaignPerformanceQuery.refetch()}
+                                          disabled={selectedCampaignPerformanceQuery.isFetching}
+                                          style={{
+                                            padding: "0.4rem 1rem",
+                                            background: "#ffffff",
+                                            border: "1px solid #fbbf24",
+                                            borderRadius: "8px",
+                                            color: "#92400e",
+                                            fontWeight: 600,
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          {selectedCampaignPerformanceQuery.isFetching ? "Calculando..." : "Tentar novamente"}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "1.5rem", color: "#71717a", fontSize: "0.85rem" }}>
+                                        <LoaderCircle size={18} className="spin" />
+                                        Calculando métricas de resposta e compras...
+                                      </div>
+                                    )}
+
                                   </div>
                                 ) : (
                                   <div style={{ textAlign: "center", padding: "1.5rem", color: "#ef4444" }}>
