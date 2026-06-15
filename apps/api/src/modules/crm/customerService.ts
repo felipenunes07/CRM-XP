@@ -24,6 +24,7 @@ function normalizeLabelName(value: string) {
 
 export const AMBASSADOR_LABEL_NORMALIZED_NAME = normalizeLabelName(AMBASSADOR_LABEL_NAME);
 const DOC_ITEM_DESCRIPTION_FILTER = "%DOC DE CARGA%";
+const CUSTOMER_TREND_MONTHS = 24;
 
 function mapInsightTags(value: unknown): InsightTag[] {
   if (!Array.isArray(value)) {
@@ -563,6 +564,47 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     [customerId],
   );
 
+  const monthlyTrendResult = await pool.query(
+    `
+      WITH months AS (
+        SELECT generate_series(
+          date_trunc('month', CURRENT_DATE) - (($2::int - 1) * interval '1 month'),
+          date_trunc('month', CURRENT_DATE),
+          interval '1 month'
+        )::date AS month_start
+      ),
+      order_item_totals AS (
+        SELECT
+          order_id,
+          COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces
+        FROM order_items
+        GROUP BY order_id
+      ),
+      monthly_totals AS (
+        SELECT
+          date_trunc('month', o.order_date)::date AS month_start,
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS revenue,
+          COUNT(*)::int AS orders,
+          COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS pieces
+        FROM orders o
+        LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
+        WHERE o.customer_id = $1
+          AND o.order_date >= (SELECT MIN(month_start) FROM months)
+          AND o.order_date <= CURRENT_DATE
+        GROUP BY date_trunc('month', o.order_date)::date
+      )
+      SELECT
+        to_char(months.month_start, 'YYYY-MM') AS month,
+        COALESCE(monthly_totals.revenue, 0)::numeric(14,2) AS revenue,
+        COALESCE(monthly_totals.orders, 0)::int AS orders,
+        COALESCE(monthly_totals.pieces, 0)::numeric(14,2) AS pieces
+      FROM months
+      LEFT JOIN monthly_totals ON monthly_totals.month_start = months.month_start
+      ORDER BY months.month_start
+    `,
+    [customerId, CUSTOMER_TREND_MONTHS],
+  );
+
   const base = mapCustomerRow(row);
   return {
     ...base,
@@ -575,6 +617,12 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     frequencyDropRatio: Number(row.frequency_drop_ratio ?? 0),
     predictedNextPurchaseAt: row.predicted_next_purchase_at ? String(row.predicted_next_purchase_at) : null,
     internalNotes: String(row.internal_notes ?? ""),
+    monthlyTrend: monthlyTrendResult.rows.map((trend) => ({
+      month: String(trend.month),
+      revenue: Number(trend.revenue ?? 0),
+      orders: Number(trend.orders ?? 0),
+      pieces: Number(trend.pieces ?? 0),
+    })),
     topProducts: topProductsResult.rows.map(
       (product) =>
         ({

@@ -394,6 +394,7 @@ export interface CustomerDetail extends CustomerListItem {
   frequencyDropRatio: number;
   predictedNextPurchaseAt: string | null;
   internalNotes: string;
+  monthlyTrend: AmbassadorTrendPoint[];
   topProducts: TopProduct[];
   recentOrders: Array<{
     id: string;
