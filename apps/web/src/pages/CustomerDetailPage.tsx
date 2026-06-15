@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { LoaderCircle, CheckCircle2 } from "lucide-react";
+import { LoaderCircle, CheckCircle2, Copy, Check } from "lucide-react";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -139,6 +139,112 @@ function customerDiagnosis(customer: CustomerDetail): { tone: string; headline: 
   };
 }
 
+function metricValueLabel(metric: ChartMetric, value: number) {
+  return metric === "revenue" ? formatCurrency(value) : formatNumber(value);
+}
+
+function trendVerdict(trendData: CustomerDetail["monthlyTrend"], metric: ChartMetric) {
+  if (trendData.length < 2) {
+    return null;
+  }
+
+  const half = Math.floor(trendData.length / 2);
+  const firstHalf = trendData.slice(0, half);
+  const secondHalf = trendData.slice(half);
+
+  const avg = (points: CustomerDetail["monthlyTrend"]) =>
+    points.length ? points.reduce((sum, point) => sum + (point[metric] ?? 0), 0) / points.length : 0;
+
+  const firstAvg = avg(firstHalf);
+  const secondAvg = avg(secondHalf);
+
+  if (firstAvg === 0) {
+    return secondAvg > 0 ? "Tendencia: *Crescendo* (comecou do zero na janela)" : null;
+  }
+
+  const change = (secondAvg - firstAvg) / firstAvg;
+  const percent = formatPercent(Math.abs(change));
+
+  if (change >= 0.05) {
+    return `Tendencia: *Crescendo* (+${percent} vs inicio da janela)`;
+  }
+
+  if (change <= -0.05) {
+    return `Tendencia: *Caindo* (-${percent} vs inicio da janela)`;
+  }
+
+  return "Tendencia: *Estavel* (sem variacao relevante na janela)";
+}
+
+function buildWhatsappSummary(
+  customer: CustomerDetail,
+  diagnosis: { headline: string; summary: string },
+  metric: ChartMetric,
+  trendWindow: TrendWindow,
+  trendData: CustomerDetail["monthlyTrend"],
+) {
+  const lines: string[] = [];
+
+  lines.push(`*${customer.displayName}* (${customer.customerCode || "sem codigo"})`);
+  lines.push(`Status: ${statusLabel(customer.status)} | Insight: ${primaryInsightLabel(customer)}`);
+  lines.push("");
+  lines.push(`Diagnostico: *${diagnosis.headline}*`);
+  lines.push(diagnosis.summary);
+  lines.push("");
+  lines.push(`Total gasto: *${formatCurrency(customer.totalSpent)}*`);
+  lines.push(`Ticket medio: ${formatCurrency(customer.avgTicket)}`);
+  lines.push(`Pedidos: ${formatNumber(customer.totalOrders)}`);
+  lines.push(`Ultima compra: ${formatDate(customer.lastPurchaseAt)} (${formatDaysSince(customer.daysSinceLastPurchase)})`);
+  lines.push(`Proxima compra prevista: ${formatDate(customer.predictedNextPurchaseAt)}`);
+
+  if (customer.frequencyDropRatio >= 0.25) {
+    lines.push(`Queda de frequencia: ${formatPercent(customer.frequencyDropRatio)}`);
+  }
+
+  if (customer.lastAttendant) {
+    lines.push(`Atendente: ${customer.lastAttendant}`);
+  }
+
+  if (trendData.length) {
+    const total = trendData.reduce((sum, point) => sum + (point[metric] ?? 0), 0);
+    lines.push("");
+    lines.push(`*${chartMetricLabel(metric)} (ultimos ${trendWindow}m): ${metricValueLabel(metric, total)}*`);
+
+    const verdict = trendVerdict(trendData, metric);
+    if (verdict) {
+      lines.push(verdict);
+    }
+
+    lines.push("");
+    trendData.forEach((point, index) => {
+      const current = point[metric] ?? 0;
+      const previous = index > 0 ? trendData[index - 1]?.[metric] ?? 0 : null;
+      let marker = "";
+      if (previous !== null) {
+        if (current > previous) {
+          marker = " (+)";
+        } else if (current < previous) {
+          marker = " (-)";
+        } else {
+          marker = " (=)";
+        }
+      }
+      lines.push(`${formatMonthLabel(point.month)}: ${metricValueLabel(metric, current)}${marker}`);
+    });
+  }
+
+  const topProducts = customer.topProducts.slice(0, 3);
+  if (topProducts.length) {
+    lines.push("");
+    lines.push("*Mais compra:*");
+    topProducts.forEach((product) => {
+      lines.push(`- ${product.itemDescription} (${formatNumber(product.totalQuantity)} pcs)`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
 function formatMonthLabel(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})$/);
   const year = match?.[1];
@@ -221,6 +327,7 @@ export function CustomerDetailPage() {
   const [ambassadorMessage, setAmbassadorMessage] = useState("");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("revenue");
   const [trendWindow, setTrendWindow] = useState<TrendWindow>(12);
+  const [copied, setCopied] = useState(false);
 
   const detailQuery = useQuery({
     queryKey: ["customer", id],
@@ -350,6 +457,41 @@ export function CustomerDetailPage() {
     });
   }
 
+  async function handleCopySummary() {
+    if (!customer) {
+      return;
+    }
+
+    const summary = buildWhatsappSummary(
+      customer,
+      customerDiagnosis(customer),
+      chartMetric,
+      trendWindow,
+      (customer.monthlyTrend ?? []).slice(-trendWindow),
+    );
+
+    try {
+      await navigator.clipboard.writeText(summary);
+    } catch {
+      // Fallback para navegadores sem clipboard API ou contexto nao seguro.
+      const textarea = document.createElement("textarea");
+      textarea.value = summary;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2500);
+  }
+
   const diagnosis = customerDiagnosis(customer);
   const trendData = (customer.monthlyTrend ?? []).slice(-trendWindow);
   const kpiCards = [
@@ -417,6 +559,15 @@ export function CustomerDetailPage() {
               {customer.ambassadorAssignedAt ? ` desde ${formatDate(customer.ambassadorAssignedAt)}` : ""}
             </span>
           ) : null}
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={handleCopySummary}
+            style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+          >
+            {copied ? <Check size={16} /> : <Copy size={16} />}
+            {copied ? "Resumo copiado!" : `Copiar resumo p/ WhatsApp (${chartMetricLabel(chartMetric)})`}
+          </button>
           <button
             type="button"
             className={customer.isAmbassador ? "ghost-button" : "primary-button"}
