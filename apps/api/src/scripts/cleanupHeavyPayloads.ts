@@ -16,14 +16,22 @@ import { cleanupHeavyPayloads } from "../modules/whatsapp/payloadRetentionServic
 
 async function main() {
   const arg = process.argv[2];
+  const mediaArg = process.argv[3];
   const retentionDays = arg ? Number(arg) : env.PAYLOAD_RETENTION_DAYS;
+  const mediaRetentionDays = mediaArg ? Number(mediaArg) : env.MEDIA_BASE64_RETENTION_DAYS;
   if (!Number.isFinite(retentionDays) || retentionDays < 7) {
     console.error(`Janela de retenção inválida: "${arg}" (mínimo 7 dias).`);
     process.exit(1);
   }
+  if (!Number.isFinite(mediaRetentionDays) || mediaRetentionDays < 7) {
+    console.error(`Janela de mídia inválida: "${mediaArg}" (mínimo 7 dias).`);
+    process.exit(1);
+  }
 
-  console.log(`Limpando payloads crus de linhas com mais de ${retentionDays} dias...`);
-  const result = await cleanupHeavyPayloads(retentionDays);
+  console.log(
+    `Limpando payloads crus (>${retentionDays} dias) e mediaBase64 (>${mediaRetentionDays} dias)...`,
+  );
+  const result = await cleanupHeavyPayloads(retentionDays, mediaRetentionDays);
   console.table(result.counts);
   console.log(
     "\nFeito. As colunas foram zeradas; o espaço volta para REUSO via autovacuum.",

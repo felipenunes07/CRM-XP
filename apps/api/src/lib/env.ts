@@ -73,6 +73,10 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   PAYLOAD_CLEANUP_HOUR: z.coerce.number().int().min(0).max(23).default(3),
   PAYLOAD_RETENTION_DAYS: z.coerce.number().int().min(7).default(90),
+  // A mídia (foto/áudio/vídeo) é guardada em base64 dentro de media_json (~737KB/linha
+  // = os 21GB de whatsapp_monitor_messages). Após esta janela, removemos só a chave
+  // mediaBase64 (o chat cai pro mediaUrl). Mídia mais nova que isso continua inline.
+  MEDIA_BASE64_RETENTION_DAYS: z.coerce.number().int().min(7).default(30),
   WORKER_OLIST_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

@@ -28,11 +28,19 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
 const BATCH_SIZE = 2000;
 
 type CleanupTarget = { table: string; column: string };
+type JsonKeyTarget = { table: string; column: string; key: string };
 
 const SAFE_TARGETS: CleanupTarget[] = [
   { table: "whatsapp_incoming_messages", column: "raw_payload" },
   { table: "message_logs", column: "provider_payload" },
   { table: "whatsapp_campaign_recipients", column: "response_payload" },
+];
+
+// Remoção por CHAVE (não a coluna toda): tira só o blob base64 pesado, mantendo as
+// chaves pequenas que o chat usa (mediaUrl, caption, mimeType, mediaType, fileName).
+// O front cai pro mediaUrl quando mediaBase64 some (buildMediaSrc em MessagesPage).
+const JSON_KEY_TARGETS: JsonKeyTarget[] = [
+  { table: "whatsapp_monitor_messages", column: "media_json", key: "mediaBase64" },
 ];
 
 async function clearColumnInBatches(target: CleanupTarget, retentionDays: number) {
@@ -63,7 +71,36 @@ async function clearColumnInBatches(target: CleanupTarget, retentionDays: number
   return total;
 }
 
-export async function cleanupHeavyPayloads(retentionDays = env.PAYLOAD_RETENTION_DAYS) {
+async function stripJsonKeyInBatches(target: JsonKeyTarget, retentionDays: number) {
+  let total = 0;
+  for (;;) {
+    const result = await pool.query(
+      `
+        UPDATE ${target.table}
+        SET ${target.column} = ${target.column} - $2
+        WHERE ctid IN (
+          SELECT ctid
+          FROM ${target.table}
+          WHERE ${target.column} ? $2
+            AND created_at < NOW() - ($1::int * INTERVAL '1 day')
+          LIMIT ${BATCH_SIZE}
+        )
+      `,
+      [retentionDays, target.key],
+    );
+    const affected = result.rowCount ?? 0;
+    total += affected;
+    if (affected < BATCH_SIZE) {
+      break;
+    }
+  }
+  return total;
+}
+
+export async function cleanupHeavyPayloads(
+  retentionDays = env.PAYLOAD_RETENTION_DAYS,
+  mediaRetentionDays = env.MEDIA_BASE64_RETENTION_DAYS,
+) {
   const counts: Record<string, number> = {};
   for (const target of SAFE_TARGETS) {
     try {
@@ -76,8 +113,19 @@ export async function cleanupHeavyPayloads(retentionDays = env.PAYLOAD_RETENTION
       });
     }
   }
-  logger.info("payload cleanup finished", { retentionDays, counts });
-  return { retentionDays, counts };
+  for (const target of JSON_KEY_TARGETS) {
+    try {
+      const cleared = await stripJsonKeyInBatches(target, mediaRetentionDays);
+      counts[`${target.table}.${target.column} -${target.key}`] = cleared;
+    } catch (error) {
+      logger.error("payload cleanup failed for json key target", {
+        target: `${target.table}.${target.column} -${target.key}`,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  logger.info("payload cleanup finished", { retentionDays, mediaRetentionDays, counts });
+  return { retentionDays, mediaRetentionDays, counts };
 }
 
 function getLocalParts(date = new Date()) {
