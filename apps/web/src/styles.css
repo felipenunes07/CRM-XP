@@ -7572,6 +7572,12 @@ textarea {
   font-weight: 700;
 }
 
+.inventory-stale-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
 .inventory-detail-list {
   display: grid;
   gap: 0.65rem;

@@ -1661,9 +1661,60 @@ async function loadOverviewRows(snapshotId: string) {
 }
 
 const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview";
+// A planilha de saldos so muda uma vez por dia, e o worker (alem do refresh em
+// background abaixo) reaquece o cache. Por isso guardamos por bastante tempo:
+// abrir a aba repetidas vezes responde em milissegundos.
+const CREDIT_OVERVIEW_CACHE_TTL_SECONDS = 60 * 60; // 1 hora
+
+let overviewBackgroundRefreshInFlight = false;
+
+async function buildOverviewResponse(snapshot: CustomerCreditSnapshotMeta): Promise<CustomerCreditOverviewResponse> {
+  const rows = await loadOverviewRows(snapshot.id);
+  const linkedRows = rows.filter((row) => row.matched);
+  const unmatchedRows = rows.filter((row) => !row.matched);
+
+  return {
+    snapshot,
+    summary: buildOverviewSummary(linkedRows, unmatchedRows),
+    linkedRows,
+    unmatchedRows,
+  };
+}
+
+async function cacheOverviewResponse(response: CustomerCreditOverviewResponse) {
+  try {
+    // @ts-ignore
+    await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", CREDIT_OVERVIEW_CACHE_TTL_SECONDS);
+  } catch (error) {
+    logger.warn("failed to save credit overview to cache", { error: String(error) });
+  }
+}
+
+// Reprocessa a planilha (caso tenha mudado) fora do caminho da requisicao e
+// reaquece o cache quando terminar. Garantimos uma execucao por vez para nao
+// disparar varios parses pesados em paralelo.
+function refreshOverviewInBackground() {
+  if (overviewBackgroundRefreshInFlight) {
+    return;
+  }
+  overviewBackgroundRefreshInFlight = true;
+
+  void (async () => {
+    try {
+      const snapshot = await ensureCustomerCreditSnapshot(false);
+      if (snapshot) {
+        await cacheOverviewResponse(await buildOverviewResponse(snapshot));
+      }
+    } catch (error) {
+      logger.warn("background credit overview refresh failed", { error: String(error) });
+    } finally {
+      overviewBackgroundRefreshInFlight = false;
+    }
+  })();
+}
 
 export async function getCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
-  // Try cache first
+  // 1. Cache quente: resposta instantanea.
   try {
     const cached = await redis.get(CREDIT_OVERVIEW_CACHE_KEY);
     if (cached) {
@@ -1673,6 +1724,20 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
     logger.warn("failed to read credit overview from cache", { error: String(error) });
   }
 
+  // 2. Ja existe um snapshot? Servimos ele na hora (so leitura do banco) e
+  //    reprocessamos a planilha em background. Assim, mesmo no dia em que o
+  //    arquivo de 60MB muda, a aba abre rapido em vez de travar ~1min no parse.
+  const activeSnapshot = await getActiveSnapshotRecord();
+  if (activeSnapshot) {
+    const response = await buildOverviewResponse(
+      mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>),
+    );
+    await cacheOverviewResponse(response);
+    refreshOverviewInBackground();
+    return response;
+  }
+
+  // 3. Primeira carga (sem snapshot ainda): precisamos parsear sincronamente.
   const snapshot = await ensureCustomerCreditSnapshot(false);
   if (!snapshot) {
     return {
@@ -1683,25 +1748,8 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
     };
   }
 
-  const rows = await loadOverviewRows(snapshot.id);
-  const linkedRows = rows.filter((row) => row.matched);
-  const unmatchedRows = rows.filter((row) => !row.matched);
-
-  const response: CustomerCreditOverviewResponse = {
-    snapshot,
-    summary: buildOverviewSummary(linkedRows, unmatchedRows),
-    linkedRows,
-    unmatchedRows,
-  };
-
-  // Save to cache
-  try {
-    // @ts-ignore
-    await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300); // 5 minutes cache
-  } catch (error) {
-    logger.warn("failed to save credit overview to cache", { error: String(error) });
-  }
-
+  const response = await buildOverviewResponse(snapshot);
+  await cacheOverviewResponse(response);
   return response;
 }
 
@@ -1716,25 +1764,15 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
     };
   }
 
-  const rows = await loadOverviewRows(snapshot.id);
-  const linkedRows = rows.filter((row) => row.matched);
-  const unmatchedRows = rows.filter((row) => !row.matched);
+  const response = await buildOverviewResponse(snapshot);
 
-  const response: CustomerCreditOverviewResponse = {
-    snapshot,
-    summary: buildOverviewSummary(linkedRows, unmatchedRows),
-    linkedRows,
-    unmatchedRows,
-  };
-
-  // Invalidate cache
+  // Reaquece o cache com o snapshot recem-processado.
   try {
     await redis.del(CREDIT_OVERVIEW_CACHE_KEY);
-    // @ts-ignore
-    await redis.set(CREDIT_OVERVIEW_CACHE_KEY, JSON.stringify(response), "EX", 300);
   } catch (error) {
-    logger.warn("failed to update credit overview cache", { error: String(error) });
+    logger.warn("failed to invalidate credit overview cache", { error: String(error) });
   }
+  await cacheOverviewResponse(response);
 
   return response;
 }

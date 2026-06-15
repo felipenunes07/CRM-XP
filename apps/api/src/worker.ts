@@ -6,7 +6,7 @@ import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
 import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 import { syncGeographicData } from "./modules/crm/geographicService.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/whatsappGroupService.js";
-import { ensureCustomerCreditSnapshot } from "./modules/crm/customerCreditService.js";
+import { refreshCustomerCreditOverview } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
@@ -70,7 +70,9 @@ async function main() {
       setInterval(
         () => {
           logger.info("starting scheduled credit sync");
-          ensureCustomerCreditSnapshot(true).catch((error) => {
+          // Reprocessa a planilha E reaquece o cache do overview, para que a aba
+          // de credito abra instantanea quando alguem acessar.
+          refreshCustomerCreditOverview().catch((error) => {
             logger.error("failed scheduled credit sync", { error: String(error) });
           });
         },

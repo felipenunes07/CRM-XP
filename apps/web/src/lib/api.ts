@@ -79,6 +79,10 @@ import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
+// A primeira leitura do snapshot financeiro reprocessa a planilha de saldos
+// (60MB+), o que pode levar mais de 1 minuto. Damos uma folga maior so para
+// essas chamadas; depois o resultado fica em cache e responde em milissegundos.
+export const CREDIT_REQUEST_TIMEOUT_MS = 180_000;
 
 export class ApiAuthError extends Error {
   status = 401;
@@ -130,9 +134,9 @@ export interface AdminUserInput {
   password?: string;
 }
 
-function createRequestSignal(upstreamSignal?: AbortSignal | null) {
+function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: number = API_REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   const abortFromUpstream = () => controller.abort();
   upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
@@ -151,8 +155,9 @@ async function request<T>(
   options: RequestInit = {},
   token?: string | null,
   didRefreshAuth = false,
+  timeoutMs: number = API_REQUEST_TIMEOUT_MS,
 ): Promise<T> {
-  const { signal, cleanup } = createRequestSignal(options.signal);
+  const { signal, cleanup } = createRequestSignal(options.signal, timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -176,7 +181,7 @@ async function request<T>(
             const { data, error } = await supabase.auth.refreshSession();
             const refreshedToken = data.session?.access_token;
             if (!error && refreshedToken && refreshedToken !== token) {
-              return request<T>(path, options, refreshedToken, true);
+              return request<T>(path, options, refreshedToken, true, timeoutMs);
             }
           } catch {
             // Renovacao falhou (rede/transitorio): NAO apagar a sessao aqui.
@@ -321,15 +326,15 @@ export const api = {
     }>(`/api/geographic/model-sales?${params.toString()}`, {}, token);
   },
   customerCreditOverview(token: string) {
-    return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token);
+    return request<CustomerCreditOverviewResponse>("/api/customer-credit/overview", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   refreshCustomerCreditOverview(token: string) {
     return request<CustomerCreditOverviewResponse>("/api/customer-credit/refresh", {
       method: "POST",
-    }, token);
+    }, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   customerCreditOpportunities(token: string) {
-    return request<CustomerOpportunityQueueResponse>("/api/customer-credit/opportunities", {}, token);
+    return request<CustomerOpportunityQueueResponse>("/api/customer-credit/opportunities", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   inventorySnapshot(token: string) {
     return request<InventorySnapshotMeta | null>("/api/inventory/snapshot", {}, token);
@@ -380,7 +385,7 @@ export const api = {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);
   },
   customerCreditDetail(token: string, id: string) {
-    return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit`, {}, token);
+    return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit`, {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   customerOpportunity(token: string, id: string) {
     return request<CustomerOpportunityDetail>(`/api/customers/${id}/opportunity`, {}, token);

@@ -15,6 +15,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDashed,
+  Download,
   Package,
   RefreshCcw,
   ShoppingCart,
@@ -746,6 +747,73 @@ function ModelDetailPanel({
   );
 }
 
+function staleFilterFileLabel(filter: StaleFilter) {
+  if (filter === "30_60") {
+    return "30_a_60_dias";
+  }
+
+  if (filter === "60_90") {
+    return "60_a_90_dias";
+  }
+
+  if (filter === "90_120") {
+    return "90_a_120_dias";
+  }
+
+  return "120_dias_ou_mais";
+}
+
+function exportStaleItemsToExcel(items: InventoryStaleListItem[], filter: StaleFilter) {
+  const headers = [
+    "SKU",
+    "Modelo",
+    "Marca",
+    "Cor",
+    "Qualidade",
+    "Tipo",
+    "Dias sem vender",
+    "Pecas",
+    "Ultima venda",
+    "Preco unitario",
+    "Valor parado",
+    "Valor estimado",
+    "Ultima reposicao",
+    "Acao sugerida",
+  ];
+
+  const csvLines = [
+    "﻿" + headers.join(";"),
+    ...items.map((item) =>
+      [
+        item.sku ?? "",
+        item.modelLabel ?? "",
+        item.brand ?? "",
+        item.color ?? "",
+        item.quality ?? "",
+        productKindLabel(item.productKind),
+        item.daysSinceLastSale === null ? "Sem venda" : item.daysSinceLastSale,
+        item.stockUnits ?? 0,
+        toDateOnly(item.lastSaleAt) ?? "",
+        item.unitPrice ?? 0,
+        item.trappedValue ?? 0,
+        item.trappedValueEstimated ? "Sim" : "Nao",
+        toDateOnly(item.lastRestockAt) ?? "",
+        staleActionLabel(item.suggestedAction),
+      ]
+        .map((val) => `"${String(val).replace(/"/g, '""')}"`)
+        .join(";"),
+    ),
+  ];
+
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `estoque_parado_${staleFilterFileLabel(filter)}_${new Date().toISOString().split("T")[0]}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function InventoryPage() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
@@ -1364,7 +1432,17 @@ export function InventoryPage() {
                     <p className="eyebrow">Produtos parados</p>
                     <h3>Tabela de produtos sem giro</h3>
                   </div>
-                  <span>{formatNumber(visibleStaleItems.length)} SKUs</span>
+                  <div className="inventory-stale-heading-actions">
+                    <span>{formatNumber(visibleStaleItems.length)} SKUs</span>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => exportStaleItemsToExcel(visibleStaleItems, staleFilter)}
+                    >
+                      <Download size={16} />
+                      Baixar Excel
+                    </button>
+                  </div>
                 </div>
 
                 <div className="inventory-stale-table-wrap">

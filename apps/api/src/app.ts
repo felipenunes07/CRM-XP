@@ -979,7 +979,6 @@ export function createApp() {
     }
   });
 
-/*
   app.get("/api/customer-credit/overview", async (_request, response, next) => {
     try {
       response.json(await getCustomerCreditOverview());
@@ -987,9 +986,7 @@ export function createApp() {
       next(error);
     }
   });
-*/
 
-/*
   app.post("/api/customer-credit/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
       response.json(await refreshCustomerCreditOverview());
@@ -997,9 +994,7 @@ export function createApp() {
       next(error);
     }
   });
-*/
 
-/*
   app.get("/api/customer-credit/opportunities", async (_request, response, next) => {
     try {
       response.json(await getCustomerCreditOpportunities());
@@ -1007,7 +1002,6 @@ export function createApp() {
       next(error);
     }
   });
-*/
 
   app.get("/api/inventory/snapshot", async (_request, response, next) => {
     try {
