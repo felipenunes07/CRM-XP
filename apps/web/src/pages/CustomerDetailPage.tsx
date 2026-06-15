@@ -3,29 +3,22 @@ import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { LoaderCircle, CheckCircle2 } from "lucide-react";
-import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { InfoHint } from "../components/InfoHint";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import {
   formatCurrency,
-  calculateDaysSince,
   formatDate,
-  formatDateTime,
   formatDaysSince,
   formatPercent,
   formatNumber,
   statusLabel,
 } from "../lib/format";
-import {
-  customerCreditHeadlineClassName,
-  customerCreditHeadlineLabel,
-  customerCreditPrimaryLabel,
-  customerCreditRiskClassName,
-  customerCreditRiskLabel,
-  customerCreditVisibleFlags,
-} from "../lib/customerCredit";
+
+type ChartMetric = "revenue" | "orders" | "pieces";
+type TrendWindow = 6 | 12 | 24;
 
 const insightLabels: Record<InsightTag, string> = {
   alto_valor: "Alto valor",
@@ -66,6 +59,155 @@ function primaryInsightLabel(customer: CustomerDetail) {
   return insightLabels[customer.primaryInsight];
 }
 
+function statusClass(status: CustomerDetail["status"]) {
+  if (status === "ACTIVE") {
+    return "status-active";
+  }
+
+  if (status === "ATTENTION") {
+    return "status-attention";
+  }
+
+  if (status === "NEW") {
+    return "status-active";
+  }
+
+  return "status-inactive";
+}
+
+function statusTone(status: CustomerDetail["status"]) {
+  if (status === "ACTIVE" || status === "NEW") {
+    return "success";
+  }
+
+  if (status === "ATTENTION") {
+    return "warning";
+  }
+
+  return "danger";
+}
+
+function frequencyTone(ratio: number) {
+  if (ratio >= 0.5) {
+    return "danger";
+  }
+
+  if (ratio >= 0.25) {
+    return "warning";
+  }
+
+  return "success";
+}
+
+function customerDiagnosis(customer: CustomerDetail): { tone: string; headline: string; summary: string } {
+  if (customer.status === "INACTIVE") {
+    return {
+      tone: "danger",
+      headline: "Cliente inativo",
+      summary: "Ja saiu da zona ativa. Precisa de reativacao antes de perder a recorrencia construida.",
+    };
+  }
+
+  if (customer.insightTags.includes("risco_churn") || customer.frequencyDropRatio >= 0.5) {
+    return {
+      tone: "danger",
+      headline: "Risco de churn",
+      summary: `Frequencia de compra caiu ${formatPercent(customer.frequencyDropRatio)} na comparacao recente. Vale contato imediato.`,
+    };
+  }
+
+  if (customer.status === "ATTENTION" || customer.insightTags.includes("compra_prevista_vencida")) {
+    return {
+      tone: "warning",
+      headline: "Pede acompanhamento",
+      summary: "Entrou em monitoramento. O ideal e agir antes de virar inativo e revisar a rotina de contato.",
+    };
+  }
+
+  if (customer.insightTags.includes("alto_valor")) {
+    return {
+      tone: "success",
+      headline: "Cliente de alto valor",
+      summary: "Gasto total acima da faixa alta da base. Merece prioridade de relacionamento e atencao dedicada.",
+    };
+  }
+
+  return {
+    tone: "success",
+    headline: "Relacao saudavel",
+    summary: "Sem alerta critico no momento. Cliente segue dentro do ritmo esperado de compra.",
+  };
+}
+
+function formatMonthLabel(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  const year = match?.[1];
+  const month = match?.[2];
+
+  if (!year || !month) {
+    return value;
+  }
+
+  return `${month}/${year.slice(2)}`;
+}
+
+function chartMetricLabel(metric: ChartMetric) {
+  if (metric === "orders") {
+    return "Pedidos";
+  }
+
+  if (metric === "pieces") {
+    return "Pecas";
+  }
+
+  return "Faturamento";
+}
+
+function chartMetricColor(metric: ChartMetric) {
+  if (metric === "orders") {
+    return "#5f8cff";
+  }
+
+  if (metric === "pieces") {
+    return "#2f9d67";
+  }
+
+  return "#2956d7";
+}
+
+function CustomerTrendTooltip({
+  active,
+  payload,
+  label,
+  metric,
+  subjectLabel,
+}: {
+  active?: boolean;
+  payload?: Array<{ value?: number }>;
+  label?: string;
+  metric: ChartMetric;
+  subjectLabel: string;
+}) {
+  if (!active || !payload?.length || !label) {
+    return null;
+  }
+
+  const value = payload[0]?.value ?? 0;
+
+  return (
+    <div className="chart-tooltip">
+      <strong>{formatMonthLabel(label)}</strong>
+      <div className="chart-tooltip-count">
+        <strong>{metric === "revenue" ? formatCurrency(value) : formatNumber(value)}</strong>
+        <span>
+          {chartMetricLabel(metric)} de {subjectLabel}
+        </span>
+      </div>
+      <p>Historico mensal de compra desse cliente. Troque a metrica ou a janela acima.</p>
+    </div>
+  );
+}
+
 export function CustomerDetailPage() {
   const { id } = useParams();
   const { token } = useAuth();
@@ -77,6 +219,8 @@ export function CustomerDetailPage() {
   const [labelMessage, setLabelMessage] = useState("");
   const [notesMessage, setNotesMessage] = useState("");
   const [ambassadorMessage, setAmbassadorMessage] = useState("");
+  const [chartMetric, setChartMetric] = useState<ChartMetric>("revenue");
+  const [trendWindow, setTrendWindow] = useState<TrendWindow>(12);
 
   const detailQuery = useQuery({
     queryKey: ["customer", id],
@@ -88,19 +232,8 @@ export function CustomerDetailPage() {
     queryFn: () => api.customerLabels(token!),
     enabled: Boolean(token),
   });
-  // const creditDetailQuery = useQuery({
-  //   queryKey: ["customer-credit-detail", id],
-  //   queryFn: () => api.customerCreditDetail(token!, id!),
-  //   enabled: Boolean(token && id),
-  // });
 
   const customer = detailQuery.data ?? null;
-  const creditRow = null; // creditDetailQuery.data?.row ?? null;
-  const creditSnapshot = null; // creditDetailQuery.data?.snapshot ?? null;
-  const creditOrders = []; // creditDetailQuery.data?.orders ?? [];
-  const creditPayments = []; // creditDetailQuery.data?.payments ?? [];
-  const creditDaysSinceLastPayment = 0;
-    // creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
   const knownLabels = useMemo(() => labelsQuery.data?.map((label) => label.name) ?? [], [labelsQuery.data]);
   const availableLabels = useMemo(
     () =>
@@ -217,15 +350,65 @@ export function CustomerDetailPage() {
     });
   }
 
+  const diagnosis = customerDiagnosis(customer);
+  const trendData = (customer.monthlyTrend ?? []).slice(-trendWindow);
+  const kpiCards = [
+    {
+      label: "Total gasto",
+      value: formatCurrency(customer.totalSpent),
+      detail: `Score de valor ${customer.valueScore.toFixed(1)} de 100.`,
+      tone: "purple",
+    },
+    {
+      label: "Ticket medio",
+      value: formatCurrency(customer.avgTicket),
+      detail: `${formatNumber(customer.totalOrders)} pedidos no historico.`,
+      tone: "neutral",
+    },
+    {
+      label: "Recencia",
+      value: formatDaysSince(customer.daysSinceLastPurchase),
+      detail: `Ultima compra: ${formatDate(customer.lastPurchaseAt)}.`,
+      tone: statusTone(customer.status),
+    },
+    {
+      label: "Queda de frequencia",
+      value: formatPercent(customer.frequencyDropRatio),
+      detail:
+        customer.frequencyDropRatio >= 0.5
+          ? "Queda relevante: priorize contato."
+          : "Ritmo de compra sob controle.",
+      tone: frequencyTone(customer.frequencyDropRatio),
+    },
+    {
+      label: "Proxima compra prevista",
+      value: formatDate(customer.predictedNextPurchaseAt),
+      detail: customer.insightTags.includes("compra_prevista_vencida")
+        ? "Previsao vencida sem novo pedido."
+        : `Intervalo medio: ${customer.avgDaysBetweenOrders?.toFixed(0) ?? "--"} dias.`,
+      tone: customer.insightTags.includes("compra_prevista_vencida") ? "warning" : "neutral",
+    },
+    {
+      label: "Score de prioridade",
+      value: customer.priorityScore.toFixed(1),
+      detail: "40% recencia, 25% valor, 20% queda, 15% previsao vencida.",
+      tone: "neutral",
+    },
+  ];
+
   return (
     <div className="page-stack">
       <section className="hero-panel">
         <div>
           <p className="eyebrow">Ficha do cliente</p>
           <h2>{customer.displayName}</h2>
-          <p>
-            {customer.customerCode} | {statusLabel(customer.status)} | Insight principal: {primaryInsightLabel(customer)}
-          </p>
+          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.4rem" }}>
+            <span className={`status-badge ${statusClass(customer.status)}`}>{statusLabel(customer.status)}</span>
+            <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{customer.customerCode || "Sem codigo"}</span>
+            <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
+              Insight principal: <strong>{primaryInsightLabel(customer)}</strong>
+            </span>
+          </div>
         </div>
         <div className="hero-actions">
           {customer.isAmbassador ? (
@@ -253,143 +436,91 @@ export function CustomerDetailPage() {
         </div>
       </section>
 
-      <section className="stats-grid detail-stats-grid">
-        <div className="panel metric-tile">
-          <span>Ultima compra</span>
-          <strong>{formatDate(customer.lastPurchaseAt)}</strong>
+      <section className={`panel customer-diagnosis tone-${diagnosis.tone}`} style={{ borderLeft: `4px solid var(--${diagnosis.tone === "neutral" ? "line" : diagnosis.tone})` }}>
+        <div className="panel-header" style={{ marginBottom: "0.3rem" }}>
+          <div>
+            <p className="eyebrow">Diagnostico comercial</p>
+            <h3 style={{ margin: 0 }}>{diagnosis.headline}</h3>
+          </div>
         </div>
-        <div className="panel metric-tile">
-          <span>Tempo desde a ultima compra</span>
-          <strong>{formatDaysSince(customer.daysSinceLastPurchase)}</strong>
-        </div>
-        <div className="panel metric-tile">
-          <span>Pedidos com a gente</span>
-          <strong>{customer.totalOrders}</strong>
-        </div>
-        <div className="panel metric-tile">
-          <span>Ticket medio</span>
-          <strong>{formatCurrency(customer.avgTicket)}</strong>
-        </div>
-        <div className="panel metric-tile">
-          <span>Total gasto</span>
-          <strong>{formatCurrency(customer.totalSpent)}</strong>
-        </div>
-        <div className="panel metric-tile">
-          <span>Score de valor</span>
-          <strong>{customer.valueScore.toFixed(1)}</strong>
-        </div>
-        <div className="panel metric-tile">
-          <span className="label-with-info">
-            Score de prioridade
-            <InfoHint text="Pontuacao de prioridade: 40% recencia, 25% valor do cliente, 20% queda de frequencia e 15% compra prevista vencida." />
-          </span>
-          <strong>{customer.priorityScore.toFixed(1)}</strong>
-        </div>
+        <p className="panel-subcopy" style={{ margin: 0 }}>{diagnosis.summary}</p>
       </section>
 
-      {/* <section className="panel customer-credit-detail-panel">
+      <section className="stats-grid">
+        {kpiCards.map((card) => (
+          <div key={card.label} className={`stat-card tone-${card.tone}`}>
+            <div className="stat-card-header">
+              <h3 className="stat-card-title">{card.label}</h3>
+            </div>
+            <div className="stat-card-body">
+              <strong>{card.value}</strong>
+              <p className="stat-card-helper">{card.detail}</p>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section className="panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Credito & Pagamento</p>
-            <h3>Leitura financeira diaria desse cliente</h3>
-            <p className="panel-subcopy">
-              Dados puxados do arquivo diario <strong>{creditSnapshot?.sourceFileName ?? "SALDO VENDAS"}</strong>.
-            </p>
+            <p className="eyebrow">Historico mensal</p>
+            <h3>Tendencia de {customer.displayName}</h3>
           </div>
-          {creditSnapshot ? (
-            <div className="customer-credit-snapshot-badge">
-              <span>Arquivo: {formatDateTime(creditSnapshot.sourceFileUpdatedAt)}</span>
-              <span>Importado: {formatDateTime(creditSnapshot.importedAt)}</span>
+          <div className="ambassador-chart-controls" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            <div className="ambassador-chart-toggle" role="tablist">
+              {(["revenue", "orders", "pieces"] as ChartMetric[]).map((metric) => (
+                <button
+                  key={metric}
+                  type="button"
+                  className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`}
+                  onClick={() => setChartMetric(metric)}
+                >
+                  {chartMetricLabel(metric)}
+                </button>
+              ))}
             </div>
-          ) : null}
+
+            <div style={{ width: "1px", height: "24px", background: "var(--line)" }} />
+
+            <div className="ambassador-range-toggle" role="tablist">
+              {([6, 12, 24] as TrendWindow[]).map((windowSize) => (
+                <button
+                  key={windowSize}
+                  type="button"
+                  className={`ambassador-range-button ${trendWindow === windowSize ? "active" : ""}`}
+                  onClick={() => setTrendWindow(windowSize)}
+                >
+                  {windowSize}m
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {creditDetailQuery.isLoading ? (
-          <div className="empty-state">Carregando snapshot financeiro...</div>
-        ) : creditRow ? (
-          <div className="customer-credit-detail-shell">
-            <div className="detail-grid customer-credit-detail-grid">
-              <div>
-                <span>Situação</span>
-                <strong>
-                  <span className={`tag credit-badge ${customerCreditHeadlineClassName(creditRow)}`}>
-                    {customerCreditHeadlineLabel(creditRow)}
-                  </span>
-                </strong>
-              </div>
-              <div>
-                <span>Risco</span>
-                <strong>
-                  <span className={`tag credit-badge ${customerCreditRiskClassName(creditRow.riskLevel)}`}>
-                    {customerCreditRiskLabel(creditRow.riskLevel)}
-                  </span>
-                </strong>
-              </div>
-              <div>
-                <span>{customerCreditPrimaryLabel(creditRow)}</span>
-                <strong>{formatCurrency(creditRow.debtAmount > 0 ? creditRow.debtAmount : creditRow.creditBalanceAmount)}</strong>
-              </div>
-              <div>
-                <span>Credito liberado</span>
-                <strong>{formatCurrency(creditRow.creditLimit)}</strong>
-              </div>
-              <div>
-                <span>Disponivel</span>
-                <strong>{formatCurrency(creditRow.availableCreditAmount)}</strong>
-              </div>
-              <div>
-                <span>Uso do limite</span>
-                <strong>
-                  {creditRow.creditLimit > 0 ? `${Math.min((creditRow.debtAmount / creditRow.creditLimit) * 100, 100).toFixed(0)}%` : "Sem limite"}
-                </strong>
-              </div>
-              <div>
-                <span>Ultimo pedido</span>
-                <strong>{formatDate(creditRow.lastOrderDate)}</strong>
-              </div>
-              <div>
-                <span>Ultimo pagamento</span>
-                <strong>{formatDate(creditRow.lastPaymentDate)}</strong>
-              </div>
-              <div>
-                <span>Dias sem pedir</span>
-                <strong>{formatDaysSince(creditRow.daysSinceLastOrder)}</strong>
-              </div>
-              <div>
-                <span>Dias sem pagar</span>
-                <strong>{formatDaysSince(creditDaysSinceLastPayment)}</strong>
-              </div>
-            </div>
-
-            <div className="customer-credit-observation-block">
-              <span className="label-block-title">Observacao operacional</span>
-              <p>{creditRow.observation || "Sem observacao relevante nesse snapshot."}</p>
-            </div>
-
-            <div>
-              <span className="label-block-title">Flags de atencao</span>
-              <div className="tag-row">
-                {customerCreditVisibleFlags(creditRow).length ? (
-                  customerCreditVisibleFlags(creditRow).map((flag) => (
-                    <span key={flag} className="tag customer-credit-flag">
-                      {flag}
-                    </span>
-                  ))
-                ) : (
-                  <span className="muted-copy">Sem flags adicionais.</span>
-                )}
-              </div>
-            </div>
-
-            <CustomerCreditLedgerSections orders={creditOrders} payments={creditPayments} />
+        {trendData.length ? (
+          <div className="trend-chart-wrap">
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={trendData} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
+                <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tickFormatter={(value) => formatMonthLabel(String(value))}
+                  stroke="#5f6f95"
+                  minTickGap={trendWindow === 24 ? 18 : 8}
+                />
+                <YAxis stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
+                <Tooltip
+                  content={<CustomerTrendTooltip metric={chartMetric} subjectLabel={customer.displayName} />}
+                  cursor={{ fill: "rgba(41, 86, 215, 0.04)" }}
+                />
+                <Bar dataKey={chartMetric} fill={chartMetricColor(chartMetric)} radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         ) : (
-          <div className="empty-state">
-            Esse cliente nao apareceu no snapshot financeiro mais recente. Vale revisar se o codigo dele existe no Excel
-            do dia.
-          </div>
+          <div className="empty-state">Ainda nao ha historico de compra suficiente para montar a tendencia.</div>
         )}
-      </section> */}
+      </section>
 
       <section className="grid-two">
         <article className="panel">
@@ -422,8 +553,11 @@ export function CustomerDetailPage() {
               <strong>{customer.lastAttendant ?? "Nao informado"}</strong>
             </div>
             <div>
-              <span>Status comercial</span>
-              <strong>{statusLabel(customer.status)}</strong>
+              <span className="label-with-info">
+                Score de prioridade
+                <InfoHint text="Pontuacao de prioridade: 40% recencia, 25% valor do cliente, 20% queda de frequencia e 15% compra prevista vencida." />
+              </span>
+              <strong>{customer.priorityScore.toFixed(1)}</strong>
             </div>
           </div>
         </article>
@@ -432,14 +566,9 @@ export function CustomerDetailPage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Como ler os insights</p>
-              <h3>Explicacao do que o sistema esta vendo</h3>
+              <h3>O que o sistema esta vendo</h3>
             </div>
           </div>
-
-          <p className="panel-subcopy">
-            Para churn, o sistema compara os ultimos 90 dias com os 90 dias anteriores. Quando a queda de frequencia
-            chega em 50% ou mais e o cliente sai da zona ativa, ele entra em risco de churn.
-          </p>
 
           <div className="insight-list">
             {customer.insightTags.length ? (
@@ -460,6 +589,35 @@ export function CustomerDetailPage() {
       </section>
 
       <section className="grid-two">
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Mix de compra</p>
+              <h3>Pecas que esse cliente mais compra</h3>
+            </div>
+          </div>
+
+          {customer.topProducts.length ? (
+            <div className="top-products-list">
+              {customer.topProducts.map((product) => (
+                <article key={`${product.sku ?? product.itemDescription}`} className="top-product-card">
+                  <div className="top-product-copy">
+                    <strong>{product.itemDescription}</strong>
+                    <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
+                  </div>
+                  <div className="top-product-metrics">
+                    <span>{formatNumber(product.totalQuantity)} pecas</span>
+                    <span>{formatNumber(product.orderCount)} pedidos</span>
+                    <span>Ultima compra: {formatDate(product.lastBoughtAt)}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">Ainda nao ha base suficiente para montar o mix de compra.</div>
+          )}
+        </article>
+
         <article className="panel">
           <div className="panel-header">
             <div>
@@ -529,6 +687,8 @@ export function CustomerDetailPage() {
                 </button>
               </div>
 
+              {labelMessage ? <span className="muted-copy" style={{ fontSize: "0.85rem" }}>{labelMessage}</span> : null}
+
               <div className="inline-actions" style={{ minHeight: "36px", display: "flex", alignItems: "center" }}>
                 {saveLabelsMutation.isPending ? (
                   <span className="muted-copy" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem" }}>
@@ -538,7 +698,7 @@ export function CustomerDetailPage() {
                   <span className="inline-error" style={{ fontSize: "0.85rem" }}>Nao foi possivel salvar os rotulos.</span>
                 ) : (
                   <span className="save-ok" style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.85rem", color: "var(--semantic-positive)" }}>
-                    <CheckCircle2 size={16} /> Rótulos salvos automaticamente!
+                    <CheckCircle2 size={16} /> Rotulos salvos automaticamente!
                   </span>
                 )}
               </div>
@@ -565,35 +725,6 @@ export function CustomerDetailPage() {
               </div>
             </form>
           </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Mix de compra</p>
-              <h3>Pecas que esse cliente mais compra</h3>
-            </div>
-          </div>
-
-          {customer.topProducts.length ? (
-            <div className="top-products-list">
-              {customer.topProducts.map((product) => (
-                <article key={`${product.sku ?? product.itemDescription}`} className="top-product-card">
-                  <div className="top-product-copy">
-                    <strong>{product.itemDescription}</strong>
-                    <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
-                  </div>
-                  <div className="top-product-metrics">
-                    <span>{formatNumber(product.totalQuantity)} pecas</span>
-                    <span>{formatNumber(product.orderCount)} pedidos</span>
-                    <span>Ultima compra: {formatDate(product.lastBoughtAt)}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">Ainda nao ha base suficiente para montar o mix de compra.</div>
-          )}
         </article>
       </section>
 
