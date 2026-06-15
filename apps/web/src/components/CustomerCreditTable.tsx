@@ -1,10 +1,10 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { formatCurrency, formatDate, calculateDaysSince } from "../lib/format";
 import {
   customerCreditRiskClassName,
   customerCreditRiskLabel,
-  customerCreditVisibleFlags,
+  customerCreditStatusBadge,
 } from "../lib/customerCredit";
 
 interface CustomerCreditTableProps {
@@ -90,12 +90,13 @@ function rowClassName(row: CustomerCreditRow) {
 export function CustomerCreditTable({
   rows,
   emptyMessage,
-  linkedOnly = true,
   selectable = false,
   selectedCodes,
   onToggleRow,
   onToggleAll,
 }: CustomerCreditTableProps) {
+  const navigate = useNavigate();
+
   if (!rows.length) {
     return (
       <div className="panel table-panel empty-panel">
@@ -134,7 +135,7 @@ export function CustomerCreditTable({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const flags = customerCreditVisibleFlags(row);
+              const statusBadge = customerCreditStatusBadge(row);
               const pct = creditUsagePercent(row);
               const barColor = usageBarColor(row);
               const hasBalance = row.creditBalanceAmount > 0;
@@ -142,11 +143,25 @@ export function CustomerCreditTable({
               const actualDays = calculateDaysSince(row.lastPaymentDate);
 
               const isSelected = selected.has(row.customerCode);
+              const isClickable = Boolean(row.customerId);
 
               return (
-                <tr key={row.id} className={`${rowClassName(row)} ${isSelected ? "credit-row-selected" : ""}`}>
+                <tr
+                  key={row.id}
+                  className={`${rowClassName(row)} ${isSelected ? "credit-row-selected" : ""} ${isClickable ? "credit-row-clickable" : ""}`}
+                  onClick={isClickable ? () => navigate(`/clientes/${row.customerId}`) : undefined}
+                  role={isClickable ? "link" : undefined}
+                  tabIndex={isClickable ? 0 : undefined}
+                  onKeyDown={
+                    isClickable
+                      ? (event) => {
+                          if (event.key === "Enter") navigate(`/clientes/${row.customerId}`);
+                        }
+                      : undefined
+                  }
+                >
                   {selectable ? (
-                    <td className="credit-select-col">
+                    <td className="credit-select-col" onClick={(event) => event.stopPropagation()}>
                       {row.customerId ? (
                         <input
                           type="checkbox"
@@ -161,31 +176,11 @@ export function CustomerCreditTable({
                   {/* Cliente */}
                   <td>
                     <div className="credit-cell-client">
-                      {row.customerId ? (
-                        <Link className="credit-cell-client-link" to={`/clientes/${row.customerId}`}>
-                          <strong>{row.customerDisplayName}</strong>
-                          <span>{row.customerCode}</span>
-                        </Link>
-                      ) : (
-                        <div className="credit-cell-client-link">
-                          <strong>{row.sourceDisplayName ?? row.customerDisplayName}</strong>
-                          <span>{row.customerCode}</span>
-                        </div>
-                      )}
-                      {flags.length > 0 ? (
-                        <div className="credit-cell-flags">
-                          {flags.slice(0, 2).map((flag) => (
-                            <span key={`${row.id}-${flag}`} className="credit-flag-dot" title={flag}>
-                              {flag}
-                            </span>
-                          ))}
-                          {flags.length > 2 ? (
-                            <span className="credit-flag-more" title={flags.slice(2).join(", ")}>
-                              +{flags.length - 2}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      <div className="credit-cell-client-link">
+                        <strong>{row.customerId ? row.customerDisplayName : row.sourceDisplayName ?? row.customerDisplayName}</strong>
+                        <span>{row.customerCode}</span>
+                      </div>
+                      <span className={`credit-status-pill ${statusBadge.className}`}>{statusBadge.label}</span>
                     </div>
                   </td>
 
@@ -237,20 +232,6 @@ export function CustomerCreditTable({
                       <strong className={prazoTone(actualDays, row.paymentTerm)}>
                         {prazoLabel(actualDays, row.paymentTerm)}
                       </strong>
-                      {row.paymentTerm && actualDays !== null && (
-                        <div className="credit-usage-track" style={{ height: "4px", margin: "4px 0" }}>
-                          <div
-                            className={`credit-usage-fill ${
-                              actualDays > row.paymentTerm
-                                ? "danger"
-                                : actualDays > row.paymentTerm * 0.8
-                                  ? "warning"
-                                  : "success"
-                            }`}
-                            style={{ width: `${Math.min((actualDays / row.paymentTerm) * 100, 100)}%` }}
-                          />
-                        </div>
-                      )}
                       {row.lastPaymentDate ? (
                         <span>{formatDate(row.lastPaymentDate)}</span>
                       ) : (
@@ -266,17 +247,12 @@ export function CustomerCreditTable({
                     </span>
                   </td>
 
-                  {/* Acao: sugestao + abrir */}
+                  {/* Acao sugerida */}
                   <td>
                     <div className="credit-cell-action-merged">
                       <span className={`credit-action-pill tone-${action.tone}`} title={action.hint}>
                         {action.label}
                       </span>
-                      {linkedOnly && row.customerId ? (
-                        <Link className="ghost-button small" to={`/clientes/${row.customerId}`}>
-                          Abrir
-                        </Link>
-                      ) : null}
                     </div>
                   </td>
                 </tr>

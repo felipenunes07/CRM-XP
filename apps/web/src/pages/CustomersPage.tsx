@@ -1,12 +1,12 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
-import { isOverdueCreditRow } from "../lib/customerCredit";
+import { isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
 import { CustomerTable } from "../components/CustomerTable";
@@ -15,6 +15,8 @@ import { GeographicView } from "../components/GeographicView";
 import {
   buildCustomersQueryParams,
   type CreditKpiFilter,
+  type CreditQuickFilter,
+  type CreditSortBy,
   type CustomerCreditFilters,
   type CustomerPortfolioSortBy,
   createInitialCustomersPageState,
@@ -110,6 +112,53 @@ function applyCreditKpiFilter(rows: CustomerCreditRow[], kpiFilter: CreditKpiFil
         return true;
     }
   });
+}
+
+function matchesCreditQuickFilter(row: CustomerCreditRow, quick: CreditQuickFilter) {
+  switch (quick) {
+    case "to_charge":
+      return creditNeedsCharge(row);
+    case "overdue":
+      return isOverdueCreditRow(row);
+    case "opportunity":
+      return row.operationalState === "UNUSED_CREDIT";
+    case "ontrack":
+      return !row.hasOverCredit && !isOverdueCreditRow(row);
+    default:
+      return true;
+  }
+}
+
+function applyCreditQuickFilter(rows: CustomerCreditRow[], quick: CreditQuickFilter) {
+  if (!quick) return rows;
+  return rows.filter((row) => matchesCreditQuickFilter(row, quick));
+}
+
+function creditUrgencyScore(row: CustomerCreditRow) {
+  if (row.hasOverCredit) return 4;
+  if (isOverdueCreditRow(row)) return 3;
+  if (row.debtAmount > 0) return 2;
+  if (row.operationalState === "UNUSED_CREDIT") return 1;
+  return 0;
+}
+
+function sortCreditRows(rows: CustomerCreditRow[], sortBy: CreditSortBy) {
+  const copy = [...rows];
+  switch (sortBy) {
+    case "debt_desc":
+      return copy.sort((a, b) => b.debtAmount - a.debtAmount);
+    case "available_desc":
+      return copy.sort((a, b) => (b.availableCreditAmount ?? 0) - (a.availableCreditAmount ?? 0));
+    case "name":
+      return copy.sort((a, b) => a.customerDisplayName.localeCompare(b.customerDisplayName, "pt-BR"));
+    case "urgency":
+    default:
+      return copy.sort((a, b) => {
+        const diff = creditUrgencyScore(b) - creditUrgencyScore(a);
+        if (diff !== 0) return diff;
+        return b.debtAmount - a.debtAmount;
+      });
+  }
 }
 
 export function CustomersPage() {
@@ -262,6 +311,7 @@ export function CustomersPage() {
   const navigate = useNavigate();
   const [selectedCreditCodes, setSelectedCreditCodes] = useState<Set<string>>(() => new Set());
   const [showCreditFilters, setShowCreditFilters] = useState(false);
+  const [audienceModal, setAudienceModal] = useState<{ destination: "dispatch" | "automation"; name: string } | null>(null);
 
   const activeAdvancedCreditFilters = [
     state.creditFilters.riskLevel,
@@ -300,6 +350,23 @@ export function CustomersPage() {
   const kpiFilteredRows = useMemo(
     () => applyCreditKpiFilter(filteredLinkedCreditRows, state.creditKpiFilter),
     [filteredLinkedCreditRows, state.creditKpiFilter],
+  );
+
+  // Linhas finais exibidas: KPI + atalho de triagem + ordenacao
+  const displayedCreditRows = useMemo(
+    () => sortCreditRows(applyCreditQuickFilter(kpiFilteredRows, state.creditQuickFilter), state.creditSort),
+    [kpiFilteredRows, state.creditQuickFilter, state.creditSort],
+  );
+
+  // Contagens dos atalhos de triagem (sobre a base filtrada por busca/avancados)
+  const quickFilterCounts = useMemo(
+    () => ({
+      to_charge: filteredLinkedCreditRows.filter((row) => creditNeedsCharge(row)).length,
+      overdue: filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
+      opportunity: filteredLinkedCreditRows.filter((row) => row.operationalState === "UNUSED_CREDIT").length,
+      ontrack: filteredLinkedCreditRows.filter((row) => !row.hasOverCredit && !isOverdueCreditRow(row)).length,
+    }),
+    [filteredLinkedCreditRows],
   );
 
   const filteredDebtAmount = useMemo(
@@ -347,8 +414,8 @@ export function CustomersPage() {
 
   // ── Selecao para montar publico de cobranca ──
   const selectedCreditRows = useMemo(
-    () => kpiFilteredRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
-    [kpiFilteredRows, selectedCreditCodes],
+    () => displayedCreditRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
+    [displayedCreditRows, selectedCreditCodes],
   );
   const selectedCreditDebt = useMemo(
     () => selectedCreditRows.reduce((sum, row) => sum + Math.max(0, row.debtAmount), 0),
@@ -358,7 +425,7 @@ export function CustomersPage() {
   const toggleAllVisibleCredit = (checked: boolean) => {
     setSelectedCreditCodes((current) => {
       const next = new Set(current);
-      for (const row of kpiFilteredRows) {
+      for (const row of displayedCreditRows) {
         if (!row.customerId) continue;
         if (checked) {
           next.add(row.customerCode);
@@ -380,13 +447,21 @@ export function CustomersPage() {
     }
   };
 
-  const buildAudienceAndGo = async (destination: "dispatch" | "automation") => {
-    if (!token || selectedCreditRows.length === 0 || createAudienceMutation.isPending) {
+  const openAudienceModal = (destination: "dispatch" | "automation") => {
+    if (selectedCreditRows.length === 0) {
       return;
     }
     const today = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
     const suggested = destination === "automation" ? `Cobranca recorrente ${today}` : `Cobranca ${today}`;
-    const name = window.prompt("Nome do publico de cobranca:", suggested)?.trim();
+    setAudienceModal({ destination, name: suggested });
+  };
+
+  const confirmAudienceModal = async () => {
+    if (!audienceModal || !token || selectedCreditRows.length === 0 || createAudienceMutation.isPending) {
+      return;
+    }
+    const { destination } = audienceModal;
+    const name = audienceModal.name.trim();
     if (!name) {
       return;
     }
@@ -397,6 +472,7 @@ export function CustomersPage() {
       });
       void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
       setSelectedCreditCodes(new Set());
+      setAudienceModal(null);
       navigate(destination === "automation" ? "/automacoes" : "/disparador", {
         state: { savedSegmentId: segment.id, savedSegmentName: segment.name },
       });
@@ -709,7 +785,21 @@ export function CustomersPage() {
         <GeographicView />
       ) : (
         <>
-          {creditOverviewQuery.isLoading ? <div className="page-loading">Carregando credito e pagamento...</div> : null}
+          {creditOverviewQuery.isLoading ? (
+            <div className="credit-skeleton" aria-busy="true" aria-label="Carregando credito e pagamento">
+              <div className="credit-skeleton-strip">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="credit-skeleton-card" />
+                ))}
+              </div>
+              <div className="credit-skeleton-bar" />
+              <div className="credit-skeleton-rows">
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="credit-skeleton-row" />
+                ))}
+              </div>
+            </div>
+          ) : null}
           {creditOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot financeiro.</div> : null}
           {creditOverviewQuery.data ? (
             <>
@@ -786,7 +876,7 @@ export function CustomersPage() {
                 </div>
 
                 <div className="credit-snapshot-actions">
-                  {state.creditKpiFilter || Object.values(state.creditFilters).some(v => v !== "") ? (
+                  {state.creditKpiFilter || state.creditQuickFilter || Object.values(state.creditFilters).some(v => v !== "") ? (
                     <button
                       type="button"
                       className="ghost-button small"
@@ -813,28 +903,66 @@ export function CustomersPage() {
                 <span className="inline-error">Nao foi possivel atualizar o arquivo agora.</span>
               ) : null}
 
+              {/* Atalhos de triagem + ordenacao */}
+              <div className="credit-triage-bar">
+                <div className="credit-triage-chips" role="group" aria-label="Atalhos de triagem">
+                  {([
+                    { value: "to_charge", label: "Cobrar hoje", tone: "danger", count: quickFilterCounts.to_charge },
+                    { value: "overdue", label: "Vencidos", tone: "warning", count: quickFilterCounts.overdue },
+                    { value: "opportunity", label: "Oportunidades", tone: "success", count: quickFilterCounts.opportunity },
+                    { value: "ontrack", label: "Em dia", tone: "muted", count: quickFilterCounts.ontrack },
+                  ] as const).map((chip) => (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      className={`credit-chip tone-${chip.tone} ${state.creditQuickFilter === chip.value ? "active" : ""}`}
+                      aria-pressed={state.creditQuickFilter === chip.value}
+                      onClick={() => dispatch({ type: "setCreditQuickFilter", value: chip.value })}
+                    >
+                      {chip.label}
+                      <span className="credit-chip-count">{formatNumber(chip.count)}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <label className="credit-sort-field">
+                  <span>Ordenar por</span>
+                  <select
+                    value={state.creditSort}
+                    onChange={(event) =>
+                      dispatch({ type: "setCreditSort", value: event.target.value as CreditSortBy })
+                    }
+                  >
+                    <option value="urgency">Urgencia</option>
+                    <option value="debt_desc">Maior em aberto</option>
+                    <option value="available_desc">Maior credito livre</option>
+                    <option value="name">Nome (A-Z)</option>
+                  </select>
+                </label>
+              </div>
+
               {/* Results meta */}
               <div className="credit-results-meta">
                 <p>
-                  Exibindo {formatNumber(kpiFilteredRows.length)} de{" "}
+                  Exibindo {formatNumber(displayedCreditRows.length)} de{" "}
                   {formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} clientes vinculados.
-                  {state.creditKpiFilter ? (
+                  {state.creditKpiFilter || state.creditQuickFilter ? (
                     <button
                       type="button"
                       className="credit-clear-filter-inline"
-                      onClick={() => dispatch({ type: "setCreditKpiFilter", value: "" })}
+                      onClick={() => dispatch({ type: "clearCreditFilters" })}
                     >
                       Mostrar todos
                     </button>
                   ) : null}
                 </p>
-                {kpiFilteredRows.length > 0 ? (
+                {displayedCreditRows.length > 0 ? (
                   <button
                     type="button"
                     className="ghost-button small"
-                    onClick={() => toggleAllVisibleCredit(selectedCreditRows.length !== kpiFilteredRows.length)}
+                    onClick={() => toggleAllVisibleCredit(selectedCreditRows.length !== displayedCreditRows.length)}
                   >
-                    {selectedCreditRows.length === kpiFilteredRows.length ? "Desmarcar todos" : "Selecionar todos os visiveis"}
+                    {selectedCreditRows.length === displayedCreditRows.length ? "Desmarcar todos" : "Selecionar todos os visiveis"}
                   </button>
                 ) : null}
               </div>
@@ -863,7 +991,7 @@ export function CustomersPage() {
                     <button
                       type="button"
                       className="ghost-button small"
-                      onClick={() => buildAudienceAndGo("automation")}
+                      onClick={() => openAudienceModal("automation")}
                       disabled={createAudienceMutation.isPending}
                     >
                       <Repeat size={15} /> Cobranca automatica
@@ -871,26 +999,26 @@ export function CustomersPage() {
                     <button
                       type="button"
                       className="primary-button small"
-                      onClick={() => buildAudienceAndGo("dispatch")}
+                      onClick={() => openAudienceModal("dispatch")}
                       disabled={createAudienceMutation.isPending}
                     >
                       <Send size={15} />
-                      {createAudienceMutation.isPending ? "Criando..." : "Disparar cobranca agora"}
+                      Disparar cobranca agora
                     </button>
                   </div>
                 </div>
               ) : null}
 
-              {selectedCreditRows.length === 0 && kpiFilteredRows.length > 0 ? (
+              {selectedCreditRows.length === 0 && displayedCreditRows.length > 0 ? (
                 <p className="credit-select-hint">
                   <Users size={14} /> Marque os clientes na primeira coluna para criar um publico e disparar a cobranca no
-                  WhatsApp. Use os cartoes acima (ex.: "Acima do limite") para filtrar quem precisa de cobranca.
+                  WhatsApp. Use os atalhos acima (ex.: "Cobrar hoje") para filtrar quem precisa de cobranca.
                 </p>
               ) : null}
 
               {/* Table */}
               <CustomerCreditTable
-                rows={kpiFilteredRows}
+                rows={displayedCreditRows}
                 emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
                 selectable
                 selectedCodes={selectedCreditCodes}
@@ -918,6 +1046,126 @@ export function CustomersPage() {
           ) : null}
         </>
       )}
+
+      {audienceModal ? (
+        <div className="modal-backdrop" onClick={() => setAudienceModal(null)}>
+          <div
+            className="modal-container credit-audience-modal"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h3>{audienceModal.destination === "automation" ? "Criar cobranca automatica" : "Disparar cobranca agora"}</h3>
+                <p className="credit-audience-modal-sub">
+                  {formatNumber(selectedCreditRows.length)} clientes · {formatCurrency(selectedCreditDebt)} em aberto
+                </p>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setAudienceModal(null)} aria-label="Fechar">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <label>
+                Nome do publico
+                <input
+                  value={audienceModal.name}
+                  autoFocus
+                  onChange={(event) =>
+                    setAudienceModal((current) => (current ? { ...current, name: event.target.value } : current))
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      void confirmAudienceModal();
+                    }
+                  }}
+                  placeholder="Ex.: Cobranca recorrente"
+                />
+              </label>
+
+              <div className="credit-audience-review">
+                <div className="credit-audience-review-head">
+                  <span>Clientes neste publico</span>
+                  <strong>{formatNumber(selectedCreditRows.length)}</strong>
+                </div>
+                <div className="credit-audience-review-list">
+                  {selectedCreditRows.map((row) => (
+                    <div key={row.customerCode} className="credit-audience-review-row">
+                      <div className="credit-audience-review-client">
+                        <strong>{row.customerDisplayName}</strong>
+                        <span>{row.customerCode}</span>
+                      </div>
+                      <div className="credit-audience-review-amount">
+                        <span className={row.debtAmount > 0 ? "credit-amount-debt" : ""}>
+                          {row.debtAmount > 0 ? formatCurrency(row.debtAmount) : "—"}
+                        </span>
+                        <button
+                          type="button"
+                          className="credit-audience-review-remove"
+                          onClick={() => toggleCreditCode(row.customerCode)}
+                          aria-label={`Remover ${row.customerDisplayName}`}
+                          title="Remover deste publico"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {selectedCreditRows.length === 0 ? (
+                    <div className="credit-audience-review-empty">
+                      Voce removeu todos os clientes. Feche e selecione ao menos um.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="credit-audience-review-total">
+                  <span>Total em aberto</span>
+                  <strong>{formatCurrency(selectedCreditDebt)}</strong>
+                </div>
+              </div>
+
+              <div className="credit-audience-modal-steps">
+                <span className="credit-audience-modal-steps-title">Como vai funcionar</span>
+                <ol>
+                  <li>
+                    Criamos um publico com esses {formatNumber(selectedCreditRows.length)} clientes selecionados.
+                  </li>
+                  {audienceModal.destination === "automation" ? (
+                    <>
+                      <li>Abrimos a automacao ja apontada para esse publico.</li>
+                      <li>Voce escolhe a frequencia (ex.: toda segunda 9h), a mensagem e ativa.</li>
+                    </>
+                  ) : (
+                    <>
+                      <li>Abrimos o disparo ja com esse publico selecionado.</li>
+                      <li>Voce confere a mensagem e envia na hora.</li>
+                    </>
+                  )}
+                </ol>
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" className="secondary-button" onClick={() => setAudienceModal(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void confirmAudienceModal()}
+                disabled={!audienceModal.name.trim() || selectedCreditRows.length === 0 || createAudienceMutation.isPending}
+              >
+                {createAudienceMutation.isPending
+                  ? "Criando..."
+                  : audienceModal.destination === "automation"
+                    ? "Continuar para automacao"
+                    : "Abrir disparo"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {toastMessage ? (
         <div className="idea-canvas-toast" style={{ background: "rgba(47, 157, 103, 0.96)" }}>

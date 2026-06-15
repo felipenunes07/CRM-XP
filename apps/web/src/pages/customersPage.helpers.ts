@@ -1,6 +1,8 @@
 export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment" | "geographic";
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
 export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
+export type CreditSortBy = "urgency" | "debt_desc" | "available_desc" | "name";
+export type CreditQuickFilter = "to_charge" | "overdue" | "opportunity" | "ontrack" | "";
 
 export interface CustomerPortfolioFilters {
   search: string;
@@ -25,6 +27,8 @@ export interface CustomersPageState {
   portfolioFilters: CustomerPortfolioFilters;
   creditFilters: CustomerCreditFilters;
   creditKpiFilter: CreditKpiFilter;
+  creditSort: CreditSortBy;
+  creditQuickFilter: CreditQuickFilter;
 }
 
 export type CustomersPageAction =
@@ -42,6 +46,8 @@ export type CustomersPageAction =
       value: string;
     }
   | { type: "setCreditInsight"; insight: "over_credit" | "unused_credit" | "overdue" }
+  | { type: "setCreditSort"; value: CreditSortBy }
+  | { type: "setCreditQuickFilter"; value: CreditQuickFilter }
   | { type: "clearCreditFilters" };
 
 export function createInitialCustomersPageState(): CustomersPageState {
@@ -64,6 +70,8 @@ export function createInitialCustomersPageState(): CustomersPageState {
       onlyOverdue: "",
     },
     creditKpiFilter: "",
+    creditSort: "urgency",
+    creditQuickFilter: "",
   };
 }
 
@@ -99,11 +107,26 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
       creditKpiFilter: state.creditKpiFilter === action.value ? "" : action.value,
     };
   }
-  
+
+  if (action.type === "setCreditSort") {
+    if (state.creditSort === action.value) {
+      return state;
+    }
+    return { ...state, creditSort: action.value };
+  }
+
+  if (action.type === "setCreditQuickFilter") {
+    return {
+      ...state,
+      creditQuickFilter: state.creditQuickFilter === action.value ? "" : action.value,
+    };
+  }
+
   if (action.type === "clearCreditFilters") {
     return {
       ...state,
       creditKpiFilter: "",
+      creditQuickFilter: "",
       creditFilters: {
         search: "",
         riskLevel: "",
@@ -120,6 +143,7 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
     const cleanState: CustomersPageState = {
       ...state,
       creditKpiFilter: "",
+      creditQuickFilter: "",
       creditFilters: {
         search: "",
         riskLevel: "",

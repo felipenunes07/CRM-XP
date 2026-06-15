@@ -159,7 +159,9 @@ async function ensureAutomationTables() {
           ADD COLUMN IF NOT EXISTS send_mode TEXT NOT NULL DEFAULT 'APPROVAL',
           ADD COLUMN IF NOT EXISTS trigger_mode TEXT NOT NULL DEFAULT 'SCHEDULED',
           ADD COLUMN IF NOT EXISTS flow_definition JSONB NOT NULL DEFAULT '{}'::jsonb,
-          ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL;
+          ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS saved_segment_name TEXT;
 
         DO $$
         BEGIN

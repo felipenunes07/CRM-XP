@@ -31,6 +31,7 @@ import type {
 import {
   AlarmClock,
   Bot,
+  CalendarClock,
   CheckCircle2,
   Clock3,
   Copy,
@@ -44,6 +45,8 @@ import {
   Save,
   Send,
   ShieldCheck,
+  Smartphone,
+  Sparkles,
   Trash2,
   Zap,
   Users,
@@ -326,6 +329,7 @@ function Inspector({
   setDraft,
   templates,
   instances,
+  savedSegments,
   preview,
   onPreview,
 }: {
@@ -334,11 +338,13 @@ function Inspector({
   setDraft: Dispatch<SetStateAction<AutomationDraft>>;
   templates: Awaited<ReturnType<typeof api.messageTemplates>> | undefined;
   instances: Awaited<ReturnType<typeof api.whatsappInstances>> | undefined;
+  savedSegments: Awaited<ReturnType<typeof api.savedSegments>> | undefined;
   preview: { customers: unknown[]; summary: { totalCustomers: number } } | undefined;
   onPreview: () => void;
 }) {
   const kind = selectedNode?.data.kind ?? "audience";
   const stage = stageFromSegmentDefinition(draft.segmentDefinition);
+  const usingSavedSegment = Boolean(draft.savedSegmentId);
 
   return (
     <aside className="automation-inspector">
@@ -446,15 +452,52 @@ function Inspector({
 
       {kind === "audience" ? (
         <div className="automation-field-stack">
-          <div className="automation-stage-grid">
+          <label>
+            Publico salvo (cobranca, lista fixa)
+            {savedSegments && savedSegments.length > 0 ? (
+              <select
+                value={draft.savedSegmentId ?? ""}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  if (!id) {
+                    setDraft((current) => ({ ...current, savedSegmentId: null }));
+                    return;
+                  }
+                  const seg = savedSegments.find((item) => item.id === id);
+                  setDraft((current) => ({
+                    ...current,
+                    savedSegmentId: id,
+                    triggerMode: "SCHEDULED",
+                    segmentDefinition: seg?.definition ?? { customerCodes: [] },
+                    name: current.name || `Cobranca - ${seg?.name ?? "publico"}`,
+                  }));
+                }}
+              >
+                <option value="">— Usar uma zona de inatividade abaixo —</option>
+                {savedSegments.map((seg) => (
+                  <option key={seg.id} value={seg.id}>
+                    {seg.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="automation-audience-note">
+                Nenhum publico salvo ainda. Crie um em <strong>Clientes → Credito &amp; Pagamento</strong>: marque os
+                clientes e clique em <strong>"Cobranca automatica"</strong>.
+              </p>
+            )}
+          </label>
+
+          <div className={`automation-stage-grid ${usingSavedSegment ? "is-disabled" : ""}`}>
             {inactivityStages.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={item.id === stage.id ? "is-active" : ""}
+                className={!usingSavedSegment && item.id === stage.id ? "is-active" : ""}
                 onClick={() =>
                   setDraft((current) => ({
                     ...current,
+                    savedSegmentId: null,
                     segmentDefinition: stageToSegmentDefinition(item.id),
                     name: current.name || `${item.label} automatico`,
                   }))
@@ -465,6 +508,12 @@ function Inspector({
               </button>
             ))}
           </div>
+
+          {usingSavedSegment ? (
+            <p className="automation-audience-note">
+              Mirando o publico salvo. As zonas de inatividade ficam desativadas enquanto um publico estiver escolhido.
+            </p>
+          ) : null}
 
           <button type="button" className="secondary-button" onClick={onPreview}>
             <Eye size={16} />
@@ -629,11 +678,125 @@ function Inspector({
   );
 }
 
+const WEEKDAY_NAMES: Record<number, string> = {
+  0: "domingo",
+  1: "segunda-feira",
+  2: "terca-feira",
+  3: "quarta-feira",
+  4: "quinta-feira",
+  5: "sexta-feira",
+  6: "sabado",
+};
+
+function scheduleSentence(schedule: AutomationDraft["schedule"]) {
+  const time = schedule.time || "09:00";
+  if (schedule.frequency === "DAILY") {
+    return `Todo dia as ${time}`;
+  }
+  const days = (schedule.weekdays && schedule.weekdays.length ? schedule.weekdays : [1])
+    .slice()
+    .sort((left, right) => left - right)
+    .map((value) => WEEKDAY_NAMES[value] ?? "");
+  if (days.length === 1) {
+    return `Toda ${days[0]} as ${time}`;
+  }
+  return `Toda semana (${days.join(", ")}) as ${time}`;
+}
+
+function AutomationHowItWorks({
+  draft,
+  savedSegments,
+  instances,
+  preview,
+}: {
+  draft: AutomationDraft;
+  savedSegments: Awaited<ReturnType<typeof api.savedSegments>> | undefined;
+  instances: Awaited<ReturnType<typeof api.whatsappInstances>> | undefined;
+  preview: { summary: { totalCustomers: number } } | undefined;
+}) {
+  const segment = draft.savedSegmentId ? savedSegments?.find((item) => item.id === draft.savedSegmentId) : null;
+  const stage = stageFromSegmentDefinition(draft.segmentDefinition);
+  const instance = instances?.find((item) => item.id === draft.whatsappInstanceId);
+  const count = preview ? formatNumber(preview.summary.totalCustomers) : null;
+
+  const audienceText = draft.savedSegmentId
+    ? `Publico "${segment?.name ?? "salvo"}"`
+    : `Clientes na faixa ${stage.label}`;
+
+  const whenText =
+    draft.triggerMode === "ON_STAGE_ENTRY"
+      ? `Assim que um cliente entrar na faixa ${stage.label}`
+      : scheduleSentence(draft.schedule);
+
+  const sendText =
+    draft.sendMode === "AUTOMATIC"
+      ? "Envia sozinho, sem precisar de aprovacao"
+      : "Monta a lista para voce revisar e aprovar antes de enviar";
+
+  return (
+    <section className="automation-how">
+      <div className="automation-how-head">
+        <span className="automation-how-spark">
+          <Sparkles size={16} />
+        </span>
+        <div>
+          <strong>Como essa automacao vai funcionar</strong>
+          <span>Um resumo em portugues claro do que o robo faz sozinho.</span>
+        </div>
+      </div>
+
+      <div className="automation-how-grid">
+        <div className="automation-how-item">
+          <CalendarClock size={18} />
+          <div>
+            <span>Quando</span>
+            <strong>{whenText}</strong>
+          </div>
+        </div>
+        <div className="automation-how-item">
+          <Users size={18} />
+          <div>
+            <span>Para quem</span>
+            <strong>
+              {audienceText}
+              {count ? ` — ${count} clientes` : ""}
+            </strong>
+          </div>
+        </div>
+        <div className="automation-how-item">
+          <Smartphone size={18} />
+          <div>
+            <span>Por onde</span>
+            <strong>{instance?.displayLabel ?? "WhatsApp (instancia padrao)"}</strong>
+          </div>
+        </div>
+        <div className="automation-how-item">
+          <CheckCircle2 size={18} />
+          <div>
+            <span>Como envia</span>
+            <strong>{sendText}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="automation-how-preview">
+        <span className="automation-how-preview-label">
+          <MessageCircle size={14} /> Mensagem que o cliente recebe
+        </span>
+        <div className={`automation-how-bubble ${draft.messageText.trim() ? "" : "is-empty"}`}>
+          {draft.messageText.trim() ? draft.messageText : "Escreva a mensagem abaixo para ver a previa aqui."}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ClassicAutomationForm({
   draft,
   setDraft,
   templates,
   instances,
+  savedSegments,
   preview,
   onPreview,
 }: {
@@ -641,10 +804,13 @@ function ClassicAutomationForm({
   setDraft: Dispatch<SetStateAction<AutomationDraft>>;
   templates: Awaited<ReturnType<typeof api.messageTemplates>> | undefined;
   instances: Awaited<ReturnType<typeof api.whatsappInstances>> | undefined;
+  savedSegments: Awaited<ReturnType<typeof api.savedSegments>> | undefined;
   preview: { customers: unknown[]; summary: { totalCustomers: number } } | undefined;
   onPreview: () => void;
 }) {
   const stage = stageFromSegmentDefinition(draft.segmentDefinition);
+  const usingSavedSegment = Boolean(draft.savedSegmentId);
+  const audienceValue = usingSavedSegment ? `saved:${draft.savedSegmentId}` : `stage:${stage.id}`;
 
   return (
     <section className="automation-classic-panel">
@@ -658,36 +824,64 @@ function ClassicAutomationForm({
         </span>
       </div>
 
+      <AutomationHowItWorks draft={draft} savedSegments={savedSegments} instances={instances} preview={preview} />
+
       <div className="automation-classic-grid">
         <label>
           Tipo de gatilho
           <select
             value={draft.triggerMode}
+            disabled={usingSavedSegment}
             onChange={(event) =>
               setDraft((current) => ({ ...current, triggerMode: event.target.value as MessageAutomationTriggerMode }))
             }
           >
             <option value="ON_STAGE_ENTRY">Cliente entrou agora na faixa</option>
-            <option value="SCHEDULED">Clientes que ja estao na faixa</option>
+            <option value="SCHEDULED">Clientes que ja estao na faixa / no publico</option>
           </select>
         </label>
 
         <label>
           Publico
           <select
-            value={stage.id}
-            onChange={(event) =>
-              setDraft((current) => ({
-                ...current,
-                segmentDefinition: stageToSegmentDefinition(event.target.value as InactivityStageId),
-              }))
-            }
+            value={audienceValue}
+            onChange={(event) => {
+              const value = event.target.value;
+              if (value.startsWith("saved:")) {
+                const id = value.slice("saved:".length);
+                const seg = savedSegments?.find((item) => item.id === id);
+                setDraft((current) => ({
+                  ...current,
+                  savedSegmentId: id,
+                  triggerMode: "SCHEDULED",
+                  segmentDefinition: seg?.definition ?? { customerCodes: [] },
+                }));
+              } else {
+                const stageId = value.slice("stage:".length) as InactivityStageId;
+                setDraft((current) => ({
+                  ...current,
+                  savedSegmentId: null,
+                  segmentDefinition: stageToSegmentDefinition(stageId),
+                }));
+              }
+            }}
           >
-            {inactivityStages.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label} - {item.description}
-              </option>
-            ))}
+            <optgroup label="Zonas de inatividade (reativacao)">
+              {inactivityStages.map((item) => (
+                <option key={item.id} value={`stage:${item.id}`}>
+                  {item.label} - {item.description}
+                </option>
+              ))}
+            </optgroup>
+            {savedSegments && savedSegments.length > 0 ? (
+              <optgroup label="Publicos salvos (cobranca etc.)">
+                {savedSegments.map((seg) => (
+                  <option key={seg.id} value={`saved:${seg.id}`}>
+                    {seg.name}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
           </select>
         </label>
 
@@ -876,6 +1070,35 @@ function AutomationsPageInner() {
     refetchInterval: 15000,
   });
 
+  // Chegou da aba de Credito ("Cobranca automatica"): abre um rascunho novo ja
+  // mirando o publico salvo, em modo agendado, para a chefe so ajustar mensagem,
+  // instancia e frequencia e ativar.
+  const location = useLocation();
+  const appliedIncomingSegmentRef = useRef(false);
+  useEffect(() => {
+    if (appliedIncomingSegmentRef.current) return;
+    const incoming = (location.state as { savedSegmentId?: string; savedSegmentName?: string } | null) ?? null;
+    if (!incoming?.savedSegmentId || !savedSegmentsQuery.data) return;
+
+    appliedIncomingSegmentRef.current = true;
+    const segment = savedSegmentsQuery.data.find((item) => item.id === incoming.savedSegmentId);
+
+    setActiveAutomationId(null);
+    setBuilderMode("classic");
+    setDraft({
+      ...createInitialDraft(),
+      name: `Cobranca - ${incoming.savedSegmentName ?? segment?.name ?? "publico"}`,
+      status: "PAUSED",
+      triggerMode: "SCHEDULED",
+      sendMode: "APPROVAL",
+      savedSegmentId: incoming.savedSegmentId,
+      segmentDefinition: segment?.definition ?? { customerCodes: [] },
+      schedule: { frequency: "WEEKLY", weekdays: [1], time: "09:00", timezone: "America/Sao_Paulo" },
+      messageText:
+        "Ola! Consta um valor em aberto na sua conta. Podemos combinar o pagamento? Qualquer duvida, estou a disposicao.",
+    });
+  }, [location.state, savedSegmentsQuery.data]);
+
   const previewMutation = useMutation({
     mutationFn: (definition: SegmentDefinition) => api.previewSegment(token!, definition),
   });
@@ -983,7 +1206,9 @@ function AutomationsPageInner() {
           };
         }
         if (node.data.kind === "audience") {
-          return { ...node, data: { ...node.data, title: stage.label, subtitle: stage.description } };
+          const title = draft.savedSegmentId ? "Publico salvo" : stage.label;
+          const subtitle = draft.savedSegmentId ? "Lista fixa (cobranca etc.)" : stage.description;
+          return { ...node, data: { ...node.data, title, subtitle } };
         }
         if (node.data.kind === "agent") {
           return { ...node, data: { ...node.data, title: selectedInstance?.displayLabel ?? "Instancia padrao", subtitle: selectedInstance?.phoneNumber ?? "WhatsApp" } };
@@ -1241,6 +1466,7 @@ function AutomationsPageInner() {
           setDraft={setDraft}
           templates={templatesQuery.data}
           instances={instancesQuery.data}
+          savedSegments={savedSegmentsQuery.data}
           preview={previewMutation.data}
           onPreview={() => previewMutation.mutate(draft.segmentDefinition)}
         />
@@ -1251,6 +1477,7 @@ function AutomationsPageInner() {
           setDraft={setDraft}
           templates={templatesQuery.data}
           instances={instancesQuery.data}
+          savedSegments={savedSegmentsQuery.data}
           preview={previewMutation.data}
           onPreview={() => previewMutation.mutate(draft.segmentDefinition)}
         />

@@ -34,6 +34,25 @@ export function customerCreditStateClassName(value: CustomerCreditOperationalSta
   return "credit-badge-ok";
 }
 
+/**
+ * Pílula de status operacional usada na célula do cliente (1 etiqueta por linha,
+ * em vez das flags cruas). Reflete a situação mais importante daquela linha.
+ */
+export function customerCreditStatusBadge(row: CustomerCreditRow): { label: string; className: string } {
+  if (row.hasOverCredit) return { label: "Acima do limite", className: "credit-badge-danger" };
+  if (isOverdueCreditRow(row)) return { label: "Vencido", className: "credit-badge-warning" };
+  if (row.operationalState === "UNUSED_CREDIT") return { label: "Crédito livre", className: "credit-badge-success" };
+  if (row.creditBalanceAmount > 0) return { label: "Saldo a favor", className: "credit-badge-info" };
+  if (row.debtAmount > 0) return { label: "Em aberto", className: "credit-badge-monitor" };
+  return { label: "Quitado", className: "credit-badge-ok" };
+}
+
+/** Linha precisa de cobrança ativa hoje (excesso, vencido ou sem pagamento com dívida). */
+export function creditNeedsCharge(row: CustomerCreditRow) {
+  if (row.debtAmount <= 0) return false;
+  return row.hasOverCredit || isOverdueCreditRow(row) || row.hasNoPayment;
+}
+
 export function isOverdueCreditRow(row: CustomerCreditRow) {
   // Only customers with active debt can be considered "overdue"
   if (row.debtAmount <= 0) {
