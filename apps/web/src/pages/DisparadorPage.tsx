@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, Fragment, type SyntheticEvent } from "react";
+import { useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CarouselSlide,
@@ -767,6 +768,21 @@ export function DisparadorPage() {
 
   const [activeTab, setActiveTab] = useState<"NEW_CAMPAIGN" | "HISTORY">("NEW_CAMPAIGN");
   const [currentStep, setCurrentStep] = useState(1); // Start at step 1 (Criação)
+
+  // Pré-seleciona um público quando chegamos vindo de outra tela (ex.: aba de
+  // Crédito & Pagamento → "Criar público e disparar cobrança").
+  const location = useLocation();
+  const appliedIncomingSegmentRef = useRef(false);
+  useEffect(() => {
+    if (appliedIncomingSegmentRef.current) return;
+    const incoming = (location.state as { savedSegmentId?: string } | null)?.savedSegmentId;
+    if (incoming) {
+      appliedIncomingSegmentRef.current = true;
+      setSavedSegmentId(incoming);
+      setActiveTab("NEW_CAMPAIGN");
+      setCurrentStep(1);
+    }
+  }, [location.state]);
   const [abTestActive, setAbTestActive] = useState(false);
   const [abMessageText, setAbMessageText] = useState("");
   const [selectedAbTemplateId, setSelectedAbTemplateId] = useState("");

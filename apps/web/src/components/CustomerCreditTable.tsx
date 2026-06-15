@@ -11,6 +11,11 @@ interface CustomerCreditTableProps {
   rows: CustomerCreditRow[];
   emptyMessage: string;
   linkedOnly?: boolean;
+  /** Habilita as caixas de selecao para montar um publico de disparo. */
+  selectable?: boolean;
+  selectedCodes?: ReadonlySet<string>;
+  onToggleRow?: (customerCode: string) => void;
+  onToggleAll?: (checked: boolean) => void;
 }
 
 function creditUsagePercent(row: CustomerCreditRow) {
@@ -86,6 +91,10 @@ export function CustomerCreditTable({
   rows,
   emptyMessage,
   linkedOnly = true,
+  selectable = false,
+  selectedCodes,
+  onToggleRow,
+  onToggleAll,
 }: CustomerCreditTableProps) {
   if (!rows.length) {
     return (
@@ -95,12 +104,26 @@ export function CustomerCreditTable({
     );
   }
 
+  const selected = selectedCodes ?? new Set<string>();
+  const selectableCodes = rows.filter((row) => row.customerId).map((row) => row.customerCode);
+  const allSelected = selectableCodes.length > 0 && selectableCodes.every((code) => selected.has(code));
+
   return (
     <div className="panel table-panel">
       <div className="table-scroll">
         <table className="data-table credit-table-v2">
           <thead>
             <tr>
+              {selectable ? (
+                <th className="credit-select-col">
+                  <input
+                    type="checkbox"
+                    aria-label="Selecionar todos os clientes visiveis"
+                    checked={allSelected}
+                    onChange={(event) => onToggleAll?.(event.target.checked)}
+                  />
+                </th>
+              ) : null}
               <th>Cliente</th>
               <th>Divida / Saldo</th>
               <th>Crédito</th>
@@ -121,8 +144,23 @@ export function CustomerCreditTable({
               const action = suggestAction(row);
               const actualDays = calculateDaysSince(row.lastPaymentDate);
 
+              const isSelected = selected.has(row.customerCode);
+
               return (
-                <tr key={row.id} className={rowClassName(row)}>
+                <tr key={row.id} className={`${rowClassName(row)} ${isSelected ? "credit-row-selected" : ""}`}>
+                  {selectable ? (
+                    <td className="credit-select-col">
+                      {row.customerId ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar ${row.customerDisplayName}`}
+                          checked={isSelected}
+                          onChange={() => onToggleRow?.(row.customerCode)}
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
+
                   {/* Cliente */}
                   <td>
                     <div className="credit-cell-client">

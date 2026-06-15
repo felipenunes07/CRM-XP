@@ -1,7 +1,8 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Download, ShieldAlert, TrendingUp } from "lucide-react";
+import { AlertTriangle, BadgeDollarSign, Copy, Download, Send, ShieldAlert, TrendingUp, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
@@ -258,6 +259,35 @@ export function CustomersPage() {
     },
   });
 
+  const navigate = useNavigate();
+  const [selectedCreditCodes, setSelectedCreditCodes] = useState<Set<string>>(() => new Set());
+
+  const toggleCreditCode = (code: string) => {
+    setSelectedCreditCodes((current) => {
+      const next = new Set(current);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
+
+  const createAudienceMutation = useMutation({
+    mutationFn: (input: { name: string; codes: string[] }) =>
+      api.createSavedSegment(token!, { name: input.name, definition: { customerCodes: input.codes } }),
+    onSuccess: (segment) => {
+      void queryClient.invalidateQueries({ queryKey: ["saved-segments"] });
+      setSelectedCreditCodes(new Set());
+      setToastMessage(`Publico "${segment.name}" criado. Abrindo o disparo de cobranca...`);
+      navigate("/disparador", { state: { savedSegmentId: segment.id, savedSegmentName: segment.name } });
+    },
+    onError: () => {
+      setToastMessage("Nao foi possivel criar o publico agora. Tente novamente.");
+    },
+  });
+
   const filteredLinkedCreditRows = useMemo(
     () => applyCreditFilters(creditOverviewQuery.data?.linkedRows ?? [], state.creditFilters),
     [creditOverviewQuery.data?.linkedRows, state.creditFilters],
@@ -314,6 +344,54 @@ export function CustomersPage() {
     () => filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
     [filteredLinkedCreditRows],
   );
+
+  // ── Selecao para montar publico de cobranca ──
+  const selectedCreditRows = useMemo(
+    () => kpiFilteredRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
+    [kpiFilteredRows, selectedCreditCodes],
+  );
+  const selectedCreditDebt = useMemo(
+    () => selectedCreditRows.reduce((sum, row) => sum + Math.max(0, row.debtAmount), 0),
+    [selectedCreditRows],
+  );
+
+  const toggleAllVisibleCredit = (checked: boolean) => {
+    setSelectedCreditCodes((current) => {
+      const next = new Set(current);
+      for (const row of kpiFilteredRows) {
+        if (!row.customerId) continue;
+        if (checked) {
+          next.add(row.customerCode);
+        } else {
+          next.delete(row.customerCode);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleCopyCreditCodes = async () => {
+    const codes = selectedCreditRows.map((row) => row.customerCode).join(", ");
+    try {
+      await navigator.clipboard.writeText(codes);
+      setToastMessage(`${formatNumber(selectedCreditRows.length)} codigos copiados.`);
+    } catch {
+      setToastMessage("Nao foi possivel copiar os codigos.");
+    }
+  };
+
+  const handleCreateAudience = () => {
+    if (!token || selectedCreditRows.length === 0 || createAudienceMutation.isPending) {
+      return;
+    }
+    const today = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+    const suggested = `Cobranca ${today}`;
+    const name = window.prompt("Nome do publico para o disparo de cobranca:", suggested)?.trim();
+    if (!name) {
+      return;
+    }
+    createAudienceMutation.mutate({ name, codes: selectedCreditRows.map((row) => row.customerCode) });
+  };
 
   return (
     <div className="page-stack">
@@ -660,58 +738,19 @@ export function CustomersPage() {
                 </button>
               </div>
 
-              {/* Smart Action Insights */}
-              <div className="credit-insights-strip">
-                <button
-                  type="button"
-                  className={`credit-insight-card danger ${state.creditKpiFilter === "over_credit" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditInsight", insight: "over_credit" })}
-                >
-                  <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
-                  <div className="credit-insight-body">
-                    <strong>Cobranca urgente</strong>
-                    <span>{formatNumber(filteredOverCreditCount)} clientes ultrapassaram o limite de credito — priorize contato</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`credit-insight-card success ${state.creditKpiFilter === "unused_credit" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditInsight", insight: "unused_credit" })}
-                >
-                  <div className="credit-insight-icon"><TrendingUp size={20} /></div>
-                  <div className="credit-insight-body">
-                    <strong>Oportunidade de venda</strong>
-                    <span>{formatCurrency(filteredAvailableCreditAmount)} disponiveis em {formatNumber(filteredUnusedCreditCount)} clientes com credito livre</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  className={`credit-insight-card warning ${state.creditFilters.onlyOverdue === "true" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditInsight", insight: "overdue" })}
-                >
-                  <div className="credit-insight-icon"><AlertTriangle size={20} /></div>
-                  <div className="credit-insight-body">
-                    <strong>Clientes com atraso</strong>
-                    <span>{formatNumber(filteredOverdueCount)} com pagamento vencido ou sem pagamento registrado</span>
-                  </div>
-                </button>
-              </div>
-
               {/* Snapshot bar + Meta */}
               <div className="credit-snapshot-bar">
                 <div className="credit-snapshot-info">
-                  <strong>{creditOverviewQuery.data.snapshot?.sourceFileName ?? "Sem snapshot"}</strong>
+                  <strong>{creditOverviewQuery.data.snapshot?.sourceFileName || "Planilha de saldos"}</strong>
                   <span>
-                    {creditOverviewQuery.data.snapshot
-                      ? `${formatNumber(creditOverviewQuery.data.snapshot.matchedRows)} vinculados · ${formatNumber(creditOverviewQuery.data.snapshot.unmatchedRows)} nao vinculados`
-                      : "Sem dados carregados"}
+                    {`${formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} vinculados · ${formatNumber(creditOverviewQuery.data.summary.totalUnmatchedRows)} nao vinculados`}
                   </span>
-                  {creditOverviewQuery.data.snapshot ? (
+                  {creditOverviewQuery.data.snapshot?.importedAt ? (
                     <small>
-                      Arquivo {formatDateTime(creditOverviewQuery.data.snapshot.sourceFileUpdatedAt)} · Importado{" "}
-                      {formatDateTime(creditOverviewQuery.data.snapshot.importedAt)}
+                      {creditOverviewQuery.data.snapshot.sourceFileUpdatedAt
+                        ? `Arquivo ${formatDateTime(creditOverviewQuery.data.snapshot.sourceFileUpdatedAt)} · `
+                        : ""}
+                      Atualizado {formatDateTime(creditOverviewQuery.data.snapshot.importedAt)}
                     </small>
                   ) : null}
                 </div>
@@ -759,12 +798,66 @@ export function CustomersPage() {
                     </button>
                   ) : null}
                 </p>
+                {kpiFilteredRows.length > 0 ? (
+                  <button
+                    type="button"
+                    className="ghost-button small"
+                    onClick={() => toggleAllVisibleCredit(selectedCreditRows.length !== kpiFilteredRows.length)}
+                  >
+                    {selectedCreditRows.length === kpiFilteredRows.length ? "Desmarcar todos" : "Selecionar todos os visiveis"}
+                  </button>
+                ) : null}
               </div>
+
+              {/* Barra de acao do publico de cobranca */}
+              {selectedCreditRows.length > 0 ? (
+                <div className="credit-audience-bar">
+                  <div className="credit-audience-info">
+                    <Users size={18} />
+                    <div>
+                      <strong>{formatNumber(selectedCreditRows.length)} clientes selecionados</strong>
+                      <span>{formatCurrency(selectedCreditDebt)} em aberto neste grupo</span>
+                    </div>
+                  </div>
+                  <div className="credit-audience-actions">
+                    <button type="button" className="ghost-button small" onClick={handleCopyCreditCodes}>
+                      <Copy size={15} /> Copiar codigos
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => setSelectedCreditCodes(new Set())}
+                    >
+                      Limpar selecao
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button small"
+                      onClick={handleCreateAudience}
+                      disabled={createAudienceMutation.isPending}
+                    >
+                      <Send size={15} />
+                      {createAudienceMutation.isPending ? "Criando publico..." : "Criar publico e disparar cobranca"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedCreditRows.length === 0 && kpiFilteredRows.length > 0 ? (
+                <p className="credit-select-hint">
+                  <Users size={14} /> Marque os clientes na primeira coluna para criar um publico e disparar a cobranca no
+                  WhatsApp. Use os cartoes acima (ex.: "Acima do limite") para filtrar quem precisa de cobranca.
+                </p>
+              ) : null}
 
               {/* Table */}
               <CustomerCreditTable
                 rows={kpiFilteredRows}
                 emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
+                selectable
+                selectedCodes={selectedCreditCodes}
+                onToggleRow={toggleCreditCode}
+                onToggleAll={toggleAllVisibleCredit}
               />
 
               {/* Unmatched */}

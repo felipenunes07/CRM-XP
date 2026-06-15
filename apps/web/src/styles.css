@@ -2672,7 +2672,101 @@ textarea {
 .credit-results-meta {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.75rem;
+}
+
+/* Selecao de clientes para montar publico de cobranca */
+.credit-select-col {
+  width: 38px;
+  text-align: center;
+}
+
+.credit-select-col input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.credit-row-selected td {
+  background: rgba(41, 86, 215, 0.06);
+}
+
+.credit-audience-bar {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #173260, #2956d7);
+  color: #fff;
+  box-shadow: 0 10px 26px rgba(23, 50, 96, 0.28);
+}
+
+.credit-audience-info {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.credit-audience-info strong {
+  display: block;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.credit-audience-info span {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.credit-audience-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.credit-audience-actions .ghost-button {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+
+.credit-audience-actions .ghost-button:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.credit-audience-actions .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fff;
+  color: #173260;
+  border: 0;
+}
+
+.credit-select-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  background: rgba(41, 86, 215, 0.06);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.credit-select-hint svg {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 .credit-results-meta p {
