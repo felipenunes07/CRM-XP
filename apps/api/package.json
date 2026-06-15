@@ -19,6 +19,7 @@
     "repair:whatsapp-identity": "tsx src/scripts/repairWhatsappIdentity.ts",
     "backfill:monitor-messages": "tsx src/scripts/backfillMonitorMessages.ts",
     "events:reclassify": "tsx src/scripts/reclassifyMessageEvents.ts",
+    "db:diagnose": "tsx src/scripts/diagnoseCampaignPerf.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },
