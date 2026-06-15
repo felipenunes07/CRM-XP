@@ -55,6 +55,14 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  // Reconstrucao completa diaria dos read-models (orders/order_items/snapshots) a
+  // partir do sales_raw. Rede de seguranca contra drift: se um sync for interrompido
+  // e deixar pedidos de algum cliente sem reconstruir, o rebuild diario autocorrige.
+  DAILY_REBUILD_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  DAILY_REBUILD_HOUR: z.coerce.number().int().min(0).max(23).default(4),
   WORKER_OLIST_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

@@ -5,6 +5,7 @@ import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
 import { startDailySyncScheduler } from "./modules/platform/syncService.js";
+import { startDailyRebuildScheduler } from "./modules/analytics/readModelRebuild.js";
 import { runMigrations } from "./db/runMigrations.js";
 import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
@@ -48,6 +49,7 @@ async function main() {
   await runMigrations();
   await bootstrapPlatform();
   const scheduler = startDailySyncScheduler();
+  const rebuildScheduler = startDailyRebuildScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
   // Só (re)configura o webhook da uazapi se explicitamente habilitado. Por padrão
   // o CRM não mexe no webhook da uazapi (UAZAPI_AUTO_CONFIGURE_WEBHOOK=false).
@@ -120,6 +122,7 @@ async function main() {
     }
     server.close(async () => {
       await scheduler.close();
+      await rebuildScheduler.close();
       if (whatsappWorker && typeof whatsappWorker.close === "function") {
         await whatsappWorker.close();
       }
