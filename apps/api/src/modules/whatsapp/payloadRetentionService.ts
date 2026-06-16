@@ -18,7 +18,7 @@
  * (a tabela para de crescer). Para encolher o arquivo já existente de uma vez, rode
  * pg_repack/VACUUM FULL numa janela de manutenção DEPOIS da primeira limpeza.
  */
-import type { PoolClient } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
@@ -105,11 +105,18 @@ export async function cleanupHeavyPayloads(
   mediaRetentionDays = env.MEDIA_BASE64_RETENTION_DAYS,
 ) {
   const counts: Record<string, number> = {};
-  // Conexão dedicada SEM statement_timeout: reescrever o TOAST pesado (media_json
-  // ~737KB/linha) passa dos 20s do pool padrão. Aqui rodamos em lotes sem esse limite.
-  const client = await pool.connect();
+  // Pool dedicado SEM timeout: o pool padrão tem statement_timeout E query_timeout de
+  // 20s; reescrever o TOAST pesado (media_json ~737KB/linha) passa disso e aborta.
+  // Aqui rodamos em lotes, sem limite de tempo, sem afetar o resto da app.
+  const cleanupPool = new Pool({
+    connectionString: env.DATABASE_URL,
+    statement_timeout: 0,
+    query_timeout: 0,
+    idleTimeoutMillis: 10_000,
+    max: 2,
+  });
+  const client = await cleanupPool.connect();
   try {
-    await client.query("SET statement_timeout = 0");
     await client.query("SET lock_timeout = '10s'");
 
     for (const target of SAFE_TARGETS) {
@@ -136,6 +143,7 @@ export async function cleanupHeavyPayloads(
     }
   } finally {
     client.release();
+    await cleanupPool.end();
   }
   logger.info("payload cleanup finished", { retentionDays, mediaRetentionDays, counts });
   return { retentionDays, mediaRetentionDays, counts };
