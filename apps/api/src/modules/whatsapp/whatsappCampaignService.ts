@@ -1487,6 +1487,69 @@ export async function skipWhatsappCampaignRecipient(campaignId: string, recipien
   return { skipped: true, recipientId };
 }
 
+export async function retryWhatsappCampaignRecipient(campaignId: string, recipientId: string) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+        UPDATE whatsapp_campaign_recipients r
+        SET
+          status = 'PENDING',
+          scheduled_for = NOW(),
+          last_attempt_at = NULL,
+          sent_at = NULL,
+          failed_at = NULL,
+          skipped_at = NULL,
+          last_error = NULL,
+          provider_message_id = NULL,
+          provider_status = NULL,
+          response_payload = NULL,
+          updated_at = NOW()
+        FROM whatsapp_campaigns wc
+        WHERE r.id = $1
+          AND r.campaign_id = $2
+          AND r.campaign_id = wc.id
+          AND r.status = 'FAILED'
+          AND wc.cancelled_at IS NULL
+        RETURNING r.id, r.campaign_id
+      `,
+      [recipientId, campaignId],
+    );
+
+    if (!result.rows[0]) {
+      throw new HttpError(400, "Destinatario nao encontrado, cancelado ou sem falha para retentar.");
+    }
+
+    await client.query(
+      `
+        UPDATE whatsapp_campaigns
+        SET
+          status = CASE
+            WHEN status = 'COMPLETED' THEN 'IN_PROGRESS'
+            ELSE status
+          END,
+          finished_at = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+      `,
+      [campaignId],
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  await refreshWhatsappCampaignStatus(campaignId);
+  return { retried: true, recipientId };
+}
+
 export async function claimRecipientForDispatch(recipientId: string): Promise<DispatchRecipientContext | null> {
   const client = await pool.connect();
 

@@ -237,6 +237,7 @@ describe("Disparador campaign performance", () => {
         recipients={campaign.recipients}
         onFilterChange={() => undefined}
         onOpenMiniChat={() => undefined}
+        onRetryRecipient={() => undefined}
       />,
     );
 
@@ -259,6 +260,7 @@ describe("Disparador campaign performance", () => {
         recipients={[]}
         onFilterChange={() => undefined}
         onOpenMiniChat={() => undefined}
+        onRetryRecipient={() => undefined}
       />,
     );
 

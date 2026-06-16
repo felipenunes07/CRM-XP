@@ -123,6 +123,7 @@ import {
   getWhatsappCampaignDetail,
   getWhatsappCampaignRecipientChat,
   listWhatsappCampaigns,
+  retryWhatsappCampaignRecipient,
   skipWhatsappCampaignRecipient,
 } from "./modules/whatsapp/whatsappCampaignService.js";
 import { ensureEvolutionConfigured, sendWhatsappTextMessage } from "./modules/whatsapp/evolutionService.js";
@@ -2037,6 +2038,27 @@ export function createApp() {
 
   // Conversa completa de um destinatário (mesmas fontes da atribuição do badge
   // "Respondeu", então o mini chat sempre mostra o que foi contado como resposta)
+  app.post("/api/whatsapp-campaigns/:id/recipients/:recipientId/retry", async (request, response, next) => {
+    try {
+      const campaignId = String(request.params.id);
+      const access = await getWhatsappCampaignAccess(campaignId);
+      if (!access) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para alterar esta campanha.");
+      }
+
+      const result = await retryWhatsappCampaignRecipient(campaignId, String(request.params.recipientId));
+      await resumeDueWhatsappCampaignRecipients(campaignId, 1);
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/whatsapp-campaigns/:id/recipients/:recipientId/chat", async (request, response, next) => {
     try {
       response.json({

@@ -15,7 +15,7 @@ import type {
   WhatsappMappingSummary,
   WhatsappMenuType,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, Copy } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, Copy, RotateCcw } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatFileSize } from "../lib/format";
@@ -362,6 +362,16 @@ function recipientDispatchTimeLabel(recipient: WhatsappCampaignRecipient) {
   return value ? formatDateTime(value) : "--";
 }
 
+function recipientObservation(recipient: WhatsappCampaignRecipient) {
+  if (recipient.lastError) return recipient.lastError;
+  if (recipient.status === "FAILED") return recipient.providerStatus || "Falha no envio";
+  if (recipient.status === "SENDING") return recipient.providerStatus || "Em envio";
+  if (recipient.providerStatus && !["PENDING", "SENT", "DELIVERED"].includes(recipient.providerStatus.toUpperCase())) {
+    return recipient.providerStatus;
+  }
+  return "-";
+}
+
 export function campaignHasDuePendingRecipients(campaign: WhatsappCampaignDetail | null | undefined, nowMs: number) {
   if (!campaign || !["QUEUED", "IN_PROGRESS"].includes(campaign.status)) {
     return false;
@@ -403,6 +413,8 @@ export function CampaignPerformancePanel({
   recipients,
   onFilterChange,
   onOpenMiniChat,
+  onRetryRecipient,
+  retryingRecipientId = null,
 }: {
   campaign: WhatsappCampaignDetail;
   performanceReady?: boolean;
@@ -413,6 +425,8 @@ export function CampaignPerformancePanel({
   recipients: WhatsappCampaignRecipient[];
   onFilterChange: (filter: CampaignPerformanceFilter) => void;
   onOpenMiniChat: (recipient: WhatsappCampaignRecipient) => void;
+  onRetryRecipient: (recipient: WhatsappCampaignRecipient) => void;
+  retryingRecipientId?: string | null;
 }) {
   const performance = campaign.performance;
   const diagnosisColors = campaignDiagnosisColors(performance.diagnosis.tone);
@@ -475,17 +489,17 @@ export function CampaignPerformancePanel({
   };
 
   const funnelStats = [
-    { label: "Publico", value: formatNumber(statsTotalRecipients), detail: `${formatNumber(Math.max(0, statsEligibleRecipients))} elegiveis`, icon: Users, accent: "#6366f1", soft: "#eef2ff" },
-    { label: "Enviados", value: formatNumber(statsSentRecipients), detail: `${formatNumber(progress.pendingCount)} na fila`, icon: Send, accent: "#0ea5e9", soft: "#f0f9ff" },
-    { label: "Aguardando", value: formatNumber(progress.pendingCount), detail: progress.nextScheduledAt ? `Proximo: ${formatDateTime(progress.nextScheduledAt)}` : "Sem fila pendente", icon: Clock3, accent: "#f59e0b", soft: "#fffbeb" },
-    { label: "Falhas", value: formatNumber(progress.failedCount), detail: `${formatNumber(progress.blockedRecentCount)} bloqueados`, icon: ShieldAlert, accent: "#ef4444", soft: "#fef2f2" },
-    { label: "Responderam", value: formatNumber(statsRespondedRecipients), detail: performanceReady ? `${formatNumber(statsNotRespondedRecipients)} sem resposta` : "Calculando respostas", icon: MessageCircle, accent: "#10b981", soft: "#ecfdf5" },
-    { label: "Termino", value: progress.estimatedFinishAt ? formatDateTime(progress.estimatedFinishAt) : "--", detail: `${formatNumber(progress.completedCount)} processados`, icon: CheckCircle2, accent: "#64748b", soft: "#f8fafc" },
+    { label: "Publico", value: formatNumber(statsTotalRecipients), detail: `${formatNumber(Math.max(0, statsEligibleRecipients))} elegiveis`, icon: Users, accent: "#4f46e5", soft: "#eef2ff" },
+    { label: "Enviados", value: formatNumber(statsSentRecipients), detail: `${formatNumber(progress.pendingCount)} na fila`, icon: Send, accent: "#0284c7", soft: "#e0f2fe" },
+    { label: "Aguardando", value: formatNumber(progress.pendingCount), detail: progress.nextScheduledAt ? `Proximo: ${formatDateTime(progress.nextScheduledAt)}` : "Sem fila pendente", icon: Clock3, accent: "#d97706", soft: "#fff7ed" },
+    { label: "Falhas", value: formatNumber(progress.failedCount), detail: `${formatNumber(progress.blockedRecentCount)} bloqueados`, icon: ShieldAlert, accent: "#dc2626", soft: "#fef2f2" },
+    { label: "Responderam", value: formatNumber(statsRespondedRecipients), detail: performanceReady ? `${formatNumber(statsNotRespondedRecipients)} sem resposta` : "Calculando respostas", icon: MessageCircle, accent: "#059669", soft: "#ecfdf5" },
+    { label: "Concluidos", value: formatNumber(progress.completedCount), detail: progress.estimatedFinishAt ? `Termina: ${formatDateTime(progress.estimatedFinishAt)}` : "Sem previsao", icon: CheckCircle2, accent: "#475569", soft: "#f1f5f9" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.75rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "0.6rem" }}>
         {funnelStats.map((stat) => {
           const StatIcon = stat.icon;
           return (
@@ -493,26 +507,25 @@ export function CampaignPerformancePanel({
               key={stat.label}
               style={{
                 background: "#ffffff",
-                border: "1px solid #e4e4e7",
-                borderRadius: "14px",
-                padding: "0.9rem 1rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-                borderTop: `3px solid ${stat.accent}`,
+                border: "1px solid #e5e7eb",
+                borderLeft: `4px solid ${stat.accent}`,
+                borderRadius: "8px",
+                padding: "0.75rem 0.85rem",
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) auto",
+                gap: "0.45rem 0.65rem",
+                alignItems: "start",
+                boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                <span style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-                  {stat.label}
-                </span>
-                <span style={{ width: "28px", height: "28px", borderRadius: "8px", background: stat.soft, display: "grid", placeItems: "center", flexShrink: 0 }}>
-                  <StatIcon size={15} style={{ color: stat.accent }} />
-                </span>
-              </div>
-              <strong style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{stat.value}</strong>
-              <span style={{ color: "#71717a", fontSize: "0.74rem", fontWeight: 500 }}>{stat.detail}</span>
+              <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                {stat.label}
+              </span>
+              <span style={{ width: "28px", height: "28px", borderRadius: "7px", background: stat.soft, display: "grid", placeItems: "center", flexShrink: 0, gridRow: "1 / span 2" }}>
+                <StatIcon size={15} style={{ color: stat.accent }} />
+              </span>
+              <strong style={{ fontSize: "1.35rem", fontWeight: 850, color: "#0f172a", lineHeight: 1 }}>{stat.value}</strong>
+              <span style={{ color: "#71717a", fontSize: "0.72rem", fontWeight: 550, gridColumn: "1 / -1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stat.detail}</span>
             </div>
           );
         })}
@@ -590,7 +603,7 @@ export function CampaignPerformancePanel({
         })}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.45fr) minmax(320px, 0.9fr)", gap: "1.25rem", alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: "1.25rem", alignItems: "start" }}>
         <div style={{ border: "1px solid #e4e4e7", borderRadius: "8px", overflow: "hidden", background: "#fff" }}>
           <div style={{ padding: "0.85rem 1rem", borderBottom: "1px solid #e4e4e7", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
             <div>
@@ -634,7 +647,15 @@ export function CampaignPerformancePanel({
             </button>
           </div>
           <div style={{ overflowX: "auto" }}>
-            <table className="z-table" style={{ minWidth: "760px" }}>
+            <table className="z-table" style={{ width: "100%", minWidth: "720px", tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "23%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "19%" }} />
+                <col style={{ width: "18%" }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>CLIENTE</th>
@@ -646,7 +667,9 @@ export function CampaignPerformancePanel({
                 </tr>
               </thead>
               <tbody>
-                {recipients.length ? recipients.map((recipient) => (
+                {recipients.length ? recipients.map((recipient) => {
+                  const observation = recipientObservation(recipient);
+                  return (
                   <tr key={recipient.id}>
                     <td>
                       <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -676,7 +699,7 @@ export function CampaignPerformancePanel({
                             </span>
                           )}
                         </div>
-                        <span style={{ color: "#71717a", fontSize: "0.72rem", fontFamily: "monospace" }}>{recipient.jid}</span>
+                        <span style={{ color: "#71717a", fontSize: "0.72rem", fontFamily: "monospace", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{recipient.jid}</span>
                       </div>
                     </td>
                     <td>
@@ -718,10 +741,10 @@ export function CampaignPerformancePanel({
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <span
-                        title={recipient.lastError ?? recipient.providerStatus ?? undefined}
+                        title={observation !== "-" ? observation : undefined}
                         style={{
                           display: "inline-block",
-                          maxWidth: "260px",
+                          maxWidth: "100%",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           whiteSpace: "nowrap",
@@ -731,10 +754,37 @@ export function CampaignPerformancePanel({
                           verticalAlign: "middle",
                         }}
                       >
-                        {recipient.lastError ?? recipient.providerStatus ?? "-"}
+                        {observation}
                       </span>
                     </td>
-                    <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
+                    <td style={{ textAlign: "center", padding: "0.75rem 0.65rem" }}>
+                      <div style={{ display: "flex", justifyContent: "center", gap: "6px", flexWrap: "wrap" }}>
+                      {recipient.status === "FAILED" && (
+                        <button
+                          type="button"
+                          onClick={() => onRetryRecipient(recipient)}
+                          disabled={retryingRecipientId === recipient.id}
+                          title="Retentar envio para este contato"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            padding: "6px 9px",
+                            background: "#fff7ed",
+                            border: "1px solid #fed7aa",
+                            borderRadius: "6px",
+                            color: "#c2410c",
+                            fontSize: "0.74rem",
+                            fontWeight: 700,
+                            cursor: retryingRecipientId === recipient.id ? "not-allowed" : "pointer",
+                            opacity: retryingRecipientId === recipient.id ? 0.65 : 1,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {retryingRecipientId === recipient.id ? <LoaderCircle size={13} className="spin" /> : <RotateCcw size={13} />}
+                          Retentar
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -744,7 +794,7 @@ export function CampaignPerformancePanel({
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "6px",
-                          padding: "6px 12px",
+                          padding: "6px 10px",
                           background: recipient.responded ? "#dcfce7" : "#eff6ff",
                           border: recipient.responded ? "1px solid #86efac" : "1px solid #bfdbfe",
                           borderRadius: "6px",
@@ -752,7 +802,8 @@ export function CampaignPerformancePanel({
                           fontSize: "0.75rem",
                           fontWeight: 600,
                           cursor: "pointer",
-                          transition: "all 0.15s"
+                          transition: "all 0.15s",
+                          whiteSpace: "nowrap"
                         }}
                         onMouseEnter={(e) => {
                           e.currentTarget.style.transform = "scale(1.05)";
@@ -764,11 +815,13 @@ export function CampaignPerformancePanel({
                         }}
                       >
                         <Smartphone size={14} />
-                        Ver Chat
+                        Chat
                       </button>
+                      </div>
                     </td>
                   </tr>
-                )) : (
+                  );
+                }) : (
                   <tr>
                     <td colSpan={6} style={{ textAlign: "center", padding: "2rem", color: "#71717a" }}>
                       Nenhum cliente encontrado neste filtro.
@@ -1270,6 +1323,22 @@ export function DisparadorPage() {
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
       ]);
+    },
+  });
+
+  const retryRecipientMutation = useMutation({
+    mutationFn: ({ campaignId, recipientId }: { campaignId: string; recipientId: string }) =>
+      api.retryWhatsappCampaignRecipient(token!, campaignId, recipientId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-performance", selectedCampaignId] }),
+      ]);
+    },
+    onError: (error: any) => {
+      alert(`Erro ao retentar disparo: ${error?.message || error}`);
     },
   });
 
@@ -4292,6 +4361,16 @@ export function DisparadorPage() {
                                 {recipientLiveLabel(recipient)}
                               </span>
                             )}
+                            {recipient.status === "PENDING" && recipient.scheduledFor && (
+                              <div style={{ marginTop: "3px", fontSize: "0.7rem", color: "#71717a", fontWeight: 600 }}>
+                                {formatDateTime(recipient.scheduledFor)}
+                              </div>
+                            )}
+                            {["SENT", "FAILED"].includes(recipient.status) && (
+                              <div style={{ marginTop: "3px", fontSize: "0.7rem", color: "#71717a", fontWeight: 600 }}>
+                                {recipientDispatchTimeLabel(recipient)}
+                              </div>
+                            )}
                           </div>
 
                           {/* Col 5: Skip button */}
@@ -4330,6 +4409,37 @@ export function DisparadorPage() {
                                 }}
                               >
                                 <X size={16} />
+                              </button>
+                            ) : recipient.status === "FAILED" ? (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Retentar envio para ${displayName}? A mensagem sera disparada novamente.`)) {
+                                    retryRecipientMutation.mutate({
+                                      campaignId: recipient.campaignId,
+                                      recipientId: recipient.id,
+                                    });
+                                  }
+                                }}
+                                disabled={retryRecipientMutation.isPending && retryRecipientMutation.variables?.recipientId === recipient.id}
+                                title="Retentar envio para este contato"
+                                style={{
+                                  background: "#fff7ed",
+                                  border: "1px solid #fed7aa",
+                                  color: "#c2410c",
+                                  cursor: retryRecipientMutation.isPending && retryRecipientMutation.variables?.recipientId === recipient.id ? "not-allowed" : "pointer",
+                                  padding: "5px",
+                                  borderRadius: "6px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  opacity: retryRecipientMutation.isPending && retryRecipientMutation.variables?.recipientId === recipient.id ? 0.65 : 1,
+                                }}
+                              >
+                                {retryRecipientMutation.isPending && retryRecipientMutation.variables?.recipientId === recipient.id ? (
+                                  <LoaderCircle size={15} className="spin" />
+                                ) : (
+                                  <RotateCcw size={15} />
+                                )}
                               </button>
                             ) : (
                               <div style={{ width: "24px" }} />
@@ -4622,6 +4732,16 @@ export function DisparadorPage() {
                                       activeFilter={campaignPerformanceFilter}
                                       recipients={selectedCampaignPerformanceRecipients}
                                       onFilterChange={setCampaignPerformanceFilter}
+                                      retryingRecipientId={retryRecipientMutation.variables?.recipientId ?? null}
+                                      onRetryRecipient={(recipient) => {
+                                        const name = recipient.customerDisplayName || recipient.customerCode || recipient.sourceName || "este contato";
+                                        if (confirm(`Retentar envio para ${name}? A mensagem sera disparada novamente.`)) {
+                                          retryRecipientMutation.mutate({
+                                            campaignId: recipient.campaignId,
+                                            recipientId: recipient.id,
+                                          });
+                                        }
+                                      }}
                                       onOpenMiniChat={async (recipient) => {
                                         setMiniChatRecipient(recipient);
                                         setMiniChatOpen(true);

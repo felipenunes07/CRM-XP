@@ -817,6 +817,11 @@ export const api = {
       method: "POST",
     }, token);
   },
+  retryWhatsappCampaignRecipient(token: string, id: string, recipientId: string) {
+    return request<{ retried: boolean; recipientId: string }>(`/api/whatsapp-campaigns/${id}/recipients/${recipientId}/retry`, {
+      method: "POST",
+    }, token);
+  },
 
   whatsappMonitorConversations(
     token: string,
