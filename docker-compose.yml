@@ -62,6 +62,8 @@ services:
       - PROSPECTING_TIMEZONE=${PROSPECTING_TIMEZONE}
     depends_on:
       - xpcrm_redis
+    volumes:
+      - campaign-media:/app/apps/api/uploads/campaign-media
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -128,6 +130,8 @@ services:
       - PROSPECTING_TIMEZONE=${PROSPECTING_TIMEZONE}
     depends_on:
       - xpcrm_redis
+    volumes:
+      - campaign-media:/app/apps/api/uploads/campaign-media
     restart: always
 
   xpcrm_redis:
@@ -138,3 +142,4 @@ services:
 
 volumes:
   redis-data:
+  campaign-media:

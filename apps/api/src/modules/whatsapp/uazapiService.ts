@@ -1,5 +1,5 @@
 import { logger } from "../../lib/logger.js";
-import { OUTBOUND_VIDEO_FILE_NAME, OUTBOUND_VIDEO_MIME_TYPE, assertSupportedOutboundVideo } from "./whatsappMedia.js";
+import { OUTBOUND_VIDEO_FILE_NAME, OUTBOUND_VIDEO_MIME_TYPE, resolveOutboundVideoPayload } from "./whatsappMedia.js";
 
 export interface UazapiInstanceConfig {
   baseUrl: string;
@@ -115,12 +115,12 @@ export async function sendUazapiVideoMessage(
   videoUrl: string,
   caption?: string,
 ) {
-  assertSupportedOutboundVideo(videoUrl);
+  const filePayload = await resolveOutboundVideoPayload(videoUrl);
 
   return requestUazapi(config, "/send/media", "POST", {
     number: formatUazapiDestination(destinationJid),
     text: caption ?? "",
-    file: videoUrl,
+    file: filePayload,
     type: "video",
     mimetype: OUTBOUND_VIDEO_MIME_TYPE,
     filename: OUTBOUND_VIDEO_FILE_NAME,

@@ -162,7 +162,7 @@ import {
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
 import { handleUazapiWebhook } from "./modules/whatsapp/uazapiWebhook.js";
-import { assertSupportedOutboundVideo } from "./modules/whatsapp/whatsappMedia.js";
+import { assertSupportedOutboundVideo, getCampaignMediaDir } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -633,7 +633,7 @@ export function createApp() {
   // Diretório onde os vídeos de campanha enviados do computador são hospedados,
   // servido publicamente em /media/campaign-videos. Mandar a URL (em vez de base64
   // inline) pros provedores elimina o timeout e o "Bad Request" no disparo.
-  const campaignMediaDir = path.join(process.cwd(), "uploads", "campaign-media");
+  const campaignMediaDir = getCampaignMediaDir();
   app.use(
     "/media/campaign-videos",
     express.static(campaignMediaDir, {

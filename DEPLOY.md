@@ -32,6 +32,7 @@ Use o `docker-compose.yml` da raiz. Ele sobe:
 - `api` na porta `4000`
 - `worker` para filas, sync e disparos
 - `redis` interno, sem porta publica
+- `campaign-media` como volume compartilhado entre API e worker para videos de campanha
 
 Configure as variaveis do backend no EasyPanel, principalmente:
 

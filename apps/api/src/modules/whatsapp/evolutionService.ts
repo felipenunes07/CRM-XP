@@ -1,7 +1,7 @@
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { formatEvolutionSendTextTarget } from "./whatsappMonitorCore.js";
-import { getOutboundMediaFileName, getOutboundMediaMimeType } from "./whatsappMedia.js";
+import { getOutboundMediaFileName, getOutboundMediaMimeType, resolveOutboundVideoPayload } from "./whatsappMedia.js";
 
 export interface EvolutionInstanceConfig {
   instanceName: string;
@@ -59,7 +59,8 @@ export async function sendWhatsappInstanceMediaMessage(
   fileName?: string,
   caption?: string,
 ) {
-  const mimeTypeStr = getOutboundMediaMimeType(mediaBase64, mediaType);
+  const resolvedMedia = mediaType === "video" ? await resolveOutboundVideoPayload(mediaBase64) : mediaBase64;
+  const mimeTypeStr = getOutboundMediaMimeType(resolvedMedia, mediaType);
   const defaultFileName = getOutboundMediaFileName(mediaType, fileName);
   const number = formatEvolutionSendTextTarget(destinationJid);
 
@@ -67,11 +68,11 @@ export async function sendWhatsappInstanceMediaMessage(
   // NOT a data URL. A value like "data:video/mp4;base64,AAAA..." must have its
   // "data:...;base64," prefix removed, otherwise Evolution responds "Bad Request".
   // Plain http(s) URLs are passed through unchanged.
-  let mediaPayloadValue = mediaBase64;
-  if (mediaBase64.startsWith("data:")) {
-    const commaIdx = mediaBase64.indexOf(",");
+  let mediaPayloadValue = resolvedMedia;
+  if (resolvedMedia.startsWith("data:")) {
+    const commaIdx = resolvedMedia.indexOf(",");
     if (commaIdx !== -1) {
-      mediaPayloadValue = mediaBase64.slice(commaIdx + 1);
+      mediaPayloadValue = resolvedMedia.slice(commaIdx + 1);
     }
   }
 

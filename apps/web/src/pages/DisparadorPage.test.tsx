@@ -240,10 +240,12 @@ describe("Disparador campaign performance", () => {
       />,
     );
 
-    expect(markup).toContain("Público");
+    expect(markup).toContain("Publico");
     expect(markup).toContain("Responderam");
-    expect(markup).toContain("Compraram");
+    expect(markup).toContain("Aguardando");
     expect(markup).toContain("Nao responderam");
+    expect(markup).toContain("DISPARO / HORARIO");
+    expect(markup).toContain("Disparado em");
     expect(markup).toContain("Clientes da campanha");
     expect(markup).toContain("Mensagens da campanha");
     expect(markup).toContain("Quero comprar");

@@ -15,10 +15,10 @@ import type {
   WhatsappMappingSummary,
   WhatsappMenuType,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, ShoppingBag, Package, Banknote, Copy } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, Copy } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDateTime, formatNumber, formatPercent, formatFileSize } from "../lib/format";
+import { formatDateTime, formatNumber, formatFileSize } from "../lib/format";
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
@@ -44,7 +44,6 @@ const campaignPerformanceFilters: Array<{ value: CampaignPerformanceFilter; labe
   { value: "SENT", label: "Enviados" },
   { value: "RESPONDED", label: "Responderam" },
   { value: "NO_RESPONSE", label: "Nao responderam" },
-  { value: "PURCHASED", label: "Compraram" },
   { value: "ISSUES", label: "Bloqueios/Falhas" },
 ];
 
@@ -262,13 +261,14 @@ function quickFilterCount(
 export function campaignPerformanceFilterCount(filter: CampaignPerformanceFilter, campaign: WhatsappCampaignDetail | null) {
   if (!campaign) return "0";
   const performance = campaign.performance;
+  const progress = campaign.progress;
 
-  if (filter === "SENT") return formatNumber(performance.sentRecipients);
+  if (filter === "SENT") return formatNumber(progress.sentCount);
   if (filter === "RESPONDED") return formatNumber(performance.respondedRecipients);
-  if (filter === "NO_RESPONSE") return formatNumber(performance.notRespondedRecipients);
+  if (filter === "NO_RESPONSE") return formatNumber(performance.notRespondedRecipients || Math.max(0, progress.sentCount - performance.respondedRecipients));
   if (filter === "PURCHASED") return formatNumber(performance.purchasedRecipients);
-  if (filter === "ISSUES") return formatNumber(performance.blockedRecipients + performance.failedRecipients);
-  return formatNumber(performance.totalRecipients);
+  if (filter === "ISSUES") return formatNumber(progress.blockedRecentCount + progress.failedCount + progress.skippedCount);
+  return formatNumber(progress.totalRecipients || performance.totalRecipients);
 }
 
 export function filterCampaignRecipients(recipients: WhatsappCampaignRecipient[], filter: CampaignPerformanceFilter) {
@@ -293,6 +293,73 @@ export function filterCampaignRecipients(recipients: WhatsappCampaignRecipient[]
   }
 
   return recipients;
+}
+
+function mergeCampaignDetailsForDisplay(
+  baseCampaign: WhatsappCampaignDetail | null,
+  performanceCampaign: WhatsappCampaignDetail | null,
+) {
+  if (!baseCampaign || !performanceCampaign) {
+    return baseCampaign;
+  }
+
+  const performanceByRecipientId = new Map(
+    performanceCampaign.recipients.map((recipient) => [recipient.id, recipient]),
+  );
+
+  return {
+    ...baseCampaign,
+    performance: performanceCampaign.performance,
+    recipients: baseCampaign.recipients.map((recipient) => ({
+      ...recipient,
+      ...(performanceByRecipientId.get(recipient.id) ?? {}),
+      status: recipient.status,
+      scheduledFor: recipient.scheduledFor,
+      lastAttemptAt: recipient.lastAttemptAt,
+      sentAt: recipient.sentAt,
+      failedAt: recipient.failedAt,
+      skippedAt: recipient.skippedAt,
+      lastError: recipient.lastError,
+    })),
+  };
+}
+
+function recipientDispatchTime(recipient: WhatsappCampaignRecipient) {
+  if (recipient.status === "SENT") return recipient.sentAt;
+  if (recipient.status === "FAILED") return recipient.failedAt ?? recipient.lastAttemptAt ?? recipient.scheduledFor;
+  if (recipient.status === "SENDING") return recipient.lastAttemptAt ?? recipient.scheduledFor;
+  if (recipient.status === "PENDING") return recipient.scheduledFor;
+  if (recipient.status === "SKIPPED") return recipient.skippedAt ?? recipient.scheduledFor;
+  return recipient.scheduledFor;
+}
+
+function recipientDispatchTimeCaption(recipient: WhatsappCampaignRecipient, nowMs: number) {
+  if (recipient.status === "PENDING") {
+    const countdown = formatCountdown(recipient.scheduledFor, nowMs);
+    return countdown ? `Falta ${countdown}` : "Na fila";
+  }
+
+  if (recipient.status === "SENDING") return "Enviando agora";
+  if (recipient.status === "SENT") return "Disparo feito";
+  if (recipient.status === "FAILED") return "Tentativa com falha";
+  if (recipient.status === "SKIPPED") return "Envio cancelado";
+  if (recipient.status === "BLOCKED_RECENT") return "Nao disparado";
+  return "";
+}
+
+function recipientDispatchTimeTitle(recipient: WhatsappCampaignRecipient) {
+  if (recipient.status === "SENT") return "Disparado em";
+  if (recipient.status === "FAILED") return "Tentativa em";
+  if (recipient.status === "SENDING") return "Enviando desde";
+  if (recipient.status === "PENDING") return "Programado para";
+  if (recipient.status === "SKIPPED") return "Cancelado em";
+  if (recipient.status === "BLOCKED_RECENT") return "Nao disparado";
+  return "Horario";
+}
+
+function recipientDispatchTimeLabel(recipient: WhatsappCampaignRecipient) {
+  const value = recipientDispatchTime(recipient);
+  return value ? formatDateTime(value) : "--";
 }
 
 export function campaignHasDuePendingRecipients(campaign: WhatsappCampaignDetail | null | undefined, nowMs: number) {
@@ -328,12 +395,20 @@ function campaignDiagnosisColors(tone: WhatsappCampaignDetail["performance"]["di
 
 export function CampaignPerformancePanel({
   campaign,
+  performanceReady = true,
+  performanceError = false,
+  performanceLoading = false,
+  nowMs = Date.now(),
   activeFilter,
   recipients,
   onFilterChange,
   onOpenMiniChat,
 }: {
   campaign: WhatsappCampaignDetail;
+  performanceReady?: boolean;
+  performanceError?: boolean;
+  performanceLoading?: boolean;
+  nowMs?: number;
   activeFilter: CampaignPerformanceFilter;
   recipients: WhatsappCampaignRecipient[];
   onFilterChange: (filter: CampaignPerformanceFilter) => void;
@@ -341,7 +416,7 @@ export function CampaignPerformancePanel({
 }) {
   const performance = campaign.performance;
   const diagnosisColors = campaignDiagnosisColors(performance.diagnosis.tone);
-  const recentMessages = performance.messages.slice(-120);
+  const recentMessages = performanceReady ? performance.messages.slice(-120) : [];
   const [respondedCopied, setRespondedCopied] = useState(false);
 
   const formatJidPhone = (jid: string) => {
@@ -357,6 +432,12 @@ export function CampaignPerformancePanel({
   };
 
   const respondedRecipients = campaign.recipients.filter((recipient) => recipient.responded);
+  const progress = campaign.progress;
+  const statsTotalRecipients = performanceReady ? performance.totalRecipients : progress.totalRecipients;
+  const statsEligibleRecipients = performanceReady ? performance.eligibleRecipients : progress.totalRecipients - progress.blockedRecentCount - progress.skippedCount;
+  const statsSentRecipients = performanceReady ? performance.sentRecipients : progress.sentCount;
+  const statsRespondedRecipients = performanceReady ? performance.respondedRecipients : respondedRecipients.length;
+  const statsNotRespondedRecipients = performanceReady ? performance.notRespondedRecipients : Math.max(0, progress.sentCount - respondedRecipients.length);
 
   const copyRespondedList = async () => {
     const lines = respondedRecipients.map((recipient, index) => {
@@ -394,12 +475,12 @@ export function CampaignPerformancePanel({
   };
 
   const funnelStats = [
-    { label: "Público", value: formatNumber(performance.totalRecipients), detail: `${formatNumber(performance.eligibleRecipients)} elegíveis`, icon: Users, accent: "#6366f1", soft: "#eef2ff" },
-    { label: "Enviados", value: formatNumber(performance.sentRecipients), detail: `${formatPercent(performance.responseRate)} de resposta`, icon: Send, accent: "#0ea5e9", soft: "#f0f9ff" },
-    { label: "Responderam", value: formatNumber(performance.respondedRecipients), detail: `${formatNumber(performance.notRespondedRecipients)} sem resposta`, icon: MessageCircle, accent: "#10b981", soft: "#ecfdf5" },
-    { label: "Compraram", value: formatNumber(performance.purchasedRecipients), detail: `${formatPercent(performance.purchaseRate)} de conversão`, icon: ShoppingBag, accent: "#f59e0b", soft: "#fffbeb" },
-    { label: "Peças", value: formatNumber(performance.pieces), detail: `${formatNumber(performance.orderCount)} pedidos`, icon: Package, accent: "#8b5cf6", soft: "#f5f3ff" },
-    { label: "Receita", value: formatCurrency(performance.revenue), detail: `${formatNumber(performance.receivedMessages)} msgs recebidas`, icon: Banknote, accent: "#059669", soft: "#ecfdf5" },
+    { label: "Publico", value: formatNumber(statsTotalRecipients), detail: `${formatNumber(Math.max(0, statsEligibleRecipients))} elegiveis`, icon: Users, accent: "#6366f1", soft: "#eef2ff" },
+    { label: "Enviados", value: formatNumber(statsSentRecipients), detail: `${formatNumber(progress.pendingCount)} na fila`, icon: Send, accent: "#0ea5e9", soft: "#f0f9ff" },
+    { label: "Aguardando", value: formatNumber(progress.pendingCount), detail: progress.nextScheduledAt ? `Proximo: ${formatDateTime(progress.nextScheduledAt)}` : "Sem fila pendente", icon: Clock3, accent: "#f59e0b", soft: "#fffbeb" },
+    { label: "Falhas", value: formatNumber(progress.failedCount), detail: `${formatNumber(progress.blockedRecentCount)} bloqueados`, icon: ShieldAlert, accent: "#ef4444", soft: "#fef2f2" },
+    { label: "Responderam", value: formatNumber(statsRespondedRecipients), detail: performanceReady ? `${formatNumber(statsNotRespondedRecipients)} sem resposta` : "Calculando respostas", icon: MessageCircle, accent: "#10b981", soft: "#ecfdf5" },
+    { label: "Termino", value: progress.estimatedFinishAt ? formatDateTime(progress.estimatedFinishAt) : "--", detail: `${formatNumber(progress.completedCount)} processados`, icon: CheckCircle2, accent: "#64748b", soft: "#f8fafc" },
   ];
 
   return (
@@ -437,6 +518,7 @@ export function CampaignPerformancePanel({
         })}
       </div>
 
+      {performanceReady ? (
       <div
         style={{
           background: diagnosisColors.background,
@@ -460,6 +542,28 @@ export function CampaignPerformancePanel({
           </span>
         </div>
       </div>
+      ) : (
+        <div
+          style={{
+            background: performanceError ? "#fffbeb" : "#eff6ff",
+            border: `1px solid ${performanceError ? "#fde68a" : "#bfdbfe"}`,
+            borderRadius: "8px",
+            color: performanceError ? "#92400e" : "#1e40af",
+            padding: "0.9rem 1rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            fontSize: "0.84rem",
+          }}
+        >
+          {performanceLoading ? <LoaderCircle size={17} className="spin" /> : <Info size={17} />}
+          <span>
+            {performanceError
+              ? "Metricas de resposta/compras falharam, mas a fila e os horarios continuam disponiveis abaixo."
+              : "Carregando metricas em segundo plano. A fila e os horarios ja estao disponiveis."}
+          </span>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         {campaignPerformanceFilters.map((filter) => {
@@ -534,10 +638,10 @@ export function CampaignPerformancePanel({
               <thead>
                 <tr>
                   <th>CLIENTE</th>
-                  <th>ENVIO</th>
+                  <th>STATUS</th>
+                  <th>DISPARO / HORARIO</th>
                   <th>RESPOSTA</th>
-                  <th>COMPRA</th>
-                  <th style={{ textAlign: "right" }}>RECEITA</th>
+                  <th style={{ textAlign: "right" }}>ERRO / OBS</th>
                   <th style={{ textAlign: "center" }}>AÇÕES</th>
                 </tr>
               </thead>
@@ -580,7 +684,28 @@ export function CampaignPerformancePanel({
                         {recipient.status === "SENT" ? "ENVIADO" : recipient.status === "FAILED" ? "FALHA" : recipient.status === "BLOCKED_RECENT" ? "BLOQUEADO" : recipient.status}
                       </span>
                       <div style={{ color: "#71717a", fontSize: "0.72rem", marginTop: "4px" }}>
-                        {recipient.status === "SENT" ? formatDateTime(recipient.sentAt) : recipientLiveLabel(recipient)}
+                        {recipient.status === "SENT"
+                          ? "Enviado"
+                          : recipient.status === "FAILED"
+                            ? "Falhou"
+                            : recipient.status === "PENDING"
+                              ? "Na fila"
+                              : recipient.status === "SENDING"
+                                ? "Enviando"
+                                : recipient.status === "BLOCKED_RECENT"
+                                  ? "Bloqueado"
+                                  : "Cancelado"}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ color: "#64748b", fontSize: "0.68rem", fontWeight: 700, marginBottom: "3px", textTransform: "uppercase" }}>
+                        {recipientDispatchTimeTitle(recipient)}
+                      </div>
+                      <strong style={{ color: "#18181b", fontSize: "0.82rem" }}>
+                        {recipientDispatchTimeLabel(recipient)}
+                      </strong>
+                      <div style={{ color: "#71717a", fontSize: "0.72rem", marginTop: "4px" }}>
+                        {recipientDispatchTimeCaption(recipient, nowMs)}
                       </div>
                     </td>
                     <td>
@@ -591,16 +716,23 @@ export function CampaignPerformancePanel({
                         {recipient.responded ? formatDateTime(recipient.firstResponseAt) : ""}
                       </div>
                     </td>
-                    <td>
-                      <strong style={{ color: recipient.purchased ? "#166534" : "#71717a", fontSize: "0.82rem" }}>
-                        {recipient.purchased ? `${formatNumber(recipient.ordersCount)} pedido(s)` : "Sem compra"}
-                      </strong>
-                      <div style={{ color: "#71717a", fontSize: "0.72rem", marginTop: "4px" }}>
-                        {recipient.purchased ? `${formatNumber(recipient.pieces)} pecas` : ""}
-                      </div>
-                    </td>
                     <td style={{ textAlign: "right" }}>
-                      <strong style={{ color: "#18181b", fontSize: "0.84rem" }}>{formatCurrency(recipient.revenue)}</strong>
+                      <span
+                        title={recipient.lastError ?? recipient.providerStatus ?? undefined}
+                        style={{
+                          display: "inline-block",
+                          maxWidth: "260px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          color: recipient.status === "FAILED" ? "#b91c1c" : "#71717a",
+                          fontSize: "0.76rem",
+                          fontWeight: recipient.status === "FAILED" ? 650 : 500,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {recipient.lastError ?? recipient.providerStatus ?? "-"}
+                      </span>
                     </td>
                     <td style={{ textAlign: "center", padding: "0.75rem 1rem" }}>
                       <button
@@ -1256,7 +1388,6 @@ export function DisparadorPage() {
   const importError = importDefaultMutation.error as Error | null;
   const isImporting = importDefaultMutation.isPending;
   const liveCampaign = activeCampaignQuery.data ?? selectedCampaignQuery.data ?? createCampaignMutation.data ?? null;
-  const liveCampaignFirstFailure = liveCampaign?.recipients.find((recipient) => recipient.status === "FAILED") ?? null;
   const liveCampaignIsRunning = liveCampaign ? ["QUEUED", "IN_PROGRESS"].includes(liveCampaign.status) : false;
   const nextDispatchCountdown = liveCampaign ? formatCountdown(liveCampaign.progress.nextScheduledAt, nowMs) : null;
   const hiddenBlockedCount = useMemo(() => {
@@ -1294,6 +1425,11 @@ export function DisparadorPage() {
       .slice(0, 200);
   }, [liveCampaign]);
   const selectedCampaignDetail = selectedCampaignQuery.data ?? null;
+  const selectedCampaignPerformanceDetail = selectedCampaignPerformanceQuery.data ?? null;
+  const selectedCampaignDisplayDetail = useMemo(
+    () => mergeCampaignDetailsForDisplay(selectedCampaignDetail, selectedCampaignPerformanceDetail),
+    [selectedCampaignDetail, selectedCampaignPerformanceDetail],
+  );
 
   useEffect(() => {
     if (!token || !liveCampaign || resumeCampaignMutation.isPending) {
@@ -1313,10 +1449,9 @@ export function DisparadorPage() {
     resumeCampaignMutation.mutate(liveCampaign.id);
   }, [liveCampaign, nowMs, resumeCampaignMutation, token]);
 
-  const selectedCampaignPerformanceDetail = selectedCampaignPerformanceQuery.data ?? null;
   const selectedCampaignPerformanceRecipients = useMemo(
-    () => filterCampaignRecipients(selectedCampaignPerformanceDetail?.recipients ?? [], campaignPerformanceFilter),
-    [campaignPerformanceFilter, selectedCampaignPerformanceDetail?.recipients],
+    () => filterCampaignRecipients(selectedCampaignDisplayDetail?.recipients ?? [], campaignPerformanceFilter),
+    [campaignPerformanceFilter, selectedCampaignDisplayDetail?.recipients],
   );
   const menuChoicesCount = menuChoices.filter((choice) => choice.trim()).length;
   const hasMessage = campaignMessageType === "CAROUSEL"
@@ -4477,9 +4612,13 @@ export function DisparadorPage() {
                                       )}
                                     </div>
 
-                                    {selectedCampaignPerformanceQuery.data ? (
+                                    {selectedCampaignDisplayDetail ? (
                                     <CampaignPerformancePanel
-                                      campaign={selectedCampaignPerformanceQuery.data}
+                                      campaign={selectedCampaignDisplayDetail}
+                                      performanceReady={Boolean(selectedCampaignPerformanceDetail)}
+                                      performanceError={selectedCampaignPerformanceQuery.isError}
+                                      performanceLoading={selectedCampaignPerformanceQuery.isFetching}
+                                      nowMs={nowMs}
                                       activeFilter={campaignPerformanceFilter}
                                       recipients={selectedCampaignPerformanceRecipients}
                                       onFilterChange={setCampaignPerformanceFilter}
