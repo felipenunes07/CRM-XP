@@ -666,7 +666,7 @@ export function createApp() {
       if (cancelPid) {
         const pidNum = parseInt(String(cancelPid), 10);
         if (!isNaN(pidNum)) {
-          const res = await pool.query("SELECT pg_cancel_backend($1) as cancelled", [pidNum]);
+          const res = await pool.query("SELECT pg_terminate_backend($1) as cancelled", [pidNum]);
           cancelResult = res.rows[0];
         }
       }
