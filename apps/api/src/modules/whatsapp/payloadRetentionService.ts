@@ -18,6 +18,7 @@
  * (a tabela para de crescer). Para encolher o arquivo já existente de uma vez, rode
  * pg_repack/VACUUM FULL numa janela de manutenção DEPOIS da primeira limpeza.
  */
+import type { PoolClient } from "pg";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
@@ -26,6 +27,8 @@ const CLEANUP_TIMEZONE = "America/Sao_Paulo";
 const CLEANUP_CURSOR_KEY = "payload_cleanup_date";
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
 const BATCH_SIZE = 2000;
+// media_json tem ~737KB por linha; lote menor evita reescrever GBs de TOAST de uma vez.
+const JSON_BATCH_SIZE = 300;
 
 type CleanupTarget = { table: string; column: string };
 type JsonKeyTarget = { table: string; column: string; key: string };
@@ -43,12 +46,12 @@ const JSON_KEY_TARGETS: JsonKeyTarget[] = [
   { table: "whatsapp_monitor_messages", column: "media_json", key: "mediaBase64" },
 ];
 
-async function clearColumnInBatches(target: CleanupTarget, retentionDays: number) {
+async function clearColumnInBatches(client: PoolClient, target: CleanupTarget, retentionDays: number) {
   let total = 0;
   // ctid em lotes: cada iteração pega até BATCH_SIZE linhas antigas que ainda têm
   // payload; ao setar NULL elas saem do filtro, garantindo progresso até zerar.
   for (;;) {
-    const result = await pool.query(
+    const result = await client.query(
       `
         UPDATE ${target.table}
         SET ${target.column} = NULL
@@ -71,10 +74,10 @@ async function clearColumnInBatches(target: CleanupTarget, retentionDays: number
   return total;
 }
 
-async function stripJsonKeyInBatches(target: JsonKeyTarget, retentionDays: number) {
+async function stripJsonKeyInBatches(client: PoolClient, target: JsonKeyTarget, retentionDays: number) {
   let total = 0;
   for (;;) {
-    const result = await pool.query(
+    const result = await client.query(
       `
         UPDATE ${target.table}
         SET ${target.column} = ${target.column} - $2
@@ -83,14 +86,14 @@ async function stripJsonKeyInBatches(target: JsonKeyTarget, retentionDays: numbe
           FROM ${target.table}
           WHERE ${target.column} ? $2
             AND created_at < NOW() - ($1::int * INTERVAL '1 day')
-          LIMIT ${BATCH_SIZE}
+          LIMIT ${JSON_BATCH_SIZE}
         )
       `,
       [retentionDays, target.key],
     );
     const affected = result.rowCount ?? 0;
     total += affected;
-    if (affected < BATCH_SIZE) {
+    if (affected < JSON_BATCH_SIZE) {
       break;
     }
   }
@@ -102,27 +105,37 @@ export async function cleanupHeavyPayloads(
   mediaRetentionDays = env.MEDIA_BASE64_RETENTION_DAYS,
 ) {
   const counts: Record<string, number> = {};
-  for (const target of SAFE_TARGETS) {
-    try {
-      const cleared = await clearColumnInBatches(target, retentionDays);
-      counts[`${target.table}.${target.column}`] = cleared;
-    } catch (error) {
-      logger.error("payload cleanup failed for target", {
-        target: `${target.table}.${target.column}`,
-        error: error instanceof Error ? error.message : String(error),
-      });
+  // Conexão dedicada SEM statement_timeout: reescrever o TOAST pesado (media_json
+  // ~737KB/linha) passa dos 20s do pool padrão. Aqui rodamos em lotes sem esse limite.
+  const client = await pool.connect();
+  try {
+    await client.query("SET statement_timeout = 0");
+    await client.query("SET lock_timeout = '10s'");
+
+    for (const target of SAFE_TARGETS) {
+      try {
+        const cleared = await clearColumnInBatches(client, target, retentionDays);
+        counts[`${target.table}.${target.column}`] = cleared;
+      } catch (error) {
+        logger.error("payload cleanup failed for target", {
+          target: `${target.table}.${target.column}`,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
-  }
-  for (const target of JSON_KEY_TARGETS) {
-    try {
-      const cleared = await stripJsonKeyInBatches(target, mediaRetentionDays);
-      counts[`${target.table}.${target.column} -${target.key}`] = cleared;
-    } catch (error) {
-      logger.error("payload cleanup failed for json key target", {
-        target: `${target.table}.${target.column} -${target.key}`,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const target of JSON_KEY_TARGETS) {
+      try {
+        const cleared = await stripJsonKeyInBatches(client, target, mediaRetentionDays);
+        counts[`${target.table}.${target.column} -${target.key}`] = cleared;
+      } catch (error) {
+        logger.error("payload cleanup failed for json key target", {
+          target: `${target.table}.${target.column} -${target.key}`,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+  } finally {
+    client.release();
   }
   logger.info("payload cleanup finished", { retentionDays, mediaRetentionDays, counts });
   return { retentionDays, mediaRetentionDays, counts };
