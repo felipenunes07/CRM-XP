@@ -661,6 +661,16 @@ export function createApp() {
       return response.status(403).json({ error: "Forbidden" });
     }
     try {
+      const cancelPid = request.query.cancelPid;
+      let cancelResult = null;
+      if (cancelPid) {
+        const pidNum = parseInt(String(cancelPid), 10);
+        if (!isNaN(pidNum)) {
+          const res = await pool.query("SELECT pg_cancel_backend($1) as cancelled", [pidNum]);
+          cancelResult = res.rows[0];
+        }
+      }
+
       const dbVersion = await pool.query("SELECT * FROM migrations ORDER BY version DESC LIMIT 10");
       const funcDef = await pool.query(`
         SELECT prosrc 
@@ -675,7 +685,8 @@ export function createApp() {
       response.json({
         migrations: dbVersion.rows,
         function: funcDef.rows[0]?.prosrc || "Not found",
-        activeQueries: activeQueries.rows
+        activeQueries: activeQueries.rows,
+        cancelResult
       });
     } catch (err: any) {
       response.status(500).json({ error: err.message });
