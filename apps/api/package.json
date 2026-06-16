@@ -22,6 +22,7 @@
     "db:diagnose": "tsx src/scripts/diagnoseCampaignPerf.ts",
     "db:vacuum": "tsx src/scripts/vacuumHotTables.ts",
     "db:cleanup-payloads": "tsx src/scripts/cleanupHeavyPayloads.ts",
+    "db:benchmark": "tsx src/scripts/benchmarkApis.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },
