@@ -656,6 +656,32 @@ export function createApp() {
     });
   });
 
+  app.get("/api/debug-db-status", async (request, response) => {
+    if (request.query.token !== "debug-token-xp-123") {
+      return response.status(403).json({ error: "Forbidden" });
+    }
+    try {
+      const dbVersion = await pool.query("SELECT * FROM migrations ORDER BY version DESC LIMIT 10");
+      const funcDef = await pool.query(`
+        SELECT prosrc 
+        FROM pg_proc 
+        WHERE proname = 'refresh_campaign_stats_cache';
+      `);
+      const activeQueries = await pool.query(`
+        SELECT pid, age(clock_timestamp(), query_start), state, query
+        FROM pg_stat_activity
+        WHERE state != 'idle' AND query NOT LIKE '%pg_stat_activity%';
+      `);
+      response.json({
+        migrations: dbVersion.rows,
+        function: funcDef.rows[0]?.prosrc || "Not found",
+        activeQueries: activeQueries.rows
+      });
+    } catch (err: any) {
+      response.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/auth/login", async (request, response, next) => {
     try {
       const payload = loginSchema.parse(request.body);
