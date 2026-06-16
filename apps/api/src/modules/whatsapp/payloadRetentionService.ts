@@ -70,6 +70,8 @@ async function clearColumnInBatches(client: PoolClient, target: CleanupTarget, r
     if (affected < BATCH_SIZE) {
       break;
     }
+    // Give the database time to breathe and prevent lock starvation/CPU saturation
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   return total;
 }
@@ -96,6 +98,8 @@ async function stripJsonKeyInBatches(client: PoolClient, target: JsonKeyTarget, 
     if (affected < JSON_BATCH_SIZE) {
       break;
     }
+    // Give the database time to breathe and prevent lock starvation/CPU saturation
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   return total;
 }
