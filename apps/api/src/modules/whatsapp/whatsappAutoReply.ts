@@ -125,6 +125,61 @@ async function claimAutoReplyRecipient(remoteJid: string): Promise<AutoReplyClai
   };
 }
 
+/**
+ * Quando nenhum destinatário é reivindicado, descobre POR QUÊ: procura o
+ * destinatário SENT mais recente cujo telefone bate com quem respondeu (mesma
+ * normalização de 9º dígito do claim) e relata o que o desqualificou — fora da
+ * janela, já respondido, campanha sem texto de resposta ou cancelada. Sem isto a
+ * resposta automática falha em silêncio e não há rastro nos logs.
+ */
+async function diagnoseNoClaim(remoteJid: string) {
+  try {
+    const result = await pool.query(
+      `
+        SELECT
+          r.id AS recipient_id,
+          r.campaign_id,
+          r.status,
+          r.sent_at,
+          r.auto_reply_sent_at,
+          (r.sent_at IS NOT NULL AND r.sent_at >= NOW() - ($2::int * INTERVAL '1 day')) AS within_window,
+          COALESCE(TRIM(wc.auto_reply_text), '') <> '' AS has_auto_reply_text,
+          wc.status AS campaign_status
+        FROM whatsapp_campaign_recipients r
+        JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
+        WHERE r.jid NOT LIKE '%@g.us'
+          AND $1 NOT LIKE '%@g.us'
+          AND length(regexp_replace(r.jid, '\\D', '', 'g')) >= 10
+          AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
+          AND right(regexp_replace(r.jid, '\\D', '', 'g'), 8) = right(regexp_replace($1, '\\D', '', 'g'), 8)
+        ORDER BY r.sent_at DESC NULLS LAST, r.created_at DESC
+        LIMIT 1
+      `,
+      [remoteJid, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      logger.info("auto-reply no claim: nenhum destinatário de campanha bate com este número", { remoteJid });
+      return;
+    }
+
+    logger.info("auto-reply no claim: destinatário encontrado mas desqualificado", {
+      remoteJid,
+      recipientId: String(row.recipient_id),
+      campaignId: String(row.campaign_id),
+      recipientStatus: row.status,
+      campaignStatus: row.campaign_status,
+      sentAt: row.sent_at,
+      withinWindow: row.within_window,
+      alreadyReplied: row.auto_reply_sent_at !== null,
+      hasAutoReplyText: row.has_auto_reply_text,
+    });
+  } catch (error) {
+    logger.warn("auto-reply diagnose failed", { remoteJid, error: String(error) });
+  }
+}
+
 async function releaseAutoReplyClaim(recipientId: string) {
   await pool.query(
     `UPDATE whatsapp_campaign_recipients SET auto_reply_sent_at = NULL, updated_at = NOW() WHERE id = $1`,
@@ -205,13 +260,20 @@ export async function processCampaignAutoReply(remoteJid: string, inboundContent
     return { sent: false };
   }
 
+  logger.info("auto-reply processing inbound", {
+    remoteJid: normalizedJid,
+    contentPreview: inboundContent.slice(0, 60),
+  });
+
   // Eco da própria instância não conta como resposta do cliente.
   if (inboundContent && (await isEchoOfOwnMessage(normalizedJid, inboundContent))) {
+    logger.info("auto-reply blocked: eco da própria mensagem", { remoteJid: normalizedJid });
     return { sent: false, echo: true };
   }
 
   const claim = await claimAutoReplyRecipient(normalizedJid);
   if (!claim) {
+    await diagnoseNoClaim(normalizedJid);
     return { sent: false };
   }
 
