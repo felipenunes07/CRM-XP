@@ -446,6 +446,12 @@ const whatsappGroupFiltersQuerySchema = z.object({
   customerStatus: z.string().optional(),
 });
 
+const whatsappMappingSummaryQuerySchema = z.object({
+  search: z.string().optional(),
+  savedSegmentId: z.string().uuid().optional(),
+  recentBlock: z.enum(["AVAILABLE_ONLY", "BLOCKED_ONLY", "ALL"]).optional(),
+});
+
 const whatsappImportSchema = z.object({
   fileName: z.string().min(1),
   fileBase64: z.string().min(1),
@@ -1827,9 +1833,10 @@ export function createApp() {
     }
   });
 
-  app.get("/api/whatsapp-groups/mapping-summary", async (_request, response, next) => {
+  app.get("/api/whatsapp-groups/mapping-summary", async (request, response, next) => {
     try {
-      response.json(await getWhatsappMappingSummary());
+      const query = whatsappMappingSummaryQuerySchema.parse(request.query);
+      response.json(await getWhatsappMappingSummary(query));
     } catch (error) {
       next(error);
     }

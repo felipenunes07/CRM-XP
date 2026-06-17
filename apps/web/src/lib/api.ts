@@ -712,8 +712,21 @@ export const api = {
     });
     return request<WhatsappGroupsResponse>(`/api/whatsapp-groups${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
-  whatsappGroupMappingSummary(token: string) {
-    return request<WhatsappMappingSummary>("/api/whatsapp-groups/mapping-summary", {}, token);
+  whatsappGroupMappingSummary(
+    token: string,
+    query: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") {
+        search.set(key, String(value));
+      }
+    });
+    return request<WhatsappMappingSummary>(
+      `/api/whatsapp-groups/mapping-summary${search.toString() ? `?${search.toString()}` : ""}`,
+      {},
+      token,
+    );
   },
   importWhatsappGroups(token: string, input: { fileName: string; fileBase64: string }) {
     return request<WhatsappImportSummary>("/api/whatsapp-groups/import", {

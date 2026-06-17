@@ -1500,6 +1500,7 @@ export interface WhatsappMappingSummary {
   lastImportedAt: string | null;
   classificationCounts: Record<WhatsappGroupClassification, number>;
   mappingCounts: Record<WhatsappGroupMappingStatus, number>;
+  activeCount?: number;
   attentionCount?: number;
   inactiveCount?: number;
 }

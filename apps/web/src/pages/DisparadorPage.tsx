@@ -23,7 +23,7 @@ import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDraw
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
 
-type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ATTENTION" | "INACTIVE";
+type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ACTIVE" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 export type CampaignPerformanceFilter = "ALL" | "SENT" | "RESPONDED" | "NO_RESPONSE" | "PURCHASED" | "ISSUES";
 
@@ -31,6 +31,7 @@ const quickFilters: Array<{ value: QuickFilter; label: string; description: stri
   { value: "ALL", label: "Todos", description: "Toda a base importada." },
   { value: "WITH_ORDER", label: "Clientes", description: "Clientes com pedido." },
   { value: "NO_ORDER_EXCEL", label: "Nunca comprou", description: "Nunca comprou." },
+  { value: "ACTIVE", label: "Ativos", description: "Clientes ativos." },
   { value: "ATTENTION", label: "Atenção", description: "Clientes que necessitam de atenção." },
   { value: "INACTIVE", label: "Inativos", description: "Clientes inativos." },
   { value: "OTHER", label: "Outros", description: "LJ, internos e demais grupos." },
@@ -115,7 +116,7 @@ function buildGroupsQueryParams(input: {
     params.classification = input.quickFilter;
   }
 
-  if (input.quickFilter === "ATTENTION" || input.quickFilter === "INACTIVE") {
+  if (input.quickFilter === "ACTIVE" || input.quickFilter === "ATTENTION" || input.quickFilter === "INACTIVE") {
     params.customerStatus = input.quickFilter;
   }
 
@@ -241,6 +242,9 @@ function quickFilterCount(
 ) {
   if (filter === "SELECTED") return formatNumber(selectedCount ?? 0);
   if (!summary) return "--";
+  if (filter === "ACTIVE") {
+    return formatNumber(summary.activeCount ?? 0);
+  }
   if (filter === "ATTENTION") {
     return formatNumber(summary.attentionCount ?? 0);
   }
@@ -1150,9 +1154,21 @@ export function DisparadorPage() {
 
 
 
+  // O summary alimenta os contadores das abas. Passamos os mesmos filtros que a
+  // lista usa (Busca, Público salvo e o toggle Bloqueio) para que o número do
+  // badge bata com as linhas exibidas.
+  const mappingSummaryParams = useMemo(
+    () => ({
+      search: search || undefined,
+      savedSegmentId: savedSegmentId || undefined,
+      recentBlock: recentBlockFilter,
+    }),
+    [search, savedSegmentId, recentBlockFilter],
+  );
+
   const mappingSummaryQuery = useQuery({
-    queryKey: ["whatsapp-group-mapping-summary"],
-    queryFn: () => api.whatsappGroupMappingSummary(token!),
+    queryKey: ["whatsapp-group-mapping-summary", mappingSummaryParams],
+    queryFn: () => api.whatsappGroupMappingSummary(token!, mappingSummaryParams),
     enabled: Boolean(token),
   });
 
@@ -1409,6 +1425,8 @@ export function DisparadorPage() {
       result = result.filter((group) => selectedGroupIds.includes(group.id));
     } else if (quickFilter === "ULTIMO_CONTATO") {
       result = result.filter((group) => group.lastContactAt !== null);
+    } else if (quickFilter === "ACTIVE") {
+      result = result.filter((group) => group.customerStatus === "ACTIVE");
     } else if (quickFilter === "ATTENTION") {
       result = result.filter((group) => group.customerStatus === "ATTENTION");
     } else if (quickFilter === "INACTIVE") {

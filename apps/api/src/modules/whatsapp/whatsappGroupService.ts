@@ -364,34 +364,83 @@ function buildGroupsWhere(filters: WhatsappGroupFilters, customerIds: string[]) 
   };
 }
 
-export async function getWhatsappMappingSummary(): Promise<WhatsappMappingSummary> {
+export interface WhatsappMappingSummaryFilters {
+  search?: string;
+  savedSegmentId?: string;
+  recentBlock?: "AVAILABLE_ONLY" | "BLOCKED_ONLY" | "ALL";
+}
+
+function emptyMappingSummary(): WhatsappMappingSummary {
+  return {
+    totalGroups: 0,
+    mappedGroups: 0,
+    pendingReviewGroups: 0,
+    confirmedUnmatchedGroups: 0,
+    ignoredGroups: 0,
+    recentlyBlockedGroups: 0,
+    lastImportedAt: null,
+    classificationCounts: { WITH_ORDER: 0, NO_ORDER_EXCEL: 0, OTHER: 0 },
+    mappingCounts: { AUTO_MAPPED: 0, MANUAL_MAPPED: 0, PENDING_REVIEW: 0, CONFIRMED_UNMATCHED: 0, IGNORED: 0 },
+    activeCount: 0,
+    attentionCount: 0,
+    inactiveCount: 0,
+  };
+}
+
+export async function getWhatsappMappingSummary(
+  filters: WhatsappMappingSummaryFilters = {},
+): Promise<WhatsappMappingSummary> {
+  // O badge precisa "bater" com a lista exibida: aplicamos a mesma Busca e
+  // Público salvo (via customerIds) e o mesmo toggle de Bloqueio que o
+  // listWhatsappGroups/front aplicam. Sem isso o número era um total global e
+  // não correspondia às linhas visíveis.
+  const customerIds = filters.savedSegmentId ? await buildSavedSegmentCustomerIds(filters.savedSegmentId) : [];
+  if (filters.savedSegmentId && customerIds.length === 0) {
+    return emptyMappingSummary();
+  }
+
+  // WHERE base = apenas Busca + Público salvo (sem classificação/status/bloqueio).
+  const { whereSql, params } = buildGroupsWhere({ search: filters.search }, customerIds);
+
+  params.push(env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS);
+  const blockDaysIndex = params.length;
+  const recentlyBlockedExpr = `wg.last_contact_at IS NOT NULL AND wg.last_contact_at > NOW() - make_interval(days => $${blockDaysIndex}::int)`;
+  // "Disponíveis" esconde recém-contatados; "Bloqueados" mostra só eles; "Todos"
+  // não restringe. Aplicado a TODAS as categorias para espelhar a lista.
+  const availability =
+    filters.recentBlock === "AVAILABLE_ONLY"
+      ? `NOT (${recentlyBlockedExpr})`
+      : filters.recentBlock === "BLOCKED_ONLY"
+        ? `(${recentlyBlockedExpr})`
+        : "TRUE";
+
   const result = await pool.query(
     `
       SELECT
-        COUNT(*)::int AS total_groups,
-        COUNT(*) FILTER (WHERE wg.mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED'))::int AS mapped_groups,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_groups,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_groups,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'IGNORED')::int AS ignored_groups,
-        COUNT(*) FILTER (
-          WHERE wg.last_contact_at IS NOT NULL
-            AND wg.last_contact_at > NOW() - make_interval(days => $1::int)
-        )::int AS recently_blocked_groups,
+        COUNT(*) FILTER (WHERE ${availability})::int AS total_groups,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED'))::int AS mapped_groups,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_groups,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_groups,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'IGNORED')::int AS ignored_groups,
+        COUNT(*) FILTER (WHERE ${recentlyBlockedExpr})::int AS recently_blocked_groups,
         MAX(wg.last_imported_at) AS last_imported_at,
-        COUNT(*) FILTER (WHERE wg.classification = 'WITH_ORDER')::int AS with_order_count,
-        COUNT(*) FILTER (WHERE wg.classification = 'NO_ORDER_EXCEL')::int AS no_order_excel_count,
-        COUNT(*) FILTER (WHERE wg.classification = 'OTHER')::int AS other_count,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'AUTO_MAPPED')::int AS auto_mapped_count,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'MANUAL_MAPPED')::int AS manual_mapped_count,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_count,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_count,
-        COUNT(*) FILTER (WHERE wg.mapping_status = 'IGNORED')::int AS ignored_count,
-        COUNT(*) FILTER (WHERE cs.status = 'ATTENTION')::int AS attention_count,
-        COUNT(*) FILTER (WHERE cs.status = 'INACTIVE')::int AS inactive_count
+        COUNT(*) FILTER (WHERE ${availability} AND wg.classification = 'WITH_ORDER')::int AS with_order_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.classification = 'NO_ORDER_EXCEL')::int AS no_order_excel_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.classification = 'OTHER')::int AS other_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'AUTO_MAPPED')::int AS auto_mapped_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'MANUAL_MAPPED')::int AS manual_mapped_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'PENDING_REVIEW')::int AS pending_review_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'CONFIRMED_UNMATCHED')::int AS confirmed_unmatched_count,
+        COUNT(*) FILTER (WHERE ${availability} AND wg.mapping_status = 'IGNORED')::int AS ignored_count,
+        COUNT(*) FILTER (WHERE ${availability} AND cs.status = 'ACTIVE')::int AS active_count,
+        COUNT(*) FILTER (WHERE ${availability} AND cs.status = 'ATTENTION')::int AS attention_count,
+        COUNT(*) FILTER (WHERE ${availability} AND cs.status = 'INACTIVE')::int AS inactive_count
       FROM whatsapp_groups wg
+      LEFT JOIN customers c ON c.id = wg.customer_id
       LEFT JOIN customer_snapshot cs ON cs.customer_id = wg.customer_id
+      ${whereSql}
     `,
-    [env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS],
+    params,
   );
 
   const row = result.rows[0] ?? {};
@@ -416,6 +465,7 @@ export async function getWhatsappMappingSummary(): Promise<WhatsappMappingSummar
       CONFIRMED_UNMATCHED: Number(row.confirmed_unmatched_count ?? 0),
       IGNORED: Number(row.ignored_count ?? 0),
     },
+    activeCount: Number(row.active_count ?? 0),
     attentionCount: Number(row.attention_count ?? 0),
     inactiveCount: Number(row.inactive_count ?? 0),
   };
