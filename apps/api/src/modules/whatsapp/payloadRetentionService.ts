@@ -44,6 +44,10 @@ const SAFE_TARGETS: CleanupTarget[] = [
 // O front cai pro mediaUrl quando mediaBase64 some (buildMediaSrc em MessagesPage).
 const JSON_KEY_TARGETS: JsonKeyTarget[] = [
   { table: "whatsapp_monitor_messages", column: "media_json", key: "mediaBase64" },
+  // A mesma imagem base64 (~484KB/linha) também é duplicada aqui = boa parte dos 14GB
+  // de deal_activities. Removemos só a chave; as chaves pequenas que a atribuição/chat
+  // usam (remoteJid, messageId, instance, mediaUrl, chatDisplayName...) ficam.
+  { table: "deal_activities", column: "metadata", key: "mediaBase64" },
 ];
 
 async function clearColumnInBatches(client: PoolClient, target: CleanupTarget, retentionDays: number) {
