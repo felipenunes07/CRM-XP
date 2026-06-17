@@ -14,6 +14,7 @@ import type {
 import { whatsappMonitorPool as pool, redis } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
+import { env } from "../../lib/env.js";
 import type { JwtUser } from "../platform/authService.js";
 import {
   markWhatsappChatAsUnread,
@@ -3438,12 +3439,14 @@ export async function getWhatsappAgentActivityReport(
         `
       );
       const lastUpdate = lastUpdateRes.rows[0]?.last_update;
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-      if (!lastUpdate || new Date(lastUpdate) < fiveMinutesAgo) {
+      const staleThreshold = new Date(Date.now() - env.WHATSAPP_ACTIVITY_ROLLUP_STALE_MINUTES * 60 * 1000);
+      if (!lastUpdate || new Date(lastUpdate) < staleThreshold) {
         logger.info("scheduling whatsapp activity rollup refresh (data stale or missing for today)", {
           lastUpdate,
         });
-        scheduleWhatsappActivityReportRefresh(days * 2, "stale-or-missing-today");
+        // Só os dias recentes (env, default 3): os dias passados já estão no rollup
+        // e não mudam. Antes refazia days*2 (~14 dias) a cada visita = CPU à toa.
+        scheduleWhatsappActivityReportRefresh(env.WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS, "stale-or-missing-today");
       }
     } catch (error) {
       logger.warn("failed to inspect whatsapp activity rollup freshness during report request", {
@@ -3473,7 +3476,7 @@ export async function getWhatsappAgentActivityReport(
 
   let activityRows = result.rows;
   if (!hasReportableCurrentActivityRows(activityRows, endDate)) {
-    scheduleWhatsappActivityReportRefresh(days * 2, "no-current-activity-in-report");
+    scheduleWhatsappActivityReportRefresh(env.WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS, "no-current-activity-in-report");
   }
   if (!hasReportableCurrentActivityRows(activityRows, endDate) && (days <= 1 || activityRows.length === 0)) {
     try {

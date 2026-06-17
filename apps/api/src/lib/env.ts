@@ -106,13 +106,17 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
-  WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
+  WORKER_WHATSAPP_ACTIVITY_ROLLUP_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
   WORKER_WHATSAPP_WEBHOOK_WATCHDOG_ENABLED: z
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
   WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES: z.coerce.number().int().positive().default(10),
   WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS: z.coerce.number().int().min(2).max(120).default(3),
+  // Quão "velho" o rollup de hoje pode estar antes de uma visita ao dashboard
+  // disparar um refresh em background. Era fixo em 5min (refazia a query pesada
+  // a cada acesso); 15min reduz a CPU sem o painel ficar perceptivelmente atrasado.
+  WHATSAPP_ACTIVITY_ROLLUP_STALE_MINUTES: z.coerce.number().int().positive().default(15),
   WHATSAPP_ACTIVITY_ROLLUP_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(300_000).default(90_000),
   WHATSAPP_INCOMING_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   WHATSAPP_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(90),
