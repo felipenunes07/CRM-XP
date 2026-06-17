@@ -3787,5 +3787,20 @@ export const migrations = [
 
   ALTER TABLE public.whatsapp_campaign_recipients
     ADD COLUMN IF NOT EXISTS auto_reply_sent_at TIMESTAMPTZ;
+  `,
+  `
+  -- Indice unico que faltava para o ON CONFLICT (message_id, deal_id) de
+  -- message_events. Sem ele, toda criacao de evento de mensagem via webhook
+  -- falhava com "no unique or exclusion constraint matching the ON CONFLICT".
+  -- Dedup primeiro (mantem 1 por par), depois cria o indice.
+  DELETE FROM message_events a
+  USING message_events b
+  WHERE a.ctid < b.ctid
+    AND a.message_id IS NOT NULL
+    AND a.message_id = b.message_id
+    AND a.deal_id = b.deal_id;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_message_events_message_deal
+    ON message_events(message_id, deal_id);
   `
 ];

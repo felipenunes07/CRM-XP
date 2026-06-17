@@ -297,6 +297,27 @@ export async function createUserAccount(input: CreateUserInput) {
   return result.rows[0];
 }
 
+// Cache de validação de token. Sem isso, CADA request autenticada faz uma chamada
+// HTTP remota ao Supabase + 2 escritas no banco (loadAuthenticatedUser). Com polling
+// do /mensagens, avatares e SSE, isso vira centenas de chamadas/min — fonte do
+// "Sessao invalida" (rate limit) e de lentidão. Cacheamos sucesso por 60s e falha
+// por 15s (token ruim continua ruim até o usuário relogar = token novo, outra chave).
+type CachedAuth = { user: JwtUser | null; expiresAt: number };
+const authTokenCache = new Map<string, CachedAuth>();
+const AUTH_CACHE_TTL_MS = 60_000;
+const AUTH_CACHE_NEG_TTL_MS = 15_000;
+const AUTH_CACHE_MAX = 5_000;
+
+function rememberAuth(token: string, user: JwtUser | null) {
+  if (authTokenCache.size >= AUTH_CACHE_MAX) {
+    authTokenCache.clear();
+  }
+  authTokenCache.set(token, {
+    user,
+    expiresAt: Date.now() + (user ? AUTH_CACHE_TTL_MS : AUTH_CACHE_NEG_TTL_MS),
+  });
+}
+
 export async function verifyToken(token: string) {
   if (token === "local-dev-token") {
     return {
@@ -325,6 +346,14 @@ export async function verifyToken(token: string) {
     };
   }
 
+  const cached = authTokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.user) {
+      return cached.user;
+    }
+    throw new HttpError(401, "Sessao invalida");
+  }
+
   if (!isSupabaseAuthConfigured()) {
     throw new HttpError(500, "Supabase Auth nao esta configurado no backend");
   }
@@ -332,10 +361,13 @@ export async function verifyToken(token: string) {
   const supabase = createSupabaseAuthClient();
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data.user?.id) {
+    rememberAuth(token, null);
     throw new HttpError(401, "Sessao invalida");
   }
 
-  return loadAuthenticatedUser(data.user.id, data.user.email ?? undefined);
+  const user = await loadAuthenticatedUser(data.user.id, data.user.email ?? undefined);
+  rememberAuth(token, user);
+  return user;
 }
 
 export async function listUsers() {
