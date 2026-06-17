@@ -432,6 +432,33 @@ function phoneFromEvolutionJid(value: string | null) {
   return digits || null;
 }
 
+/**
+ * Busca a foto de perfil do PRÓPRIO número conectado da instância, direto na
+ * Evolution. Usado como fallback quando o payload de fetchInstances não traz a
+ * foto. Devolve uma URL fresca (não expira na hora), garantindo a imagem real.
+ */
+async function fetchEvolutionOwnProfilePicture(instanceName: string, phoneDigits: string): Promise<string | null> {
+  try {
+    const base = env.EVOLUTION_API_BASE_URL.replace(/\/+$/, "");
+    const res = await fetch(`${base}/chat/fetchProfilePictureUrl/${encodeURIComponent(instanceName)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: env.EVOLUTION_API_KEY },
+      body: JSON.stringify({ number: phoneDigits }),
+    });
+    if (!res.ok) return null;
+    const payload = await res.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return null;
+    return pickEvolutionString(payload as Record<string, unknown>, [
+      "profilePictureUrl",
+      "profilePicUrl",
+      "pictureUrl",
+      "url",
+    ]);
+  } catch {
+    return null;
+  }
+}
+
 async function syncEvolutionInstancesForSelection() {
   if (!env.EVOLUTION_API_BASE_URL || !env.EVOLUTION_API_KEY) {
     return;
@@ -458,6 +485,22 @@ async function syncEvolutionInstancesForSelection() {
       const displayLabel = pickEvolutionString(source, ["displayName", "profileName", "name"]) ?? instanceName;
       const ownerJid = pickEvolutionString(source, ["ownerJid", "owner", "wuid", "number"]);
       const phoneNumber = phoneFromEvolutionJid(ownerJid);
+      // A foto de perfil vem no próprio payload de fetchInstances e é gerada na
+      // hora (URL fresca do CDN do WhatsApp). Capturamos e sobrescrevemos sempre
+      // que vier, porque a URL antiga EXPIRA (param oe=) e o <img> quebra.
+      let profilePictureUrl = pickEvolutionString(source, [
+        "profilePicUrl",
+        "profilePictureUrl",
+        "pictureUrl",
+        "profilePic",
+        "picture",
+        "avatar",
+      ]);
+
+      // Fallback: payload sem foto → busca direta o avatar do número conectado.
+      if (!profilePictureUrl && phoneNumber) {
+        profilePictureUrl = await fetchEvolutionOwnProfilePicture(instanceName, phoneNumber);
+      }
 
       await pool.query(
         `
@@ -467,23 +510,25 @@ async function syncEvolutionInstancesForSelection() {
           phone_number,
           evolution_base_url,
           evolution_api_key,
+          profile_picture_url,
           status,
           last_health_status,
           last_health_check_at,
           is_default
         )
-        VALUES ($1, $2, $3, $4, $5, 'ACTIVE', 'OK', NOW(), false)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', 'OK', NOW(), false)
         ON CONFLICT (instance_name) DO UPDATE SET
           display_label = COALESCE(NULLIF(whatsapp_instances.display_label, ''), EXCLUDED.display_label),
           phone_number = COALESCE(NULLIF(whatsapp_instances.phone_number, ''), EXCLUDED.phone_number),
           evolution_base_url = EXCLUDED.evolution_base_url,
           evolution_api_key = EXCLUDED.evolution_api_key,
+          profile_picture_url = COALESCE(EXCLUDED.profile_picture_url, whatsapp_instances.profile_picture_url),
           status = CASE WHEN whatsapp_instances.status = 'DISCONNECTED' THEN 'ACTIVE' ELSE whatsapp_instances.status END,
           last_health_status = 'OK',
           last_health_check_at = NOW(),
           updated_at = NOW()
         `,
-        [instanceName, displayLabel, phoneNumber, env.EVOLUTION_API_BASE_URL, env.EVOLUTION_API_KEY],
+        [instanceName, displayLabel, phoneNumber, env.EVOLUTION_API_BASE_URL, env.EVOLUTION_API_KEY, profilePictureUrl],
       );
     }
   } catch (error) {
