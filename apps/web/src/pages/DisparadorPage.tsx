@@ -23,6 +23,41 @@ import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDraw
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
 
+// Avatar de fallback gerado em SVG (data URI, sem rede). As fotos de perfil da
+// Evolution vêm do CDN do WhatsApp (pps.whatsapp.net) e EXPIRAM — depois de um
+// tempo retornam 403 e o <img> quebra. Em vez de mostrar o ícone de imagem
+// quebrada, trocamos por um avatar com as iniciais do nome.
+const AVATAR_FALLBACK_COLORS = ["#0ea5e9", "#6366f1", "#8b5cf6", "#ec4899", "#f97316", "#10b981", "#14b8a6", "#f43f5e"];
+
+function initialsAvatarDataUri(name: string): string {
+  const clean = (name || "?").trim();
+  const parts = clean.split(/\s+/).filter(Boolean);
+  const initials = (
+    parts.length >= 2
+      ? (parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")
+      : clean.slice(0, 2)
+  ).toUpperCase();
+  // Cor estável por nome para o mesmo contato sempre ter o mesmo avatar.
+  let hash = 0;
+  for (let i = 0; i < clean.length; i += 1) hash = (hash * 31 + clean.charCodeAt(i)) >>> 0;
+  const bg = AVATAR_FALLBACK_COLORS[hash % AVATAR_FALLBACK_COLORS.length];
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">` +
+    `<rect width="96" height="96" fill="${bg}"/>` +
+    `<text x="50%" y="50%" dy=".35em" text-anchor="middle" fill="#ffffff" ` +
+    `font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="600">${initials}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+// onError trocando o src pelo avatar de iniciais. Limpa o próprio onError para
+// não entrar em loop caso o fallback (impossível, mas por segurança) falhe.
+function handleAvatarError(event: SyntheticEvent<HTMLImageElement>, name: string) {
+  const img = event.currentTarget;
+  img.onerror = null;
+  img.src = initialsAvatarDataUri(name);
+}
+
 type QuickFilter = "ALL" | "WITH_ORDER" | "NO_ORDER_EXCEL" | "OTHER" | "BLOQUEADOS" | "ULTIMO_CONTATO" | "SELECTED" | "ACTIVE" | "ATTENTION" | "INACTIVE";
 type RecentBlockFilter = "AVAILABLE_ONLY" | "ALL" | "BLOCKED_ONLY";
 export type CampaignPerformanceFilter = "ALL" | "SENT" | "RESPONDED" | "NO_RESPONSE" | "PURCHASED" | "ISSUES";
@@ -1000,15 +1035,18 @@ export function DisparadorPage() {
         { id: "default", name: "Carregando...", role: "WhatsApp", phone: "", avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80", status: "DISCONNECTED" }
       ];
     }
-    return list.map(instance => ({
-      id: instance.id,
-      name: instance.displayLabel || instance.instanceName || "Canal WhatsApp",
-      role: instance.assignedUserName || "Conexão",
-      phone: instance.phoneNumber || "Sem número",
-      avatarUrl: instance.profilePictureUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
-      status: instance.status,
-      provider: instance.provider ?? "EVOLUTION",
-    }));
+    return list.map(instance => {
+      const name = instance.displayLabel || instance.instanceName || "Canal WhatsApp";
+      return {
+        id: instance.id,
+        name,
+        role: instance.assignedUserName || "Conexão",
+        phone: instance.phoneNumber || "Sem número",
+        avatarUrl: instance.profilePictureUrl || initialsAvatarDataUri(name),
+        status: instance.status,
+        provider: instance.provider ?? "EVOLUTION",
+      };
+    });
   }, [whatsappInstancesQuery.data]);
 
   const [selectedSenderIds, setSelectedSenderIds] = useState<string[]>([]);
@@ -1896,7 +1934,7 @@ export function DisparadorPage() {
                           }}
                           style={{ opacity: sender.status === "ACTIVE" ? 1 : 0.6, cursor: sender.status === "ACTIVE" ? "pointer" : "not-allowed" }}
                         >
-                          <img src={sender.avatarUrl} alt={sender.name} className="wp-sender-avatar" />
+                          <img src={sender.avatarUrl} alt={sender.name} className="wp-sender-avatar" onError={(e) => handleAvatarError(e, sender.name)} />
                           <div className="wp-sender-info">
                             <h4 className="wp-sender-name">{sender.name}</h4>
                             <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "2px" }}>
@@ -2362,6 +2400,7 @@ export function DisparadorPage() {
                                     <img
                                       src={activeSender.avatarUrl}
                                       alt={activeSender.name}
+                                      onError={(e) => handleAvatarError(e, activeSender.name)}
                                       style={{ width: "36px", height: "36px", borderRadius: "50%", border: "1px solid rgba(0,0,0,0.06)", objectFit: "cover" }}
                                     />
                                     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
@@ -3759,7 +3798,7 @@ export function DisparadorPage() {
                     <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                       {senders.filter(s => selectedSenderIds.includes(s.id)).map(s => (
                         <div key={s.id} className="wp-review-sender-pill" style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--bg-soft)", padding: "6px 12px", borderRadius: "8px", border: "1px solid var(--line)" }}>
-                          <img src={s.avatarUrl} alt={s.name} className="wp-avatar-sm" style={{ width: "20px", height: "20px", borderRadius: "50%" }} />
+                          <img src={s.avatarUrl} alt={s.name} className="wp-avatar-sm" onError={(e) => handleAvatarError(e, s.name)} style={{ width: "20px", height: "20px", borderRadius: "50%" }} />
                           <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>{s.name} ({s.phone})</span>
                           <span className="status-badge status-success" style={{ fontSize: "0.6rem", padding: "0 4px" }}>Ativo</span>
                         </div>
