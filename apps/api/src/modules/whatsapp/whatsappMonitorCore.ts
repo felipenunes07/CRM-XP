@@ -344,6 +344,17 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
     extractNestedString(unwrapped, ["templateMessage", "hydratedFourRowTemplate", "hydratedContentText"]) ??
     extractNestedString(unwrapped, ["listMessage", "description"]) ??
     extractNestedString(unwrapped, ["listMessage", "footerText"]) ??
+    // Respostas a menus interativos (cliente clicou num botão/opção): o texto da
+    // escolha vem em mensagens *Response*, não nas *Message* de saída acima. Sem
+    // isto a mensagem fica sem conteúdo e é descartada antes da resposta automática.
+    extractNestedString(unwrapped, ["buttonsResponseMessage", "selectedDisplayText"]) ??
+    extractNestedString(unwrapped, ["buttonsResponseMessage", "selectedButtonId"]) ??
+    extractNestedString(unwrapped, ["templateButtonReplyMessage", "selectedDisplayText"]) ??
+    extractNestedString(unwrapped, ["templateButtonReplyMessage", "selectedId"]) ??
+    extractNestedString(unwrapped, ["listResponseMessage", "title"]) ??
+    extractNestedString(unwrapped, ["listResponseMessage", "singleSelectReply", "selectedRowId"]) ??
+    extractNestedString(unwrapped, ["interactiveResponseMessage", "nativeFlowResponseMessage", "paramsJson"]) ??
+    extractNestedString(unwrapped, ["interactiveResponseMessage", "body", "text"]) ??
     null
   );
 
@@ -371,6 +382,9 @@ export function extractEvolutionMessageText(message: EvolutionMessageLike): stri
   if (unwrapped.contactMessage || unwrapped.contactsArrayMessage) return "[Contato]";
   if (unwrapped.locationMessage || unwrapped.liveLocationMessage) return "[Localização]";
   if (unwrapped.pollCreationMessage || unwrapped.pollCreationMessageV2 || unwrapped.pollCreationMessageV3) return "[Enquete]";
+  // Voto numa enquete-menu: a opção escolhida vem criptografada (Baileys não
+  // decifra aqui), mas o voto em si É a resposta do cliente e precisa contar.
+  if (unwrapped.pollUpdateMessage) return "[Resposta de enquete]";
   if (unwrapped.reactionMessage) return null; // Reactions are usually ignored in main feed
 
   return null;

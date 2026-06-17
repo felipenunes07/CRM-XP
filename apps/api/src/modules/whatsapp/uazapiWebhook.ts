@@ -244,6 +244,18 @@ export function uazapiMessageToEvolution(raw: unknown): EvolutionMessageLike | n
 
   const text =
     pick(m, ["text", "body", "caption", "conversation"]) ??
+    // Resposta a menu interativo: o uazapi entrega a opção escolhida nestes
+    // campos planos. Sem isto o clique chega sem texto e é descartado antes da
+    // resposta automática de campanha.
+    pick(m, [
+      "selectedDisplayText",
+      "selectedButtonId",
+      "selectedId",
+      "selectedRowId",
+      "buttonText",
+      "listTitle",
+      "responseText",
+    ]) ??
     (typeof m.content === "string" ? readString(m.content) : null);
 
   const { content, base64 } = buildEvolutionMessageContent(m, text);

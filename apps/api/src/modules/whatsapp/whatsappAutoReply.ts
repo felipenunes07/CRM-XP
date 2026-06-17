@@ -48,9 +48,35 @@ async function claimAutoReplyRecipient(remoteJid: string): Promise<AutoReplyClai
             OR (
               r.jid NOT LIKE '%@g.us'
               AND $1 NOT LIKE '%@g.us'
-              AND length(regexp_replace(r.jid, '\\D', '', 'g')) >= 10
-              AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
-              AND right(regexp_replace(r.jid, '\\D', '', 'g'), 10) = right(regexp_replace($1, '\\D', '', 'g'), 10)
+              AND (
+                regexp_replace(r.jid, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g')
+                OR (
+                  length(regexp_replace(r.jid, '\\D', '', 'g')) >= 10
+                  AND length(regexp_replace($1, '\\D', '', 'g')) >= 10
+                  AND (
+                    -- Normaliza o 9º dígito dos celulares BR antes de comparar, igual
+                    -- ao matching de deals: sem isto "5511987654321" não bate com
+                    -- "551187654321" e a resposta automática nunca encontra o destinatário.
+                    CASE
+                      WHEN (length(regexp_replace(r.jid, '\\D', '', 'g')) = 13 AND substring(regexp_replace(r.jid, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                        substring(regexp_replace(r.jid, '\\D', '', 'g') from 3 for 2) || right(regexp_replace(r.jid, '\\D', '', 'g'), 8)
+                      WHEN (length(regexp_replace(r.jid, '\\D', '', 'g')) = 11 AND substring(regexp_replace(r.jid, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                        substring(regexp_replace(r.jid, '\\D', '', 'g') from 1 for 2) || right(regexp_replace(r.jid, '\\D', '', 'g'), 8)
+                      ELSE
+                        right(regexp_replace(r.jid, '\\D', '', 'g'), 10)
+                    END
+                  ) = (
+                    CASE
+                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 13 AND substring(regexp_replace($1, '\\D', '', 'g') from 5 for 1) = '9') THEN
+                        substring(regexp_replace($1, '\\D', '', 'g') from 3 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
+                      WHEN (length(regexp_replace($1, '\\D', '', 'g')) = 11 AND substring(regexp_replace($1, '\\D', '', 'g') from 3 for 1) = '9') THEN
+                        substring(regexp_replace($1, '\\D', '', 'g') from 1 for 2) || right(regexp_replace($1, '\\D', '', 'g'), 8)
+                      ELSE
+                        right(regexp_replace($1, '\\D', '', 'g'), 10)
+                    END
+                  )
+                )
+              )
             )
           )
         ORDER BY r.sent_at DESC
