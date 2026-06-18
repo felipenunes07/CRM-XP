@@ -610,6 +610,19 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
           ) AS t
           WHERE COALESCE(trim(name), '') <> '' AND length(trim(name)) >= 3
         ),
+        -- Numeros da empresa/equipe: instancias de envio + contatos padrao
+        -- cadastrados. Mensagem de grupo vinda de um desses numeros NAO e resposta
+        -- do cliente (e a propria empresa/funcionario), mesmo que o nome de perfil
+        -- seja outro. Sinal confiavel (numero) no lugar do nome, que era furado.
+        team_numbers AS (
+          SELECT DISTINCT regexp_replace(num, '\\D', '', 'g') AS num
+          FROM (
+            SELECT phone_number AS num FROM whatsapp_instances WHERE COALESCE(phone_number, '') <> ''
+            UNION ALL
+            SELECT phone_number FROM whatsapp_team_contacts WHERE COALESCE(phone_number, '') <> ''
+          ) AS tn
+          WHERE length(regexp_replace(num, '\\D', '', 'g')) >= 8
+        ),
         inbound_candidates AS (
           SELECT
             COALESCE(NULLIF(da.metadata ->> 'messageId', ''), da.id::text) AS event_key,
@@ -637,6 +650,19 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
               SELECT 1 FROM team_names tn
               WHERE tn.name = lower(trim(COALESCE(da.actor_name, '')))
                 AND COALESCE(NULLIF(da.metadata ->> 'remoteJid', ''), d.whatsapp_jid) LIKE '%@g.us'
+            )
+            -- Exclui por NUMERO de quem postou no grupo (empresa/funcionario),
+            -- mesmo que o nome de perfil nao bata com um rotulo de instancia.
+            AND NOT EXISTS (
+              SELECT 1 FROM team_numbers tnum
+              WHERE tnum.num = regexp_replace(
+                COALESCE(NULLIF(da.metadata ->> 'participant', ''),
+                         NULLIF(da.metadata ->> 'participantJid', ''),
+                         NULLIF(da.metadata ->> 'senderJid', ''), ''), '\\D', '', 'g')
+                AND length(regexp_replace(
+                COALESCE(NULLIF(da.metadata ->> 'participant', ''),
+                         NULLIF(da.metadata ->> 'participantJid', ''),
+                         NULLIF(da.metadata ->> 'senderJid', ''), ''), '\\D', '', 'g')) >= 8
             )
 
           UNION ALL
@@ -666,6 +692,13 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
               SELECT 1 FROM team_names tn
               WHERE tn.name = lower(trim(COALESCE(NULLIF(wim.participant_name, ''), wim.sender_name, '')))
                 AND COALESCE(wim.remote_jid, '') LIKE '%@g.us'
+            )
+            -- Exclui por NUMERO do remetente no grupo (participant_jid): empresa/
+            -- funcionario/contato padrao nao conta como resposta do cliente.
+            AND NOT EXISTS (
+              SELECT 1 FROM team_numbers tnum
+              WHERE tnum.num = regexp_replace(COALESCE(wim.participant_jid, ''), '\\D', '', 'g')
+                AND length(regexp_replace(COALESCE(wim.participant_jid, ''), '\\D', '', 'g')) >= 8
             )
         ),
         inbound_events AS (
@@ -835,22 +868,6 @@ async function getWhatsappCampaignPerformance(campaignId: string, excludePerform
   const recipientPerformance = new Map<string, WhatsappCampaignRecipientPerformance>();
   for (const recipient of recipientStatusRows) {
     recipientPerformance.set(recipient.id, blankRecipientPerformance(recipient.id));
-  }
-
-  // DEBUG: Log inbound messages being attributed
-  if (inboundResult.rows.length > 0) {
-    console.log('ðŸ” [BADGE DEBUG] Inbound messages attributed to campaign:', {
-      campaignId,
-      totalInboundMessages: inboundResult.rows.length,
-      sampleMessages: inboundResult.rows.slice(0, 5).map((row: any) => ({
-        recipientId: row.recipient_id,
-        customerName: row.customer_display_name,
-        jid: row.jid,
-        content: String(row.content || '').substring(0, 50),
-        source: row.source,
-        createdAt: row.created_at,
-      })),
-    });
   }
 
   for (const row of inboundResult.rows) {

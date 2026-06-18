@@ -1,29 +1,37 @@
-import { LoaderCircle, CheckCircle2, Send } from "lucide-react";
+import { CheckCircle2, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface CampaignCreationProgressProps {
   isCreating: boolean;
 }
 
+const steps = [
+  { label: "Validando destinatários...", progress: 25 },
+  { label: "Organizando fila de envio...", progress: 50 },
+  { label: "Configurando instâncias WhatsApp...", progress: 75 },
+  { label: "Finalizando preparação...", progress: 95 },
+];
+
+// Após este tempo (segundos) a criação está demorando mais que o normal:
+// o backend ainda está montando a lista de destinatários, mas os primeiros
+// envios já podem ter começado. Avisamos o usuário em vez de parecer travado.
+const LONG_WAIT_SECONDS = 8;
+
 export function CampaignCreationProgress({ isCreating }: CampaignCreationProgressProps) {
   const [progress, setProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(0);
-
-  const steps = [
-    { label: "Validando destinatários...", progress: 25 },
-    { label: "Organizando fila de envio...", progress: 50 },
-    { label: "Configurando instâncias WhatsApp...", progress: 75 },
-    { label: "Finalizando preparação...", progress: 95 },
-  ];
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     if (!isCreating) {
       setProgress(0);
-      setCurrentStep(0);
+      setElapsed(0);
       return;
     }
 
-    // Animação de progresso suave
+    // Animação de progresso. Diferente da versão antiga, o progresso nunca
+    // congela em 95%: depois de cruzar as etapas ele continua subindo
+    // lentamente em direção a 99%, então a tela sempre parece "viva"
+    // enquanto a requisição (lenta) de criação ainda está em andamento.
     const interval = setInterval(() => {
       setProgress((prev) => {
         const nextStep = steps.find((step) => prev < step.progress);
@@ -31,26 +39,26 @@ export function CampaignCreationProgress({ isCreating }: CampaignCreationProgres
           const increment = (nextStep.progress - prev) / 10;
           return Math.min(prev + increment, nextStep.progress);
         }
-        return prev;
+        // Já passou de todas as etapas: rasteja devagar até 99%.
+        return Math.min(prev + (99 - prev) / 40, 99);
       });
     }, 200);
 
-    // Atualizar step atual baseado no progresso
-    const stepInterval = setInterval(() => {
-      setCurrentStep((prev) => {
-        const currentProgress = progress;
-        const stepIndex = steps.findIndex((step) => currentProgress < step.progress);
-        return stepIndex >= 0 ? stepIndex : steps.length - 1;
-      });
-    }, 300);
+    const elapsedInterval = setInterval(() => {
+      setElapsed((prev) => prev + 1);
+    }, 1000);
 
     return () => {
       clearInterval(interval);
-      clearInterval(stepInterval);
+      clearInterval(elapsedInterval);
     };
-  }, [isCreating, progress]);
+  }, [isCreating]);
 
   if (!isCreating) return null;
+
+  const pendingStep = steps.findIndex((step) => progress < step.progress);
+  const currentStep = pendingStep === -1 ? steps.length - 1 : pendingStep;
+  const isLongWait = elapsed >= LONG_WAIT_SECONDS;
 
   return (
     <>
@@ -122,11 +130,14 @@ export function CampaignCreationProgress({ isCreating }: CampaignCreationProgres
             style={{
               margin: "0 0 2rem 0",
               fontSize: "0.9rem",
-              color: "#71717a",
+              color: isLongWait ? "#0e9f6e" : "#71717a",
               textAlign: "center",
+              transition: "color 0.3s ease",
             }}
           >
-            Aguarde enquanto organizamos sua campanha
+            {isLongWait
+              ? "Quase lá! Sua campanha já está sendo criada e os primeiros envios podem já ter começado. Isso pode levar alguns segundos."
+              : "Aguarde enquanto organizamos sua campanha"}
           </p>
 
           {/* Progress Bar */}

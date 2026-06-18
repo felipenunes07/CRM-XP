@@ -3802,5 +3802,22 @@ export const migrations = [
 
   CREATE UNIQUE INDEX IF NOT EXISTS uq_message_events_message_deal
     ON message_events(message_id, deal_id);
+  `,
+  `
+  -- Numeros da empresa/equipe para EXCLUIR da atribuicao de resposta de campanha.
+  -- Mensagem em grupo vinda de um desses numeros (ou de uma instancia) NAO conta
+  -- como "cliente respondeu" -- e a propria empresa/funcionario ("contato padrao").
+  -- Os numeros das instancias (whatsapp_instances.phone_number) ja entram
+  -- automaticamente na atribuicao; esta tabela guarda os extras (funcionarios etc.).
+  CREATE TABLE IF NOT EXISTS whatsapp_team_contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone_number TEXT NOT NULL,
+    label TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- Indice nos digitos para casar rapido com participant_jid normalizado.
+  CREATE INDEX IF NOT EXISTS idx_whatsapp_team_contacts_digits
+    ON whatsapp_team_contacts ((regexp_replace(phone_number, '\\D', '', 'g')));
   `
 ];
