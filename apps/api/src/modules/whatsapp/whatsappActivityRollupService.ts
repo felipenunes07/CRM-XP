@@ -1,9 +1,27 @@
-import { pool } from "../../db/client.js";
+import { Pool } from "pg";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_ROLLUP_LOCK_ID = 2026060202;
+
+// Pool dedicado SEM query_timeout do node-pg. O pool padrão tem query_timeout=20s,
+// que matava o rebuild do rollup (~30s) com "Query read timeout" ANTES do
+// statement_timeout (90s) — por isso o heatmap de hoje ficava VAZIO. Aqui só o
+// statement_timeout (SET LOCAL abaixo) governa o limite.
+let rollupPool: Pool | null = null;
+function getRollupPool() {
+  if (!rollupPool) {
+    rollupPool = new Pool({
+      connectionString: env.DATABASE_URL,
+      query_timeout: 0,
+      statement_timeout: 0,
+      max: 2,
+      idleTimeoutMillis: 30_000,
+    });
+  }
+  return rollupPool;
+}
 
 function localDateParts(value: Date) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -41,7 +59,7 @@ function buildRefreshWindow(daysInput?: number) {
 
 export async function refreshWhatsappActivityRollups(daysInput?: number) {
   const window = buildRefreshWindow(daysInput);
-  const client = await pool.connect();
+  const client = await getRollupPool().connect();
 
   try {
     await client.query("BEGIN");
