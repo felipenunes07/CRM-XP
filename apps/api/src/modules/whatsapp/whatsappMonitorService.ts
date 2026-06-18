@@ -4311,6 +4311,16 @@ export async function getWhatsappDailySummaryReport(
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     const isOutbound = isWhatsappActivityOutbound(row);
+    const sourceChatNameForFilter = [
+      row.metadata_chat_display_name,
+      row.customer_display_name,
+      row.title,
+      row.real_customer_name,
+    ].map((candidate) => candidate ? String(candidate).trim() : "").find(Boolean) ?? null;
+
+    if (isInternalChat(sourceChatNameForFilter, remoteJid)) {
+      continue;
+    }
 
     // Resolve robust and clean customer display name
     const chatName = (() => {
@@ -4546,6 +4556,142 @@ export async function getWhatsappDailySummaryReport(
   }
 
   const agentsList = Array.from(mergedAgentsMap.values());
+
+  type DailyRollupMetric = {
+    agentName: string;
+    sentMessages: number;
+    receivedMessages: number;
+    attendedPrivateClients: { name: string; jid: string; sent: number; received: number; initiated: boolean }[];
+    attendedGroupClients: { name: string; jid: string; sent: number; received: number; initiated: boolean }[];
+  };
+
+  try {
+    const rollupMetricsResult = await pool.query(
+      `
+      SELECT
+        war.agent_name,
+        war.remote_jid,
+        MAX(war.chat_name) AS chat_name,
+        COALESCE(SUM(war.sent_messages), 0)::int AS sent_messages,
+        COALESCE(SUM(war.received_messages), 0)::int AS received_messages
+      FROM whatsapp_activity_rollups war
+      WHERE war.period_date = $1::date
+        AND ${monitorableWhatsappJidSql("war.remote_jid")}
+      GROUP BY war.agent_name, war.remote_jid
+      `,
+      [dateStr],
+    );
+
+    const rollupMetricsByName = new Map<string, DailyRollupMetric>();
+    for (const row of rollupMetricsResult?.rows ?? []) {
+      const remoteJid = String(row.remote_jid || "");
+      if (!remoteJid) {
+        continue;
+      }
+
+      const chatName = row.chat_name ? String(row.chat_name) : null;
+      if (isInternalChat(chatName, remoteJid)) {
+        continue;
+      }
+
+      const sentMessages = Number(row.sent_messages ?? 0);
+      const receivedMessages = Number(row.received_messages ?? 0);
+      if (sentMessages <= 0 && receivedMessages <= 0) {
+        continue;
+      }
+
+      const agentName = String(row.agent_name || "Sem agente");
+      const nameKey = agentName.trim().toLowerCase();
+      const metric = rollupMetricsByName.get(nameKey) ?? {
+        agentName,
+        sentMessages: 0,
+        receivedMessages: 0,
+        attendedPrivateClients: [],
+        attendedGroupClients: [],
+      };
+
+      metric.sentMessages += sentMessages;
+      metric.receivedMessages += receivedMessages;
+
+      if (sentMessages > 0) {
+        const client = {
+          name: chatName || formatWhatsappJidPhone(remoteJid),
+          jid: remoteJid,
+          sent: sentMessages,
+          received: receivedMessages,
+          initiated: false,
+        };
+        if (remoteJid.endsWith("@g.us")) {
+          metric.attendedGroupClients.push(client);
+        } else {
+          metric.attendedPrivateClients.push(client);
+        }
+      }
+
+      rollupMetricsByName.set(nameKey, metric);
+    }
+
+    if (rollupMetricsByName.size > 0) {
+      totalSent = 0;
+      totalReceived = 0;
+
+      for (const agent of agentsList) {
+        const nameKey = agent.agentName.trim().toLowerCase();
+        const metric = rollupMetricsByName.get(nameKey);
+        if (!metric) {
+          agent.sentMessages = 0;
+          agent.receivedMessages = 0;
+          agent.privateChatsCount = 0;
+          agent.groupChatsCount = 0;
+          agent.attendedPrivateClients = [];
+          agent.attendedGroupClients = [];
+          agent.initiatedCount = 0;
+          continue;
+        }
+
+        agent.sentMessages = metric.sentMessages;
+        agent.receivedMessages = metric.receivedMessages;
+        agent.attendedPrivateClients = metric.attendedPrivateClients;
+        agent.attendedGroupClients = metric.attendedGroupClients;
+        agent.privateChatsCount = metric.attendedPrivateClients.length;
+        agent.groupChatsCount = metric.attendedGroupClients.length;
+        agent.initiatedCount = Math.min(agent.initiatedCount, agent.privateChatsCount + agent.groupChatsCount);
+        totalSent += metric.sentMessages;
+        totalReceived += metric.receivedMessages;
+        rollupMetricsByName.delete(nameKey);
+      }
+
+      for (const metric of rollupMetricsByName.values()) {
+        const sales = salesPerformance.find(s => {
+          const cleanAttendant = s.attendant.trim().toLowerCase().replace(/^xp\s+/i, '');
+          const cleanAgent = metric.agentName.trim().toLowerCase().replace(/^xp\s+/i, '');
+          return cleanAttendant === cleanAgent;
+        });
+        agentsList.push({
+          agentId: `rollup:${metric.agentName.trim().toLowerCase()}`,
+          agentName: metric.agentName,
+          sentMessages: metric.sentMessages,
+          receivedMessages: metric.receivedMessages,
+          privateChatsCount: metric.attendedPrivateClients.length,
+          groupChatsCount: metric.attendedGroupClients.length,
+          initiatedCount: 0,
+          screensSold: sales ? Number(sales.total_items ?? 0) : 0,
+          ordersCount: sales ? Number(sales.total_orders ?? 0) : 0,
+          revenue: sales ? Number(sales.total_revenue ?? 0) : 0,
+          attendedPrivateClients: metric.attendedPrivateClients,
+          attendedGroupClients: metric.attendedGroupClients,
+          averageFirstResponseSeconds: null,
+        });
+        totalSent += metric.sentMessages;
+        totalReceived += metric.receivedMessages;
+      }
+    }
+  } catch (error) {
+    logger.warn("failed to align daily whatsapp summary with activity rollups", {
+      date: dateStr,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   // Ranking de atendimento: atividade no WhatsApp vem antes de vendas do dia.
   agentsList.sort((left, right) => {
