@@ -4153,7 +4153,7 @@ export async function getWhatsappDailySummaryReport(
     chatFirstActivity: Map<string, { activityType: string; isGroup: boolean; name: string }>;
     // Detail lists
     attendedPrivateClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
-    attendedGroupClients: Map<string, { name: string; jid: string; sent: number; received: number }>;
+    attendedGroupClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
     totalResponseSeconds: number;
     responseCount: number;
   }>();
@@ -4299,6 +4299,7 @@ export async function getWhatsappDailySummaryReport(
           jid: remoteJid,
           sent: 0,
           received: 0,
+          initiated: false,
         });
       }
       const client = agent.attendedGroupClients.get(remoteJid)!;
@@ -4330,12 +4331,18 @@ export async function getWhatsappDailySummaryReport(
         name: chatName,
       });
 
-      // If the first activity is outbound and it's private, it's initiated!
-      if (isOutbound && !isGroup) {
+      // Primeira atividade do dia foi do vendedor (outbound) = ele PUXOU a conversa.
+      // Vale pra privado E grupo — antes só contava privado, então numa operação
+      // 100% em grupo "Conversas Iniciadas" dava sempre 0.
+      if (isOutbound) {
         agent.initiatedChats.add(remoteJid);
-        const client = agent.attendedPrivateClients.get(remoteJid);
-        if (client) {
-          client.initiated = true;
+        const privateClient = agent.attendedPrivateClients.get(remoteJid);
+        if (privateClient) {
+          privateClient.initiated = true;
+        }
+        const groupClient = agent.attendedGroupClients.get(remoteJid);
+        if (groupClient) {
+          groupClient.initiated = true;
         }
       }
     }
@@ -4410,6 +4417,7 @@ export async function getWhatsappDailySummaryReport(
         if (ext) {
           ext.sent += g.sent;
           ext.received += g.received;
+          ext.initiated = ext.initiated || g.initiated;
         } else {
           groupClientsMap.set(g.jid, g);
         }
@@ -4417,8 +4425,10 @@ export async function getWhatsappDailySummaryReport(
       existing.attendedGroupClients = Array.from(groupClientsMap.values());
       existing.groupChatsCount = existing.attendedGroupClients.length;
 
-      // Initiated count
-      existing.initiatedCount = existing.attendedPrivateClients.filter(c => c.initiated).length;
+      // Conversas iniciadas = privados + grupos onde o vendedor falou primeiro
+      existing.initiatedCount =
+        existing.attendedPrivateClients.filter(c => c.initiated).length +
+        existing.attendedGroupClients.filter(g => g.initiated).length;
 
       // Average response time
       if (existing.averageFirstResponseSeconds !== null && agent.averageFirstResponseSeconds !== null) {
