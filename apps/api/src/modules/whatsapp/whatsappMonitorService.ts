@@ -4048,9 +4048,16 @@ export async function getWhatsappDailySummaryReport(
       FROM (
         SELECT
           source_messages.*,
+          -- Dedup por CHAT (jid), não por deal: a mesma msg de grupo é gravada em
+          -- 1 deal por instância (amanda/Suelen/tamires) -> contava 3x e não batia
+          -- com o heatmap (que deduplica por jid). Agora colapsa as cópias do mesmo
+          -- (jid, message_id) e mantém a cópia de quem ENVIOU (WHATSAPP_SENT), pra a
+          -- mensagem de grupo enviada ser creditada à vendedora certa, uma vez só.
           ROW_NUMBER() OVER (
-            PARTITION BY deal_id, message_key
-            ORDER BY source_priority ASC, created_at ASC, source_id ASC
+            PARTITION BY COALESCE(NULLIF(metadata_remote_jid, ''), deal_id::text), message_key
+            ORDER BY
+              (CASE WHEN activity_type = 'WHATSAPP_SENT' THEN 0 ELSE 1 END),
+              source_priority ASC, created_at ASC, source_id ASC
           ) AS source_rank
         FROM source_messages
       ) ranked_source
