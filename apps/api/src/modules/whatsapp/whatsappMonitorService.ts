@@ -3283,7 +3283,9 @@ export async function getWhatsappAgentActivityReport(
             unioned.*,
             ROW_NUMBER() OVER (
               PARTITION BY unioned.remote_jid, unioned.message_key
-              ORDER BY unioned.source_priority ASC, unioned.created_at ASC, unioned.id ASC
+              ORDER BY
+                (CASE WHEN unioned.activity_type = 'WHATSAPP_SENT' THEN 0 ELSE 1 END),
+                unioned.source_priority ASC, unioned.created_at ASC, unioned.id ASC
             ) AS row_rank
           FROM (
             SELECT
