@@ -4613,7 +4613,7 @@ export async function getWhatsappDailySummaryReport(
       metric.sentMessages += sentMessages;
       metric.receivedMessages += receivedMessages;
 
-      if (sentMessages > 0) {
+      if (sentMessages > 0 && receivedMessages > 0) {
         const client = {
           name: chatName || formatWhatsappJidPhone(remoteJid),
           jid: remoteJid,
