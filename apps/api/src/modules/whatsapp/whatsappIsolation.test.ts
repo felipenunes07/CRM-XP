@@ -228,7 +228,7 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
+    expect(mocks.refreshRollups).toHaveBeenCalledWith(3);
     expect(rollupQueryCount).toBe(1);
     expect(directQueryCount).toBe(1);
     expect(report.hourlyCells).toHaveLength(1);
@@ -299,7 +299,7 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    expect(mocks.refreshRollups).toHaveBeenCalledWith(14);
+    expect(mocks.refreshRollups).toHaveBeenCalledWith(3);
     expect(rollupQueryCount).toBe(1);
     expect(report.hourlyCells.some((cell) => cell.date === yesterday && cell.sentMessages === 4)).toBe(true);
     expect(report.hourlyCells.some((cell) => cell.date === today && cell.sentMessages === 2)).toBe(false);
@@ -393,6 +393,328 @@ describe("whatsapp conversation isolation", () => {
     });
     expect(summary.formattedText).toContain("Atendimentos em Grupo: 1");
     expect(summary.formattedText).toContain("CL1049 - MINAS CELL / XP EXPOR TELAS (Grupo)");
+  });
+
+  it("includes private raw incoming messages in the formatted daily WhatsApp summary source", async () => {
+    const date = localTodayKey();
+    mocks.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            activity_type: "WHATSAPP_SENT",
+            actor_user_id: null,
+            actor_name: "Suelen",
+            metadata: {
+              remoteJid: "5511999998888@s.whatsapp.net",
+              chatDisplayName: "Cliente Privado",
+              instance: "suelen",
+              fromMe: true,
+            },
+            created_at: `${date}T12:00:00.000Z`,
+            incoming_raw_payload: {},
+            incoming_from_me: true,
+            metadata_instance: "suelen",
+            metadata_remote_jid: "5511999998888@s.whatsapp.net",
+            metadata_chat_display_name: "Cliente Privado",
+            assigned_to: "user-suelen",
+            assigned_to_name: "Suelen",
+            whatsapp_instance_id: "instance-suelen",
+            whatsapp_jid: "5511999998888@s.whatsapp.net",
+            customer_display_name: null,
+            title: "Cliente Privado",
+            real_customer_name: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: "user-suelen", name: "Suelen" }] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-suelen",
+            instance_name: "suelen",
+            display_label: "Suelen",
+            assigned_user_id: "user-suelen",
+            assigned_user_name: "Suelen",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ remote_jid: "5511999998888@s.whatsapp.net", display_name: "Cliente Privado" }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const summary = await getWhatsappDailySummaryReport({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any, date);
+
+    const activitiesSql = String(mocks.query.mock.calls[3]?.[0] ?? "");
+    expect(activitiesSql).toContain("FROM whatsapp_incoming_messages wim");
+    expect(summary.totalMessagesSent).toBe(1);
+    expect(summary.agents[0]).toMatchObject({
+      agentName: "Suelen",
+      privateChatsCount: 1,
+    });
+    expect(summary.formattedText).toContain("Atendimentos Particular: 1");
+  });
+
+  it("attributes daily raw private messages to the matched instance before the raw sender name", async () => {
+    const date = localTodayKey();
+    mocks.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            activity_type: "WHATSAPP_SENT",
+            actor_user_id: null,
+            actor_name: "tamires",
+            metadata: {
+              remoteJid: "5511999998888@s.whatsapp.net",
+              chatDisplayName: "Cliente Privado",
+              instance: "suelen",
+              fromMe: true,
+            },
+            created_at: `${date}T12:00:00.000Z`,
+            incoming_raw_payload: {},
+            incoming_from_me: true,
+            metadata_instance: "suelen",
+            metadata_remote_jid: "5511999998888@s.whatsapp.net",
+            metadata_chat_display_name: "Cliente Privado",
+            assigned_to: null,
+            assigned_to_name: null,
+            whatsapp_instance_id: null,
+            whatsapp_jid: null,
+            customer_display_name: null,
+            title: "Cliente Privado",
+            real_customer_name: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: "user-suelen", name: "Suelen" },
+          { id: "user-tamires", name: "tamires" },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-suelen",
+            instance_name: "suelen",
+            display_label: "Suelen",
+            assigned_user_id: "user-suelen",
+            assigned_user_name: "Suelen",
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [{ remote_jid: "5511999998888@s.whatsapp.net", display_name: "Cliente Privado" }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const summary = await getWhatsappDailySummaryReport({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any, date);
+
+    expect(summary.agents).toHaveLength(1);
+    expect(summary.agents[0]).toMatchObject({
+      agentName: "Suelen",
+      sentMessages: 1,
+      privateChatsCount: 1,
+    });
+  });
+
+  it("ranks daily WhatsApp summary agents by activity before sales totals", async () => {
+    const date = localTodayKey();
+    mocks.query
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            attendant: "Thais",
+            total_orders: 2,
+            unique_customers: 2,
+            total_revenue: "5000.00",
+            total_items: 50,
+          },
+          {
+            attendant: "Amanda",
+            total_orders: 0,
+            unique_customers: 0,
+            total_revenue: "0.00",
+            total_items: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            activity_type: "WHATSAPP_RECEIVED",
+            actor_user_id: null,
+            actor_name: null,
+            metadata: {
+              remoteJid: "120363111111111111@g.us",
+              chatDisplayName: "Grupo Thais",
+              instance: "thais",
+              fromMe: false,
+            },
+            created_at: `${date}T12:00:00.000Z`,
+            incoming_raw_payload: null,
+            incoming_from_me: false,
+            metadata_instance: "thais",
+            metadata_remote_jid: "120363111111111111@g.us",
+            metadata_chat_display_name: "Grupo Thais",
+            assigned_to: "user-thais",
+            assigned_to_name: "Thais",
+            whatsapp_instance_id: "instance-thais",
+            whatsapp_jid: "120363111111111111@g.us",
+            customer_display_name: null,
+            title: "Grupo Thais",
+            real_customer_name: null,
+          },
+          {
+            activity_type: "WHATSAPP_SENT",
+            actor_user_id: null,
+            actor_name: "Amanda",
+            metadata: {
+              remoteJid: "120363222222222222@g.us",
+              chatDisplayName: "Grupo Amanda",
+              instance: "amanda",
+              fromMe: true,
+            },
+            created_at: `${date}T12:01:00.000Z`,
+            incoming_raw_payload: null,
+            incoming_from_me: true,
+            metadata_instance: "amanda",
+            metadata_remote_jid: "120363222222222222@g.us",
+            metadata_chat_display_name: "Grupo Amanda",
+            assigned_to: "user-amanda",
+            assigned_to_name: "Amanda",
+            whatsapp_instance_id: "instance-amanda",
+            whatsapp_jid: "120363222222222222@g.us",
+            customer_display_name: null,
+            title: "Grupo Amanda",
+            real_customer_name: null,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          { id: "user-thais", name: "Thais" },
+          { id: "user-amanda", name: "Amanda" },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: "instance-thais",
+            instance_name: "thais",
+            display_label: "Thais",
+            assigned_user_id: "user-thais",
+            assigned_user_name: "Thais",
+          },
+          {
+            id: "instance-amanda",
+            instance_name: "amanda",
+            display_label: "Amanda",
+            assigned_user_id: "user-amanda",
+            assigned_user_name: "Amanda",
+          },
+        ],
+      });
+
+    const summary = await getWhatsappDailySummaryReport({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any, date);
+
+    expect(summary.agents.map((agent: any) => agent.agentName)).toEqual(["Amanda", "Thais"]);
+    expect(summary.agents[0].sentMessages).toBe(1);
+    expect(summary.agents[1].sentMessages).toBe(0);
+  });
+
+  it("uses private raw incoming rows in the direct heatmap fallback", async () => {
+    const today = localTodayKey();
+    let directQueryCount = 0;
+    const privateRow = {
+      agent_id: "user-suelen",
+      agent_name: "Suelen",
+      instance_name: "suelen",
+      display_label: "Suelen",
+      phone_number: "+55 11 91234-5678",
+      profile_picture_url: null,
+      remote_jid: "5511999998888@s.whatsapp.net",
+      chat_name: "Cliente Privado",
+      local_date: today,
+      local_hour: 13,
+      sent_messages: 1,
+      received_messages: 0,
+      response_count: 0,
+      response_seconds_total: 0,
+      last_message_at: `${today}T16:00:00.000Z`,
+    };
+
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+
+      if (sql.includes("raw_incoming_rows") && sql.includes("FROM whatsapp_incoming_messages wim")) {
+        directQueryCount += 1;
+        return { rows: [privateRow] };
+      }
+
+      if (sql.includes("FROM whatsapp_instances wi")) {
+        return {
+          rows: [
+            {
+              instance_id: "instance-suelen",
+              instance_name: "suelen",
+              display_label: "Suelen",
+              phone_number: "+55 11 91234-5678",
+              profile_picture_url: null,
+              assigned_user_id: "user-suelen",
+              assigned_user_name: "Suelen",
+              user_id: "user-suelen",
+              user_name: "Suelen",
+            },
+          ],
+        };
+      }
+
+      if (sql.includes("FROM whatsapp_activity_rollups war")) {
+        return { rows: [] };
+      }
+
+      return { rows: [] };
+    });
+
+    const report = await getWhatsappAgentActivityReport({
+      id: "admin-private-raw",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "ADMIN",
+    } as any, 1);
+
+    expect(directQueryCount).toBe(1);
+    expect(report.summary.sentMessagesPrivate).toBe(1);
+    expect(report.hourlyCells[0]).toMatchObject({
+      date: today,
+      hour: 13,
+      sentMessagesPrivate: 1,
+      attendedPrivates: 0,
+    });
   });
 
   it("filters captured conversation messages by the concrete instance only", async () => {

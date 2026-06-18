@@ -159,6 +159,35 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           AND LOWER(COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)) <> 'status@broadcast'
           AND LOWER(COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)) NOT LIKE '%@broadcast'
       ),
+      raw_incoming_rows AS (
+        SELECT
+          ('incoming:' || wim.id::text) AS id,
+          COALESCE(NULLIF(wim.message_id, ''), wim.id::text) AS message_key,
+          2 AS source_priority,
+          CASE
+            WHEN COALESCE(wim.from_me, false) THEN 'WHATSAPP_SENT'
+            ELSE 'WHATSAPP_RECEIVED'
+          END AS activity_type,
+          wim.created_at,
+          NULL::uuid AS da_actor_user_id,
+          CASE
+            WHEN COALESCE(wim.from_me, false)
+              THEN COALESCE(NULLIF(wim.participant_name, ''), NULLIF(wim.sender_name, ''))
+            ELSE NULL
+          END AS da_actor_name,
+          NULLIF(wim.instance_name, '') AS da_instance_name,
+          NULL::uuid AS deal_instance_id,
+          NULL::uuid AS deal_assigned_to,
+          NULL::text AS deal_assigned_to_name,
+          wim.remote_jid AS remote_jid,
+          COALESCE(NULLIF(wim.chat_display_name, ''), NULLIF(wim.sender_name, '')) AS chat_name
+        FROM whatsapp_incoming_messages wim
+        WHERE wim.created_at >= ($1::date AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND wim.created_at < (($2::date + INTERVAL '1 day') AT TIME ZONE '${ACTIVITY_REPORT_TIMEZONE}')
+          AND wim.remote_jid IS NOT NULL
+          AND LOWER(wim.remote_jid) <> 'status@broadcast'
+          AND LOWER(wim.remote_jid) NOT LIKE '%@broadcast'
+      ),
       deduped_raw AS (
         SELECT *
         FROM (
@@ -190,6 +219,14 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
               da_actor_user_id, da_actor_name,
               activity_type
             FROM raw_activity_rows
+            UNION ALL
+            SELECT
+              id, message_key, source_priority, created_at, remote_jid, chat_name,
+              deal_instance_id, deal_assigned_to, deal_assigned_to_name,
+              NULL AS wmm_instance_name, da_instance_name,
+              da_actor_user_id, da_actor_name,
+              activity_type
+            FROM raw_incoming_rows
           ) unioned
         ) ranked
         WHERE row_rank = 1

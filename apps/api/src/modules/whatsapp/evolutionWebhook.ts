@@ -646,10 +646,13 @@ export async function handleEvolutionWebhook(
         actualSenderJid &&
         areWhatsappJidsEqual(actualSenderJid, instanceOwnerJid)
       );
+      const senderOwnerIndicatesOutbound = Boolean(
+        senderIsInstanceOwner && (context.isGroup || isSendMessageEvent || explicitFromMe !== false)
+      );
 
       const fallbackFromMe = Boolean(
         isSendMessageEvent ||
-        senderIsInstanceOwner ||
+        senderOwnerIndicatesOutbound ||
         (context.isGroup && (
           isAgentSender ||
           isAgentJid ||
@@ -662,7 +665,7 @@ export async function handleEvolutionWebhook(
       // explícito da Evolution: nesses casos o remetente é comprovadamente da
       // equipe (número da instância ou nome de perfil de uma instância ativa),
       // então o flag do provider está errado (típico em grupos com @lid).
-      const isFromMe = (senderIsInstanceOwner || isKnownTeamSender) ? true : (explicitFromMe ?? fallbackFromMe);
+      const isFromMe = (senderOwnerIndicatesOutbound || isKnownTeamSender) ? true : (explicitFromMe ?? fallbackFromMe);
 
       const activityType = isFromMe ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED";
       const actorUserId = isFromMe
