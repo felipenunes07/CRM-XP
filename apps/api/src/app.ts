@@ -163,7 +163,7 @@ import {
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
 import { handleUazapiWebhook } from "./modules/whatsapp/uazapiWebhook.js";
-import { assertSupportedOutboundVideo, getCampaignMediaDir } from "./modules/whatsapp/whatsappMedia.js";
+import { assertSupportedOutboundVideo, getCampaignMediaDir, IMAGE_MIME_EXTENSIONS } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
 const loginSchema = z.object({
@@ -650,6 +650,10 @@ export function createApp() {
       },
     }),
   );
+  // Imagens de campanha (ex.: cabeçalho do menu interativo) enviadas do
+  // computador. Mesmo diretório dos vídeos, mas servidas deixando o express
+  // inferir o Content-Type pela extensão do arquivo.
+  app.use("/media/campaign-images", express.static(campaignMediaDir, { maxAge: "7d" }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -1448,6 +1452,57 @@ export function createApp() {
       const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
       const url = `${base}/media/campaign-videos/${objectName}`;
       logger.info("🎥 Vídeo de campanha hospedado", { objectName, bytes: buffer.length, sourceName: fileName ?? null });
+      response.json({ url });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Recebe uma imagem (base64), salva no disco do backend e devolve uma URL
+  // pública. Usado pelo cabeçalho do menu interativo: o provedor (UAZAPI) precisa
+  // de uma URL acessível, então hospedamos em vez de pedir o link ao usuário.
+  app.post("/api/messages/upload-image", async (request, response, next) => {
+    try {
+      const { fileBase64, fileName } = (request.body ?? {}) as {
+        fileBase64?: string;
+        fileName?: string;
+      };
+
+      if (!fileBase64 || typeof fileBase64 !== "string") {
+        throw new HttpError(400, "fileBase64 é obrigatório");
+      }
+
+      // Aceita data URL ("data:image/png;base64,AAAA") ou base64 puro (assume jpeg).
+      let base64 = fileBase64;
+      let mime = "image/jpeg";
+      if (fileBase64.startsWith("data:")) {
+        const match = fileBase64.match(/^data:([^;]+);base64,(.*)$/s);
+        if (match && match[1] && match[2]) {
+          mime = match[1].toLowerCase();
+          base64 = match[2];
+        }
+      }
+
+      const extension = IMAGE_MIME_EXTENSIONS[mime];
+      if (!extension) {
+        throw new HttpError(400, "Formato inválido. Envie uma imagem JPG, PNG, GIF ou WEBP.");
+      }
+
+      const buffer = Buffer.from(base64, "base64");
+      if (!buffer.length) {
+        throw new HttpError(400, "Arquivo de imagem inválido ou vazio.");
+      }
+      if (buffer.length > 10 * 1024 * 1024) {
+        throw new HttpError(413, "Imagem muito grande. Máximo 10MB.");
+      }
+
+      const objectName = `${Date.now()}-${randomUUID()}.${extension}`;
+      await fsPromises.mkdir(campaignMediaDir, { recursive: true });
+      await fsPromises.writeFile(path.join(campaignMediaDir, objectName), buffer);
+
+      const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+      const url = `${base}/media/campaign-images/${objectName}`;
+      logger.info("🖼️ Imagem de campanha hospedada", { objectName, bytes: buffer.length, sourceName: fileName ?? null });
       response.json({ url });
     } catch (error) {
       next(error);

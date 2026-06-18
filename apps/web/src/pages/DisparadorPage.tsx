@@ -22,6 +22,7 @@ import { formatDateTime, formatNumber, formatFileSize } from "../lib/format";
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
+import { PurchaseSparkline } from "../components/PurchaseSparkline";
 
 // Avatar de fallback gerado em SVG (data URI, sem rede). As fotos de perfil da
 // Evolution vêm do CDN do WhatsApp (pps.whatsapp.net) e EXPIRAM — depois de um
@@ -1064,6 +1065,7 @@ export function DisparadorPage() {
   const [menuListButton, setMenuListButton] = useState("");
   const [menuSelectableCount, setMenuSelectableCount] = useState(1);
   const [menuImageButton, setMenuImageButton] = useState("");
+  const [uploadingMenuImage, setUploadingMenuImage] = useState(false);
   // Resposta automática quando o cliente responder ao disparo
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoReplyText, setAutoReplyText] = useState("");
@@ -1140,18 +1142,8 @@ export function DisparadorPage() {
     };
   }
 
-  // Auto-select all active senders when loaded
-  useEffect(() => {
-    if (whatsappInstancesQuery.data && whatsappInstancesQuery.data.length > 0) {
-      const activeIds = whatsappInstancesQuery.data
-        .filter(inst => inst.status === "ACTIVE")
-        .map(inst => inst.id);
-      const firstId = whatsappInstancesQuery.data[0]?.id;
-      if (firstId) {
-        setSelectedSenderIds(activeIds.length ? activeIds : [firstId]);
-      }
-    }
-  }, [whatsappInstancesQuery.data]);
+  // Por padrão nenhum remetente vem selecionado: o usuário escolhe
+  // manualmente quais conexões serão usadas no disparo.
   const [recipientSenderMapping, setRecipientSenderMapping] = useState<Record<string, string>>({}); // groupId -> senderId
 
   // Tooltip tracking
@@ -1586,7 +1578,7 @@ export function DisparadorPage() {
       : campaignMessageType === "MENU"
         ? Boolean(messageText.trim()) && menuChoicesCount > 0
         : Boolean(messageText.trim());
-  const isReadyToDispatch = hasMessage && selectedGroupCount > 0;
+  const isReadyToDispatch = hasMessage && selectedGroupCount > 0 && selectedSenderIds.length > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
     ? "Criando campanha..."
     : selectedGroupCount > 0
@@ -2344,7 +2336,7 @@ export function DisparadorPage() {
                             <th style={{ padding: "1rem 1.5rem" }}>REMETENTE (WHATSAPP CANAL)</th>
                             <th style={{ padding: "1rem 0.5rem", width: "40px", textAlign: "center" }}></th>
                             <th style={{ padding: "1rem 1.5rem" }}>DESTINATÁRIO (WHATSAPP & CRM)</th>
-                            <th style={{ padding: "1rem 1.5rem" }}>TIPO & CLASSIFICAÇÃO</th>
+                            <th style={{ padding: "1rem 1.5rem" }}>COMPRAS (PEÇAS/MÊS · 12M)</th>
                             <th style={{ padding: "1rem 1.5rem" }}>DISPAROS</th>
                             <th style={{ padding: "1rem 1.5rem" }}>STATUS (SPAM RISK)</th>
                           </tr>
@@ -2467,17 +2459,13 @@ export function DisparadorPage() {
                                   </div>
                                 </td>
                                 <td style={{ padding: "1.25rem 1.5rem" }}>
-                                  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                    <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap" }}>
-                                      <span className="status-badge" style={{ fontSize: "0.72rem", background: "#f1f5f9", color: "#334155", fontWeight: 600, padding: "1px 6px", borderRadius: "4px" }}>
-                                        {classificationLabel(group.classification)}
-                                      </span>
-                                      <span className="status-badge" style={{ fontSize: "0.72rem", background: "#eff6ff", color: "#1e40af", fontWeight: 600, padding: "1px 6px", borderRadius: "4px" }}>
-                                        {mappingStatusLabel(group.mappingStatus)}
-                                      </span>
-                                    </div>
-                                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                                      Último contato: <strong>{group.lastContactAt ? formatDateTime(group.lastContactAt) : "Sem registro"}</strong>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                    <PurchaseSparkline
+                                      trend={group.purchaseTrend}
+                                      emptyHint={classificationLabel(group.classification)}
+                                    />
+                                    <span style={{ fontSize: "0.7rem", color: "#94a3b8" }}>
+                                      Últ. contato: <strong style={{ color: "#64748b" }}>{group.lastContactAt ? formatDateTime(group.lastContactAt) : "Sem registro"}</strong>
                                     </span>
                                   </div>
                                 </td>
@@ -2975,17 +2963,106 @@ export function DisparadorPage() {
                           )}
 
                           {menuType === "button" && (
-                            <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
-                              URL da imagem (opcional)
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.82rem", fontWeight: 600, color: "var(--muted)" }}>
+                              <span>Imagem do cabeçalho (opcional)</span>
+
+                              <label style={{ cursor: uploadingMenuImage ? "not-allowed" : "pointer" }}>
+                                <input
+                                  type="file"
+                                  accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                                  style={{ display: "none" }}
+                                  disabled={uploadingMenuImage}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const maxSize = 10 * 1024 * 1024; // 10MB
+                                    if (file.size > maxSize) {
+                                      alert(`Arquivo muito grande! Tamanho máximo: 10MB. Seu arquivo: ${formatFileSize(file.size)}`);
+                                      return;
+                                    }
+                                    const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+                                    if (!validTypes.includes(file.type)) {
+                                      alert("Tipo de arquivo inválido! Use: JPG, PNG, GIF ou WEBP");
+                                      return;
+                                    }
+                                    setUploadingMenuImage(true);
+                                    try {
+                                      const fileBase64 = await new Promise<string>((resolve, reject) => {
+                                        const reader = new FileReader();
+                                        reader.onload = () => resolve(reader.result as string);
+                                        reader.onerror = () => reject(new Error("read error"));
+                                        reader.readAsDataURL(file);
+                                      });
+                                      const { url } = await api.uploadCampaignImage(token!, { fileBase64, fileName: file.name });
+                                      setMenuImageButton(url);
+                                    } catch (uploadErr) {
+                                      console.error("Upload da imagem do menu falhou:", uploadErr);
+                                      alert("Erro ao enviar a imagem. Tente novamente.");
+                                    } finally {
+                                      setUploadingMenuImage(false);
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                />
+                                <div style={{
+                                  padding: "10px 14px",
+                                  background: uploadingMenuImage ? "#f0fdf4" : "#f8fafc",
+                                  border: uploadingMenuImage ? "2px solid #10b981" : "2px dashed #cbd5e1",
+                                  borderRadius: "8px",
+                                  textAlign: "center",
+                                  fontSize: "0.8rem",
+                                  fontWeight: 600,
+                                  color: uploadingMenuImage ? "#10b981" : "#475569",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "6px",
+                                }}>
+                                  {uploadingMenuImage ? (
+                                    <><LoaderCircle size={14} className="spin" /> Enviando...</>
+                                  ) : (
+                                    <>📁 Escolher do computador</>
+                                  )}
+                                </div>
+                              </label>
+
+                              {menuImageButton && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#fff", padding: "6px 10px", borderRadius: "8px", border: "1px solid var(--line)" }}>
+                                  <img
+                                    src={menuImageButton}
+                                    alt="Prévia"
+                                    style={{ width: "40px", height: "40px", borderRadius: "6px", objectFit: "cover" }}
+                                  />
+                                  <span style={{ flex: 1, fontSize: "0.72rem", color: "#64748b", fontWeight: 500, wordBreak: "break-all" }}>
+                                    {menuImageButton.startsWith("data:") ? "Imagem carregada" : menuImageButton}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="ghost-button danger"
+                                    style={{ padding: "2px 8px", fontSize: "0.72rem" }}
+                                    onClick={() => setMenuImageButton("")}
+                                  >
+                                    <Trash2 size={12} /> Remover
+                                  </button>
+                                </div>
+                              )}
+
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+                                <span style={{ fontSize: "0.72rem", color: "#94a3b8", fontWeight: 600 }}>OU</span>
+                                <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+                              </div>
+
                               <input
                                 type="text"
                                 className="wp-search-input"
                                 style={{ background: "#fff", paddingLeft: "12px" }}
                                 placeholder="https://exemplo.com/imagem.jpg"
-                                value={menuImageButton}
+                                value={menuImageButton.startsWith("data:") ? "" : menuImageButton}
+                                disabled={uploadingMenuImage}
                                 onChange={(event) => setMenuImageButton(event.target.value)}
                               />
-                            </label>
+                            </div>
                           )}
                         </div>
                       )}

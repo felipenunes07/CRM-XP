@@ -285,6 +285,12 @@ function mapWhatsappGroupRow(row: Record<string, unknown>): WhatsappGroup {
     isRecentlyBlocked: isBlocked,
     recentBlockUntil,
     sentCampaignsCount: row.sent_campaigns_count !== undefined ? Number(row.sent_campaigns_count) : 0,
+    purchaseTrend: Array.isArray(row.purchase_trend)
+      ? (row.purchase_trend as Array<{ month: unknown; pieces: unknown }>).map((point) => ({
+          month: String(point.month),
+          pieces: Number(point.pieces ?? 0),
+        }))
+      : undefined,
   };
 }
 
@@ -490,12 +496,37 @@ export async function listWhatsappGroups(filters: WhatsappGroupFilters = {}): Pr
   const [itemsResult, totalResult] = await Promise.all([
     pool.query(
       `
+        WITH recent_orders AS (
+          SELECT o.id, o.customer_id, date_trunc('month', o.order_date) AS month_start
+          FROM orders o
+          WHERE o.customer_id IS NOT NULL
+            AND o.order_date >= date_trunc('month', CURRENT_DATE) - interval '11 months'
+            AND o.order_date <= CURRENT_DATE
+        ),
+        order_pieces AS (
+          SELECT ro.customer_id, ro.month_start, SUM(COALESCE(oi.quantity, 0)) AS pieces
+          FROM recent_orders ro
+          JOIN order_items oi ON oi.order_id = ro.id
+          GROUP BY ro.customer_id, ro.month_start
+        ),
+        customer_trend AS (
+          SELECT
+            customer_id,
+            jsonb_agg(
+              jsonb_build_object('month', to_char(month_start, 'YYYY-MM'), 'pieces', pieces)
+              ORDER BY month_start
+            ) AS trend
+          FROM order_pieces
+          WHERE pieces > 0
+          GROUP BY customer_id
+        )
         SELECT
           wg.*,
           c.customer_code,
           COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS customer_display_name,
           cs.status AS customer_status,
           COALESCE(cs.last_attendant, c.last_attendant) AS last_attendant,
+          ct.trend AS purchase_trend,
           (
             SELECT COUNT(*)::int
             FROM whatsapp_campaign_recipients wcr
@@ -504,6 +535,7 @@ export async function listWhatsappGroups(filters: WhatsappGroupFilters = {}): Pr
         FROM whatsapp_groups wg
         LEFT JOIN customers c ON c.id = wg.customer_id
         LEFT JOIN customer_snapshot cs ON cs.customer_id = wg.customer_id
+        LEFT JOIN customer_trend ct ON ct.customer_id = wg.customer_id
         ${whereSql}
         ORDER BY wg.last_contact_at DESC NULLS LAST, wg.source_name ASC
         ${limitSql}

@@ -1449,6 +1449,13 @@ export type WhatsappCampaignRecipientStatus =
   | "FAILED"
   | "SKIPPED";
 
+export interface WhatsappGroupPurchasePoint {
+  /** Mês no formato 'YYYY-MM'. */
+  month: string;
+  /** Peças compradas pelo cliente naquele mês. */
+  pieces: number;
+}
+
 export interface WhatsappGroup {
   id: string;
   jid: string;
@@ -1471,6 +1478,12 @@ export interface WhatsappGroup {
   isRecentlyBlocked: boolean;
   recentBlockUntil: string | null;
   sentCampaignsCount?: number;
+  /**
+   * Série de peças compradas por mês (meses com compra, ordem crescente) nos
+   * últimos 12 meses. Usada no mini-gráfico do Disparador para identificar quem
+   * compra/comprava muito. Ausente em endpoints que não calculam a série.
+   */
+  purchaseTrend?: WhatsappGroupPurchasePoint[];
 }
 
 export interface WhatsappGroupsResponse {

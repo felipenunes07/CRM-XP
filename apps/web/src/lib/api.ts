@@ -1098,6 +1098,31 @@ export const api = {
       globalThis.clearTimeout(timeoutId);
     }
   },
+  async uploadCampaignImage(
+    token: string,
+    input: { fileBase64: string; fileName?: string },
+  ): Promise<{ url: string }> {
+    const controller = new AbortController();
+    const timeoutId = globalThis.setTimeout(() => controller.abort(), 120_000);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/messages/upload-image`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(input),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(payload.message ?? `Falha no upload da imagem (status ${response.status})`);
+      }
+      return (await response.json()) as { url: string };
+    } finally {
+      globalThis.clearTimeout(timeoutId);
+    }
+  },
   createWhatsappInstance(token: string, input: {
     provider?: WhatsappInstanceProvider;
     instanceName: string;

@@ -4,6 +4,17 @@ import path from "node:path";
 export const OUTBOUND_VIDEO_MIME_TYPE = "video/mp4";
 export const OUTBOUND_VIDEO_FILE_NAME = "video.mp4";
 export const CAMPAIGN_VIDEO_PUBLIC_PATH = "/media/campaign-videos";
+export const CAMPAIGN_IMAGE_PUBLIC_PATH = "/media/campaign-images";
+
+// Extensão de arquivo a partir do mime de imagem, para salvar o upload com a
+// extensão certa (o express infere o Content-Type pela extensão ao servir).
+export const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
 
 const dataUrlMimePattern = /^data:([^;,]+)(?:;[^,]*)*;base64,/i;
 const unsupportedVideoUrlExtensionPattern = /\.(mov|qt|webm|ogg|ogv|avi|mkv|wmv|flv|3gp|m4v)(?:[?#].*)?$/i;
