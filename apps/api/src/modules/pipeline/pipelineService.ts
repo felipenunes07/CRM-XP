@@ -389,6 +389,10 @@ function mapInstanceRow(row: Record<string, unknown>): WhatsappInstanceItem {
 
 export async function listWhatsappInstances(): Promise<WhatsappInstanceItem[]> {
   await syncEvolutionInstancesForSelection();
+  // Renova fotos vazias/expiradas usando as credenciais de cada instância — é o
+  // que garante a foto real do WhatsApp mesmo quando o env Evolution global não
+  // cobre essas instâncias.
+  await refreshActiveInstanceAvatars();
   const result = await pool.query("SELECT * FROM whatsapp_instances ORDER BY is_default DESC, display_label ASC");
   return result.rows.map(mapInstanceRow);
 }
@@ -434,15 +438,21 @@ function phoneFromEvolutionJid(value: string | null) {
 
 /**
  * Busca a foto de perfil do PRÓPRIO número conectado da instância, direto na
- * Evolution. Usado como fallback quando o payload de fetchInstances não traz a
- * foto. Devolve uma URL fresca (não expira na hora), garantindo a imagem real.
+ * Evolution, usando as credenciais DA INSTÂNCIA (não o env global — cada
+ * instância pode apontar para um servidor Evolution diferente). Devolve uma URL
+ * fresca, garantindo a imagem real.
  */
-async function fetchEvolutionOwnProfilePicture(instanceName: string, phoneDigits: string): Promise<string | null> {
+async function fetchEvolutionOwnProfilePicture(
+  baseUrl: string,
+  apiKey: string,
+  instanceName: string,
+  phoneDigits: string,
+): Promise<string | null> {
   try {
-    const base = env.EVOLUTION_API_BASE_URL.replace(/\/+$/, "");
+    const base = baseUrl.replace(/\/+$/, "");
     const res = await fetch(`${base}/chat/fetchProfilePictureUrl/${encodeURIComponent(instanceName)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", apikey: env.EVOLUTION_API_KEY },
+      headers: { "Content-Type": "application/json", apikey: apiKey },
       body: JSON.stringify({ number: phoneDigits }),
     });
     if (!res.ok) return null;
@@ -457,6 +467,71 @@ async function fetchEvolutionOwnProfilePicture(instanceName: string, phoneDigits
   } catch {
     return null;
   }
+}
+
+/**
+ * Foto do CDN do WhatsApp carrega um `oe=<hex unix>` de expiração. Considera
+ * "precisa renovar" quando está vazia ou já expirada (ou prestes a expirar).
+ */
+function instanceAvatarNeedsRefresh(url: string | null): boolean {
+  if (!url) return true;
+  const match = url.match(/[?&]oe=([0-9a-fA-F]+)/);
+  if (!match) return false;
+  const expSeconds = parseInt(match[1] as string, 16);
+  if (!Number.isFinite(expSeconds)) return false;
+  return expSeconds * 1000 < Date.now() + 60_000;
+}
+
+/**
+ * Renova a foto de perfil das instâncias Evolution ativas cuja URL está vazia ou
+ * expirada, usando as credenciais de cada instância. Roda a cada listagem para
+ * que a tela de seleção de remetentes sempre mostre a foto real do WhatsApp.
+ */
+async function refreshActiveInstanceAvatars() {
+  let result;
+  try {
+    result = await pool.query(
+      `
+      SELECT id, instance_name, phone_number, evolution_base_url, evolution_api_key, profile_picture_url
+      FROM whatsapp_instances
+      WHERE status = 'ACTIVE' AND (provider = 'EVOLUTION' OR provider IS NULL)
+      `,
+    );
+  } catch (error) {
+    logger.warn("Falha ao listar instâncias para renovar avatar", { error: String(error) });
+    return;
+  }
+
+  await Promise.all(
+    (result.rows ?? []).map(async (row) => {
+      const stored = row.profile_picture_url ? String(row.profile_picture_url) : null;
+      if (!instanceAvatarNeedsRefresh(stored)) {
+        return;
+      }
+
+      const baseUrl = (row.evolution_base_url && String(row.evolution_base_url)) || env.EVOLUTION_API_BASE_URL;
+      const apiKey = (row.evolution_api_key && String(row.evolution_api_key)) || env.EVOLUTION_API_KEY;
+      const phone = row.phone_number ? String(row.phone_number).replace(/\D/g, "") : "";
+      if (!baseUrl || !apiKey || !phone) {
+        return;
+      }
+
+      const fresh = await fetchEvolutionOwnProfilePicture(baseUrl, apiKey, String(row.instance_name), phone);
+      if (fresh) {
+        await pool.query(
+          "UPDATE whatsapp_instances SET profile_picture_url = $2, updated_at = NOW() WHERE id = $1",
+          [row.id, fresh],
+        );
+        logger.info("avatar de instância renovado", { instanceName: String(row.instance_name) });
+      } else {
+        logger.warn("Evolution não retornou foto para a instância", {
+          instanceName: String(row.instance_name),
+          phone,
+          hadStored: Boolean(stored),
+        });
+      }
+    }),
+  );
 }
 
 async function syncEvolutionInstancesForSelection() {
@@ -499,7 +574,12 @@ async function syncEvolutionInstancesForSelection() {
 
       // Fallback: payload sem foto → busca direta o avatar do número conectado.
       if (!profilePictureUrl && phoneNumber) {
-        profilePictureUrl = await fetchEvolutionOwnProfilePicture(instanceName, phoneNumber);
+        profilePictureUrl = await fetchEvolutionOwnProfilePicture(
+          env.EVOLUTION_API_BASE_URL,
+          env.EVOLUTION_API_KEY,
+          instanceName,
+          phoneNumber,
+        );
       }
 
       await pool.query(
