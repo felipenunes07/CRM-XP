@@ -23,6 +23,7 @@
     "db:vacuum": "tsx src/scripts/vacuumHotTables.ts",
     "db:cleanup-payloads": "tsx src/scripts/cleanupHeavyPayloads.ts",
     "db:benchmark": "tsx src/scripts/benchmarkApis.ts",
+    "db:audit-report": "tsx src/scripts/auditDailyReport.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },

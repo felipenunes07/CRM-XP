@@ -4634,7 +4634,14 @@ export async function getWhatsappDailySummaryReport(
       rollupMetricsByName.set(nameKey, metric);
     }
 
-    if (rollupMetricsByName.size > 0) {
+    // DESATIVADO: este bloco sobrescrevia os números do relatório (calculados ao
+    // vivo, com dedup por jid e atribuição por remetente real) pelos números do
+    // ROLLUP. Quando o rollup estava vazio/stale/com atribuição diferente, o Resumo
+    // mostrava valores errados (ex.: Tamires aparecia com 2 em vez de 58 enviadas).
+    // O cálculo ao vivo é a fonte correta; heatmap e Resumo batem por usarem a MESMA
+    // dedup, não por um copiar o outro.
+    const ALIGN_DAILY_WITH_ROLLUP = false;
+    if (ALIGN_DAILY_WITH_ROLLUP && rollupMetricsByName.size > 0) {
       totalSent = 0;
       totalReceived = 0;
 
