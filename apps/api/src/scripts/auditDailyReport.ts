@@ -55,7 +55,7 @@ async function rawTruth(dateStr: string) {
 
 async function main() {
   const userRes = await pool.query(
-    `SELECT id, email, name, role FROM users WHERE role <> 'SELLER' AND COALESCE(is_active, true) ORDER BY created_at LIMIT 1`,
+    `SELECT id, email, name, role FROM users WHERE role <> 'SELLER' ORDER BY created_at LIMIT 1`,
   );
   const row = userRes.rows[0] ?? (await pool.query(`SELECT id, email, name, role FROM users LIMIT 1`)).rows[0];
   const user = {

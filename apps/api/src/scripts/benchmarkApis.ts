@@ -36,7 +36,7 @@ async function timeIt(endpoint: string, passada: string, fn: () => Promise<unkno
 async function main() {
   const userRes = await pool.query(
     `SELECT id, email, name, role FROM users
-     WHERE role <> 'SELLER' AND COALESCE(is_active, true)
+     WHERE role <> 'SELLER'
      ORDER BY created_at LIMIT 1`,
   );
   const row =
