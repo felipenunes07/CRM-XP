@@ -282,9 +282,12 @@ export function isInternalWhatsappReportChat(input: {
     return true;
   }
 
-  const jid = normalizeWhatsappReportJid(input.remoteJid);
-  const isGroup = input.isGroup ?? Boolean(jid?.endsWith("@g.us"));
-  return isGroup && isInternalWhatsappReportName(input.name);
+  // Os padrões de nome interno são específicos da equipe XP ("XP Conferência",
+  // "XP Telas", "interno", etc.). Antes só filtravam GRUPO, mas há contatos internos
+  // gravados como PRIVADO (ex.: "XP Conferência 2 joey" com jid @s.whatsapp.net) que
+  // escapavam e apareciam como atendimento particular no relatório. Aplicamos a
+  // grupo E privado — um cliente real não tem nome no padrão da equipe.
+  return isInternalWhatsappReportName(input.name);
 }
 
 function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
