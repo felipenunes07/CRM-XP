@@ -25,7 +25,10 @@ async function rawTruth(dateStr: string) {
     `
     WITH dd AS (
       SELECT DISTINCT ON (wmm.remote_jid, wmm.message_id)
-        lower(wmm.instance_name) AS agente,
+        -- O relatorio atribui por REMETENTE real (sender_name), nao por instancia:
+        -- assim uma msg de grupo de quem esta com a Evolution off, mas captada por
+        -- outra instancia, ainda e creditada a pessoa certa.
+        lower(COALESCE(NULLIF(wmm.sender_name,''), wmm.instance_name)) AS agente,
         COALESCE(NULLIF(wmm.media_json->>'chatDisplayName',''), d.title, d.customer_display_name, '') AS chat,
         wmm.from_me
       FROM whatsapp_monitor_messages wmm
@@ -65,7 +68,15 @@ async function main() {
   let totalDiverge = 0;
   for (let off = 0; off < 4; off++) {
     const dateStr = spDateKey(off);
-    const report = await getWhatsappDailySummaryReport(user, dateStr);
+    let report: any;
+    try {
+      report = await getWhatsappDailySummaryReport(user, dateStr);
+    } catch (error) {
+      console.log(`\n===== ${dateStr} =====`);
+      console.log(`  ERRO ao gerar o relatorio: ${error instanceof Error ? error.message : String(error)}`);
+      totalDiverge++;
+      continue;
+    }
     const raw = await rawTruth(dateStr);
 
     const rows: Array<Record<string, unknown>> = [];
