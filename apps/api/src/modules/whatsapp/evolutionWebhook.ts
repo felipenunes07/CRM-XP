@@ -752,7 +752,7 @@ export async function handleEvolutionWebhook(
       // clique em botão/enquete) a um disparo recente. Fire-and-forget para não
       // atrasar o processamento do webhook.
       if (!isFromMe) {
-        void processCampaignAutoReply(String(resolvedRemoteJid), messageContent).catch((error) => {
+        void processCampaignAutoReply(String(resolvedRemoteJid), messageContent, String(activitySenderJid ?? "")).catch((error) => {
           logger.error("campaign auto-reply processing failed", {
             remoteJid: resolvedRemoteJid,
             error: String(error),

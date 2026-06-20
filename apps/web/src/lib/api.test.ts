@@ -36,4 +36,58 @@ describe("api request timeouts", () => {
       }),
     );
   });
+
+  it("sends all message intelligence filters to metrics and intelligence endpoints", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.getEventsMetrics("token-1", {
+      dateFrom: "2026-06-13",
+      dateTo: "2026-06-20",
+      eventType: "COMPLAINT",
+      severity: "HIGH",
+      resolved: false,
+      search: "estoque",
+      isGroup: true,
+    } as any);
+
+    await api.getEventsIntelligence("token-1", {
+      dateFrom: "2026-06-13",
+      dateTo: "2026-06-20",
+      eventType: "COMPLAINT",
+      severity: "HIGH",
+      resolved: false,
+      search: "estoque",
+      isGroup: true,
+    } as any);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/events/metrics?dateFrom=2026-06-13&dateTo=2026-06-20&eventType=COMPLAINT&severity=HIGH&resolved=false&search=estoque&isGroup=true",
+      expect.any(Object),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/events/intelligence?dateFrom=2026-06-13&dateTo=2026-06-20&eventType=COMPLAINT&severity=HIGH&resolved=false&search=estoque&isGroup=true",
+      expect.any(Object),
+    );
+  });
+
+  it("can trigger the manual message intelligence AI batch", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "SUCCEEDED", eventCount: 3 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.runEventsAiBatch("token-1");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/events/ai-batch/run",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
 });

@@ -254,7 +254,39 @@ async function isEchoOfOwnMessage(remoteJid: string, inboundContent: string): Pr
   return result.rows.length > 0;
 }
 
-export async function processCampaignAutoReply(remoteJid: string, inboundContent = "") {
+/**
+ * Quem respondeu é da empresa/equipe? Confere o NÚMERO do remetente (em grupo, o
+ * participante) contra os números das instâncias de envio e dos contatos padrão
+ * cadastrados em `whatsapp_team_contacts`. Se for, NÃO é resposta de cliente e a
+ * resposta automática não pode disparar (ex.: Ragnar ou uma vendedora postando no
+ * grupo não pode acionar o auto-reply).
+ */
+async function isTeamSender(senderJid: string): Promise<boolean> {
+  const digits = senderJid.split("@")[0]?.replace(/\D/g, "") ?? "";
+  if (digits.length < 8) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1 FROM whatsapp_instances
+        WHERE COALESCE(phone_number, '') <> ''
+          AND regexp_replace(phone_number, '\\D', '', 'g') = $1
+      )
+      OR EXISTS (
+        SELECT 1 FROM whatsapp_team_contacts
+        WHERE regexp_replace(phone_number, '\\D', '', 'g') = $1
+      )
+      LIMIT 1
+    `,
+    [digits],
+  );
+  return result.rows.length > 0;
+}
+
+export async function processCampaignAutoReply(remoteJid: string, inboundContent = "", senderJid = "") {
   const normalizedJid = String(remoteJid ?? "").trim();
   if (!normalizedJid) {
     return { sent: false };
@@ -262,8 +294,20 @@ export async function processCampaignAutoReply(remoteJid: string, inboundContent
 
   logger.info("auto-reply processing inbound", {
     remoteJid: normalizedJid,
+    senderJid: senderJid || null,
     contentPreview: inboundContent.slice(0, 60),
   });
+
+  // Remetente da equipe/empresa (instância ou contato padrão) NÃO aciona resposta
+  // automática — só vale resposta de cliente.
+  const normalizedSender = String(senderJid ?? "").trim();
+  if (normalizedSender && (await isTeamSender(normalizedSender))) {
+    logger.info("auto-reply blocked: remetente é da equipe/empresa", {
+      remoteJid: normalizedJid,
+      senderJid: normalizedSender,
+    });
+    return { sent: false, team: true };
+  }
 
   // Eco da própria instância não conta como resposta do cliente.
   if (inboundContent && (await isEchoOfOwnMessage(normalizedJid, inboundContent))) {

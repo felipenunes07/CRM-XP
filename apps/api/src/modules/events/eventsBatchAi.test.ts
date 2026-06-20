@@ -77,6 +77,22 @@ describe("events batch AI policy", () => {
     }).reason).toBe("daily_token_cap");
   });
 
+  it("allows manual runs to skip cadence while preserving business-hour and budget gates", () => {
+    expect(shouldRunEventsAiBatch({
+      now: new Date("2026-06-19T13:30:00.000Z"),
+      config: baseConfig,
+      usage: { requestCount: 0, tokenCount: 0, lastRunAt: new Date("2026-06-19T13:00:00.000Z") },
+      ignoreCadence: true,
+    }).reason).toBe("allowed");
+
+    expect(shouldRunEventsAiBatch({
+      now: new Date("2026-06-19T22:00:00.000Z"),
+      config: baseConfig,
+      usage: { requestCount: 0, tokenCount: 0, lastRunAt: new Date("2026-06-19T13:00:00.000Z") },
+      ignoreCadence: true,
+    }).reason).toBe("outside_business_hours");
+  });
+
   it("anonymizes customer identifiers before sending text to an external model", () => {
     const text = "Felipe 11 99999-8888 pediu no grupo 120363@g.us email cliente@xp.com CPF 123.456.789-10";
 
