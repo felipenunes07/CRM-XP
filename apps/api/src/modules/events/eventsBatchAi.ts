@@ -230,8 +230,9 @@ export function shouldRunEventsAiBatch(input: {
   now: Date;
   config: EventsAiBatchConfig;
   usage: EventsAiBatchUsage;
+  ignoreCadence?: boolean;
 }): EventsAiBatchDecision {
-  const { now, config, usage } = input;
+  const { now, config, usage, ignoreCadence = false } = input;
 
   if (!config.enabled) {
     return { allowed: false, reason: "disabled", nextEligibleAt: null };
@@ -245,7 +246,7 @@ export function shouldRunEventsAiBatch(input: {
     return { allowed: false, reason: "outside_business_hours", nextEligibleAt: getNextBusinessWindowStart(now, config) };
   }
 
-  if (usage.lastRunAt) {
+  if (!ignoreCadence && usage.lastRunAt) {
     const nextRunAt = new Date(usage.lastRunAt.getTime() + config.intervalMinutes * 60 * 1000);
     if (nextRunAt > now) {
       return { allowed: false, reason: "cadence_wait", nextEligibleAt: nextRunAt };
@@ -494,6 +495,7 @@ export async function getEventsAiBatchStatus(now = new Date()) {
   const config = getEventsAiBatchConfig();
   const usage = await getBatchUsage(now);
   const decision = shouldRunEventsAiBatch({ now, config, usage });
+  const manualDecision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: true });
 
   const latest = await pool.query(`
     SELECT status, status_reason, summary_json, event_count, finished_at, error_message
@@ -520,6 +522,9 @@ export async function getEventsAiBatchStatus(now = new Date()) {
     canRunNow: decision.allowed,
     blockedReason: decision.allowed ? null : decision.reason,
     nextEligibleAt: decision.nextEligibleAt?.toISOString() ?? null,
+    canRunManually: manualDecision.allowed,
+    manualBlockedReason: manualDecision.allowed ? null : manualDecision.reason,
+    manualNextEligibleAt: manualDecision.nextEligibleAt?.toISOString() ?? null,
     latestBatch: latest.rows[0] ? {
       status: latest.rows[0].status,
       reason: latest.rows[0].status_reason,
@@ -531,10 +536,10 @@ export async function getEventsAiBatchStatus(now = new Date()) {
   };
 }
 
-export async function runEventsAiBatch(now = new Date()) {
+export async function runEventsAiBatch(now = new Date(), options: { manual?: boolean } = {}) {
   const config = getEventsAiBatchConfig();
   const usage = await getBatchUsage(now);
-  const decision = shouldRunEventsAiBatch({ now, config, usage });
+  const decision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: options.manual === true });
 
   if (!decision.allowed) {
     logger.info("events AI batch skipped", { reason: decision.reason, nextEligibleAt: decision.nextEligibleAt?.toISOString() });

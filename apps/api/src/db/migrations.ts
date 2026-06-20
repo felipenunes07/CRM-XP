@@ -3847,5 +3847,20 @@ export const migrations = [
     ON event_ai_batches(batch_date DESC);
   CREATE INDEX IF NOT EXISTS idx_event_ai_batches_finished_at
     ON event_ai_batches(finished_at DESC);
+  `,
+  `
+  -- Deduplicacao operacional de eventos replicados por varias instancias.
+  -- A mesma mensagem de grupo pode chegar por 2+ webhooks porque varias
+  -- vendedoras estao no mesmo grupo. A chave e criada pela aplicacao com
+  -- grupo/remetente/texto/janela curta para manter um unico evento gerencial.
+  ALTER TABLE message_events
+    ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_message_events_dedupe_key
+    ON message_events(dedupe_key)
+    WHERE dedupe_key IS NOT NULL;
+
+  CREATE INDEX IF NOT EXISTS idx_message_events_dedupe_key
+    ON message_events(dedupe_key);
   `
 ];

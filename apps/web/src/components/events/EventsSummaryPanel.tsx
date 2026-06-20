@@ -45,7 +45,7 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
   return (
     <div className="wa-metrics-grid">
       <MetricCard
-        title="Total de eventos"
+        title="Eventos unicos"
         value={summary.totalEvents}
         subtitle={`${summary.totalEvents - summary.unresolvedEvents} resolvidos`}
         icon={MessageSquare}

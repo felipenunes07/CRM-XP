@@ -117,6 +117,7 @@ import {
   resolveEvent,
   getDailySentiments,
 } from "./modules/events/eventsService.js";
+import { runEventsAiBatch } from "./modules/events/eventsBatchAi.js";
 import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
@@ -2574,6 +2575,14 @@ export function createApp() {
       const query = eventsFiltersSchema.parse(request.query);
       const intelligence = await getEventsIntelligence(request.user!, query);
       response.json(intelligence);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/events/ai-batch/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.json(await runEventsAiBatch(new Date(), { manual: true }));
     } catch (error) {
       next(error);
     }

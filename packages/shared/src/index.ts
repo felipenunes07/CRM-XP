@@ -2257,6 +2257,9 @@ export interface EventsAiBatchStatus {
   canRunNow: boolean;
   blockedReason: string | null;
   nextEligibleAt: string | null;
+  canRunManually: boolean;
+  manualBlockedReason: string | null;
+  manualNextEligibleAt: string | null;
   latestBatch: {
     status: string;
     reason: string;

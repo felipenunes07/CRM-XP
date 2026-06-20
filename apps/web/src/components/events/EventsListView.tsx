@@ -61,6 +61,18 @@ function readNumberMetadata(event: MessageEvent, key: string) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function readDuplicateCount(event: MessageEvent) {
+  const numericValue = readNumberMetadata(event, "duplicateCount");
+  if (numericValue && numericValue > 1) return numericValue;
+
+  const value = event.metadata?.duplicateCount;
+  if (typeof value === "string" && /^\d+$/.test(value) && Number(value) > 1) {
+    return Number(value);
+  }
+
+  return 1;
+}
+
 function isActionRequired(event: MessageEvent) {
   const value = event.metadata?.actionRequired;
   if (typeof value === "boolean") return value;
@@ -91,6 +103,7 @@ export function EventsListView({ events, onResolve, onViewConversation }: Events
           const reason = readStringMetadata(event, "classificationReason");
           const confidence = readNumberMetadata(event, "classificationConfidence");
           const requiresAction = isActionRequired(event);
+          const duplicateCount = readDuplicateCount(event);
 
           return (
             <div key={event.id} className="wa-event-row" style={{ gridTemplateColumns: "var(--event-columns)" }}>
@@ -106,6 +119,11 @@ export function EventsListView({ events, onResolve, onViewConversation }: Events
                   <span className="wa-origin-chip">
                     {event.conversationContext?.isGroup ? "Grupo" : "Privado"}
                   </span>
+                  {duplicateCount > 1 && (
+                    <span className="wa-duplicate-chip">
+                      {duplicateCount} webhooks unidos
+                    </span>
+                  )}
                 </div>
                 <p className="wa-event-content-preview">{event.content}</p>
                 {(reason || confidence !== null || requiresAction) && (

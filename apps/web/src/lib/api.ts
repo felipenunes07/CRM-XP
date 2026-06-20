@@ -64,6 +64,7 @@ import type {
   WhatsappMonitorConversationsResponse,
   WhatsappMonitorMetrics,
   EventsMetrics,
+  EventsFilters,
   EventsIntelligenceResponse,
   MessageEvent,
   DailySentiment,
@@ -84,6 +85,18 @@ export const API_REQUEST_TIMEOUT_MS = 30_000;
 // (60MB+), o que pode levar mais de 1 minuto. Damos uma folga maior so para
 // essas chamadas; depois o resultado fica em cache e responde em milissegundos.
 export const CREDIT_REQUEST_TIMEOUT_MS = 180_000;
+
+type EventsQuery = EventsFilters & {
+  eventType?: EventsFilters["eventType"] | string;
+  severity?: EventsFilters["severity"] | string;
+};
+
+function appendEventsQuery(search: URLSearchParams, query: EventsQuery) {
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === "") return;
+    search.set(key, Array.isArray(value) ? value.join(",") : String(value));
+  });
+}
 
 export class ApiAuthError extends Error {
   status = 401;
@@ -1164,18 +1177,14 @@ export const api = {
       token,
     );
   },
-  getEventsMetrics(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
+  getEventsMetrics(token: string, query: EventsQuery = {}) {
     const search = new URLSearchParams();
-    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
-    if (query.dateTo) search.set("dateTo", query.dateTo);
-    if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
+    appendEventsQuery(search, query);
     return request<EventsMetrics>(`/api/events/metrics?${search.toString()}`, {}, token);
   },
-  getEventsIntelligence(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
+  getEventsIntelligence(token: string, query: EventsQuery = {}) {
     const search = new URLSearchParams();
-    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
-    if (query.dateTo) search.set("dateTo", query.dateTo);
-    if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
+    appendEventsQuery(search, query);
     return request<EventsIntelligenceResponse>(`/api/events/intelligence?${search.toString()}`, {}, token);
   },
   listEvents(token: string, filters: any, pagination: { page: number; pageSize: number }) {
@@ -1186,6 +1195,13 @@ export const api = {
     search.set("page", String(pagination.page));
     search.set("pageSize", String(pagination.pageSize));
     return request<{ events: MessageEvent[]; total: number }>(`/api/events?${search.toString()}`, {}, token);
+  },
+  runEventsAiBatch(token: string) {
+    return request<{ status: "SKIPPED" | "SUCCEEDED" | "FAILED"; reason?: string; eventCount?: number; error?: string }>(
+      "/api/events/ai-batch/run",
+      { method: "POST" },
+      token,
+    );
   },
   resolveEvent(token: string, id: string, input: { resolutionNote: string }) {
     return request<MessageEvent>(`/api/events/${id}/resolve`, {

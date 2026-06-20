@@ -18,6 +18,7 @@ import {
   WhatsappMonitorMessage,
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
+import { createHash } from "node:crypto";
 import { buildEventsIntelligence } from "./eventsInsights.js";
 import { getEventsAiBatchStatus } from "./eventsBatchAi.js";
 
@@ -219,6 +220,49 @@ function normalizeMessageText(value: string) {
     .toLocaleLowerCase("pt-BR")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeDedupeText(value: string) {
+  return normalizeMessageText(value)
+    .replace(/[^\p{L}\p{N}\s?]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stableHash(value: string) {
+  return createHash("sha1").update(value).digest("hex").slice(0, 20);
+}
+
+function readDedupeDate(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+export function buildEventDeduplicationKey(input: EventDeduplicationInput) {
+  const remoteJid = normalizeMessageText(input.remoteJid ?? "");
+  const senderJid = normalizeMessageText(input.senderJid ?? "");
+  const text = normalizeDedupeText(input.content);
+  const contentHash = stableHash(text);
+  const bucket = Math.floor(readDedupeDate(input.createdAt).getTime() / EVENT_DEDUPE_BUCKET_MS);
+  const isGroup = input.isGroup || remoteJid.endsWith("@g.us");
+
+  if (isGroup) {
+    return [
+      "group",
+      remoteJid || "unknown-remote",
+      senderJid || "unknown-sender",
+      bucket,
+      contentHash,
+    ].join(":");
+  }
+
+  return [
+    "private",
+    input.dealId,
+    senderJid || remoteJid || "unknown-sender",
+    bucket,
+    contentHash,
+  ].join(":");
 }
 
 function buildClassificationText(content: string): ClassificationText {
@@ -651,9 +695,20 @@ function mapEventRow(row: any): MessageEvent {
   const eventType = classification?.eventType ?? row.event_type as EventType;
   const severity = classification?.severity ?? row.severity as EventSeverity;
   const label = classification?.label ?? row.label;
+  const duplicateCount = Number(row.duplicate_count ?? 0);
+  const currentDuplicateCount =
+    typeof metadata.duplicateCount === "number" && Number.isFinite(metadata.duplicateCount)
+      ? metadata.duplicateCount
+      : 1;
   const eventMetadata = classification
     ? buildClassificationMetadata(metadata, classification, row)
     : metadata;
+  const metadataWithDuplicateCount = duplicateCount > 1
+    ? {
+        ...eventMetadata,
+        duplicateCount: Math.max(duplicateCount, currentDuplicateCount),
+      }
+    : eventMetadata;
 
   return {
     id: row.id,
@@ -663,7 +718,7 @@ function mapEventRow(row: any): MessageEvent {
     severity,
     label,
     content: row.content,
-    metadata: eventMetadata,
+    metadata: metadataWithDuplicateCount,
     detectedAt: row.detected_at.toISOString(),
     resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
     resolutionNote: row.resolution_note,
@@ -763,6 +818,35 @@ async function fetchConversationContext(dealId: string): Promise<ConversationCon
   };
 }
 
+async function markDuplicateEventByKey(dedupeKey: string) {
+  const result = await pool.query(`
+    UPDATE message_events
+    SET
+      metadata = jsonb_set(
+        jsonb_set(
+          COALESCE(metadata, '{}'::jsonb),
+          '{duplicateCount}',
+          to_jsonb((
+            CASE
+              WHEN COALESCE(metadata->>'duplicateCount', '') ~ '^\\d+$'
+                THEN (metadata->>'duplicateCount')::int
+              ELSE 1
+            END
+          ) + 1),
+          true
+        ),
+        '{lastDuplicateAt}',
+        to_jsonb(NOW()::text),
+        true
+      ),
+      updated_at = NOW()
+    WHERE dedupe_key = $1
+    RETURNING *, false as inserted
+  `, [dedupeKey]);
+
+  return result.rows[0] ?? null;
+}
+
 export async function createEventFromMessage(
   message: WhatsappMonitorMessage,
   dealId: string
@@ -805,6 +889,21 @@ export async function createEventFromMessage(
   }
 
   const conversationContext = await fetchConversationContext(dealId);
+  const dedupeKey = buildEventDeduplicationKey({
+    dealId,
+    remoteJid: message.remoteJid,
+    senderJid: message.senderJid,
+    content: message.content,
+    createdAt: message.createdAt,
+    isGroup: message.isGroup,
+  });
+
+  const duplicateRow = await markDuplicateEventByKey(dedupeKey);
+  if (duplicateRow) {
+    const duplicateEvent = mapEventRow(duplicateRow);
+    duplicateEvent.conversationContext = conversationContext;
+    return duplicateEvent;
+  }
 
   // ── Escalation 1: VIP Customers ──
   // Check if the customer has high value or high frequency
@@ -843,6 +942,7 @@ export async function createEventFromMessage(
     classificationEvidence: classification.evidence,
     actionRequired: classification.actionRequired,
     shouldCreateEvent: classification.shouldCreateEvent,
+    dedupeKey,
     originalRisk: message.risk,
     isVip
   };
@@ -850,13 +950,30 @@ export async function createEventFromMessage(
   const result = await pool.query(`
     INSERT INTO message_events (
       deal_id, message_id, event_type, severity, label,
-      content, metadata, detected_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-    ON CONFLICT (message_id, deal_id) DO NOTHING
-    RETURNING *
-  `, [dealId, message.id, eventType, severity, label, message.content, metadata]);
+      content, metadata, dedupe_key, detected_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+    ON CONFLICT (message_id, deal_id) DO UPDATE SET
+      metadata = jsonb_set(
+        jsonb_set(
+          COALESCE(message_events.metadata, '{}'::jsonb),
+          '{duplicateCount}',
+          to_jsonb((
+            CASE
+              WHEN COALESCE(message_events.metadata->>'duplicateCount', '') ~ '^\\d+$'
+                THEN (message_events.metadata->>'duplicateCount')::int
+              ELSE 1
+            END
+          ) + 1),
+          true
+        ),
+        '{lastDuplicateAt}',
+        to_jsonb(NOW()::text),
+        true
+      ),
+      updated_at = NOW()
+    RETURNING *, (xmax = 0) as inserted
+  `, [dealId, message.id, eventType, severity, label, message.content, metadata, dedupeKey]);
 
-  // If no row was inserted, it means it was a duplicate webhook from another instance
   if (result.rows.length === 0) {
     return null;
   }
@@ -864,10 +981,12 @@ export async function createEventFromMessage(
   const event = mapEventRow(result.rows[0]);
   event.conversationContext = conversationContext;
 
-  // Background update for daily sentiment
-  updateDailySentimentFromDeal(dealId, sentimentScore).catch(err => {
-    logger.warn("Failed to update daily sentiment", { dealId, error: err.message });
-  });
+  if (result.rows[0].inserted) {
+    // Background update for daily sentiment
+    updateDailySentimentFromDeal(dealId, sentimentScore).catch(err => {
+      logger.warn("Failed to update daily sentiment", { dealId, error: err.message });
+    });
+  }
 
   return event;
 }
@@ -963,11 +1082,31 @@ export async function listEvents(
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const legacyDedupeKeySql = `
+    COALESCE(
+      me.dedupe_key,
+      CASE
+        WHEN COALESCE((me.metadata->>'isGroup')::boolean, d.whatsapp_jid LIKE '%@g.us') THEN concat_ws(
+          ':',
+          'legacy-group',
+          COALESCE(me.metadata->>'remoteJid', d.whatsapp_jid, ''),
+          COALESCE(me.metadata->>'senderJid', ''),
+          FLOOR(EXTRACT(EPOCH FROM me.detected_at) / 300)::bigint::text,
+          md5(regexp_replace(lower(trim(me.content)), '\\s+', ' ', 'g'))
+        )
+        ELSE me.id::text
+      END
+    )
+  `;
 
   const totalResult = await pool.query(`
-    SELECT COUNT(*) FROM message_events me
-    JOIN deals d ON d.id = me.deal_id
-    ${whereClause}
+    WITH filtered_events AS (
+      SELECT ${legacyDedupeKeySql} AS dedupe_partition_key
+      FROM message_events me
+      JOIN deals d ON d.id = me.deal_id
+      ${whereClause}
+    )
+    SELECT COUNT(DISTINCT dedupe_partition_key) FROM filtered_events
   `, params);
 
   const total = parseInt(totalResult.rows[0].count);
@@ -975,19 +1114,32 @@ export async function listEvents(
 
   params.push(pagination.pageSize, offset);
   const eventsResult = await pool.query(`
-    SELECT
-      me.*,
-      d.title as deal_title,
-      d.whatsapp_jid,
-      d.assigned_to_name as agent_name,
-      wi.display_label as instance_name,
-      c.display_name as customer_name
-    FROM message_events me
-    JOIN deals d ON d.id = me.deal_id
-    LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
-    LEFT JOIN customers c ON c.id = d.customer_id
-    ${whereClause}
-    ORDER BY me.detected_at DESC
+    WITH filtered_events AS (
+      SELECT
+        me.*,
+        d.title as deal_title,
+        d.whatsapp_jid,
+        d.assigned_to_name as agent_name,
+        wi.display_label as instance_name,
+        c.display_name as customer_name,
+        ${legacyDedupeKeySql} AS dedupe_partition_key
+      FROM message_events me
+      JOIN deals d ON d.id = me.deal_id
+      LEFT JOIN whatsapp_instances wi ON wi.id = d.whatsapp_instance_id
+      LEFT JOIN customers c ON c.id = d.customer_id
+      ${whereClause}
+    ),
+    ranked_events AS (
+      SELECT
+        *,
+        COUNT(*) OVER (PARTITION BY dedupe_partition_key)::int AS duplicate_count,
+        ROW_NUMBER() OVER (PARTITION BY dedupe_partition_key ORDER BY detected_at DESC, id DESC) AS dedupe_rank
+      FROM filtered_events
+    )
+    SELECT *
+    FROM ranked_events
+    WHERE dedupe_rank = 1
+    ORDER BY detected_at DESC
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `, params);
 
@@ -1015,6 +1167,17 @@ export async function listEvents(
     pageSize: pagination.pageSize
   };
 }
+
+interface EventDeduplicationInput {
+  dealId: string;
+  remoteJid: string | null | undefined;
+  senderJid: string | null | undefined;
+  content: string;
+  createdAt: string | Date;
+  isGroup: boolean;
+}
+
+const EVENT_DEDUPE_BUCKET_MS = 5 * 60 * 1000;
 
 export async function getEventsIntelligence(
   user: JwtUser,
@@ -1173,41 +1336,88 @@ export async function getEventsMetrics(
   }
 
   const params: any[] = [from, to];
-  let accessFilter = "AND me.event_type NOT IN ('GREETING', 'NEUTRAL')";
+  let accessFilter = "";
   if (user.role === "SELLER") {
-    params.push(user.id, user.name);
-    accessFilter += ` AND (d.assigned_to = $3 OR d.assigned_to_name = $4)`;
+    params.push(user.id);
+    const userIdParam = params.length;
+    params.push(user.name);
+    const userNameParam = params.length;
+    accessFilter += ` AND (d.assigned_to = $${userIdParam} OR d.assigned_to_name = $${userNameParam})`;
+  }
+
+  if (filters?.eventType && filters.eventType.length > 0) {
+    params.push(filters.eventType);
+    accessFilter += ` AND me.event_type = ANY($${params.length})`;
+  } else {
+    accessFilter += " AND me.event_type NOT IN ('GREETING', 'NEUTRAL')";
+  }
+
+  if (filters?.severity && filters.severity.length > 0) {
+    params.push(filters.severity);
+    accessFilter += ` AND me.severity = ANY($${params.length})`;
+  }
+
+  if (filters?.resolved !== undefined) {
+    accessFilter += filters.resolved ? " AND me.resolved_at IS NOT NULL" : " AND me.resolved_at IS NULL";
+  }
+
+  if (filters?.agentId) {
+    params.push(filters.agentId);
+    accessFilter += ` AND d.assigned_to = $${params.length}`;
+  }
+
+  if (filters?.search) {
+    params.push(`%${filters.search}%`);
+    accessFilter += ` AND (me.content ILIKE $${params.length} OR d.title ILIKE $${params.length})`;
   }
   
   if (filters?.isGroup !== undefined) {
     accessFilter += ` AND (me.metadata->>'isGroup')::boolean = ${filters.isGroup ? 'true' : 'false'}`;
   }
 
+  const dedupeKeySql = `
+    COALESCE(
+      me.dedupe_key,
+      CASE
+        WHEN COALESCE((me.metadata->>'isGroup')::boolean, d.whatsapp_jid LIKE '%@g.us') THEN concat_ws(
+          ':',
+          'legacy-group',
+          COALESCE(me.metadata->>'remoteJid', d.whatsapp_jid, ''),
+          COALESCE(me.metadata->>'senderJid', ''),
+          FLOOR(EXTRACT(EPOCH FROM me.detected_at) / 300)::bigint::text,
+          md5(regexp_replace(lower(trim(me.content)), '\\s+', ' ', 'g'))
+        )
+        ELSE me.id::text
+      END
+    )
+  `;
+
   // Summary
   const summaryResult = await pool.query(`
     SELECT
-      COUNT(*)::int as total_events,
-      COUNT(*) FILTER (WHERE resolved_at IS NULL)::int as unresolved_events,
-      COUNT(*) FILTER (WHERE event_type IN ('RISK', 'ESCALATION', 'CHURN_RISK'))::int as risk_events,
-      COUNT(*) FILTER (WHERE event_type = 'POSITIVE_FEEDBACK')::int as positive_feedbacks,
-      COUNT(*) FILTER (WHERE event_type = 'NEGATIVE_FEEDBACK')::int as negative_feedbacks,
-      COUNT(*) FILTER (WHERE event_type = 'COMPLAINT')::int as complaints_count,
+      COUNT(DISTINCT ${dedupeKeySql})::int as total_events,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE resolved_at IS NULL)::int as unresolved_events,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type IN ('RISK', 'ESCALATION', 'CHURN_RISK'))::int as risk_events,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type IN ('PRAISE', 'POSITIVE_FEEDBACK'))::int as positive_feedbacks,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type = 'NEGATIVE_FEEDBACK')::int as negative_feedbacks,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type = 'COMPLAINT')::int as complaints_count,
       CASE
-        WHEN COUNT(*) > 0 THEN COUNT(*) FILTER (WHERE resolved_at IS NOT NULL)::float / COUNT(*)
+        WHEN COUNT(DISTINCT ${dedupeKeySql}) > 0
+          THEN COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE resolved_at IS NOT NULL)::float / COUNT(DISTINCT ${dedupeKeySql})
         ELSE 0
       END as resolution_rate,
-      COUNT(*) FILTER (WHERE severity = 'CRITICAL')::int as critical_count,
-      COUNT(*) FILTER (WHERE severity = 'HIGH')::int as high_count,
-      COUNT(*) FILTER (WHERE severity = 'MODERATE')::int as moderate_count,
-      COUNT(*) FILTER (WHERE severity = 'LOW')::int as low_count,
-      COUNT(*) FILTER (WHERE (event_type = 'COMPLAINT' OR event_type = 'NEGATIVE_FEEDBACK') AND label LIKE '[VIP]%')::int as vip_complaints_count,
-      COUNT(*) FILTER (WHERE event_type = 'SALES_OPPORTUNITY')::int as opportunities_count,
-      COUNT(*) FILTER (WHERE event_type = 'QUESTION')::int as question_count,
-      COUNT(*) FILTER (
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE severity = 'CRITICAL')::int as critical_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE severity = 'HIGH')::int as high_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE severity = 'MODERATE')::int as moderate_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE severity = 'LOW')::int as low_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE (event_type = 'COMPLAINT' OR event_type = 'NEGATIVE_FEEDBACK') AND label LIKE '[VIP]%')::int as vip_complaints_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type = 'SALES_OPPORTUNITY')::int as opportunities_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type = 'QUESTION')::int as question_count,
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (
         WHERE resolved_at IS NULL
         AND COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
       )::int as action_required_events,
-      COUNT(*) FILTER (
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (
         WHERE COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION')) = false
       )::int as informational_events,
       AVG((me.metadata->>'sentimentScore')::float) as avg_sentiment
@@ -1254,7 +1464,7 @@ export async function getEventsMetrics(
     SELECT
       d.assigned_to as agent_id,
       d.assigned_to_name as agent_name,
-      COUNT(*) FILTER (
+      COUNT(DISTINCT ${dedupeKeySql}) FILTER (
         WHERE me.resolved_at IS NULL
         AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
       )::int as unresolved_count,
@@ -1274,7 +1484,7 @@ export async function getEventsMetrics(
     WHERE me.detected_at BETWEEN $1 AND $2
     ${accessFilter}
     GROUP BY d.assigned_to, d.assigned_to_name
-    HAVING COUNT(*) FILTER (
+    HAVING COUNT(DISTINCT ${dedupeKeySql}) FILTER (
       WHERE me.resolved_at IS NULL
       AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
     ) > 0
@@ -1288,7 +1498,7 @@ export async function getEventsMetrics(
       event_type,
       label,
       severity,
-      COUNT(*)::int as count,
+      COUNT(DISTINCT ${dedupeKeySql})::int as count,
       MAX(detected_at) as last_occurrence
     FROM message_events me
     JOIN deals d ON d.id = me.deal_id
@@ -1304,7 +1514,7 @@ export async function getEventsMetrics(
 
   // Unanswered opportunities for > 2 hours
   const unansweredOpportunitiesResult = await pool.query(`
-    SELECT COUNT(*)::int as count
+    SELECT COUNT(DISTINCT ${dedupeKeySql})::int as count
     FROM message_events me
     JOIN deals d ON d.id = me.deal_id
     LEFT JOIN LATERAL (
