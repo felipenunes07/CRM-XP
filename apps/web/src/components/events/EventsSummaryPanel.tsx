@@ -1,11 +1,12 @@
-import { EventsMetrics } from "@olist-crm/shared";
-import { AlertTriangle, MessageSquare, TrendingUp, Clock, Ghost } from "lucide-react";
+import type { ElementType } from "react";
+import type { EventsMetrics } from "@olist-crm/shared";
+import { AlertTriangle, Gauge, MessageSquare, TrendingUp, Clock } from "lucide-react";
 
 interface MetricCardProps {
   title: string;
   value: string | number;
   subtitle?: string;
-  icon: React.ElementType;
+  icon: ElementType;
   trend?: {
     value: number;
     label: string;
@@ -44,28 +45,28 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
   return (
     <div className="wa-metrics-grid">
       <MetricCard
-        title="Total de Eventos"
+        title="Total de eventos"
         value={summary.totalEvents}
         subtitle={`${summary.totalEvents - summary.unresolvedEvents} resolvidos`}
         icon={MessageSquare}
         color="#3b82f6"
       />
       <MetricCard
-        title="Alertas Críticos"
+        title="Alertas criticos"
         value={(summary.bySeverity?.CRITICAL || 0) + (summary.bySeverity?.HIGH || 0)}
         subtitle="Risco alto detectado"
         icon={AlertTriangle}
         color="#ef4444"
       />
       <MetricCard
-        title="Sentimento Médio"
+        title="Sentimento medio"
         value={Number(summary.averageSentiment ?? 0).toFixed(1)}
-        subtitle={Number(summary.averageSentiment ?? 0) > 0.3 ? "Predominantemente positivo" : Number(summary.averageSentiment ?? 0) < -0.3 ? "Atenção necessária" : "Neutro"}
+        subtitle={Number(summary.averageSentiment ?? 0) > 0.3 ? "Predominantemente positivo" : Number(summary.averageSentiment ?? 0) < -0.3 ? "Atencao necessaria" : "Neutro"}
         icon={TrendingUp}
         color="#10b981"
       />
       <MetricCard
-        title="Resolução Média"
+        title="Resolucao media"
         value={`${Number(operationalEfficiency.averageResolutionTimeHours ?? 0).toFixed(1)}h`}
         subtitle="Tempo de encerramento"
         icon={Clock}
@@ -74,8 +75,8 @@ export function EventsSummaryPanel({ metrics }: { metrics: EventsMetrics | null 
       <MetricCard
         title="Gargalos"
         value={operationalEfficiency.bottleneckAgents?.length ?? 0}
-        subtitle="Agentes com pendências"
-        icon={Ghost}
+        subtitle="Agentes com pendencias"
+        icon={Gauge}
         color="#f59e0b"
       />
     </div>

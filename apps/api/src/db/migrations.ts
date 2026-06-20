@@ -3819,5 +3819,33 @@ export const migrations = [
   -- Indice nos digitos para casar rapido com participant_jid normalizado.
   CREATE INDEX IF NOT EXISTS idx_whatsapp_team_contacts_digits
     ON whatsapp_team_contacts ((regexp_replace(phone_number, '\\D', '', 'g')));
+  `,
+  `
+  -- Message intelligence optional AI batch summaries and usage caps.
+  CREATE TABLE IF NOT EXISTS event_ai_batches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    batch_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    status TEXT NOT NULL,
+    status_reason TEXT NOT NULL DEFAULT '',
+    period_from TIMESTAMPTZ,
+    period_to TIMESTAMPTZ,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    input_tokens_estimated INTEGER NOT NULL DEFAULT 0,
+    output_tokens_estimated INTEGER NOT NULL DEFAULT 0,
+    summary_json JSONB,
+    error_message TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (status IN ('SKIPPED', 'SUCCEEDED', 'FAILED'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_event_ai_batches_date
+    ON event_ai_batches(batch_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_event_ai_batches_finished_at
+    ON event_ai_batches(finished_at DESC);
   `
 ];

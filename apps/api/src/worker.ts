@@ -9,6 +9,7 @@ import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/what
 import { refreshCustomerCreditOverview } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
+import { runEventsAiBatch } from "./modules/events/eventsBatchAi.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
@@ -93,6 +94,30 @@ async function main() {
           });
         },
         env.WORKER_SENTIMENT_AGGREGATION_INTERVAL_HOURS * 60 * 60 * 1000,
+      )
+    );
+  }
+
+  // 5.5. Optional AI batch summary for message intelligence. The job itself
+  // enforces business hours, API key presence, cadence, and daily budget caps.
+  if (env.EVENTS_AI_BATCH_ENABLED) {
+    logger.info("scheduled events AI batch enabled", {
+      intervalMinutes: env.EVENTS_AI_BATCH_INTERVAL_MINUTES,
+      provider: env.EVENTS_AI_PROVIDER,
+      model: env.EVENTS_AI_MODEL,
+      cerebrasModel: env.CEREBRAS_MODEL,
+      timezone: env.EVENTS_AI_TIMEZONE,
+      businessStartHour: env.EVENTS_AI_BUSINESS_START_HOUR,
+      businessEndHour: env.EVENTS_AI_BUSINESS_END_HOUR,
+    });
+    intervals.push(
+      setInterval(
+        () => {
+          runEventsAiBatch().catch((error) => {
+            logger.error("failed scheduled events AI batch", { error: String(error) });
+          });
+        },
+        env.EVENTS_AI_BATCH_INTERVAL_MINUTES * 60 * 1000,
       )
     );
   }

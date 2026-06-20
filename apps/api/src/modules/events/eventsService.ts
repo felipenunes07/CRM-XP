@@ -12,10 +12,14 @@ import {
   TopEvent,
   EventsFilters,
   EventsListResponse,
+  EventsAiBatchStatus,
+  EventsIntelligenceResponse,
   EventResolutionInput,
   WhatsappMonitorMessage,
   WhatsappMessageRisk,
 } from "@olist-crm/shared";
+import { buildEventsIntelligence } from "./eventsInsights.js";
+import { getEventsAiBatchStatus } from "./eventsBatchAi.js";
 
 export const MESSAGE_CLASSIFIER_VERSION = "2026-05-15-v4";
 
@@ -89,7 +93,8 @@ const COMPLAINT_PHRASES = [
   "reclamacao", "insatisfeito", "pessimo", "horrivel", "cancelar",
   "absurdo", "ridiculo", "veio errado", "veio com defeito", "produto errado",
   "nao chegou", "nao recebi", "atrasou", "defeito", "quebrado",
-  "sem retorno", "sem resposta",
+  "sem retorno", "sem resposta", "reclamando", "faltando estoque",
+  "falta estoque", "sem estoque", "nao tem estoque",
 ];
 
 const NEGATIVE_FEEDBACK_PHRASES = [
@@ -342,7 +347,7 @@ function hasCommercialIntent(ctx: ClassificationText) {
     return true;
   }
 
-  if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS) && ctx.normalized.includes("?")) {
+  if ((hasToken(ctx, "reposicao") || hasToken(ctx, "chegou") || hasToken(ctx, "chegaram")) && hasAnyToken(ctx, PRODUCT_TOKENS)) {
     return true;
   }
 
@@ -398,7 +403,7 @@ function buildClassification(
     reason: input.reason ?? "Classificacao por contexto da mensagem.",
     category,
     actionRequired,
-    shouldCreateEvent: eventType !== "GREETING" && eventType !== "NEUTRAL" && category !== "feedback" && eventType !== "SALES_OPPORTUNITY",
+    shouldCreateEvent: eventType !== "GREETING" && eventType !== "NEUTRAL",
     evidence: input.evidence ?? [],
   };
 }
@@ -474,8 +479,8 @@ export function classifyMessageContent(
   }
 
   if (hasCommercialIntent(ctx)) {
-    return buildClassification("QUESTION", ctx, {
-      category: "question",
+    return buildClassification("SALES_OPPORTUNITY", ctx, {
+      category: "opportunity",
       confidence: 0.88,
       reason: "Mensagem indica interesse comercial ou duvida sobre produto/preco.",
       evidence: ctx.tokens.filter((token) => COMMERCIAL_TOKENS.has(token)).slice(0, 5),
@@ -1009,6 +1014,38 @@ export async function listEvents(
     page: pagination.page,
     pageSize: pagination.pageSize
   };
+}
+
+export async function getEventsIntelligence(
+  user: JwtUser,
+  filters: EventsFilters,
+): Promise<EventsIntelligenceResponse> {
+  const from = filters.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const to = filters.dateTo || new Date().toISOString().slice(0, 10);
+
+  const eventResult = await listEvents(user, {
+    ...filters,
+    dateFrom: from,
+    dateTo: to,
+  }, {
+    page: 1,
+    pageSize: 500,
+  });
+
+  let aiBatch: EventsAiBatchStatus | null = null;
+  try {
+    aiBatch = await getEventsAiBatchStatus();
+  } catch (error) {
+    logger.warn("failed to read events AI batch status", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return buildEventsIntelligence(eventResult.events, {
+    generatedAt: new Date().toISOString(),
+    period: { from, to },
+    aiBatch,
+  });
 }
 
 export async function resolveEvent(
@@ -1546,6 +1583,21 @@ export async function purgeOldEventsData() {
       )
       `,
       [env.EVENTS_SENTIMENT_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.aiBatches = await deleteInBatches(
+      "event_ai_batches",
+      `
+      DELETE FROM event_ai_batches
+      WHERE ctid IN (
+        SELECT ctid
+        FROM event_ai_batches
+        WHERE batch_date < CURRENT_DATE - $1::int
+        ORDER BY batch_date
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_AI_SUMMARY_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
     );
 
     const totalPurged = Object.values(results).reduce((a, b) => a + b, 0);

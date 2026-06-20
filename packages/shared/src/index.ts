@@ -2206,6 +2206,91 @@ export interface EventsMetrics {
   executiveSummary?: EventsExecutiveSummary;
 }
 
+export interface MessageInsightExample {
+  eventId: string;
+  content: string;
+  contactName: string;
+  agentName: string | null;
+  detectedAt: string;
+  isGroup: boolean;
+}
+
+export interface MessageInsightTheme {
+  key: string;
+  title: string;
+  category: "negative" | "positive" | "opportunity" | "risk";
+  severity: EventSeverity;
+  count: number;
+  unresolvedCount: number;
+  groupCount: number;
+  privateCount: number;
+  examples: MessageInsightExample[];
+  lastDetectedAt: string;
+}
+
+export interface EventsCriticalAlert {
+  eventId: string;
+  title: string;
+  severity: EventSeverity;
+  content: string;
+  contactName: string;
+  agentName: string | null;
+  detectedAt: string;
+  isGroup: boolean;
+}
+
+export interface EventsAiBatchStatus {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  businessHours: {
+    timezone: string;
+    startHour: number;
+    endHour: number;
+    days: number[];
+  };
+  dailyUsage: {
+    requestCount: number;
+    tokenCount: number;
+    lastRunAt: string | null;
+  };
+  canRunNow: boolean;
+  blockedReason: string | null;
+  nextEligibleAt: string | null;
+  latestBatch: {
+    status: string;
+    reason: string;
+    eventCount: number;
+    finishedAt: string | null;
+    errorMessage: string | null;
+    summary: Record<string, unknown> | null;
+  } | null;
+}
+
+export interface EventsIntelligenceResponse {
+  generatedAt: string;
+  period: {
+    from: string;
+    to: string;
+  };
+  executiveSummary: string;
+  summary: {
+    totalEvents: number;
+    criticalOpen: number;
+    negativeSignals: number;
+    positiveSignals: number;
+    opportunities: number;
+    unresolvedEvents: number;
+  };
+  sourceSplit: {
+    groups: number;
+    private: number;
+  };
+  topThemes: MessageInsightTheme[];
+  criticalAlerts: EventsCriticalAlert[];
+  aiBatch: EventsAiBatchStatus | null;
+}
+
 // ── Filters ────────────────────────────────────────────────
 
 export interface EventsFilters {

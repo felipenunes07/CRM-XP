@@ -64,6 +64,7 @@ import type {
   WhatsappMonitorConversationsResponse,
   WhatsappMonitorMetrics,
   EventsMetrics,
+  EventsIntelligenceResponse,
   MessageEvent,
   DailySentiment,
 } from "@olist-crm/shared";
@@ -1169,6 +1170,13 @@ export const api = {
     if (query.dateTo) search.set("dateTo", query.dateTo);
     if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
     return request<EventsMetrics>(`/api/events/metrics?${search.toString()}`, {}, token);
+  },
+  getEventsIntelligence(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
+    const search = new URLSearchParams();
+    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
+    if (query.dateTo) search.set("dateTo", query.dateTo);
+    if (query.isGroup !== undefined) search.set("isGroup", String(query.isGroup));
+    return request<EventsIntelligenceResponse>(`/api/events/intelligence?${search.toString()}`, {}, token);
   },
   listEvents(token: string, filters: any, pagination: { page: number; pageSize: number }) {
     const search = new URLSearchParams();

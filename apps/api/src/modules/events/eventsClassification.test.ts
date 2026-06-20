@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateSentimentScore, detectEventType } from "./eventsService.js";
+import { calculateSentimentScore, classifyMessageContent, detectEventType } from "./eventsService.js";
 import type { WhatsappMessageRisk } from "@olist-crm/shared";
 
 const noRisk: WhatsappMessageRisk | null = null;
@@ -25,6 +25,14 @@ describe("message event classification", () => {
     expect(detectEventType("Bom dia linda, como estas? iPhone 11 ta tendo quais? 13c nada ne?", noRisk)).toBe("SALES_OPPORTUNITY");
   });
 
+  it("creates actionable events for sales opportunities", () => {
+    const classification = classifyMessageContent("Tem tela de iPhone 11 no atacado?", noRisk);
+
+    expect(classification.eventType).toBe("SALES_OPPORTUNITY");
+    expect(classification.actionRequired).toBe(true);
+    expect(classification.shouldCreateEvent).toBe(true);
+  });
+
   it("keeps greetings and casual warmth out of risk queues", () => {
     expect(detectEventType("Bom dia", noRisk)).toBe("GREETING");
     expect(detectEventType("Boooooom dia meu amigoooo lindo", noRisk)).toBe("GREETING");
@@ -34,6 +42,7 @@ describe("message event classification", () => {
   it("requires explicit dissatisfaction to classify negative events", () => {
     expect(detectEventType("O produto veio com problema e quero cancelar", noRisk)).toBe("COMPLAINT");
     expect(detectEventType("Estou chateado com a demora do pedido", noRisk)).toBe("NEGATIVE_FEEDBACK");
+    expect(detectEventType("Cliente reclamando que esta faltando estoque de tela do iPhone 11", noRisk)).toBe("COMPLAINT");
   });
 
   it("does not let price lists distort sentiment", () => {

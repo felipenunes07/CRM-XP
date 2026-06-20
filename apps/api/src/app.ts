@@ -112,6 +112,7 @@ import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
   getEventsMetrics,
+  getEventsIntelligence,
   listEvents,
   resolveEvent,
   getDailySentiments,
@@ -2563,6 +2564,16 @@ export function createApp() {
       const query = eventsFiltersSchema.parse(request.query);
       const metrics = await getEventsMetrics(request.user!, query);
       response.json(metrics);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/intelligence", async (request, response, next) => {
+    try {
+      const query = eventsFiltersSchema.parse(request.query);
+      const intelligence = await getEventsIntelligence(request.user!, query);
+      response.json(intelligence);
     } catch (error) {
       next(error);
     }
