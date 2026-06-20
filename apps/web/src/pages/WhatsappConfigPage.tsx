@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL, api } from "../lib/api";
+import { healthInfo } from "../lib/whatsappHealth";
 
 type UserTab = "monitorados" | "gestores" | "grupos";
 type StatusFilter = "all" | "ACTIVE" | "DISCONNECTED" | "PAUSED";
@@ -42,71 +43,6 @@ function statusClass(status: WhatsappInstanceItem["status"]) {
   }
 
   return "paused";
-}
-
-type HealthTone = "green" | "red" | "yellow" | "gray";
-
-interface HealthInfo {
-  tone: HealthTone;
-  label: string;
-  title: string;
-  /** Quando true, a conexão caiu e faz sentido oferecer o "Reconectar". */
-  down: boolean;
-}
-
-function relativeTime(iso: string | null): string {
-  if (!iso) {
-    return "ainda não verificado";
-  }
-  const diffMs = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(diffMs) || diffMs < 0) {
-    return "agora";
-  }
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "há instantes";
-  if (minutes < 60) return `há ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `há ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `há ${days} dia${days > 1 ? "s" : ""}`;
-}
-
-/**
- * Deriva a "bolinha" de saúde da conexão a partir do health check periódico
- * (watchdog grava last_health_status a cada ~10 min). Verde = conectado,
- * vermelho = caiu (precisa reconectar o QR), amarelo = não foi possível
- * verificar, cinza = ainda sem leitura.
- */
-function healthInfo(instance: WhatsappInstanceItem): HealthInfo {
-  const checked = relativeTime(instance.lastHealthCheckAt);
-  const raw = instance.lastHealthStatus;
-
-  if (raw === "OK") {
-    return { tone: "green", label: "Conectado", title: `Conectado · verificado ${checked}`, down: false };
-  }
-  if (raw && raw.startsWith("DOWN")) {
-    return {
-      tone: "red",
-      label: "Caiu — reconecte",
-      title: `WhatsApp desconectado da Evolution · verificado ${checked}. Clique em Reconectar para ler o QR.`,
-      down: true,
-    };
-  }
-  if (raw === "CHECK_FAILED") {
-    return {
-      tone: "yellow",
-      label: "Sem resposta",
-      title: `Não foi possível falar com a Evolution · ${checked}`,
-      down: true,
-    };
-  }
-  // Sem leitura ainda (instância nova ou provedor não monitorado).
-  return {
-    tone: "gray",
-    label: "Não verificado",
-    title: `Status de conexão ainda não verificado (${checked})`,
-    down: false,
-  };
 }
 
 /**
@@ -473,11 +409,16 @@ function ReconnectModal({
   onClose: () => void;
   onConnected: () => void;
 }) {
+  // Tempo de vida de cada QR da Evolution antes de expirar (em segundos).
+  const QR_TTL_SECONDS = 40;
+
   const [qr, setQr] = useState<{ base64: string | null; pairingCode: string | null } | null>(null);
   const [phase, setPhase] = useState<"loading" | "waiting" | "connected" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(QR_TTL_SECONDS);
 
-  // 1. Dispara a conexão para obter o QR / pairing code.
+  // 1. Dispara a conexão NA MESMA instância (Evolution /instance/connect/<nome>),
+  // só renova o QR — não recria a instância — e devolve o QR / pairing code.
   async function requestQr() {
     setPhase("loading");
     setErrorMessage(null);
@@ -489,6 +430,7 @@ function ReconnectModal({
         return;
       }
       setQr({ base64: result.base64, pairingCode: result.pairingCode });
+      setSecondsLeft(QR_TTL_SECONDS);
       setPhase("waiting");
     } catch (error) {
       setErrorMessage((error as Error).message || "Falha ao gerar o QR code.");
@@ -501,32 +443,41 @@ function ReconnectModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instance.id]);
 
-  // 2. Enquanto espera o scan, verifica o estado a cada 3s e expira o QR (~60s).
+  // 2. Enquanto espera o scan: conta o tempo de expiração (1s), verifica a
+  // conexão a cada 3s e, ao zerar o cronômetro, gera um QR novo automaticamente.
   useEffect(() => {
     if (phase !== "waiting") {
       return;
     }
     let cancelled = false;
-    const startedAt = Date.now();
+    let tick = 0;
     const timer = setInterval(async () => {
-      try {
-        const conn = await api.whatsappInstanceConnection(token, instance.id);
-        if (cancelled) return;
-        if (conn.state === "open") {
-          setPhase("connected");
-          onConnected();
+      if (cancelled) return;
+      tick += 1;
+
+      setSecondsLeft((prev) => {
+        const next = prev - 1;
+        if (next <= 0) {
           clearInterval(timer);
-          return;
+          void requestQr();
+          return 0;
         }
-      } catch {
-        // Ignora erros transitórios de polling.
+        return next;
+      });
+
+      if (tick % 3 === 0) {
+        try {
+          const conn = await api.whatsappInstanceConnection(token, instance.id);
+          if (!cancelled && conn.state === "open") {
+            setPhase("connected");
+            onConnected();
+            clearInterval(timer);
+          }
+        } catch {
+          // Ignora erros transitórios de polling.
+        }
       }
-      // QR da Evolution expira rápido — recarrega após ~60s sem conexão.
-      if (!cancelled && Date.now() - startedAt > 60_000) {
-        clearInterval(timer);
-        void requestQr();
-      }
-    }, 3000);
+    }, 1000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -579,6 +530,10 @@ function ReconnectModal({
                   Ou use o código de pareamento: <strong>{qr.pairingCode}</strong>
                 </p>
               ) : null}
+              <p className={`wa-qr-expiry ${secondsLeft <= 10 ? "warning" : ""}`}>
+                Este QR expira em <strong>{secondsLeft}s</strong>
+                {secondsLeft <= 10 ? " — gerando um novo..." : ""}
+              </p>
               <p className="wa-qr-waiting">Aguardando leitura...</p>
             </>
           ) : null}

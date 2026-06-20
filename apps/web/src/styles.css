@@ -11979,10 +11979,13 @@ textarea {
 }
 
 .wa-status-dot {
-  width: 0.7rem;
-  height: 0.7rem;
+  width: 0.85rem;
+  height: 0.85rem;
   border-radius: 50%;
   background: var(--wa-muted);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
 }
 
 .wa-status-active {
@@ -11995,6 +11998,24 @@ textarea {
 
 .wa-status-paused {
   background: #d09a29;
+}
+
+/* Pontos de saúde (Evolution) reaproveitados na lista de agentes. */
+.wa-status-dot.wa-health-green {
+  background: #16a34a;
+}
+
+.wa-status-dot.wa-health-red {
+  background: #ef4444;
+  animation: wa-health-pulse 1.5s ease-in-out infinite;
+}
+
+.wa-status-dot.wa-health-yellow {
+  background: #f59e0b;
+}
+
+.wa-status-dot.wa-health-gray {
+  background: #cbd5e1;
 }
 
 .risk-icon.moderate,
@@ -12737,22 +12758,22 @@ textarea {
 .wa-health-dot {
   position: absolute;
   z-index: 3;
-  right: 2px;
-  bottom: 2px;
-  width: 0.95rem;
-  height: 0.95rem;
+  right: -2px;
+  bottom: -2px;
+  width: 1.35rem;
+  height: 1.35rem;
   border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  border: 3px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .wa-health-dot.green {
-  background: #22c55e;
+  background: #16a34a;
 }
 
 .wa-health-dot.red {
   background: #ef4444;
-  animation: wa-health-pulse 1.6s ease-in-out infinite;
+  animation: wa-health-pulse 1.5s ease-in-out infinite;
 }
 
 .wa-health-dot.yellow {
@@ -12764,8 +12785,26 @@ textarea {
 }
 
 @keyframes wa-health-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
-  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35); }
+  0%, 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.wa-qr-expiry {
+  margin-top: 0.85rem;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.wa-qr-expiry strong {
+  color: #0f172a;
+}
+
+.wa-qr-expiry.warning {
+  color: #b4233a;
+}
+
+.wa-qr-expiry.warning strong {
+  color: #b4233a;
 }
 
 /* Badge de status baseado na saúde (Evolution). */

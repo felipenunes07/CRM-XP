@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api, API_BASE_URL } from "../lib/api";
+import { healthInfo } from "../lib/whatsappHealth";
 import { buildMessageTimelineItems } from "./messagesPage.helpers";
 import { PhoneLoadingScreen } from "../components/PhoneLoadingScreen";
 
@@ -314,7 +315,17 @@ const AgentRow = memo(function AgentRow({
         <strong>{agent.displayLabel}</strong>
         <small>{agent.phoneNumber || agent.instanceName}</small>
       </span>
-      <span className={`wa-status-dot wa-status-${agent.status.toLocaleLowerCase("pt-BR")}`} />
+      {agent.provider === "EVOLUTION" ? (
+        (() => {
+          const health = healthInfo(agent);
+          return <span className={`wa-status-dot wa-health-${health.tone}`} title={health.title} />;
+        })()
+      ) : (
+        <span
+          className={`wa-status-dot wa-status-${agent.status.toLocaleLowerCase("pt-BR")}`}
+          title="Status da conexão"
+        />
+      )}
     </button>
   );
 });
@@ -731,6 +742,8 @@ export function MessagesPage() {
     enabled: Boolean(token),
     refetchOnWindowFocus: false,
     staleTime: 60 * 1000,
+    // Mantém a bolinha de status da conexão fresca na aba mais usada.
+    refetchInterval: 60 * 1000,
   });
 
   const filterState = useMemo<ConversationFilterState>(
