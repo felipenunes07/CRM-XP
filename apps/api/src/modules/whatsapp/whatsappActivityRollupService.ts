@@ -208,13 +208,35 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
               NULL::uuid AS da_actor_user_id,
               -- Para ENVIADA, o remetente real (sender_name) é quem mandou — usado para
               -- creditar à vendedora certa, não ao dono/instância do deal deduplicado.
+              -- Membro da equipe que manda em grupo onde sua instância não está chega com
+              -- from_me=false e sender_name "XP <nome>"; também é ENVIADA (igual ao Resumo).
               CASE
                 WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
+                  OR COALESCE(wmm_sender_name, '') ~* '^xp\\s+'
+                  OR EXISTS (
+                    SELECT 1 FROM whatsapp_instances si2
+                    WHERE NULLIF(wmm_sender_name, '') IS NOT NULL
+                      AND LOWER(regexp_replace(COALESCE(wmm_sender_name, ''), '^xp\\s+', '', 'i')) IN (
+                        LOWER(regexp_replace(COALESCE(si2.instance_name, ''), '^xp\\s+', '', 'i')),
+                        LOWER(regexp_replace(COALESCE(si2.display_label, ''), '^xp\\s+', '', 'i')),
+                        LOWER(regexp_replace(COALESCE(si2.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+                      )
+                  )
                   THEN NULLIF(wmm_sender_name, '')
                 ELSE NULL
               END AS da_actor_name,
               CASE
                 WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
+                  OR COALESCE(wmm_sender_name, '') ~* '^xp\\s+'
+                  OR EXISTS (
+                    SELECT 1 FROM whatsapp_instances si2
+                    WHERE NULLIF(wmm_sender_name, '') IS NOT NULL
+                      AND LOWER(regexp_replace(COALESCE(wmm_sender_name, ''), '^xp\\s+', '', 'i')) IN (
+                        LOWER(regexp_replace(COALESCE(si2.instance_name, ''), '^xp\\s+', '', 'i')),
+                        LOWER(regexp_replace(COALESCE(si2.display_label, ''), '^xp\\s+', '', 'i')),
+                        LOWER(regexp_replace(COALESCE(si2.assigned_user_name, ''), '^xp\\s+', '', 'i'))
+                      )
+                  )
                   THEN 'WHATSAPP_SENT'
                 ELSE 'WHATSAPP_RECEIVED'
               END AS activity_type
