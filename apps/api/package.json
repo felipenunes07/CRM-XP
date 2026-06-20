@@ -25,6 +25,7 @@
     "db:benchmark": "tsx src/scripts/benchmarkApis.ts",
     "db:audit-report": "tsx src/scripts/auditDailyReport.ts",
     "db:debug-report": "tsx src/scripts/debugReportTrace.ts",
+    "db:test-5d": "tsx src/scripts/testReportVsHeatmap.ts",
     "test": "vitest run",
     "lint": "node -e \"process.exit(0)\""
   },
