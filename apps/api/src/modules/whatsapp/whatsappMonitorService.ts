@@ -4057,11 +4057,11 @@ export async function getWhatsappDailySummaryReport(
           ELSE 'WHATSAPP_RECEIVED'
         END AS activity_type,
         NULL::uuid AS actor_user_id,
-        CASE
-          WHEN COALESCE(wmm.from_me, false) OR UPPER(COALESCE(wmm.direction, '')) = 'OUTBOUND'
-            THEN NULLIF(wmm.sender_name, '')
-          ELSE NULL
-        END AS actor_name,
+        -- Sempre carrega o sender_name (mesmo em recebida). Membro da equipe que manda
+        -- em grupo às vezes vem com from_me=false (a detecção de equipe na ingestão
+        -- falha), e a mensagem é dele(a). O JS reconhece pelo nome (teamSenderNames) e
+        -- reclassifica como ENVIADA. Cliente real não casa a equipe, então fica recebida.
+        NULLIF(wmm.sender_name, '') AS actor_name,
         COALESCE(wmm.media_json, '{}'::jsonb) AS metadata,
         wmm.created_at,
         NULL::jsonb AS incoming_raw_payload,
@@ -4358,7 +4358,16 @@ export async function getWhatsappDailySummaryReport(
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
-    const isOutbound = isWhatsappActivityOutbound(row);
+    // ENVIADA se o provider disse (from_me/direction) OU se o remetente é da equipe XP
+    // (prefixo "xp " ou bate com instância/usuário). Pega a msg de equipe em grupo
+    // gravada com from_me=false. NÃO usa salesAttendants aqui pra não confundir cliente
+    // que por acaso tenha o mesmo nome de uma vendedora que vendeu no dia.
+    const senderIsTeam = Boolean(actorName) && (
+      /^xp\s+/i.test(actorName) ||
+      teamSenderNames.has(actorNameLower) ||
+      teamSenderNames.has(senderStripped)
+    );
+    const isOutbound = isWhatsappActivityOutbound(row) || senderIsTeam;
     const sourceChatNameForFilter = [
       row.metadata_chat_display_name,
       row.customer_display_name,
