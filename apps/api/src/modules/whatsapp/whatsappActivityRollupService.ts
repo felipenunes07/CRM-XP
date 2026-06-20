@@ -120,6 +120,7 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           0 AS source_priority,
           wmm.direction,
           wmm.from_me,
+          wmm.sender_name AS wmm_sender_name,
           wmm.created_at,
           wmm.instance_name AS wmm_instance_name,
           d.whatsapp_instance_id AS deal_instance_id,
@@ -204,7 +205,14 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
               id, message_key, source_priority, created_at, remote_jid, chat_name,
               deal_instance_id, deal_assigned_to, deal_assigned_to_name,
               wmm_instance_name, NULL AS da_instance_name,
-              NULL::uuid AS da_actor_user_id, NULL AS da_actor_name,
+              NULL::uuid AS da_actor_user_id,
+              -- Para ENVIADA, o remetente real (sender_name) é quem mandou — usado para
+              -- creditar à vendedora certa, não ao dono/instância do deal deduplicado.
+              CASE
+                WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
+                  THEN NULLIF(wmm_sender_name, '')
+                ELSE NULL
+              END AS da_actor_name,
               CASE
                 WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
                   THEN 'WHATSAPP_SENT'
@@ -241,8 +249,11 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           dr_inner.chat_name,
           TO_CHAR(timezone('${ACTIVITY_REPORT_TIMEZONE}', dr_inner.created_at), 'YYYY-MM-DD') AS local_date,
           EXTRACT(HOUR FROM timezone('${ACTIVITY_REPORT_TIMEZONE}', dr_inner.created_at))::int AS local_hour,
-          COALESCE(u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
+          -- sender_inst (remetente real da ENVIADA) tem prioridade sobre dono/instância do deal.
+          COALESCE('instance:' || sender_inst.id, u.id::text, 'instance:' || wi_base.id, 'instance:' || wi.id, 'sem-agente') AS agent_id,
           COALESCE(
+            sender_inst.display_label,
+            sender_inst.instance_name,
             CASE
               WHEN u.name IS NOT NULL AND COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) IS NOT NULL
                 THEN u.name || ' (' || COALESCE(wi_base.display_label, wi_base.instance_name, wi.display_label, wi.instance_name) || ')'
@@ -250,10 +261,10 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
             END,
             'Sem agente'
           ) AS agent_name,
-          COALESCE(wi_base.instance_name, wi.instance_name) AS instance_name,
-          COALESCE(wi_base.display_label, wi.display_label) AS display_label,
-          COALESCE(wi_base.phone_number, wi.phone_number) AS phone_number,
-          COALESCE(wi_base.profile_picture_url, wi.profile_picture_url) AS profile_picture_url
+          COALESCE(sender_inst.instance_name, wi_base.instance_name, wi.instance_name) AS instance_name,
+          COALESCE(sender_inst.display_label, wi_base.display_label, wi.display_label) AS display_label,
+          COALESCE(sender_inst.phone_number, wi_base.phone_number, wi.phone_number) AS phone_number,
+          COALESCE(sender_inst.profile_picture_url, wi_base.profile_picture_url, wi.profile_picture_url) AS profile_picture_url
         FROM deduped_raw dr_inner
         LEFT JOIN LATERAL (
           SELECT wi_match.*
@@ -298,6 +309,26 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
             END
           LIMIT 1
         ) wi ON true
+        -- Instância do REMETENTE real (só p/ ENVIADA): casa o sender_name com a
+        -- instância da equipe por instance_name/display_label (com "xp " removido).
+        -- Tem prioridade na atribuição, pra mensagem de grupo ser creditada a quem
+        -- enviou — igual o Resumo Diário faz.
+        LEFT JOIN LATERAL (
+          SELECT si.*
+          FROM whatsapp_instances si
+          WHERE dr_inner.activity_type = 'WHATSAPP_SENT'
+            AND NULLIF(dr_inner.da_actor_name, '') IS NOT NULL
+            AND (
+              LOWER(si.instance_name) = LOWER(dr_inner.da_actor_name)
+              OR LOWER(COALESCE(si.display_label, '')) = LOWER(dr_inner.da_actor_name)
+              OR LOWER(COALESCE(si.assigned_user_name, '')) = LOWER(dr_inner.da_actor_name)
+              OR LOWER(regexp_replace(si.instance_name, '^xp\\s+', '', 'i'))
+                 = LOWER(regexp_replace(dr_inner.da_actor_name, '^xp\\s+', '', 'i'))
+              OR LOWER(regexp_replace(COALESCE(si.display_label, ''), '^xp\\s+', '', 'i'))
+                 = LOWER(regexp_replace(dr_inner.da_actor_name, '^xp\\s+', '', 'i'))
+            )
+          LIMIT 1
+        ) sender_inst ON true
       ),
       sequenced AS (
         SELECT
