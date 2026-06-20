@@ -46,7 +46,8 @@ async function main() {
       console.log(`Rollup reconstruido: ${res.inserted} linhas (${res.startDate}..${res.endDate})`);
       rebuilt = true;
     } else {
-      console.log(`Rollup ocupado (${res.reason}); tentativa ${i + 1}/6, aguardando 8s...`);
+      const reason = (res as { reason?: string }).reason ?? "lock";
+      console.log(`Rollup ocupado (${reason}); tentativa ${i + 1}/6, aguardando 8s...`);
       await new Promise((r) => setTimeout(r, 8000));
     }
   }
