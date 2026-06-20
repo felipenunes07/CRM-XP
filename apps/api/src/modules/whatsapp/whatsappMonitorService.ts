@@ -4275,6 +4275,13 @@ export async function getWhatsappDailySummaryReport(
   let totalReceived = 0;
   const pendingInboundByAgentConversation = new Map<string, Date>();
 
+  // Instrumentação temporária (env DEBUG_DAILY_REPORT=1): rastreia, por remetente
+  // real (actor_name), para qual agentName cada msg enviada foi creditada, e quantas
+  // foram filtradas como internas. Revela atribuição errada sem afetar produção.
+  const __dbg = process.env.DEBUG_DAILY_REPORT === "1";
+  const __dbgTrace = new Map<string, Map<string, number>>();
+  const __dbgInternal = new Map<string, number>();
+
   for (const row of activitiesResult.rows) {
     // Resolve WhatsApp instance (in-memory, highly efficient)
     const metadataInstance = row.metadata_instance ? String(row.metadata_instance).toLowerCase() : "";
@@ -4322,7 +4329,18 @@ export async function getWhatsappDailySummaryReport(
     ].map((candidate) => candidate ? String(candidate).trim() : "").find(Boolean) ?? null;
 
     if (isInternalChat(sourceChatNameForFilter, remoteJid)) {
+      if (__dbg && isOutbound) {
+        const k = actorName || "(vazio)";
+        __dbgInternal.set(k, (__dbgInternal.get(k) ?? 0) + 1);
+      }
       continue;
+    }
+
+    if (__dbg && isOutbound) {
+      const k = actorName || "(vazio)";
+      let m = __dbgTrace.get(k);
+      if (!m) { m = new Map(); __dbgTrace.set(k, m); }
+      m.set(agentName, (m.get(agentName) ?? 0) + 1);
     }
 
     // Resolve robust and clean customer display name
@@ -4764,6 +4782,18 @@ export async function getWhatsappDailySummaryReport(
     }
     text += `\n`;
   });
+
+  if (__dbg) {
+    const alvos = ["tamires", "amanda", "suelen", "thais"];
+    console.log(`\n===== DEBUG ATRIBUICAO ${dateStr} =====`);
+    for (const [actor, agentes] of [...__dbgTrace.entries()].sort()) {
+      if (!alvos.some((a) => actor.toLowerCase().includes(a))) continue;
+      const dist = [...agentes.entries()].map(([ag, n]) => `${ag}=${n}`).join("  ");
+      const interno = __dbgInternal.get(actor) ?? 0;
+      console.log(`  remetente "${actor}": creditado -> [ ${dist} ] | filtrado_interno=${interno}`);
+    }
+    console.log(`  (acima: pra cada remetente real, em qual agentName a msg enviada caiu)`);
+  }
 
   return {
     date: dateStr,
