@@ -169,6 +169,11 @@ const INTERNAL_WHATSAPP_REPORT_JIDS = new Set([
   "120363024580077621@g.us",
   "120363422564243122@g.us",
   "120363422753753190@g.us",
+  // Grupos internos adicionais vindos do node "Ignorar Grupos" do n8n (fonte oficial).
+  "120363421089539075@g.us", // Comprovantes
+  "120363400962278418@g.us", // Lixo
+  "120363421552008670@g.us", // Rei Comprovantes
+  "5511942224889@s.whatsapp.net", // Macedo (privado interno)
   "93755076042876@lid",
   "269603754213443@lid",
   "226362308726972@lid",
@@ -208,6 +213,68 @@ const INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS = new Set([
   "5511996435466",
   "5511998595698",
 ]);
+
+// ===========================================================================
+// Roster do time POR NÚMERO (fonte: node "Switch" do n8n — sender_pn/sender_lid).
+// Verificado na prod: sender_jid sempre vem como telefone real (@s.whatsapp.net),
+// 0 @lid em uso — então casar por dígitos do número é suficiente e robusto.
+//
+// VENDEDORA = só as 5 instâncias conectadas (decisão do Felipe). Mensagem cujo
+// remetente é uma vendedora conta como ENVIADA e é creditada a ela, independente
+// de from_me (msg em grupo onde a instância dela não está chega com from_me=false).
+// Inclui os @lid conhecidos por segurança caso o provider passe a usá-los.
+const SALES_AGENT_BY_PHONE = new Map<string, { id: string; name: string }>([
+  ["5511998595698", { id: "amanda", name: "Amanda" }],
+  ["226362308726972", { id: "amanda", name: "Amanda" }],
+  ["5511996435466", { id: "suelen", name: "Suelen" }],
+  ["269603754213443", { id: "suelen", name: "Suelen" }],
+  ["5511951392256", { id: "tamires", name: "Tamires" }],
+  ["268044697878703", { id: "tamires", name: "Tamires" }],
+  ["5511944705416", { id: "thais", name: "Thais" }],
+  ["93755076042876", { id: "thais", name: "Thais" }],
+  ["5511959502231", { id: "ragnar", name: "Ragnar" }],
+  ["5511975501901", { id: "ragnar", name: "Ragnar" }],
+  ["278971715473575", { id: "ragnar", name: "Ragnar" }],
+  ["214997741375562", { id: "ragnar", name: "Ragnar" }],
+]);
+const SALES_AGENT_BY_NAME = new Map<string, { id: string; name: string }>([
+  ["amanda", { id: "amanda", name: "Amanda" }],
+  ["suelen", { id: "suelen", name: "Suelen" }],
+  ["tamires", { id: "tamires", name: "Tamires" }],
+  ["thais", { id: "thais", name: "Thais" }],
+  ["ragnar", { id: "ragnar", name: "Ragnar" }],
+  ["ragnar lothbrok", { id: "ragnar", name: "Ragnar" }],
+]);
+// Time INTERNO (não-vendedora): manda em grupo de cliente mas NÃO conta como
+// conversa nem enviada (conversa interna entre o time). Fonte: mesmo Switch do n8n,
+// todos os números que NÃO são uma das 5 vendedoras.
+const INTERNAL_TEAM_SENDER_PHONES = new Set<string>([
+  "5511911279702", // Felipe / Expor Telas
+  "132791866028208", // Expor Telas (lid)
+  "5511915863088", // Quedma / Hugo
+  "5511916263525", // Camila
+  "5511930890128", // Site
+  "5511944538074", // Lucas
+  "5511947879036", // Lili
+  "5511971086782", // Iza - Defeitos
+  "35013009666203", // Iza (lid)
+  "5511914898986", // Felipe Zhao
+  "5511978398236", // Ronaldo / Domingos
+  "5511964218475", // Rafael / Rafa
+  "5511976001044", // contabackupxp
+  "5511915103835", // Conferência
+  "5511958326930", // Motoboy Lucas
+  "5511990224961", // Xp Factory
+  "5511997431733", // XpBrasil Lili (alt)
+  "32624739369122", // XpBrasil Lili (lid)
+  "5511973422619", // XP Conferência 2 joey
+  "74810310824049", // XP Conferência 2 joey (lid)
+  "3960597401743", // Denis
+  "128441684885669", // Valessa
+]);
+function reportPhoneDigits(jid: string | null | undefined): string {
+  return whatsappReportJidDigits(jid);
+}
 
 const INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS = [
   /^int\b.*xp brasil$/,
@@ -4071,7 +4138,8 @@ export async function getWhatsappDailySummaryReport(
         COALESCE(
           NULLIF(wmm.media_json ->> 'chatDisplayName', ''),
           NULLIF(wmm.media_json ->> 'groupName', '')
-        ) AS metadata_chat_display_name
+        ) AS metadata_chat_display_name,
+        wmm.sender_jid AS sender_jid
       FROM whatsapp_monitor_messages wmm
       JOIN deals d ON d.id = wmm.deal_id
       WHERE ${monitorWhere.join("\n        AND ")}
@@ -4091,7 +4159,8 @@ export async function getWhatsappDailySummaryReport(
         NULL::boolean AS incoming_from_me,
         (da.metadata ->> 'instance')::text AS metadata_instance,
         (da.metadata ->> 'remoteJid')::text AS metadata_remote_jid,
-        (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name
+        (da.metadata ->> 'chatDisplayName')::text AS metadata_chat_display_name,
+        (da.metadata ->> 'senderJid')::text AS sender_jid
       FROM deal_activities da
       JOIN deals d ON d.id = da.deal_id
       WHERE ${activityWhere.join("\n        AND ")}
@@ -4126,7 +4195,8 @@ export async function getWhatsappDailySummaryReport(
         wim.from_me AS incoming_from_me,
         NULLIF(wim.instance_name, '') AS metadata_instance,
         wim.remote_jid AS metadata_remote_jid,
-        COALESCE(NULLIF(wim.chat_display_name, ''), NULLIF(wim.sender_name, '')) AS metadata_chat_display_name
+        COALESCE(NULLIF(wim.chat_display_name, ''), NULLIF(wim.sender_name, '')) AS metadata_chat_display_name,
+        wim.participant_jid AS sender_jid
       FROM whatsapp_incoming_messages wim
       WHERE ${incomingWhere.join("\n        AND ")}
     ),
@@ -4168,6 +4238,7 @@ export async function getWhatsappDailySummaryReport(
       src.metadata_instance,
       src.metadata_remote_jid,
       src.metadata_chat_display_name,
+      src.sender_jid,
       d.assigned_to,
       d.assigned_to_name,
       d.whatsapp_instance_id,
@@ -4333,41 +4404,48 @@ export async function getWhatsappDailySummaryReport(
       (wiAssignedUserName ? usersByName.get(wiAssignedUserName) : undefined);
 
     const senderStripped = actorNameLower.replace(/^xp\s+/i, '').trim();
-    // Reconhece a remetente como vendedora pela lista ESTÁVEL da equipe (instâncias/
-    // usuários) OU prefixo "xp " OU vendas do dia — assim independe de ter vendido hoje.
-    const isXpAgentName = actorName && (
-      /^xp\s+/i.test(actorName) ||
-      salesAttendants.has(actorNameLower) ||
-      salesAttendants.has(senderStripped) ||
-      teamSenderNames.has(actorNameLower) ||
-      teamSenderNames.has(senderStripped)
-    ) && actorNameLower !== "sem atendente" && actorNameLower !== "sem agente";
 
-    // O REMETENTE REAL vem PRIMEIRO: msg enviada por uma vendedora conhecida é creditada
-    // a ELA, nunca ao dono/instância do deal (a dedup de grupo mantém a cópia de um deal
-    // de outra instância, e isso fazia msgs da Tamires caírem na Amanda). Bucket
-    // canônico (xp-agent:<nome sem "xp ">) unifica variações do mesmo nome.
+    // DETECÇÃO POR NÚMERO (fonte: node "Switch" do n8n). O sender_jid traz o telefone
+    // real do remetente mesmo em msg de grupo com from_me=false. Vendedora = uma das 5
+    // instâncias conectadas; qualquer outro número do time = INTERNO (ignorado);
+    // número fora da lista = cliente. Substitui o antigo "prefixo XP", que errava
+    // (Hugo/Rafael/Camila não têm "XP"; e "XP Conferência/Defeitos" são internos).
+    const senderDigits = reportPhoneDigits(row.sender_jid);
+    let salesAgent = senderDigits ? SALES_AGENT_BY_PHONE.get(senderDigits) : undefined;
+    if (!salesAgent && !senderDigits) {
+      // Fallback por nome só p/ as 5 vendedoras quando o sender_jid vier vazio (~0,1%).
+      salesAgent = SALES_AGENT_BY_NAME.get(senderStripped) || SALES_AGENT_BY_NAME.get(actorNameLower);
+    }
+    const isInternalSender = Boolean(senderDigits) && !salesAgent && INTERNAL_TEAM_SENDER_PHONES.has(senderDigits);
+
+    // Remetente é time INTERNO (não-vendedora): conversa interna entre o time. Não conta
+    // como conversa, nem enviada, nem recebida — é ruído interno (ex.: Iza/Defeitos,
+    // Conferência, Expor Telas mandando em grupo de cliente).
+    if (isInternalSender) {
+      if (__dbg) {
+        const k = actorName || senderDigits;
+        __dbgInternal.set(k, (__dbgInternal.get(k) ?? 0) + 1);
+      }
+      continue;
+    }
+
+    // Credita ENVIADA à vendedora pelo NÚMERO do remetente (nunca ao dono/instância do
+    // deal). A dedup de grupo mantém uma cópia com o sender_jid real, então a msg enviada
+    // por uma vendedora em grupo onde a instância dela não está cai aqui, creditada a ela.
     const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
-    const agentId = isXpAgentName
-      ? `xp-agent:${senderStripped || actorNameLower}`
+    const agentId = salesAgent
+      ? `xp-agent:${salesAgent.id}`
       : (matchedUser ? String(matchedUser.id) : (wi ? `instance:${wi.id}` : 'sem-agente'));
 
-    const agentName = isXpAgentName
-      ? (teamCanonicalLabel.get(senderStripped) || actorName)
+    const agentName = salesAgent
+      ? salesAgent.name
       : (matchedUser ? matchedUser.name : (wiLabel || 'Sem agente'));
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
-    // ENVIADA se o provider disse (from_me/direction) OU se o remetente é da equipe XP
-    // (prefixo "xp " ou bate com instância/usuário). Pega a msg de equipe em grupo
-    // gravada com from_me=false. NÃO usa salesAttendants aqui pra não confundir cliente
-    // que por acaso tenha o mesmo nome de uma vendedora que vendeu no dia.
-    const senderIsTeam = Boolean(actorName) && (
-      /^xp\s+/i.test(actorName) ||
-      teamSenderNames.has(actorNameLower) ||
-      teamSenderNames.has(senderStripped)
-    );
-    const isOutbound = isWhatsappActivityOutbound(row) || senderIsTeam;
+    // ENVIADA se o remetente é uma vendedora (por número) OU o provider marcou from_me/
+    // OUTBOUND. Pega a msg de equipe em grupo gravada com from_me=false.
+    const isOutbound = Boolean(salesAgent) || isWhatsappActivityOutbound(row);
     const sourceChatNameForFilter = [
       row.metadata_chat_display_name,
       row.customer_display_name,
