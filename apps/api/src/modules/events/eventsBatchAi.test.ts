@@ -77,7 +77,7 @@ describe("events batch AI policy", () => {
     }).reason).toBe("daily_token_cap");
   });
 
-  it("allows manual runs to skip cadence while preserving business-hour and budget gates", () => {
+  it("allows manual runs to skip cadence and business-hour gates while preserving budget gates", () => {
     expect(shouldRunEventsAiBatch({
       now: new Date("2026-06-19T13:30:00.000Z"),
       config: baseConfig,
@@ -90,7 +90,16 @@ describe("events batch AI policy", () => {
       config: baseConfig,
       usage: { requestCount: 0, tokenCount: 0, lastRunAt: new Date("2026-06-19T13:00:00.000Z") },
       ignoreCadence: true,
-    }).reason).toBe("outside_business_hours");
+      ignoreBusinessHours: true,
+    }).reason).toBe("allowed");
+
+    expect(shouldRunEventsAiBatch({
+      now: new Date("2026-06-19T22:00:00.000Z"),
+      config: baseConfig,
+      usage: { requestCount: 4, tokenCount: 0, lastRunAt: new Date("2026-06-19T13:00:00.000Z") },
+      ignoreCadence: true,
+      ignoreBusinessHours: true,
+    }).reason).toBe("daily_request_cap");
   });
 
   it("anonymizes customer identifiers before sending text to an external model", () => {

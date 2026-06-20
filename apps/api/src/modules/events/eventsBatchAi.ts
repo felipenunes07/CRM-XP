@@ -231,8 +231,9 @@ export function shouldRunEventsAiBatch(input: {
   config: EventsAiBatchConfig;
   usage: EventsAiBatchUsage;
   ignoreCadence?: boolean;
+  ignoreBusinessHours?: boolean;
 }): EventsAiBatchDecision {
-  const { now, config, usage, ignoreCadence = false } = input;
+  const { now, config, usage, ignoreCadence = false, ignoreBusinessHours = false } = input;
 
   if (!config.enabled) {
     return { allowed: false, reason: "disabled", nextEligibleAt: null };
@@ -242,7 +243,7 @@ export function shouldRunEventsAiBatch(input: {
     return { allowed: false, reason: "missing_api_key", nextEligibleAt: null };
   }
 
-  if (!isWithinBusinessWindow(now, config)) {
+  if (!ignoreBusinessHours && !isWithinBusinessWindow(now, config)) {
     return { allowed: false, reason: "outside_business_hours", nextEligibleAt: getNextBusinessWindowStart(now, config) };
   }
 
@@ -495,7 +496,7 @@ export async function getEventsAiBatchStatus(now = new Date()) {
   const config = getEventsAiBatchConfig();
   const usage = await getBatchUsage(now);
   const decision = shouldRunEventsAiBatch({ now, config, usage });
-  const manualDecision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: true });
+  const manualDecision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: true, ignoreBusinessHours: true });
 
   const latest = await pool.query(`
     SELECT status, status_reason, summary_json, event_count, finished_at, error_message
@@ -539,7 +540,13 @@ export async function getEventsAiBatchStatus(now = new Date()) {
 export async function runEventsAiBatch(now = new Date(), options: { manual?: boolean } = {}) {
   const config = getEventsAiBatchConfig();
   const usage = await getBatchUsage(now);
-  const decision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: options.manual === true });
+  const decision = shouldRunEventsAiBatch({
+    now,
+    config,
+    usage,
+    ignoreCadence: options.manual === true,
+    ignoreBusinessHours: options.manual === true,
+  });
 
   if (!decision.allowed) {
     logger.info("events AI batch skipped", { reason: decision.reason, nextEligibleAt: decision.nextEligibleAt?.toISOString() });

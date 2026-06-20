@@ -4,14 +4,14 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
-  ExternalLink,
   MessageSquare,
+  Smartphone,
 } from "lucide-react";
 
 interface EventsListViewProps {
   events: MessageEvent[];
   onResolve: (event: MessageEvent) => void;
-  onViewConversation: (dealId: string) => void;
+  onViewConversation: (event: MessageEvent) => void;
 }
 
 const EVENT_TYPE_LABELS: Record<EventType, string> = {
@@ -164,10 +164,10 @@ export function EventsListView({ events, onResolve, onViewConversation }: Events
                 <button
                   type="button"
                   className="wa-action-btn primary"
-                  onClick={() => onViewConversation(event.dealId)}
-                  title="Ver conversa"
+                  onClick={() => onViewConversation(event)}
+                  title="Abrir celular"
                 >
-                  <ExternalLink size={18} />
+                  <Smartphone size={18} />
                 </button>
                 {!event.resolvedAt && (
                   <button

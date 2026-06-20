@@ -87,6 +87,7 @@ describe("events intelligence aggregation", () => {
     expect(result.sourceSplit.groups).toBe(1);
     expect(result.sourceSplit.private).toBe(2);
     expect(result.topThemes.at(0)).toMatchObject({ key: "stock_shortage" });
+    expect(result.topThemes.at(0)?.examples.at(0)).toMatchObject({ eventId: "1", dealId: "deal-1" });
     expect(result.criticalAlerts.at(0)).toMatchObject({ eventId: "2" });
     expect(result.executiveSummary).toContain("3 eventos");
   });

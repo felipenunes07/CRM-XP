@@ -144,6 +144,7 @@ export function detectEventTopics(event: MessageEvent): TopicRule[] {
 function makeExample(event: MessageEvent) {
   return {
     eventId: event.id,
+    dealId: event.dealId,
     content: event.content,
     contactName: event.conversationContext?.contactName ?? "Cliente desconhecido",
     agentName: event.conversationContext?.agentName ?? null,

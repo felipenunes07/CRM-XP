@@ -2208,6 +2208,7 @@ export interface EventsMetrics {
 
 export interface MessageInsightExample {
   eventId: string;
+  dealId: string;
   content: string;
   contactName: string;
   agentName: string | null;
