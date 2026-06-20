@@ -4309,14 +4309,19 @@ export async function getWhatsappDailySummaryReport(
       salesAttendants.has(actorNameLower.replace(/^xp\s+/i, '').trim())
     ) && actorNameLower !== "sem atendente" && actorNameLower !== "sem agente";
 
-    const agentId = matchedUser
-      ? String(matchedUser.id)
-      : (wi ? `instance:${wi.id}` : (isXpAgentName ? `xp-agent:${actorNameLower}` : 'sem-agente'));
-
+    // O REMETENTE REAL vem primeiro: se a msg foi enviada por uma vendedora conhecida
+    // (actor_name na equipe XP / em salesAttendants), credita a ELA — não ao dono ou
+    // instância do deal. Antes a ordem era matchedUser->instancia->remetente, e a dedup
+    // de grupo (que mantem a copia de um deal de outra instancia) fazia, por ex., 41
+    // msgs da Tamires caírem na Amanda. Provado pelo trace DEBUG_DAILY_REPORT.
     const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
-    const agentName = matchedUser
-      ? matchedUser.name
-      : (wiLabel || (isXpAgentName ? actorName : 'Sem agente'));
+    const agentId = isXpAgentName
+      ? `xp-agent:${actorNameLower}`
+      : (matchedUser ? String(matchedUser.id) : (wi ? `instance:${wi.id}` : 'sem-agente'));
+
+    const agentName = isXpAgentName
+      ? actorName
+      : (matchedUser ? matchedUser.name : (wiLabel || 'Sem agente'));
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
