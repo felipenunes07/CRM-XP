@@ -4206,6 +4206,35 @@ export async function getWhatsappDailySummaryReport(
   const salesPerformance = salesPerformanceResult.rows;
   const salesAttendants = new Set(salesPerformance.map(s => s.attendant.trim().toLowerCase()));
 
+  // Lista ESTÁVEL da equipe (vendedoras), derivada das instâncias de WhatsApp e dos
+  // usuários — NÃO das vendas do dia. Sem isso, uma vendedora que ainda não vendeu
+  // naquele dia não era reconhecida como remetente e suas msgs caíam no dono/instância
+  // do deal (ex.: 20/06 a Tamires caindo na Amanda). teamCanonicalLabel unifica
+  // "tamires"/"XP Tamires" num só bucket com rótulo de exibição consistente.
+  const teamSenderNames = new Set<string>();
+  const teamCanonicalLabel = new Map<string, string>();
+  const addTeamName = (raw: unknown, label: unknown) => {
+    if (!raw) return;
+    const low = String(raw).trim().toLowerCase();
+    if (!low) return;
+    const stripped = low.replace(/^xp\s+/i, "").trim();
+    teamSenderNames.add(low);
+    if (stripped) {
+      teamSenderNames.add(stripped);
+      if (!teamCanonicalLabel.has(stripped)) {
+        teamCanonicalLabel.set(stripped, String(label || raw).trim());
+      }
+    }
+  };
+  for (const inst of instances) {
+    addTeamName(inst.instance_name, inst.display_label || inst.instance_name);
+    addTeamName(inst.display_label, inst.display_label);
+    addTeamName(inst.assigned_user_name, inst.assigned_user_name);
+  }
+  for (const u of users) {
+    addTeamName(u.name, u.name);
+  }
+
   // 1. Collect all unique private JIDs from activities to batch-resolve customer names
   const privateJids = new Set<string>();
   for (const row of activitiesResult.rows) {
@@ -4303,24 +4332,28 @@ export async function getWhatsappDailySummaryReport(
       (assignedToName ? usersByName.get(assignedToName) : undefined) ??
       (wiAssignedUserName ? usersByName.get(wiAssignedUserName) : undefined);
 
+    const senderStripped = actorNameLower.replace(/^xp\s+/i, '').trim();
+    // Reconhece a remetente como vendedora pela lista ESTÁVEL da equipe (instâncias/
+    // usuários) OU prefixo "xp " OU vendas do dia — assim independe de ter vendido hoje.
     const isXpAgentName = actorName && (
       /^xp\s+/i.test(actorName) ||
       salesAttendants.has(actorNameLower) ||
-      salesAttendants.has(actorNameLower.replace(/^xp\s+/i, '').trim())
+      salesAttendants.has(senderStripped) ||
+      teamSenderNames.has(actorNameLower) ||
+      teamSenderNames.has(senderStripped)
     ) && actorNameLower !== "sem atendente" && actorNameLower !== "sem agente";
 
-    // O REMETENTE REAL vem primeiro: se a msg foi enviada por uma vendedora conhecida
-    // (actor_name na equipe XP / em salesAttendants), credita a ELA — não ao dono ou
-    // instância do deal. Antes a ordem era matchedUser->instancia->remetente, e a dedup
-    // de grupo (que mantem a copia de um deal de outra instancia) fazia, por ex., 41
-    // msgs da Tamires caírem na Amanda. Provado pelo trace DEBUG_DAILY_REPORT.
+    // O REMETENTE REAL vem PRIMEIRO: msg enviada por uma vendedora conhecida é creditada
+    // a ELA, nunca ao dono/instância do deal (a dedup de grupo mantém a cópia de um deal
+    // de outra instância, e isso fazia msgs da Tamires caírem na Amanda). Bucket
+    // canônico (xp-agent:<nome sem "xp ">) unifica variações do mesmo nome.
     const wiLabel = wi ? (wi.display_label || wi.instance_name) : null;
     const agentId = isXpAgentName
-      ? `xp-agent:${actorNameLower}`
+      ? `xp-agent:${senderStripped || actorNameLower}`
       : (matchedUser ? String(matchedUser.id) : (wi ? `instance:${wi.id}` : 'sem-agente'));
 
     const agentName = isXpAgentName
-      ? actorName
+      ? (teamCanonicalLabel.get(senderStripped) || actorName)
       : (matchedUser ? matchedUser.name : (wiLabel || 'Sem agente'));
 
     const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
