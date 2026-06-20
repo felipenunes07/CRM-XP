@@ -298,10 +298,12 @@ const AgentRow = memo(function AgentRow({
   onSelect: (id: string) => void;
   onPrefetch?: (id: string) => void;
 }) {
+  const health = agent.provider === "EVOLUTION" ? healthInfo(agent) : null;
+
   return (
     <button
       type="button"
-      className={`wa-list-row ${active ? "active" : ""}`}
+      className={`wa-list-row ${active ? "active" : ""} ${health?.down ? "is-down" : ""}`}
       onClick={() => onSelect(agent.id)}
       onMouseEnter={() => onPrefetch?.(agent.id)}
       onFocus={() => onPrefetch?.(agent.id)}
@@ -313,13 +315,10 @@ const AgentRow = memo(function AgentRow({
       />
       <span className="wa-list-copy">
         <strong>{agent.displayLabel}</strong>
-        <small>{agent.phoneNumber || agent.instanceName}</small>
+        <small>{health?.down ? health.label : agent.phoneNumber || agent.instanceName}</small>
       </span>
-      {agent.provider === "EVOLUTION" ? (
-        (() => {
-          const health = healthInfo(agent);
-          return <span className={`wa-status-dot wa-health-${health.tone}`} title={health.title} />;
-        })()
+      {health ? (
+        <span className={`wa-status-dot wa-health-${health.tone}`} title={health.title} />
       ) : (
         <span
           className={`wa-status-dot wa-status-${agent.status.toLocaleLowerCase("pt-BR")}`}

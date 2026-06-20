@@ -12018,6 +12018,17 @@ textarea {
   background: #cbd5e1;
 }
 
+/* Linha do agente destacada quando a conexão caiu (aba Mensagens). */
+.wa-list-row.is-down {
+  background: #fff5f6;
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.wa-list-row.is-down .wa-list-copy small {
+  color: #b4233a;
+  font-weight: 700;
+}
+
 .risk-icon.moderate,
 .risk-icon.high {
   color: #ef1744;
@@ -12754,17 +12765,32 @@ textarea {
   background: #fff3cd;
 }
 
-/* Bolinha de saúde da conexão sobreposta na foto do usuário. */
+/* Wrapper da foto: NÃO corta (overflow visível) para a bolinha aparecer
+   inteira na borda. A foto redonda fica no filho .wa-user-photo. */
+.wa-user-photo-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+/* Bolinha de saúde da conexão, posicionada na borda da foto sem ser cortada. */
 .wa-health-dot {
   position: absolute;
-  z-index: 3;
-  right: -2px;
-  bottom: -2px;
-  width: 1.35rem;
-  height: 1.35rem;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  width: 1.6rem;
+  height: 1.6rem;
   border-radius: 50%;
   border: 3px solid #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+.wa-health-dot svg {
+  display: block;
 }
 
 .wa-health-dot.green {
@@ -12773,7 +12799,7 @@ textarea {
 
 .wa-health-dot.red {
   background: #ef4444;
-  animation: wa-health-pulse 1.5s ease-in-out infinite;
+  animation: wa-health-pulse 1.4s ease-in-out infinite;
 }
 
 .wa-health-dot.yellow {
@@ -12785,8 +12811,16 @@ textarea {
 }
 
 @keyframes wa-health-pulse {
-  0%, 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 0 rgba(239, 68, 68, 0.5); }
-  50% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 6px rgba(239, 68, 68, 0); }
+  0%, 100% { box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  50% { box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3), 0 0 0 8px rgba(239, 68, 68, 0); }
+}
+
+/* Card inteiro destacado em vermelho quando a instância caiu — sinal claro
+   para qualquer pessoa identificar de longe qual WhatsApp precisa reconectar. */
+.wa-user-card.is-down {
+  border: 2px solid #ef4444;
+  background: #fff5f6;
+  box-shadow: 0 12px 30px rgba(239, 68, 68, 0.18);
 }
 
 .wa-qr-expiry {
@@ -12829,12 +12863,18 @@ textarea {
 }
 
 .wa-user-configure.reconnect {
-  background: #b4233a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: #ef4444;
   color: #fff;
+  font-weight: 700;
+  border-color: #ef4444;
 }
 
 .wa-user-configure.reconnect:hover {
-  background: #97162e;
+  background: #dc2626;
 }
 
 /* Modal de reconexão por QR code. */

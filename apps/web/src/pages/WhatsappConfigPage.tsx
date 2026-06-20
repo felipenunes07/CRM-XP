@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { WhatsappInstanceItem } from "@olist-crm/shared";
 import {
+  AlertTriangle,
+  Check,
   CheckCircle2,
   Copy,
   Grid3X3,
@@ -112,24 +114,38 @@ function UserCard({
   const isEvolution = instance.provider === "EVOLUTION";
   const health = healthInfo(instance);
 
+  const isDown = isEvolution && health.down;
+
   return (
-    <article className="wa-user-card">
+    <article className={`wa-user-card ${isDown ? "is-down" : ""}`}>
       <button type="button" className="wa-user-menu" title="Mais opcoes">
         <MoreVertical size={18} />
       </button>
-      <span className="wa-user-photo">
-        {instance.profilePictureUrl ? (
-          <img
-            src={instance.profilePictureUrl}
-            alt=""
-            loading="lazy"
-            onError={(event) => {
-              event.currentTarget.style.display = "none";
-            }}
-          />
+      <span className="wa-user-photo-wrap">
+        <span className="wa-user-photo">
+          {instance.profilePictureUrl ? (
+            <img
+              src={instance.profilePictureUrl}
+              alt=""
+              loading="lazy"
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+              }}
+            />
+          ) : null}
+          <UserRound size={28} />
+        </span>
+        {isEvolution ? (
+          <span className={`wa-health-dot ${health.tone}`} title={health.title}>
+            {health.tone === "green" ? (
+              <Check size={13} strokeWidth={4} />
+            ) : health.tone === "red" ? (
+              <X size={13} strokeWidth={4} />
+            ) : health.tone === "yellow" ? (
+              <AlertTriangle size={11} strokeWidth={3} />
+            ) : null}
+          </span>
         ) : null}
-        <UserRound size={28} />
-        {isEvolution ? <span className={`wa-health-dot ${health.tone}`} title={health.title} /> : null}
       </span>
       <h3>{instance.displayLabel}</h3>
       <p>{email}</p>
@@ -156,7 +172,8 @@ function UserCard({
               onClick={onReconnect}
               title="Ler o QR code e reconectar este WhatsApp"
             >
-              Reconectar
+              <AlertTriangle size={15} strokeWidth={2.5} />
+              Reconectar agora
             </button>
           ) : (
             <button
