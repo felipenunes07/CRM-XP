@@ -190,6 +190,84 @@ export async function deleteEvolutionInstance(instance: {
   }
 }
 
+export interface EvolutionConnectResult {
+  /** Connection state reported by Evolution: "open", "connecting", "close", ... */
+  state: string;
+  /** Data-URL ready QR image (when a new scan is required). */
+  base64: string | null;
+  /** Numeric pairing code (alternative to scanning the QR). */
+  pairingCode: string | null;
+  /** Raw QR payload string. */
+  code: string | null;
+}
+
+function pickEvolutionField(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Reads the live WhatsApp connection state of an instance straight from
+ * Evolution. Returns one of Evolution's states ("open" = connected) or
+ * "unknown" when the shape is unexpected.
+ */
+export async function fetchEvolutionConnectionState(instance: {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}): Promise<string> {
+  const payload = await requestEvolution(
+    instance.evolutionBaseUrl,
+    instance.evolutionApiKey,
+    `/instance/connectionState/${encodeURIComponent(instance.instanceName)}`,
+    "GET",
+  );
+  const nested = (payload.instance as Record<string, unknown> | undefined) ?? undefined;
+  return String(nested?.state ?? payload.state ?? "unknown");
+}
+
+/**
+ * Triggers a (re)connection on Evolution and returns the QR code / pairing code
+ * needed to re-pair the WhatsApp session. When Evolution reports the session as
+ * already open it returns no QR (state = "open").
+ */
+export async function connectEvolutionInstance(instance: {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}): Promise<EvolutionConnectResult> {
+  const payload = await requestEvolution(
+    instance.evolutionBaseUrl,
+    instance.evolutionApiKey,
+    `/instance/connect/${encodeURIComponent(instance.instanceName)}`,
+    "GET",
+  );
+
+  // Different Evolution versions return the QR either flat or nested under `qrcode`.
+  const nested = (payload.qrcode as Record<string, unknown> | undefined) ?? payload;
+
+  const base64Raw = pickEvolutionField(nested, ["base64"]) ?? pickEvolutionField(payload, ["base64"]);
+  const base64 = base64Raw
+    ? base64Raw.startsWith("data:")
+      ? base64Raw
+      : `data:image/png;base64,${base64Raw}`
+    : null;
+
+  const code = pickEvolutionField(nested, ["code"]) ?? pickEvolutionField(payload, ["code"]);
+  const pairingCode = pickEvolutionField(nested, ["pairingCode"]) ?? pickEvolutionField(payload, ["pairingCode"]);
+  const state =
+    pickEvolutionField(payload, ["state"]) ??
+    pickEvolutionField(nested, ["state"]) ??
+    (base64 || code || pairingCode ? "connecting" : "unknown");
+
+  return { state, base64, pairingCode, code };
+}
+
 async function requestEvolution(baseUrl: string, apiKey: string, path: string, method: string, body?: any) {
   const response = await fetch(`${baseUrl.replace(/\/+$/, "")}${path}`, {
     method,

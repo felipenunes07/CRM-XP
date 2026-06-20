@@ -2647,6 +2647,24 @@ export function createApp() {
     }
   });
 
+  app.get("/api/whatsapp-instances/:id/connection", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const { getWhatsappInstanceConnection } = await import("./modules/pipeline/pipelineService.js");
+      response.json(await getWhatsappInstanceConnection(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-instances/:id/connect", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const { connectWhatsappInstance } = await import("./modules/pipeline/pipelineService.js");
+      response.json(await connectWhatsappInstance(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.delete("/api/whatsapp-instances/:id", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
       await deleteWhatsappInstance(String(request.params.id));

@@ -12733,6 +12733,126 @@ textarea {
   background: #fff3cd;
 }
 
+/* Bolinha de saúde da conexão sobreposta na foto do usuário. */
+.wa-health-dot {
+  position: absolute;
+  z-index: 3;
+  right: 2px;
+  bottom: 2px;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.wa-health-dot.green {
+  background: #22c55e;
+}
+
+.wa-health-dot.red {
+  background: #ef4444;
+  animation: wa-health-pulse 1.6s ease-in-out infinite;
+}
+
+.wa-health-dot.yellow {
+  background: #f59e0b;
+}
+
+.wa-health-dot.gray {
+  background: #cbd5e1;
+}
+
+@keyframes wa-health-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35); }
+}
+
+/* Badge de status baseado na saúde (Evolution). */
+.wa-user-status.health-green {
+  color: #198754;
+  background: #d9fdd3;
+}
+
+.wa-user-status.health-red {
+  color: #b4233a;
+  background: #ffe3ea;
+}
+
+.wa-user-status.health-yellow {
+  color: #8f6512;
+  background: #fff3cd;
+}
+
+.wa-user-status.health-gray {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.wa-user-configure.reconnect {
+  background: #b4233a;
+  color: #fff;
+}
+
+.wa-user-configure.reconnect:hover {
+  background: #97162e;
+}
+
+/* Modal de reconexão por QR code. */
+.wa-qr-modal {
+  max-width: 420px;
+}
+
+.wa-qr-body {
+  text-align: center;
+}
+
+.wa-qr-instructions {
+  font-size: 0.85rem;
+  color: #475569;
+  margin: 0 0 0.75rem;
+}
+
+.wa-qr-image {
+  width: 260px;
+  height: 260px;
+  max-width: 100%;
+  margin: 0 auto;
+  display: block;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.wa-qr-pairing {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.wa-qr-pairing strong {
+  letter-spacing: 0.12em;
+  font-size: 1rem;
+}
+
+.wa-qr-waiting {
+  margin-top: 0.75rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.wa-qr-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
+  color: #198754;
+}
+
+.wa-qr-error {
+  padding: 1rem 0;
+  color: #b4233a;
+}
+
 .wa-user-foot {
   width: 100%;
   margin-top: auto;

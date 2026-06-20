@@ -11,7 +11,14 @@ import type {
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
-import { configureInstanceSettings, configureInstanceWebhook, deleteEvolutionInstance } from "../whatsapp/evolutionService.js";
+import {
+  configureInstanceSettings,
+  configureInstanceWebhook,
+  connectEvolutionInstance,
+  deleteEvolutionInstance,
+  fetchEvolutionConnectionState,
+  type EvolutionConnectResult,
+} from "../whatsapp/evolutionService.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 
@@ -711,6 +718,91 @@ export async function configureWhatsappInstance(id: string): Promise<void> {
     evolutionApiKey: String(row.evolution_api_key),
   });
   logger.info("Manual Evolution API configuration completed", { instanceName: instance.instanceName });
+}
+
+export interface WhatsappInstanceConnection {
+  /** Evolution connection state: "open" = conectado. */
+  state: string;
+  lastHealthStatus: string | null;
+  lastHealthCheckAt: string | null;
+}
+
+/**
+ * Consulta o estado de conexão ao vivo na Evolution e já persiste uma leitura
+ * fresca de saúde, para que a bolinha de status na tela reflita o momento do
+ * clique (sem esperar o ciclo do watchdog).
+ */
+export async function getWhatsappInstanceConnection(id: string): Promise<WhatsappInstanceConnection> {
+  const result = await pool.query("SELECT * FROM whatsapp_instances WHERE id = $1", [id]);
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(404, "Instancia nao encontrada.");
+  }
+
+  const lastHealthStatus = row.last_health_status ? String(row.last_health_status) : null;
+  const lastHealthCheckAt = row.last_health_check_at ? new Date(String(row.last_health_check_at)).toISOString() : null;
+
+  if (String(row.provider ?? "EVOLUTION") !== "EVOLUTION") {
+    return { state: "unknown", lastHealthStatus, lastHealthCheckAt };
+  }
+
+  try {
+    const state = await fetchEvolutionConnectionState({
+      instanceName: String(row.instance_name),
+      evolutionBaseUrl: String(row.evolution_base_url),
+      evolutionApiKey: String(row.evolution_api_key),
+    });
+    const health = state === "open" ? "OK" : `DOWN:${state}`;
+    await pool.query(
+      "UPDATE whatsapp_instances SET last_health_check_at = NOW(), last_health_status = $2 WHERE id = $1",
+      [id, health.slice(0, 20)],
+    );
+    return { state, lastHealthStatus: health, lastHealthCheckAt: new Date().toISOString() };
+  } catch (error) {
+    logger.warn("Falha ao consultar connectionState da instancia", { id, error: String(error) });
+    return { state: "unknown", lastHealthStatus, lastHealthCheckAt };
+  }
+}
+
+/**
+ * Dispara a reconexão na Evolution e devolve o QR code / pairing code para
+ * reparear a sessão direto no sistema. Se a sessão já estiver aberta, reaplica o
+ * webhook e marca a instância como saudável.
+ */
+export async function connectWhatsappInstance(id: string): Promise<EvolutionConnectResult> {
+  const result = await pool.query("SELECT * FROM whatsapp_instances WHERE id = $1", [id]);
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(404, "Instancia nao encontrada.");
+  }
+  if (String(row.provider ?? "EVOLUTION") !== "EVOLUTION") {
+    throw new HttpError(400, "Reconexao via QR code disponivel apenas para instancias Evolution.");
+  }
+
+  const instance = {
+    instanceName: String(row.instance_name),
+    evolutionBaseUrl: String(row.evolution_base_url),
+    evolutionApiKey: String(row.evolution_api_key),
+  };
+
+  const connection = await connectEvolutionInstance(instance);
+
+  if (connection.state === "open") {
+    // Já estava conectada: garante webhook reaplicado e saúde verde.
+    await configureInstanceWebhook(instance).catch((error) => {
+      logger.warn("Falha ao reaplicar webhook apos reconexao", { id, error: String(error) });
+    });
+    await pool.query(
+      `UPDATE whatsapp_instances
+         SET last_health_check_at = NOW(),
+             last_health_status = 'OK',
+             status = CASE WHEN status = 'DISCONNECTED' THEN 'ACTIVE' ELSE status END
+       WHERE id = $1`,
+      [id],
+    );
+  }
+
+  return connection;
 }
 
 export async function deleteWhatsappInstance(id: string): Promise<void> {

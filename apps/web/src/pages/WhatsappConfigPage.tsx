@@ -44,6 +44,86 @@ function statusClass(status: WhatsappInstanceItem["status"]) {
   return "paused";
 }
 
+type HealthTone = "green" | "red" | "yellow" | "gray";
+
+interface HealthInfo {
+  tone: HealthTone;
+  label: string;
+  title: string;
+  /** Quando true, a conexão caiu e faz sentido oferecer o "Reconectar". */
+  down: boolean;
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) {
+    return "ainda não verificado";
+  }
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diffMs) || diffMs < 0) {
+    return "agora";
+  }
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return "há instantes";
+  if (minutes < 60) return `há ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `há ${days} dia${days > 1 ? "s" : ""}`;
+}
+
+/**
+ * Deriva a "bolinha" de saúde da conexão a partir do health check periódico
+ * (watchdog grava last_health_status a cada ~10 min). Verde = conectado,
+ * vermelho = caiu (precisa reconectar o QR), amarelo = não foi possível
+ * verificar, cinza = ainda sem leitura.
+ */
+function healthInfo(instance: WhatsappInstanceItem): HealthInfo {
+  const checked = relativeTime(instance.lastHealthCheckAt);
+  const raw = instance.lastHealthStatus;
+
+  if (raw === "OK") {
+    return { tone: "green", label: "Conectado", title: `Conectado · verificado ${checked}`, down: false };
+  }
+  if (raw && raw.startsWith("DOWN")) {
+    return {
+      tone: "red",
+      label: "Caiu — reconecte",
+      title: `WhatsApp desconectado da Evolution · verificado ${checked}. Clique em Reconectar para ler o QR.`,
+      down: true,
+    };
+  }
+  if (raw === "CHECK_FAILED") {
+    return {
+      tone: "yellow",
+      label: "Sem resposta",
+      title: `Não foi possível falar com a Evolution · ${checked}`,
+      down: true,
+    };
+  }
+  // Sem leitura ainda (instância nova ou provedor não monitorado).
+  return {
+    tone: "gray",
+    label: "Não verificado",
+    title: `Status de conexão ainda não verificado (${checked})`,
+    down: false,
+  };
+}
+
+/**
+ * Status "efetivo" usado nos contadores e no filtro das abas. Para instâncias
+ * Evolution leva em conta a saúde real (bolinha) em vez do status salvo no
+ * banco — que o watchdog não altera de propósito (senão pararia de monitorar).
+ */
+function effectiveStatus(instance: WhatsappInstanceItem): StatusFilter {
+  if (instance.status === "PAUSED") {
+    return "PAUSED";
+  }
+  if (instance.provider === "EVOLUTION") {
+    return healthInfo(instance).down ? "DISCONNECTED" : "ACTIVE";
+  }
+  return instance.status;
+}
+
 function buildCsv(instances: WhatsappInstanceItem[]) {
   const rows = [
     ["nome", "email", "telefone", "instancia", "status", "setor", "gestor"],
@@ -77,12 +157,14 @@ function UserCard({
   instance,
   onDelete,
   onConfigure,
+  onReconnect,
   deleting,
   configuring,
 }: {
   instance: WhatsappInstanceItem;
   onDelete: () => void;
   onConfigure: () => void;
+  onReconnect: () => void;
   deleting: boolean;
   configuring: boolean;
 }) {
@@ -90,6 +172,9 @@ function UserCard({
     instance.assignedUserName?.trim()
       ? `${instance.assignedUserName.toLocaleLowerCase("pt-BR").replace(/\s+/g, ".")}@whats.ws`
       : `${instance.instanceName}@whats.ws`;
+
+  const isEvolution = instance.provider === "EVOLUTION";
+  const health = healthInfo(instance);
 
   return (
     <article className="wa-user-card">
@@ -108,6 +193,7 @@ function UserCard({
           />
         ) : null}
         <UserRound size={28} />
+        {isEvolution ? <span className={`wa-health-dot ${health.tone}`} title={health.title} /> : null}
       </span>
       <h3>{instance.displayLabel}</h3>
       <p>{email}</p>
@@ -118,20 +204,35 @@ function UserCard({
         <span className="wa-user-tag provider" style={{ background: instance.provider === "UAZAPI" ? "#dbeafe" : "#fef3c7", color: instance.provider === "UAZAPI" ? "#1e40af" : "#92400e" }}>
           {instance.provider === "UAZAPI" ? "UazAPI" : "Evolution"}
         </span>
-        <span className={`wa-user-status ${statusClass(instance.status)}`}>{statusLabel(instance.status)}</span>
+        {isEvolution ? (
+          <span className={`wa-user-status health-${health.tone}`} title={health.title}>{health.label}</span>
+        ) : (
+          <span className={`wa-user-status ${statusClass(instance.status)}`}>{statusLabel(instance.status)}</span>
+        )}
       </div>
 
       <div className="wa-user-foot">
-        {instance.provider === "EVOLUTION" ? (
-          <button
-            type="button"
-            className="wa-user-configure"
-            onClick={onConfigure}
-            disabled={configuring}
-            title="Configurar Webhook e Grupos automaticamente"
-          >
-            {configuring ? "..." : "Configurar Agora"}
-          </button>
+        {isEvolution ? (
+          health.down ? (
+            <button
+              type="button"
+              className="wa-user-configure reconnect"
+              onClick={onReconnect}
+              title="Ler o QR code e reconectar este WhatsApp"
+            >
+              Reconectar
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="wa-user-configure"
+              onClick={onConfigure}
+              disabled={configuring}
+              title="Configurar Webhook e Grupos automaticamente"
+            >
+              {configuring ? "..." : "Configurar Agora"}
+            </button>
+          )
         ) : (
           <button
             type="button"
@@ -159,11 +260,14 @@ export function WhatsappConfigPage() {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [activeTab, setActiveTab] = useState<UserTab>("monitorados");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [reconnectInstance, setReconnectInstance] = useState<WhatsappInstanceItem | null>(null);
 
   const instancesQuery = useQuery({
     queryKey: ["whatsapp-instances"],
     queryFn: () => api.whatsappInstances(token!),
     enabled: Boolean(token),
+    // Mantém a bolinha de status fresca sem precisar recarregar a página.
+    refetchInterval: 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -190,9 +294,9 @@ export function WhatsappConfigPage() {
   });
 
   const instances = instancesQuery.data ?? [];
-  const connectedCount = instances.filter((instance) => instance.status === "ACTIVE").length;
-  const disconnectedCount = instances.filter((instance) => instance.status === "DISCONNECTED").length;
-  const pausedCount = instances.filter((instance) => instance.status === "PAUSED").length;
+  const connectedCount = instances.filter((instance) => effectiveStatus(instance) === "ACTIVE").length;
+  const disconnectedCount = instances.filter((instance) => effectiveStatus(instance) === "DISCONNECTED").length;
+  const pausedCount = instances.filter((instance) => effectiveStatus(instance) === "PAUSED").length;
 
   const visibleInstances = useMemo(() => {
     if (activeTab === "grupos") {
@@ -207,7 +311,7 @@ export function WhatsappConfigPage() {
       return instances;
     }
 
-    return instances.filter((instance) => instance.status === statusFilter);
+    return instances.filter((instance) => effectiveStatus(instance) === statusFilter);
   }, [activeTab, instances, statusFilter]);
 
   const webhookBaseUrl = (API_BASE_URL || window.location.origin).replace(/\/$/, "");
@@ -332,6 +436,7 @@ export function WhatsappConfigPage() {
               onConfigure={() => {
                 configureMutation.mutate(instance.id);
               }}
+              onReconnect={() => setReconnectInstance(instance)}
             />
           ))}
         </section>
@@ -343,6 +448,153 @@ export function WhatsappConfigPage() {
       )}
 
       {showAddModal ? <AddInstanceModal onClose={() => setShowAddModal(false)} /> : null}
+      {reconnectInstance ? (
+        <ReconnectModal
+          instance={reconnectInstance}
+          token={token!}
+          onClose={() => setReconnectInstance(null)}
+          onConnected={() => {
+            void queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function ReconnectModal({
+  instance,
+  token,
+  onClose,
+  onConnected,
+}: {
+  instance: WhatsappInstanceItem;
+  token: string;
+  onClose: () => void;
+  onConnected: () => void;
+}) {
+  const [qr, setQr] = useState<{ base64: string | null; pairingCode: string | null } | null>(null);
+  const [phase, setPhase] = useState<"loading" | "waiting" | "connected" | "error">("loading");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // 1. Dispara a conexão para obter o QR / pairing code.
+  async function requestQr() {
+    setPhase("loading");
+    setErrorMessage(null);
+    try {
+      const result = await api.connectWhatsappInstance(token, instance.id);
+      if (result.state === "open") {
+        setPhase("connected");
+        onConnected();
+        return;
+      }
+      setQr({ base64: result.base64, pairingCode: result.pairingCode });
+      setPhase("waiting");
+    } catch (error) {
+      setErrorMessage((error as Error).message || "Falha ao gerar o QR code.");
+      setPhase("error");
+    }
+  }
+
+  useEffect(() => {
+    void requestQr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instance.id]);
+
+  // 2. Enquanto espera o scan, verifica o estado a cada 3s e expira o QR (~60s).
+  useEffect(() => {
+    if (phase !== "waiting") {
+      return;
+    }
+    let cancelled = false;
+    const startedAt = Date.now();
+    const timer = setInterval(async () => {
+      try {
+        const conn = await api.whatsappInstanceConnection(token, instance.id);
+        if (cancelled) return;
+        if (conn.state === "open") {
+          setPhase("connected");
+          onConnected();
+          clearInterval(timer);
+          return;
+        }
+      } catch {
+        // Ignora erros transitórios de polling.
+      }
+      // QR da Evolution expira rápido — recarrega após ~60s sem conexão.
+      if (!cancelled && Date.now() - startedAt > 60_000) {
+        clearInterval(timer);
+        void requestQr();
+      }
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, instance.id, token]);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-container wa-qr-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h3>Reconectar {instance.displayLabel}</h3>
+          <button type="button" className="modal-close" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="modal-body wa-qr-body">
+          {phase === "loading" ? <p>Gerando QR code...</p> : null}
+
+          {phase === "connected" ? (
+            <div className="wa-qr-success">
+              <CheckCircle2 size={48} />
+              <strong>WhatsApp reconectado!</strong>
+              <span>As mensagens voltarão a ser recebidas normalmente.</span>
+            </div>
+          ) : null}
+
+          {phase === "error" ? (
+            <div className="wa-qr-error">
+              <p>{errorMessage}</p>
+              <button type="button" className="primary-button" onClick={() => void requestQr()}>
+                Tentar novamente
+              </button>
+            </div>
+          ) : null}
+
+          {phase === "waiting" ? (
+            <>
+              <p className="wa-qr-instructions">
+                Abra o WhatsApp no celular → <strong>Aparelhos conectados</strong> → <strong>Conectar um aparelho</strong> e aponte para o QR abaixo.
+              </p>
+              {qr?.base64 ? (
+                <img className="wa-qr-image" src={qr.base64} alt="QR code para reconectar o WhatsApp" />
+              ) : (
+                <p>QR code indisponível. Tente novamente.</p>
+              )}
+              {qr?.pairingCode ? (
+                <p className="wa-qr-pairing">
+                  Ou use o código de pareamento: <strong>{qr.pairingCode}</strong>
+                </p>
+              ) : null}
+              <p className="wa-qr-waiting">Aguardando leitura...</p>
+            </>
+          ) : null}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="secondary-button" onClick={onClose}>
+            {phase === "connected" ? "Fechar" : "Cancelar"}
+          </button>
+          {phase === "waiting" ? (
+            <button type="button" className="primary-button" onClick={() => void requestQr()}>
+              Gerar novo QR
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

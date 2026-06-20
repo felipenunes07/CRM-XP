@@ -1149,6 +1149,20 @@ export const api = {
       method: "POST",
     }, token);
   },
+  whatsappInstanceConnection(token: string, id: string) {
+    return request<{ state: string; lastHealthStatus: string | null; lastHealthCheckAt: string | null }>(
+      `/api/whatsapp-instances/${id}/connection`,
+      {},
+      token,
+    );
+  },
+  connectWhatsappInstance(token: string, id: string) {
+    return request<{ state: string; base64: string | null; pairingCode: string | null; code: string | null }>(
+      `/api/whatsapp-instances/${id}/connect`,
+      { method: "POST" },
+      token,
+    );
+  },
   getEventsMetrics(token: string, query: { dateFrom?: string; dateTo?: string; isGroup?: boolean } = {}) {
     const search = new URLSearchParams();
     if (query.dateFrom) search.set("dateFrom", query.dateFrom);
