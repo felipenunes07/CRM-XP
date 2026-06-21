@@ -138,7 +138,7 @@ function compactAiItem(value: unknown) {
     const detail = [record.descricao, record.description, record.resumo, record.acao, record.action]
       .find((entry) => typeof entry === "string" && entry.trim());
 
-    return [title, detail].filter(Boolean).join(" - ");
+    return [title, detail].filter(Boolean).join(" — ");
   }
 
   return "";
@@ -154,15 +154,6 @@ function readAiList(summary: Record<string, unknown> | null | undefined, key: st
     .map(compactAiItem)
     .filter(Boolean)
     .slice(0, 5);
-}
-
-function buildAiSections(summary: Record<string, unknown> | null | undefined) {
-  return [
-    { title: "Alertas IA", items: readAiList(summary, "alertasCriticos") },
-    { title: "Temas IA", items: readAiList(summary, "temasEmAlta") },
-    { title: "Acoes IA", items: readAiList(summary, "acoesRecomendadas") },
-    { title: "Gargalos IA", items: readAiList(summary, "gargalos") },
-  ].filter((section) => section.items.length > 0);
 }
 
 function buildChatState(seed: EventConversationSeed, detail: WhatsappMonitorConversationDetail | null, loading: boolean): ChatState {
@@ -267,6 +258,54 @@ function seedFromExample(example: MessageInsightExample, theme: MessageInsightTh
     severity: theme.severity,
     label: theme.title,
   };
+}
+
+/* ── AI Category config ── */
+interface AiCategory {
+  key: string;
+  icon: string;
+  title: string;
+  description: string;
+  items: string[];
+  tone: "danger" | "info" | "warning" | "success";
+}
+
+function buildManagerCategories(summary: Record<string, unknown> | null | undefined): AiCategory[] {
+  const items: AiCategory[] = [
+    {
+      key: "alertas",
+      icon: "🚨",
+      title: "Alertas Urgentes",
+      description: "Problemas críticos que precisam de atenção imediata",
+      items: readAiList(summary, "alertasCriticos"),
+      tone: "danger" as const,
+    },
+    {
+      key: "acoes",
+      icon: "📋",
+      title: "Ações Recomendadas",
+      description: "Sugestões práticas para a equipe de atendimento",
+      items: readAiList(summary, "acoesRecomendadas"),
+      tone: "info" as const,
+    },
+    {
+      key: "temas",
+      icon: "📈",
+      title: "Tendências",
+      description: "Temas recorrentes nas conversas",
+      items: readAiList(summary, "temasEmAlta"),
+      tone: "warning" as const,
+    },
+    {
+      key: "noticias",
+      icon: "💚",
+      title: "Destaques Positivos",
+      description: "Elogios, vendas e interações positivas",
+      items: readAiList(summary, "noticiasBoas"),
+      tone: "success" as const,
+    },
+  ];
+  return items.filter((cat) => cat.items.length > 0);
 }
 
 export function EventsPage() {
@@ -420,45 +459,8 @@ export function EventsPage() {
   const aiExecutiveText = typeof latestAiSummary?.resumoExecutivo === "string"
     ? latestAiSummary.resumoExecutivo
     : null;
-  const aiSections = buildAiSections(latestAiSummary);
-  
-  const managerCategories = [
-    {
-      key: "alertas",
-      title: "🚨 Alertas Urgentes",
-      description: "Problemas críticos detectados que exigem atenção imediata",
-      items: readAiList(latestAiSummary, "alertasCriticos"),
-      themeClass: "alertas",
-    },
-    {
-      key: "acoes",
-      title: "📋 Recomendações",
-      description: "Sugestões práticas de resolução para a equipe de atendimento",
-      items: readAiList(latestAiSummary, "acoesRecomendadas"),
-      themeClass: "acoes",
-    },
-    {
-      key: "temas",
-      title: "📈 Assuntos em Alta",
-      description: "Temas recorrentes e tópicos frequentes comentados pelos clientes",
-      items: readAiList(latestAiSummary, "temasEmAlta"),
-      themeClass: "temas",
-    },
-    {
-      key: "noticias",
-      title: "💚 Boas Notícias & Conquistas",
-      description: "Elogios recebidos, vendas finalizadas e interações positivas",
-      items: readAiList(latestAiSummary, "noticiasBoas"),
-      themeClass: "noticias",
-    },
-    {
-      key: "gargalos",
-      title: "⏳ Atrasos e Impedimentos",
-      description: "Gargalos operacionais ou lentidão identificados nas conversas",
-      items: readAiList(latestAiSummary, "gargalos"),
-      themeClass: "gargalos",
-    }
-  ].filter((cat) => cat.items.length > 0);
+
+  const managerCategories = buildManagerCategories(latestAiSummary);
 
   const aiDisplay = buildAiBatchDisplay(aiBatch);
   const visibleTotal = eventsQuery.data?.total ?? intelligence?.summary.totalEvents ?? 0;
@@ -501,8 +503,14 @@ export function EventsPage() {
     return items.filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
   }, [overviewMetrics, overviewIntelligence]);
 
+  /* ── Render helpers ── */
+  const lastBatchLabel = aiBatch?.latestBatch
+    ? `${aiBatch.latestBatch.runSource === "manual" ? "👤 Manual" : "🤖 Automático"} · ${formatBatchStatus(aiBatch.latestBatch.status)} · ${formatBatchTime(aiBatch.latestBatch.finishedAt)}`
+    : "Nenhuma análise executada";
+
   return (
     <div className="wa-events-page">
+      {/* ═══ HEADER ═══ */}
       <header className="wa-page-header">
         <div className="wa-header-content">
           <div className="wa-title-row">
@@ -541,45 +549,58 @@ export function EventsPage() {
       </header>
 
       <div className="wa-events-content">
-        <section className="wa-manager-dashboard" aria-label="Painel Gerencial da IA">
-          {/* Coluna Esquerda: Leitura e Gráfico de Sentimento */}
-          <div className="wa-manager-col">
-            <div className="wa-manager-card">
-              <header className="wa-manager-card-header">
-                <div className="wa-manager-card-title">
+        {/* ═══ BLOCO 1: KPIs ═══ */}
+        <section className="wa-section metrics" aria-label="KPIs do período">
+          <EventsSummaryPanel metrics={overviewMetrics || null} onSelectScope={applyScopeFilter} />
+        </section>
+
+        {/* ═══ BLOCO 2: Painel IA ═══ */}
+        <section className="wa-ai-dashboard" aria-label="Painel da IA">
+          {/* Coluna Esquerda: Leitura Executiva + Gráfico */}
+          <div className="wa-ai-col-left">
+            {/* Card: Leitura Executiva */}
+            <div className="wa-ai-card">
+              <header className="wa-ai-card-header">
+                <div className="wa-ai-card-title">
                   <Bot size={22} className="text-primary" />
-                  <h3>Leitura Executiva (IA)</h3>
+                  <h3>Leitura Executiva</h3>
                 </div>
-                <div className="wa-hub-meta">
-                  {aiBatch?.latestBatch && (
+                <div className="wa-ai-status-badges">
+                  {aiBatch?.latestBatch ? (
                     <>
-                      <span className={`wa-hub-badge ${aiBatch.latestBatch.runSource === "manual" ? "manual" : "auto"}`}>
+                      <span className={`wa-ai-badge ${aiBatch.latestBatch.runSource === "manual" ? "manual" : "auto"}`}>
                         {aiBatch.latestBatch.runSource === "manual" ? "👤 Manual" : "🤖 Automático"}
                       </span>
-                      <span className={`wa-hub-badge status-${aiBatch.latestBatch.status.toLowerCase()}`}>
+                      <span className={`wa-ai-badge status-${aiBatch.latestBatch.status.toLowerCase()}`}>
                         {formatBatchStatus(aiBatch.latestBatch.status)}
                       </span>
+                      <span className="wa-ai-badge time">
+                        {formatBatchTime(aiBatch.latestBatch.finishedAt)}
+                      </span>
                     </>
+                  ) : (
+                    <span className="wa-ai-badge neutral">Sem análise</span>
                   )}
                 </div>
               </header>
-              <div className="wa-manager-card-body">
+              <div className="wa-ai-card-body">
                 {aiExecutiveText ? (
-                  <div className="wa-manager-summary-box">
+                  <div className="wa-ai-executive-text">
                     <p>{aiExecutiveText}</p>
                   </div>
                 ) : (
-                  <div className="wa-manager-summary-box text-muted">
-                    <p>Ainda sem resumo executivo gerado pela IA para o período selecionado. Clique em "Análise Manual" abaixo para analisar as interações recentes.</p>
+                  <div className="wa-ai-executive-text empty">
+                    <p>Ainda sem resumo executivo gerado pela IA para o período selecionado. Clique em "Análise Manual" para gerar.</p>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="wa-manager-card">
-              <div className="wa-manager-card-body" style={{ padding: 0 }}>
+            {/* Card: Gráfico de Sentimento */}
+            <div className="wa-ai-card">
+              <div className="wa-ai-card-body" style={{ padding: 0 }}>
                 {sentimentQuery.isLoading ? (
-                  <div className="wa-chart-container text-muted" style={{ height: 350, display: "grid", placeItems: "center" }}>
+                  <div className="wa-chart-container text-muted" style={{ height: 320, display: "grid", placeItems: "center" }}>
                     <span>Carregando gráfico de sentimento...</span>
                   </div>
                 ) : (
@@ -589,67 +610,73 @@ export function EventsPage() {
             </div>
           </div>
 
-          {/* Coluna Direita: Ações, Alertas e Sinais */}
-          <div className="wa-manager-col">
-            <div className="wa-manager-card">
-              <header className="wa-manager-card-header">
-                <div className="wa-manager-card-title">
+          {/* Coluna Direita: Plano de Ação IA */}
+          <div className="wa-ai-col-right">
+            <div className="wa-ai-card wa-ai-action-card">
+              <header className="wa-ai-card-header">
+                <div className="wa-ai-card-title">
                   <LayoutDashboard size={20} className="text-primary" />
-                  <h3>Plano de Ação e Sinais da IA</h3>
+                  <h3>Plano de Ação da IA</h3>
                 </div>
               </header>
-              
-              <div className="wa-manager-card-body">
+
+              <div className="wa-ai-card-body wa-ai-actions-body">
                 {managerCategories.length > 0 ? (
-                  <div className="wa-manager-list-grid">
+                  <div className="wa-ai-categories">
                     {managerCategories.map((category) => (
-                      <div key={category.key} className="wa-manager-list-section">
-                        <div className={`wa-manager-list-header ${category.themeClass}`} title={category.description}>
-                          {category.title}
+                      <div key={category.key} className={`wa-ai-category-group tone-${category.tone}`}>
+                        <div className="wa-ai-category-header">
+                          <span className="wa-ai-category-icon">{category.icon}</span>
+                          <div>
+                            <strong>{category.title}</strong>
+                            <small>{category.description}</small>
+                          </div>
                         </div>
-                        <div className="wa-manager-list-body">
+                        <ul className="wa-ai-category-items">
                           {category.items.map((item) => {
                             const isActive = filters.search === item;
                             return (
-                              <button
-                                key={item}
-                                type="button"
-                                className={`wa-clickable-item ${isActive ? "active" : ""}`}
-                                onClick={() => {
-                                  setFilters((current) => ({
-                                    ...current,
-                                    search: isActive ? undefined : item,
-                                    page: 1
-                                  }));
-                                }}
-                                title="Clique para filtrar os eventos abaixo por este termo"
-                              >
-                                <span className="wa-clickable-item-bullet">•</span>
-                                <span>{item}</span>
-                              </button>
+                              <li key={item}>
+                                <button
+                                  type="button"
+                                  className={`wa-ai-action-item ${isActive ? "active" : ""}`}
+                                  onClick={() => {
+                                    setFilters((current) => ({
+                                      ...current,
+                                      search: isActive ? undefined : item,
+                                      page: 1,
+                                    }));
+                                  }}
+                                  title="Clique para filtrar os eventos abaixo por este item"
+                                >
+                                  {item}
+                                </button>
+                              </li>
                             );
                           })}
-                        </div>
+                        </ul>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-muted text-center" style={{ padding: "2rem 0" }}>
-                    Nenhuma recomendação detalhada ou alerta gerado. Execute uma nova análise abaixo para gerar insights de atendimento.
+                  <div className="wa-ai-empty-state">
+                    <Bot size={40} style={{ opacity: 0.15 }} />
+                    <p>Nenhuma recomendação gerada ainda.</p>
+                    <small>Execute a análise manual para gerar insights.</small>
                   </div>
                 )}
               </div>
 
-              <footer className="wa-manager-footer">
-                <div className="wa-manager-history-accordion-wrapper">
+              <footer className="wa-ai-card-footer">
+                <div className="wa-ai-history-section">
                   {aiBatch?.recentBatches?.length ? (
-                    <details className="wa-manager-history-accordion">
-                      <summary>Histórico de execuções ({aiBatch.recentBatches.length})</summary>
-                      <div className="wa-manager-history-list">
+                    <details className="wa-ai-history-accordion">
+                      <summary>Histórico ({aiBatch.recentBatches.length})</summary>
+                      <div className="wa-ai-history-list">
                         {aiBatch.recentBatches.map((batch, index) => (
-                          <div key={index} className="wa-hub-history-item">
-                            <span>{formatRunSource(batch.runSource)} • {formatBatchStatus(batch.status)}</span>
-                            <span>{batch.eventCount} msg • {formatBatchTime(batch.finishedAt)}</span>
+                          <div key={index} className="wa-ai-history-row">
+                            <span>{formatRunSource(batch.runSource)} · {formatBatchStatus(batch.status)}</span>
+                            <span>{batch.eventCount} msg · {formatBatchTime(batch.finishedAt)}</span>
                           </div>
                         ))}
                       </div>
@@ -661,7 +688,7 @@ export function EventsPage() {
 
                 <button
                   type="button"
-                  className="wa-hub-btn-run"
+                  className="wa-ai-run-btn"
                   disabled={!canRunManualBatch}
                   onClick={() => aiBatchMutation.mutate()}
                   title={formatBlockedReason(aiBatch?.manualBlockedReason)}
@@ -675,10 +702,7 @@ export function EventsPage() {
           </div>
         </section>
 
-        <section className="wa-section metrics">
-          <EventsSummaryPanel metrics={overviewMetrics || null} onSelectScope={applyScopeFilter} />
-        </section>
-
+        {/* ═══ BLOCO 3: Temas + Eventos ═══ */}
         {intelligence && (
           <div className="wa-insight-grid">
             <section className="wa-section wa-themes-panel">
@@ -778,6 +802,7 @@ export function EventsPage() {
           </div>
         )}
 
+        {/* ═══ BLOCO 4: Lista de Eventos ═══ */}
         <section className="wa-section list-card">
           <div className="wa-card-header events-workspace">
             <div className="wa-card-title">
