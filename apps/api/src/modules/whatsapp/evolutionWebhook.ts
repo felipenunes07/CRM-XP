@@ -820,7 +820,11 @@ export async function handleEvolutionWebhook(
                 d.whatsapp_jid = $2
                 OR d.whatsapp_jid = ANY($6::text[])
                 OR $2 = ANY(deal_aliases.associated_jids)
-                OR $6::text[] && deal_aliases.associated_jids
+                -- associated_jids é varchar[] (canonical_jid/alias_jid são VARCHAR);
+                -- o operador && exige o MESMO tipo dos dois lados, e text[] && varchar[]
+                -- NÃO existe → sem o cast a query inteira abortava e TODA mensagem 1:1
+                -- caía no catch do webhook (gravava só em incoming, nunca virava deal).
+                OR $6::text[] && deal_aliases.associated_jids::text[]
                 OR (
                   -- Se um é LID e o outro é telefone real, verificamos se há algum mapeamento histórico
                   -- que ligue os dois na tabela whatsapp_incoming_messages.

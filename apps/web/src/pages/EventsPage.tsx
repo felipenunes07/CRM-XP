@@ -433,7 +433,7 @@ export function EventsPage() {
     const complaints = (summary?.complaintsCount || 0) + (summary?.negativeFeedbacks || 0) + (summary?.riskEvents || 0);
     const opportunities = summary?.opportunitiesCount || 0;
 
-    const items: EventFilterShortcut[] = [
+    return [
       { id: "all", label: "Tudo", count: total, patch: {}, tone: "neutral" },
       { id: "risk", label: "Criticos", count: highRisk, patch: { severity: "CRITICAL,HIGH", resolved: "false" }, tone: "danger" },
       { id: "complaints", label: "Reclamacoes", count: complaints, patch: { eventType: "COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION" }, tone: "warning" },
@@ -451,9 +451,7 @@ export function EventsPage() {
       },
       { id: "groups", label: "Grupos", count: groups, patch: { isGroup: true }, tone: "neutral" },
       { id: "private", label: "Privado", count: privateCount, patch: { isGroup: false }, tone: "neutral" },
-    ];
-
-    return items.filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
+    ].filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
   }, [overviewMetrics, overviewIntelligence]);
 
   return (
@@ -619,12 +617,12 @@ export function EventsPage() {
                     key={theme.key}
                     className={`wa-theme-row ${theme.category} ${selectedTheme?.key === theme.key ? "active" : ""}`}
                     onClick={() => setSelectedThemeKey(theme.key)}
-                  >
-                    <div>
-                      <strong>{theme.title}</strong>
-                      <span>{theme.count} ocorrencias - {theme.unresolvedCount} abertas - {theme.groupCount} em grupos</span>
-                      {theme.examples[0] && <p>{theme.examples[0].content}</p>}
-                    </div>
+                    >
+                      <div>
+                        <strong>{theme.title}</strong>
+                        <span>{theme.count} ocorrencias - {theme.unresolvedCount} abertas - {theme.groupCount} em grupos</span>
+                        {theme.examples[0] && <p>{theme.examples[0].content}</p>}
+                      </div>
                     <span className="wa-theme-count-pill">
                       <strong>{theme.count}</strong>
                       <span>casos</span>
