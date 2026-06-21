@@ -501,7 +501,9 @@ export async function getEventsAiBatchStatus(now = new Date()) {
   const manualDecision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: true, ignoreBusinessHours: true });
 
   const latest = await pool.query(`
-    SELECT status, status_reason, run_source, provider, model, summary_json, event_count, finished_at, error_message
+    SELECT
+      status, status_reason, run_source, provider, model, summary_json, event_count,
+      period_from, period_to, finished_at, error_message
     FROM event_ai_batches
     ORDER BY finished_at DESC NULLS LAST, started_at DESC
     LIMIT 5
@@ -536,6 +538,8 @@ export async function getEventsAiBatchStatus(now = new Date()) {
       provider: latestRow.provider,
       model: latestRow.model,
       eventCount: Number(latestRow.event_count ?? 0),
+      periodFrom: latestRow.period_from ? new Date(latestRow.period_from).toISOString() : null,
+      periodTo: latestRow.period_to ? new Date(latestRow.period_to).toISOString() : null,
       finishedAt: latestRow.finished_at ? new Date(latestRow.finished_at).toISOString() : null,
       errorMessage: latestRow.error_message,
       summary: latestRow.summary_json ?? null,
@@ -547,6 +551,8 @@ export async function getEventsAiBatchStatus(now = new Date()) {
       provider: row.provider,
       model: row.model,
       eventCount: Number(row.event_count ?? 0),
+      periodFrom: row.period_from ? new Date(row.period_from).toISOString() : null,
+      periodTo: row.period_to ? new Date(row.period_to).toISOString() : null,
       finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
       errorMessage: row.error_message,
     })),

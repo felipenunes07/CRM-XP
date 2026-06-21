@@ -93,7 +93,7 @@ describe("events intelligence aggregation", () => {
   });
 
   it("keeps enough theme examples to explain counts without pretending the sample is the full queue", () => {
-    const events = Array.from({ length: 8 }, (_, index) => event({
+    const events = Array.from({ length: 45 }, (_, index) => event({
       id: `stock-${index}`,
       content: `Esta faltando estoque de tela modelo ${index}`,
       eventType: "COMPLAINT",
@@ -108,8 +108,8 @@ describe("events intelligence aggregation", () => {
     });
 
     const stockTheme = result.topThemes.find((theme) => theme.key === "stock_shortage");
-    expect(stockTheme?.count).toBe(8);
-    expect(stockTheme?.sampleCount).toBe(8);
-    expect(stockTheme?.examples).toHaveLength(8);
+    expect(stockTheme?.count).toBe(45);
+    expect(stockTheme?.sampleCount).toBe(40);
+    expect(stockTheme?.examples).toHaveLength(40);
   });
 });

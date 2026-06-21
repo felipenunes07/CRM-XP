@@ -74,6 +74,28 @@ function formatBatchTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function formatBatchPeriod(from: string | null | undefined, to: string | null | undefined) {
+  if (!from || !to) return "Periodo nao registrado";
+  return `${formatBatchTime(from)} ate ${formatBatchTime(to)}`;
+}
+
+function formatBatchStatus(status: string) {
+  switch (status) {
+    case "SUCCEEDED":
+      return "Concluido";
+    case "SKIPPED":
+      return "Ignorado";
+    case "FAILED":
+      return "Falhou";
+    default:
+      return status;
+  }
+}
+
+function formatRunSource(source: string | null | undefined) {
+  return source === "manual" ? "Manual" : "Automatico";
+}
+
 function formatBlockedReason(reason: string | null | undefined) {
   switch (reason) {
     case "disabled":
@@ -130,7 +152,7 @@ function readAiList(summary: Record<string, unknown> | null | undefined, key: st
   return value
     .map(compactAiItem)
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, 5);
 }
 
 function buildAiSections(summary: Record<string, unknown> | null | undefined) {
@@ -193,6 +215,21 @@ function themeSummaryText(theme: MessageInsightTheme) {
     return `${theme.count} pedidos ou duvidas comerciais apareceram. Vale abrir as conversas para recuperar venda.`;
   }
   return `${theme.count} ocorrencias apareceram, com ${theme.unresolvedCount} ainda abertas. A prioridade vem dos casos em grupos e da severidade.`;
+}
+
+function formatThemeCategory(category: MessageInsightTheme["category"]) {
+  switch (category) {
+    case "negative":
+      return "Problema";
+    case "positive":
+      return "Sinal positivo";
+    case "opportunity":
+      return "Oportunidade";
+    case "risk":
+      return "Risco";
+    default:
+      return category;
+  }
 }
 
 function readStringMetadata(event: MessageEvent, key: string) {
@@ -385,6 +422,7 @@ export function EventsPage() {
     if (!intelligence?.topThemes.length) return null;
     return intelligence.topThemes.find((theme) => theme.key === selectedThemeKey) ?? intelligence.topThemes[0];
   }, [intelligence?.topThemes, selectedThemeKey]);
+  const visibleThemeExamples = selectedTheme?.examples.length ?? 0;
 
   const shortcuts = useMemo<EventFilterShortcut[]>(() => {
     const summary = overviewMetrics?.summary;
@@ -395,12 +433,12 @@ export function EventsPage() {
     const complaints = (summary?.complaintsCount || 0) + (summary?.negativeFeedbacks || 0) + (summary?.riskEvents || 0);
     const opportunities = summary?.opportunitiesCount || 0;
 
-    return [
+    const items: EventFilterShortcut[] = [
       { id: "all", label: "Tudo", count: total, patch: {}, tone: "neutral" },
       { id: "risk", label: "Criticos", count: highRisk, patch: { severity: "CRITICAL,HIGH", resolved: "false" }, tone: "danger" },
       { id: "complaints", label: "Reclamacoes", count: complaints, patch: { eventType: "COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION" }, tone: "warning" },
       { id: "sales", label: "Oportunidades", count: opportunities, patch: { eventType: "SALES_OPPORTUNITY" }, tone: "info" },
-      { id: "questions", label: "Duvidas", count: summary?.questionCount || 0, patch: { eventType: "QUESTION" }, tone: "neutral" },
+      { id: "questions", label: "Duvidas simples", count: summary?.questionCount || 0, patch: { eventType: "QUESTION" }, tone: "neutral" },
       {
         id: "pending",
         label: "Pendencias",
@@ -414,6 +452,8 @@ export function EventsPage() {
       { id: "groups", label: "Grupos", count: groups, patch: { isGroup: true }, tone: "neutral" },
       { id: "private", label: "Privado", count: privateCount, patch: { isGroup: false }, tone: "neutral" },
     ];
+
+    return items.filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
   }, [overviewMetrics, overviewIntelligence]);
 
   return (
@@ -511,6 +551,16 @@ export function EventsPage() {
               </div>
               <small>{aiDisplay.actionHint}</small>
             </div>
+            <div className="wa-ai-scope">
+              <span>
+                <strong>Base</strong>
+                Eventos capturados por regras
+              </span>
+              <span>
+                <strong>Escopo</strong>
+                {formatBatchPeriod(aiBatch?.latestBatch?.periodFrom, aiBatch?.latestBatch?.periodTo)}
+              </span>
+            </div>
             <div className="wa-ai-result">
               <strong>O que a IA devolveu</strong>
               <p>{aiExecutiveText || "Ainda sem resumo de IA para o periodo. Clique em rodar para atualizar a leitura gerencial."}</p>
@@ -530,7 +580,7 @@ export function EventsPage() {
                 <strong>Ultimas execucoes</strong>
                 {aiBatch.recentBatches.slice(0, 3).map((batch) => (
                   <span key={`${batch.finishedAt}-${batch.status}-${batch.runSource}`}>
-                    {batch.runSource === "manual" ? "Manual" : "Automatico"} - {batch.status} - {batch.eventCount} eventos - {formatBatchTime(batch.finishedAt)}
+                    {formatRunSource(batch.runSource)} - {formatBatchStatus(batch.status)} - {batch.eventCount} eventos - {formatBatchTime(batch.finishedAt)}
                   </span>
                 ))}
               </div>
@@ -543,7 +593,7 @@ export function EventsPage() {
               title={formatBlockedReason(aiBatch?.manualBlockedReason)}
             >
               {aiBatchMutation.isPending ? <RefreshCw size={18} className="spin" /> : <PlayCircle size={18} />}
-              Rodar IA agora
+              Rodar lote manual
             </button>
             {manualBatchMessage && <p className="wa-ai-message">{manualBatchMessage}</p>}
           </div>
@@ -575,7 +625,11 @@ export function EventsPage() {
                       <span>{theme.count} ocorrencias - {theme.unresolvedCount} abertas - {theme.groupCount} em grupos</span>
                       {theme.examples[0] && <p>{theme.examples[0].content}</p>}
                     </div>
-                    <small>{theme.severity}</small>
+                    <span className="wa-theme-count-pill">
+                      <strong>{theme.count}</strong>
+                      <span>casos</span>
+                      <small>{theme.severity}</small>
+                    </span>
                   </button>
                 ))}
                 {intelligence.topThemes.length === 0 && (
@@ -592,7 +646,7 @@ export function EventsPage() {
                       <Smartphone size={20} />
                       <div>
                         <h2>{selectedTheme.title}</h2>
-                        <span>{selectedTheme.severity} - {selectedTheme.category}</span>
+                        <span>{selectedTheme.severity} - {formatThemeCategory(selectedTheme.category)}</span>
                       </div>
                     </div>
                     <button
@@ -601,21 +655,21 @@ export function EventsPage() {
                       onClick={() => applyScopeFilter(themeFilterPatch(selectedTheme))}
                     >
                       <Filter size={16} />
-                      Ver fila
+                      Filtrar tabela
                     </button>
                   </div>
                   <div className="wa-theme-detail-body">
                     <p className="wa-theme-summary">{themeSummaryText(selectedTheme)}</p>
                     <div className="wa-theme-detail-stats">
-                      <span>{selectedTheme.count} total</span>
-                      <span>{selectedTheme.sampleCount} na lista</span>
-                      <span>{selectedTheme.unresolvedCount} abertas</span>
-                      <span>{selectedTheme.groupCount} grupos</span>
-                      <span>{selectedTheme.privateCount} privados</span>
+                      <span><strong>{selectedTheme.count}</strong> total detectado</span>
+                      <span><strong>{visibleThemeExamples}</strong> visiveis aqui</span>
+                      <span><strong>{selectedTheme.unresolvedCount}</strong> abertas</span>
+                      <span><strong>{selectedTheme.groupCount}</strong> grupos</span>
+                      <span><strong>{selectedTheme.privateCount}</strong> privados</span>
                     </div>
-                    {selectedTheme.sampleCount < selectedTheme.count && (
+                    {visibleThemeExamples < selectedTheme.count && (
                       <p className="wa-theme-sample-note">
-                        Mostrando {selectedTheme.sampleCount} conversas recentes de {selectedTheme.count} detectadas neste tema.
+                        Mostrando {visibleThemeExamples} conversas recentes de {selectedTheme.count} detectadas neste tema.
                       </p>
                     )}
                     <div className="wa-theme-examples">

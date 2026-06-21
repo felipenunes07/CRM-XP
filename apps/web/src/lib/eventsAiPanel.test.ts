@@ -22,10 +22,13 @@ describe("events AI panel display", () => {
         provider: "cerebras",
         model: "gpt-oss-120b",
         eventCount: 33,
+        periodFrom: "2026-06-21T10:49:00.000Z",
+        periodTo: "2026-06-21T11:49:00.000Z",
         finishedAt: "2026-06-21T11:49:00.000Z",
         errorMessage: null,
         summary: { resumoExecutivo: "Clientes pediram reposicao de telas." },
       },
+      recentBatches: [],
     });
 
     expect(display.sourceLabel).toBe("Manual");
@@ -55,10 +58,13 @@ describe("events AI panel display", () => {
         provider: "gemini",
         model: "gemini-2.5-flash-lite",
         eventCount: 0,
+        periodFrom: "2026-06-21T10:49:00.000Z",
+        periodTo: "2026-06-21T11:49:00.000Z",
         finishedAt: "2026-06-21T11:49:00.000Z",
         errorMessage: null,
         summary: null,
       },
+      recentBatches: [],
     });
 
     expect(display.sourceLabel).toBe("Automatico");

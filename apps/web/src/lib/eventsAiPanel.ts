@@ -18,6 +18,11 @@ function formatTime(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function formatPeriod(from: string | null | undefined, to: string | null | undefined) {
+  if (!from || !to) return null;
+  return `${formatTime(from)} ate ${formatTime(to)}`;
+}
+
 function blockedReasonText(reason: string | null | undefined) {
   switch (reason) {
     case "disabled":
@@ -62,6 +67,8 @@ export function buildAiBatchDisplay(status: EventsAiBatchStatus | null | undefin
 
   const sourceLabel = latest.runSource === "manual" ? "Manual" : "Automatico";
   const modelLabel = `${formatProvider(latest.provider)} / ${latest.model}`;
+  const periodLabel = formatPeriod(latest.periodFrom, latest.periodTo);
+  const detailLabel = [modelLabel, periodLabel, formatTime(latest.finishedAt)].filter(Boolean).join(" - ");
 
   if (latest.status === "SKIPPED") {
     const noEvents = latest.reason === "no_events";
@@ -71,7 +78,7 @@ export function buildAiBatchDisplay(status: EventsAiBatchStatus | null | undefin
       headline: noEvents
         ? "A IA rodou, mas nao havia eventos relevantes no lote."
         : "A IA tentou rodar, mas o lote foi ignorado por uma regra de seguranca.",
-      details: `${modelLabel} - ${formatTime(latest.finishedAt)}`,
+      details: detailLabel,
       actionHint: blockedReasonText(status.manualBlockedReason),
     };
   }
@@ -81,7 +88,7 @@ export function buildAiBatchDisplay(status: EventsAiBatchStatus | null | undefin
       sourceLabel,
       statusLabel: "Falhou",
       headline: "A IA tentou analisar o lote, mas o provedor retornou erro.",
-      details: latest.errorMessage || `${modelLabel} - ${formatTime(latest.finishedAt)}`,
+      details: latest.errorMessage || detailLabel,
       actionHint: blockedReasonText(status.manualBlockedReason),
     };
   }
@@ -90,7 +97,7 @@ export function buildAiBatchDisplay(status: EventsAiBatchStatus | null | undefin
     sourceLabel,
     statusLabel: "Concluido",
     headline: `${latest.eventCount} eventos foram analisados pela IA.`,
-    details: `${modelLabel} - ${formatTime(latest.finishedAt)}`,
+    details: detailLabel,
     actionHint: blockedReasonText(status.manualBlockedReason),
   };
 }

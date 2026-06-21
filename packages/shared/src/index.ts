@@ -2269,6 +2269,8 @@ export interface EventsAiBatchStatus {
     provider: string;
     model: string;
     eventCount: number;
+    periodFrom: string | null;
+    periodTo: string | null;
     finishedAt: string | null;
     errorMessage: string | null;
     summary: Record<string, unknown> | null;
@@ -2280,6 +2282,8 @@ export interface EventsAiBatchStatus {
     provider: string;
     model: string;
     eventCount: number;
+    periodFrom: string | null;
+    periodTo: string | null;
     finishedAt: string | null;
     errorMessage: string | null;
   }>;
@@ -2320,7 +2324,6 @@ export interface EventsFilters {
   agentId?: string;
   search?: string;
   isGroup?: boolean;
-  topicKey?: string;
 }
 
 // ── API Responses ──────────────────────────────────────────
