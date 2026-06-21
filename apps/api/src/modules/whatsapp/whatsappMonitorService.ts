@@ -174,6 +174,9 @@ const INTERNAL_WHATSAPP_REPORT_JIDS = new Set([
   "120363400962278418@g.us", // Lixo
   "120363421552008670@g.us", // Rei Comprovantes
   "5511942224889@s.whatsapp.net", // Macedo (privado interno)
+  // Grupos internos informados pelo Felipe (jids confirmados na prod).
+  "120363155567349673@g.us", // Motoboy Lucas (grupo)
+  "120363145793612222@g.us", // Cancelamentos (grupo)
   "93755076042876@lid",
   "269603754213443@lid",
   "226362308726972@lid",
@@ -212,6 +215,7 @@ const INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS = new Set([
   "5511992112882",
   "5511996435466",
   "5511998595698",
+  "5511963553259", // FAMÍLIA BÊNÇÃO DO SENHOR (particular interno, informado pelo Felipe)
 ]);
 
 // ===========================================================================
