@@ -361,6 +361,35 @@ function isInternalChat(name: string | null | undefined, remoteJid: string | nul
   return isInternalWhatsappReportChat({ name, remoteJid });
 }
 
+// Monta um predicado SQL booleano "este chat é interno?" a partir das MESMAS constantes
+// de isInternalWhatsappReportChat (jids + telefones + name-patterns) — FONTE ÚNICA, sem
+// listas paralelas que dão drift. O rollup (heatmap) usa isto para filtrar os mesmos
+// chats internos que o Resumo, garantindo que as duas telas batam.
+// `jidCol`/`nameCol` são expressões SQL (ex.: "wmm.remote_jid", "d.title").
+export function internalChatExclusionSql(jidCol: string, nameCol: string): string {
+  const sqlList = (vals: Iterable<string>) =>
+    [...vals].map((v) => `'${String(v).replace(/'/g, "''")}'`).join(", ");
+  const jids = sqlList(INTERNAL_WHATSAPP_REPORT_JIDS);
+  const phones = sqlList(INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS);
+  // Converte cada RegExp para regex POSIX do Postgres (\b -> \y, que é a borda de
+  // palavra no Postgres). \s, \d etc. são suportados pela engine ARE do Postgres.
+  const patterns = INTERNAL_WHATSAPP_REPORT_NAME_PATTERNS
+    .map((rx) => `'${rx.source.replace(/\\b/g, "\\y").replace(/'/g, "''")}'`)
+    .join(", ");
+  const jidLower = `LOWER(COALESCE(${jidCol}, ''))`;
+  const jidDigits = `REGEXP_REPLACE(SPLIT_PART(${jidLower}, '@', 1), '\\D', '', 'g')`;
+  // normalizeLabel em SQL: minúsculo + remove acento (translate) + colapsa espaços.
+  const normName =
+    `REGEXP_REPLACE(TRANSLATE(LOWER(COALESCE(${nameCol}, '')), ` +
+    `'áàâãäéèêëíìîïóòôõöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn'), '\\s+', ' ', 'g')`;
+  return `(
+    ${jidLower} = 'status@broadcast' OR ${jidLower} LIKE '%@broadcast'
+    OR ${jidLower} IN (${jids})
+    OR (${jidDigits} <> '' AND ${jidDigits} IN (${phones}))
+    OR ${normName} ~ ANY (ARRAY[${patterns}])
+  )`;
+}
+
 
 
 function whatsappMonitorMessageMatchesInstanceSql(messageAlias: string, instanceAlias: string) {

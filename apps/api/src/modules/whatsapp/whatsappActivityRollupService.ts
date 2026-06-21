@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
+import { internalChatExclusionSql } from "./whatsappMonitorService.js";
 
 const ACTIVITY_REPORT_TIMEZONE = "America/Sao_Paulo";
 const ACTIVITY_ROLLUP_LOCK_ID = 2026060202;
@@ -121,6 +122,7 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           wmm.direction,
           wmm.from_me,
           wmm.sender_name AS wmm_sender_name,
+          regexp_replace(split_part(COALESCE(wmm.sender_jid, ''), '@', 1), '\\D', '', 'g') AS wmm_sender_digits,
           wmm.created_at,
           wmm.instance_name AS wmm_instance_name,
           d.whatsapp_instance_id AS deal_instance_id,
@@ -135,6 +137,15 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
           AND COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid) IS NOT NULL
           AND LOWER(COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)) <> 'status@broadcast'
           AND LOWER(COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)) NOT LIKE '%@broadcast'
+          -- Remetente time INTERNO (não-vendedora): conversa interna, não conta no heatmap
+          -- (igual ao Resumo). Fonte: roster por número do n8n. Empty sender_jid -> mantém.
+          AND regexp_replace(split_part(COALESCE(wmm.sender_jid, ''), '@', 1), '\\D', '', 'g') NOT IN (
+            '5511911279702','132791866028208','5511915863088','5511916263525','5511930890128',
+            '5511944538074','5511947879036','5511971086782','35013009666203','5511914898986',
+            '5511978398236','5511964218475','5511976001044','5511915103835','5511958326930',
+            '5511990224961','5511997431733','32624739369122','5511973422619','74810310824049',
+            '3960597401743','128441684885669'
+          )
       ),
       raw_activity_rows AS (
         SELECT
@@ -206,29 +217,30 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
               deal_instance_id, deal_assigned_to, deal_assigned_to_name,
               wmm_instance_name, NULL AS da_instance_name,
               NULL::uuid AS da_actor_user_id,
-              -- Para ENVIADA, o remetente real (sender_name) é quem mandou — usado para
-              -- creditar à vendedora certa, não ao dono/instância do deal deduplicado.
-              -- Membro da equipe que manda em grupo onde sua instância não está chega com
-              -- from_me=false e sender_name "XP <nome>"; também é ENVIADA (igual ao Resumo).
+              -- ENVIADA é creditada à vendedora pelo NÚMERO do remetente (sender_jid),
+              -- igual ao Resumo. Vendedora = só as 5 instâncias conectadas. Pega a msg de
+              -- grupo com from_me=false (sender_jid traz o telefone real da vendedora).
+              -- Internos já foram removidos no WHERE do raw_monitor_rows.
               CASE
+                WHEN wmm_sender_digits IN ('5511998595698','226362308726972') THEN 'Amanda'
+                WHEN wmm_sender_digits IN ('5511996435466','269603754213443') THEN 'Suelen'
+                WHEN wmm_sender_digits IN ('5511951392256','268044697878703') THEN 'Tamires'
+                WHEN wmm_sender_digits IN ('5511944705416','93755076042876') THEN 'Thais'
+                WHEN wmm_sender_digits IN ('5511959502231','5511975501901','278971715473575','214997741375562') THEN 'Ragnar'
                 WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
-                  OR COALESCE(wmm_sender_name, '') ~* '^xp\\s+'
-                  OR EXISTS (
-                    SELECT 1 FROM whatsapp_instances si2
-                    WHERE NULLIF(wmm_sender_name, '') IS NOT NULL
-                      AND LOWER(regexp_replace(COALESCE(wmm_sender_name, ''), '^xp\\s+', '', 'i')) IN (
-                        LOWER(regexp_replace(COALESCE(si2.instance_name, ''), '^xp\\s+', '', 'i')),
-                        LOWER(regexp_replace(COALESCE(si2.display_label, ''), '^xp\\s+', '', 'i')),
-                        LOWER(regexp_replace(COALESCE(si2.assigned_user_name, ''), '^xp\\s+', '', 'i'))
-                      )
-                  )
                   THEN NULLIF(wmm_sender_name, '')
                 ELSE NULL
               END AS da_actor_name,
               CASE
                 WHEN COALESCE(from_me, false) OR UPPER(COALESCE(direction, '')) = 'OUTBOUND'
-                  OR COALESCE(wmm_sender_name, '') ~* '^xp\\s+'
-                  OR EXISTS (
+                  OR wmm_sender_digits IN (
+                    '5511998595698','226362308726972','5511996435466','269603754213443',
+                    '5511951392256','268044697878703','5511944705416','93755076042876',
+                    '5511959502231','5511975501901','278971715473575','214997741375562'
+                  )
+                  -- Fallback por nome SÓ quando o sender_jid veio vazio (igual ao Resumo),
+                  -- pra não classificar como ENVIADA por nome quando o número já decidiu.
+                  OR (COALESCE(wmm_sender_digits, '') = '' AND EXISTS (
                     SELECT 1 FROM whatsapp_instances si2
                     WHERE NULLIF(wmm_sender_name, '') IS NOT NULL
                       AND LOWER(regexp_replace(COALESCE(wmm_sender_name, ''), '^xp\\s+', '', 'i')) IN (
@@ -236,7 +248,7 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
                         LOWER(regexp_replace(COALESCE(si2.display_label, ''), '^xp\\s+', '', 'i')),
                         LOWER(regexp_replace(COALESCE(si2.assigned_user_name, ''), '^xp\\s+', '', 'i'))
                       )
-                  )
+                  ))
                   THEN 'WHATSAPP_SENT'
                 ELSE 'WHATSAPP_RECEIVED'
               END AS activity_type
@@ -259,7 +271,12 @@ export async function refreshWhatsappActivityRollups(daysInput?: number) {
             FROM raw_incoming_rows
           ) unioned
         ) ranked
+        -- Exclui os MESMOS chats internos que o Resumo (jids/telefones/nomes da equipe),
+        -- via fonte única internalChatExclusionSql. Sem isto o heatmap inflaria (ex.:
+        -- vendedora mandando em grupo interno entraria só no heatmap). Medido 19/06:
+        -- Amanda 73->48, Thais 31->14, batendo com o Resumo.
         WHERE row_rank = 1
+          AND NOT ${internalChatExclusionSql("remote_jid", "chat_name")}
       ),
       joined_rows AS (
         SELECT
