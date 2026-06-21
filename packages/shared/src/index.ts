@@ -2222,6 +2222,7 @@ export interface MessageInsightTheme {
   category: "negative" | "positive" | "opportunity" | "risk";
   severity: EventSeverity;
   count: number;
+  sampleCount: number;
   unresolvedCount: number;
   groupCount: number;
   privateCount: number;
@@ -2264,11 +2265,24 @@ export interface EventsAiBatchStatus {
   latestBatch: {
     status: string;
     reason: string;
+    runSource: "manual" | "automatic";
+    provider: string;
+    model: string;
     eventCount: number;
     finishedAt: string | null;
     errorMessage: string | null;
     summary: Record<string, unknown> | null;
   } | null;
+  recentBatches: Array<{
+    status: string;
+    reason: string;
+    runSource: "manual" | "automatic";
+    provider: string;
+    model: string;
+    eventCount: number;
+    finishedAt: string | null;
+    errorMessage: string | null;
+  }>;
 }
 
 export interface EventsIntelligenceResponse {
@@ -2306,6 +2320,7 @@ export interface EventsFilters {
   agentId?: string;
   search?: string;
   isGroup?: boolean;
+  topicKey?: string;
 }
 
 // ── API Responses ──────────────────────────────────────────

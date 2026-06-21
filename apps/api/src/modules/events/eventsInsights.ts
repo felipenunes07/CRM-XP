@@ -162,6 +162,7 @@ export function buildEventsIntelligence(
   },
 ): EventsIntelligenceResponse {
   const themes = new Map<string, MessageInsightTheme>();
+  const maxThemeExamples = 40;
 
   for (const event of events) {
     for (const topic of detectEventTopics(event)) {
@@ -173,6 +174,7 @@ export function buildEventsIntelligence(
           category: topic.category,
           severity: strongerSeverity(topic.severity, event.severity),
           count: 1,
+          sampleCount: 1,
           unresolvedCount: event.resolvedAt ? 0 : 1,
           groupCount: event.conversationContext?.isGroup ? 1 : 0,
           privateCount: event.conversationContext?.isGroup ? 0 : 1,
@@ -188,8 +190,9 @@ export function buildEventsIntelligence(
       current.privateCount += event.conversationContext?.isGroup ? 0 : 1;
       current.severity = strongerSeverity(current.severity, event.severity);
       current.lastDetectedAt = current.lastDetectedAt > event.detectedAt ? current.lastDetectedAt : event.detectedAt;
-      if (current.examples.length < 3) {
+      if (current.examples.length < maxThemeExamples) {
         current.examples.push(makeExample(event));
+        current.sampleCount = current.examples.length;
       }
     }
   }

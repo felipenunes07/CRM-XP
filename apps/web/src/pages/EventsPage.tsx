@@ -5,10 +5,8 @@ import {
   Bell,
   Bot,
   CheckCircle2,
-  Clock,
   Filter,
   LayoutDashboard,
-  MessageSquare,
   PackageSearch,
   PlayCircle,
   RefreshCw,
@@ -16,7 +14,6 @@ import {
   Smartphone,
   ThumbsDown,
   ThumbsUp,
-  Users,
 } from "lucide-react";
 import type {
   MessageEvent,
@@ -31,6 +28,7 @@ import { EventsListView } from "../components/events/EventsListView";
 import { EventsFilters, type EventFilterShortcut, type EventsFilterState } from "../components/events/EventsFilters";
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
 import { buildEventChatMessages, type EventConversationSeed } from "../lib/eventsChat";
+import { buildAiBatchDisplay } from "../lib/eventsAiPanel";
 
 interface ChatState {
   open: boolean;
@@ -97,7 +95,7 @@ function formatBlockedReason(reason: string | null | undefined) {
 
 function formatManualResult(result: { status: string; reason?: string; eventCount?: number }) {
   if (result.status === "SUCCEEDED") {
-    return `IA atualizada: ${result.eventCount ?? 0} eventos recentes analisados no painel de IA.`;
+    return `Lote manual concluido: ${result.eventCount ?? 0} eventos recentes foram analisados.`;
   }
   if (result.status === "SKIPPED") {
     return `Lote nao executado: ${formatBlockedReason(result.reason)}.`;
@@ -379,6 +377,7 @@ export function EventsPage() {
     ? latestAiSummary.resumoExecutivo
     : null;
   const aiSections = buildAiSections(latestAiSummary);
+  const aiDisplay = buildAiBatchDisplay(aiBatch);
   const visibleTotal = eventsQuery.data?.total ?? intelligence?.summary.totalEvents ?? 0;
   const canRunManualBatch = Boolean(aiBatch?.enabled && aiBatch.canRunManually && !aiBatchMutation.isPending);
 
@@ -461,7 +460,7 @@ export function EventsPage() {
           <div className="wa-command-summary">
             <div className="wa-command-title">
               <LayoutDashboard size={20} />
-              <span>Sistema por regras</span>
+              <span>Leitura do Sistema</span>
             </div>
             <p>{intelligence?.executiveSummary || overviewIntelligence?.executiveSummary || "Carregando sinais capturados por regras, deduplicacao e classificacao local..."}</p>
             <div className="wa-command-stats">
@@ -471,59 +470,71 @@ export function EventsPage() {
               <span><ThumbsUp size={16} /> {intelligence?.summary.positiveSignals ?? 0} positivos</span>
               <span><PackageSearch size={16} /> {intelligence?.summary.opportunities ?? 0} oportunidades</span>
             </div>
-          </div>
-
-          <div className="wa-next-actions">
-            <div className="wa-command-title">
-              <Bell size={20} />
-              <span>Onde agir agora</span>
-            </div>
-            {intelligence?.criticalAlerts.length ? (
-              intelligence.criticalAlerts.slice(0, 3).map((alert) => (
-                <article
-                  key={alert.eventId}
-                  className={`wa-action-alert ${alert.severity.toLowerCase()}`}
-                >
-                  <strong>{alert.title}</strong>
-                  <span>{alert.content}</span>
-                </article>
-              ))
-            ) : (
-              <div className="wa-action-empty">
-                <CheckCircle2 size={18} />
-                Nenhum alerta alto aberto no filtro atual.
+            <div className="wa-next-actions-inline">
+              <div className="wa-command-title">
+                <Bell size={20} />
+                <span>Prioridades agora</span>
               </div>
-            )}
+              <div className="wa-action-list-inline">
+                {intelligence?.criticalAlerts.length ? (
+                  intelligence.criticalAlerts.slice(0, 3).map((alert) => (
+                    <article
+                      key={alert.eventId}
+                      className={`wa-action-alert ${alert.severity.toLowerCase()}`}
+                    >
+                      <strong>{alert.title}</strong>
+                      <span>{alert.content}</span>
+                    </article>
+                  ))
+                ) : (
+                  <div className="wa-action-empty">
+                    <CheckCircle2 size={18} />
+                    Nenhum alerta alto aberto no filtro atual.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="wa-ai-control">
             <div className="wa-ai-status">
               <Bot size={20} />
               <div>
-                <strong>IA em lote</strong>
-                <span>{aiBatch?.provider || "auto"} / {aiBatch?.model || "sem modelo"} - {formatBatchTime(aiBatch?.latestBatch?.finishedAt)}</span>
+                <strong>Central da IA</strong>
+                <span>{aiDisplay.sourceLabel} - {aiDisplay.statusLabel}</span>
               </div>
             </div>
-            <div className="wa-ai-meta">
-              <span><Clock size={15} /> {formatBlockedReason(aiBatch?.manualBlockedReason)}</span>
-              <span><Filter size={15} /> Lote: {aiBatch?.latestBatch?.eventCount ?? 0} eventos</span>
-              <span><Users size={15} /> Grupos: {overviewIntelligence?.sourceSplit.groups ?? 0}</span>
-              <span><MessageSquare size={15} /> Privado: {overviewIntelligence?.sourceSplit.private ?? 0}</span>
+            <div className="wa-ai-run-card">
+              <div>
+                <strong>{aiDisplay.headline}</strong>
+                <span>{aiDisplay.details}</span>
+              </div>
+              <small>{aiDisplay.actionHint}</small>
             </div>
             <div className="wa-ai-result">
-              <strong>Resultado da IA</strong>
+              <strong>O que a IA devolveu</strong>
               <p>{aiExecutiveText || "Ainda sem resumo de IA para o periodo. Clique em rodar para atualizar a leitura gerencial."}</p>
               {aiSections.length > 0 && (
-                <div className="wa-ai-section-grid">
+                <div className="wa-ai-section-list">
                   {aiSections.map((section) => (
-                    <article key={section.title}>
-                      <span>{section.title}</span>
-                      {section.items.map((item) => <small key={item}>{item}</small>)}
-                    </article>
+                    <details key={section.title} open>
+                      <summary>{section.title}</summary>
+                      {section.items.map((item) => <span key={item}>{item}</span>)}
+                    </details>
                   ))}
                 </div>
               )}
             </div>
+            {aiBatch?.recentBatches?.length ? (
+              <div className="wa-ai-history">
+                <strong>Ultimas execucoes</strong>
+                {aiBatch.recentBatches.slice(0, 3).map((batch) => (
+                  <span key={`${batch.finishedAt}-${batch.status}-${batch.runSource}`}>
+                    {batch.runSource === "manual" ? "Manual" : "Automatico"} - {batch.status} - {batch.eventCount} eventos - {formatBatchTime(batch.finishedAt)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               className="wa-run-ai-button"
@@ -597,10 +608,16 @@ export function EventsPage() {
                     <p className="wa-theme-summary">{themeSummaryText(selectedTheme)}</p>
                     <div className="wa-theme-detail-stats">
                       <span>{selectedTheme.count} total</span>
+                      <span>{selectedTheme.sampleCount} na lista</span>
                       <span>{selectedTheme.unresolvedCount} abertas</span>
                       <span>{selectedTheme.groupCount} grupos</span>
                       <span>{selectedTheme.privateCount} privados</span>
                     </div>
+                    {selectedTheme.sampleCount < selectedTheme.count && (
+                      <p className="wa-theme-sample-note">
+                        Mostrando {selectedTheme.sampleCount} conversas recentes de {selectedTheme.count} detectadas neste tema.
+                      </p>
+                    )}
                     <div className="wa-theme-examples">
                       {selectedTheme.examples.map((example) => (
                         <article key={`${example.eventId}-${example.dealId}`} className="wa-theme-example">

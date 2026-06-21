@@ -3847,6 +3847,11 @@ export const migrations = [
     ON event_ai_batches(batch_date DESC);
   CREATE INDEX IF NOT EXISTS idx_event_ai_batches_finished_at
     ON event_ai_batches(finished_at DESC);
+  ALTER TABLE event_ai_batches
+    ADD COLUMN IF NOT EXISTS run_source TEXT NOT NULL DEFAULT 'automatic';
+  ALTER TABLE event_ai_batches DROP CONSTRAINT IF EXISTS event_ai_batches_run_source_check;
+  ALTER TABLE event_ai_batches
+    ADD CONSTRAINT event_ai_batches_run_source_check CHECK (run_source IN ('manual', 'automatic'));
   `,
   `
   -- Deduplicacao operacional de eventos replicados por varias instancias.

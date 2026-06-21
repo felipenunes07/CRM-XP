@@ -91,4 +91,25 @@ describe("events intelligence aggregation", () => {
     expect(result.criticalAlerts.at(0)).toMatchObject({ eventId: "2" });
     expect(result.executiveSummary).toContain("3 eventos");
   });
+
+  it("keeps enough theme examples to explain counts without pretending the sample is the full queue", () => {
+    const events = Array.from({ length: 8 }, (_, index) => event({
+      id: `stock-${index}`,
+      content: `Esta faltando estoque de tela modelo ${index}`,
+      eventType: "COMPLAINT",
+      severity: "HIGH",
+      detectedAt: `2026-06-19T12:${String(index).padStart(2, "0")}:00.000Z`,
+    }));
+
+    const result = buildEventsIntelligence(events, {
+      generatedAt: "2026-06-19T14:00:00.000Z",
+      period: { from: "2026-06-19", to: "2026-06-19" },
+      aiBatch: null,
+    });
+
+    const stockTheme = result.topThemes.find((theme) => theme.key === "stock_shortage");
+    expect(stockTheme?.count).toBe(8);
+    expect(stockTheme?.sampleCount).toBe(8);
+    expect(stockTheme?.examples).toHaveLength(8);
+  });
 });

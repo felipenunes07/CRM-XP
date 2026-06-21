@@ -456,6 +456,7 @@ async function fetchEventsForBatch(config: EventsAiBatchConfig): Promise<EventFo
 async function recordBatch(input: {
   now: Date;
   config: EventsAiBatchConfig;
+  runSource: "manual" | "automatic";
   provider?: string;
   model?: string;
   status: "SKIPPED" | "SUCCEEDED" | "FAILED";
@@ -468,17 +469,18 @@ async function recordBatch(input: {
 }) {
   await pool.query(`
     INSERT INTO event_ai_batches (
-      batch_date, provider, model, status, status_reason, period_from, period_to,
+      batch_date, provider, model, run_source, status, status_reason, period_from, period_to,
       event_count, request_count, input_tokens_estimated, output_tokens_estimated,
       summary_json, error_message, started_at, finished_at
     ) VALUES (
-      $1::date, $2, $3, $4, $5, NOW() - ($6::int * INTERVAL '1 hour'), NOW(),
-      $7, $8, $9, $10, $11::jsonb, $12, $13, NOW()
+      $1::date, $2, $3, $4, $5, $6, NOW() - ($7::int * INTERVAL '1 hour'), NOW(),
+      $8, $9, $10, $11, $12::jsonb, $13, $14, NOW()
     )
   `, [
     input.now.toISOString().slice(0, 10),
     input.provider ?? input.config.provider,
     input.model ?? getConfiguredModelLabel(input.config),
+    input.runSource,
     input.status,
     input.reason,
     input.config.lookbackHours,
@@ -499,11 +501,12 @@ export async function getEventsAiBatchStatus(now = new Date()) {
   const manualDecision = shouldRunEventsAiBatch({ now, config, usage, ignoreCadence: true, ignoreBusinessHours: true });
 
   const latest = await pool.query(`
-    SELECT status, status_reason, summary_json, event_count, finished_at, error_message
+    SELECT status, status_reason, run_source, provider, model, summary_json, event_count, finished_at, error_message
     FROM event_ai_batches
     ORDER BY finished_at DESC NULLS LAST, started_at DESC
-    LIMIT 1
+    LIMIT 5
   `);
+  const latestRow = latest.rows[0] ?? null;
 
   return {
     enabled: config.enabled,
@@ -526,19 +529,33 @@ export async function getEventsAiBatchStatus(now = new Date()) {
     canRunManually: manualDecision.allowed,
     manualBlockedReason: manualDecision.allowed ? null : manualDecision.reason,
     manualNextEligibleAt: manualDecision.nextEligibleAt?.toISOString() ?? null,
-    latestBatch: latest.rows[0] ? {
-      status: latest.rows[0].status,
-      reason: latest.rows[0].status_reason,
-      eventCount: Number(latest.rows[0].event_count ?? 0),
-      finishedAt: latest.rows[0].finished_at ? new Date(latest.rows[0].finished_at).toISOString() : null,
-      errorMessage: latest.rows[0].error_message,
-      summary: latest.rows[0].summary_json ?? null,
+    latestBatch: latestRow ? {
+      status: latestRow.status,
+      reason: latestRow.status_reason,
+      runSource: latestRow.run_source === "manual" ? "manual" as const : "automatic" as const,
+      provider: latestRow.provider,
+      model: latestRow.model,
+      eventCount: Number(latestRow.event_count ?? 0),
+      finishedAt: latestRow.finished_at ? new Date(latestRow.finished_at).toISOString() : null,
+      errorMessage: latestRow.error_message,
+      summary: latestRow.summary_json ?? null,
     } : null,
+    recentBatches: latest.rows.map((row) => ({
+      status: row.status,
+      reason: row.status_reason,
+      runSource: row.run_source === "manual" ? "manual" as const : "automatic" as const,
+      provider: row.provider,
+      model: row.model,
+      eventCount: Number(row.event_count ?? 0),
+      finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
+      errorMessage: row.error_message,
+    })),
   };
 }
 
 export async function runEventsAiBatch(now = new Date(), options: { manual?: boolean } = {}) {
   const config = getEventsAiBatchConfig();
+  const runSource = options.manual === true ? "manual" as const : "automatic" as const;
   const usage = await getBatchUsage(now);
   const decision = shouldRunEventsAiBatch({
     now,
@@ -558,6 +575,7 @@ export async function runEventsAiBatch(now = new Date(), options: { manual?: boo
     await recordBatch({
       now,
       config,
+      runSource,
       status: "SKIPPED",
       reason: "no_events",
       events,
@@ -575,6 +593,7 @@ export async function runEventsAiBatch(now = new Date(), options: { manual?: boo
     await recordBatch({
       now,
       config,
+      runSource,
       status: "SKIPPED",
       reason: "daily_token_cap",
       events,
@@ -590,6 +609,7 @@ export async function runEventsAiBatch(now = new Date(), options: { manual?: boo
     await recordBatch({
       now,
       config,
+      runSource,
       provider: result.provider,
       model: result.model,
       status: "SUCCEEDED",
@@ -606,6 +626,7 @@ export async function runEventsAiBatch(now = new Date(), options: { manual?: boo
     await recordBatch({
       now,
       config,
+      runSource,
       status: "FAILED",
       reason: "provider_error",
       events,
