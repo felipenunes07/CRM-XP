@@ -1,6 +1,6 @@
 import type { CSSProperties, ElementType } from "react";
 import type { EventsMetrics } from "@olist-crm/shared";
-import { AlertTriangle, MessageSquareWarning, ShoppingCart, TimerReset, TrendingUp } from "lucide-react";
+import { AlertTriangle, Gauge, HelpCircle, MessageSquareWarning, ShoppingCart, TimerReset } from "lucide-react";
 
 export type EventsScopePatch = {
   eventType?: string;
@@ -25,18 +25,18 @@ function MetricCard({ title, value, subtitle, icon: Icon, color, onClick, disabl
   return (
     <button
       type="button"
-      className="wa-metric-card-v2"
+      className="wa-metric-card"
       onClick={onClick}
       disabled={disabled}
-      style={{ "--metric-accent": color } as CSSProperties}
+      style={{ "--metric-color": color } as CSSProperties}
     >
-      <div className="wa-metric-icon-v2">
-        <Icon size={24} />
+      <div className="wa-metric-icon">
+        <Icon size={22} />
       </div>
-      <div className="wa-metric-body-v2">
-        <span className="wa-metric-value-v2">{value}</span>
-        <span className="wa-metric-title-v2">{title}</span>
-        <span className="wa-metric-sub-v2">{subtitle}</span>
+      <div className="wa-metric-content">
+        <span className="wa-metric-title">{title}</span>
+        <span className="wa-metric-value">{value}</span>
+        <span className="wa-metric-subtitle">{subtitle}</span>
       </div>
     </button>
   );
@@ -51,36 +51,32 @@ export function EventsSummaryPanel({
 }) {
   if (!metrics) return null;
 
-  const { summary } = metrics;
+  const { summary, operationalEfficiency } = metrics;
   const highRiskCount = (summary.bySeverity?.CRITICAL || 0) + (summary.bySeverity?.HIGH || 0);
   const complaintCount = summary.complaintsCount + summary.negativeFeedbacks + summary.riskEvents;
   const salesCount = summary.opportunitiesCount;
   const pendingCount = summary.actionRequiredEvents;
-  const resolvedPct = summary.totalEvents > 0 ? Math.round(summary.resolutionRate * 100) : 0;
+  const bottleneckCount = operationalEfficiency.bottleneckAgents?.length ?? 0;
+  const topBottleneck = operationalEfficiency.bottleneckAgents?.[0] ?? null;
+  const bottleneckPatch = topBottleneck?.agentId
+    ? { agentId: topBottleneck.agentId, resolved: "false" }
+    : { resolved: "false" };
 
   return (
-    <div className="wa-kpi-strip" aria-label="KPIs do período">
+    <div className="wa-metrics-grid" aria-label="Atalhos de revisao">
       <MetricCard
-        title="Total de Eventos"
-        value={summary.totalEvents}
-        subtitle={`${summary.unresolvedEvents} sem resolução`}
-        icon={TrendingUp}
-        color="#475569"
-        onClick={() => onSelectScope?.({})}
-      />
-      <MetricCard
-        title="Alertas Críticos"
+        title="Criticos e altos"
         value={highRiskCount}
-        subtitle="Severidade alta ou crítica"
+        subtitle="Abrir riscos abertos"
         icon={AlertTriangle}
         color="#ef4444"
         disabled={highRiskCount === 0}
         onClick={() => onSelectScope?.({ severity: "CRITICAL,HIGH", resolved: "false" })}
       />
       <MetricCard
-        title="Reclamações"
+        title="Reclamacoes"
         value={complaintCount}
-        subtitle="Clientes insatisfeitos"
+        subtitle="Clientes irritados ou risco"
         icon={MessageSquareWarning}
         color="#f97316"
         disabled={complaintCount === 0}
@@ -89,16 +85,16 @@ export function EventsSummaryPanel({
       <MetricCard
         title="Oportunidades"
         value={salesCount}
-        subtitle={`${summary.questionCount} dúvidas informativas`}
+        subtitle={`${summary.questionCount} duvidas informativas`}
         icon={ShoppingCart}
         color="#2563eb"
         disabled={salesCount === 0}
         onClick={() => onSelectScope?.({ eventType: "SALES_OPPORTUNITY" })}
       />
       <MetricCard
-        title="Pendências"
+        title="Pendencias reais"
         value={pendingCount}
-        subtitle={`${resolvedPct}% taxa de resolução`}
+        subtitle="Exclui duvidas comuns"
         icon={TimerReset}
         color="#7c3aed"
         disabled={pendingCount === 0}
@@ -106,6 +102,15 @@ export function EventsSummaryPanel({
           eventType: "RISK,ESCALATION,COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,SALES_OPPORTUNITY",
           resolved: "false",
         })}
+      />
+      <MetricCard
+        title="Gargalos"
+        value={bottleneckCount}
+        subtitle={metrics.executiveSummary?.bottleneckAgentText || "Abrir maior fila pendente"}
+        icon={bottleneckCount > 0 ? Gauge : HelpCircle}
+        color="#0f766e"
+        disabled={bottleneckCount === 0}
+        onClick={() => onSelectScope?.(bottleneckPatch)}
       />
     </div>
   );
