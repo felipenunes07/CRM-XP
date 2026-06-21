@@ -433,7 +433,7 @@ export function EventsPage() {
     const complaints = (summary?.complaintsCount || 0) + (summary?.negativeFeedbacks || 0) + (summary?.riskEvents || 0);
     const opportunities = summary?.opportunitiesCount || 0;
 
-    return [
+    const list: EventFilterShortcut[] = [
       { id: "all", label: "Tudo", count: total, patch: {}, tone: "neutral" },
       { id: "risk", label: "Criticos", count: highRisk, patch: { severity: "CRITICAL,HIGH", resolved: "false" }, tone: "danger" },
       { id: "complaints", label: "Reclamacoes", count: complaints, patch: { eventType: "COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION" }, tone: "warning" },
@@ -451,7 +451,9 @@ export function EventsPage() {
       },
       { id: "groups", label: "Grupos", count: groups, patch: { isGroup: true }, tone: "neutral" },
       { id: "private", label: "Privado", count: privateCount, patch: { isGroup: false }, tone: "neutral" },
-    ].filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
+    ];
+
+    return list.filter((shortcut) => shortcut.id === "all" || shortcut.count > 0);
   }, [overviewMetrics, overviewIntelligence]);
 
   return (
