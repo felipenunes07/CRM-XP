@@ -29,6 +29,7 @@ import { EventsFilters, type EventFilterShortcut, type EventsFilterState } from 
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
 import { buildEventChatMessages, type EventConversationSeed } from "../lib/eventsChat";
 import { buildAiBatchDisplay } from "../lib/eventsAiPanel";
+import { SentimentTrendChart } from "../components/events/SentimentTrendChart";
 
 interface ChatState {
   open: boolean;
@@ -343,6 +344,12 @@ export function EventsPage() {
     enabled: Boolean(token),
   });
 
+  const sentimentQuery = useQuery({
+    queryKey: ["events-sentiment-daily", dateRange],
+    queryFn: () => api.getDailySentiments(token!, { from: dateRange.from, to: dateRange.to }),
+    enabled: Boolean(token),
+  });
+
   const resolveMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
       api.resolveEvent(token!, id, { resolutionNote: note }),
@@ -414,6 +421,45 @@ export function EventsPage() {
     ? latestAiSummary.resumoExecutivo
     : null;
   const aiSections = buildAiSections(latestAiSummary);
+  
+  const managerCategories = [
+    {
+      key: "alertas",
+      title: "🚨 Alertas Urgentes",
+      description: "Problemas críticos detectados que exigem atenção imediata",
+      items: readAiList(latestAiSummary, "alertasCriticos"),
+      themeClass: "alertas",
+    },
+    {
+      key: "acoes",
+      title: "📋 Recomendações",
+      description: "Sugestões práticas de resolução para a equipe de atendimento",
+      items: readAiList(latestAiSummary, "acoesRecomendadas"),
+      themeClass: "acoes",
+    },
+    {
+      key: "temas",
+      title: "📈 Assuntos em Alta",
+      description: "Temas recorrentes e tópicos frequentes comentados pelos clientes",
+      items: readAiList(latestAiSummary, "temasEmAlta"),
+      themeClass: "temas",
+    },
+    {
+      key: "noticias",
+      title: "💚 Boas Notícias & Conquistas",
+      description: "Elogios recebidos, vendas finalizadas e interações positivas",
+      items: readAiList(latestAiSummary, "noticiasBoas"),
+      themeClass: "noticias",
+    },
+    {
+      key: "gargalos",
+      title: "⏳ Atrasos e Impedimentos",
+      description: "Gargalos operacionais ou lentidão identificados nas conversas",
+      items: readAiList(latestAiSummary, "gargalos"),
+      themeClass: "gargalos",
+    }
+  ].filter((cat) => cat.items.length > 0);
+
   const aiDisplay = buildAiBatchDisplay(aiBatch);
   const visibleTotal = eventsQuery.data?.total ?? intelligence?.summary.totalEvents ?? 0;
   const canRunManualBatch = Boolean(aiBatch?.enabled && aiBatch.canRunManually && !aiBatchMutation.isPending);
@@ -495,106 +541,137 @@ export function EventsPage() {
       </header>
 
       <div className="wa-events-content">
-        <section className="wa-command-center" aria-label="Resumo operacional">
-          <div className="wa-command-summary">
-            <div className="wa-command-title">
-              <LayoutDashboard size={20} />
-              <span>Leitura do Sistema</span>
-            </div>
-            <p>{intelligence?.executiveSummary || overviewIntelligence?.executiveSummary || "Carregando sinais capturados por regras, deduplicacao e classificacao local..."}</p>
-            <div className="wa-command-stats">
-              <span><Filter size={16} /> {visibleTotal} eventos unicos</span>
-              <span><AlertTriangle size={16} /> {intelligence?.summary.criticalOpen ?? 0} criticos abertos</span>
-              <span><ThumbsDown size={16} /> {intelligence?.summary.negativeSignals ?? 0} negativos</span>
-              <span><ThumbsUp size={16} /> {intelligence?.summary.positiveSignals ?? 0} positivos</span>
-              <span><PackageSearch size={16} /> {intelligence?.summary.opportunities ?? 0} oportunidades</span>
-            </div>
-            <div className="wa-next-actions-inline">
-              <div className="wa-command-title">
-                <Bell size={20} />
-                <span>Prioridades agora</span>
-              </div>
-              <div className="wa-action-list-inline">
-                {intelligence?.criticalAlerts.length ? (
-                  intelligence.criticalAlerts.slice(0, 3).map((alert) => (
-                    <article
-                      key={alert.eventId}
-                      className={`wa-action-alert ${alert.severity.toLowerCase()}`}
-                    >
-                      <strong>{alert.title}</strong>
-                      <span>{alert.content}</span>
-                    </article>
-                  ))
-                ) : (
-                  <div className="wa-action-empty">
-                    <CheckCircle2 size={18} />
-                    Nenhum alerta alto aberto no filtro atual.
+        <section className="wa-manager-dashboard" aria-label="Painel Gerencial da IA">
+          {/* Coluna Esquerda: Leitura e Gráfico de Sentimento */}
+          <div className="wa-manager-col">
+            <div className="wa-manager-card">
+              <header className="wa-manager-card-header">
+                <div className="wa-manager-card-title">
+                  <Bot size={22} className="text-primary" />
+                  <h3>Leitura Executiva (IA)</h3>
+                </div>
+                <div className="wa-hub-meta">
+                  {aiBatch?.latestBatch && (
+                    <>
+                      <span className={`wa-hub-badge ${aiBatch.latestBatch.runSource === "manual" ? "manual" : "auto"}`}>
+                        {aiBatch.latestBatch.runSource === "manual" ? "👤 Manual" : "🤖 Automático"}
+                      </span>
+                      <span className={`wa-hub-badge status-${aiBatch.latestBatch.status.toLowerCase()}`}>
+                        {formatBatchStatus(aiBatch.latestBatch.status)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </header>
+              <div className="wa-manager-card-body">
+                {aiExecutiveText ? (
+                  <div className="wa-manager-summary-box">
+                    <p>{aiExecutiveText}</p>
                   </div>
+                ) : (
+                  <div className="wa-manager-summary-box text-muted">
+                    <p>Ainda sem resumo executivo gerado pela IA para o período selecionado. Clique em "Análise Manual" abaixo para analisar as interações recentes.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="wa-manager-card">
+              <div className="wa-manager-card-body" style={{ padding: 0 }}>
+                {sentimentQuery.isLoading ? (
+                  <div className="wa-chart-container text-muted" style={{ height: 350, display: "grid", placeItems: "center" }}>
+                    <span>Carregando gráfico de sentimento...</span>
+                  </div>
+                ) : (
+                  <SentimentTrendChart data={sentimentQuery.data || []} />
                 )}
               </div>
             </div>
           </div>
 
-          <div className="wa-ai-control">
-            <div className="wa-ai-status">
-              <Bot size={20} />
-              <div>
-                <strong>Central da IA</strong>
-                <span>{aiDisplay.sourceLabel} - {aiDisplay.statusLabel}</span>
-              </div>
-            </div>
-            <div className="wa-ai-run-card">
-              <div>
-                <strong>{aiDisplay.headline}</strong>
-                <span>{aiDisplay.details}</span>
-              </div>
-              <small>{aiDisplay.actionHint}</small>
-            </div>
-            <div className="wa-ai-scope">
-              <span>
-                <strong>Base</strong>
-                Eventos capturados por regras
-              </span>
-              <span>
-                <strong>Escopo</strong>
-                {formatBatchPeriod(aiBatch?.latestBatch?.periodFrom, aiBatch?.latestBatch?.periodTo)}
-              </span>
-            </div>
-            <div className="wa-ai-result">
-              <strong>O que a IA devolveu</strong>
-              <p>{aiExecutiveText || "Ainda sem resumo de IA para o periodo. Clique em rodar para atualizar a leitura gerencial."}</p>
-              {aiSections.length > 0 && (
-                <div className="wa-ai-section-list">
-                  {aiSections.map((section) => (
-                    <details key={section.title} open>
-                      <summary>{section.title}</summary>
-                      {section.items.map((item) => <span key={item}>{item}</span>)}
-                    </details>
-                  ))}
+          {/* Coluna Direita: Ações, Alertas e Sinais */}
+          <div className="wa-manager-col">
+            <div className="wa-manager-card">
+              <header className="wa-manager-card-header">
+                <div className="wa-manager-card-title">
+                  <LayoutDashboard size={20} className="text-primary" />
+                  <h3>Plano de Ação e Sinais da IA</h3>
                 </div>
-              )}
-            </div>
-            {aiBatch?.recentBatches?.length ? (
-              <div className="wa-ai-history">
-                <strong>Ultimas execucoes</strong>
-                {aiBatch.recentBatches.slice(0, 3).map((batch) => (
-                  <span key={`${batch.finishedAt}-${batch.status}-${batch.runSource}`}>
-                    {formatRunSource(batch.runSource)} - {formatBatchStatus(batch.status)} - {batch.eventCount} eventos - {formatBatchTime(batch.finishedAt)}
-                  </span>
-                ))}
+              </header>
+              
+              <div className="wa-manager-card-body">
+                {managerCategories.length > 0 ? (
+                  <div className="wa-manager-list-grid">
+                    {managerCategories.map((category) => (
+                      <div key={category.key} className="wa-manager-list-section">
+                        <div className={`wa-manager-list-header ${category.themeClass}`} title={category.description}>
+                          {category.title}
+                        </div>
+                        <div className="wa-manager-list-body">
+                          {category.items.map((item) => {
+                            const isActive = filters.search === item;
+                            return (
+                              <button
+                                key={item}
+                                type="button"
+                                className={`wa-clickable-item ${isActive ? "active" : ""}`}
+                                onClick={() => {
+                                  setFilters((current) => ({
+                                    ...current,
+                                    search: isActive ? undefined : item,
+                                    page: 1
+                                  }));
+                                }}
+                                title="Clique para filtrar os eventos abaixo por este termo"
+                              >
+                                <span className="wa-clickable-item-bullet">•</span>
+                                <span>{item}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-muted text-center" style={{ padding: "2rem 0" }}>
+                    Nenhuma recomendação detalhada ou alerta gerado. Execute uma nova análise abaixo para gerar insights de atendimento.
+                  </div>
+                )}
               </div>
-            ) : null}
-            <button
-              type="button"
-              className="wa-run-ai-button"
-              disabled={!canRunManualBatch}
-              onClick={() => aiBatchMutation.mutate()}
-              title={formatBlockedReason(aiBatch?.manualBlockedReason)}
-            >
-              {aiBatchMutation.isPending ? <RefreshCw size={18} className="spin" /> : <PlayCircle size={18} />}
-              Rodar lote manual
-            </button>
-            {manualBatchMessage && <p className="wa-ai-message">{manualBatchMessage}</p>}
+
+              <footer className="wa-manager-footer">
+                <div className="wa-manager-history-accordion-wrapper">
+                  {aiBatch?.recentBatches?.length ? (
+                    <details className="wa-manager-history-accordion">
+                      <summary>Histórico de execuções ({aiBatch.recentBatches.length})</summary>
+                      <div className="wa-manager-history-list">
+                        {aiBatch.recentBatches.map((batch, index) => (
+                          <div key={index} className="wa-hub-history-item">
+                            <span>{formatRunSource(batch.runSource)} • {formatBatchStatus(batch.status)}</span>
+                            <span>{batch.eventCount} msg • {formatBatchTime(batch.finishedAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : (
+                    <span className="text-muted text-sm">Sem execuções recentes.</span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="wa-hub-btn-run"
+                  disabled={!canRunManualBatch}
+                  onClick={() => aiBatchMutation.mutate()}
+                  title={formatBlockedReason(aiBatch?.manualBlockedReason)}
+                >
+                  {aiBatchMutation.isPending ? <RefreshCw size={16} className="spin" /> : <PlayCircle size={16} />}
+                  Análise Manual
+                </button>
+              </footer>
+              {manualBatchMessage && <p className="wa-ai-message" style={{ padding: "0 1.5rem 1.5rem" }}>{manualBatchMessage}</p>}
+            </div>
           </div>
         </section>
 
@@ -666,10 +743,13 @@ export function EventsPage() {
                       <span><strong>{selectedTheme.groupCount}</strong> grupos</span>
                       <span><strong>{selectedTheme.privateCount}</strong> privados</span>
                     </div>
-                    {visibleThemeExamples < selectedTheme.count && (
-                      <p className="wa-theme-sample-note">
-                        Mostrando {visibleThemeExamples} conversas recentes de {selectedTheme.count} detectadas neste tema.
-                      </p>
+                    {selectedTheme.count > visibleThemeExamples && (
+                      <div className="wa-theme-sample-banner">
+                        <AlertTriangle size={18} />
+                        <span>
+                          <strong>Nota de amostragem:</strong> Exibindo apenas {visibleThemeExamples} exemplos representativos de um total de {selectedTheme.count} ocorrências detectadas. Para visualizar a lista completa na tabela de eventos abaixo, clique no botão <strong>Filtrar Tabela</strong>.
+                        </span>
+                      </div>
                     )}
                     <div className="wa-theme-examples">
                       {selectedTheme.examples.map((example) => (

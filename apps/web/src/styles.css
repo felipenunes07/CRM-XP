@@ -16139,6 +16139,297 @@ body:has(.whatsapp-monitor-page) .main-content {
   }
 }
 
+/* ── Managerial Dashboard ── */
+.wa-manager-dashboard {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .wa-manager-dashboard {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
+
+.wa-manager-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.wa-manager-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-manager-card-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.wa-manager-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.wa-manager-card-title h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wa-manager-card-body {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.wa-manager-summary-box {
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+}
+
+.wa-manager-summary-box p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1e293b;
+  line-height: 1.65;
+}
+
+/* Actions lists */
+.wa-manager-list-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.wa-manager-list-section {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.wa-manager-list-header {
+  padding: 0.85rem 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.wa-manager-list-header.alertas { background: #fff5f5; color: #b91c1c; border-bottom-color: #fecaca; }
+.wa-manager-list-header.acoes { background: #eff6ff; color: #1e40af; border-bottom-color: #bfdbfe; }
+.wa-manager-list-header.temas { background: #fff7ed; color: #c2410c; border-bottom-color: #fed7aa; }
+.wa-manager-list-header.noticias { background: #f0fdf4; color: #166534; border-bottom-color: #bbf7d0; }
+
+.wa-manager-list-body {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wa-clickable-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.wa-clickable-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  transform: translateY(-1px);
+}
+
+.wa-clickable-item.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.wa-clickable-item-bullet {
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+
+.wa-hub-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.wa-hub-badge.auto {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.wa-hub-badge.manual {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.wa-hub-badge.status-succeeded {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.wa-hub-badge.status-failed {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.wa-hub-badge.status-skipped {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.wa-manager-footer {
+  padding: 1rem 1.5rem;
+  background: #f8fafc;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.wa-hub-btn-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 10px;
+  border: none;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.wa-hub-btn-run:hover:not(:disabled) {
+  background: #1e293b;
+}
+
+.wa-hub-btn-run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* History */
+.wa-manager-history-accordion {
+  width: 100%;
+}
+
+.wa-manager-history-accordion summary {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.wa-manager-history-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.wa-manager-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.wa-hub-history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #475569;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wa-hub-history-item:last-child {
+  border-bottom: none;
+}
+
+.wa-theme-sample-banner {
+  background: #fff7ed;
+  border: 1px solid #ffedd5;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  color: #c2410c;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.wa-theme-sample-banner svg {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
 /* ── WhatsApp Quick Reply Shortcuts ── */
 .wa-shortcuts-dropdown {
   position: absolute;
