@@ -10,6 +10,47 @@ export interface MiniChatMessage {
   status?: "sent" | "delivered" | "read" | "failed";
   senderName?: string | null;
   senderAvatarUrl?: string | null;
+  highlight?: {
+    severity: "CRITICAL" | "HIGH" | "MODERATE" | "LOW";
+    label: string;
+    reason?: string | null;
+  };
+}
+
+function highlightTone(severity: NonNullable<MiniChatMessage["highlight"]>["severity"] | undefined) {
+  if (severity === "CRITICAL") {
+    return {
+      border: "#dc2626",
+      background: "#fff1f2",
+      text: "#991b1b",
+      label: "CRITICO",
+    };
+  }
+
+  if (severity === "HIGH") {
+    return {
+      border: "#ef4444",
+      background: "#fff7ed",
+      text: "#b91c1c",
+      label: "ALTO",
+    };
+  }
+
+  if (severity === "MODERATE") {
+    return {
+      border: "#f59e0b",
+      background: "#fffbeb",
+      text: "#92400e",
+      label: "MODERADO",
+    };
+  }
+
+  return {
+    border: "#64748b",
+    background: "#f8fafc",
+    text: "#334155",
+    label: "BAIXO",
+  };
 }
 
 function SenderAvatar({
@@ -265,6 +306,7 @@ export function MiniChatDrawer({
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {messages.map((message) => {
                 const isOutbound = message.direction === "OUTBOUND";
+                const tone = highlightTone(message.highlight?.severity);
                 return (
                   <div
                     key={message.id}
@@ -282,12 +324,51 @@ export function MiniChatDrawer({
                     <div
                       style={{
                         maxWidth: "72%",
-                        background: isOutbound ? "#d9fdd3" : "#ffffff",
+                        background: message.highlight ? tone.background : isOutbound ? "#d9fdd3" : "#ffffff",
                         padding: "8px 12px",
                         borderRadius: isOutbound ? "10px 10px 2px 10px" : "10px 10px 10px 2px",
-                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+                        border: message.highlight ? `2px solid ${tone.border}` : "1px solid transparent",
+                        boxShadow: message.highlight
+                          ? `0 0 0 3px ${tone.border}18, 0 6px 18px rgba(15, 23, 42, 0.16)`
+                          : "0 1px 2px rgba(0, 0, 0, 0.1)",
                       }}
                     >
+                      {message.highlight && (
+                        <div
+                          style={{
+                            display: "grid",
+                            gap: "3px",
+                            marginBottom: "8px",
+                            paddingBottom: "7px",
+                            borderBottom: `1px solid ${tone.border}40`,
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              width: "fit-content",
+                              alignItems: "center",
+                              gap: "5px",
+                              padding: "2px 7px",
+                              borderRadius: "999px",
+                              background: "#ffffff",
+                              color: tone.text,
+                              border: `1px solid ${tone.border}55`,
+                              fontSize: "0.64rem",
+                              fontWeight: 800,
+                              letterSpacing: 0,
+                            }}
+                          >
+                            Mensagem capturada - {tone.label}
+                          </span>
+                          <strong style={{ color: tone.text, fontSize: "0.78rem" }}>{message.highlight.label}</strong>
+                          {message.highlight.reason && (
+                            <small style={{ color: "#64748b", fontSize: "0.72rem", lineHeight: 1.35 }}>
+                              {message.highlight.reason}
+                            </small>
+                          )}
+                        </div>
+                      )}
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
                         <span
                           style={{
@@ -306,7 +387,7 @@ export function MiniChatDrawer({
                           style={{
                             fontSize: "0.6rem",
                             fontWeight: 700,
-                            letterSpacing: "0.04em",
+                            letterSpacing: 0,
                             padding: "1px 7px",
                             borderRadius: "999px",
                             background: isOutbound ? "#d1fae5" : "#ffedd5",

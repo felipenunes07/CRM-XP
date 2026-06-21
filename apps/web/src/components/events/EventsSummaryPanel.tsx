@@ -8,6 +8,7 @@ export type EventsScopePatch = {
   resolved?: string;
   isGroup?: boolean;
   search?: string;
+  agentId?: string;
 };
 
 interface MetricCardProps {
@@ -53,9 +54,13 @@ export function EventsSummaryPanel({
   const { summary, operationalEfficiency } = metrics;
   const highRiskCount = (summary.bySeverity?.CRITICAL || 0) + (summary.bySeverity?.HIGH || 0);
   const complaintCount = summary.complaintsCount + summary.negativeFeedbacks + summary.riskEvents;
-  const salesCount = summary.opportunitiesCount + summary.questionCount;
-  const pendingCount = summary.unresolvedEvents;
+  const salesCount = summary.opportunitiesCount;
+  const pendingCount = summary.actionRequiredEvents;
   const bottleneckCount = operationalEfficiency.bottleneckAgents?.length ?? 0;
+  const topBottleneck = operationalEfficiency.bottleneckAgents?.[0] ?? null;
+  const bottleneckPatch = topBottleneck?.agentId
+    ? { agentId: topBottleneck.agentId, resolved: "false" }
+    : { resolved: "false" };
 
   return (
     <div className="wa-metrics-grid" aria-label="Atalhos de revisao">
@@ -78,31 +83,34 @@ export function EventsSummaryPanel({
         onClick={() => onSelectScope?.({ eventType: "COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION" })}
       />
       <MetricCard
-        title="Vendas e duvidas"
+        title="Oportunidades"
         value={salesCount}
-        subtitle="Pedidos, preco e produto"
+        subtitle={`${summary.questionCount} duvidas informativas`}
         icon={ShoppingCart}
         color="#2563eb"
         disabled={salesCount === 0}
-        onClick={() => onSelectScope?.({ eventType: "SALES_OPPORTUNITY,QUESTION" })}
+        onClick={() => onSelectScope?.({ eventType: "SALES_OPPORTUNITY" })}
       />
       <MetricCard
-        title="Pendentes"
+        title="Pendencias reais"
         value={pendingCount}
-        subtitle="Ainda precisam de acao"
+        subtitle="Exclui duvidas comuns"
         icon={TimerReset}
         color="#7c3aed"
         disabled={pendingCount === 0}
-        onClick={() => onSelectScope?.({ resolved: "false" })}
+        onClick={() => onSelectScope?.({
+          eventType: "RISK,ESCALATION,COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,SALES_OPPORTUNITY",
+          resolved: "false",
+        })}
       />
       <MetricCard
         title="Gargalos"
         value={bottleneckCount}
-        subtitle={metrics.executiveSummary?.bottleneckAgentText || "Agentes com fila pesada"}
+        subtitle={metrics.executiveSummary?.bottleneckAgentText || "Abrir maior fila pendente"}
         icon={bottleneckCount > 0 ? Gauge : HelpCircle}
         color="#0f766e"
         disabled={bottleneckCount === 0}
-        onClick={() => onSelectScope?.({ resolved: "false" })}
+        onClick={() => onSelectScope?.(bottleneckPatch)}
       />
     </div>
   );

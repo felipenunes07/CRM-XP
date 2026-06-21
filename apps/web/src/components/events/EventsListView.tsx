@@ -74,9 +74,10 @@ function readDuplicateCount(event: MessageEvent) {
 }
 
 function isActionRequired(event: MessageEvent) {
+  if (event.eventType === "QUESTION") return false;
   const value = event.metadata?.actionRequired;
   if (typeof value === "boolean") return value;
-  return ["RISK", "ESCALATION", "COMPLAINT", "NEGATIVE_FEEDBACK", "CHURN_RISK", "SALES_OPPORTUNITY", "QUESTION"].includes(event.eventType);
+  return ["RISK", "ESCALATION", "COMPLAINT", "NEGATIVE_FEEDBACK", "CHURN_RISK", "SALES_OPPORTUNITY"].includes(event.eventType);
 }
 
 export function EventsListView({ events, onResolve, onViewConversation }: EventsListViewProps) {

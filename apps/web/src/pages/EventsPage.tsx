@@ -23,7 +23,6 @@ import type {
   MessageInsightExample,
   MessageInsightTheme,
   WhatsappMonitorConversationDetail,
-  WhatsappMonitorMessage,
 } from "@olist-crm/shared";
 import { api } from "../lib/api";
 import { useAuth } from "../hooks/useAuth";
@@ -31,16 +30,7 @@ import { EventsSummaryPanel, type EventsScopePatch } from "../components/events/
 import { EventsListView } from "../components/events/EventsListView";
 import { EventsFilters, type EventFilterShortcut, type EventsFilterState } from "../components/events/EventsFilters";
 import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
-
-interface ConversationSeed {
-  dealId: string;
-  content: string;
-  detectedAt: string;
-  contactName: string;
-  contactPhone?: string;
-  agentName?: string | null;
-  isGroup?: boolean;
-}
+import { buildEventChatMessages, type EventConversationSeed } from "../lib/eventsChat";
 
 interface ChatState {
   open: boolean;
@@ -107,7 +97,7 @@ function formatBlockedReason(reason: string | null | undefined) {
 
 function formatManualResult(result: { status: string; reason?: string; eventCount?: number }) {
   if (result.status === "SUCCEEDED") {
-    return `Lote concluido com ${result.eventCount ?? 0} eventos analisados.`;
+    return `IA atualizada: ${result.eventCount ?? 0} eventos recentes analisados no painel de IA.`;
   }
   if (result.status === "SKIPPED") {
     return `Lote nao executado: ${formatBlockedReason(result.reason)}.`;
@@ -115,32 +105,50 @@ function formatManualResult(result: { status: string; reason?: string; eventCoun
   return "Lote falhou. Verifique a chave, o modelo ou tente novamente.";
 }
 
-function fallbackMessages(seed: ConversationSeed): MiniChatMessage[] {
-  return [{
-    id: `event-${seed.dealId}-${seed.detectedAt}`,
-    content: seed.content,
-    direction: "INBOUND",
-    timestamp: seed.detectedAt,
-    senderName: seed.contactName,
-  }];
+function compactAiItem(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const title = [record.titulo, record.title, record.tema, record.nome]
+      .find((entry) => typeof entry === "string" && entry.trim());
+    const detail = [record.descricao, record.description, record.resumo, record.acao, record.action]
+      .find((entry) => typeof entry === "string" && entry.trim());
+
+    return [title, detail].filter(Boolean).join(" - ");
+  }
+
+  return "";
 }
 
-function mapMonitorMessages(messages: WhatsappMonitorMessage[]): MiniChatMessage[] {
-  return [...messages]
-    .filter((message) => message.direction !== "SYSTEM" && message.content.trim())
-    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    .map((message) => ({
-      id: message.id,
-      content: message.content,
-      direction: message.direction === "OUTBOUND" ? "OUTBOUND" : "INBOUND",
-      timestamp: message.createdAt,
-      senderName: message.senderName,
-      senderAvatarUrl: message.senderProfilePictureUrl,
-    }));
+function readAiList(summary: Record<string, unknown> | null | undefined, key: string) {
+  const value = summary?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(compactAiItem)
+    .filter(Boolean)
+    .slice(0, 3);
 }
 
-function buildChatState(seed: ConversationSeed, detail: WhatsappMonitorConversationDetail | null, loading: boolean): ChatState {
-  const mappedMessages = detail ? mapMonitorMessages(detail.messages) : [];
+function buildAiSections(summary: Record<string, unknown> | null | undefined) {
+  return [
+    { title: "Alertas IA", items: readAiList(summary, "alertasCriticos") },
+    { title: "Temas IA", items: readAiList(summary, "temasEmAlta") },
+    { title: "Acoes IA", items: readAiList(summary, "acoesRecomendadas") },
+    { title: "Gargalos IA", items: readAiList(summary, "gargalos") },
+  ].filter((section) => section.items.length > 0);
+}
+
+function buildChatState(seed: EventConversationSeed, detail: WhatsappMonitorConversationDetail | null, loading: boolean): ChatState {
+  const mappedMessages = buildEventChatMessages({
+    seed,
+    monitorMessages: detail?.messages ?? [],
+  });
   const name = detail?.contactName || detail?.title || seed.contactName || "Conversa";
   const phone = detail?.contactPhone || seed.contactPhone || "";
   const jid = detail?.remoteJid || (seed.isGroup ? "Grupo" : "");
@@ -152,7 +160,7 @@ function buildChatState(seed: ConversationSeed, detail: WhatsappMonitorConversat
     customerName: name,
     customerPhone: phone,
     jid,
-    messages: mappedMessages.length > 0 ? mappedMessages : fallbackMessages(seed),
+    messages: mappedMessages,
   };
 }
 
@@ -169,7 +177,7 @@ function themeFilterPatch(theme: MessageInsightTheme): EventsScopePatch {
     case "price_objection":
       return { search: "preco", resolved: "false" };
     case "sales_demand":
-      return { eventType: "SALES_OPPORTUNITY,QUESTION" };
+      return { eventType: "SALES_OPPORTUNITY" };
     case "praise":
       return { eventType: "PRAISE,POSITIVE_FEEDBACK" };
     default:
@@ -189,26 +197,39 @@ function themeSummaryText(theme: MessageInsightTheme) {
   return `${theme.count} ocorrencias apareceram, com ${theme.unresolvedCount} ainda abertas. A prioridade vem dos casos em grupos e da severidade.`;
 }
 
-function seedFromEvent(event: MessageEvent): ConversationSeed {
+function readStringMetadata(event: MessageEvent, key: string) {
+  const value = event.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function seedFromEvent(event: MessageEvent): EventConversationSeed {
   return {
     dealId: event.dealId,
+    eventId: event.id,
+    messageId: event.messageId,
     content: event.content,
     detectedAt: event.detectedAt,
     contactName: event.conversationContext?.contactName || "Cliente",
     contactPhone: event.conversationContext?.contactPhone || "",
     agentName: event.conversationContext?.agentName,
     isGroup: event.conversationContext?.isGroup,
+    severity: event.severity,
+    label: event.label,
+    reason: readStringMetadata(event, "classificationReason"),
   };
 }
 
-function seedFromExample(example: MessageInsightExample): ConversationSeed {
+function seedFromExample(example: MessageInsightExample, theme: MessageInsightTheme): EventConversationSeed {
   return {
     dealId: example.dealId,
+    eventId: example.eventId,
     content: example.content,
     detectedAt: example.detectedAt,
     contactName: example.contactName,
     agentName: example.agentName,
     isGroup: example.isGroup,
+    severity: theme.severity,
+    label: theme.title,
   };
 }
 
@@ -241,6 +262,7 @@ export function EventsPage() {
     resolved: filters.resolved,
     search: filters.search,
     isGroup: filters.isGroup,
+    agentId: filters.agentId,
   }), [
     dateRange.from,
     dateRange.to,
@@ -249,6 +271,7 @@ export function EventsPage() {
     filters.resolved,
     filters.search,
     filters.isGroup,
+    filters.agentId,
   ]);
 
   const overviewMetricsQuery = useQuery({
@@ -326,7 +349,7 @@ export function EventsPage() {
     }
   };
 
-  const openConversation = async (seed: ConversationSeed) => {
+  const openConversation = async (seed: EventConversationSeed) => {
     if (!token) return;
 
     setChatState(buildChatState(seed, null, true));
@@ -355,6 +378,7 @@ export function EventsPage() {
   const aiExecutiveText = typeof latestAiSummary?.resumoExecutivo === "string"
     ? latestAiSummary.resumoExecutivo
     : null;
+  const aiSections = buildAiSections(latestAiSummary);
   const visibleTotal = eventsQuery.data?.total ?? intelligence?.summary.totalEvents ?? 0;
   const canRunManualBatch = Boolean(aiBatch?.enabled && aiBatch.canRunManually && !aiBatchMutation.isPending);
 
@@ -370,14 +394,24 @@ export function EventsPage() {
     const total = summary?.totalEvents ?? 0;
     const highRisk = (summary?.bySeverity?.CRITICAL || 0) + (summary?.bySeverity?.HIGH || 0);
     const complaints = (summary?.complaintsCount || 0) + (summary?.negativeFeedbacks || 0) + (summary?.riskEvents || 0);
-    const opportunities = (summary?.opportunitiesCount || 0) + (summary?.questionCount || 0);
+    const opportunities = summary?.opportunitiesCount || 0;
 
     return [
       { id: "all", label: "Tudo", count: total, patch: {}, tone: "neutral" },
       { id: "risk", label: "Criticos", count: highRisk, patch: { severity: "CRITICAL,HIGH", resolved: "false" }, tone: "danger" },
       { id: "complaints", label: "Reclamacoes", count: complaints, patch: { eventType: "COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION" }, tone: "warning" },
-      { id: "sales", label: "Vendas", count: opportunities, patch: { eventType: "SALES_OPPORTUNITY,QUESTION" }, tone: "info" },
-      { id: "pending", label: "Pendentes", count: summary?.unresolvedEvents || 0, patch: { resolved: "false" }, tone: "neutral" },
+      { id: "sales", label: "Oportunidades", count: opportunities, patch: { eventType: "SALES_OPPORTUNITY" }, tone: "info" },
+      { id: "questions", label: "Duvidas", count: summary?.questionCount || 0, patch: { eventType: "QUESTION" }, tone: "neutral" },
+      {
+        id: "pending",
+        label: "Pendencias",
+        count: summary?.actionRequiredEvents || 0,
+        patch: {
+          eventType: "RISK,ESCALATION,COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,SALES_OPPORTUNITY",
+          resolved: "false",
+        },
+        tone: "neutral",
+      },
       { id: "groups", label: "Grupos", count: groups, patch: { isGroup: true }, tone: "neutral" },
       { id: "private", label: "Privado", count: privateCount, patch: { isGroup: false }, tone: "neutral" },
     ];
@@ -427,9 +461,9 @@ export function EventsPage() {
           <div className="wa-command-summary">
             <div className="wa-command-title">
               <LayoutDashboard size={20} />
-              <span>Resumo do periodo</span>
+              <span>Sistema por regras</span>
             </div>
-            <p>{aiExecutiveText || intelligence?.executiveSummary || overviewIntelligence?.executiveSummary || "Carregando resumo dos eventos filtrados..."}</p>
+            <p>{intelligence?.executiveSummary || overviewIntelligence?.executiveSummary || "Carregando sinais capturados por regras, deduplicacao e classificacao local..."}</p>
             <div className="wa-command-stats">
               <span><Filter size={16} /> {visibleTotal} eventos unicos</span>
               <span><AlertTriangle size={16} /> {intelligence?.summary.criticalOpen ?? 0} criticos abertos</span>
@@ -467,13 +501,28 @@ export function EventsPage() {
               <Bot size={20} />
               <div>
                 <strong>IA em lote</strong>
-                <span>{formatBatchTime(aiBatch?.latestBatch?.finishedAt)}</span>
+                <span>{aiBatch?.provider || "auto"} / {aiBatch?.model || "sem modelo"} - {formatBatchTime(aiBatch?.latestBatch?.finishedAt)}</span>
               </div>
             </div>
             <div className="wa-ai-meta">
               <span><Clock size={15} /> {formatBlockedReason(aiBatch?.manualBlockedReason)}</span>
+              <span><Filter size={15} /> Lote: {aiBatch?.latestBatch?.eventCount ?? 0} eventos</span>
               <span><Users size={15} /> Grupos: {overviewIntelligence?.sourceSplit.groups ?? 0}</span>
               <span><MessageSquare size={15} /> Privado: {overviewIntelligence?.sourceSplit.private ?? 0}</span>
+            </div>
+            <div className="wa-ai-result">
+              <strong>Resultado da IA</strong>
+              <p>{aiExecutiveText || "Ainda sem resumo de IA para o periodo. Clique em rodar para atualizar a leitura gerencial."}</p>
+              {aiSections.length > 0 && (
+                <div className="wa-ai-section-grid">
+                  {aiSections.map((section) => (
+                    <article key={section.title}>
+                      <span>{section.title}</span>
+                      {section.items.map((item) => <small key={item}>{item}</small>)}
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
             <button
               type="button"
@@ -560,7 +609,7 @@ export function EventsPage() {
                             <span>{example.agentName || "Sem agente"} - {formatDateTime(example.detectedAt)}</span>
                           </div>
                           <p>{example.content}</p>
-                          <button type="button" onClick={() => openConversation(seedFromExample(example))}>
+                          <button type="button" onClick={() => openConversation(seedFromExample(example, selectedTheme))}>
                             <Smartphone size={15} />
                             Abrir celular
                           </button>

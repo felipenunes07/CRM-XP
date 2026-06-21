@@ -14896,13 +14896,13 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wa-events-content {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.85rem;
 }
 
 .wa-command-center {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.85fr) 300px;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1.05fr) minmax(240px, 0.6fr) minmax(320px, 0.8fr);
+  gap: 0.75rem;
   align-items: stretch;
 }
 
@@ -14910,18 +14910,22 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wa-next-actions,
 .wa-ai-control {
   min-width: 0;
-  padding: 1.15rem;
+  padding: 0.85rem;
   background: #ffffff;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.04);
 }
 
 .wa-command-summary p {
   margin: 0;
   color: #1f2937;
-  font-size: 1rem;
-  line-height: 1.55;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .wa-next-actions,
@@ -14933,9 +14937,9 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 .wa-action-alert {
   display: block;
-  padding: 0.75rem 0.85rem;
-  border-left: 4px solid #f59e0b;
-  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  border-left: 3px solid #f59e0b;
+  border-radius: 8px;
   background: #fff7ed;
 }
 
@@ -14951,13 +14955,13 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 .wa-action-alert strong {
   color: #111827;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
 .wa-action-alert span {
-  margin-top: 0.25rem;
+  margin-top: 0.2rem;
   color: #475569;
-  font-size: 0.78rem;
+  font-size: 0.73rem;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -14969,12 +14973,12 @@ body:has(.whatsapp-monitor-page) .main-content {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  min-height: 78px;
-  padding: 0.85rem;
-  border-radius: 10px;
+  min-height: 58px;
+  padding: 0.65rem;
+  border-radius: 8px;
   background: #f8fafc;
   color: #64748b;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
   font-weight: 700;
 }
 
@@ -14986,16 +14990,85 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 .wa-ai-meta {
   display: grid;
-  gap: 0.4rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem 0.45rem;
 }
 
 .wa-ai-meta span {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  min-width: 0;
   color: #64748b;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
+}
+
+.wa-ai-meta span svg {
+  flex: 0 0 auto;
+}
+
+.wa-ai-result {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.65rem;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+}
+
+.wa-ai-result > strong {
+  color: #1e3a8a;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.wa-ai-result p {
+  margin: 0;
+  color: #1f2937;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wa-ai-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.wa-ai-section-grid article {
+  min-width: 0;
+  padding: 0.45rem;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 7px;
+  background: rgba(255,255,255,0.72);
+}
+
+.wa-ai-section-grid span,
+.wa-ai-section-grid small {
+  display: block;
+  min-width: 0;
+}
+
+.wa-ai-section-grid span {
+  margin-bottom: 0.18rem;
+  color: #1e40af;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.wa-ai-section-grid small {
+  color: #334155;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wa-run-ai-button {
@@ -15003,13 +15076,13 @@ body:has(.whatsapp-monitor-page) .main-content {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  min-height: 40px;
+  min-height: 34px;
   width: 100%;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #0f172a;
   color: #ffffff;
-  font-size: 0.88rem;
+  font-size: 0.82rem;
   font-weight: 800;
   cursor: pointer;
 }
@@ -15023,7 +15096,7 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wa-ai-message {
   margin: 0;
   color: #475569;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   line-height: 1.35;
 }
 
@@ -15377,20 +15450,21 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 .wa-metrics-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(5, minmax(145px, 1fr));
+  gap: 0.55rem;
 }
 
 .wa-metric-card {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1.25rem;
+  gap: 0.65rem;
+  min-height: 76px;
+  padding: 0.7rem 0.75rem;
   background: #fff;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
-  border-left: 4px solid var(--metric-color, #94a3b8);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+  border-left: 3px solid var(--metric-color, #94a3b8);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.025);
   transition: transform 0.2s ease;
   color: inherit;
   text-align: left;
@@ -15409,9 +15483,9 @@ body:has(.whatsapp-monitor-page) .main-content {
 }
 
 .wa-metric-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15426,8 +15500,8 @@ body:has(.whatsapp-monitor-page) .main-content {
 }
 
 .wa-metric-title {
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.66rem;
+  font-weight: 800;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0;
@@ -15437,12 +15511,12 @@ body:has(.whatsapp-monitor-page) .main-content {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin: 0.1rem 0;
+  margin: 0.05rem 0;
 }
 
 .wa-metric-value {
-  font-size: 1.5rem;
-  font-weight: 700;
+  font-size: 1.2rem;
+  font-weight: 800;
   color: var(--text);
 }
 
@@ -15457,8 +15531,13 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wa-metric-trend.negative { color: var(--danger); background: rgba(217,83,79,0.1); }
 
 .wa-metric-subtitle {
-  font-size: 0.75rem;
+  font-size: 0.68rem;
   color: var(--muted);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .wa-dashboard-grid {
@@ -15931,6 +16010,14 @@ body:has(.whatsapp-monitor-page) .main-content {
   .wa-intelligence-command,
   .wa-command-center,
   .wa-insight-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wa-metrics-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .wa-ai-section-grid {
     grid-template-columns: 1fr;
   }
 }

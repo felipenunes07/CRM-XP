@@ -33,6 +33,14 @@ describe("message event classification", () => {
     expect(classification.shouldCreateEvent).toBe(true);
   });
 
+  it("keeps generic questions visible but out of manual pending queues", () => {
+    const classification = classifyMessageContent("Que horas voces fecham hoje?", noRisk);
+
+    expect(classification.eventType).toBe("QUESTION");
+    expect(classification.actionRequired).toBe(false);
+    expect(classification.shouldCreateEvent).toBe(true);
+  });
+
   it("keeps greetings and casual warmth out of risk queues", () => {
     expect(detectEventType("Bom dia", noRisk)).toBe("GREETING");
     expect(detectEventType("Boooooom dia meu amigoooo lindo", noRisk)).toBe("GREETING");

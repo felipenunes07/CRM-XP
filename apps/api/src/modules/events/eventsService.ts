@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { buildEventsIntelligence } from "./eventsInsights.js";
 import { getEventsAiBatchStatus } from "./eventsBatchAi.js";
 
-export const MESSAGE_CLASSIFIER_VERSION = "2026-05-15-v4";
+export const MESSAGE_CLASSIFIER_VERSION = "2026-06-21-v5";
 
 type MessageClassificationCategory =
   | "risk"
@@ -422,8 +422,9 @@ function categoryFromEventType(eventType: EventType): MessageClassificationCateg
     case "PRAISE":
     case "POSITIVE_FEEDBACK":
       return "feedback";
-    case "QUESTION":
     case "SALES_OPPORTUNITY":
+      return "opportunity";
+    case "QUESTION":
       return "question";
     default:
       return "noise";
@@ -436,7 +437,7 @@ function buildClassification(
   input: Partial<Omit<MessageEventClassification, "eventType" | "severity" | "label" | "sentimentScore" | "shouldCreateEvent">>
 ): MessageEventClassification {
   const category = input.category ?? categoryFromEventType(eventType);
-  const actionRequired = input.actionRequired ?? ["risk", "opportunity", "complaint", "question"].includes(category);
+  const actionRequired = input.actionRequired ?? ["risk", "opportunity", "complaint"].includes(category);
 
   return {
     eventType,
@@ -734,11 +735,15 @@ function mapEventRow(row: any): MessageEvent {
 }
 
 function eventRequiresAction(event: MessageEvent) {
+  if (event.eventType === "QUESTION") {
+    return false;
+  }
+
   if (typeof event.metadata.actionRequired === "boolean") {
     return event.metadata.actionRequired;
   }
 
-  return ["RISK", "ESCALATION", "COMPLAINT", "NEGATIVE_FEEDBACK", "CHURN_RISK", "SALES_OPPORTUNITY", "QUESTION"]
+  return ["RISK", "ESCALATION", "COMPLAINT", "NEGATIVE_FEEDBACK", "CHURN_RISK", "SALES_OPPORTUNITY"]
     .includes(event.eventType);
 }
 
@@ -1068,8 +1073,12 @@ export async function listEvents(
   }
 
   if (filters.agentId) {
-    params.push(filters.agentId);
-    conditions.push(`d.assigned_to = $${params.length}`);
+    if (filters.agentId === "__unassigned") {
+      conditions.push("d.assigned_to IS NULL");
+    } else {
+      params.push(filters.agentId);
+      conditions.push(`d.assigned_to = $${params.length}`);
+    }
   }
 
   if (filters.search) {
@@ -1362,8 +1371,12 @@ export async function getEventsMetrics(
   }
 
   if (filters?.agentId) {
-    params.push(filters.agentId);
-    accessFilter += ` AND d.assigned_to = $${params.length}`;
+    if (filters.agentId === "__unassigned") {
+      accessFilter += " AND d.assigned_to IS NULL";
+    } else {
+      params.push(filters.agentId);
+      accessFilter += ` AND d.assigned_to = $${params.length}`;
+    }
   }
 
   if (filters?.search) {
@@ -1415,10 +1428,16 @@ export async function getEventsMetrics(
       COUNT(DISTINCT ${dedupeKeySql}) FILTER (WHERE event_type = 'QUESTION')::int as question_count,
       COUNT(DISTINCT ${dedupeKeySql}) FILTER (
         WHERE resolved_at IS NULL
-        AND COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+        AND CASE
+          WHEN me.event_type = 'QUESTION' THEN false
+          ELSE COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY'))
+        END
       )::int as action_required_events,
       COUNT(DISTINCT ${dedupeKeySql}) FILTER (
-        WHERE COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION')) = false
+        WHERE CASE
+          WHEN me.event_type = 'QUESTION' THEN false
+          ELSE COALESCE((me.metadata->>'actionRequired')::boolean, event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY'))
+        END = false
       )::int as informational_events,
       AVG((me.metadata->>'sentimentScore')::float) as avg_sentiment
     FROM message_events me
@@ -1466,7 +1485,10 @@ export async function getEventsMetrics(
       d.assigned_to_name as agent_name,
       COUNT(DISTINCT ${dedupeKeySql}) FILTER (
         WHERE me.resolved_at IS NULL
-        AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+        AND CASE
+          WHEN me.event_type = 'QUESTION' THEN false
+          ELSE COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY'))
+        END
       )::int as unresolved_count,
       AVG(EXTRACT(EPOCH FROM (first_response.created_at - me.detected_at)) / 60) as avg_response_minutes,
       COUNT(DISTINCT me.deal_id)::int as conversation_count
@@ -1486,7 +1508,10 @@ export async function getEventsMetrics(
     GROUP BY d.assigned_to, d.assigned_to_name
     HAVING COUNT(DISTINCT ${dedupeKeySql}) FILTER (
       WHERE me.resolved_at IS NULL
-      AND COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY', 'QUESTION'))
+      AND CASE
+        WHEN me.event_type = 'QUESTION' THEN false
+        ELSE COALESCE((me.metadata->>'actionRequired')::boolean, me.event_type IN ('RISK', 'ESCALATION', 'COMPLAINT', 'NEGATIVE_FEEDBACK', 'CHURN_RISK', 'SALES_OPPORTUNITY'))
+      END
     ) > 0
     ORDER BY unresolved_count DESC
     LIMIT 5

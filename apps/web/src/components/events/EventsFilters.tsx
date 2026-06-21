@@ -6,6 +6,7 @@ export interface EventsFilterState {
   resolved?: string;
   search?: string;
   isGroup?: boolean;
+  agentId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -26,7 +27,7 @@ interface EventsFiltersProps {
 
 function isSameShortcut(filters: EventsFilterState, shortcut: EventFilterShortcut) {
   const patchKeys = Object.keys(shortcut.patch) as Array<keyof EventsFilterState>;
-  const scopedKeys: Array<keyof EventsFilterState> = ["eventType", "severity", "resolved", "search", "isGroup"];
+  const scopedKeys: Array<keyof EventsFilterState> = ["eventType", "severity", "resolved", "search", "isGroup", "agentId"];
 
   if (patchKeys.length === 0) {
     return scopedKeys.every((key) => filters[key] === undefined || filters[key] === "");
@@ -62,6 +63,7 @@ export function EventsFilters({ filters, shortcuts = [], onChange }: EventsFilte
     filters.severity ||
     filters.resolved ||
     filters.search ||
+    filters.agentId ||
     filters.isGroup !== undefined,
   );
 
@@ -114,12 +116,12 @@ export function EventsFilters({ filters, shortcuts = [], onChange }: EventsFilte
               >
                 <option value="">Todos os sinais</option>
                 <option value="COMPLAINT,NEGATIVE_FEEDBACK,CHURN_RISK,RISK,ESCALATION">Problemas e riscos</option>
-                <option value="SALES_OPPORTUNITY,QUESTION">Vendas e duvidas</option>
+                <option value="SALES_OPPORTUNITY">Oportunidades comerciais</option>
+                <option value="QUESTION">Duvidas informativas</option>
                 <option value="PRAISE,POSITIVE_FEEDBACK">Elogios e positivos</option>
                 <option value="COMPLAINT">Reclamacoes</option>
                 <option value="NEGATIVE_FEEDBACK">Feedback negativo</option>
                 <option value="CHURN_RISK">Risco de churn</option>
-                <option value="QUESTION">Duvidas</option>
               </select>
               <ChevronDown size={16} />
             </label>
