@@ -782,8 +782,45 @@ export async function handleEvolutionWebhook(
           whatsapp_jid: row.whatsapp_jid ? String(row.whatsapp_jid) : null
         }));
       } else {
-        const dealMatch = await pool.query(
-          `
+        const dealMatchParams = [
+          messageId,
+          resolvedRemoteJid,
+          instanceDetails?.id ?? null,
+          instanceDetails?.assignedUserId ?? null,
+          instanceDetails?.assignedUserName ?? "",
+          context.remoteJidAliases,
+          instanceName,
+        ];
+
+        // PERF/timeout: a reconciliação histórica LID↔telefone (EXISTS abaixo) varre
+        // whatsapp_incoming_messages e DETOASTA o raw_payload (JSON enorme com mídia
+        // base64) por deal @lid. Sozinha levava ~14s e estourava o statement_timeout de
+        // 20s → TODA mensagem 1:1 caía no catch (gravava só em incoming, nunca virava
+        // deal: foi o que congelou os "Privados"). Por isso ela agora só roda como
+        // FALLBACK: primeiro tentamos o match barato/indexado (jid exato, aliases,
+        // número); só se NADA casar é que pagamos a varredura cara (caso raro).
+        const lidHistoricalClause = `
+                OR (
+                  (
+                    (d.whatsapp_jid LIKE '%@lid' AND $2 LIKE '%@s.whatsapp.net')
+                    OR (d.whatsapp_jid LIKE '%@s.whatsapp.net' AND $2 LIKE '%@lid')
+                  )
+                  AND EXISTS (
+                    SELECT 1
+                    FROM whatsapp_incoming_messages wim
+                    WHERE (wim.remote_jid = d.whatsapp_jid OR wim.participant_jid = d.whatsapp_jid OR wim.remote_jid = $2 OR wim.participant_jid = $2)
+                      AND (
+                        COALESCE(
+                          wim.raw_payload -> 'key' ->> 'participantPn',
+                          wim.raw_payload -> 'key' ->> 'remoteJidPn',
+                          wim.raw_payload ->> 'participantPn',
+                          wim.raw_payload ->> 'remoteJidPn'
+                        ) IN ($2, d.whatsapp_jid, regexp_replace($2, '@s.whatsapp.net', ''), regexp_replace(d.whatsapp_jid, '@s.whatsapp.net', ''))
+                      )
+                  )
+                )`;
+
+        const buildDealMatchSql = (lidHistorical: string) => `
           WITH existing_message_deal AS (
             SELECT d.id, d.whatsapp_instance_id, d.last_activity_at, da.created_at, da.id AS activity_id, d.whatsapp_jid
             FROM deal_activities da
@@ -820,32 +857,10 @@ export async function handleEvolutionWebhook(
                 d.whatsapp_jid = $2
                 OR d.whatsapp_jid = ANY($6::text[])
                 OR $2 = ANY(deal_aliases.associated_jids)
-                -- associated_jids é varchar[] (canonical_jid/alias_jid são VARCHAR);
-                -- o operador && exige o MESMO tipo dos dois lados, e text[] && varchar[]
-                -- NÃO existe → sem o cast a query inteira abortava e TODA mensagem 1:1
-                -- caía no catch do webhook (gravava só em incoming, nunca virava deal).
+                -- $6 é text[]; associated_jids é varchar[]. text[] && varchar[] NÃO existe
+                -- como operador → sem o cast a query abortava e derrubava a ingestão 1:1.
                 OR $6::text[] && deal_aliases.associated_jids::text[]
-                OR (
-                  -- Se um é LID e o outro é telefone real, verificamos se há algum mapeamento histórico
-                  -- que ligue os dois na tabela whatsapp_incoming_messages.
-                  (
-                    (d.whatsapp_jid LIKE '%@lid' AND $2 LIKE '%@s.whatsapp.net')
-                    OR (d.whatsapp_jid LIKE '%@s.whatsapp.net' AND $2 LIKE '%@lid')
-                  )
-                  AND EXISTS (
-                    SELECT 1
-                    FROM whatsapp_incoming_messages wim
-                    WHERE (wim.remote_jid = d.whatsapp_jid OR wim.participant_jid = d.whatsapp_jid OR wim.remote_jid = $2 OR wim.participant_jid = $2)
-                      AND (
-                        COALESCE(
-                          wim.raw_payload -> 'key' ->> 'participantPn',
-                          wim.raw_payload -> 'key' ->> 'remoteJidPn',
-                          wim.raw_payload ->> 'participantPn',
-                          wim.raw_payload ->> 'remoteJidPn'
-                        ) IN ($2, d.whatsapp_jid, regexp_replace($2, '@s.whatsapp.net', ''), regexp_replace(d.whatsapp_jid, '@s.whatsapp.net', ''))
-                      )
-                  )
-                )
+                ${lidHistorical}
                 OR (
                   $2 NOT LIKE '%@g.us'
                   AND d.whatsapp_jid NOT LIKE '%@g.us'
@@ -903,17 +918,14 @@ export async function handleEvolutionWebhook(
           ) matched_deals
           ORDER BY match_priority ASC, last_activity_at DESC NULLS LAST
           LIMIT 1
-          `,
-          [
-            messageId,
-            resolvedRemoteJid,
-            instanceDetails?.id ?? null,
-            instanceDetails?.assignedUserId ?? null,
-            instanceDetails?.assignedUserName ?? "",
-            context.remoteJidAliases,
-            instanceName,
-          ],
-        );
+        `;
+
+        // 1) match barato e indexado (sem varrer raw_payload) — cobre a imensa maioria.
+        let dealMatch = await pool.query(buildDealMatchSql(""), dealMatchParams);
+        // 2) fallback raro: só roda a reconciliação cara quando o match barato não achou nada.
+        if (!dealMatch.rows[0]) {
+          dealMatch = await pool.query(buildDealMatchSql(lidHistoricalClause), dealMatchParams);
+        }
 
         if (dealMatch.rows[0]) {
           matchedDeals = [{

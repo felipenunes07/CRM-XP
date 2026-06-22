@@ -1333,7 +1333,7 @@ export function DisparadorPage() {
 
   const activeCampaignQuery = useQuery({
     queryKey: ["whatsapp-campaign-live", activeCampaignId],
-    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 20, offset: 0, excludePerformance: true }),
+    queryFn: () => api.whatsappCampaign(token!, activeCampaignId!, { limit: 5000, offset: 0, excludePerformance: true }),
     enabled: Boolean(token && activeCampaignId),
     refetchInterval: (query) =>
       query.state.data && ["QUEUED", "IN_PROGRESS"].includes(query.state.data.status) ? 5000 : false,
@@ -1538,8 +1538,7 @@ export function DisparadorPage() {
         const leftTime = left.scheduledFor ? new Date(left.scheduledFor).getTime() : 0;
         const rightTime = right.scheduledFor ? new Date(right.scheduledFor).getTime() : 0;
         return leftTime - rightTime;
-      })
-      .slice(0, 200);
+      });
   }, [liveCampaign]);
   const selectedCampaignDetail = selectedCampaignQuery.data ?? null;
   const selectedCampaignPerformanceDetail = selectedCampaignPerformanceQuery.data ?? null;
