@@ -15,7 +15,7 @@ import type {
   WhatsappMappingSummary,
   WhatsappMenuType,
 } from "@olist-crm/shared";
-import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, Copy, RotateCcw } from "lucide-react";
+import { CheckCircle2, Clock3, LoaderCircle, Send, ShieldAlert, XCircle, Plus, ArrowRight, Filter, Check, Trash2, HelpCircle, Info, Users, Smartphone, PlusCircle, Sparkles, ChevronRight, ChevronLeft, Award, Search, ClipboardList, Bookmark, Save, X, CheckCheck, Smile, Paperclip, Film, MessageCircle, Copy, RotateCcw, Pause, Play } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber, formatFileSize } from "../lib/format";
@@ -1327,7 +1327,7 @@ export function DisparadorPage() {
       return createCampaignMutation.data.id;
     }
 
-    const activeCampaign = campaignsQuery.data?.find((campaign) => ["QUEUED", "IN_PROGRESS"].includes(campaign.status));
+    const activeCampaign = campaignsQuery.data?.find((campaign) => ["QUEUED", "IN_PROGRESS", "PAUSED"].includes(campaign.status));
     return activeCampaign?.id ?? selectedCampaignId ?? null;
   }, [campaignsQuery.data, createCampaignMutation.data?.id, selectedCampaignId]);
 
@@ -1357,6 +1357,37 @@ export function DisparadorPage() {
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
       ]);
+    },
+  });
+
+  const pauseCampaignMutation = useMutation({
+    mutationFn: (campaignId: string) => api.pauseWhatsappCampaign(token!, campaignId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+      ]);
+    },
+    onError: (error: any) => {
+      alert(`Erro ao pausar campanha: ${error?.message || error}`);
+    },
+  });
+
+  const retryAllFailedMutation = useMutation({
+    mutationFn: (campaignId: string) => api.retryAllFailedWhatsappCampaign(token!, campaignId),
+    onSuccess: async (data) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-live", activeCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign", selectedCampaignId] }),
+        queryClient.invalidateQueries({ queryKey: ["whatsapp-campaign-performance", selectedCampaignId] }),
+      ]);
+      const retried = (data as { retried?: number } | null)?.retried ?? 0;
+      alert(retried > 0 ? `${retried} disparo(s) reenfileirado(s) para nova tentativa.` : "Nenhuma falha para retentar.");
+    },
+    onError: (error: any) => {
+      alert(`Erro ao retentar falhas: ${error?.message || error}`);
     },
   });
 
@@ -1505,7 +1536,7 @@ export function DisparadorPage() {
   const importError = importDefaultMutation.error as Error | null;
   const isImporting = importDefaultMutation.isPending;
   const liveCampaign = activeCampaignQuery.data ?? selectedCampaignQuery.data ?? createCampaignMutation.data ?? null;
-  const liveCampaignIsRunning = liveCampaign ? ["QUEUED", "IN_PROGRESS"].includes(liveCampaign.status) : false;
+  const liveCampaignIsRunning = liveCampaign ? ["QUEUED", "IN_PROGRESS", "PAUSED"].includes(liveCampaign.status) : false;
   const nextDispatchCountdown = liveCampaign ? formatCountdown(liveCampaign.progress.nextScheduledAt, nowMs) : null;
   const hiddenBlockedCount = useMemo(() => {
     if (recentBlockFilter !== "AVAILABLE_ONLY") {
@@ -1549,6 +1580,12 @@ export function DisparadorPage() {
 
   useEffect(() => {
     if (!token || !liveCampaign || resumeCampaignMutation.isPending) {
+      return;
+    }
+
+    // Campanha pausada NÃO deve ser retomada pelo nudge automático — só pelo botão
+    // Retomar. Sem isto, o auto-resume desfaria a pausa em ~15s.
+    if (liveCampaign.status === "PAUSED") {
       return;
     }
 
@@ -4215,15 +4252,15 @@ export function DisparadorPage() {
                     </div>
                     <div>
                       <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, color: "#18181b" }}>
-                        🚀 Disparo em andamento
+                        {liveCampaign.status === "PAUSED" ? "⏸️ Campanha pausada" : "🚀 Disparo em andamento"}
                       </h3>
                       <span style={{ fontSize: "0.82rem", color: "#71717a" }}>
                         {liveCampaign.name}
                       </span>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    {nextDispatchCountdown && (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                    {liveCampaign.status !== "PAUSED" && nextDispatchCountdown && (
                       <div style={{
                         background: "#ecfdf5",
                         border: "1px solid #a7f3d0",
@@ -4238,14 +4275,101 @@ export function DisparadorPage() {
                         <span style={{ fontSize: "0.72rem", color: "#71717a" }}>próximo envio</span>
                       </div>
                     )}
+                    {/* Pausar (some quando já pausada) — para TODOS os pendentes sem cancelar */}
+                    {liveCampaign.status !== "PAUSED" && (
+                      <button
+                        type="button"
+                        onClick={() => pauseCampaignMutation.mutate(liveCampaign.id)}
+                        disabled={pauseCampaignMutation.isPending}
+                        title="Pausa todos os pendentes. Você pode Retomar de onde parou."
+                        style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "8px 16px",
+                          background: "rgba(245, 158, 11, 0.08)",
+                          border: "1px solid rgba(245, 158, 11, 0.25)",
+                          borderRadius: "8px",
+                          color: "#b45309",
+                          fontSize: "0.85rem", fontWeight: 650,
+                          cursor: pauseCampaignMutation.isPending ? "not-allowed" : "pointer",
+                          opacity: pauseCampaignMutation.isPending ? 0.6 : 1,
+                        }}
+                      >
+                        {pauseCampaignMutation.isPending ? (
+                          <><LoaderCircle size={14} className="spin" /> Pausando...</>
+                        ) : (
+                          <><Pause size={14} /> Pausar</>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Retomar — só aparece quando está pausada */}
+                    {liveCampaign.status === "PAUSED" && (
+                      <button
+                        type="button"
+                        onClick={() => resumeCampaignMutation.mutate(liveCampaign.id)}
+                        disabled={resumeCampaignMutation.isPending}
+                        title="Continua os envios de onde parou (não reenvia quem já recebeu)."
+                        style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "8px 16px",
+                          background: "rgba(16, 185, 129, 0.10)",
+                          border: "1px solid rgba(16, 185, 129, 0.30)",
+                          borderRadius: "8px",
+                          color: "#047857",
+                          fontSize: "0.85rem", fontWeight: 650,
+                          cursor: resumeCampaignMutation.isPending ? "not-allowed" : "pointer",
+                          opacity: resumeCampaignMutation.isPending ? 0.6 : 1,
+                        }}
+                      >
+                        {resumeCampaignMutation.isPending ? (
+                          <><LoaderCircle size={14} className="spin" /> Retomando...</>
+                        ) : (
+                          <><Play size={14} /> Retomar</>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Retentar todos que falharam — só quando há falhas */}
+                    {progress.failedCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (confirm(`Retentar os ${formatNumber(progress.failedCount)} envios que falharam?`)) {
+                            retryAllFailedMutation.mutate(liveCampaign.id);
+                          }
+                        }}
+                        disabled={retryAllFailedMutation.isPending}
+                        title="Volta todos os destinatários com falha para a fila e tenta de novo."
+                        style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "8px 16px",
+                          background: "rgba(59, 130, 246, 0.08)",
+                          border: "1px solid rgba(59, 130, 246, 0.25)",
+                          borderRadius: "8px",
+                          color: "#1d4ed8",
+                          fontSize: "0.85rem", fontWeight: 650,
+                          cursor: retryAllFailedMutation.isPending ? "not-allowed" : "pointer",
+                          opacity: retryAllFailedMutation.isPending ? 0.6 : 1,
+                        }}
+                      >
+                        {retryAllFailedMutation.isPending ? (
+                          <><LoaderCircle size={14} className="spin" /> Retentando...</>
+                        ) : (
+                          <><RotateCcw size={14} /> Retentar falhas ({formatNumber(progress.failedCount)})</>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Cancelar — encerra a campanha de vez (pendentes viram cancelados) */}
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm("Tem certeza que deseja PAUSAR (cancelar) esta campanha? Os envios pendentes serão cancelados.")) {
+                        if (confirm("CANCELAR a campanha? Os envios pendentes serão descartados e NÃO dá pra retomar. (Para parar temporariamente, use Pausar.)")) {
                           cancelCampaignMutation.mutate(liveCampaign.id);
                         }
                       }}
                       disabled={cancelCampaignMutation.isPending}
+                      title="Encerra a campanha. Os pendentes são descartados e não dá pra retomar."
                       style={{
                         display: "flex", alignItems: "center", gap: "6px",
                         padding: "8px 16px",
@@ -4253,27 +4377,15 @@ export function DisparadorPage() {
                         border: "1px solid rgba(239, 68, 68, 0.15)",
                         borderRadius: "8px",
                         color: "#dc2626",
-                        fontSize: "0.85rem",
-                        fontWeight: 650,
+                        fontSize: "0.85rem", fontWeight: 650,
                         cursor: cancelCampaignMutation.isPending ? "not-allowed" : "pointer",
                         opacity: cancelCampaignMutation.isPending ? 0.6 : 1,
-                        transition: "all 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!cancelCampaignMutation.isPending) {
-                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.12)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!cancelCampaignMutation.isPending) {
-                          e.currentTarget.style.backgroundColor = "rgba(239, 68, 68, 0.06)";
-                        }
                       }}
                     >
                       {cancelCampaignMutation.isPending ? (
-                        <><LoaderCircle size={14} className="spin" /> Pausando...</>
+                        <><LoaderCircle size={14} className="spin" /> Cancelando...</>
                       ) : (
-                        <><XCircle size={14} /> Pausar Campanha</>
+                        <><XCircle size={14} /> Cancelar</>
                       )}
                     </button>
                   </div>

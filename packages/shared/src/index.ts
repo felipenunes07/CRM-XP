@@ -1420,7 +1420,7 @@ export type WhatsappGroupMappingStatus =
   | "CONFIRMED_UNMATCHED"
   | "IGNORED";
 export type WhatsappGroupMatchMethod = "CODE" | "NAME" | "MANUAL" | "CONFIRMED_NONE" | "IGNORED";
-export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "PAUSED" | "COMPLETED" | "CANCELLED";
 export type WhatsappCampaignMessageType = "TEXT" | "CAROUSEL" | "VIDEO" | "MENU";
 export type WhatsappInstanceProvider = "EVOLUTION" | "UAZAPI";
 

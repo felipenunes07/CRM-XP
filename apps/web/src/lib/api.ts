@@ -839,6 +839,16 @@ export const api = {
       method: "POST",
     }, token);
   },
+  pauseWhatsappCampaign(token: string, id: string) {
+    return request<WhatsappCampaignDetail | null>(`/api/whatsapp-campaigns/${id}/pause`, {
+      method: "POST",
+    }, token);
+  },
+  retryAllFailedWhatsappCampaign(token: string, id: string) {
+    return request<(WhatsappCampaignDetail & { retried: number }) | null>(`/api/whatsapp-campaigns/${id}/retry-failed`, {
+      method: "POST",
+    }, token);
+  },
   skipWhatsappCampaignRecipient(token: string, id: string, recipientId: string) {
     return request<{ skipped: boolean; recipientId: string }>(`/api/whatsapp-campaigns/${id}/recipients/${recipientId}/skip`, {
       method: "POST",

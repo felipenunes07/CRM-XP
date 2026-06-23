@@ -3867,5 +3867,14 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_message_events_dedupe_key
     ON message_events(dedupe_key);
+  `,
+  `
+  -- Pausa real de campanhas: novo estado PAUSED (para todos os pendentes sem
+  -- cancelar; Retomar continua de onde parou). Antes "Pausar" cancelava a campanha.
+  ALTER TABLE whatsapp_campaigns DROP CONSTRAINT IF EXISTS whatsapp_campaigns_status_check;
+  ALTER TABLE whatsapp_campaigns
+    ADD CONSTRAINT whatsapp_campaigns_status_check
+    CHECK (status IN ('QUEUED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'CANCELLED'));
+  ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
   `
 ];

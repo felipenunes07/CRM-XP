@@ -125,6 +125,9 @@ import {
   getWhatsappCampaignDetail,
   getWhatsappCampaignRecipientChat,
   listWhatsappCampaigns,
+  pauseWhatsappCampaign,
+  resumeWhatsappCampaign,
+  retryAllFailedWhatsappCampaignRecipients,
   retryWhatsappCampaignRecipient,
   skipWhatsappCampaignRecipient,
 } from "./modules/whatsapp/whatsappCampaignService.js";
@@ -2024,6 +2027,25 @@ export function createApp() {
     }
   });
 
+  app.post("/api/whatsapp-campaigns/:id/pause", async (request, response, next) => {
+    try {
+      const campaignId = String(request.params.id);
+      const access = await getWhatsappCampaignAccess(campaignId);
+      if (!access) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para pausar esta campanha.");
+      }
+
+      response.json(await pauseWhatsappCampaign(campaignId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/whatsapp-campaigns/:id/resume", async (request, response, next) => {
     try {
       const campaignId = String(request.params.id);
@@ -2037,9 +2059,33 @@ export function createApp() {
         throw new HttpError(403, "Voce nao tem permissao para retomar esta campanha.");
       }
 
+      // Tira de PAUSED -> IN_PROGRESS e cutuca o dispatcher pra continuar de onde parou.
+      const detail = await resumeWhatsappCampaign(campaignId);
       await resumeDueWhatsappCampaignRecipients(campaignId, 1);
-      const updatedDetail = await getWhatsappCampaignDetail(campaignId, 100, 0, true);
-      response.json(updatedDetail);
+      response.json(detail);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/whatsapp-campaigns/:id/retry-failed", async (request, response, next) => {
+    try {
+      const campaignId = String(request.params.id);
+      const access = await getWhatsappCampaignAccess(campaignId);
+      if (!access) {
+        throw new HttpError(404, "Campanha nao encontrada.");
+      }
+
+      const user = request.user!;
+      if (!["ADMIN", "MANAGER"].includes(user.role) && access.createdByUserId !== user.id) {
+        throw new HttpError(403, "Voce nao tem permissao para alterar esta campanha.");
+      }
+
+      const { retried, detail } = await retryAllFailedWhatsappCampaignRecipients(campaignId);
+      if (retried > 0) {
+        await resumeDueWhatsappCampaignRecipients(campaignId, 1);
+      }
+      response.json({ retried, ...detail });
     } catch (error) {
       next(error);
     }

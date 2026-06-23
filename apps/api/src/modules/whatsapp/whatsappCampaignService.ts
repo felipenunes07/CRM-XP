@@ -1480,6 +1480,113 @@ export async function cancelWhatsappCampaign(campaignId: string) {
   return getWhatsappCampaignDetail(campaignId, 100, 0);
 }
 
+/**
+ * Pausa REAL: para todos os pendentes sem cancelar. O dispatcher só pega
+ * PENDING de campanhas QUEUED/IN_PROGRESS, então PAUSED congela o envio. Os que
+ * já estão SENDING terminam normalmente; os PENDING continuam PENDING pra retomar.
+ */
+export async function pauseWhatsappCampaign(campaignId: string) {
+  const result = await pool.query(
+    `
+      UPDATE whatsapp_campaigns
+      SET status = 'PAUSED', paused_at = NOW(), updated_at = NOW()
+      WHERE id = $1
+        AND cancelled_at IS NULL
+        AND status IN ('QUEUED', 'IN_PROGRESS')
+      RETURNING id
+    `,
+    [campaignId],
+  );
+  if (!result.rows[0]) {
+    throw new HttpError(400, "So da pra pausar campanhas em andamento ou na fila.");
+  }
+  return getWhatsappCampaignDetail(campaignId, 100, 0);
+}
+
+/**
+ * Retoma de onde parou: PAUSED -> IN_PROGRESS e cutuca o dispatcher. Os PENDING
+ * que sobraram voltam a ser enviados, sem reenviar quem já recebeu.
+ */
+export async function resumeWhatsappCampaign(campaignId: string) {
+  await pool.query(
+    `
+      UPDATE whatsapp_campaigns
+      SET
+        status = 'IN_PROGRESS',
+        paused_at = NULL,
+        started_at = COALESCE(started_at, NOW()),
+        updated_at = NOW()
+      WHERE id = $1
+        AND cancelled_at IS NULL
+        AND status = 'PAUSED'
+    `,
+    [campaignId],
+  );
+  await refreshWhatsappCampaignStatus(campaignId);
+  return getWhatsappCampaignDetail(campaignId, 100, 0);
+}
+
+/**
+ * Retenta TODOS os destinatários que falharam de uma vez: volta FAILED -> PENDING
+ * (limpa erro), reativa a campanha (estava COMPLETED/PAUSED) e cutuca o dispatcher.
+ */
+export async function retryAllFailedWhatsappCampaignRecipients(campaignId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const camp = await client.query(
+      `SELECT id, cancelled_at FROM whatsapp_campaigns WHERE id = $1 FOR UPDATE`,
+      [campaignId],
+    );
+    if (!camp.rows[0]) {
+      throw new HttpError(404, "Campanha nao encontrada.");
+    }
+    if (camp.rows[0].cancelled_at) {
+      throw new HttpError(400, "Campanha cancelada nao pode ser retentada.");
+    }
+
+    const reset = await client.query(
+      `
+        UPDATE whatsapp_campaign_recipients
+        SET
+          status = 'PENDING',
+          failed_at = NULL,
+          last_error = NULL,
+          provider_status = NULL,
+          scheduled_for = NOW(),
+          updated_at = NOW()
+        WHERE campaign_id = $1
+          AND status = 'FAILED'
+        RETURNING id
+      `,
+      [campaignId],
+    );
+
+    const retried = reset.rowCount ?? 0;
+    if (retried > 0) {
+      await client.query(
+        `
+          UPDATE whatsapp_campaigns
+          SET status = 'IN_PROGRESS', paused_at = NULL, finished_at = NULL,
+              started_at = COALESCE(started_at, NOW()), updated_at = NOW()
+          WHERE id = $1 AND cancelled_at IS NULL
+        `,
+        [campaignId],
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return { retried, detail: await getWhatsappCampaignDetail(campaignId, 100, 0) };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function skipWhatsappCampaignRecipient(campaignId: string, recipientId: string) {
   const result = await pool.query(
     `
@@ -2278,6 +2385,11 @@ export async function refreshWhatsappCampaignStatus(campaignId: string) {
     } else if (pendingCount === 0 && sendingCount === 0 && totalRecipients > 0) {
       nextStatus = "COMPLETED";
       finishedAtSql = "COALESCE(finished_at, NOW())";
+    } else if (campaign.status === "PAUSED") {
+      // Pausa manual: mantém PAUSED enquanto houver pendentes/em envio, mesmo quando
+      // um destinatário em SENDING termina e dispara este recálculo. Só Retomar/
+      // Retentar tiram de PAUSED (setando IN_PROGRESS explicitamente).
+      nextStatus = "PAUSED";
     } else if (processedCount > 0 || sendingCount > 0) {
       nextStatus = "IN_PROGRESS";
     } else {
