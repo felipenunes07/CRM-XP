@@ -127,6 +127,80 @@ export function OffboardingPage() {
 
   return (
     <div className="page-stack">
+      <style>{`
+        .page-filter-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          min-height: 34px;
+          padding: 0 0.85rem;
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          border-radius: 8px;
+          background: #ffffff;
+          color: #475569;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.15s ease-in-out;
+        }
+        .page-filter-chip:hover {
+          background: #f8fafc;
+          border-color: rgba(0, 0, 0, 0.15);
+          color: #0f172a;
+        }
+        .page-filter-chip.active {
+          background: #0f172a;
+          border-color: #0f172a;
+          color: #ffffff;
+          font-weight: 700;
+        }
+        
+        .page-btn-primary {
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
+          color: #ffffff;
+          border: 0;
+          border-radius: 999px;
+          padding: 0.65rem 1.25rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.55rem;
+          cursor: pointer;
+          font-weight: 700;
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+          transition: all 0.16s ease;
+        }
+        .page-btn-primary:hover:not(:disabled) {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+        }
+        .page-btn-primary:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+          background: #cbd5e1;
+          color: #64748b;
+          box-shadow: none;
+        }
+        
+        .page-btn-secondary {
+          background: #ffffff;
+          color: #475569;
+          border: 1px solid rgba(0, 0, 0, 0.08);
+          border-radius: 999px;
+          padding: 0.65rem 1.25rem;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.55rem;
+          cursor: pointer;
+          font-weight: 700;
+          transition: all 0.16s ease;
+        }
+        .page-btn-secondary:hover:not(:disabled) {
+          background: #f8fafc;
+          border-color: rgba(0, 0, 0, 0.15);
+          color: #0f172a;
+          transform: translateY(-1px);
+        }
+      `}</style>
       {toast ? (
         <div className="panel" style={{ background: "#0f172a", color: "white", padding: "0.85rem 1.25rem" }}>
           {toast}
@@ -172,12 +246,12 @@ export function OffboardingPage() {
               você mesmo para o grupo.
             </p>
           </div>
-          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", alignItems: "center" }}>
             {WINDOW_OPTIONS.map((opt) => (
               <button
                 key={String(opt.value)}
                 type="button"
-                className={`filter-chip ${window === opt.value ? "active" : ""}`}
+                className={`page-filter-chip ${window === opt.value ? "active" : ""}`}
                 onClick={() => {
                   setWindow(opt.value);
                   setSelected(new Set());
