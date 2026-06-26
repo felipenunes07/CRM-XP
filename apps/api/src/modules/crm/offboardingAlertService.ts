@@ -1,0 +1,500 @@
+/**
+ * Alerta diario de "Saida da Base".
+ *
+ * Todo dia de manha detecta quais clientes VIRARAM INATIVOS desde ontem — ou
+ * seja, cruzaram 90 dias sem comprar (de ATENCAO/ATIVO para INATIVO) — e avisa
+ * num grupo de WhatsApp: uma mensagem de cabecalho seguida de uma mensagem por
+ * cliente, com a media de pecas/mes que ele comprava enquanto estava ativo.
+ *
+ * Reaproveita exatamente a mesma logica de transicao de status da pagina
+ * "Movimentacao da Base" (getCustomerMovements): o status e calculado ao vivo a
+ * partir de orders em dois instantes (ontem x hoje), entao nao precisa de tabela
+ * de historico e cada cliente aparece uma unica vez, no dia em que cruzou.
+ */
+import { pool } from "../../db/client.js";
+import { logger } from "../../lib/logger.js";
+import { env } from "../../lib/env.js";
+import { sendWhatsappTextMessage } from "../whatsapp/evolutionService.js";
+
+const OFFBOARDING_CURSOR_KEY = "offboarding_alert_date";
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
+const SEND_DELAY_MS = 1500; // respiro entre mensagens para nao tomar rate-limit
+
+export interface NewlyInactiveCustomer {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number;
+  avgPiecesPerMonth: number;
+  totalOrders: number;
+}
+
+/**
+ * Nivel de urgencia pela media de telas/mes que o cliente comprava: quanto mais
+ * volume ele movia, mais critico e perde-lo. Faixas definidas pelo Felipe.
+ */
+export function urgencyLevel(avgPiecesPerMonth: number): string {
+  if (avgPiecesPerMonth > 300) return "🔴 URGÊNCIA CRÍTICA";
+  if (avgPiecesPerMonth > 100) return "🟠 URGÊNCIA ALTA";
+  if (avgPiecesPerMonth > 50) return "🟡 URGÊNCIA MÉDIA";
+  return "⚪ URGÊNCIA BAIXA";
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatBrDate(isoDate: string | null): string {
+  if (!isoDate) return "—";
+  const [year, month, day] = isoDate.slice(0, 10).split("-");
+  if (!year || !month || !day) return "—";
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Clientes que cruzaram de ATIVO/ATENCAO para INATIVO entre ontem (t1) e hoje
+ * (t2), com a media de pecas/mes (total de pecas / meses entre 1a e ultima
+ * compra). Mesma regra de status da Movimentacao da Base.
+ */
+export async function findNewlyInactiveCustomers(): Promise<NewlyInactiveCustomer[]> {
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1 AS t1,
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS t2
+      ),
+      last_orders AS (
+        SELECT
+          o.customer_id,
+          MAX(CASE WHEN o.order_date::date <= p.t1 THEN o.order_date::date END) AS last_order_t1,
+          MAX(o.order_date::date) AS last_order_t2
+        FROM orders o
+        CROSS JOIN params p
+        WHERE o.order_date::date <= p.t2
+        GROUP BY o.customer_id
+      ),
+      statuses AS (
+        SELECT
+          c.id AS customer_id,
+          c.customer_code,
+          c.display_name,
+          lo.last_order_t2 AS last_purchase_at,
+          CASE
+            WHEN lo.last_order_t1 IS NULL THEN 'NEW'
+            WHEN p.t1 - lo.last_order_t1 <= 30 THEN 'ACTIVE'
+            WHEN p.t1 - lo.last_order_t1 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t1,
+          CASE
+            WHEN lo.last_order_t2 IS NULL THEN 'INACTIVE'
+            WHEN p.t2 - lo.last_order_t2 <= 30 THEN 'ACTIVE'
+            WHEN p.t2 - lo.last_order_t2 BETWEEN 31 AND 89 THEN 'ATTENTION'
+            ELSE 'INACTIVE'
+          END::text AS status_t2,
+          COALESCE(p.t2 - lo.last_order_t2, 999) AS days_since_last_purchase
+        FROM customers c
+        LEFT JOIN last_orders lo ON c.id = lo.customer_id
+        CROSS JOIN params p
+      ),
+      newly_inactive AS (
+        SELECT *
+        FROM statuses
+        WHERE status_t2 = 'INACTIVE' AND status_t1 <> 'INACTIVE'
+      ),
+      pieces AS (
+        SELECT
+          o.customer_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric AS total_pieces,
+          COUNT(DISTINCT o.id) AS total_orders,
+          MIN(o.order_date::date) AS first_order,
+          MAX(o.order_date::date) AS last_order
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.customer_id IN (SELECT customer_id FROM newly_inactive)
+        GROUP BY o.customer_id
+      )
+      SELECT
+        ni.customer_id,
+        ni.customer_code,
+        ni.display_name,
+        ni.last_purchase_at::text AS last_purchase_at,
+        ni.days_since_last_purchase,
+        COALESCE(pc.total_pieces, 0) AS total_pieces,
+        COALESCE(pc.total_orders, 0) AS total_orders,
+        GREATEST(1, ROUND(COALESCE((pc.last_order - pc.first_order), 0) / 30.0)) AS months_active
+      FROM newly_inactive ni
+      LEFT JOIN pieces pc ON pc.customer_id = ni.customer_id
+      ORDER BY ni.display_name
+    `,
+  );
+
+  return result.rows.map(mapEnrichedRow);
+}
+
+function mapEnrichedRow(row: Record<string, unknown>): NewlyInactiveCustomer {
+  const totalPieces = Number(row.total_pieces ?? 0);
+  const monthsActive = Math.max(1, Number(row.months_active ?? 1));
+  return {
+    customerId: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name ?? "Cliente"),
+    lastPurchaseAt: row.last_purchase_at ? String(row.last_purchase_at) : null,
+    daysSinceLastPurchase: Number(row.days_since_last_purchase ?? 0),
+    avgPiecesPerMonth: Math.round(totalPieces / monthsActive),
+    totalOrders: Number(row.total_orders ?? 0),
+  };
+}
+
+/**
+ * Clientes que JA estao inativos hoje (90+ dias sem comprar). Se withinDays for
+ * informado, limita a quem virou inativo nessa janela (ex.: 30 = entrou nos
+ * ultimos 30 dias); null = todo o backlog. Enriquecido com telas/mes e historico.
+ */
+export async function findInactiveBacklog(withinDays: number | null): Promise<NewlyInactiveCustomer[]> {
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
+      ),
+      last_orders AS (
+        SELECT customer_id, MAX(order_date::date) AS last_order
+        FROM orders
+        GROUP BY customer_id
+      ),
+      target AS (
+        SELECT
+          c.id, c.customer_code, c.display_name,
+          lo.last_order,
+          (p.today - lo.last_order) AS days_since
+        FROM customers c
+        JOIN last_orders lo ON lo.customer_id = c.id
+        CROSS JOIN params p
+        WHERE lo.last_order IS NOT NULL
+          AND (p.today - lo.last_order) >= 90
+          AND ($1::int IS NULL OR (p.today - lo.last_order) - 90 <= $1::int)
+      ),
+      pieces AS (
+        SELECT
+          o.customer_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric AS total_pieces,
+          COUNT(DISTINCT o.id) AS total_orders,
+          MIN(o.order_date::date) AS first_order,
+          MAX(o.order_date::date) AS last_order
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.customer_id IN (SELECT id FROM target)
+        GROUP BY o.customer_id
+      )
+      SELECT
+        t.id AS customer_id,
+        t.customer_code,
+        t.display_name,
+        t.last_order::text AS last_purchase_at,
+        t.days_since AS days_since_last_purchase,
+        COALESCE(pc.total_pieces, 0) AS total_pieces,
+        COALESCE(pc.total_orders, 0) AS total_orders,
+        GREATEST(1, ROUND(COALESCE((pc.last_order - pc.first_order), 0) / 30.0)) AS months_active
+      FROM target t
+      LEFT JOIN pieces pc ON pc.customer_id = t.id
+      ORDER BY t.days_since ASC, t.display_name
+    `,
+    [withinDays],
+  );
+
+  return result.rows.map(mapEnrichedRow);
+}
+
+/**
+ * Clientes que VAO virar inativos em `offsetDays` dias — ou seja, o que o
+ * automatico vai disparar no proximo(s) ciclo(s). Para offsetDays=1 mostra
+ * exatamente o lote programado para amanha (quem hoje esta com 89 dias).
+ */
+export async function findUpcomingInactive(offsetDays: number): Promise<NewlyInactiveCustomer[]> {
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
+      ),
+      last_orders AS (
+        SELECT customer_id, MAX(order_date::date) AS last_order
+        FROM orders
+        GROUP BY customer_id
+      ),
+      target AS (
+        SELECT
+          c.id, c.customer_code, c.display_name,
+          lo.last_order,
+          (p.today - lo.last_order) AS days_since
+        FROM customers c
+        JOIN last_orders lo ON lo.customer_id = c.id
+        CROSS JOIN params p
+        WHERE lo.last_order IS NOT NULL
+          AND (p.today - lo.last_order) BETWEEN (90 - $1::int) AND 89
+      ),
+      pieces AS (
+        SELECT
+          o.customer_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric AS total_pieces,
+          COUNT(DISTINCT o.id) AS total_orders,
+          MIN(o.order_date::date) AS first_order,
+          MAX(o.order_date::date) AS last_order
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.customer_id IN (SELECT id FROM target)
+        GROUP BY o.customer_id
+      )
+      SELECT
+        t.id AS customer_id,
+        t.customer_code,
+        t.display_name,
+        t.last_order::text AS last_purchase_at,
+        t.days_since AS days_since_last_purchase,
+        COALESCE(pc.total_pieces, 0) AS total_pieces,
+        COALESCE(pc.total_orders, 0) AS total_orders,
+        GREATEST(1, ROUND(COALESCE((pc.last_order - pc.first_order), 0) / 30.0)) AS months_active
+      FROM target t
+      LEFT JOIN pieces pc ON pc.customer_id = t.id
+      ORDER BY t.days_since DESC, t.display_name
+    `,
+    [Math.max(1, offsetDays)],
+  );
+
+  return result.rows.map(mapEnrichedRow);
+}
+
+/** Enriquece um conjunto especifico de clientes (por id), para envio manual. */
+async function enrichCustomersByIds(customerIds: string[]): Promise<NewlyInactiveCustomer[]> {
+  if (customerIds.length === 0) return [];
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
+      ),
+      pieces AS (
+        SELECT
+          o.customer_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric AS total_pieces,
+          COUNT(DISTINCT o.id) AS total_orders,
+          MIN(o.order_date::date) AS first_order,
+          MAX(o.order_date::date) AS last_order
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.customer_id = ANY($1::uuid[])
+        GROUP BY o.customer_id
+      )
+      SELECT
+        c.id AS customer_id,
+        c.customer_code,
+        c.display_name,
+        pc.last_order::text AS last_purchase_at,
+        COALESCE(p.today - pc.last_order, 999) AS days_since_last_purchase,
+        COALESCE(pc.total_pieces, 0) AS total_pieces,
+        COALESCE(pc.total_orders, 0) AS total_orders,
+        GREATEST(1, ROUND(COALESCE((pc.last_order - pc.first_order), 0) / 30.0)) AS months_active
+      FROM customers c
+      LEFT JOIN pieces pc ON pc.customer_id = c.id
+      CROSS JOIN params p
+      WHERE c.id = ANY($1::uuid[])
+      ORDER BY c.display_name
+    `,
+    [customerIds],
+  );
+
+  return result.rows.map(mapEnrichedRow);
+}
+
+/**
+ * Envio MANUAL pela interface: dispara o cabecalho + uma mensagem por cliente
+ * selecionado para o grupo. Diferente do automatico, nao depende da flag
+ * OFFBOARDING_ALERT_ENABLED (o usuario clicou de proposito) — so exige o grupo
+ * configurado e a Evolution ativa.
+ */
+export async function sendOffboardingForCustomers(customerIds: string[]): Promise<{
+  customers: NewlyInactiveCustomer[];
+  messages: string[];
+  sent: boolean;
+}> {
+  const customers = await enrichCustomersByIds(customerIds);
+  if (customers.length === 0) {
+    return { customers, messages: [], sent: false };
+  }
+
+  const messages = [
+    buildHeaderMessage(customers.length),
+    ...customers.map((customer) => buildCustomerMessage(customer)),
+  ];
+
+  const groupJid = env.OFFBOARDING_ALERT_GROUP_JID.trim();
+  if (!groupJid) {
+    throw new Error("Grupo de destino nao configurado (OFFBOARDING_ALERT_GROUP_JID).");
+  }
+
+  for (let i = 0; i < messages.length; i += 1) {
+    await sendWhatsappTextMessage(groupJid, messages[i]!);
+    if (i < messages.length - 1) {
+      await sleep(SEND_DELAY_MS);
+    }
+  }
+
+  logger.info("offboarding manual enviado", { customers: customers.length, groupJid });
+  return { customers, messages, sent: true };
+}
+
+/** Mensagem de cabecalho, enviada uma vez quando ha ao menos um cliente. */
+export function buildHeaderMessage(count: number, today = new Date()): string {
+  const dateLabel = today.toLocaleDateString("pt-BR", { timeZone: env.OFFBOARDING_ALERT_TIMEZONE });
+  const plural = count === 1 ? "cliente cruzou" : "clientes cruzaram";
+  return (
+    `🚨 ALERTA DE INATIVAÇÃO • ${dateLabel}\n\n` +
+    `Os clientes abaixo passaram de 90 dias sem comprar e\n` +
+    `acabaram de entrar como INATIVOS:\n\n` +
+    `Total: ${count} ${plural} 90 dias sem pedido.\n\n` +
+    `Vale uma tentativa de reativação. 👀`
+  );
+}
+
+/** Mensagem individual de um cliente, com nivel de urgencia e historico. */
+export function buildCustomerMessage(customer: NewlyInactiveCustomer): string {
+  const codeLabel = customer.customerCode ? ` (cód. ${customer.customerCode})` : "";
+  const ordersLabel = customer.totalOrders === 1 ? "1 compra" : `${customer.totalOrders} compras`;
+  return (
+    `${urgencyLevel(customer.avgPiecesPerMonth)}\n` +
+    `👤 ${customer.displayName}${codeLabel}\n` +
+    `🛒 Última compra: ${formatBrDate(customer.lastPurchaseAt)} — ${customer.daysSinceLastPurchase} dias parado\n` +
+    `📦 Comprava em média ~${customer.avgPiecesPerMonth} telas/mês\n` +
+    `🤝 ${ordersLabel} no histórico`
+  );
+}
+
+/**
+ * Roda a deteccao e (se habilitado) envia para o grupo. Com dryRun=true apenas
+ * retorna as mensagens que SERIAM enviadas, sem tocar no WhatsApp — util para
+ * testar o texto antes de ligar o disparo real.
+ */
+export async function runOffboardingAlert(options: { dryRun?: boolean } = {}): Promise<{
+  customers: NewlyInactiveCustomer[];
+  messages: string[];
+  sent: boolean;
+}> {
+  const customers = await findNewlyInactiveCustomers();
+
+  if (customers.length === 0) {
+    logger.info("offboarding alert: nenhum cliente virou inativo hoje");
+    return { customers, messages: [], sent: false };
+  }
+
+  const messages = [
+    buildHeaderMessage(customers.length),
+    ...customers.map((customer) => buildCustomerMessage(customer)),
+  ];
+
+  const groupJid = env.OFFBOARDING_ALERT_GROUP_JID.trim();
+  const shouldSend = !options.dryRun && env.OFFBOARDING_ALERT_ENABLED && Boolean(groupJid);
+
+  if (!shouldSend) {
+    logger.info("offboarding alert: modo somente-leitura (sem envio)", {
+      customers: customers.length,
+      enabled: env.OFFBOARDING_ALERT_ENABLED,
+      hasGroup: Boolean(groupJid),
+      dryRun: Boolean(options.dryRun),
+    });
+    return { customers, messages, sent: false };
+  }
+
+  for (let i = 0; i < messages.length; i += 1) {
+    await sendWhatsappTextMessage(groupJid, messages[i]!);
+    if (i < messages.length - 1) {
+      await sleep(SEND_DELAY_MS);
+    }
+  }
+
+  logger.info("offboarding alert enviado", { customers: customers.length, groupJid });
+  return { customers, messages, sent: true };
+}
+
+function getLocalParts(timeZone: string, date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour ?? "0"),
+  };
+}
+
+async function getCursor(key: string) {
+  const result = await pool.query("SELECT cursor_value FROM sync_cursors WHERE key = $1", [key]);
+  return (result.rows[0]?.cursor_value as string | undefined) ?? null;
+}
+
+async function setCursor(key: string, value: string) {
+  await pool.query(
+    `
+      INSERT INTO sync_cursors (key, cursor_value, updated_at)
+      VALUES ($1, $2, NOW())
+      ON CONFLICT (key) DO UPDATE
+      SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
+    `,
+    [key, value],
+  );
+}
+
+export function startDailyOffboardingScheduler() {
+  if (!env.OFFBOARDING_ALERT_ENABLED) {
+    logger.info("offboarding alert scheduler disabled");
+    return {
+      async close() {
+        return;
+      },
+    };
+  }
+
+  const timeZone = env.OFFBOARDING_ALERT_TIMEZONE;
+
+  const check = async () => {
+    try {
+      const now = getLocalParts(timeZone);
+      if (now.hour !== env.OFFBOARDING_ALERT_HOUR) {
+        return;
+      }
+      const lastRun = await getCursor(OFFBOARDING_CURSOR_KEY);
+      if (lastRun === now.dateKey) {
+        return; // ja rodou hoje
+      }
+
+      logger.info("offboarding alert started", { dateKey: now.dateKey });
+      const result = await runOffboardingAlert();
+      await setCursor(OFFBOARDING_CURSOR_KEY, now.dateKey);
+      logger.info("offboarding alert completed", {
+        dateKey: now.dateKey,
+        customers: result.customers.length,
+        sent: result.sent,
+      });
+    } catch (error) {
+      logger.error("offboarding alert failed", { error: String(error) });
+    }
+  };
+
+  const interval = setInterval(check, CHECK_INTERVAL_MS);
+  void check();
+
+  logger.info("offboarding alert scheduler initialized", {
+    hour: env.OFFBOARDING_ALERT_HOUR,
+    timezone: timeZone,
+    hasGroup: Boolean(env.OFFBOARDING_ALERT_GROUP_JID.trim()),
+  });
+
+  return {
+    async close() {
+      clearInterval(interval);
+    },
+  };
+}

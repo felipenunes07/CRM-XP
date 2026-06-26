@@ -86,7 +86,7 @@ function permissionForPath(path: string) {
   if (path === "/clientes/financeiro") return "finance.view";
   if (path === "/automacoes") return "automations.view";
   if (path === "/mensagens" || path === "/eventos") return "messages.view";
-  if (path === "/disparador") return "messages.manage";
+  if (path === "/disparador" || path === "/templates" || path === "/saida-base") return "messages.manage";
   if (path === "/metas") return "finance.manage";
   if (
     path === "/atividade-whatsapp" ||
@@ -114,7 +114,6 @@ const sidebarMenu: SidebarEntry[] = [
     icon: Users,
     children: [
       { to: "/clientes", labelPt: "Todos os Clientes" },
-      { to: "/clientes/financeiro", labelPt: "Financeiro" },
       { to: "/clientes-novos", labelPt: "Clientes Novos" },
       { to: "/reativacao", labelPt: "Reativação" },
       { to: "/embaixadores", labelPt: "Embaixadores" },
@@ -126,6 +125,8 @@ const sidebarMenu: SidebarEntry[] = [
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
       { to: "/eventos", labelPt: "Inteligencia / Eventos" },
+      { to: "/templates", labelPt: "Templates" },
+      { to: "/saida-base", labelPt: "Saída da Base" },
       { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
     ],

@@ -193,6 +193,17 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  // Alerta diario de "Saida da Base": detecta quem virou INATIVO (cruzou 90 dias
+  // sem comprar) desde ontem e avisa num grupo de WhatsApp, uma mensagem por
+  // cliente. Desligado por padrao para nao disparar no grupo sem querer — ligue
+  // OFFBOARDING_ALERT_ENABLED=true e defina OFFBOARDING_ALERT_GROUP_JID.
+  OFFBOARDING_ALERT_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  OFFBOARDING_ALERT_GROUP_JID: z.string().default("120363425564890886@g.us"),
+  OFFBOARDING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(8),
+  OFFBOARDING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
 });
 
 export const env = envSchema.parse(process.env);

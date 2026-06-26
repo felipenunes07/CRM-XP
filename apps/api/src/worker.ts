@@ -14,12 +14,14 @@ import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActiv
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
 import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
+import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
 
 async function main() {
   await bootstrapPlatform();
   const worker = startWorkerProcessing();
   const whatsappWorker = startWhatsappDispatchWorker();
   const automationScheduler = startMessageAutomationScheduler();
+  const offboardingScheduler = startDailyOffboardingScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
   const recurringJobs: RecurringJobHandle[] = [];
@@ -196,6 +198,7 @@ async function main() {
     intervals.forEach(clearInterval);
     await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
+    await offboardingScheduler.close();
     await worker.close();
     await whatsappWorker.close();
     await redis.quit();

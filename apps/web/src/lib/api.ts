@@ -125,6 +125,16 @@ export interface UserPermissionOverride {
   allowed: boolean;
 }
 
+export interface OffboardingCustomer {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number;
+  avgPiecesPerMonth: number;
+  totalOrders: number;
+}
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -569,6 +579,28 @@ export const api = {
     return request<void>(`/api/messages/templates/${id}`, {
       method: "DELETE",
     }, token);
+  },
+  offboardingUpcoming(token: string, days = 1) {
+    return request<{ days: number; customers: OffboardingCustomer[] }>(
+      `/api/offboarding-alert/upcoming?days=${days}`,
+      {},
+      token,
+    );
+  },
+  offboardingBacklog(token: string, withinDays: number | "all") {
+    const qs = withinDays === "all" ? "all" : String(withinDays);
+    return request<{ withinDays: number | null; customers: OffboardingCustomer[] }>(
+      `/api/offboarding-alert/backlog?withinDays=${qs}`,
+      {},
+      token,
+    );
+  },
+  offboardingSend(token: string, customerIds: string[]) {
+    return request<{ customers: OffboardingCustomer[]; messages: string[]; sent: boolean }>(
+      "/api/offboarding-alert/send",
+      { method: "POST", body: JSON.stringify({ customerIds }) },
+      token,
+    );
   },
   sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; menuData?: WhatsappMenuData; videoUrl?: string; whatsappInstanceId?: string }) {
     return request<{ success: boolean; result: any }>("/api/messages/test", {

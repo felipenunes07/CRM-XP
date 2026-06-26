@@ -67,6 +67,12 @@ import {
   updateMessageTemplate,
 } from "./modules/crm/messageService.js";
 import {
+  runOffboardingAlert,
+  findInactiveBacklog,
+  findUpcomingInactive,
+  sendOffboardingForCustomers,
+} from "./modules/crm/offboardingAlertService.js";
+import {
   createIdea,
   deleteIdea,
   getIdeaDetail,
@@ -1408,6 +1414,58 @@ export function createApp() {
     try {
       await deleteMessageTemplate(request.params.id);
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Alerta "Saida da Base": previa de quem virou INATIVO hoje. Por padrao roda em
+  // dry-run (so devolve as mensagens, nao envia). Passe ?send=true para forcar o
+  // envio real ao grupo (respeita OFFBOARDING_ALERT_ENABLED + group jid).
+  app.get("/api/offboarding-alert/preview", async (request, response, next) => {
+    try {
+      const dryRun = request.query.send !== "true";
+      const result = await runOffboardingAlert({ dryRun });
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Lote programado para os proximos dias (o que o automatico vai disparar).
+  // ?days=1 (default) = quem vira inativo amanha.
+  app.get("/api/offboarding-alert/upcoming", async (request, response, next) => {
+    try {
+      const days = Math.max(1, Math.min(30, Number(request.query.days ?? 1) || 1));
+      const customers = await findUpcomingInactive(days);
+      response.json({ days, customers });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Backlog de quem JA esta inativo. ?withinDays=30 limita a quem entrou nos
+  // ultimos N dias; omitir (ou ?withinDays=all) traz todo o backlog.
+  app.get("/api/offboarding-alert/backlog", async (request, response, next) => {
+    try {
+      const raw = request.query.withinDays;
+      const withinDays = raw === undefined || raw === "all" || raw === "" ? null : Math.max(0, Number(raw) || 0);
+      const customers = await findInactiveBacklog(withinDays);
+      response.json({ withinDays, customers });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Envio MANUAL dos clientes selecionados pela interface.
+  app.post("/api/offboarding-alert/send", async (request, response, next) => {
+    try {
+      const ids = request.body?.customerIds;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.some((id) => typeof id !== "string")) {
+        throw new HttpError(400, "Informe customerIds (array de IDs de cliente).");
+      }
+      const result = await sendOffboardingForCustomers(ids);
+      response.json(result);
     } catch (error) {
       next(error);
     }

@@ -28,6 +28,8 @@ const MovementsPage = lazy(async () => ({ default: (await import("./pages/Moveme
 const LabelsPage = lazy(async () => ({ default: (await import("./pages/LabelsPage")).LabelsPage }));
 const ProspectingPage = lazy(async () => ({ default: (await import("./pages/ProspectingPage")).ProspectingPage }));
 const DisparadorPage = lazy(async () => ({ default: (await import("./pages/DisparadorPage")).DisparadorPage }));
+const TemplatesPage = lazy(async () => ({ default: (await import("./pages/TemplatesPage")).TemplatesPage }));
+const OffboardingPage = lazy(async () => ({ default: (await import("./pages/OffboardingPage")).OffboardingPage }));
 const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage")).MetasPage }));
 const PipelinePage = lazy(async () => ({ default: (await import("./pages/PipelinePage")).PipelinePage }));
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
@@ -80,6 +82,8 @@ export default function App() {
             <Route path="/atividade-whatsapp" element={<PermissionElement permission="reports.view"><WhatsappActivityPage /></PermissionElement>} />
             <Route path="/movimentacao" element={<PermissionElement permission="reports.view"><MovementsPage /></PermissionElement>} />
             <Route path="/disparador" element={<PermissionElement permission="messages.manage"><DisparadorPage /></PermissionElement>} />
+            <Route path="/templates" element={<PermissionElement permission="messages.manage"><TemplatesPage /></PermissionElement>} />
+            <Route path="/saida-base" element={<PermissionElement permission="messages.manage"><OffboardingPage /></PermissionElement>} />
             <Route path="/rotulos" element={<PermissionElement permission="commercial.manage"><LabelsPage /></PermissionElement>} />
             <Route path="/prospeccao" element={<PermissionElement permission="commercial.view"><ProspectingPage /></PermissionElement>} />
             <Route path="/metas" element={<PermissionElement permission="finance.manage"><MetasPage /></PermissionElement>} />
