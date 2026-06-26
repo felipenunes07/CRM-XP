@@ -4,7 +4,6 @@ import { logger } from "../../lib/logger.js";
 import { sendUazapiTextMessage } from "./uazapiService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } from "./evolutionService.js";
 import { applyWhatsappMessagePlaceholders } from "./whatsappCore.js";
-import { WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS } from "./whatsappCampaignService.js";
 
 /**
  * Resposta automática de campanha: quando um cliente responde a um disparo
@@ -15,6 +14,12 @@ import { WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS } from "./whatsappCampaignSer
  * O envio único por destinatário é garantido pelo claim atômico de
  * `auto_reply_sent_at` (UPDATE ... WHERE auto_reply_sent_at IS NULL).
  */
+
+// Janela da resposta automática: só dispara se o cliente responder até 24h após
+// o disparo. É PROPOSITALMENTE separada da janela de atribuição/analytics (7
+// dias) — sem isto, um cliente que fala algo NÃO relacionado 3 dias depois
+// recebia a resposta automática. Mudou aqui? Atualize também diagnoseNoClaim.
+const WHATSAPP_AUTO_REPLY_WINDOW_HOURS = 24;
 
 interface AutoReplyClaim {
   recipientId: string;
@@ -39,7 +44,7 @@ async function claimAutoReplyRecipient(remoteJid: string): Promise<AutoReplyClai
         JOIN whatsapp_campaigns wc ON wc.id = r.campaign_id
         WHERE r.status = 'SENT'
           AND r.sent_at IS NOT NULL
-          AND r.sent_at >= NOW() - ($2::int * INTERVAL '1 day')
+          AND r.sent_at >= NOW() - ($2::int * INTERVAL '1 hour')
           AND r.auto_reply_sent_at IS NULL
           AND COALESCE(TRIM(wc.auto_reply_text), '') <> ''
           AND wc.status <> 'CANCELLED'
@@ -102,7 +107,7 @@ async function claimAutoReplyRecipient(remoteJid: string): Promise<AutoReplyClai
         wc.created_by_name,
         wc.whatsapp_instance_id
     `,
-    [remoteJid, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+    [remoteJid, WHATSAPP_AUTO_REPLY_WINDOW_HOURS],
   );
 
   const row = result.rows[0];
@@ -142,7 +147,7 @@ async function diagnoseNoClaim(remoteJid: string) {
           r.status,
           r.sent_at,
           r.auto_reply_sent_at,
-          (r.sent_at IS NOT NULL AND r.sent_at >= NOW() - ($2::int * INTERVAL '1 day')) AS within_window,
+          (r.sent_at IS NOT NULL AND r.sent_at >= NOW() - ($2::int * INTERVAL '1 hour')) AS within_window,
           COALESCE(TRIM(wc.auto_reply_text), '') <> '' AS has_auto_reply_text,
           wc.status AS campaign_status
         FROM whatsapp_campaign_recipients r
@@ -155,7 +160,7 @@ async function diagnoseNoClaim(remoteJid: string) {
         ORDER BY r.sent_at DESC NULLS LAST, r.created_at DESC
         LIMIT 1
       `,
-      [remoteJid, WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS],
+      [remoteJid, WHATSAPP_AUTO_REPLY_WINDOW_HOURS],
     );
 
     const row = result.rows[0];

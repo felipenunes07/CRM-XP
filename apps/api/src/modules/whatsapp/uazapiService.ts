@@ -193,6 +193,17 @@ export async function requestUazapi(
 ): Promise<Record<string, unknown>> {
   const url = `${config.baseUrl.replace(/\/+$/, "")}${path}`;
 
+  // Em TODOS os envios (/send/*) desligamos a marcação de leitura para NÃO dar
+  // "visto"/tique azul nas mensagens do cliente ao disparar ou responder
+  // automaticamente — o financeiro usa esse número e não pode marcar como lida.
+  // São dois flags da uazapi: readchat (marca a conversa como lida) e
+  // readmessages (marca as últimas recebidas como lidas). Vão como default; se
+  // algum body explicitar um deles, o valor do body vence.
+  let finalBody = body;
+  if (body && typeof body === "object" && !Array.isArray(body) && path.startsWith("/send/")) {
+    finalBody = { readchat: false, readmessages: false, ...(body as Record<string, unknown>) };
+  }
+
   logger.info("UazAPI request", { url, method });
 
   const response = await fetch(url, {
@@ -202,7 +213,7 @@ export async function requestUazapi(
       Accept: "application/json",
       token: config.token,
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: finalBody ? JSON.stringify(finalBody) : undefined,
     // 30s era insuficiente para enviar vídeo (o upload do base64 + processamento
     // no provedor passava disso e abortava com "operation was aborted due to timeout").
     signal: AbortSignal.timeout(120000),
