@@ -20942,3 +20942,119 @@ body:has(.whatsapp-monitor-page) .main-content {
   transition: width 0.2s ease;
 }
 
+/* ── Utilitarios usados em Templates / Saida da Base / Automacao de Carteira ── */
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.8rem 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  font-weight: 700;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #ffffff;
+  box-shadow: 0 14px 30px rgba(41, 86, 215, 0.22);
+}
+
+.btn-secondary,
+.btn-danger {
+  background: #ffffff;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+
+.btn-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-primary:hover,
+.btn-secondary:hover,
+.btn-danger:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-danger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-sm {
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 34px;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(41, 86, 215, 0.1);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.input-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+  margin-bottom: 0.35rem;
+}
+
+.input-field {
+  width: 100%;
+}
+
+.panel-row {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel, #ffffff);
+}
+
+.panel-empty {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--muted, #64748b);
+  background: var(--panel, #f8fafc);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+
