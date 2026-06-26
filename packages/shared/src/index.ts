@@ -1092,11 +1092,15 @@ export interface CustomerOpportunityQueueResponse {
   items: CustomerOpportunityQueueItem[];
 }
 
+export type MessageTemplateType = "TEXT" | "IMAGE" | "VIDEO";
+
 export interface MessageTemplate {
   id: string;
   category: "reativacao" | "follow_up" | "promocao" | "credito";
   title: string;
   content: string;
+  messageType: MessageTemplateType;
+  mediaUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -15,7 +15,13 @@ function categoryLabel(value: string) {
   return CATEGORIES.find((c) => c.value === value)?.label ?? value;
 }
 
-const EMPTY_FORM = { category: "follow_up" as MessageTemplate["category"], title: "", content: "" };
+const EMPTY_FORM = {
+  category: "follow_up" as MessageTemplate["category"],
+  title: "",
+  content: "",
+  messageType: "TEXT" as MessageTemplate["messageType"],
+  mediaUrl: null as string | null,
+};
 
 export function TemplatesPage() {
   const { token } = useAuth();
@@ -58,9 +64,13 @@ export function TemplatesPage() {
     },
   });
 
+  const needsMedia = form.messageType !== "TEXT";
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!form.title.trim() || !form.content.trim()) return;
+    if (!form.title.trim()) return;
+    if (needsMedia && !form.mediaUrl?.trim()) return;
+    if (!needsMedia && !form.content.trim()) return;
     if (editingId) {
       updateMutation.mutate({ id: editingId, input: form });
     } else {
@@ -70,7 +80,13 @@ export function TemplatesPage() {
 
   function startEdit(template: MessageTemplate) {
     setEditingId(template.id);
-    setForm({ category: template.category, title: template.title, content: template.content });
+    setForm({
+      category: template.category,
+      title: template.title,
+      content: template.content,
+      messageType: template.messageType,
+      mediaUrl: template.mediaUrl,
+    });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -122,16 +138,50 @@ export function TemplatesPage() {
           </div>
 
           <div>
+            <label className="input-label">Tipo de mensagem</label>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              {(["TEXT", "IMAGE", "VIDEO"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  className={`filter-chip ${form.messageType === t ? "active" : ""}`}
+                  onClick={() => setForm((prev) => ({ ...prev, messageType: t }))}
+                >
+                  {t === "TEXT" ? "Texto" : t === "IMAGE" ? "Imagem" : "Vídeo"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {needsMedia ? (
+            <div>
+              <label className="input-label">
+                URL da {form.messageType === "IMAGE" ? "imagem" : "vídeo"}
+                <span style={{ marginLeft: "0.5rem", fontWeight: 400, opacity: 0.6, fontSize: "0.8rem" }}>
+                  link público (https://...)
+                </span>
+              </label>
+              <input
+                className="input-field"
+                type="text"
+                placeholder="https://..."
+                value={form.mediaUrl ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, mediaUrl: e.target.value || null }))}
+              />
+            </div>
+          ) : null}
+
+          <div>
             <label className="input-label">
-              Mensagem
+              {needsMedia ? "Legenda (opcional)" : "Mensagem"}
               <span style={{ marginLeft: "0.5rem", fontWeight: 400, opacity: 0.6, fontSize: "0.8rem" }}>
                 Use /titulo para acionar no chat de mensagens
               </span>
             </label>
             <textarea
               className="input-field"
-              rows={5}
-              placeholder="Digite a mensagem pronta..."
+              rows={needsMedia ? 3 : 5}
+              placeholder={needsMedia ? "Texto que acompanha a mídia..." : "Digite a mensagem pronta..."}
               value={form.content}
               onChange={(e) => setForm((prev) => ({ ...prev, content: e.target.value }))}
               style={{ resize: "vertical" }}
@@ -139,7 +189,11 @@ export function TemplatesPage() {
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button type="submit" className="btn-primary" disabled={isSaving || !form.title.trim() || !form.content.trim()}>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={isSaving || !form.title.trim() || (needsMedia ? !form.mediaUrl?.trim() : !form.content.trim())}
+            >
               {isSaving ? "Salvando..." : editingId ? "Salvar alterações" : "Salvar template"}
             </button>
             {editingId ? (

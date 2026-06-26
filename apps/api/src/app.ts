@@ -73,6 +73,14 @@ import {
   sendOffboardingForCustomers,
 } from "./modules/crm/offboardingAlertService.js";
 import {
+  getLifecycleConfig,
+  setLifecycleConfig,
+  getLifecycleOverview,
+  runLifecycleAutomation,
+  LIFECYCLE_STAGES,
+  type LifecycleStage,
+} from "./modules/crm/lifecycleAutomationService.js";
+import {
   createIdea,
   deleteIdea,
   getIdeaDetail,
@@ -292,11 +300,22 @@ const segmentSchema = z.object({
   minTotalOrders: z.number().optional(),
 });
 
-const messageSchema = z.object({
-  category: z.enum(["reativacao", "follow_up", "promocao", "credito"]),
-  title: z.string().min(1),
-  content: z.string().min(1),
-});
+const messageSchema = z
+  .object({
+    category: z.enum(["reativacao", "follow_up", "promocao", "credito"]),
+    title: z.string().min(1),
+    content: z.string().default(""),
+    messageType: z.enum(["TEXT", "IMAGE", "VIDEO"]).default("TEXT"),
+    mediaUrl: z.string().nullable().default(null),
+  })
+  .refine((data) => data.messageType === "TEXT" || Boolean(data.mediaUrl), {
+    message: "Templates de imagem/video precisam de uma midia (mediaUrl).",
+    path: ["mediaUrl"],
+  })
+  .refine((data) => data.messageType !== "TEXT" || data.content.trim().length > 0, {
+    message: "Template de texto precisa de conteudo.",
+    path: ["content"],
+  });
 
 const createIdeaSchema = z
   .object({
@@ -1466,6 +1485,50 @@ export function createApp() {
       }
       const result = await sendOffboardingForCustomers(ids);
       response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Automacao de carteira (regua de relacionamento) ──
+  app.get("/api/lifecycle/overview", async (_request, response, next) => {
+    try {
+      response.json(await getLifecycleOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/lifecycle/config", async (_request, response, next) => {
+    try {
+      response.json(await getLifecycleConfig());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put("/api/lifecycle/config/:stage", async (request, response, next) => {
+    try {
+      const stage = request.params.stage as LifecycleStage;
+      if (!LIFECYCLE_STAGES.includes(stage)) {
+        throw new HttpError(400, "Estagio invalido.");
+      }
+      const templateId = request.body?.templateId ?? null;
+      const enabled = request.body?.enabled !== false;
+      if (templateId !== null && typeof templateId !== "string") {
+        throw new HttpError(400, "templateId invalido.");
+      }
+      await setLifecycleConfig(stage, templateId, enabled);
+      response.json(await getLifecycleConfig());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Roda a automacao manualmente agora (respeita LIFECYCLE_SIMULATION_ONLY).
+  app.post("/api/lifecycle/run", async (_request, response, next) => {
+    try {
+      response.json(await runLifecycleAutomation());
     } catch (error) {
       next(error);
     }

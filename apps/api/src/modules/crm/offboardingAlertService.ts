@@ -14,7 +14,8 @@
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
-import { sendWhatsappTextMessage } from "../whatsapp/evolutionService.js";
+import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } from "../whatsapp/evolutionService.js";
+import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
 
 const OFFBOARDING_CURSOR_KEY = "offboarding_alert_date";
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
@@ -43,6 +44,52 @@ export function urgencyLevel(avgPiecesPerMonth: number): string {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve a instancia de WhatsApp que envia o alerta e manda o texto pelo
+ * provedor dela (UAZAPI ou Evolution) — mesmo padrao do auto-reply. Prioridade:
+ * OFFBOARDING_ALERT_INSTANCE_ID (se setado) → instancia UAZAPI ativa (a conta
+ * conectada que ja esta no grupo) → is_default → mais antiga → fallback para o
+ * sender global da Evolution (.env).
+ */
+async function sendToGroup(destinationJid: string, messageText: string) {
+  const explicitId = env.OFFBOARDING_ALERT_INSTANCE_ID.trim();
+  const instanceResult = await pool.query(
+    explicitId
+      ? `SELECT provider, instance_name, evolution_base_url, evolution_api_key, uazapi_base_url, uazapi_token, display_label
+           FROM whatsapp_instances WHERE id = $1 AND status = 'ACTIVE'`
+      : `SELECT provider, instance_name, evolution_base_url, evolution_api_key, uazapi_base_url, uazapi_token, display_label
+           FROM whatsapp_instances WHERE status = 'ACTIVE'
+          ORDER BY (provider = 'UAZAPI') DESC, is_default DESC, created_at ASC
+          LIMIT 1`,
+    explicitId ? [explicitId] : [],
+  );
+
+  const instance = instanceResult.rows[0];
+
+  if (instance?.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
+    return sendUazapiTextMessage(
+      { baseUrl: String(instance.uazapi_base_url), token: String(instance.uazapi_token) },
+      destinationJid,
+      messageText,
+    );
+  }
+
+  if (instance?.instance_name && instance.evolution_base_url && instance.evolution_api_key) {
+    return sendWhatsappInstanceTextMessage(
+      {
+        instanceName: String(instance.instance_name),
+        evolutionBaseUrl: String(instance.evolution_base_url),
+        evolutionApiKey: String(instance.evolution_api_key),
+      },
+      destinationJid,
+      messageText,
+    );
+  }
+
+  // Sem instancia no banco: cai no sender global do .env (Evolution).
+  return sendWhatsappTextMessage(destinationJid, messageText);
 }
 
 function formatBrDate(isoDate: string | null): string {
@@ -332,7 +379,7 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
   }
 
   for (let i = 0; i < messages.length; i += 1) {
-    await sendWhatsappTextMessage(groupJid, messages[i]!);
+    await sendToGroup(groupJid, messages[i]!);
     if (i < messages.length - 1) {
       await sleep(SEND_DELAY_MS);
     }
@@ -404,7 +451,7 @@ export async function runOffboardingAlert(options: { dryRun?: boolean } = {}): P
   }
 
   for (let i = 0; i < messages.length; i += 1) {
-    await sendWhatsappTextMessage(groupJid, messages[i]!);
+    await sendToGroup(groupJid, messages[i]!);
     if (i < messages.length - 1) {
       await sleep(SEND_DELAY_MS);
     }

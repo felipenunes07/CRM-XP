@@ -135,6 +135,31 @@ export interface OffboardingCustomer {
   totalOrders: number;
 }
 
+export type LifecycleStage = "ATENCAO_1" | "ATENCAO_2" | "INATIVO" | "INATIVO_30";
+
+export interface LifecycleStageConfig {
+  stage: LifecycleStage;
+  label: string;
+  templateId: string | null;
+  templateTitle: string | null;
+  enabled: boolean;
+}
+
+export interface LifecycleOverview {
+  stageCounts: Record<LifecycleStage, number>;
+  discardedCount: number;
+  pendingCandidates: number;
+  recentEvents: {
+    customerId: string;
+    displayName: string;
+    stage: LifecycleStage;
+    action: string;
+    templateTitle: string | null;
+    daysSinceLastPurchase: number | null;
+    createdAt: string;
+  }[];
+}
+
 export interface AdminUser {
   id: string;
   email: string;
@@ -563,13 +588,13 @@ export const api = {
   messageTemplates(token: string) {
     return request<MessageTemplate[]>("/api/messages/templates", {}, token);
   },
-  createMessageTemplate(token: string, input: Pick<MessageTemplate, "category" | "title" | "content">) {
+  createMessageTemplate(token: string, input: Pick<MessageTemplate, "category" | "title" | "content" | "messageType" | "mediaUrl">) {
     return request<MessageTemplate>("/api/messages/templates", {
       method: "POST",
       body: JSON.stringify(input),
     }, token);
   },
-  updateMessageTemplate(token: string, id: string, input: Pick<MessageTemplate, "category" | "title" | "content">) {
+  updateMessageTemplate(token: string, id: string, input: Pick<MessageTemplate, "category" | "title" | "content" | "messageType" | "mediaUrl">) {
     return request<MessageTemplate>(`/api/messages/templates/${id}`, {
       method: "PUT",
       body: JSON.stringify(input),
@@ -599,6 +624,26 @@ export const api = {
     return request<{ customers: OffboardingCustomer[]; messages: string[]; sent: boolean }>(
       "/api/offboarding-alert/send",
       { method: "POST", body: JSON.stringify({ customerIds }) },
+      token,
+    );
+  },
+  lifecycleOverview(token: string) {
+    return request<LifecycleOverview>("/api/lifecycle/overview", {}, token);
+  },
+  lifecycleConfig(token: string) {
+    return request<LifecycleStageConfig[]>("/api/lifecycle/config", {}, token);
+  },
+  setLifecycleConfig(token: string, stage: LifecycleStage, templateId: string | null, enabled: boolean) {
+    return request<LifecycleStageConfig[]>(
+      `/api/lifecycle/config/${stage}`,
+      { method: "PUT", body: JSON.stringify({ templateId, enabled }) },
+      token,
+    );
+  },
+  lifecycleRun(token: string) {
+    return request<{ processed: number; simulated: number; sent: number; skipped: number; simulationOnly: boolean }>(
+      "/api/lifecycle/run",
+      { method: "POST" },
       token,
     );
   },

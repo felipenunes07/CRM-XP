@@ -86,7 +86,8 @@ function permissionForPath(path: string) {
   if (path === "/clientes/financeiro") return "finance.view";
   if (path === "/automacoes") return "automations.view";
   if (path === "/mensagens" || path === "/eventos") return "messages.view";
-  if (path === "/disparador" || path === "/templates" || path === "/saida-base") return "messages.manage";
+  if (path === "/disparador" || path === "/templates" || path === "/saida-base" || path === "/automacao-carteira")
+    return "messages.manage";
   if (path === "/metas") return "finance.manage";
   if (
     path === "/atividade-whatsapp" ||
@@ -127,6 +128,7 @@ const sidebarMenu: SidebarEntry[] = [
       { to: "/eventos", labelPt: "Inteligencia / Eventos" },
       { to: "/templates", labelPt: "Templates" },
       { to: "/saida-base", labelPt: "Saída da Base" },
+      { to: "/automacao-carteira", labelPt: "Automação de Carteira" },
       { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
     ],

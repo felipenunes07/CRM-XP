@@ -204,6 +204,26 @@ const envSchema = z.object({
   OFFBOARDING_ALERT_GROUP_JID: z.string().default("120363425564890886@g.us"),
   OFFBOARDING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(8),
   OFFBOARDING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  // Instancia de WhatsApp que envia o alerta. Vazio = usa a instancia padrao
+  // (is_default) ativa do banco, qualquer provedor (UAZAPI/Evolution). Preencha
+  // com o id de uma whatsapp_instances para fixar um remetente especifico.
+  OFFBOARDING_ALERT_INSTANCE_ID: z.string().default(""),
+  // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
+  // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
+  // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que
+  // MANDARIA (sem enviar) — fase de validacao antes do disparo real.
+  LIFECYCLE_AUTOMATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  LIFECYCLE_SIMULATION_ONLY: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  LIFECYCLE_AUTOMATION_HOUR: z.coerce.number().int().min(0).max(23).default(9),
+  LIFECYCLE_AUTOMATION_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  // Instancia de WhatsApp que envia ao cliente (mesma logica do offboarding).
+  LIFECYCLE_AUTOMATION_INSTANCE_ID: z.string().default(""),
 });
 
 export const env = envSchema.parse(process.env);

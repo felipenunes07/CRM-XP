@@ -3876,5 +3876,53 @@ export const migrations = [
     ADD CONSTRAINT whatsapp_campaigns_status_check
     CHECK (status IN ('QUEUED', 'IN_PROGRESS', 'PAUSED', 'COMPLETED', 'CANCELLED'));
   ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ;
+  `,
+  `
+  -- Automacao de carteira ("regua de relacionamento"): quando o cliente cruza um
+  -- estagio (Atencao 1 / Atencao 2 / Inativo / Inativo +30), o sistema manda o
+  -- template definido direto pro cliente. Comeca em modo simulacao (so registra o
+  -- que MANDARIA, sem enviar). Stages: ATENCAO_1, ATENCAO_2, INATIVO, INATIVO_30.
+
+  -- Config: qual template/mensagem cada estagio dispara (1 linha por estagio).
+  CREATE TABLE IF NOT EXISTS lifecycle_stage_config (
+    stage TEXT PRIMARY KEY
+      CHECK (stage IN ('ATENCAO_1', 'ATENCAO_2', 'INATIVO', 'INATIVO_30')),
+    template_id UUID REFERENCES message_templates(id) ON DELETE SET NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  -- Log: cada vez que um cliente cruza um estagio, registra o que aconteceu.
+  -- action: SIMULATED (so registrou) | SENT (enviou de verdade) | SKIPPED (sem
+  -- template/sem telefone/etc). UNIQUE(customer_id, stage) garante que cada
+  -- cliente passa por cada estagio uma unica vez (sem reenvio do mesmo template).
+  CREATE TABLE IF NOT EXISTS customer_lifecycle_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL
+      CHECK (stage IN ('ATENCAO_1', 'ATENCAO_2', 'INATIVO', 'INATIVO_30')),
+    template_id UUID REFERENCES message_templates(id) ON DELETE SET NULL,
+    action TEXT NOT NULL CHECK (action IN ('SIMULATED', 'SENT', 'SKIPPED')),
+    detail TEXT,
+    days_since_last_purchase INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_lifecycle_customer_stage
+    ON customer_lifecycle_events(customer_id, stage);
+
+  CREATE INDEX IF NOT EXISTS idx_customer_lifecycle_created_at
+    ON customer_lifecycle_events(created_at DESC);
+
+  -- Marca de "descartado": cliente que passou por todos os estagios sem voltar a
+  -- comprar. Fica na propria customers para a tela de carteira filtrar facil.
+  ALTER TABLE customers ADD COLUMN IF NOT EXISTS lifecycle_discarded_at TIMESTAMPTZ;
+  `,
+  `
+  -- Templates agora podem carregar midia (imagem/video), nao so texto — para a
+  -- automacao de carteira mandar mensagem rica direto pro cliente.
+  ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'TEXT'
+    CHECK (message_type IN ('TEXT', 'IMAGE', 'VIDEO'));
+  ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS media_url TEXT;
   `
 ];
