@@ -373,7 +373,7 @@ const BC_STYLES = `
   .bc-q-name { font-weight:600; color:#0f172a; font-size:0.9rem; }
   .bc-q-code { color:#94a3b8; font-weight:400; }
   .bc-q-meta { font-size:0.74rem; color:#64748b; margin-top:0.12rem; }
-  .bc-q-bar { height:4px; border-radius:3px; background:#eef2ف7; background:#eef2f7; margin-top:0.4rem; overflow:hidden; }
+  .bc-q-bar { height:4px; border-radius:3px; background:#eef2f7; margin-top:0.4rem; overflow:hidden; }
   .bc-q-bar span { display:block; height:100%; border-radius:3px; }
   .bc-q-right { text-align:right; }
   .bc-q-tpl { font-size:0.7rem; margin-top:0.3rem; }
