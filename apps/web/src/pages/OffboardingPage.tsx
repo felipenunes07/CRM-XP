@@ -518,7 +518,7 @@ export function OffboardingPage() {
                 <div>
                   <h3 className="ob-list-title">
                     {activeTab === "automatico"
-                      ? `Clientes que podem sair da base ${offset === 0 ? "hoje" : offset === 1 ? "amanhã" : meta.title.toLowerCase()} (${meta.dateStr.split(",")[1]?.trim() || meta.dateStr})`
+                      ? `Clientes em risco de offboarding ${offset === 0 ? "hoje" : offset === 1 ? "amanhã" : meta.title.toLowerCase()} (${meta.dateStr.split(",")[1]?.trim() || meta.dateStr})`
                       : "Clientes já inativos · Envio manual"}
                   </h3>
                   <p className="ob-list-subtitle">

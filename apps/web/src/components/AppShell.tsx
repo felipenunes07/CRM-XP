@@ -127,7 +127,7 @@ const sidebarMenu: SidebarEntry[] = [
       { to: "/mensagens", labelPt: "Mensagens" },
       { to: "/eventos", labelPt: "Inteligencia / Eventos" },
       { to: "/templates", labelPt: "Templates" },
-      { to: "/saida-base", labelPt: "Saída da Base" },
+      { to: "/saida-base", labelPt: "Offboarding" },
       { to: "/automacao-carteira", labelPt: "Automação de Carteira" },
       { to: "/automacoes", labelPt: "Automacoes", adminOnly: true },
       { to: "/disparador", labelPt: "Disparador" },
