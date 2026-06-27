@@ -25,15 +25,7 @@ const WINDOW_OPTIONS: { label: string; value: number | "all" }[] = [
   { label: "Todos", value: "all" },
 ];
 
-const TIMELINE_OFFSETS = [
-  { label: "Ontem", offset: -1 },
-  { label: "Hoje", offset: 0 },
-  { label: "Amanhã", offset: 1 },
-  { label: "Em 2 dias", offset: 2 },
-  { label: "Em 5 dias", offset: 5 },
-  { label: "Em 7 dias", offset: 7 },
-  { label: "Em 10 dias", offset: 10 },
-];
+/* Dynamically generated timeline offsets instead of static TIMELINE_OFFSETS */
 
 type Urgency = { key: string; label: string; color: string; soft: string };
 
@@ -188,16 +180,33 @@ export function OffboardingPage() {
   const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<"automatico" | "manual">("automatico");
   const [offset, setOffset] = useState(1);
+  const [startOffset, setStartOffset] = useState(-1); // Starts displaying with Yesterday (-1)
   const [backlogWindow, setBacklogWindow] = useState<number | "all">(30);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  const visibleOffsets = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => startOffset + i);
+  }, [startOffset]);
+
   const dayQueries = useQueries({
-    queries: TIMELINE_OFFSETS.map((item) => ({
-      queryKey: ["offboarding-day", item.offset],
-      queryFn: () => api.offboardingByDay(token!, item.offset),
+    queries: visibleOffsets.map((offsetVal) => ({
+      queryKey: ["offboarding-day", offsetVal],
+      queryFn: () => api.offboardingByDay(token!, offsetVal),
       enabled: Boolean(token),
     })),
+  });
+
+  const todayQuery = useQuery({
+    queryKey: ["offboarding-day", 0],
+    queryFn: () => api.offboardingByDay(token!, 0),
+    enabled: Boolean(token),
+  });
+
+  const tomorrowQuery = useQuery({
+    queryKey: ["offboarding-day", 1],
+    queryFn: () => api.offboardingByDay(token!, 1),
+    enabled: Boolean(token),
   });
 
   const backlogQuery = useQuery({
@@ -238,8 +247,8 @@ export function OffboardingPage() {
     },
   });
 
-  const selectedIdx = TIMELINE_OFFSETS.findIndex((t) => t.offset === offset);
-  const selectedQueryData = dayQueries[selectedIdx]?.data;
+  const selectedIdx = visibleOffsets.indexOf(offset);
+  const selectedQueryData = selectedIdx !== -1 ? dayQueries[selectedIdx]?.data : null;
   const dayCustomers = selectedQueryData?.customers ?? [];
   const backlog = backlogQuery.data?.customers ?? [];
 
@@ -249,23 +258,29 @@ export function OffboardingPage() {
 
   const meta = dayMeta(offset);
 
-  const currentTimelineIndex = TIMELINE_OFFSETS.findIndex((t) => t.offset === offset);
-
   function goPrev() {
-    if (currentTimelineIndex > 0) {
-      const prevItem = TIMELINE_OFFSETS[currentTimelineIndex - 1];
-      if (prevItem) {
-        setOffset(prevItem.offset);
+    const currentIndex = visibleOffsets.indexOf(offset);
+    if (currentIndex > 0) {
+      const prevVal = visibleOffsets[currentIndex - 1];
+      if (prevVal !== undefined) {
+        setOffset(prevVal);
       }
+    } else {
+      setStartOffset((prev) => prev - 1);
+      setOffset((prev) => prev - 1);
     }
   }
 
   function goNext() {
-    if (currentTimelineIndex < TIMELINE_OFFSETS.length - 1) {
-      const nextItem = TIMELINE_OFFSETS[currentTimelineIndex + 1];
-      if (nextItem) {
-        setOffset(nextItem.offset);
+    const currentIndex = visibleOffsets.indexOf(offset);
+    if (currentIndex < visibleOffsets.length - 1) {
+      const nextVal = visibleOffsets[currentIndex + 1];
+      if (nextVal !== undefined) {
+        setOffset(nextVal);
       }
+    } else {
+      setStartOffset((prev) => prev + 1);
+      setOffset((prev) => prev + 1);
     }
   }
 
@@ -283,21 +298,22 @@ export function OffboardingPage() {
   }
 
   const timelineCards = useMemo(() => {
-    return TIMELINE_OFFSETS.map((item, idx) => {
+    return visibleOffsets.map((offsetVal, idx) => {
       const q = dayQueries[idx];
       const customers = q?.data?.customers ?? [];
       const clientsCount = customers.length;
       const screensCount = customers.reduce((acc, c) => acc + c.avgPiecesPerMonth, 0);
 
-      const m = dayMeta(item.offset);
+      const m = dayMeta(offsetVal);
       return {
-        ...item,
+        offset: offsetVal,
+        label: m.title,
         dateLabel: m.dateStr.split(",")[1]?.trim() || m.dateStr,
         clientsCount,
         screensCount,
       };
     });
-  }, [dayQueries]);
+  }, [visibleOffsets, dayQueries]);
 
   const recData = recoveryQuery.data;
   const rawRate = recData?.recoveryRate ?? 0;
@@ -317,8 +333,8 @@ export function OffboardingPage() {
 
   const timelineClientsTotal = timelineCards.reduce((sum, item) => sum + item.clientsCount, 0);
   const timelineScreensTotal = timelineCards.reduce((sum, item) => sum + item.screensCount, 0);
-  const todayCard = timelineCards.find((item) => item.offset === 0);
-  const tomorrowCard = timelineCards.find((item) => item.offset === 1);
+  const todayClientsCount = todayQuery.data?.customers.length ?? 0;
+  const tomorrowClientsCount = tomorrowQuery.data?.customers.length ?? 0;
   const runHourLabel =
     overviewQuery.isLoading || ovData?.runHour === undefined ? "..." : `${String(ovData.runHour).padStart(2, "0")}:00`;
   const automationStateLabel = overviewQuery.isLoading
@@ -415,13 +431,13 @@ export function OffboardingPage() {
               <div className="ob-activity-stat-card">
                 <span className="ob-activity-stat-label">Hoje</span>
                 <strong className="ob-activity-stat-val">
-                  {todayCard ? todayCard.clientsCount.toLocaleString("pt-BR") : "..."}
+                  {todayQuery.isLoading ? "..." : todayClientsCount.toLocaleString("pt-BR")}
                 </strong>
               </div>
               <div className="ob-activity-stat-card">
                 <span className="ob-activity-stat-label">Amanhã</span>
                 <strong className="ob-activity-stat-val">
-                  {tomorrowCard ? tomorrowCard.clientsCount.toLocaleString("pt-BR") : "..."}
+                  {tomorrowQuery.isLoading ? "..." : tomorrowClientsCount.toLocaleString("pt-BR")}
                 </strong>
               </div>
               <div className="ob-activity-stat-card">
@@ -446,7 +462,6 @@ export function OffboardingPage() {
                   type="button"
                   className="ob-timeline-arrow"
                   onClick={goPrev}
-                  disabled={currentTimelineIndex === 0}
                   aria-label="Voltar dia"
                 >
                   <ChevronLeft size={18} />
@@ -492,7 +507,6 @@ export function OffboardingPage() {
                   type="button"
                   className="ob-timeline-arrow"
                   onClick={goNext}
-                  disabled={currentTimelineIndex === TIMELINE_OFFSETS.length - 1}
                   aria-label="Avançar dia"
                 >
                   <ChevronRight size={18} />
@@ -500,11 +514,11 @@ export function OffboardingPage() {
               </div>
 
               <div className="ob-timeline-dots">
-                {TIMELINE_OFFSETS.map((item) => {
-                  const isActive = offset === item.offset;
+                {visibleOffsets.map((offsetVal) => {
+                  const isActive = offset === offsetVal;
                   return (
                     <span
-                      key={item.offset}
+                      key={offsetVal}
                       className={`ob-timeline-nav-dot ${isActive ? "active" : ""}`}
                     />
                   );
