@@ -11,6 +11,7 @@
  * partir de orders em dois instantes (ontem x hoje), entao nao precisa de tabela
  * de historico e cada cliente aparece uma unica vez, no dia em que cruzou.
  */
+import { createHash } from "node:crypto";
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
@@ -20,6 +21,9 @@ import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
 const OFFBOARDING_CURSOR_KEY = "offboarding_alert_date";
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
 const SEND_DELAY_MS = 1500; // respiro entre mensagens para nao tomar rate-limit
+const MANUAL_SEND_DEDUP_WINDOW_SECONDS = 15 * 60;
+const OFFBOARDING_DAILY_LOCK_NS = 724011;
+const OFFBOARDING_MANUAL_LOCK_NS = 724012;
 
 export interface NewlyInactiveCustomer {
   customerId: string;
@@ -30,6 +34,8 @@ export interface NewlyInactiveCustomer {
   avgPiecesPerMonth: number;
   totalOrders: number;
 }
+
+type OffboardingSkipReason = "recent_duplicate";
 
 /**
  * Nivel de urgencia pela media de telas/mes que o cliente comprava: quanto mais
@@ -44,6 +50,71 @@ export function urgencyLevel(avgPiecesPerMonth: number): string {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function lockKey(value: string): number {
+  return parseInt(createHash("sha256").update(value).digest("hex").slice(0, 8), 16) & 0x7fffffff;
+}
+
+function manualSendCursorKey(groupJid: string, customerId: string): string {
+  return `offboarding_manual_send:${groupJid}:${customerId}`;
+}
+
+async function claimManualOffboardingCustomerSends(
+  groupJid: string,
+  customerIds: string[],
+): Promise<{ claimedIds: string[]; skippedIds: string[] }> {
+  const uniqueIds = Array.from(new Set(customerIds)).sort();
+  if (uniqueIds.length === 0) {
+    return { claimedIds: [], skippedIds: [] };
+  }
+
+  const keysById = new Map(uniqueIds.map((id) => [id, manualSendCursorKey(groupJid, id)]));
+  const keys = uniqueIds.map((id) => keysById.get(id)!);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1::int, $2::int)", [
+      OFFBOARDING_MANUAL_LOCK_NS,
+      lockKey(groupJid),
+    ]);
+
+    const recentResult = await client.query<{ key: string }>(
+      `
+        SELECT key
+        FROM sync_cursors
+        WHERE key = ANY($1::text[])
+          AND updated_at > NOW() - ($2::int * INTERVAL '1 second')
+      `,
+      [keys, MANUAL_SEND_DEDUP_WINDOW_SECONDS],
+    );
+
+    const recentKeys = new Set(recentResult.rows.map((row) => row.key));
+    const claimedIds = uniqueIds.filter((id) => !recentKeys.has(keysById.get(id)!));
+    const skippedIds = uniqueIds.filter((id) => recentKeys.has(keysById.get(id)!));
+    const claimedKeys = claimedIds.map((id) => keysById.get(id)!);
+
+    if (claimedKeys.length > 0) {
+      await client.query(
+        `
+          INSERT INTO sync_cursors (key, cursor_value, updated_at)
+          SELECT unnest($1::text[]), $2::text, NOW()
+          ON CONFLICT (key) DO UPDATE
+          SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
+        `,
+        [claimedKeys, "manual_offboarding_send"],
+      );
+    }
+
+    await client.query("COMMIT");
+    return { claimedIds, skippedIds };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -311,6 +382,67 @@ export async function findUpcomingInactive(offsetDays: number): Promise<NewlyIna
   return result.rows.map(mapEnrichedRow);
 }
 
+/**
+ * Clientes que cruzam os 90 dias EXATAMENTE em `offsetDays` (navegacao por dia):
+ * offset 0 = hoje, +1 = amanha, -1 = ontem. Internamente: quem hoje tem
+ * (90 - offset) dias parado. Permite andar pra frente/tras na linha do tempo.
+ */
+export async function findInactiveByDayOffset(offsetDays: number): Promise<NewlyInactiveCustomer[]> {
+  const targetDaysSince = 90 - offsetDays;
+  if (targetDaysSince < 0) return [];
+
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today
+      ),
+      last_orders AS (
+        SELECT customer_id, MAX(order_date::date) AS last_order
+        FROM orders
+        GROUP BY customer_id
+      ),
+      target AS (
+        SELECT
+          c.id, c.customer_code, c.display_name,
+          lo.last_order,
+          (p.today - lo.last_order) AS days_since
+        FROM customers c
+        JOIN last_orders lo ON lo.customer_id = c.id
+        CROSS JOIN params p
+        WHERE lo.last_order IS NOT NULL
+          AND (p.today - lo.last_order) = $1::int
+      ),
+      pieces AS (
+        SELECT
+          o.customer_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric AS total_pieces,
+          COUNT(DISTINCT o.id) AS total_orders,
+          MIN(o.order_date::date) AS first_order,
+          MAX(o.order_date::date) AS last_order
+        FROM orders o
+        LEFT JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.customer_id IN (SELECT id FROM target)
+        GROUP BY o.customer_id
+      )
+      SELECT
+        t.id AS customer_id,
+        t.customer_code,
+        t.display_name,
+        t.last_order::text AS last_purchase_at,
+        t.days_since AS days_since_last_purchase,
+        COALESCE(pc.total_pieces, 0) AS total_pieces,
+        COALESCE(pc.total_orders, 0) AS total_orders,
+        GREATEST(1, ROUND(COALESCE((pc.last_order - pc.first_order), 0) / 30.0)) AS months_active
+      FROM target t
+      LEFT JOIN pieces pc ON pc.customer_id = t.id
+      ORDER BY t.display_name
+    `,
+    [targetDaysSince],
+  );
+
+  return result.rows.map(mapEnrichedRow);
+}
+
 /** Enriquece um conjunto especifico de clientes (por id), para envio manual. */
 async function enrichCustomersByIds(customerIds: string[]): Promise<NewlyInactiveCustomer[]> {
   if (customerIds.length === 0) return [];
@@ -362,21 +494,44 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
   customers: NewlyInactiveCustomer[];
   messages: string[];
   sent: boolean;
+  skippedCustomerIds?: string[];
+  skippedReason?: OffboardingSkipReason;
 }> {
-  const customers = await enrichCustomersByIds(customerIds);
+  const groupJid = env.OFFBOARDING_ALERT_GROUP_JID.trim();
+  if (!groupJid) {
+    throw new Error("Grupo de destino nao configurado (OFFBOARDING_ALERT_GROUP_JID).");
+  }
+
+  const enrichedCustomers = await enrichCustomersByIds(Array.from(new Set(customerIds)));
+  if (enrichedCustomers.length === 0) {
+    return { customers: [], messages: [], sent: false };
+  }
+
+  const claim = await claimManualOffboardingCustomerSends(
+    groupJid,
+    enrichedCustomers.map((customer) => customer.customerId),
+  );
+  const claimedIds = new Set(claim.claimedIds);
+  const customers = enrichedCustomers.filter((customer) => claimedIds.has(customer.customerId));
+
   if (customers.length === 0) {
-    return { customers, messages: [], sent: false };
+    logger.warn("offboarding manual duplicado bloqueado", {
+      skippedCustomers: claim.skippedIds.length,
+      groupJid,
+    });
+    return {
+      customers: [],
+      messages: [],
+      sent: false,
+      skippedCustomerIds: claim.skippedIds,
+      skippedReason: "recent_duplicate",
+    };
   }
 
   const messages = [
     buildHeaderMessage(customers.length),
     ...customers.map((customer) => buildCustomerMessage(customer)),
   ];
-
-  const groupJid = env.OFFBOARDING_ALERT_GROUP_JID.trim();
-  if (!groupJid) {
-    throw new Error("Grupo de destino nao configurado (OFFBOARDING_ALERT_GROUP_JID).");
-  }
 
   for (let i = 0; i < messages.length; i += 1) {
     await sendToGroup(groupJid, messages[i]!);
@@ -385,8 +540,12 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
     }
   }
 
-  logger.info("offboarding manual enviado", { customers: customers.length, groupJid });
-  return { customers, messages, sent: true };
+  logger.info("offboarding manual enviado", {
+    customers: customers.length,
+    skippedCustomers: claim.skippedIds.length,
+    groupJid,
+  });
+  return { customers, messages, sent: true, skippedCustomerIds: claim.skippedIds };
 }
 
 /** Mensagem de cabecalho, enviada uma vez quando ha ao menos um cliente. */
@@ -477,21 +636,41 @@ function getLocalParts(timeZone: string, date = new Date()) {
   };
 }
 
-async function getCursor(key: string) {
-  const result = await pool.query("SELECT cursor_value FROM sync_cursors WHERE key = $1", [key]);
-  return (result.rows[0]?.cursor_value as string | undefined) ?? null;
-}
+async function claimDailyOffboardingRun(dateKey: string): Promise<boolean> {
+  const client = await pool.connect();
 
-async function setCursor(key: string, value: string) {
-  await pool.query(
-    `
-      INSERT INTO sync_cursors (key, cursor_value, updated_at)
-      VALUES ($1, $2, NOW())
-      ON CONFLICT (key) DO UPDATE
-      SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
-    `,
-    [key, value],
-  );
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1::int, $2::int)", [OFFBOARDING_DAILY_LOCK_NS, 1]);
+
+    const result = await client.query<{ cursor_value: string }>(
+      "SELECT cursor_value FROM sync_cursors WHERE key = $1 FOR UPDATE",
+      [OFFBOARDING_CURSOR_KEY],
+    );
+
+    if (result.rows[0]?.cursor_value === dateKey) {
+      await client.query("COMMIT");
+      return false;
+    }
+
+    await client.query(
+      `
+        INSERT INTO sync_cursors (key, cursor_value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE
+        SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
+      `,
+      [OFFBOARDING_CURSOR_KEY, dateKey],
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function startDailyOffboardingScheduler() {
@@ -512,14 +691,13 @@ export function startDailyOffboardingScheduler() {
       if (now.hour !== env.OFFBOARDING_ALERT_HOUR) {
         return;
       }
-      const lastRun = await getCursor(OFFBOARDING_CURSOR_KEY);
-      if (lastRun === now.dateKey) {
-        return; // ja rodou hoje
+      const claimed = await claimDailyOffboardingRun(now.dateKey);
+      if (!claimed) {
+        return; // ja rodou hoje ou outro worker acabou de assumir o envio
       }
 
       logger.info("offboarding alert started", { dateKey: now.dateKey });
       const result = await runOffboardingAlert();
-      await setCursor(OFFBOARDING_CURSOR_KEY, now.dateKey);
       logger.info("offboarding alert completed", {
         dateKey: now.dateKey,
         customers: result.customers.length,

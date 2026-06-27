@@ -70,6 +70,7 @@ import {
   runOffboardingAlert,
   findInactiveBacklog,
   findUpcomingInactive,
+  findInactiveByDayOffset,
   sendOffboardingForCustomers,
 } from "./modules/crm/offboardingAlertService.js";
 import {
@@ -77,6 +78,8 @@ import {
   setLifecycleConfig,
   getLifecycleOverview,
   runLifecycleAutomation,
+  findScheduledLifecycle,
+  getLifecycleRecovery,
   LIFECYCLE_STAGES,
   type LifecycleStage,
 } from "./modules/crm/lifecycleAutomationService.js";
@@ -1463,6 +1466,18 @@ export function createApp() {
     }
   });
 
+  // Navegacao por dia: quem cruza os 90 dias exatamente em ?offset dias
+  // (0 = hoje, 1 = amanha, -1 = ontem, etc.).
+  app.get("/api/offboarding-alert/day", async (request, response, next) => {
+    try {
+      const offset = Math.max(-365, Math.min(365, Math.trunc(Number(request.query.offset ?? 0)) || 0));
+      const customers = await findInactiveByDayOffset(offset);
+      response.json({ offset, customers });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Backlog de quem JA esta inativo. ?withinDays=30 limita a quem entrou nos
   // ultimos N dias; omitir (ou ?withinDays=all) traz todo o backlog.
   app.get("/api/offboarding-alert/backlog", async (request, response, next) => {
@@ -1529,6 +1544,26 @@ export function createApp() {
   app.post("/api/lifecycle/run", async (_request, response, next) => {
     try {
       response.json(await runLifecycleAutomation());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Fila de envios programados (quem vai cruzar pra um estagio nos proximos N dias).
+  app.get("/api/lifecycle/scheduled", async (request, response, next) => {
+    try {
+      const days = Math.max(1, Math.min(60, Number(request.query.days ?? 7) || 7));
+      const entries = await findScheduledLifecycle(days);
+      response.json({ days, entries });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Recuperacao: quem voltou a comprar depois do follow-up.
+  app.get("/api/lifecycle/recovery", async (_request, response, next) => {
+    try {
+      response.json(await getLifecycleRecovery());
     } catch (error) {
       next(error);
     }

@@ -145,10 +145,43 @@ export interface LifecycleStageConfig {
   enabled: boolean;
 }
 
+export interface ScheduledLifecycleEntry {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  daysSinceLastPurchase: number;
+  targetStage: LifecycleStage;
+  daysUntil: number;
+  crossDate: string;
+  templateId: string | null;
+  templateTitle: string | null;
+}
+
+export interface RecoveredCustomer {
+  customerId: string;
+  displayName: string;
+  stage: LifecycleStage;
+  recoverDate: string;
+  daysToRecover: number;
+}
+
+export interface LifecycleRecovery {
+  contacted: number;
+  recoveredCount: number;
+  recoveryRate: number;
+  messagesSent: number;
+  recovered: RecoveredCustomer[];
+}
+
 export interface LifecycleOverview {
   stageCounts: Record<LifecycleStage, number>;
   discardedCount: number;
   pendingCandidates: number;
+  automationEnabled: boolean;
+  simulationOnly: boolean;
+  runHour: number;
+  timezone: string;
+  totalWatched: number;
   recentEvents: {
     customerId: string;
     displayName: string;
@@ -612,6 +645,13 @@ export const api = {
       token,
     );
   },
+  offboardingByDay(token: string, offset: number) {
+    return request<{ offset: number; customers: OffboardingCustomer[] }>(
+      `/api/offboarding-alert/day?offset=${offset}`,
+      {},
+      token,
+    );
+  },
   offboardingBacklog(token: string, withinDays: number | "all") {
     const qs = withinDays === "all" ? "all" : String(withinDays);
     return request<{ withinDays: number | null; customers: OffboardingCustomer[] }>(
@@ -621,7 +661,13 @@ export const api = {
     );
   },
   offboardingSend(token: string, customerIds: string[]) {
-    return request<{ customers: OffboardingCustomer[]; messages: string[]; sent: boolean }>(
+    return request<{
+      customers: OffboardingCustomer[];
+      messages: string[];
+      sent: boolean;
+      skippedCustomerIds?: string[];
+      skippedReason?: "recent_duplicate";
+    }>(
       "/api/offboarding-alert/send",
       { method: "POST", body: JSON.stringify({ customerIds }) },
       token,
@@ -646,6 +692,16 @@ export const api = {
       { method: "POST" },
       token,
     );
+  },
+  lifecycleScheduled(token: string, days = 7) {
+    return request<{ days: number; entries: ScheduledLifecycleEntry[] }>(
+      `/api/lifecycle/scheduled?days=${days}`,
+      {},
+      token,
+    );
+  },
+  lifecycleRecovery(token: string) {
+    return request<LifecycleRecovery>("/api/lifecycle/recovery", {}, token);
   },
   sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; menuData?: WhatsappMenuData; videoUrl?: string; whatsappInstanceId?: string }) {
     return request<{ success: boolean; result: any }>("/api/messages/test", {

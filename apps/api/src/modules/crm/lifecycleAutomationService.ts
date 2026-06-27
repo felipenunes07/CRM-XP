@@ -195,6 +195,7 @@ export async function findLifecycleCandidates(): Promise<LifecycleCandidate[]> {
         AND NOT EXISTS (
           SELECT 1 FROM customer_lifecycle_events e
           WHERE e.customer_id = s.customer_id AND e.stage = s.stage
+            AND e.action <> 'SKIPPED'
         )
       ORDER BY s.days_since DESC, s.display_name
     `,
@@ -263,6 +264,15 @@ export async function runLifecycleAutomation(): Promise<{
       }
     }
 
+    // "Pulado" e transitorio (falta template, falta numero, erro de envio): NAO
+    // grava no log, senao a trava UNIQUE(customer_id, stage) marcaria o cliente
+    // como "feito" para sempre e ele nunca seria reprocessado quando o template
+    // fosse configurado. So persistimos resultados reais (Simulado/Enviado).
+    if (action === "SKIPPED") {
+      skipped += 1;
+      continue;
+    }
+
     const inserted = await pool.query(
       `
         INSERT INTO customer_lifecycle_events
@@ -285,8 +295,7 @@ export async function runLifecycleAutomation(): Promise<{
       continue; // ja existia (corrida): nao conta
     }
 
-    if (action === "SKIPPED") skipped += 1;
-    else if (action === "SENT") sent += 1;
+    if (action === "SENT") sent += 1;
     else simulated += 1;
 
     // Esgotou a regua (chegou no ultimo estagio): marca como descartado.
@@ -363,6 +372,11 @@ export interface LifecycleOverview {
   stageCounts: Record<LifecycleStage, number>;
   discardedCount: number;
   pendingCandidates: number;
+  automationEnabled: boolean;
+  simulationOnly: boolean;
+  runHour: number;
+  timezone: string;
+  totalWatched: number;
   recentEvents: {
     customerId: string;
     displayName: string;
@@ -375,7 +389,7 @@ export interface LifecycleOverview {
 }
 
 export async function getLifecycleOverview(): Promise<LifecycleOverview> {
-  const [counts, discarded, recent, candidates] = await Promise.all([
+  const [counts, discarded, recent, candidates, watched] = await Promise.all([
     pool.query(
       `SELECT stage, COUNT(*)::int AS n FROM customer_lifecycle_events GROUP BY stage`,
     ),
@@ -392,6 +406,11 @@ export async function getLifecycleOverview(): Promise<LifecycleOverview> {
       `,
     ),
     findLifecycleCandidates(),
+    pool.query(
+      `SELECT COUNT(DISTINCT o.customer_id)::int AS n
+         FROM orders o
+        WHERE o.order_date::date >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 120`,
+    ),
   ]);
 
   const stageCounts = { ATENCAO_1: 0, ATENCAO_2: 0, INATIVO: 0, INATIVO_30: 0 } as Record<LifecycleStage, number>;
@@ -403,6 +422,11 @@ export async function getLifecycleOverview(): Promise<LifecycleOverview> {
     stageCounts,
     discardedCount: Number(discarded.rows[0]?.n ?? 0),
     pendingCandidates: candidates.length,
+    automationEnabled: env.LIFECYCLE_AUTOMATION_ENABLED,
+    simulationOnly: env.LIFECYCLE_SIMULATION_ONLY,
+    runHour: env.LIFECYCLE_AUTOMATION_HOUR,
+    timezone: env.LIFECYCLE_AUTOMATION_TIMEZONE,
+    totalWatched: Number(watched.rows[0]?.n ?? 0),
     recentEvents: recent.rows.map((row) => ({
       customerId: String(row.customer_id),
       displayName: String(row.display_name ?? "Cliente"),
@@ -412,6 +436,184 @@ export async function getLifecycleOverview(): Promise<LifecycleOverview> {
       daysSinceLastPurchase: row.days_since_last_purchase === null ? null : Number(row.days_since_last_purchase),
       createdAt: String(row.created_at),
     })),
+  };
+}
+
+// ── Fila de envios programados (o "relogio") ──
+
+export interface ScheduledLifecycleEntry {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  daysSinceLastPurchase: number;
+  targetStage: LifecycleStage;
+  daysUntil: number;
+  crossDate: string;
+  templateId: string | null;
+  templateTitle: string | null;
+}
+
+/**
+ * Clientes que VAO cruzar para um proximo estagio dentro de `daysAhead` dias —
+ * a fila do que o sistema esta "esperando" disparar. Para cada cliente acha a
+ * proxima fronteira (31/61/90/120) acima dos dias atuais e calcula a data exata.
+ */
+export async function findScheduledLifecycle(daysAhead = 7): Promise<ScheduledLifecycleEntry[]> {
+  const result = await pool.query(
+    `
+      WITH params AS (
+        SELECT (CURRENT_TIMESTAMP AT TIME ZONE $1)::date AS today, $2::int AS ahead
+      ),
+      last_orders AS (
+        SELECT customer_id, MAX(order_date::date) AS last_order FROM orders GROUP BY customer_id
+      ),
+      base AS (
+        SELECT
+          c.id, c.customer_code, c.display_name,
+          (p.today - lo.last_order) AS days_since,
+          p.today, p.ahead
+        FROM customers c
+        JOIN last_orders lo ON lo.customer_id = c.id
+        CROSS JOIN params p
+        WHERE lo.last_order IS NOT NULL
+      ),
+      nb AS (
+        SELECT *,
+          CASE
+            WHEN days_since < 31 THEN 31
+            WHEN days_since < 61 THEN 61
+            WHEN days_since < 90 THEN 90
+            WHEN days_since < 120 THEN 120
+            ELSE NULL
+          END AS boundary,
+          CASE
+            WHEN days_since < 31 THEN 'ATENCAO_1'
+            WHEN days_since < 61 THEN 'ATENCAO_2'
+            WHEN days_since < 90 THEN 'INATIVO'
+            WHEN days_since < 120 THEN 'INATIVO_30'
+            ELSE NULL
+          END AS target_stage
+        FROM base
+      )
+      SELECT
+        nb.id AS customer_id,
+        nb.customer_code,
+        nb.display_name,
+        nb.days_since AS days_since_last_purchase,
+        nb.target_stage,
+        (nb.boundary - nb.days_since) AS days_until,
+        (nb.today + (nb.boundary - nb.days_since))::text AS cross_date,
+        cfg.template_id,
+        t.title AS template_title
+      FROM nb
+      LEFT JOIN lifecycle_stage_config cfg ON cfg.stage = nb.target_stage AND cfg.enabled = TRUE
+      LEFT JOIN message_templates t ON t.id = cfg.template_id
+      WHERE nb.target_stage IS NOT NULL
+        AND (nb.boundary - nb.days_since) BETWEEN 0 AND nb.ahead
+        AND NOT EXISTS (
+          SELECT 1 FROM customer_lifecycle_events e
+          WHERE e.customer_id = nb.id AND e.stage = nb.target_stage AND e.action <> 'SKIPPED'
+        )
+      ORDER BY days_until ASC, nb.display_name
+      LIMIT 200
+    `,
+    [env.LIFECYCLE_AUTOMATION_TIMEZONE, Math.max(1, daysAhead)],
+  );
+
+  return result.rows.map((row) => ({
+    customerId: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name ?? "Cliente"),
+    daysSinceLastPurchase: Number(row.days_since_last_purchase ?? 0),
+    targetStage: String(row.target_stage) as LifecycleStage,
+    daysUntil: Number(row.days_until ?? 0),
+    crossDate: String(row.cross_date),
+    templateId: row.template_id ? String(row.template_id) : null,
+    templateTitle: row.template_title ? String(row.template_title) : null,
+  }));
+}
+
+// ── Recuperacao (quem voltou a comprar depois do follow-up) ──
+
+export interface RecoveredCustomer {
+  customerId: string;
+  displayName: string;
+  stage: LifecycleStage;
+  recoverDate: string;
+  daysToRecover: number;
+}
+
+export interface LifecycleRecovery {
+  contacted: number;
+  recoveredCount: number;
+  recoveryRate: number; // 0..1
+  messagesSent: number;
+  recovered: RecoveredCustomer[];
+}
+
+/**
+ * Recuperacao REAL: clientes que receberam (ou teriam recebido, em simulacao) uma
+ * mensagem da regua e voltaram a comprar DEPOIS disso. Tudo derivado de
+ * customer_lifecycle_events + orders — nenhum numero inventado.
+ */
+export async function getLifecycleRecovery(): Promise<LifecycleRecovery> {
+  const [totals, recoveredRows] = await Promise.all([
+    pool.query(
+      `
+        SELECT
+          COUNT(DISTINCT customer_id)::int AS contacted,
+          COUNT(*) FILTER (WHERE action = 'SENT')::int AS sent
+        FROM customer_lifecycle_events
+        WHERE action IN ('SENT', 'SIMULATED')
+      `,
+    ),
+    pool.query(
+      `
+        WITH ev AS (
+          SELECT
+            customer_id,
+            MIN(created_at::date) AS first_event_date,
+            (array_agg(stage ORDER BY created_at DESC))[1] AS last_stage
+          FROM customer_lifecycle_events
+          WHERE action IN ('SENT', 'SIMULATED')
+          GROUP BY customer_id
+        ),
+        recovered AS (
+          SELECT ev.customer_id, ev.last_stage, ev.first_event_date,
+                 MIN(o.order_date::date) AS recover_date
+          FROM ev
+          JOIN orders o ON o.customer_id = ev.customer_id AND o.order_date::date > ev.first_event_date
+          GROUP BY ev.customer_id, ev.last_stage, ev.first_event_date
+        )
+        SELECT r.customer_id, c.display_name, r.last_stage,
+               r.recover_date::text AS recover_date,
+               (r.recover_date - r.first_event_date) AS days_to_recover,
+               COUNT(*) OVER ()::int AS total_recovered
+        FROM recovered r
+        JOIN customers c ON c.id = r.customer_id
+        ORDER BY r.recover_date DESC
+        LIMIT 50
+      `,
+    ),
+  ]);
+
+  const contacted = Number(totals.rows[0]?.contacted ?? 0);
+  const messagesSent = Number(totals.rows[0]?.sent ?? 0);
+  const recovered = recoveredRows.rows.map((row) => ({
+    customerId: String(row.customer_id),
+    displayName: String(row.display_name ?? "Cliente"),
+    stage: String(row.last_stage) as LifecycleStage,
+    recoverDate: String(row.recover_date),
+    daysToRecover: Number(row.days_to_recover ?? 0),
+  }));
+  const recoveredCount = Number(recoveredRows.rows[0]?.total_recovered ?? 0);
+
+  return {
+    contacted,
+    recoveredCount,
+    recoveryRate: contacted > 0 ? recoveredCount / contacted : 0,
+    messagesSent,
+    recovered,
   };
 }
 

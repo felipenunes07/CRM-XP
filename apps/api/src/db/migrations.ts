@@ -3924,5 +3924,12 @@ export const migrations = [
   ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'TEXT'
     CHECK (message_type IN ('TEXT', 'IMAGE', 'VIDEO'));
   ALTER TABLE message_templates ADD COLUMN IF NOT EXISTS media_url TEXT;
+  `,
+  `
+  -- Correcao: "Pulado" (sem template/sem numero/erro) nao deve consumir a vaga
+  -- unica do cliente naquele estagio. Removemos os SKIPPED ja gravados para que
+  -- voltem a ser candidatos quando um template for configurado. A partir do fix,
+  -- o runtime nao grava mais SKIPPED, entao isto e um no-op nos proximos deploys.
+  DELETE FROM customer_lifecycle_events WHERE action = 'SKIPPED';
   `
 ];

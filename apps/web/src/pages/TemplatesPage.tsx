@@ -1,5 +1,5 @@
 import type { MessageTemplate } from "@olist-crm/shared";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -196,8 +196,43 @@ export function TemplatesPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack liquid-page-stack">
       <style>{`
+        .liquid-page-stack {
+          position: relative;
+          background: radial-gradient(circle at 12% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
+                      radial-gradient(circle at 88% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 45%),
+                      #f8fafc;
+          min-height: calc(100vh - 100px);
+          padding: 1.5rem;
+        }
+        .liquid-panel {
+          position: relative;
+          background: rgba(255, 255, 255, 0.65) !important;
+          backdrop-filter: blur(20px) saturate(140%) !important;
+          -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+          border: 1px solid rgba(255, 255, 255, 0.5) !important;
+          box-shadow: 0 10px 40px -10px rgba(15, 23, 42, 0.06),
+                      inset 0 1px 0 0 rgba(255, 255, 255, 0.4) !important;
+          border-radius: 16px;
+          transition: all 0.2s ease-in-out;
+        }
+        .liquid-panel:hover {
+          background: rgba(255, 255, 255, 0.72) !important;
+          box-shadow: 0 12px 48px -8px rgba(15, 23, 42, 0.09),
+                      inset 0 1px 0 0 rgba(255, 255, 255, 0.5) !important;
+        }
+        .templates-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1.5rem;
+          align-items: flex-start;
+        }
+        @media (min-width: 1024px) {
+          .templates-grid {
+            grid-template-columns: 4fr 5fr;
+          }
+        }
         .page-filter-chip {
           display: inline-flex;
           align-items: center;
@@ -309,16 +344,17 @@ export function TemplatesPage() {
           to { transform: rotate(360deg); }
         }
       `}</style>
-      {/* Form */}
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Comunicação / Templates</p>
-            <h2 className="premium-header-title">{editingId ? "Editar template" : "Novo template"}</h2>
+      <div className="templates-grid">
+        {/* Form */}
+        <section className="panel liquid-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Comunicação / Templates</p>
+              <h2 className="premium-header-title">{editingId ? "Editar template" : "Novo template"}</h2>
+            </div>
           </div>
-        </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem", maxWidth: "640px" }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
             <div>
               <label className="input-label">Categoria</label>
@@ -529,7 +565,7 @@ export function TemplatesPage() {
       </section>
 
       {/* List */}
-      <section className="panel">
+      <section className="panel liquid-panel">
         <div className="panel-header">
           <div>
             <h3 className="panel-title">Templates salvos</h3>
@@ -604,6 +640,7 @@ export function TemplatesPage() {
           </div>
         )}
       </section>
+      </div>
     </div>
   );
 }
