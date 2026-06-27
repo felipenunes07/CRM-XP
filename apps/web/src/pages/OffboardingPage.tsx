@@ -587,16 +587,18 @@ export function OffboardingPage() {
                     <table className="ob-table">
                       <thead>
                         <tr>
-                          <th style={{ width: "45px", textAlign: "center" }}>
-                            <input type="checkbox" className="ob-check" checked={allSelected} onChange={toggleAll} />
+                          <th style={{ width: "42px", textAlign: "center" }}>
+                            <label className="ob-check-wrap">
+                              <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                              <span className="ob-check-box" />
+                            </label>
                           </th>
-                          <th style={{ width: "23%" }}>CLIENTE</th>
-                          <th style={{ width: "13%" }}>ÚLTIMA COMPRA</th>
-                          <th style={{ width: "12%" }}>DIAS INATIVO</th>
-                          <th style={{ width: "14%" }}>VOLUME</th>
-                          <th style={{ width: "18%" }}>AUTOMAÇÃO</th>
-                          <th style={{ width: "10%" }}>URGÊNCIA</th>
-                          <th style={{ width: "10%", textAlign: "right", paddingRight: "1.5rem" }}>AÇÃO</th>
+                          <th>CLIENTE</th>
+                          <th style={{ width: "110px", textAlign: "center" }}>DIAS PARADO</th>
+                          <th style={{ width: "95px", textAlign: "center" }}>COMPRAS</th>
+                          <th style={{ width: "95px", textAlign: "center" }}>TELAS / MÊS</th>
+                          <th style={{ width: "100px", textAlign: "center" }}>URGÊNCIA</th>
+                          <th style={{ width: "160px", textAlign: "right", paddingRight: "1rem" }}>AÇÃO</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -610,55 +612,54 @@ export function OffboardingPage() {
                               onClick={() => toggle(customer.customerId)}
                             >
                               <td style={{ textAlign: "center" }}>
-                                <input
-                                  type="checkbox"
-                                  className="ob-check"
-                                  checked={isRowSelected}
-                                  onChange={() => toggle(customer.customerId)}
-                                  onClick={(e) => e.stopPropagation()}
-                                />
+                                <label className="ob-check-wrap" onClick={(e) => e.stopPropagation()}>
+                                  <input type="checkbox" checked={isRowSelected} onChange={() => toggle(customer.customerId)} />
+                                  <span className="ob-check-box" />
+                                </label>
                               </td>
                               <td>
                                 <div className="ob-client-info">
                                   <span className="ob-client-accent" style={{ background: u.color }} />
                                   <div>
-                                    <strong className="ob-client-name" title={customer.displayName}>{customer.displayName}</strong>
-                                    <span className="ob-client-code">cód. {customer.customerCode || "—"}</span>
+                                    <div className="ob-client-title-row">
+                                      <strong className="ob-client-name" title={customer.displayName}>
+                                        {customer.displayName}
+                                      </strong>
+                                      {customer.customerCode && (
+                                        <span className="ob-client-badge">
+                                          {customer.customerCode}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="ob-client-subtitle">
+                                      Última compra: {formatBrDate(customer.lastPurchaseAt)}
+                                    </span>
                                   </div>
                                 </div>
                               </td>
-                              <td>
-                                <span className="ob-cell-date">{formatBrDate(customer.lastPurchaseAt)}</span>
-                              </td>
-                              <td>
+                              <td style={{ textAlign: "center" }}>
                                 <span className="ob-cell-highlight">{customer.daysSinceLastPurchase} dias</span>
                               </td>
-                              <td>
-                                <div className="ob-cell-volume-stack">
-                                  <strong className="ob-cell-screens">~{customer.avgPiecesPerMonth} telas</strong>
-                                  <span className="ob-cell-orders">{customer.totalOrders} compras</span>
-                                </div>
+                              <td style={{ textAlign: "center" }}>
+                                <span className="ob-cell-data">{customer.totalOrders}</span>
                               </td>
-                              <td>
-                                <div className="ob-prepared-badge">
-                                  <span className="ob-channel-dot" />
-                                  <span>WhatsApp · Reativação</span>
-                                </div>
+                              <td style={{ textAlign: "center" }}>
+                                <span className="ob-cell-data">{customer.avgPiecesPerMonth}</span>
                               </td>
-                              <td>
+                              <td style={{ textAlign: "center" }}>
                                 <span className="ob-pill" style={{ background: u.soft, color: u.color }}>
                                   <span className="pill-dot" style={{ background: u.color }} /> {u.label}
                                 </span>
                               </td>
-                              <td style={{ textAlign: "right", paddingRight: "1.5rem" }} onClick={(e) => e.stopPropagation()}>
-                                <div style={{ display: "inline-flex", alignItems: "center", gap: "0.55rem" }}>
+                              <td style={{ textAlign: "right", paddingRight: "1rem" }} onClick={(e) => e.stopPropagation()}>
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                                   <button
                                     type="button"
                                     className="page-btn-primary page-btn-sm"
                                     disabled={sendMutation.isPending}
                                     onClick={() => sendMutation.mutate([customer.customerId])}
                                   >
-                                    Enviar
+                                    Enviar follow-up
                                   </button>
                                   <button type="button" className="ob-more-btn" aria-label="Ações adicionais">
                                     <MoreVertical size={16} />
@@ -674,7 +675,10 @@ export function OffboardingPage() {
 
                   <div className="ob-sendbar">
                     <label className="ob-selectall">
-                      <input type="checkbox" className="ob-check" checked={allSelected} onChange={toggleAll} />
+                      <label className="ob-check-wrap">
+                        <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                        <span className="ob-check-box" />
+                      </label>
                       Selecionar todos os clientes listados <strong>({activeList.length})</strong>
                     </label>
                     <button
@@ -1662,48 +1666,85 @@ const OB_STYLES = `
     gap: 0.4rem;
   }
 
-  /* Table styling */
+  /* Table styling as modern cards list */
   .ob-table-container {
     overflow-x: auto;
-    border: 1px solid rgba(99, 102, 241, 0.06);
-    border-radius: 14px;
-    background: #ffffff;
+    background: transparent;
     margin-bottom: 1.15rem;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.01);
   }
   .ob-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 10px; /* Vertical gap between cards */
     text-align: left;
     font-size: 0.82rem;
     table-layout: fixed;
   }
   .ob-table th {
-    background: #f8fafc;
+    background: transparent;
     color: #475569;
     font-weight: 800;
-    font-size: 0.70rem;
-    letter-spacing: 0;
-    padding: 0.65rem 0.85rem;
-    border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    padding: 0.5rem 0.85rem;
+    border-bottom: none;
     text-transform: uppercase;
   }
   .ob-table td {
-    padding: 0.7rem 0.85rem;
-    border-bottom: 1px solid rgba(99, 102, 241, 0.03);
+    padding: 0.85rem 0.85rem;
+    border-bottom: none;
     vertical-align: middle;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .ob-table-row {
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background: transparent;
+    transition: all 0.2s ease;
   }
-  .ob-table-row:hover {
-    background: rgba(99, 102, 241, 0.015) !important;
+
+  /* First cell is the checkbox column - transparent background */
+  .ob-table-row td:first-child {
+    background: transparent !important;
+    border: none !important;
+    text-align: center;
+    width: 45px;
+    padding: 0;
   }
-  .ob-table-row.is-selected {
-    background: rgba(37, 99, 235, 0.035);
+
+  /* The rest of the cells form the white card */
+  .ob-table-row td:not(:first-child) {
+    background: #ffffff !important;
+    border-top: 1px solid rgba(99, 102, 241, 0.06);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.01);
+  }
+
+  /* Left edge of the card */
+  .ob-table-row td:nth-child(2) {
+    border-left: 1px solid rgba(99, 102, 241, 0.06);
+    border-top-left-radius: 12px;
+    border-bottom-left-radius: 12px;
+    padding-left: 1rem;
+  }
+
+  /* Right edge of the card */
+  .ob-table-row td:last-child {
+    border-right: 1px solid rgba(99, 102, 241, 0.06);
+    border-top-right-radius: 12px;
+    border-bottom-right-radius: 12px;
+    padding-right: 1rem;
+  }
+
+  /* Hover and Selected effects for the card rows */
+  .ob-table-row:hover td:not(:first-child) {
+    background: #fafafc !important;
+    border-color: rgba(37, 99, 235, 0.15);
+  }
+  .ob-table-row.is-selected td:not(:first-child) {
+    background: rgba(37, 99, 235, 0.02) !important;
+    border-color: rgba(37, 99, 235, 0.25);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.03);
   }
 
   /* Client cell column */
@@ -1711,31 +1752,43 @@ const OB_STYLES = `
     position: relative;
     display: flex;
     align-items: center;
-    padding-left: 0.75rem;
+    padding-left: 0.9rem;
   }
   .ob-client-accent {
     position: absolute;
     left: 0;
-    top: 0px;
-    bottom: 0px;
-    width: 3.5px;
+    top: -2px;
+    bottom: -2px;
+    width: 4px;
     border-radius: 99px;
   }
-  .ob-client-name {
-    font-size: 0.84rem;
-    font-weight: 750;
-    color: #0f172a;
-    display: block;
-    line-height: 1.25;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
+  .ob-client-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
   }
-  .ob-client-code {
-    font-size: 0.72rem;
+  .ob-client-name {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .ob-client-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #1e3a8a;
+    background: #eff6ff;
+    padding: 0.08rem 0.4rem;
+    border-radius: 6px;
+    border: 1px solid rgba(30, 58, 138, 0.08);
+  }
+  .ob-client-subtitle {
+    font-size: 0.74rem;
     color: #64748b;
-    margin-top: 0.08rem;
     display: block;
+    margin-top: 0.15rem;
+    font-weight: 500;
   }
   .ob-cell-date {
     color: #475569;
@@ -1778,6 +1831,11 @@ const OB_STYLES = `
   .ob-cell-highlight {
     font-weight: 700;
     color: #1e293b;
+  }
+  .ob-cell-data {
+    font-weight: 600;
+    color: #334155;
+    font-size: 0.82rem;
   }
 
   /* Pill status badges */
@@ -1822,35 +1880,51 @@ const OB_STYLES = `
     color: #475569;
   }
 
-  /* Custom Checkbox Design */
-  .ob-check {
-    appearance: none;
-    -webkit-appearance: none;
-    width: 17px;
-    height: 17px;
-    border: 1.5px solid #cbd5e1;
-    border-radius: 5px;
-    outline: none;
-    cursor: pointer;
+  /* Custom Checkbox via label wrapper */
+  .ob-check-wrap {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    background: #ffffff;
-    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    vertical-align: middle;
   }
-  .ob-check:checked {
-    border-color: #2563eb;
+  .ob-check-wrap input {
+    position: absolute !important;
+    opacity: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .ob-check-box {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 5px;
+    background: #ffffff;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+  .ob-check-wrap:hover .ob-check-box {
+    border-color: #93c5fd;
+  }
+  .ob-check-wrap input:checked + .ob-check-box {
     background: #2563eb;
+    border-color: #2563eb;
     box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
   }
-  .ob-check:checked::before {
-    content: "✓";
-    color: #ffffff;
-    font-size: 9px;
-    font-weight: 800;
-  }
-  .ob-check:hover {
-    border-color: #3b82f6;
+  .ob-check-wrap input:checked + .ob-check-box::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 5px;
+    width: 4px;
+    height: 8px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
   }
 
   /* Premium Buttons */
