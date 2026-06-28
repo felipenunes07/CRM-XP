@@ -8,10 +8,10 @@ const STAGE_ORDER: LifecycleStage[] = ["ATENCAO_1", "ATENCAO_2", "INATIVO", "INA
 
 // Escala sóbria (família azul/índigo) ââ‚¬â€ diferencia os estágios sem poluir.
 const STAGE_META: Record<LifecycleStage, { short: string; range: string; color: string }> = {
-  ATENCAO_1: { short: "Atenção 1", range: "31-60 dias", color: "#94a3b8" },
-  ATENCAO_2: { short: "Atenção 2", range: "61-89 dias", color: "#6366f1" },
-  INATIVO: { short: "Inativo", range: "90-119 dias", color: "#4f46e5" },
-  INATIVO_30: { short: "Inativo +30", range: "120+ dias", color: "#3730a3" },
+  ATENCAO_1: { short: "Atenção 1", range: "31-60 dias", color: "#eab308" },
+  ATENCAO_2: { short: "Atenção 2", range: "61-89 dias", color: "#f97316" },
+  INATIVO: { short: "Inativo", range: "90-119 dias", color: "#10b981" },
+  INATIVO_30: { short: "Inativo +30", range: "120+ dias", color: "#059669" },
 };
 
 const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
@@ -423,7 +423,7 @@ export function LifecyclePage() {
                     strokeLinecap="round"
                     filter="url(#glow)"
                   />
-                  <circle r={5} fill="#ffffff" stroke="#6366f1" strokeWidth={2}>
+                  <circle r={5} fill="#ffffff" stroke="#10b981" strokeWidth={2}>
                     <animateMotion
                       path={pathD}
                       dur="2.5s"
@@ -441,7 +441,7 @@ export function LifecyclePage() {
 
   const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
     RECUPERADO: { label: "Recuperado", color: "#16a34a", bg: "#dcfce7" },
-    RESPONDEU: { label: "Respondeu", color: "#4338ca", bg: "#e0e7ff" },
+    RESPONDEU: { label: "Respondeu", color: "#047857", bg: "#ecfdf5" },
     AGUARDANDO: { label: "Aguardando", color: "#64748b", bg: "#f1f5f9" },
     DESCARTADO: { label: "Descartado", color: "#9ca3af", bg: "#f3f4f6" },
   };
@@ -452,7 +452,7 @@ export function LifecyclePage() {
 
   const kpis = [
     { icon: <Eye size={18} />, n: overview?.totalWatched, l: "Clientes monitorados", gradient: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)", color: "#0284c7" },
-    { icon: <CalendarClock size={18} />, n: scheduled.length, l: "Follow-ups agendados (14d)", gradient: "linear-gradient(135deg, #faf5ff 0%, #e9d5ff 100%)", color: "#7c3aed" },
+    { icon: <CalendarClock size={18} />, n: scheduled.length, l: "Follow-ups agendados (14d)", gradient: "linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)", color: "#059669" },
     { icon: <CheckCircle2 size={18} />, n: recovery?.recoveredCount, l: "Reconquistados", gradient: "linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)", color: "#059669" },
     { icon: <TrendingUp size={18} />, n: recovery ? `${recRate}%` : undefined, l: "Taxa de recuperação", gradient: "linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)", color: "#16a34a" },
   ];
@@ -532,8 +532,8 @@ export function LifecyclePage() {
 
               {/* Step: Monitor */}
               <div className="lc-pipe-step">
-                <div className="lc-pipe-icon" style={{ background: "linear-gradient(135deg, #f0f2ff, #ddd6fe)" }}>
-                  <Eye size={18} color="#6366f1" />
+                <div className="lc-pipe-icon" style={{ background: "linear-gradient(135deg, #ecfdf5, #a7f3d0)" }}>
+                  <Eye size={18} color="#059669" />
                 </div>
                 <div className="lc-pipe-label">Monitorando</div>
                 <div className="lc-pipe-detail"><b>{overview?.totalWatched ?? "ââ‚¬â€"}</b> clientes</div>
@@ -934,16 +934,16 @@ export function LifecyclePage() {
               </div>
 
               <div className="lc-filters">
-                <button className={journeyFilter === "ALL" ? "active" : ""} onClick={() => setJourneyFilter("ALL")}>
+                <button className={`lc-fchip ${journeyFilter === "ALL" ? "on" : ""}`} onClick={() => setJourneyFilter("ALL")}>
                   Todos ({journeys.length})
                 </button>
                 {STAGE_ORDER.map((st: LifecycleStage) => (
                   <button
                     key={st}
-                    className={journeyFilter === st ? "active" : ""}
+                    className={`lc-fchip ${journeyFilter === st ? "on" : ""}`}
                     onClick={() => setJourneyFilter(st)}
                   >
-                    <span className="lc-filter-dot" style={{ background: STAGE_META[st].color }} />
+                    <span className="lc-fdot" style={{ background: STAGE_META[st].color }} />
                     {STAGE_META[st].short} ({stageCountIn(st)})
                   </button>
                 ))}
@@ -1164,12 +1164,12 @@ const LC_STYLES = `
     border: none;
     padding: 0.55rem 1.1rem;
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .lc-verify:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
   }
   .lc-verify:active {
     transform: translateY(1px);
@@ -1338,7 +1338,7 @@ const LC_STYLES = `
   }
   .lc-cfg select:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
   }
   
   .lc-switch {
@@ -1568,10 +1568,48 @@ const LC_STYLES = `
     padding: 0.4rem 0.85rem;
     border-radius: 999px;
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    outline: none;
   }
   .lc-fchip:hover { background: #e2e8f0; color: var(--ink); }
-  .lc-fchip.on { background: var(--ink); color: #ffffff; }
+  .lc-fchip.on { background: var(--accent); color: #ffffff; }
   .lc-fdot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── Search Input & Actions Layout ── */
+  .lc-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .lc-search {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lc-search svg {
+    position: absolute;
+    left: 0.85rem;
+    color: #94a3b8;
+    pointer-events: none;
+  }
+  .lc-search input {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 0.45rem 0.75rem 0.45rem 2.2rem;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 550;
+    color: var(--ink);
+    outline: none;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    width: 240px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+  .lc-search input:focus {
+    border-color: var(--accent);
+    background: #ffffff;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
   
   .lc-j-days { margin-left: auto; font-size: 0.8rem; font-weight: 500; color: var(--muted); white-space: nowrap; }
   .lc-j-days b { color: var(--ink); font-weight: 700; }
@@ -1659,22 +1697,22 @@ const LC_STYLES = `
     display: flex;
     align-items: center;
     font-weight: 600;
-    color: #4f46e5;
+    color: #10b981;
   }
   .lc-j-pulse {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #6366f1;
-    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
-    animation: lc-pulse-indigo 1.5s infinite;
+    background: #10b981;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: lc-pulse-green 1.5s infinite;
     display: inline-block;
     margin-right: 0.5rem;
   }
-  @keyframes lc-pulse-indigo {
-    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
-    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(99, 102, 241, 0); }
-    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+  @keyframes lc-pulse-green {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
   }
 
   .lc-handoff {
@@ -2251,7 +2289,7 @@ const LC_STYLES = `
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(16, 185, 129, 0.15);
     animation: lc-brain-expand 2s infinite ease-out;
   }
   @keyframes lc-brain-expand {
@@ -2470,7 +2508,7 @@ const LC_STYLES = `
   }
   .lc-pipe-step:hover .lc-pipe-icon {
     transform: translateY(-3px);
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.15);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.15);
   }
   .lc-pipe-label {
     font-size: 0.78rem;
@@ -2515,8 +2553,8 @@ const LC_STYLES = `
     max-width: 140px;
   }
   .lc-pipe-connector.active {
-    background: linear-gradient(90deg, #818cf8, #6366f1);
-    box-shadow: 0 0 8px rgba(99, 102, 241, 0.15);
+    background: linear-gradient(90deg, #34d399, #10b981);
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.15);
   }
   .lc-pipe-connector.active::after {
     content: "";
@@ -2526,8 +2564,8 @@ const LC_STYLES = `
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #6366f1;
-    box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+    background: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
     animation: lc-pipe-pulse 1.8s ease-out infinite;
   }
   @keyframes lc-pipe-pulse {
@@ -2556,7 +2594,7 @@ const LC_STYLES = `
   .lc-kpi:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 16px rgba(0,0,0,0.07);
-    border-color: rgba(99, 102, 241, 0.3);
+    border-color: rgba(16, 185, 129, 0.3);
   }
   .lc-kpi-ic {
     width: 40px;
