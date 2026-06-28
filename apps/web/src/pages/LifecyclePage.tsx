@@ -451,7 +451,7 @@ export function LifecyclePage() {
   const recRate = recovery ? Math.round(recovery.recoveryRate * 1000) / 10 : 0;
 
   const kpis = [
-    { icon: <Eye size={18} />, n: overview?.totalWatched, l: "Clientes monitorados", gradient: "linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)", color: "#0284c7" },
+    { icon: <Eye size={18} />, n: overview?.totalWatched, l: "Clientes monitorados", gradient: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)", color: "#16a34a" },
     { icon: <CalendarClock size={18} />, n: scheduled.length, l: "Follow-ups agendados (14d)", gradient: "linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)", color: "#059669" },
     { icon: <CheckCircle2 size={18} />, n: recovery?.recoveredCount, l: "Reconquistados", gradient: "linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)", color: "#059669" },
     { icon: <TrendingUp size={18} />, n: recovery ? `${recRate}%` : undefined, l: "Taxa de recuperação", gradient: "linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)", color: "#16a34a" },
@@ -1184,9 +1184,9 @@ const LC_STYLES = `
     gap: 0.6rem;
     font-size: 0.82rem;
     font-weight: 500;
-    color: #475569;
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    color: #15803d;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
     border-radius: 12px;
     padding: 0.7rem 1rem;
   }
@@ -2277,7 +2277,7 @@ const LC_STYLES = `
     position: relative;
     width: 38px;
     height: 38px;
-    background: #f0f2ff;
+    background: #ecfdf5;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -2301,8 +2301,8 @@ const LC_STYLES = `
     z-index: 2;
   }
   .lc-brain-live-badge {
-    background: #e0f2fe;
-    color: #0369a1;
+    background: #ecfdf5;
+    color: #059669;
     font-size: 0.65rem;
     font-weight: 800;
     text-transform: uppercase;
@@ -2315,14 +2315,14 @@ const LC_STYLES = `
   }
   @keyframes lc-brain-flash {
     0% { opacity: 0.8; }
-    50% { opacity: 1; box-shadow: 0 0 8px rgba(14, 165, 233, 0.25); }
+    50% { opacity: 1; box-shadow: 0 0 8px rgba(16, 185, 129, 0.25); }
     100% { opacity: 0.8; }
   }
 
   .lc-brain-terminal {
-    background: #0f172a;
+    background: #0b0f0d;
     border-radius: 12px;
-    border: 1px solid #1e293b;
+    border: 1px solid #141c18;
     font-family: 'Fira Code', 'Courier New', Courier, monospace;
     display: flex;
     flex-direction: column;
@@ -2332,12 +2332,12 @@ const LC_STYLES = `
     box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
   }
   .lc-terminal-hdr {
-    background: #1e293b;
+    background: #161e1b;
     padding: 0.5rem 0.85rem;
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    border-bottom: 1px solid #0f172a;
+    border-bottom: 1px solid #0b0f0d;
   }
   .lc-term-dot {
     width: 9px;
@@ -2386,11 +2386,11 @@ const LC_STYLES = `
     text-transform: uppercase;
     font-size: 0.72rem;
   }
-  .lc-term-tag.sistema { color: #38bdf8; }
+  .lc-term-tag.sistema { color: #2dd4bf; }
   .lc-term-tag.leitura { color: #facc15; }
   .lc-term-tag.monitor { color: #fb7185; }
   .lc-term-tag.cognitivo { color: #c084fc; }
-  .lc-term-tag.decisão { color: #818cf8; }
+  .lc-term-tag.decisão { color: #4ade80; }
   .lc-term-tag.sucesso { color: #4ade80; }
   .lc-term-tag.erro { color: #f87171; }
   .lc-term-msg {
@@ -2403,7 +2403,7 @@ const LC_STYLES = `
     gap: 0.4rem;
   }
   .lc-term-prompt {
-    color: #38bdf8;
+    color: #10b981;
     font-weight: 700;
   }
   .lc-term-typing-indicator {
