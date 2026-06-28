@@ -189,9 +189,10 @@ export async function findLifecycleCandidates(): Promise<LifecycleCandidate[]> {
           LIMIT 1
         ) AS jid
       FROM staged s
-      LEFT JOIN lifecycle_stage_config cfg ON cfg.stage = s.stage AND cfg.enabled = TRUE
+      LEFT JOIN lifecycle_stage_config cfg ON cfg.stage = s.stage
       LEFT JOIN message_templates t ON t.id = cfg.template_id
       WHERE s.stage IS NOT NULL
+        AND COALESCE(cfg.enabled, TRUE) = TRUE
         AND NOT EXISTS (
           SELECT 1 FROM customer_lifecycle_events e
           WHERE e.customer_id = s.customer_id AND e.stage = s.stage
@@ -506,9 +507,10 @@ export async function findScheduledLifecycle(daysAhead = 7): Promise<ScheduledLi
         cfg.template_id,
         t.title AS template_title
       FROM nb
-      LEFT JOIN lifecycle_stage_config cfg ON cfg.stage = nb.target_stage AND cfg.enabled = TRUE
+      LEFT JOIN lifecycle_stage_config cfg ON cfg.stage = nb.target_stage
       LEFT JOIN message_templates t ON t.id = cfg.template_id
       WHERE nb.target_stage IS NOT NULL
+        AND COALESCE(cfg.enabled, TRUE) = TRUE
         AND (nb.boundary - nb.days_since) BETWEEN 0 AND nb.ahead
         AND NOT EXISTS (
           SELECT 1 FROM customer_lifecycle_events e

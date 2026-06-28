@@ -239,6 +239,8 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const { canAccess } = usePermissions();
   const { language, setLanguage, tx } = useUiLanguage();
+  const location = useLocation();
+  const isLifecycleCockpit = location.pathname === "/automacao-carteira";
   const userInitials = user?.name
     ?.split(" ")
     .filter(Boolean)
@@ -249,7 +251,7 @@ export function AppShell() {
   const isAdminLike = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${isLifecycleCockpit ? "is-lifecycle-cockpit" : ""}`}>
       <aside className="cw-sidebar">
         {/* ── Header ── */}
         <section className="cw-header">

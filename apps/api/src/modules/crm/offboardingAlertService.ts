@@ -529,7 +529,7 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
   }
 
   const messages = [
-    buildHeaderMessage(customers.length),
+    buildHeaderMessage(),
     ...customers.map((customer) => buildCustomerMessage(customer)),
   ];
 
@@ -549,28 +549,22 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
 }
 
 /** Mensagem de cabecalho, enviada uma vez quando ha ao menos um cliente. */
-export function buildHeaderMessage(count: number, today = new Date()): string {
+export function buildHeaderMessage(today = new Date()): string {
   const dateLabel = today.toLocaleDateString("pt-BR", { timeZone: env.OFFBOARDING_ALERT_TIMEZONE });
-  const plural = count === 1 ? "cliente cruzou" : "clientes cruzaram";
-  return (
-    `🚨 ALERTA DE INATIVAÇÃO • ${dateLabel}\n\n` +
-    `Os clientes abaixo passaram de 90 dias sem comprar e\n` +
-    `acabaram de entrar como INATIVOS:\n\n` +
-    `Total: ${count} ${plural} 90 dias sem pedido.\n\n` +
-    `Vale uma tentativa de reativação. 👀`
-  );
+  return `🧠 DETECÇÃO AUTOMÁTICA DE INATIVIDADE • ${dateLabel}`;
 }
 
 /** Mensagem individual de um cliente, com nivel de urgencia e historico. */
 export function buildCustomerMessage(customer: NewlyInactiveCustomer): string {
-  const codeLabel = customer.customerCode ? ` (cód. ${customer.customerCode})` : "";
+  const codeLabel = customer.customerCode ? ` — cód. ${customer.customerCode}` : "";
   const ordersLabel = customer.totalOrders === 1 ? "1 compra" : `${customer.totalOrders} compras`;
   return (
-    `${urgencyLevel(customer.avgPiecesPerMonth)}\n` +
-    `👤 ${customer.displayName}${codeLabel}\n` +
-    `🛒 Última compra: ${formatBrDate(customer.lastPurchaseAt)} — ${customer.daysSinceLastPurchase} dias parado\n` +
-    `📦 Comprava em média ~${customer.avgPiecesPerMonth} telas/mês\n` +
-    `🤝 ${ordersLabel} no histórico`
+    `${urgencyLevel(customer.avgPiecesPerMonth)}\n\n` +
+    `👤 *${customer.displayName}*${codeLabel}\n` +
+    `🛒 Última compra: ${formatBrDate(customer.lastPurchaseAt)}\n` +
+    `⏳ *${customer.daysSinceLastPurchase} dias sem comprar*\n` +
+    `📦 Média anterior: ~${customer.avgPiecesPerMonth} telas/mês\n` +
+    `🤝 Histórico: ${ordersLabel}`
   );
 }
 
@@ -592,7 +586,7 @@ export async function runOffboardingAlert(options: { dryRun?: boolean } = {}): P
   }
 
   const messages = [
-    buildHeaderMessage(customers.length),
+    buildHeaderMessage(),
     ...customers.map((customer) => buildCustomerMessage(customer)),
   ];
 

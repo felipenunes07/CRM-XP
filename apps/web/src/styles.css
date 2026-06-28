@@ -21058,3 +21058,75 @@ body:has(.whatsapp-monitor-page) .main-content {
   border-radius: 12px;
 }
 
+.app-shell.is-lifecycle-cockpit {
+  background: #f7f8fb;
+}
+
+.app-shell.is-lifecycle-cockpit .main-content {
+  background:
+    radial-gradient(720px 320px at 76% -18%, rgba(14, 165, 233, 0.055), transparent 62%),
+    linear-gradient(180deg, #fafbfc 0%, #f3f5f9 100%);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-sidebar,
+.app-shell.is-lifecycle-cockpit .cw-footer {
+  border-color: rgba(15, 23, 42, 0.07);
+  background:
+    radial-gradient(220px 180px at 45% 4%, rgba(14, 165, 233, 0.045), transparent 62%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-footer::before {
+  background: linear-gradient(to top, #f8fafc, transparent);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-premium-brand,
+.app-shell.is-lifecycle-cockpit .sidebar-language-card,
+.app-shell.is-lifecycle-cockpit .cw-user-card {
+  border-color: rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.045);
+}
+
+.app-shell.is-lifecycle-cockpit .sidebar-language-label,
+.app-shell.is-lifecycle-cockpit .cw-link,
+.app-shell.is-lifecycle-cockpit .cw-group-toggle,
+.app-shell.is-lifecycle-cockpit .cw-child-link,
+.app-shell.is-lifecycle-cockpit .cw-user-info span,
+.app-shell.is-lifecycle-cockpit .cw-logout-btn {
+  color: #63708a;
+}
+
+.app-shell.is-lifecycle-cockpit .cw-group-toggle:hover,
+.app-shell.is-lifecycle-cockpit .cw-link:hover,
+.app-shell.is-lifecycle-cockpit .cw-child-link:hover {
+  color: #0f2a5c;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-group-toggle.is-active,
+.app-shell.is-lifecycle-cockpit .cw-link.active,
+.app-shell.is-lifecycle-cockpit .cw-child-link.active {
+  color: #0f3f8f;
+  background: #eef5ff;
+  box-shadow: inset 3px 0 0 rgba(14, 165, 233, 0.55);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-child-item::before {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.app-shell.is-lifecycle-cockpit .cw-user-info strong {
+  color: #0f2a5c;
+}
+
+.app-shell.is-lifecycle-cockpit .cw-user-avatar {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.16);
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.14), rgba(99, 102, 241, 0.12));
+}
+
+.app-shell.is-lifecycle-cockpit .cw-logout-btn {
+  border-color: rgba(37, 99, 235, 0.12);
+}
+
