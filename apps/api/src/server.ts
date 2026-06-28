@@ -12,6 +12,7 @@ import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 import { configureUazapiWebhook } from "./modules/whatsapp/uazapiService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
+import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
 
 /**
  * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
@@ -52,6 +53,10 @@ async function main() {
   const scheduler = startDailySyncScheduler();
   const rebuildScheduler = startDailyRebuildScheduler();
   const payloadCleanupScheduler = startPayloadCleanupScheduler();
+  // Roda tambem na API (alem do worker) para o alerta diario das 8h disparar
+  // mesmo se o container worker estiver fora. A trava diaria (claimDailyOffboardingRun)
+  // garante que so um processo envia por dia.
+  const offboardingScheduler = startDailyOffboardingScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
   // Só (re)configura o webhook da uazapi se explicitamente habilitado. Por padrão
   // o CRM não mexe no webhook da uazapi (UAZAPI_AUTO_CONFIGURE_WEBHOOK=false).
@@ -126,6 +131,7 @@ async function main() {
       await scheduler.close();
       await rebuildScheduler.close();
       await payloadCleanupScheduler.close();
+      await offboardingScheduler.close();
       if (whatsappWorker && typeof whatsappWorker.close === "function") {
         await whatsappWorker.close();
       }
