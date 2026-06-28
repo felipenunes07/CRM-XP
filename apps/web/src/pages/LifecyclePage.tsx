@@ -8,9 +8,9 @@ const STAGE_ORDER: LifecycleStage[] = ["ATENCAO_1", "ATENCAO_2", "INATIVO", "INA
 
 // Escala sóbria (família azul/índigo) ââ‚¬â€ diferencia os estágios sem poluir.
 const STAGE_META: Record<LifecycleStage, { short: string; range: string; color: string }> = {
-  ATENCAO_1: { short: "Atenção 1", range: "31ââ‚¬â€œ60 dias", color: "#94a3b8" },
-  ATENCAO_2: { short: "Atenção 2", range: "61ââ‚¬â€œ89 dias", color: "#6366f1" },
-  INATIVO: { short: "Inativo", range: "90ââ‚¬â€œ119 dias", color: "#4f46e5" },
+  ATENCAO_1: { short: "Atenção 1", range: "31-60 dias", color: "#94a3b8" },
+  ATENCAO_2: { short: "Atenção 2", range: "61-89 dias", color: "#6366f1" },
+  INATIVO: { short: "Inativo", range: "90-119 dias", color: "#4f46e5" },
   INATIVO_30: { short: "Inativo +30", range: "120+ dias", color: "#3730a3" },
 };
 
@@ -29,6 +29,57 @@ const initials = (n: string) => { const p = n.trim().split(/\s+/); return ((p[0]
 const untilLbl = (d: number) => (d <= 0 ? "hoje" : d === 1 ? "amanhã" : `em ${d} dias`);
 
 // Edge component removed in favor of dynamic SVG connections
+
+function CountdownTimer({ crossDate, runHour }: { crossDate: string; runHour: number }) {
+  const [timeLeft, setTimeLeft] = useState("");
+  const [isSoon, setIsSoon] = useState(false);
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const now = new Date();
+      const targetDateStr = crossDate.split("T")[0]!;
+      const target = new Date(`${targetDateStr}T${String(runHour).padStart(2, "0")}:00:00`);
+      const diffMs = target.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setIsSoon(true);
+        return "Pronto para envio";
+      }
+
+      const sec = Math.floor((diffMs / 1000) % 60);
+      const min = Math.floor((diffMs / 1000 / 60) % 60);
+      const hr = Math.floor((diffMs / (1000 * 60 * 60)) % 24);
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      setIsSoon(diffMs < 24 * 60 * 60 * 1000);
+
+      const parts = [];
+      if (days > 0) parts.push(`${days}d`);
+      parts.push(`${String(hr).padStart(2, "0")}h`);
+      parts.push(`${String(min).padStart(2, "0")}m`);
+      parts.push(`${String(sec).padStart(2, "0")}s`);
+
+      return parts.join(" ");
+    };
+
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [crossDate, runHour]);
+
+  return (
+    <div className={`lc-countdown-badge ${isSoon ? "soon" : ""}`}>
+      <div className="lc-radar-container">
+        <span className="lc-radar-wave" />
+        <span className="lc-radar-core" />
+      </div>
+      <span className="lc-countdown-text">{timeLeft}</span>
+    </div>
+  );
+}
 
 export function LifecyclePage() {
   const { token } = useAuth();
@@ -112,24 +163,35 @@ export function LifecyclePage() {
   }, []);
 
   useEffect(() => {
+    // Dias estáveis por cliente (evita dados conflitantes)
+    const clientDays: Record<string, number> = {
+      "Neto CL354": 38, "SANTANA JOSE": 72, "Roberta Lima": 55,
+      "Marcos Silva": 95, "Ana Oliveira": 42, "Carlos Souza": 110,
+      "Juliana Costa": 63, "Fernando Santos": 130
+    };
+    const clientNames = Object.keys(clientDays);
+    let lastClient = "";
+
     const timer = setInterval(() => {
-      const clients = [
-        "Neto CL354", "SANTANA JOSE", "Roberta Lima", "Marcos Silva",
-        "Ana Oliveira", "Carlos Souza", "Juliana Costa", "Fernando Santos"
-      ];
-      const randomClient = clients[Math.floor(Math.random() * clients.length)];
-      
+      // Nunca repete o mesmo cliente consecutivamente
+      let randomClient: string;
+      do {
+        randomClient = clientNames[Math.floor(Math.random() * clientNames.length)]!;
+      } while (randomClient === lastClient && clientNames.length > 1);
+      lastClient = randomClient;
+
       const templatesList = ["Atenção 1", "Atenção 2", "Inativo", "Inativo +30"];
       const randomTemplate = templatesList[Math.floor(Math.random() * templatesList.length)];
-      
+
       const types = ["LEITURA", "MONITOR", "COGNITIVO", "DECISÃO"] as const;
       const randomType = types[Math.floor(Math.random() * types.length)]!;
-      
+
+      const days = clientDays[randomClient]!;
       let message = "";
       if (randomType === "LEITURA") {
         message = `Analisando intervalo de compras de ${randomClient}...`;
       } else if (randomType === "MONITOR") {
-        message = `Cliente ${randomClient} está a ${Math.floor(Math.random() * 90) + 30} dias sem comprar.`;
+        message = `Cliente ${randomClient} está a ${days} dias sem comprar.`;
       } else if (randomType === "COGNITIVO") {
         message = `Correlacionando interesse de ${randomClient} com novos produtos.`;
       } else {
@@ -142,7 +204,7 @@ export function LifecyclePage() {
           ...prev,
           { time: nowStr(), type: randomType, msg: message }
         ];
-        return nextLogs.slice(-10); // Keep last 10 logs
+        return nextLogs.slice(-10);
       });
     }, 4500);
 
@@ -577,7 +639,7 @@ export function LifecyclePage() {
                         const timeStr = times[index] || "há alguns dias";
                         return (
                           <div key={r.customerId} className="lc-feed-item">
-                            <span className="lc-feed-av">{initials(r.displayName)}</span>
+                            <img src="/xp-logo.jpg" alt="XP" className="lc-feed-av" style={{ objectFit: "cover" }} />
                             <div className="lc-feed-info">
                               <b>{r.displayName}</b>
                               <small>comprou após {STAGE_META[r.stage as LifecycleStage]?.short ?? "recuperação"}</small>
@@ -679,7 +741,7 @@ export function LifecyclePage() {
           ) : (
             <div className="lc-table">
               <div className="lc-tr lc-th">
-                <span>Cliente</span><span>Transição de estágio</span><span>Agendamento</span><span>Ação recomendada</span><span>Açàµes</span>
+                <span>Cliente</span><span>Transição de estágio</span><span>Agendamento</span><span>Ação recomendada</span><span>Ações</span>
               </div>
               {filteredScheduled.slice(0, 25).map((e: any) => {
                 const m = STAGE_META[e.targetStage as LifecycleStage];
@@ -688,7 +750,7 @@ export function LifecyclePage() {
                 return (
                   <div key={`${e.customerId}-${e.targetStage}`} className="lc-tr">
                     <span className="lc-cell-client">
-                      <span className="lc-av" style={{ background: m.color }}>{initials(e.displayName)}</span>
+                      <img src="/xp-logo.jpg" alt="XP" className="lc-av" style={{ objectFit: "cover" }} />
                       <div>
                         <b>{e.displayName}</b>
                         {e.customerCode ? <small className="lc-muted">{e.customerCode}</small> : null}
@@ -726,24 +788,19 @@ export function LifecyclePage() {
                     </span>
                     <span>
                       {e.templateTitle ? (
-                        <div className="lc-ai-action-badge ok">
-                          <Bot size={13} className="lc-ai-bot-ic" />
-                          <div className="lc-ai-action-details">
-                            <span className="lc-ai-action-title">Auto-Disparo WhatsApp</span>
-                            <span className="lc-ai-action-tmpl" title={e.templateTitle}>
-                              <MessageSquare size={10} style={{ marginRight: "0.15rem", display: "inline-block", verticalAlign: "middle" }} />
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                          <CountdownTimer crossDate={e.crossDate} runHour={Number(runHour)} />
+                          <small className="lc-muted" style={{ display: "flex", alignItems: "center", gap: "0.25rem", fontSize: "0.72rem", color: "#64748b" }}>
+                            <MessageSquare size={11} style={{ flexShrink: 0, color: "#94a3b8" }} />
+                            <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap", maxWidth: "135px", color: "#475569", fontWeight: 500 }} title={e.templateTitle}>
                               {e.templateTitle}
                             </span>
-                          </div>
+                          </small>
                         </div>
                       ) : (
-                        <div className="lc-ai-action-badge warn">
-                          <Info size={13} className="lc-ai-bot-ic" />
-                          <div className="lc-ai-action-details">
-                            <span className="lc-ai-action-title">Ação Requerida</span>
-                            <span className="lc-ai-action-tmpl">Configurar template</span>
-                          </div>
-                        </div>
+                        <span className="lc-trans-pill outline" style={{ color: "#d97706", borderColor: "#fef3c7", background: "#fffbeb", fontSize: "0.74rem", fontWeight: 700 }}>
+                          Sem template ativo
+                        </span>
                       )}
                     </span>
                     <span className="lc-actions-cell">
@@ -838,7 +895,10 @@ export function LifecyclePage() {
                           <div className="lc-wa-text">
                             {templates.find((t: any) => t.id === selectedTmplId)?.content ?? "Carregando mensagem..."}
                           </div>
-                          <span className="lc-wa-time">09:00</span>
+                          <div className="lc-wa-time-container">
+                            <span className="lc-wa-time">09:00</span>
+                            <span className="lc-wa-checks">✓✓</span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -904,7 +964,7 @@ export function LifecyclePage() {
                 return (
                   <div key={j.customerId} className="lc-journey">
                     <div className="lc-j-head">
-                      <span className="lc-av sm" style={{ background: "#475569" }}>{initials(j.displayName)}</span>
+                      <img src="/xp-logo.jpg" alt="XP" className="lc-av sm" style={{ objectFit: "cover" }} />
                       <div className="lc-j-id">
                         <b>{j.displayName}</b>
                         {j.customerCode ? <small className="lc-muted">{j.customerCode}</small> : null}
@@ -1000,15 +1060,15 @@ const LC_STYLES = `
     --ink: #0f172a;
     --muted: #64748b;
     --line: #e2e8f0;
-    --accent: #6366f1;
-    --accent-soft: #f0f2ff;
-    --accent-hover: #4f46e5;
+    --accent: #10b981;
+    --accent-soft: #ecfdf5;
+    --accent-hover: #059669;
     --bg-main: #f8fafc;
     --bg-card: #ffffff;
     --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
-    --shadow-premium: 0 15px 30px -5px rgba(99, 102, 241, 0.08), 0 10px 15px -5px rgba(99, 102, 241, 0.03);
+    --shadow-premium: 0 15px 30px -5px rgba(16, 185, 129, 0.08), 0 10px 15px -5px rgba(16, 185, 129, 0.03);
 
     display: flex;
     flex-direction: column;
@@ -1222,8 +1282,9 @@ const LC_STYLES = `
     font-weight: 700;
     flex-shrink: 0;
     box-shadow: inset 0 -2px 0 rgba(0,0,0,0.1);
+    object-fit: cover;
   }
-  .lc-av.sm { width: 28px; height: 28px; font-size: 0.68rem; }
+  .lc-av.sm { width: 28px; height: 28px; font-size: 0.68rem; border-radius: 50%; }
   
   .lc-stage { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.86rem; font-weight: 650; color: var(--ink); }
   .lc-stage-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 2px #fff, 0 0 4px rgba(0,0,0,0.15); }
@@ -1736,23 +1797,23 @@ const LC_STYLES = `
   }
 
   /* Conversão Radial CSS */
+  /* Conversão — consolidado */
   .lc-conv-body {
     display: flex;
-    align-items: center;
-    justify-content: space-around;
-    gap: 1.5rem;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 1.25rem;
     padding: 0.5rem 0;
   }
   .lc-conv-radial {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 2rem;
+    padding: 0.75rem 0;
   }
   .lc-radial-svg {
     position: relative;
-    width: 96px;
-    height: 96px;
+    width: 110px;
+    height: 110px;
     flex-shrink: 0;
   }
   .lc-radial-svg svg {
@@ -1762,7 +1823,7 @@ const LC_STYLES = `
   }
   .lc-radial-bg {
     fill: none !important;
-    stroke: #f1f5f9;
+    stroke: #e2e8f0;
     stroke-width: 8;
   }
   .lc-radial-fg {
@@ -1771,27 +1832,38 @@ const LC_STYLES = `
     stroke-width: 8;
     stroke-dasharray: 251.2;
     stroke-linecap: round;
-    transition: stroke-dashoffset 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: stroke-dashoffset 0.8s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .lc-radial-txt {
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 1.25rem;
-    font-weight: 850;
-    color: var(--ink);
-  }
-  
-  .lc-conv-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .lc-conv-stat {
+    inset: 0;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 850;
+    color: #059669;
+    pointer-events: none;
+  }
+  .lc-conv-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+  .lc-conv-stats div {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-conv-stats b {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  .lc-conv-stats small {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-weight: 600;
   }
   .lc-conv-dot {
     width: 10px;
@@ -1801,48 +1873,26 @@ const LC_STYLES = `
   }
   .lc-conv-dot.green { background: #10b981; }
   .lc-conv-dot.purple { background: #8b5cf6; }
-  .lc-conv-stat b {
-    font-size: 1.15rem;
-    font-weight: 800;
-    color: var(--ink);
-    display: block;
-    line-height: 1;
-  }
-  .lc-conv-stat small {
-    font-size: 0.74rem;
-    color: var(--muted);
-    font-weight: 600;
-  }
-
   .lc-conv-divider {
-    width: 1px;
-    height: 80px;
+    width: 100%;
+    height: 1px;
     background: var(--line);
   }
-  @media(max-width: 600px) {
-    .lc-conv-divider { display: none; }
-  }
-
   .lc-conv-feed-title {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     font-weight: 800;
     color: var(--ink);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    width: 100%;
-    margin-top: 0.5rem;
   }
   .lc-conv-feed {
-    width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
+    gap: 0;
   }
   .lc-conv-empty {
-    width: 100%;
     text-align: center;
-    padding: 1rem;
+    padding: 1.5rem;
     color: var(--muted);
     font-size: 0.82rem;
     font-weight: 500;
@@ -2045,11 +2095,11 @@ const LC_STYLES = `
     flex-direction: column;
   }
   .lc-wa-bubble {
-    background: #ffffff;
-    align-self: flex-start;
+    background: #d9fdd3;
+    align-self: flex-end;
     padding: 0.5rem 0.65rem 0.35rem 0.65rem;
-    border-radius: 0 8px 8px 8px;
-    box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+    border-radius: 8px 0 8px 8px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.12);
     max-width: 90%;
     position: relative;
     word-break: break-word;
@@ -2060,13 +2110,23 @@ const LC_STYLES = `
     line-height: 1.4;
     white-space: pre-wrap;
   }
+  .lc-wa-time-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    margin-top: 0.15rem;
+  }
   .lc-wa-time {
-    display: block;
     font-size: 0.62rem;
     color: #667781;
-    text-align: right;
-    margin-top: 0.2rem;
     font-weight: 500;
+  }
+  .lc-wa-checks {
+    font-size: 0.75rem;
+    color: #53bdeb;
+    font-weight: 700;
+    line-height: 1;
   }
 
   /* Transition Flows */
@@ -2383,9 +2443,9 @@ const LC_STYLES = `
   .lc-pipeline {
     display: flex;
     align-items: flex-start;
-    gap: 0;
-    padding: 0.5rem 0;
-    overflow-x: auto;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    width: 100%;
   }
   .lc-pipe-step {
     display: flex;
@@ -2445,13 +2505,14 @@ const LC_STYLES = `
     color: #b45309;
   }
   .lc-pipe-connector {
-    flex-shrink: 0;
-    width: 36px;
+    flex-grow: 1;
     height: 2px;
     background: #e2e8f0;
     margin-top: 24px;
     border-radius: 2px;
     position: relative;
+    min-width: 16px;
+    max-width: 140px;
   }
   .lc-pipe-connector.active {
     background: linear-gradient(90deg, #818cf8, #6366f1);
@@ -2636,14 +2697,8 @@ const LC_STYLES = `
   .lc-feed-av {
     width: 32px;
     height: 32px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-    color: #6d28d9;
-    font-size: 0.7rem;
-    font-weight: 800;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 50%;
+    object-fit: cover;
     flex-shrink: 0;
   }
   .lc-feed-info {
@@ -2670,6 +2725,139 @@ const LC_STYLES = `
     color: #94a3b8;
     white-space: nowrap;
     flex-shrink: 0;
+  }
+
+  /* ── Table Action Buttons ── */
+  .lc-actions-cell {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .lc-btn-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    outline: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .lc-btn-action:hover:not(:disabled) {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #1e293b;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0,0,0,0.08);
+  }
+  .lc-btn-action:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .lc-btn-action.primary {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #047857;
+  }
+  .lc-btn-action.primary:hover:not(:disabled) {
+    background: #d1fae5;
+    border-color: #34d399;
+    color: #065f46;
+  }
+  .lc-btn-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  .lc-btn-action svg {
+    flex-shrink: 0;
+  }
+
+  /* ── Countdown Timer Badge ── */
+  .lc-countdown-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #e2e8f0;
+    padding: 0.38rem 0.8rem;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 750;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+    letter-spacing: 0.05em;
+    width: fit-content;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .lc-countdown-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(71, 85, 105, 0.08);
+    border-color: #cbd5e1;
+  }
+  .lc-countdown-badge.soon {
+    background: rgba(217, 119, 6, 0.06);
+    color: #b45309;
+    border-color: rgba(217, 119, 6, 0.3);
+    box-shadow: 0 0 12px rgba(217, 119, 6, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    animation: lc-pulse-gold-badge 2s infinite ease-in-out;
+  }
+  .lc-radar-container {
+    position: relative;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lc-countdown-badge.soon .lc-radar-container {
+    border-color: rgba(217, 119, 6, 0.4);
+  }
+  .lc-radar-wave {
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 2px solid #475569;
+    border-color: #475569 transparent transparent transparent;
+    animation: lc-radar-spin 1s linear infinite;
+  }
+  .lc-countdown-badge.soon .lc-radar-wave {
+    border-top-color: #d97706;
+  }
+  .lc-radar-core {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #475569;
+  }
+  .lc-countdown-badge.soon .lc-radar-core {
+    background: #d97706;
+    animation: lc-radar-blink 1s steps(2, start) infinite;
+  }
+  @keyframes lc-radar-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes lc-radar-blink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+  @keyframes lc-pulse-gold-badge {
+    0% { box-shadow: 0 0 6px rgba(217, 119, 6, 0.05); }
+    50% { box-shadow: 0 0 14px rgba(217, 119, 6, 0.18); }
+    100% { box-shadow: 0 0 6px rgba(217, 119, 6, 0.05); }
   }
 `;
 
