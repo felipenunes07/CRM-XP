@@ -901,3 +901,82 @@ export function startDailyLifecycleScheduler() {
     },
   };
 }
+
+export async function triggerIndividualLifecycle(
+  customerId: string,
+  targetStage: LifecycleStage
+): Promise<{ success: boolean; detail: string }> {
+  // 1. Find the customer JID
+  const customerResult = await pool.query(
+    `SELECT display_name, (
+       SELECT whatsapp_jid FROM deals 
+       WHERE customer_id = c.id AND whatsapp_jid IS NOT NULL 
+       ORDER BY updated_at DESC LIMIT 1
+     ) AS jid 
+     FROM customers c WHERE c.id = $1`,
+    [customerId]
+  );
+  if (customerResult.rowCount === 0) {
+    throw new Error("Cliente não encontrado.");
+  }
+  const customer = customerResult.rows[0];
+  const jid = customer.jid ? String(customer.jid) : null;
+  if (!jid) {
+    throw new Error("Cliente sem número de WhatsApp vinculado (deals.whatsapp_jid).");
+  }
+
+  // 2. Find template
+  const configResult = await pool.query(
+    `SELECT template_id FROM lifecycle_stage_config WHERE stage = $1 AND enabled = TRUE`,
+    [targetStage]
+  );
+  const templateId = configResult.rows[0]?.template_id;
+  if (!templateId) {
+    throw new Error("Nenhum template ativo configurado para este estágio.");
+  }
+
+  const template = await loadTemplatePayload(templateId);
+  if (!template) {
+    throw new Error("Template não encontrado.");
+  }
+
+  // 3. Send WhatsApp
+  await sendTemplateToCustomer(jid, template);
+
+  // 4. Save Event
+  await pool.query(
+    `
+      INSERT INTO customer_lifecycle_events
+        (customer_id, stage, template_id, action, detail, days_since_last_purchase)
+      VALUES ($1, $2, $3, 'SENT', $4, 0)
+      ON CONFLICT (customer_id, stage) DO UPDATE
+      SET template_id = EXCLUDED.template_id,
+          action = EXCLUDED.action,
+          detail = EXCLUDED.detail,
+          created_at = NOW()
+    `,
+    [customerId, targetStage, templateId, `Disparado manualmente: ${template.messageType}`]
+  );
+
+  return { success: true, detail: `Mensagem enviada com sucesso para ${customer.display_name}.` };
+}
+
+export async function skipIndividualLifecycle(
+  customerId: string,
+  targetStage: LifecycleStage
+): Promise<{ success: boolean }> {
+  await pool.query(
+    `
+      INSERT INTO customer_lifecycle_events
+        (customer_id, stage, template_id, action, detail, days_since_last_purchase)
+      VALUES ($1, $2, NULL, 'SIMULATED', $3, 0)
+      ON CONFLICT (customer_id, stage) DO UPDATE
+      SET action = EXCLUDED.action,
+          detail = EXCLUDED.detail,
+          created_at = NOW()
+    `,
+    [customerId, targetStage, "Pulado manualmente pelo usuário"]
+  );
+  return { success: true };
+}
+

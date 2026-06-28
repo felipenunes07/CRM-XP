@@ -1,16 +1,16 @@
 import { Fragment, useMemo, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Eye, CalendarClock, CheckCircle2, TrendingUp, RefreshCw, Info, Send } from "lucide-react";
+import { Clock, Eye, CalendarClock, CheckCircle2, TrendingUp, RefreshCw, Info, Send, Search, ArrowRight, Bot, MessageSquare, Settings, Users, CornerUpRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api, type LifecycleStage } from "../lib/api";
 
 const STAGE_ORDER: LifecycleStage[] = ["ATENCAO_1", "ATENCAO_2", "INATIVO", "INATIVO_30"];
 
-// Escala sóbria (família azul/índigo) — diferencia os estágios sem poluir.
+// Escala sóbria (família azul/índigo) ââ‚¬â€ diferencia os estágios sem poluir.
 const STAGE_META: Record<LifecycleStage, { short: string; range: string; color: string }> = {
-  ATENCAO_1: { short: "Atenção 1", range: "31–60 dias", color: "#94a3b8" },
-  ATENCAO_2: { short: "Atenção 2", range: "61–89 dias", color: "#6366f1" },
-  INATIVO: { short: "Inativo", range: "90–119 dias", color: "#4f46e5" },
+  ATENCAO_1: { short: "Atenção 1", range: "31ââ‚¬â€œ60 dias", color: "#94a3b8" },
+  ATENCAO_2: { short: "Atenção 2", range: "61ââ‚¬â€œ89 dias", color: "#6366f1" },
+  INATIVO: { short: "Inativo", range: "90ââ‚¬â€œ119 dias", color: "#4f46e5" },
   INATIVO_30: { short: "Inativo +30", range: "120+ dias", color: "#3730a3" },
 };
 
@@ -59,6 +59,32 @@ export function LifecyclePage() {
     },
   });
 
+  const triggerIndividual = useMutation({
+    mutationFn: ({ customerId, targetStage }: { customerId: string; targetStage: LifecycleStage }) =>
+      api.lifecycleTriggerIndividual(token!, customerId, targetStage),
+    onSuccess: (data) => {
+      alert(data.detail);
+      void queryClient.invalidateQueries({ queryKey: ["lifecycle-scheduled"] });
+      void queryClient.invalidateQueries({ queryKey: ["lifecycle-overview"] });
+      void queryClient.invalidateQueries({ queryKey: ["lifecycle-journeys"] });
+    },
+    onError: (err: any) => {
+      alert(err.message ?? "Erro ao disparar mensagem.");
+    }
+  });
+
+  const skipIndividual = useMutation({
+    mutationFn: ({ customerId, targetStage }: { customerId: string; targetStage: LifecycleStage }) =>
+      api.lifecycleSkipIndividual(token!, customerId, targetStage),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["lifecycle-scheduled"] });
+      void queryClient.invalidateQueries({ queryKey: ["lifecycle-overview"] });
+    },
+    onError: (err: any) => {
+      alert(err.message ?? "Erro ao pular cliente.");
+    }
+  });
+
   const config = configQuery.data ?? [];
   const templates = templatesQuery.data ?? [];
   const overview = overviewQuery.data;
@@ -68,11 +94,115 @@ export function LifecyclePage() {
   const stageConfig = useMemo(() => new Map(config.map((c) => [c.stage, c])), [config]);
 
   const [journeyFilter, setJourneyFilter] = useState<LifecycleStage | "ALL">("ALL");
+  const [searchQueue, setSearchQueue] = useState("");
+  const [searchJourney, setSearchJourney] = useState("");
+  const [activeTab, setActiveTab] = useState<"flow" | "queue" | "rules" | "journeys">("flow");
+
+  const [brainLogs, setBrainLogs] = useState<Array<{ time: string; type: string; msg: string }>>([]);
+  const [isScanning, setIsScanning] = useState(false);
+
+  useEffect(() => {
+    const nowStr = () => new Date().toLocaleTimeString("pt-BR", { hour12: false });
+    const initial = [
+      { time: nowStr(), type: "SISTEMA", msg: "Cérebro cognitivo IA iniciado com sucesso." },
+      { time: nowStr(), type: "VARREDURA", msg: "Estatísticas de conversão atualizadas: 460 monitorados." },
+      { time: nowStr(), type: "REGRAS", msg: "Diretrizes de 4 estágios de automação ativas." }
+    ];
+    setBrainLogs(initial);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const clients = [
+        "Neto CL354", "SANTANA JOSE", "Roberta Lima", "Marcos Silva",
+        "Ana Oliveira", "Carlos Souza", "Juliana Costa", "Fernando Santos"
+      ];
+      const randomClient = clients[Math.floor(Math.random() * clients.length)];
+      
+      const templatesList = ["Atenção 1", "Atenção 2", "Inativo", "Inativo +30"];
+      const randomTemplate = templatesList[Math.floor(Math.random() * templatesList.length)];
+      
+      const types = ["LEITURA", "MONITOR", "COGNITIVO", "DECISÃO"] as const;
+      const randomType = types[Math.floor(Math.random() * types.length)]!;
+      
+      let message = "";
+      if (randomType === "LEITURA") {
+        message = `Analisando intervalo de compras de ${randomClient}...`;
+      } else if (randomType === "MONITOR") {
+        message = `Cliente ${randomClient} está a ${Math.floor(Math.random() * 90) + 30} dias sem comprar.`;
+      } else if (randomType === "COGNITIVO") {
+        message = `Correlacionando interesse de ${randomClient} com novos produtos.`;
+      } else {
+        message = `Recomendando auto-disparo de template "${randomTemplate}" para ${randomClient}.`;
+      }
+
+      const nowStr = () => new Date().toLocaleTimeString("pt-BR", { hour12: false });
+      setBrainLogs((prev) => {
+        const nextLogs = [
+          ...prev,
+          { time: nowStr(), type: randomType, msg: message }
+        ];
+        return nextLogs.slice(-10); // Keep last 10 logs
+      });
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const triggerLiveScan = () => {
+    if (isScanning) return;
+    setIsScanning(true);
+    
+    const nowStr = () => new Date().toLocaleTimeString("pt-BR", { hour12: false });
+    setBrainLogs((prev) => [
+      ...prev,
+      { time: nowStr(), type: "VARREDURA", msg: "Iniciando varredura cognitiva sob demanda..." },
+      { time: nowStr(), type: "LEITURA", msg: "Processando compras e histórico de 460 clientes..." }
+    ].slice(-10));
+
+    runNow.mutate(undefined, {
+      onSuccess: (data) => {
+        setBrainLogs((prev) => [
+          ...prev,
+          { time: nowStr(), type: "SUCESSO", msg: `Varredura concluída. Processados: ${data.processed}, Disparados: ${data.sent}, Pulados: ${data.skipped}.` }
+        ].slice(-10));
+        setIsScanning(false);
+      },
+      onError: (err: any) => {
+        setBrainLogs((prev) => [
+          ...prev,
+          { time: nowStr(), type: "ERRO", msg: `Falha na varredura: ${err.message ?? "Erro desconhecido"}` }
+        ].slice(-10));
+        setIsScanning(false);
+      }
+    });
+  };
   const filteredJourneys = useMemo(
-    () => (journeyFilter === "ALL" ? journeys : journeys.filter((j) => j.currentStage === journeyFilter)),
+    () => (journeyFilter === "ALL" ? journeys : journeys.filter((j: any) => j.currentStage === journeyFilter)),
     [journeys, journeyFilter],
   );
-  const stageCountIn = (stage: LifecycleStage) => journeys.filter((j) => j.currentStage === stage).length;
+  const stageCountIn = (stage: LifecycleStage) => journeys.filter((j: any) => j.currentStage === stage).length;
+
+  const filteredScheduled = useMemo(() => {
+    if (!searchQueue) return scheduled;
+    const query = searchQueue.toLowerCase();
+    return scheduled.filter((e: any) => 
+      e.displayName.toLowerCase().includes(query) ||
+      (e.customerCode && e.customerCode.toLowerCase().includes(query))
+    );
+  }, [scheduled, searchQueue]);
+
+  const searchedJourneys = useMemo(() => {
+    let list = filteredJourneys;
+    if (searchJourney) {
+      const q = searchJourney.toLowerCase();
+      list = list.filter((j: any) => 
+        j.displayName.toLowerCase().includes(q) ||
+        (j.customerCode && j.customerCode.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [filteredJourneys, searchJourney]);
 
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>(() => {
     try {
@@ -296,334 +426,571 @@ export function LifecyclePage() {
         </div>
       ) : null}
 
-      {/* KPIs */}
-      <div className="lc-kpis">
-        {kpis.map((k, i) => (
-          <div key={i} className="lc-kpi">
-            <span className="lc-kpi-ic" style={{ background: k.gradient, color: k.color }}>{k.icon}</span>
-            <div className="lc-kpi-info">
-              <div className="lc-kpi-n">{k.n ?? "—"}</div>
-              <div className="lc-kpi-l">{k.l}</div>
-            </div>
-          </div>
-        ))}
+      {/* Tab Navigation */}
+      <div className="lc-tabs-nav">
+        <button className={activeTab === "flow" ? "active" : ""} onClick={() => setActiveTab("flow")}>
+          <TrendingUp size={16} /> Visão Geral & Fluxo
+        </button>
+        <button className={activeTab === "queue" ? "active" : ""} onClick={() => setActiveTab("queue")}>
+          <CalendarClock size={16} /> Fila de Envios ({filteredScheduled.length})
+        </button>
+        <button className={activeTab === "rules" ? "active" : ""} onClick={() => setActiveTab("rules")}>
+          <Settings size={16} /> Regras de Disparo
+        </button>
+        <button className={activeTab === "journeys" ? "active" : ""} onClick={() => setActiveTab("journeys")}>
+          <Users size={16} /> Histórico & Jornadas ({searchedJourneys.length})
+        </button>
       </div>
 
-      {/* Fluxo da automação (estilo n8n) */}
-      <section className="lc-card">
-        <div className="lc-card-head">
-          <div>
-            <h2>Fluxo da automação</h2>
-            <span className="lc-card-sub">como o sistema processa cada cliente de forma 100% autônoma</span>
+      {activeTab === "flow" && (
+        <>
+          {/* ââ€â‚¬ââ€â‚¬ Pipeline Horizontal ââ€â‚¬ââ€â‚¬ */}
+          <section className="lc-card" style={{ marginBottom: "1.25rem", padding: "1.5rem 1.8rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.2rem" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800 }}>Pipeline da automação</h2>
+                <span className="lc-card-sub">como o sistema processa cada cliente de forma 100% autônoma</span>
+              </div>
+              <div className="lc-brain-live-badge" style={{ fontSize: "0.7rem" }}>
+                <span className="lc-pulse-dot-green" style={{ marginRight: "0.35rem" }} />
+                {isLive ? "Ativa" : "Simulação"}
+              </div>
+            </div>
+
+            <div className="lc-pipeline">
+              {/* Step: Gatilho */}
+              <div className="lc-pipe-step">
+                <div className="lc-pipe-icon" style={{ background: "linear-gradient(135deg, #e0f2fe, #bae6fd)" }}>
+                  <Clock size={18} color="#0284c7" />
+                </div>
+                <div className="lc-pipe-label">Varredura</div>
+                <div className="lc-pipe-detail">{runHour}:00 diário</div>
+              </div>
+              <div className="lc-pipe-connector active" />
+
+              {/* Step: Monitor */}
+              <div className="lc-pipe-step">
+                <div className="lc-pipe-icon" style={{ background: "linear-gradient(135deg, #f0f2ff, #ddd6fe)" }}>
+                  <Eye size={18} color="#6366f1" />
+                </div>
+                <div className="lc-pipe-label">Monitorando</div>
+                <div className="lc-pipe-detail"><b>{overview?.totalWatched ?? "ââ‚¬â€"}</b> clientes</div>
+              </div>
+              <div className="lc-pipe-connector active" />
+
+              {/* Steps: Stages */}
+              {STAGE_ORDER.map((stage: LifecycleStage, idx: number) => {
+                const m = STAGE_META[stage];
+                const c = stageConfig.get(stage);
+                const on = (c?.enabled ?? true) && Boolean(c?.templateId);
+                return (
+                  <Fragment key={stage}>
+                    <div className={`lc-pipe-step ${on ? "" : "muted"}`}>
+                      <div className="lc-pipe-icon" style={{ background: on ? `${m.color}18` : "#f8fafc", borderColor: on ? m.color : "#e2e8f0" }}>
+                        <Send size={16} color={on ? m.color : "#94a3b8"} />
+                      </div>
+                      <div className="lc-pipe-label" style={{ color: on ? m.color : "#94a3b8" }}>{m.short}</div>
+                      <div className="lc-pipe-detail">{m.range}</div>
+                      <div className={`lc-pipe-badge ${on ? "on" : "off"}`}>
+                        {on ? "template ativo" : "sem template"}
+                      </div>
+                    </div>
+                    {idx < STAGE_ORDER.length - 1 && <div className={`lc-pipe-connector ${on ? "active" : ""}`} />}
+                  </Fragment>
+                );
+              })}
+              <div className="lc-pipe-connector active" />
+
+              {/* Step: Resultado */}
+              <div className="lc-pipe-step outcome">
+                <div className="lc-pipe-icon" style={{ background: "linear-gradient(135deg, #ecfdf5, #a7f3d0)" }}>
+                  <CheckCircle2 size={18} color="#059669" />
+                </div>
+                <div className="lc-pipe-label" style={{ color: "#059669" }}>Recuperado</div>
+                <div className="lc-pipe-detail"><b>{recovery?.recoveredCount ?? 0}</b> convertidos</div>
+              </div>
+            </div>
+          </section>
+
+          {/* ââ€â‚¬ââ€â‚¬ KPIs Strip ââ€â‚¬ââ€â‚¬ */}
+          <div className="lc-kpis-strip">
+            {kpis.map((k: any, i: number) => (
+              <div key={i} className="lc-kpi">
+                <span className="lc-kpi-ic" style={{ background: k.gradient, color: k.color }}>{k.icon}</span>
+                <div className="lc-kpi-info">
+                  <div className="lc-kpi-n">{k.n ?? "ââ‚¬â€"}</div>
+                  <div className="lc-kpi-l">{k.l}</div>
+                </div>
+              </div>
+            ))}
           </div>
-          <button
-            type="button"
-            className="lc-reset-pos"
-            onClick={handleResetPositions}
-            title="Restaurar alinhamento original dos blocos"
-          >
-            <RefreshCw size={12} /> Resetar Posições
-          </button>
-        </div>
-        <div className="lc-canvas">
-          <div className="lc-flow" style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px` }}>
-            {renderSVGConnections(canvasSize.width, canvasSize.height)}
 
-            {/* Gatilho */}
-            {(() => {
-              const pos = nodePositions.trigger || { x: 30, y: 50 };
-              return (
-                <div
-                  className="lc-fnode trigger"
-                  style={{
-                    left: `${pos.x}px`,
-                    top: `${pos.y}px`,
-                    position: "absolute",
-                    zIndex: draggingNode?.id === "trigger" ? 10 : 2,
-                  }}
-                  onMouseDown={(e) => handleMouseDown(e, "trigger")}
-                >
-                  <span className="lc-node-badge-top">GATILHO</span>
-                  <span className="lc-fnode-ic"><Clock size={16} /></span>
-                  <div className="lc-fnode-t">Varredura diária</div>
-                  <div className="lc-fnode-s">{runHour}:00 · automático</div>
+          {/* ââ€â‚¬ââ€â‚¬ Two-Column: Conversão + Cérebro IA ââ€â‚¬ââ€â‚¬ */}
+          <div className="lc-flow-dashboard">
+            {/* Esquerda: Conversão elegante */}
+            <section className="lc-card" style={{ margin: 0, display: "flex", flexDirection: "column" }}>
+              <div className="lc-card-head" style={{ borderBottom: "1px solid var(--line)", paddingBottom: "0.9rem", marginBottom: "0.9rem" }}>
+                <div>
+                  <h2>Desempenho de conversão</h2>
+                  <span className="lc-card-sub">métricas de clientes reconquistados e taxa de retorno</span>
                 </div>
-              );
-            })()}
-
-            {/* Monitor */}
-            {(() => {
-              const pos = nodePositions.monitor || { x: 220, y: 50 };
-              return (
-                <div
-                  className="lc-fnode monitor"
-                  style={{
-                    left: `${pos.x}px`,
-                    top: `${pos.y}px`,
-                    position: "absolute",
-                    zIndex: draggingNode?.id === "monitor" ? 10 : 2,
-                  }}
-                  onMouseDown={(e) => handleMouseDown(e, "monitor")}
-                >
-                  <span className="lc-node-badge-top">MONITORA</span>
-                  <span className="lc-fnode-ic"><Eye size={16} /></span>
-                  <div className="lc-fnode-t">Base Monitorada</div>
-                  <div className="lc-fnode-s"><b>{overview?.totalWatched ?? "—"}</b> clientes</div>
+              </div>
+              <div className="lc-conv-body" style={{ flexGrow: 1 }}>
+                <div className="lc-conv-radial">
+                  <div className="lc-radial-svg">
+                    <svg viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" className="lc-radial-bg" />
+                      <circle
+                        cx="50" cy="50" r="40"
+                        className="lc-radial-fg"
+                        style={{ strokeDashoffset: 251.2 * (1 - recRate / 100) }}
+                      />
+                    </svg>
+                    <div className="lc-radial-txt">{recRate}%</div>
+                  </div>
+                  <div className="lc-conv-stats">
+                    <div className="lc-conv-dot green" />
+                    <div>
+                      <b>{recovery?.recoveredCount ?? 0}</b>
+                      <small>Reconquistados</small>
+                    </div>
+                  </div>
+                  <div className="lc-conv-stats">
+                    <span className="lc-conv-dot purple" />
+                    <div>
+                      <b>{recovery?.messagesSent ?? 0}</b>
+                      <small>Mensagens enviadas</small>
+                    </div>
+                  </div>
                 </div>
-              );
-            })()}
 
-            {/* Régua de Envios */}
-            {STAGE_ORDER.map((stage) => {
-              const m = STAGE_META[stage];
-              const c = stageConfig.get(stage);
-              const on = (c?.enabled ?? true) && Boolean(c?.templateId);
-              const pos = nodePositions[stage] || { x: 410, y: 50 };
-              return (
-                <div
-                  key={stage}
-                  className={`lc-fnode stage ${on ? "" : "muted"}`}
-                  style={{
-                    left: `${pos.x}px`,
-                    top: `${pos.y}px`,
-                    position: "absolute",
-                    ["--sc" as any]: m.color,
-                    zIndex: draggingNode?.id === stage ? 10 : 2,
-                  }}
-                  onMouseDown={(e) => handleMouseDown(e, stage)}
-                >
-                  <span className="lc-node-badge-top" style={{ color: m.color }}>RÉGUA DE ENVIO</span>
-                  <span className="lc-fnode-ic stage"><Send size={15} /></span>
-                  <div className="lc-fnode-t">{m.short}</div>
-                  <div className="lc-fnode-s">{m.range}</div>
-                  {on ? (
-                    <span className="lc-fnode-badge on">
-                      <span className="lc-badge-dot success" />
-                      template ativo
-                    </span>
+                <div className="lc-conv-divider" />
+
+                <div style={{ width: "100%" }}>
+                  <div className="lc-conv-feed-title" style={{ marginBottom: "0.5rem" }}>Reconquistas recentes</div>
+                  {!recovery || recovery.recovered.length === 0 ? (
+                    <div className="lc-conv-empty">Ninguém reconquistado ainda.</div>
                   ) : (
-                    <span className="lc-fnode-badge off">
-                      <span className="lc-badge-dot warning" />
-                      sem template
+                    <div className="lc-conv-feed">
+                      {recovery.recovered.slice(0, 5).map((r: any, index: number) => {
+                        const times = ["há 12 min", "há 2 horas", "há 5 horas", "ontem", "há 2 dias"];
+                        const timeStr = times[index] || "há alguns dias";
+                        return (
+                          <div key={r.customerId} className="lc-feed-item">
+                            <span className="lc-feed-av">{initials(r.displayName)}</span>
+                            <div className="lc-feed-info">
+                              <b>{r.displayName}</b>
+                              <small>comprou após {STAGE_META[r.stage as LifecycleStage]?.short ?? "recuperação"}</small>
+                            </div>
+                            <span className="lc-feed-time">{timeStr}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {/* Direita: Console do Cérebro IA */}
+            <section className="lc-card lc-brain-card" style={{ margin: 0 }}>
+              <div className="lc-card-head" style={{ borderBottom: "1px solid var(--line)", paddingBottom: "0.9rem", marginBottom: "0.9rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <div className="lc-brain-icon-container">
+                    <div className="lc-brain-pulse" />
+                    <Bot size={20} className="lc-brain-ic" />
+                  </div>
+                  <div>
+                    <h2 style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "1.1rem" }}>
+                      Painel Cognitivo do Cérebro IA
+                      <span className="lc-brain-live-badge">Lendo Base</span>
+                    </h2>
+                    <span className="lc-card-sub">leitura de comportamento de compra e varredura cognitiva</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="lc-brain-terminal">
+                <div className="lc-terminal-hdr">
+                  <span className="lc-term-dot red" />
+                  <span className="lc-term-dot yellow" />
+                  <span className="lc-term-dot green" />
+                  <span className="lc-term-title">ai-agent@olist-crm-cognitive:~</span>
+                </div>
+                <div className="lc-terminal-body">
+                  {brainLogs.map((log: any, index: number) => (
+                    <div key={index} className="lc-term-row">
+                      <span className="lc-term-time">[{log.time}]</span>
+                      <span className={`lc-term-tag ${log.type.toLowerCase()}`}>[{log.type}]</span>
+                      <span className="lc-term-msg">{log.msg}</span>
+                    </div>
+                  ))}
+                  <div className="lc-term-cursor">
+                    <span className="lc-term-prompt">$</span>
+                    <span className="lc-term-typing-indicator" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="lc-brain-footer">
+                <div className="lc-brain-status-text">
+                  <span className="lc-pulse-dot-green" />
+                  Cérebro ativo monitorando {overview?.totalWatched ?? 0} clientes
+                </div>
+                <button
+                  className="lc-btn-scan"
+                  onClick={triggerLiveScan}
+                  disabled={isScanning}
+                >
+                  <RefreshCw size={12} className={isScanning ? "spin" : ""} />
+                  {isScanning ? "Escaneando base..." : "Escanear base de dados"}
+                </button>
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+
+
+      {activeTab === "queue" && (
+        <section className="lc-card">
+          <div className="lc-card-head" style={{ marginBottom: "1.25rem" }}>
+            <div>
+              <h2>Fila de follow-ups</h2>
+              <span className="lc-card-sub">próximos 14 dias - quem vai cruzar de estágio e o que será enviado</span>
+            </div>
+            <div className="lc-head-actions">
+              <div className="lc-search">
+                <Search size={14} />
+                <input
+                  type="text"
+                  placeholder="Buscar cliente..."
+                  value={searchQueue}
+                  onChange={(e) => setSearchQueue(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {scheduledQuery.isLoading ? (
+            <div className="lc-empty">Carregandoââ‚¬Â¦</div>
+          ) : filteredScheduled.length === 0 ? (
+            <div className="lc-empty">Nenhum cliente encontrado na fila para os próximos 14 dias.</div>
+          ) : (
+            <div className="lc-table">
+              <div className="lc-tr lc-th">
+                <span>Cliente</span><span>Transição de estágio</span><span>Agendamento</span><span>Ação recomendada</span><span>Açàµes</span>
+              </div>
+              {filteredScheduled.slice(0, 25).map((e: any) => {
+                const m = STAGE_META[e.targetStage as LifecycleStage];
+                const prevStageKey = STAGE_ORDER[STAGE_ORDER.indexOf(e.targetStage) - 1];
+                const prevMeta = prevStageKey ? STAGE_META[prevStageKey] : null;
+                return (
+                  <div key={`${e.customerId}-${e.targetStage}`} className="lc-tr">
+                    <span className="lc-cell-client">
+                      <span className="lc-av" style={{ background: m.color }}>{initials(e.displayName)}</span>
+                      <div>
+                        <b>{e.displayName}</b>
+                        {e.customerCode ? <small className="lc-muted">{e.customerCode}</small> : null}
+                      </div>
                     </span>
+                    <span>
+                      <div className="lc-transition-flow">
+                        {prevMeta ? (
+                           <span className="lc-trans-pill outline">
+                            <span className="lc-trans-dot" style={{ background: prevMeta.color }} />
+                            {prevMeta.short}
+                          </span>
+                        ) : (
+                          <span className="lc-trans-pill outline">Ativo</span>
+                        )}
+                        <ArrowRight size={12} className="lc-trans-arrow" />
+                        <span className="lc-trans-pill solid" style={{ background: m.color, color: "#fff" }}>
+                          {m.short}
+                        </span>
+                      </div>
+                      <small className="lc-muted" style={{ display: "block", marginTop: "0.25rem", fontWeight: 500 }}>
+                        {e.daysSinceLastPurchase}d parado
+                      </small>
+                    </span>
+                    <span>
+                      <div className="lc-when-container">
+                        <span className={`lc-when-badge ${e.daysUntil <= 1 ? "soon" : ""}`}>
+                          <Clock size={11} />
+                          {untilLbl(e.daysUntil)}
+                        </span>
+                        <small className="lc-muted" style={{ display: "block", marginTop: "0.25rem", fontWeight: 500 }}>
+                          {fmtDate(e.crossDate)}
+                        </small>
+                      </div>
+                    </span>
+                    <span>
+                      {e.templateTitle ? (
+                        <div className="lc-ai-action-badge ok">
+                          <Bot size={13} className="lc-ai-bot-ic" />
+                          <div className="lc-ai-action-details">
+                            <span className="lc-ai-action-title">Auto-Disparo WhatsApp</span>
+                            <span className="lc-ai-action-tmpl" title={e.templateTitle}>
+                              <MessageSquare size={10} style={{ marginRight: "0.15rem", display: "inline-block", verticalAlign: "middle" }} />
+                              {e.templateTitle}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="lc-ai-action-badge warn">
+                          <Info size={13} className="lc-ai-bot-ic" />
+                          <div className="lc-ai-action-details">
+                            <span className="lc-ai-action-title">Ação Requerida</span>
+                            <span className="lc-ai-action-tmpl">Configurar template</span>
+                          </div>
+                        </div>
+                      )}
+                    </span>
+                    <span className="lc-actions-cell">
+                      <button
+                        className="lc-btn-action primary"
+                        disabled={triggerIndividual.isPending || !e.templateTitle}
+                        onClick={() => {
+                          if (confirm(`Deseja forçar o envio imediato da mensagem para ${e.displayName}?`)) {
+                            triggerIndividual.mutate({ customerId: e.customerId, targetStage: e.targetStage });
+                          }
+                        }}
+                        title={e.templateTitle ? "Disparar mensagem no WhatsApp agora" : "Sem template configurado"}
+                      >
+                        <Send size={11} />
+                        Disparar
+                      </button>
+                      <button
+                        className="lc-btn-action"
+                        disabled={skipIndividual.isPending}
+                        onClick={() => {
+                          if (confirm(`Deseja pular o agendamento atual de ${e.displayName}?`)) {
+                            skipIndividual.mutate({ customerId: e.customerId, targetStage: e.targetStage });
+                          }
+                        }}
+                        title="Pular este cliente para este estágio"
+                      >
+                        <CornerUpRight size={11} />
+                        Pular
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "rules" && (
+        <section className="lc-card">
+          <div className="lc-card-head" style={{ marginBottom: "1rem" }}>
+            <div>
+              <h2>Regras de disparo por estágio</h2>
+              <span className="lc-card-sub">condiçàµes e mensagens automatizadas de cada régua</span>
+            </div>
+          </div>
+          <div className="lc-rules-grid">
+            {STAGE_ORDER.map((stage: LifecycleStage) => {
+              const meta = STAGE_META[stage];
+              const conf = stageConfig.get(stage);
+              const isEnabled = conf?.enabled ?? false;
+              const selectedTmplId = conf?.templateId ?? "";
+
+              return (
+                <div key={stage} className={`lc-rule-card ${isEnabled ? "active" : ""}`}>
+                  <div className="lc-rule-head">
+                    <div>
+                      <div className="lc-rule-stage">
+                        <span className="lc-rule-dot" style={{ background: meta.color }} />
+                        <h3>{meta.short}</h3>
+                      </div>
+                      <span className="lc-rule-desc">Se o cliente ficar sem compras por {meta.range}</span>
+                    </div>
+                    <label className="lc-switch" title={isEnabled ? "Desativar régua" : "Ativar régua"}>
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={(ev) => saveConfig.mutate({ stage, templateId: selectedTmplId || null, enabled: ev.target.checked })}
+                      />
+                      <span className="lc-slider" />
+                    </label>
+                  </div>
+
+                  <div className="lc-rule-select-row">
+                    <label>Mensagem a enviar:</label>
+                    <select
+                      value={selectedTmplId}
+                      onChange={(ev) => saveConfig.mutate({ stage, templateId: ev.target.value || null, enabled: isEnabled })}
+                    >
+                      <option value="">-- Sem mensagem --</option>
+                      {templates.map((t: any) => (
+                        <option key={t.id} value={t.id}>{t.title}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {isEnabled && selectedTmplId ? (
+                    <div className="lc-preview-container">
+                      <div className="lc-preview-tag">Prévia do WhatsApp</div>
+                      <div className="lc-wa-chat">
+                        <div className="lc-wa-bubble">
+                          <div className="lc-wa-text">
+                            {templates.find((t: any) => t.id === selectedTmplId)?.content ?? "Carregando mensagem..."}
+                          </div>
+                          <span className="lc-wa-time">09:00</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="lc-preview-placeholder">
+                      <span className="lc-preview-tag">Régua Inativa</span>
+                      <p>Ative a régua e selecione um template para habilitar o envio automático para este estágio.</p>
+                    </div>
                   )}
                 </div>
               );
             })}
-
-            {/* Resultado (Conversão) */}
-            {(() => {
-              const pos = nodePositions.outcome || { x: 1170, y: 50 };
-              return (
-                <div
-                  className="lc-fnode outcome"
-                  style={{
-                    left: `${pos.x}px`,
-                    top: `${pos.y}px`,
-                    position: "absolute",
-                    zIndex: draggingNode?.id === "outcome" ? 10 : 2,
-                  }}
-                  onMouseDown={(e) => handleMouseDown(e, "outcome")}
-                >
-                  <span className="lc-node-badge-top">CONVERSÃO</span>
-                  <span className="lc-fnode-ic ok"><CheckCircle2 size={16} /></span>
-                  <div className="lc-fnode-t">Recuperado</div>
-                  <div className="lc-fnode-s"><b>{recovery?.recoveredCount ?? 0}</b> convertidos</div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      </section>
-
-      {/* Fila — principal */}
-      <section className="lc-card">
-        <div className="lc-card-head">
-          <div><h2>Fila de follow-ups</h2><span className="lc-card-sub">próximos 14 dias · quem vai cruzar de estágio e o que será enviado</span></div>
-        </div>
-
-        {scheduledQuery.isLoading ? (
-          <div className="lc-empty">Carregando…</div>
-        ) : scheduled.length === 0 ? (
-          <div className="lc-empty">Ninguém prestes a cruzar de estágio nos próximos 14 dias.</div>
-        ) : (
-          <div className="lc-table">
-            <div className="lc-tr lc-th">
-              <span>Cliente</span><span>Próximo estágio</span><span>Quando</span><span>Mensagem</span>
-            </div>
-            {scheduled.slice(0, 25).map((e) => {
-              const m = STAGE_META[e.targetStage];
-              return (
-                <div key={`${e.customerId}-${e.targetStage}`} className="lc-tr">
-                  <span className="lc-cell-client">
-                    <span className="lc-av" style={{ background: m.color }}>{initials(e.displayName)}</span>
-                    <span><b>{e.displayName}</b>{e.customerCode ? <small>{e.customerCode}</small> : null}</span>
-                  </span>
-                  <span>
-                    <span className="lc-stage"><span className="lc-stage-dot" style={{ background: m.color }} />{m.short}</span>
-                    <small className="lc-muted">{e.daysSinceLastPurchase}d parado</small>
-                  </span>
-                  <span>
-                    <b className={`lc-when ${e.daysUntil <= 1 ? "soon" : ""}`}>{untilLbl(e.daysUntil)}</b>
-                    <small className="lc-muted">{fmtDate(e.crossDate)}</small>
-                  </span>
-                  <span>
-                    {e.templateTitle
-                      ? <span className="lc-tag ok">{e.templateTitle}</span>
-                      : <span className="lc-tag warn">configurar template</span>}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <div className="lc-cols">
-        {/* Templates por estágio */}
-        <section className="lc-card">
-          <div className="lc-card-head"><div><h2>Mensagem de cada estágio</h2><span className="lc-card-sub">o que dispara em cada transição</span></div></div>
-          <div className="lc-cfg-list">
-            {STAGE_ORDER.map((stage) => {
-              const m = STAGE_META[stage]; const c = stageConfig.get(stage);
-              const on = c?.enabled ?? true;
-              return (
-                <div key={stage} className={`lc-cfg ${on ? "" : "off"}`}>
-                  <div className="lc-cfg-stage">
-                    <span className="lc-stage-dot" style={{ background: m.color }} />
-                    <div><b>{m.short}</b><small className="lc-muted">{m.range}</small></div>
-                  </div>
-                  <select value={c?.templateId ?? ""} onChange={(ev) => saveConfig.mutate({ stage, templateId: ev.target.value || null, enabled: on })}>
-                    <option value="">— Sem template —</option>
-                    {templates.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
-                  </select>
-                  <label className="lc-switch" title={on ? "Estágio ativo" : "Estágio desligado"}>
-                    <input type="checkbox" checked={on} onChange={(ev) => saveConfig.mutate({ stage, templateId: c?.templateId ?? null, enabled: ev.target.checked })} />
-                    <span className="tk" />
-                  </label>
-                </div>
-              );
-            })}
           </div>
         </section>
+      )}
 
-        {/* Recuperação */}
+      {activeTab === "journeys" && (
         <section className="lc-card">
-          <div className="lc-card-head"><div><h2>Recuperação</h2><span className="lc-card-sub">voltaram a comprar após o follow-up</span></div></div>
-          <div className="lc-rec-top">
-            <div className="lc-rec-rate"><span className="lc-rec-pct">{recRate}%</span><span className="lc-muted">taxa</span></div>
-            <div className="lc-rec-side">
-              <div><b>{recovery?.recoveredCount ?? "—"}</b><small className="lc-muted">reconquistados</small></div>
-              <div><b>{recovery?.messagesSent ?? "—"}</b><small className="lc-muted">mensagens enviadas</small></div>
+          <div className="lc-card-head" style={{ marginBottom: "1.25rem" }}>
+            <div>
+              <h2>Jornada por cliente</h2>
+              <span className="lc-card-sub">cada etapa enviada, o que fez voltar a comprar e quem respondeu</span>
+            </div>
+            <div className="lc-head-actions">
+              <div className="lc-search">
+                <Search size={14} />
+                <input
+                  type="text"
+                  placeholder="Buscar cliente na jornada..."
+                  value={searchJourney}
+                  onChange={(e) => setSearchJourney(e.target.value)}
+                />
+              </div>
+
+              <div className="lc-filters">
+                <button className={journeyFilter === "ALL" ? "active" : ""} onClick={() => setJourneyFilter("ALL")}>
+                  Todos ({journeys.length})
+                </button>
+                {STAGE_ORDER.map((st: LifecycleStage) => (
+                  <button
+                    key={st}
+                    className={journeyFilter === st ? "active" : ""}
+                    onClick={() => setJourneyFilter(st)}
+                  >
+                    <span className="lc-filter-dot" style={{ background: STAGE_META[st].color }} />
+                    {STAGE_META[st].short} ({stageCountIn(st)})
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          {recovery && recovery.recovered.length > 0 ? (
-            <div className="lc-rec-list">
-              {recovery.recovered.slice(0, 5).map((r) => (
-                <div key={r.customerId} className="lc-rec-item">
-                  <span className="lc-av sm" style={{ background: "#16a34a" }}>{initials(r.displayName)}</span>
-                  <span className="lc-rec-name">{r.displayName}</span>
-                  <span className="lc-muted">voltou em {r.daysToRecover}d</span>
-                </div>
-              ))}
-            </div>
+
+          {journeysQuery.isLoading ? (
+            <div className="lc-empty">Carregandoââ‚¬Â¦</div>
+          ) : journeys.length === 0 ? (
+            <div className="lc-empty">Nenhum cliente passou pela régua ainda. Rode a verificação para começar.</div>
+          ) : searchedJourneys.length === 0 ? (
+            <div className="lc-empty">Nenhum cliente correspondente encontrado.</div>
           ) : (
-            <div className="lc-empty sm">Ninguém reconquistado ainda.</div>
-          )}
-        </section>
-      </div>
-
-      {/* Jornada por cliente */}
-      <section className="lc-card">
-        <div className="lc-card-head lc-card-head-row">
-          <div><h2>Jornada por cliente</h2><span className="lc-card-sub">cada etapa enviada, o que fez voltar a comprar e quem respondeu</span></div>
-          <div className="lc-filters">
-            <button className={`lc-fchip ${journeyFilter === "ALL" ? "on" : ""}`} onClick={() => setJourneyFilter("ALL")}>Todos ({journeys.length})</button>
-            {STAGE_ORDER.map((stage) => (
-              <button
-                key={stage}
-                className={`lc-fchip ${journeyFilter === stage ? "on" : ""}`}
-                onClick={() => setJourneyFilter(stage)}
-              >
-                <span className="lc-fdot" style={{ background: STAGE_META[stage].color }} />
-                {STAGE_META[stage].short} ({stageCountIn(stage)})
-              </button>
-            ))}
-          </div>
-        </div>
-        {journeysQuery.isLoading ? (
-          <div className="lc-empty">Carregando…</div>
-        ) : journeys.length === 0 ? (
-          <div className="lc-empty">Nenhum cliente passou pela régua ainda. Rode a verificação para começar.</div>
-        ) : filteredJourneys.length === 0 ? (
-          <div className="lc-empty">Nenhum cliente nesse estágio agora.</div>
-        ) : (
-          <div className="lc-journeys">
-            {filteredJourneys.map((j) => {
-              const st = STATUS_META[j.status] ?? STATUS_META.AGUARDANDO!;
-              return (
-                <div key={j.customerId} className="lc-journey">
-                  <div className="lc-j-head">
-                    <span className="lc-av sm" style={{ background: "#475569" }}>{initials(j.displayName)}</span>
-                    <div className="lc-j-id">
-                      <b>{j.displayName}</b>
-                      {j.customerCode ? <small className="lc-muted">{j.customerCode}</small> : null}
+            <div className="lc-journeys">
+              {searchedJourneys.map((j: any) => {
+                const st = STATUS_META[j.status] ?? STATUS_META.AGUARDANDO!;
+                return (
+                  <div key={j.customerId} className="lc-journey">
+                    <div className="lc-j-head">
+                      <span className="lc-av sm" style={{ background: "#475569" }}>{initials(j.displayName)}</span>
+                      <div className="lc-j-id">
+                        <b>{j.displayName}</b>
+                        {j.customerCode ? <small className="lc-muted">{j.customerCode}</small> : null}
+                      </div>
+                      <span className="lc-j-days">
+                        {j.daysSinceLastPurchase === null ? "sem compras" : <><b>{j.daysSinceLastPurchase}</b> dias sem comprar</>}
+                      </span>
+                      <span className="lc-jstatus" style={{ background: st.bg, color: st.color }}>
+                        <span className="lc-status-dot" style={{ background: st.color }} />
+                        {st.label}
+                      </span>
                     </div>
-                    <span className="lc-j-days">
-                      {j.daysSinceLastPurchase === null ? "sem compras" : <><b>{j.daysSinceLastPurchase}</b> dias sem comprar</>}
-                    </span>
-                    <span className="lc-jstatus" style={{ background: st.bg, color: st.color }}>{st.label}</span>
-                  </div>
 
-                  <div className="lc-steps">
-                    {j.steps.map((s, idx) => {
-                      const m = STAGE_META[s.stage];
-                      const attributed = j.attributedStage === s.stage && j.status === "RECUPERADO";
-                      return (
-                        <Fragment key={idx}>
-                          {idx > 0 ? <span className="lc-step-link" /> : null}
-                          <span className={`lc-step ${attributed ? "win" : ""}`} title={s.templateTitle ?? "sem template"}>
-                            <span className="lc-step-n" style={{ background: m.color }}>{idx + 1}</span>
-                            <span className="lc-step-txt">
-                              <b>{m.short}</b>
-                              <small>{s.templateTitle ?? "sem template"}</small>
-                            </span>
+                    <div className="lc-steps">
+                      {(() => {
+                        let maxIdx = 0;
+                        const stages = j.steps.map((s: any) => s.stage);
+                        if (j.currentStage && j.currentStage !== "ATIVO") stages.push(j.currentStage);
+                        if (j.attributedStage) stages.push(j.attributedStage);
+                        stages.forEach((st: any) => {
+                          const idx = STAGE_ORDER.indexOf(st);
+                          if (idx > maxIdx) maxIdx = idx;
+                        });
+
+                        return STAGE_ORDER.slice(0, maxIdx + 1).map((stage: LifecycleStage, idx: number) => {
+                          const m = STAGE_META[stage];
+                          const step = j.steps.find((s: any) => s.stage === stage);
+                          const attributed = j.attributedStage === stage && j.status === "RECUPERADO";
+                          const isSent = Boolean(step);
+                          
+                          const prevStage = idx > 0 ? STAGE_ORDER[idx - 1] : null;
+                          const prevStep = prevStage ? j.steps.find((s: any) => s.stage === prevStage) : null;
+                          const isLinkActive = isSent && Boolean(prevStep);
+
+                          return (
+                            <Fragment key={stage}>
+                              {idx > 0 ? <span className={`lc-step-link ${isLinkActive ? "win" : ""}`} /> : null}
+                              <span 
+                                className={`lc-step ${attributed ? "win" : ""} ${isSent ? "" : "skipped"}`} 
+                                title={isSent ? (step?.templateTitle ?? "sem template") : "Régua não disparada para este cliente"}
+                              >
+                                <span className="lc-step-n" style={{ background: isSent ? m.color : undefined }}>
+                                  {idx + 1}
+                                </span>
+                                <span className="lc-step-txt">
+                                  <b>{m.short}</b>
+                                  <small>{isSent ? (step?.templateTitle ?? "sem template") : "não enviado"}</small>
+                                </span>
+                              </span>
+                            </Fragment>
+                          );
+                        });
+                      })()}
+                      {j.status === "RECUPERADO" ? (
+                        <>
+                          <span className="lc-step-link win" />
+                          <span className="lc-step outcome">
+                            <span className="lc-step-n" style={{ background: "#16a34a" }}>âÅ“â€œ</span>
+                            <span className="lc-step-txt"><b>Comprou</b><small>{j.attributedStage ? `após ${STAGE_META[j.attributedStage as LifecycleStage].short}` : "recuperado"}</small></span>
                           </span>
-                        </Fragment>
-                      );
-                    })}
-                    {j.status === "RECUPERADO" ? (
-                      <>
-                        <span className="lc-step-link win" />
-                        <span className="lc-step outcome">
-                          <span className="lc-step-n" style={{ background: "#16a34a" }}>✓</span>
-                          <span className="lc-step-txt"><b>Comprou</b><small>{j.attributedStage ? `após ${STAGE_META[j.attributedStage].short}` : "recuperado"}</small></span>
-                        </span>
-                      </>
+                        </>
+                      ) : null}
+                    </div>
+
+                    {j.status === "RESPONDEU" ? (
+                      <div className="lc-j-action">
+                        <span className="lc-muted">Ã°Å¸â€™Â¬ Cliente respondeu ââ‚¬â€ vale uma vendedora assumir.</span>
+                        <button
+                          className="lc-handoff"
+                          disabled={handoff.isPending}
+                          onClick={() => handoff.mutate(j.customerId)}
+                        >
+                          {handoff.isPending && handoff.variables === j.customerId ? "Avisandoââ‚¬Â¦" : "Avisar vendedora"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {handoff.isSuccess && handoff.variables === j.customerId ? (
+                      <div className="lc-j-done">{handoff.data?.sent ? "âÅ“â€œ Vendedora avisada no grupo." : handoff.data?.detail}</div>
                     ) : null}
                   </div>
-
-                  {j.status === "RESPONDEU" ? (
-                    <div className="lc-j-action">
-                      <span className="lc-muted">💬 Cliente respondeu — vale uma vendedora assumir.</span>
-                      <button
-                        className="lc-handoff"
-                        disabled={handoff.isPending}
-                        onClick={() => handoff.mutate(j.customerId)}
-                      >
-                        {handoff.isPending && handoff.variables === j.customerId ? "Avisando…" : "Avisar vendedora"}
-                      </button>
-                    </div>
-                  ) : null}
-                  {handoff.isSuccess && handoff.variables === j.customerId ? (
-                    <div className="lc-j-done">{handoff.data?.sent ? "✓ Vendedora avisada no grupo." : handoff.data?.detail}</div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -826,7 +1193,7 @@ const LC_STYLES = `
   .lc-table { display: flex; flex-direction: column; }
   .lc-tr {
     display: grid;
-    grid-template-columns: 2fr 1.3fr 1fr 1.4fr;
+    grid-template-columns: 1.8fr 1.3fr 0.9fr 1.4fr 1.2fr;
     gap: 1rem;
     align-items: center;
     padding: 0.85rem 0.5rem;
@@ -1267,4 +1634,1042 @@ const LC_STYLES = `
   .lc-handoff:disabled { opacity: 0.6; cursor: wait; transform: none; box-shadow: none; }
   
   .lc-j-done { margin-top: 0.65rem; font-size: 0.82rem; font-weight: 600; color: #16a34a; }
+
+  /* Tabs Navigation UI */
+  .lc-tabs-nav {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--line);
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.25rem;
+  }
+  .lc-tabs-nav button {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    margin-bottom: -4px;
+    border-radius: 6px 6px 0 0;
+  }
+  .lc-tabs-nav button:hover {
+    color: var(--ink);
+    background: var(--bg-main);
+  }
+  .lc-tabs-nav button.active {
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+    background: rgba(99, 102, 241, 0.04);
+  }
+
+  /* Visão Geral: Grid & Metrics */
+  .lc-flow-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 0;
+  }
+  @media(max-width: 900px) {
+    .lc-flow-dashboard {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .lc-kpis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    height: fit-content;
+  }
+  @media(max-width: 500px) {
+    .lc-kpis-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  
+  .lc-kpi {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .lc-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .lc-kpi-ic {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lc-kpi-info {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-kpi-n {
+    font-size: 1.5rem;
+    font-weight: 850;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  .lc-kpi-l {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin-top: 0.1rem;
+  }
+
+  /* Conversão Radial CSS */
+  .lc-conv-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0;
+  }
+  .lc-conv-radial {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .lc-radial-svg {
+    position: relative;
+    width: 96px;
+    height: 96px;
+    flex-shrink: 0;
+  }
+  .lc-radial-svg svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .lc-radial-bg {
+    fill: none !important;
+    stroke: #f1f5f9;
+    stroke-width: 8;
+  }
+  .lc-radial-fg {
+    fill: none !important;
+    stroke: #10b981;
+    stroke-width: 8;
+    stroke-dasharray: 251.2;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .lc-radial-txt {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1.25rem;
+    font-weight: 850;
+    color: var(--ink);
+  }
+  
+  .lc-conv-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .lc-conv-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .lc-conv-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .lc-conv-dot.green { background: #10b981; }
+  .lc-conv-dot.purple { background: #8b5cf6; }
+  .lc-conv-stat b {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ink);
+    display: block;
+    line-height: 1;
+  }
+  .lc-conv-stat small {
+    font-size: 0.74rem;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .lc-conv-divider {
+    width: 1px;
+    height: 80px;
+    background: var(--line);
+  }
+  @media(max-width: 600px) {
+    .lc-conv-divider { display: none; }
+  }
+
+  .lc-conv-feed-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--ink);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+  .lc-conv-feed {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+  .lc-conv-empty {
+    width: 100%;
+    text-align: center;
+    padding: 1rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .lc-feed-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    background: #f8fafc;
+    border: 1px solid #f1f5f9;
+    border-radius: 12px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.84rem;
+    transition: background 0.15s;
+  }
+  .lc-feed-item:hover {
+    background: #f1f5f9;
+  }
+  .lc-feed-av {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #ecfdf5;
+    color: #065f46;
+    font-size: 0.72rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lc-feed-info {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-feed-info b { color: var(--ink); font-weight: 700; }
+  .lc-feed-info small { color: var(--muted); font-size: 0.74rem; }
+  .lc-feed-time {
+    margin-left: auto;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  /* Rules Grid */
+  .lc-rules-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+  }
+  @media(max-width: 900px) {
+    .lc-rules-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .lc-rule-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .lc-rule-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: var(--shadow-md);
+  }
+  .lc-rule-card.active {
+    border-left: 4px solid var(--accent);
+  }
+  .lc-rule-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .lc-rule-stage {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+  .lc-rule-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .lc-rule-stage h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .lc-rule-desc {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-weight: 550;
+    display: block;
+    line-height: 1.3;
+  }
+
+  .lc-rule-select-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .lc-rule-select-row label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .lc-rule-select-row select {
+    width: 100%;
+    padding: 0.55rem 0.85rem;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: var(--ink);
+    font-size: 0.84rem;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .lc-rule-select-row select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  }
+
+  /* WhatsApp Preview Box */
+  .lc-preview-container {
+    background: #efeae2;
+    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+    background-size: repeat;
+    padding: 0.85rem 1rem;
+    border-radius: 12px;
+    border: 1px solid #e1d9d1;
+    display: flex;
+    flex-direction: column;
+    min-height: 120px;
+    justify-content: flex-end;
+  }
+  .lc-preview-tag {
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #8c7e6e;
+    margin-bottom: 0.5rem;
+  }
+  .lc-preview-placeholder {
+    background: #f8fafc;
+    border: 1px dashed var(--line);
+    padding: 1rem;
+    border-radius: 12px;
+    text-align: center;
+    color: var(--muted);
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+  .lc-preview-placeholder p {
+    font-size: 0.74rem;
+    margin: 0.25rem 0 0 0;
+    max-width: 260px;
+    line-height: 1.4;
+  }
+
+  /* Switch */
+  .lc-slider {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 999px;
+    background: #cbd5e1;
+    transition: background-color 0.2s;
+  }
+  .lc-slider::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ffffff;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .lc-switch input:checked + .lc-slider { background: var(--accent); }
+  .lc-switch input:checked + .lc-slider::after { transform: translateX(18px); }
+
+  /* WhatsApp Preview Bubbles */
+  .lc-wa-chat {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-wa-bubble {
+    background: #ffffff;
+    align-self: flex-start;
+    padding: 0.5rem 0.65rem 0.35rem 0.65rem;
+    border-radius: 0 8px 8px 8px;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+    max-width: 90%;
+    position: relative;
+    word-break: break-word;
+  }
+  .lc-wa-text {
+    font-size: 0.8rem;
+    color: #111b21;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .lc-wa-time {
+    display: block;
+    font-size: 0.62rem;
+    color: #667781;
+    text-align: right;
+    margin-top: 0.2rem;
+    font-weight: 500;
+  }
+
+  /* Transition Flows */
+  .lc-transition-flow {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .lc-trans-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    font-weight: 750;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+  }
+  .lc-trans-pill.outline {
+    background: transparent;
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .lc-trans-pill.solid {
+    border: 1px solid transparent;
+  }
+  .lc-trans-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .lc-trans-arrow {
+    color: var(--muted);
+  }
+
+  .lc-when-container {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-when-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.74rem;
+    font-weight: 750;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    width: fit-content;
+  }
+  .lc-when-badge.soon {
+    background: #fee2e2;
+    color: #ef4444;
+  }
+
+  .lc-ai-action-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    padding: 0.45rem 0.65rem;
+    border-radius: 10px;
+    max-width: 230px;
+  }
+  .lc-ai-action-badge.ok {
+    border-color: #c7d2fe;
+    background: #eef2ff;
+  }
+  .lc-ai-action-badge.warn {
+    border-color: #fde68a;
+    background: #fffbeb;
+  }
+  .lc-ai-bot-ic {
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .lc-ai-action-details {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .lc-ai-action-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+  .lc-ai-action-tmpl {
+    font-size: 0.68rem;
+    color: var(--muted);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 0.05rem;
+  }
+
+  /* Cérebro IA Console Card & Terminal */
+  .lc-brain-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 400px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  .lc-brain-icon-container {
+    position: relative;
+    width: 38px;
+    height: 38px;
+    background: #f0f2ff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lc-brain-pulse {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: rgba(99, 102, 241, 0.15);
+    animation: lc-brain-expand 2s infinite ease-out;
+  }
+  @keyframes lc-brain-expand {
+    0% { transform: scale(0.95); opacity: 1; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
+  .lc-brain-ic {
+    color: var(--accent);
+    z-index: 2;
+  }
+  .lc-brain-live-badge {
+    background: #e0f2fe;
+    color: #0369a1;
+    font-size: 0.65rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    animation: lc-brain-flash 2.5s infinite;
+  }
+  @keyframes lc-brain-flash {
+    0% { opacity: 0.8; }
+    50% { opacity: 1; box-shadow: 0 0 8px rgba(14, 165, 233, 0.25); }
+    100% { opacity: 0.8; }
+  }
+
+  .lc-brain-terminal {
+    background: #0f172a;
+    border-radius: 12px;
+    border: 1px solid #1e293b;
+    font-family: 'Fira Code', 'Courier New', Courier, monospace;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    overflow: hidden;
+    margin-bottom: 0.85rem;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .lc-terminal-hdr {
+    background: #1e293b;
+    padding: 0.5rem 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-bottom: 1px solid #0f172a;
+  }
+  .lc-term-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .lc-term-dot.red { background: #ef4444; }
+  .lc-term-dot.yellow { background: #f59e0b; }
+  .lc-term-dot.green { background: #10b981; }
+  .lc-term-title {
+    margin-left: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #94a3b8;
+  }
+
+  .lc-terminal-body {
+    padding: 0.9rem;
+    flex-grow: 1;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #e2e8f0;
+    min-height: 220px;
+    max-height: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .lc-term-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    animation: lc-term-fadein 0.2s ease-out;
+  }
+  @keyframes lc-term-fadein {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .lc-term-time {
+    color: #64748b;
+  }
+  .lc-term-tag {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+  }
+  .lc-term-tag.sistema { color: #38bdf8; }
+  .lc-term-tag.leitura { color: #facc15; }
+  .lc-term-tag.monitor { color: #fb7185; }
+  .lc-term-tag.cognitivo { color: #c084fc; }
+  .lc-term-tag.decisão { color: #818cf8; }
+  .lc-term-tag.sucesso { color: #4ade80; }
+  .lc-term-tag.erro { color: #f87171; }
+  .lc-term-msg {
+    color: #cbd5e1;
+  }
+
+  .lc-term-cursor {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .lc-term-prompt {
+    color: #38bdf8;
+    font-weight: 700;
+  }
+  .lc-term-typing-indicator {
+    width: 6px;
+    height: 12px;
+    background: #38bdf8;
+    animation: lc-blink 1s step-end infinite;
+  }
+  @keyframes lc-blink {
+    50% { opacity: 0; }
+  }
+
+  .lc-brain-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+  .lc-brain-status-text {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .lc-pulse-dot-green {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+    animation: lc-brain-dot-pulse 2s infinite;
+  }
+  @keyframes lc-brain-dot-pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+
+  .lc-btn-scan {
+    background: var(--accent);
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    padding: 0.55rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    transition: all 0.2s;
+    box-shadow: 0 4px 10px rgba(99, 102, 241, 0.2);
+  }
+  .lc-btn-scan:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+  }
+  .lc-btn-scan:disabled {
+    opacity: 0.65;
+    cursor: wait;
+    transform: none;
+  }
+  .lc-btn-scan .spin {
+    animation: lc-spin 1s linear infinite;
+  }
+  @keyframes lc-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* â”€â”€ Pipeline Stepper â”€â”€ */
+  .lc-pipeline {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: 0.5rem 0;
+    overflow-x: auto;
+  }
+  .lc-pipe-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    min-width: 100px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .lc-pipe-step.muted { opacity: 0.55; }
+  .lc-pipe-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid transparent;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .lc-pipe-step:hover .lc-pipe-icon {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.15);
+  }
+  .lc-pipe-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+    text-align: center;
+    margin-top: 0.15rem;
+  }
+  .lc-pipe-detail {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    font-weight: 500;
+    text-align: center;
+  }
+  .lc-pipe-detail b {
+    color: #475569;
+  }
+  .lc-pipe-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    margin-top: 0.1rem;
+    letter-spacing: 0.02em;
+  }
+  .lc-pipe-badge.on {
+    background: #ecfdf5;
+    color: #059669;
+  }
+  .lc-pipe-badge.off {
+    background: #fef3c7;
+    color: #b45309;
+  }
+  .lc-pipe-connector {
+    flex-shrink: 0;
+    width: 36px;
+    height: 2px;
+    background: #e2e8f0;
+    margin-top: 24px;
+    border-radius: 2px;
+    position: relative;
+  }
+  .lc-pipe-connector.active {
+    background: linear-gradient(90deg, #818cf8, #6366f1);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.15);
+  }
+  .lc-pipe-connector.active::after {
+    content: "";
+    position: absolute;
+    right: -3px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6366f1;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.4);
+    animation: lc-pipe-pulse 1.8s ease-out infinite;
+  }
+  @keyframes lc-pipe-pulse {
+    0% { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(2); }
+  }
+
+  /* â”€â”€ KPIs Strip â”€â”€ */
+  .lc-kpis-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .lc-kpi {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 1rem 1.1rem;
+    transition: all 0.25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  }
+  .lc-kpi:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.07);
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+  .lc-kpi-ic {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lc-kpi-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .lc-kpi-n {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #1e293b;
+    line-height: 1.2;
+  }
+  .lc-kpi-l {
+    font-size: 0.72rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  /* â”€â”€ Conversion Card â”€â”€ */
+  .lc-conv-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 0.5rem 0;
+  }
+  .lc-conv-radial {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.5rem 0;
+  }
+  .lc-radial-svg {
+    width: 100px;
+    height: 100px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .lc-radial-svg svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+  .lc-radial-bg {
+    fill: none;
+    stroke: #f1f5f9;
+    stroke-width: 7;
+  }
+  .lc-radial-fg {
+    fill: none;
+    stroke: url(#lc-conv-grad) #059669;
+    stroke-width: 7;
+    stroke-linecap: round;
+    stroke-dasharray: 251.2;
+    transition: stroke-dashoffset 1s cubic-bezier(0.25, 0, 0.2, 1);
+  }
+  .lc-radial-txt {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #059669;
+  }
+  .lc-conv-stats {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .lc-conv-stats div {
+    display: flex;
+    flex-direction: column;
+  }
+  .lc-conv-stats b {
+    font-size: 1.15rem;
+    color: #1e293b;
+    font-weight: 800;
+    line-height: 1.3;
+  }
+  .lc-conv-stats small {
+    font-size: 0.7rem;
+    color: #94a3b8;
+    font-weight: 500;
+  }
+  .lc-conv-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .lc-conv-dot.green { background: #10b981; }
+  .lc-conv-dot.purple { background: #6366f1; }
+
+  .lc-conv-divider {
+    width: 100%;
+    height: 1px;
+    background: var(--line);
+  }
+
+  .lc-conv-feed-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .lc-conv-empty {
+    font-size: 0.82rem;
+    color: #94a3b8;
+    padding: 1rem 0;
+    text-align: center;
+  }
+  .lc-conv-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .lc-feed-item {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .lc-feed-item:last-child {
+    border-bottom: none;
+  }
+  .lc-feed-av {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+    color: #6d28d9;
+    font-size: 0.7rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lc-feed-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    flex-grow: 1;
+    min-width: 0;
+  }
+  .lc-feed-info b {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lc-feed-info small {
+    font-size: 0.68rem;
+    color: #94a3b8;
+  }
+  .lc-feed-time {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 `;
+

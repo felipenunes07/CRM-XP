@@ -734,6 +734,20 @@ export const api = {
       token,
     );
   },
+  lifecycleTriggerIndividual(token: string, customerId: string, targetStage: LifecycleStage) {
+    return request<{ success: boolean; detail: string }>(
+      "/api/lifecycle/trigger-individual",
+      { method: "POST", body: JSON.stringify({ customerId, targetStage }) },
+      token,
+    );
+  },
+  lifecycleSkipIndividual(token: string, customerId: string, targetStage: LifecycleStage) {
+    return request<{ success: boolean }>(
+      "/api/lifecycle/skip-individual",
+      { method: "POST", body: JSON.stringify({ customerId, targetStage }) },
+      token,
+    );
+  },
   sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; menuData?: WhatsappMenuData; videoUrl?: string; whatsappInstanceId?: string }) {
     return request<{ success: boolean; result: any }>("/api/messages/test", {
       method: "POST",

@@ -84,6 +84,8 @@ import {
   sendLifecycleHandoff,
   LIFECYCLE_STAGES,
   type LifecycleStage,
+  triggerIndividualLifecycle,
+  skipIndividualLifecycle,
 } from "./modules/crm/lifecycleAutomationService.js";
 import {
   createIdea,
@@ -1589,6 +1591,34 @@ export function createApp() {
         throw new HttpError(400, "Informe customerId.");
       }
       response.json(await sendLifecycleHandoff(customerId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Dispara follow-up individual agora
+  app.post("/api/lifecycle/trigger-individual", async (request, response, next) => {
+    try {
+      const { customerId, targetStage } = request.body;
+      if (!customerId || !targetStage) {
+        throw new HttpError(400, "Informe customerId e targetStage.");
+      }
+      const res = await triggerIndividualLifecycle(customerId, targetStage);
+      response.json(res);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Pula follow-up individual agora
+  app.post("/api/lifecycle/skip-individual", async (request, response, next) => {
+    try {
+      const { customerId, targetStage } = request.body;
+      if (!customerId || !targetStage) {
+        throw new HttpError(400, "Informe customerId e targetStage.");
+      }
+      const res = await skipIndividualLifecycle(customerId, targetStage);
+      response.json(res);
     } catch (error) {
       next(error);
     }
