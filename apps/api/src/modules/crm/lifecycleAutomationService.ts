@@ -168,6 +168,7 @@ export async function findLifecycleCandidates(): Promise<LifecycleCandidate[]> {
           c.id AS customer_id,
           c.customer_code,
           c.display_name,
+          lo.last_order AS last_order,
           (p.today - lo.last_order) AS days_since,
           ${STAGE_CASE_SQL.replace(/days_since/g, "(p.today - lo.last_order)")} AS stage
         FROM customers c
@@ -193,10 +194,14 @@ export async function findLifecycleCandidates(): Promise<LifecycleCandidate[]> {
       LEFT JOIN message_templates t ON t.id = cfg.template_id
       WHERE s.stage IS NOT NULL
         AND COALESCE(cfg.enabled, TRUE) = TRUE
+        -- Re-engajamento: so bloqueia se ja tratamos este estagio DEPOIS da ultima
+        -- compra. Se o cliente comprou de novo (recuperou) e esfriou outra vez, o
+        -- evento antigo fica antes da compra e ele volta a entrar na regua.
         AND NOT EXISTS (
           SELECT 1 FROM customer_lifecycle_events e
           WHERE e.customer_id = s.customer_id AND e.stage = s.stage
             AND e.action <> 'SKIPPED'
+            AND e.created_at::date > s.last_order
         )
       ORDER BY s.days_since DESC, s.display_name
     `,
@@ -274,12 +279,21 @@ export async function runLifecycleAutomation(): Promise<{
       continue;
     }
 
+    // Re-engajamento: se o cliente recomprou e esfriou de novo, o registro antigo
+    // do estagio (de antes da compra) é re-disparado — atualizamos para o novo
+    // ciclo (created_at = agora). A query de candidatos só chega aqui quando NÃO
+    // há evento pós-compra, então o DO UPDATE só acontece em re-engajamento real.
     const inserted = await pool.query(
       `
         INSERT INTO customer_lifecycle_events
           (customer_id, stage, template_id, action, detail, days_since_last_purchase)
         VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (customer_id, stage) DO NOTHING
+        ON CONFLICT (customer_id, stage) DO UPDATE
+        SET template_id = EXCLUDED.template_id,
+            action = EXCLUDED.action,
+            detail = EXCLUDED.detail,
+            days_since_last_purchase = EXCLUDED.days_since_last_purchase,
+            created_at = NOW()
         RETURNING id
       `,
       [
@@ -293,7 +307,7 @@ export async function runLifecycleAutomation(): Promise<{
     );
 
     if (inserted.rowCount === 0) {
-      continue; // ja existia (corrida): nao conta
+      continue; // nada inserido/atualizado: nao conta
     }
 
     if (action === "SENT") sent += 1;
@@ -471,6 +485,7 @@ export async function findScheduledLifecycle(daysAhead = 7): Promise<ScheduledLi
       base AS (
         SELECT
           c.id, c.customer_code, c.display_name,
+          lo.last_order AS last_order,
           (p.today - lo.last_order) AS days_since,
           p.today, p.ahead
         FROM customers c
@@ -515,6 +530,7 @@ export async function findScheduledLifecycle(daysAhead = 7): Promise<ScheduledLi
         AND NOT EXISTS (
           SELECT 1 FROM customer_lifecycle_events e
           WHERE e.customer_id = nb.id AND e.stage = nb.target_stage AND e.action <> 'SKIPPED'
+            AND e.created_at::date > nb.last_order
         )
       ORDER BY days_until ASC, nb.display_name
       LIMIT 200
@@ -617,6 +633,193 @@ export async function getLifecycleRecovery(): Promise<LifecycleRecovery> {
     messagesSent,
     recovered,
   };
+}
+
+// ── Jornada por cliente (historico de etapas) ──
+
+export interface JourneyStep {
+  stage: LifecycleStage;
+  action: string;
+  templateTitle: string | null;
+  sentAt: string;
+}
+
+export interface CustomerJourney {
+  customerId: string;
+  displayName: string;
+  customerCode: string;
+  steps: JourneyStep[];
+  recoverDate: string | null;
+  attributedStage: LifecycleStage | null;
+  repliedAt: string | null;
+  discarded: boolean;
+  daysSinceLastPurchase: number | null;
+  currentStage: LifecycleStage | "ATIVO" | null;
+  status: "RECUPERADO" | "RESPONDEU" | "DESCARTADO" | "AGUARDANDO";
+}
+
+function stageFromDays(days: number | null): LifecycleStage | "ATIVO" | null {
+  if (days === null) return null;
+  if (days <= 30) return "ATIVO";
+  if (days <= 60) return "ATENCAO_1";
+  if (days <= 89) return "ATENCAO_2";
+  if (days <= 119) return "INATIVO";
+  return "INATIVO_30";
+}
+
+/**
+ * Historico por cliente: cada etapa (template enviado/simulado) na ordem, se ele
+ * voltou a comprar (e qual etapa foi a ultima antes da compra = atribuicao) e se
+ * respondeu no WhatsApp depois do follow-up. Tudo de dados reais.
+ */
+export async function getLifecycleJourneys(limit = 100): Promise<CustomerJourney[]> {
+  const result = await pool.query(
+    `
+      WITH contacted AS (
+        SELECT customer_id, MIN(created_at) AS first_event_at, MAX(created_at) AS last_event_at
+        FROM customer_lifecycle_events
+        WHERE action IN ('SENT', 'SIMULATED')
+        GROUP BY customer_id
+        ORDER BY MAX(created_at) DESC
+        LIMIT $1
+      ),
+      steps AS (
+        SELECT e.customer_id,
+          json_agg(json_build_object(
+            'stage', e.stage, 'action', e.action,
+            'templateTitle', t.title, 'sentAt', e.created_at
+          ) ORDER BY e.created_at) AS steps
+        FROM customer_lifecycle_events e
+        JOIN contacted c ON c.customer_id = e.customer_id
+        LEFT JOIN message_templates t ON t.id = e.template_id
+        WHERE e.action IN ('SENT', 'SIMULATED')
+        GROUP BY e.customer_id
+      ),
+      jids AS (
+        SELECT c.customer_id,
+          (SELECT d.whatsapp_jid FROM deals d
+            WHERE d.customer_id = c.customer_id AND COALESCE(d.whatsapp_jid, '') <> '' LIMIT 1) AS jid
+        FROM contacted c
+      ),
+      recovery AS (
+        SELECT c.customer_id, MIN(o.order_date::date) AS recover_date
+        FROM contacted c
+        JOIN orders o ON o.customer_id = c.customer_id AND o.order_date::date > c.first_event_at::date
+        GROUP BY c.customer_id
+      ),
+      responded AS (
+        SELECT c.customer_id, MAX(w.created_at) AS replied_at
+        FROM contacted c
+        JOIN jids j ON j.customer_id = c.customer_id AND COALESCE(j.jid, '') <> ''
+        JOIN whatsapp_incoming_messages w
+          ON COALESCE(w.from_me, FALSE) = FALSE
+         AND LOWER(w.remote_jid) = LOWER(j.jid)
+         AND w.created_at > c.first_event_at
+        GROUP BY c.customer_id
+      )
+      SELECT
+        c.customer_id,
+        cu.display_name,
+        cu.customer_code,
+        s.steps,
+        r.recover_date::text AS recover_date,
+        rp.replied_at::text AS replied_at,
+        cu.lifecycle_discarded_at IS NOT NULL AS discarded,
+        (
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+          - (SELECT MAX(o.order_date::date) FROM orders o WHERE o.customer_id = c.customer_id)
+        ) AS days_since
+      FROM contacted c
+      JOIN customers cu ON cu.id = c.customer_id
+      LEFT JOIN steps s ON s.customer_id = c.customer_id
+      LEFT JOIN recovery r ON r.customer_id = c.customer_id
+      LEFT JOIN responded rp ON rp.customer_id = c.customer_id
+      ORDER BY c.last_event_at DESC
+    `,
+    [Math.max(1, Math.min(500, limit))],
+  );
+
+  return result.rows.map((row) => {
+    const steps: JourneyStep[] = (Array.isArray(row.steps) ? row.steps : []).map((s: Record<string, unknown>) => ({
+      stage: String(s.stage) as LifecycleStage,
+      action: String(s.action),
+      templateTitle: s.templateTitle ? String(s.templateTitle) : null,
+      sentAt: String(s.sentAt),
+    }));
+
+    const recoverDate = row.recover_date ? String(row.recover_date) : null;
+    const repliedAt = row.replied_at ? String(row.replied_at) : null;
+    const discarded = Boolean(row.discarded);
+
+    // Atribuicao: ultima etapa cujo envio foi ANTES da data de recompra.
+    let attributedStage: LifecycleStage | null = null;
+    if (recoverDate) {
+      const before = steps.filter((s) => s.sentAt.slice(0, 10) <= recoverDate);
+      attributedStage = (before[before.length - 1] ?? steps[steps.length - 1])?.stage ?? null;
+    }
+
+    const status: CustomerJourney["status"] = recoverDate
+      ? "RECUPERADO"
+      : repliedAt
+        ? "RESPONDEU"
+        : discarded
+          ? "DESCARTADO"
+          : "AGUARDANDO";
+
+    const daysSinceLastPurchase = row.days_since === null || row.days_since === undefined ? null : Number(row.days_since);
+
+    return {
+      customerId: String(row.customer_id),
+      displayName: String(row.display_name ?? "Cliente"),
+      customerCode: String(row.customer_code ?? ""),
+      steps,
+      recoverDate,
+      attributedStage,
+      repliedAt,
+      discarded,
+      daysSinceLastPurchase,
+      currentStage: stageFromDays(daysSinceLastPurchase),
+      status,
+    };
+  });
+}
+
+/**
+ * Avisa o grupo/vendedora (LIFECYCLE_HANDOFF_GROUP_JID) que um cliente respondeu
+ * ao follow-up e vale assumir. Reusa a instancia ativa (mesma logica do envio).
+ */
+export async function sendLifecycleHandoff(customerId: string): Promise<{ sent: boolean; detail: string }> {
+  const groupJid = env.LIFECYCLE_HANDOFF_GROUP_JID.trim();
+  if (!groupJid) {
+    return { sent: false, detail: "Grupo de handoff nao configurado (LIFECYCLE_HANDOFF_GROUP_JID)." };
+  }
+
+  const info = await pool.query(
+    `
+      SELECT cu.display_name, cu.customer_code,
+        (SELECT e.stage FROM customer_lifecycle_events e
+          WHERE e.customer_id = cu.id AND e.action IN ('SENT','SIMULATED')
+          ORDER BY e.created_at DESC LIMIT 1) AS last_stage
+      FROM customers cu WHERE cu.id = $1
+    `,
+    [customerId],
+  );
+  const row = info.rows[0];
+  if (!row) {
+    return { sent: false, detail: "Cliente nao encontrado." };
+  }
+
+  const stageLabel = row.last_stage ? STAGE_LABELS[String(row.last_stage) as LifecycleStage] : "follow-up";
+  const codeLabel = row.customer_code ? ` (cód. ${row.customer_code})` : "";
+  const message =
+    `🔔 *Cliente respondeu ao follow-up*\n\n` +
+    `👤 *${row.display_name}*${codeLabel}\n` +
+    `📌 Estava em: ${stageLabel}\n\n` +
+    `Vale uma vendedora assumir essa conversa. 🚀`;
+
+  await sendTemplateToCustomer(groupJid, { messageType: "TEXT", content: message, mediaUrl: null });
+  logger.info("lifecycle handoff enviado", { customerId, groupJid });
+  return { sent: true, detail: "Aviso enviado ao grupo." };
 }
 
 // ── Agendador diario ──

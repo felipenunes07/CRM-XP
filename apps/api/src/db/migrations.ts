@@ -3931,5 +3931,31 @@ export const migrations = [
   -- voltem a ser candidatos quando um template for configurado. A partir do fix,
   -- o runtime nao grava mais SKIPPED, entao isto e um no-op nos proximos deploys.
   DELETE FROM customer_lifecycle_events WHERE action = 'SKIPPED';
+  `,
+  `
+  -- Varios templates por estagio, em ordem: na 1a vez que o cliente passa no
+  -- estagio recebe a variacao 0, na 2a a variacao 1, etc. (ex.: Atencao 2 -1,
+  -- Atencao 2 -2) — para nao mandar sempre a mesma mensagem.
+  CREATE TABLE IF NOT EXISTS lifecycle_stage_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stage TEXT NOT NULL
+      CHECK (stage IN ('ATENCAO_1', 'ATENCAO_2', 'INATIVO', 'INATIVO_30')),
+    position INTEGER NOT NULL,
+    template_id UUID NOT NULL REFERENCES message_templates(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(stage, position)
+  );
+
+  -- Migra o template unico ja configurado para a posicao 0 da nova tabela.
+  INSERT INTO lifecycle_stage_templates (stage, position, template_id)
+  SELECT stage, 0, template_id FROM lifecycle_stage_config WHERE template_id IS NOT NULL
+  ON CONFLICT (stage, position) DO NOTHING;
+
+  -- Permite o cliente passar pelo mesmo estagio mais de uma vez (re-engajamento +
+  -- rotacao de variacao). A unicidade por ciclo passa a ser garantida pela query.
+  DROP INDEX IF EXISTS uq_customer_lifecycle_customer_stage;
+
+  CREATE INDEX IF NOT EXISTS idx_customer_lifecycle_customer_stage
+    ON customer_lifecycle_events(customer_id, stage);
   `
 ];

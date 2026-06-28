@@ -80,6 +80,8 @@ import {
   runLifecycleAutomation,
   findScheduledLifecycle,
   getLifecycleRecovery,
+  getLifecycleJourneys,
+  sendLifecycleHandoff,
   LIFECYCLE_STAGES,
   type LifecycleStage,
 } from "./modules/crm/lifecycleAutomationService.js";
@@ -1564,6 +1566,29 @@ export function createApp() {
   app.get("/api/lifecycle/recovery", async (_request, response, next) => {
     try {
       response.json(await getLifecycleRecovery());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Jornada por cliente: etapas enviadas, recompra (atribuicao) e resposta.
+  app.get("/api/lifecycle/journeys", async (request, response, next) => {
+    try {
+      const limit = Math.max(1, Math.min(500, Number(request.query.limit ?? 100) || 100));
+      response.json({ journeys: await getLifecycleJourneys(limit) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Handoff: avisa o grupo/vendedora que um cliente respondeu ao follow-up.
+  app.post("/api/lifecycle/handoff", async (request, response, next) => {
+    try {
+      const customerId = request.body?.customerId;
+      if (typeof customerId !== "string" || !customerId) {
+        throw new HttpError(400, "Informe customerId.");
+      }
+      response.json(await sendLifecycleHandoff(customerId));
     } catch (error) {
       next(error);
     }

@@ -173,6 +173,27 @@ export interface LifecycleRecovery {
   recovered: RecoveredCustomer[];
 }
 
+export interface JourneyStep {
+  stage: LifecycleStage;
+  action: string;
+  templateTitle: string | null;
+  sentAt: string;
+}
+
+export interface CustomerJourney {
+  customerId: string;
+  displayName: string;
+  customerCode: string;
+  steps: JourneyStep[];
+  recoverDate: string | null;
+  attributedStage: LifecycleStage | null;
+  repliedAt: string | null;
+  discarded: boolean;
+  daysSinceLastPurchase: number | null;
+  currentStage: LifecycleStage | "ATIVO" | null;
+  status: "RECUPERADO" | "RESPONDEU" | "DESCARTADO" | "AGUARDANDO";
+}
+
 export interface LifecycleOverview {
   stageCounts: Record<LifecycleStage, number>;
   discardedCount: number;
@@ -702,6 +723,16 @@ export const api = {
   },
   lifecycleRecovery(token: string) {
     return request<LifecycleRecovery>("/api/lifecycle/recovery", {}, token);
+  },
+  lifecycleJourneys(token: string, limit = 100) {
+    return request<{ journeys: CustomerJourney[] }>(`/api/lifecycle/journeys?limit=${limit}`, {}, token);
+  },
+  lifecycleHandoff(token: string, customerId: string) {
+    return request<{ sent: boolean; detail: string }>(
+      "/api/lifecycle/handoff",
+      { method: "POST", body: JSON.stringify({ customerId }) },
+      token,
+    );
   },
   sendTestMessage(token: string, input: { messageText: string; messageType: string; carouselData?: any; menuData?: WhatsappMenuData; videoUrl?: string; whatsappInstanceId?: string }) {
     return request<{ success: boolean; result: any }>("/api/messages/test", {

@@ -224,6 +224,9 @@ const envSchema = z.object({
   LIFECYCLE_AUTOMATION_TIMEZONE: z.string().default("America/Sao_Paulo"),
   // Instancia de WhatsApp que envia ao cliente (mesma logica do offboarding).
   LIFECYCLE_AUTOMATION_INSTANCE_ID: z.string().default(""),
+  // Grupo (ou numero) que recebe o aviso de handoff quando um cliente responde ao
+  // follow-up — para uma vendedora assumir. Vazio = botao de avisar fica inativo.
+  LIFECYCLE_HANDOFF_GROUP_JID: z.string().default(""),
 });
 
 export const env = envSchema.parse(process.env);
