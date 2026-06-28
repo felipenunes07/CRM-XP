@@ -199,12 +199,9 @@ export function TemplatesPage() {
     <div className="page-stack liquid-page-stack">
       <style>{`
         .liquid-page-stack {
-          --accent: #10b981 !important;
-          --accent-2: #059669 !important;
-          --accent-3: #a7f3d0 !important;
           position: relative;
-          background: radial-gradient(circle at 12% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 45%),
-                      radial-gradient(circle at 88% 85%, rgba(5, 150, 105, 0.08) 0%, transparent 45%),
+          background: radial-gradient(circle at 12% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
+                      radial-gradient(circle at 88% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 45%),
                       #f8fafc;
           min-height: calc(100vh - 100px);
           padding: 1.5rem;
@@ -257,20 +254,14 @@ export function TemplatesPage() {
           color: #0f172a;
         }
         .page-filter-chip.active {
-          background: #059669;
-          border-color: #059669;
+          background: #0f172a;
+          border-color: #0f172a;
           color: #ffffff;
           font-weight: 700;
         }
-        .premium-header-title,
-        .premium-title {
-          background: linear-gradient(135deg, #0f172a 0%, #059669 100%) !important;
-          -webkit-background-clip: text !important;
-          -webkit-text-fill-color: transparent !important;
-        }
         
         .page-btn-primary {
-          background: linear-gradient(135deg, #10b981, #059669);
+          background: linear-gradient(135deg, #2563eb, #1d4ed8);
           color: #ffffff;
           border: 0;
           border-radius: 999px;
@@ -280,12 +271,12 @@ export function TemplatesPage() {
           gap: 0.55rem;
           cursor: pointer;
           font-weight: 700;
-          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+          box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
           transition: all 0.16s ease;
         }
         .page-btn-primary:hover:not(:disabled) {
           transform: translateY(-1px);
-          box-shadow: 0 6px 16px rgba(16, 185, 129, 0.3);
+          box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
         }
         .page-btn-primary:disabled {
           cursor: not-allowed;
@@ -347,76 +338,6 @@ export function TemplatesPage() {
           font-size: 0.78rem;
           min-height: auto;
         }
-        
-        /* ── Simulated WhatsApp Previews ── */
-        .tmpl-wa-chat {
-          background: #efeae2;
-          background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
-          background-size: repeat;
-          padding: 0.75rem 1rem;
-          border-radius: 12px;
-          border: 1px solid #e1d9d1;
-          display: flex;
-          flex-direction: column;
-          width: 100%;
-          max-width: 480px;
-          box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-          margin-top: 0.35rem;
-        }
-        .tmpl-wa-bubble {
-          background: #d9fdd3;
-          align-self: flex-end;
-          padding: 0.45rem 0.6rem 0.3rem 0.6rem;
-          border-radius: 8px 0 8px 8px;
-          box-shadow: 0 1px 1px rgba(0,0,0,0.12);
-          max-width: 90%;
-          word-break: break-word;
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-        }
-        .tmpl-wa-bubble.has-media {
-          padding: 0.3rem;
-          border-radius: 8px;
-        }
-        .tmpl-wa-media {
-          max-width: 100%;
-          max-height: 180px;
-          border-radius: 6px;
-          object-fit: cover;
-          display: block;
-        }
-        .tmpl-wa-text {
-          font-size: 0.82rem;
-          color: #111b21;
-          line-height: 1.45;
-          white-space: pre-wrap;
-          padding: 0.2rem 0.3rem;
-        }
-        .tmpl-wa-time-container {
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          gap: 0.2rem;
-          margin-top: 0.1rem;
-          padding-right: 0.2rem;
-        }
-        .tmpl-wa-time {
-          font-size: 0.62rem;
-          color: #667781;
-          font-weight: 550;
-        }
-        .tmpl-wa-checks {
-          font-size: 0.72rem;
-          color: #53bdeb;
-          font-weight: 700;
-          line-height: 1;
-        }
-        
-        .badge.reativacao { background: #ecfdf5; color: #047857; }
-        .badge.follow_up { background: #fef3c7; color: #b45309; }
-        .badge.promocao { background: #eff6ff; color: #1d4ed8; }
-        .badge.credito { background: #fdf2f8; color: #be185d; }
 
         @keyframes spin {
           from { transform: rotate(0deg); }
@@ -488,12 +409,12 @@ export function TemplatesPage() {
                 onDrop={handleDrop}
                 style={{
                   border: dragActive 
-                    ? "2px solid #10b981" 
+                    ? "2px solid #2563eb" 
                     : uploadingMedia 
-                      ? "2px solid #059669" 
+                      ? "2px solid #10b981" 
                       : "2px dashed #cbd5e1",
                   background: dragActive 
-                    ? "rgba(16, 185, 129, 0.04)" 
+                    ? "rgba(37, 99, 235, 0.04)" 
                     : uploadingMedia 
                       ? "#f0fdf4" 
                       : form.mediaUrl 
@@ -626,39 +547,6 @@ export function TemplatesPage() {
             />
           </div>
 
-          {/* Live Preview of the template being edited/created */}
-          <div style={{ marginTop: "1.2rem", borderTop: "1px dashed #e2e8f0", paddingTop: "1.2rem" }}>
-            <label className="input-label" style={{ marginBottom: "0.6rem", display: "block" }}>
-              Visualização em Tempo Real (WhatsApp)
-            </label>
-            <div className="tmpl-wa-chat">
-              {needsMedia && form.mediaUrl ? (
-                <div className="tmpl-wa-bubble has-media">
-                  {form.messageType === "IMAGE" ? (
-                    <img src={getDisplayMediaUrl(form.mediaUrl)} alt="Mídia" className="tmpl-wa-media" />
-                  ) : (
-                    <video src={getDisplayMediaUrl(form.mediaUrl)} className="tmpl-wa-media" controls />
-                  )}
-                  {form.content && (
-                    <div className="tmpl-wa-text">{form.content}</div>
-                  )}
-                  <div className="tmpl-wa-time-container">
-                    <span className="tmpl-wa-time">09:00</span>
-                    <span className="tmpl-wa-checks">✓✓</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="tmpl-wa-bubble">
-                  <div className="tmpl-wa-text">{form.content || "Digite sua legenda/mensagem..."}</div>
-                  <div className="tmpl-wa-time-container">
-                    <span className="tmpl-wa-time">09:00</span>
-                    <span className="tmpl-wa-checks">✓✓</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button
               type="submit"
@@ -716,39 +604,12 @@ export function TemplatesPage() {
                 className="panel-row"
                 style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "1rem", alignItems: "start" }}
               >
-                <span className={`badge ${template.category}`} style={{ marginTop: "0.15rem", whiteSpace: "nowrap" }}>
+                <span className="badge" style={{ marginTop: "0.15rem", whiteSpace: "nowrap" }}>
                   {categoryLabel(template.category)}
                 </span>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", width: "100%", minWidth: 0 }}>
-                  <p style={{ fontWeight: 700, margin: 0, fontSize: "0.92rem", color: "#1e293b" }}>{template.title}</p>
-                  
-                  {/* WhatsApp Chat Preview */}
-                  <div className="tmpl-wa-chat">
-                    {template.mediaUrl ? (
-                      <div className="tmpl-wa-bubble has-media">
-                        {template.messageType === "IMAGE" ? (
-                          <img src={getDisplayMediaUrl(template.mediaUrl)} alt="Mídia" className="tmpl-wa-media" />
-                        ) : (
-                          <video src={getDisplayMediaUrl(template.mediaUrl)} className="tmpl-wa-media" controls />
-                        )}
-                        {template.content && (
-                          <div className="tmpl-wa-text">{template.content}</div>
-                        )}
-                        <div className="tmpl-wa-time-container">
-                          <span className="tmpl-wa-time">09:00</span>
-                          <span className="tmpl-wa-checks">✓✓</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="tmpl-wa-bubble">
-                        <div className="tmpl-wa-text">{template.content}</div>
-                        <div className="tmpl-wa-time-container">
-                          <span className="tmpl-wa-time">09:00</span>
-                          <span className="tmpl-wa-checks">✓✓</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                <div>
+                  <p style={{ fontWeight: 600, marginBottom: "0.25rem" }}>{template.title}</p>
+                  <p style={{ opacity: 0.7, fontSize: "0.875rem", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{template.content}</p>
                 </div>
                 <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
                   <button type="button" className="page-btn-secondary page-btn-sm" onClick={() => startEdit(template)}>
