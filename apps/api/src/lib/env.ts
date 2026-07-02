@@ -137,15 +137,21 @@ const envSchema = z.object({
   EVENTS_AI_BUSINESS_END_HOUR: z.coerce.number().int().min(1).max(24).default(18),
   EVENTS_AI_BUSINESS_DAYS: z.string().default("1,2,3,4,5"),
   EVENTS_AI_BATCH_INTERVAL_MINUTES: z.coerce.number().int().min(15).max(24 * 60).default(60),
-  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(2000).default(300),
-  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(20_000_000).default(2_000_000),
+  // Orcamento diario apertado de proposito (Felipe nao quer pagar API): cabe
+  // no free tier do Cerebras (14.400 req/dia, ~1M tokens/dia) e do Gemini.
+  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(2000).default(40),
+  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(20_000_000).default(400_000),
   EVENTS_AI_MAX_EVENTS_PER_BATCH: z.coerce.number().int().min(10).max(1000).default(200),
   EVENTS_AI_LOOKBACK_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   EVENTS_AI_SUMMARY_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
   // Inteligencia de Mensagens v2: analise de conversas inteiras por IA.
-  EVENTS_AI_MAX_CONVERSATIONS_PER_RUN: z.coerce.number().int().min(5).max(200).default(40),
-  EVENTS_AI_CONVERSATIONS_PER_REQUEST: z.coerce.number().int().min(1).max(20).default(6),
-  EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION: z.coerce.number().int().min(10).max(200).default(48),
+  // 24 conversas/rodada em lotes de 8 = ~3 chamadas por ciclo; as conversas
+  // com sinal de reclamacao/risco (classificador por regra) vao primeiro.
+  EVENTS_AI_MAX_CONVERSATIONS_PER_RUN: z.coerce.number().int().min(5).max(200).default(24),
+  EVENTS_AI_CONVERSATIONS_PER_REQUEST: z.coerce.number().int().min(1).max(20).default(8),
+  EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION: z.coerce.number().int().min(10).max(200).default(40),
+  // Trava do briefing: regenera no maximo a cada N minutos (manual ignora).
+  EVENTS_AI_BRIEFING_MIN_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(24 * 60).default(110),
   // Quantos dias as analises de conversa e briefings ficam guardados antes da
   // limpeza diaria apagar (pedido do gestor: ~30 dias e some).
   EVENTS_INTELLIGENCE_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(30),

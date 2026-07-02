@@ -124,8 +124,8 @@ export function buildTranscriptText(
   messages: TranscriptMessage[],
   options: { timezone: string; maxMessages: number; maxCharsPerMessage?: number; maxTotalChars?: number },
 ) {
-  const maxPerMessage = options.maxCharsPerMessage ?? 350;
-  const maxTotal = options.maxTotalChars ?? 6500;
+  const maxPerMessage = options.maxCharsPerMessage ?? 300;
+  const maxTotal = options.maxTotalChars ?? 4500;
   const lines: string[] = [];
   let total = 0;
 
@@ -348,7 +348,8 @@ async function selectConversationCandidates(
       convs.*,
       COALESCE(c.display_name, d.title) AS chat_name,
       d.assigned_to_name AS agent_name,
-      COALESCE(cs.total_spent > 5000 OR cs.total_orders > 10 OR cs.value_score > 80, false) AS is_vip
+      COALESCE(cs.total_spent > 5000 OR cs.total_orders > 10 OR cs.value_score > 80, false) AS is_vip,
+      signals.signal_count
     FROM convs
     JOIN deals d ON d.id = convs.deal_id
     LEFT JOIN customers c ON c.id = d.customer_id
@@ -356,9 +357,25 @@ async function selectConversationCandidates(
     LEFT JOIN conversation_insights ci
       ON ci.conversation_key = convs.conversation_key
      AND ci.window_date = $6::date
+    -- Orcamento de IA e curto: conversas onde o classificador por regra ja viu
+    -- reclamacao/risco hoje furam a fila e sao analisadas primeiro.
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS signal_count
+      FROM message_events me
+      WHERE me.deal_id = convs.deal_id
+        AND me.detected_at >= $1
+        AND me.detected_at < $2
+        AND (
+          me.severity IN ('HIGH', 'CRITICAL')
+          OR me.event_type IN ('COMPLAINT', 'CHURN_RISK', 'ESCALATION', 'RISK', 'NEGATIVE_FEEDBACK')
+        )
+    ) signals ON true
     WHERE convs.customer_message_count > 0
       AND (ci.id IS NULL OR convs.last_message_at > ci.last_message_at)
-    ORDER BY convs.customer_message_count DESC, convs.last_message_at DESC
+    ORDER BY
+      signals.signal_count DESC,
+      convs.customer_message_count DESC,
+      convs.last_message_at DESC
     LIMIT $7
   `, [
     windowStart,
@@ -565,6 +582,23 @@ export function buildBriefingPrompt(input: {
     "ANALISES DE CONVERSAS:",
     JSON.stringify(input.insights),
   ].join("\n");
+}
+
+/**
+ * O briefing so e regenerado quando o atual esta "velho" o suficiente
+ * (EVENTS_AI_BRIEFING_MIN_INTERVAL_MINUTES) — cada regeneracao custa uma
+ * chamada de IA e o orcamento diario e apertado. Rodada manual ignora.
+ */
+async function briefingIsFresh(windowDate: string, now: Date): Promise<boolean> {
+  const minIntervalMs = env.EVENTS_AI_BRIEFING_MIN_INTERVAL_MINUTES * 60 * 1000;
+  if (minIntervalMs <= 0) return false;
+
+  const result = await pool.query(
+    `SELECT generated_at FROM daily_briefings WHERE briefing_date = $1::date`,
+    [windowDate],
+  );
+  const generatedAt = result.rows[0]?.generated_at ? new Date(result.rows[0].generated_at) : null;
+  return Boolean(generatedAt && now.getTime() - generatedAt.getTime() < minIntervalMs);
 }
 
 async function generateDailyBriefing(
@@ -836,7 +870,7 @@ export async function runConversationIntelligence(
   });
 
   let briefingUpdated = false;
-  if (analyzed > 0) {
+  if (analyzed > 0 && (options.manual === true || !(await briefingIsFresh(windowDate, now)))) {
     briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
   }
 
@@ -1038,8 +1072,8 @@ export async function getIntelligenceStatus(now = new Date()): Promise<EventsInt
     ignoreBusinessHours: true,
   });
 
-  const { windowDate } = getDayWindow(now, config.timezone);
-  const [lastRunResult, analyzedTodayResult, lastErrorResult] = await Promise.all([
+  const { windowStart, windowEnd, windowDate } = getDayWindow(now, config.timezone);
+  const [lastRunResult, analyzedTodayResult, lastErrorResult, messagesTodayResult] = await Promise.all([
     pool.query(`
       SELECT finished_at FROM event_ai_batches
       WHERE kind = 'conversations' AND status = 'SUCCEEDED'
@@ -1056,6 +1090,14 @@ export async function getIntelligenceStatus(now = new Date()): Promise<EventsInt
       ORDER BY finished_at DESC NULLS LAST
       LIMIT 1
     `, [now.toISOString().slice(0, 10)]),
+    // Diagnostico: quantas mensagens o monitor capturou hoje (fora grupos
+    // internos). Se isso for 0, o problema e na ingestao, nao na IA.
+    pool.query(`
+      SELECT COUNT(*)::int AS total
+      FROM whatsapp_monitor_messages
+      WHERE created_at >= $1 AND created_at < $2
+        AND COALESCE(remote_jid, '') <> ALL($3::text[])
+    `, [windowStart, windowEnd, INTERNAL_GROUP_JID_LIST]),
   ]);
 
   return {
@@ -1066,6 +1108,7 @@ export async function getIntelligenceStatus(now = new Date()): Promise<EventsInt
       ? new Date(lastRunResult.rows[0].finished_at).toISOString()
       : null,
     conversationsAnalyzedToday: Number(analyzedTodayResult.rows[0]?.total ?? 0),
+    messagesToday: Number(messagesTodayResult.rows[0]?.total ?? 0),
     usage: {
       requestCount: usage.requestCount,
       tokenCount: usage.tokenCount,

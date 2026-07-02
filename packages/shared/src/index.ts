@@ -2417,6 +2417,7 @@ export interface EventsIntelligenceStatus {
   model: string;
   lastAnalysisAt: string | null;
   conversationsAnalyzedToday: number;
+  messagesToday: number;
   usage: {
     requestCount: number;
     tokenCount: number;
