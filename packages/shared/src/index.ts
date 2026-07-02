@@ -2342,3 +2342,129 @@ export interface EventsListResponse {
 export interface EventResolutionInput {
   resolutionNote: string;
 }
+
+// ── Conversation Intelligence (Inteligencia de Mensagens v2) ──
+
+export type ConversationAttentionLevel = "none" | "low" | "medium" | "high" | "critical";
+
+export interface ConversationInsightHighlight {
+  autor: string;
+  texto: string;
+  tipo: string;
+}
+
+export interface ConversationInsight {
+  id: string;
+  conversationKey: string;
+  dealId: string | null;
+  remoteJid: string | null;
+  isGroup: boolean;
+  chatName: string | null;
+  agentName: string | null;
+  windowDate: string;
+  firstMessageAt: string | null;
+  lastMessageAt: string | null;
+  messageCount: number;
+  customerMessageCount: number;
+  analyzedAt: string;
+  provider: string | null;
+  model: string | null;
+  summary: string;
+  sentimentScore: number | null;
+  sentimentLabel: string | null;
+  attentionLevel: ConversationAttentionLevel;
+  attentionReason: string | null;
+  flags: Record<string, boolean>;
+  topics: string[];
+  highlights: ConversationInsightHighlight[];
+  actionItems: string[];
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  ackNote: string | null;
+}
+
+export type BriefingItem = string | { titulo?: string; detalhe?: string };
+
+export interface DailyBriefing {
+  id: string;
+  briefingDate: string;
+  generatedAt: string;
+  provider: string | null;
+  model: string | null;
+  narrative: string;
+  payload: Record<string, unknown>;
+  stats: Record<string, unknown>;
+}
+
+export interface ConversationTopicStat {
+  topic: string;
+  count: number;
+  negativeCount: number;
+}
+
+export interface ConversationAgentStat {
+  agentName: string;
+  conversations: number;
+  complaints: number;
+  opportunities: number;
+  praises: number;
+  averageSentiment: number | null;
+}
+
+export interface EventsIntelligenceStatus {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  lastAnalysisAt: string | null;
+  conversationsAnalyzedToday: number;
+  usage: {
+    requestCount: number;
+    tokenCount: number;
+    requestLimit: number;
+    tokenLimit: number;
+  };
+  canRunManually: boolean;
+  manualBlockedReason: string | null;
+  retentionDays: number;
+  lastError: string | null;
+}
+
+export interface EventsOverviewStats {
+  conversations: number;
+  byAttention: Record<ConversationAttentionLevel, number>;
+  complaints: number;
+  churnRisks: number;
+  unanswered: number;
+  opportunities: number;
+  praises: number;
+  groups: number;
+  privates: number;
+  averageSentiment: number | null;
+  openRadar: number;
+}
+
+export interface EventsOverviewResponse {
+  generatedAt: string;
+  period: { from: string; to: string };
+  briefing: DailyBriefing | null;
+  status: EventsIntelligenceStatus;
+  stats: EventsOverviewStats;
+  radar: ConversationInsight[];
+  topics: ConversationTopicStat[];
+  agents: ConversationAgentStat[];
+}
+
+export interface ConversationInsightsListResponse {
+  insights: ConversationInsight[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ConversationIntelligenceRunResult {
+  status: "SKIPPED" | "SUCCEEDED" | "FAILED";
+  reason?: string;
+  analyzedConversations?: number;
+  briefingUpdated?: boolean;
+  error?: string;
+}

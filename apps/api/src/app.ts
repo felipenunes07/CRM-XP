@@ -138,7 +138,12 @@ import {
   resolveEvent,
   getDailySentiments,
 } from "./modules/events/eventsService.js";
-import { runEventsAiBatch } from "./modules/events/eventsBatchAi.js";
+import {
+  acknowledgeConversationInsight,
+  getEventsOverview,
+  listConversationInsights,
+  runConversationIntelligence,
+} from "./modules/events/conversationAi.js";
 import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
@@ -2837,9 +2842,66 @@ export function createApp() {
     }
   });
 
+  // Rota legada: agora dispara o motor novo (analise de conversas + briefing).
   app.post("/api/events/ai-batch/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
-      response.json(await runEventsAiBatch(new Date(), { manual: true }));
+      response.json(await runConversationIntelligence(new Date(), { manual: true }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Inteligencia de Mensagens v2 (conversas + briefing) ──
+
+  const conversationInsightsQuerySchema = z.object({
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    attention: z.string().optional().transform((value) =>
+      value ? value.split(",").filter((entry) => ["none", "low", "medium", "high", "critical"].includes(entry)) as Array<"none" | "low" | "medium" | "high" | "critical"> : undefined,
+    ),
+    flag: z.string().regex(/^[a-z_]+$/).optional(),
+    search: z.string().optional(),
+    isGroup: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
+    agentName: z.string().optional(),
+    onlyOpen: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/events/overview", async (request, response, next) => {
+    try {
+      const query = conversationInsightsQuerySchema.parse(request.query);
+      response.json(await getEventsOverview(request.user!, query));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/conversations", async (request, response, next) => {
+    try {
+      const query = conversationInsightsQuerySchema.parse(request.query);
+      const result = await listConversationInsights(request.user!, query, {
+        page: query.page || 1,
+        pageSize: query.pageSize || 20,
+      });
+      response.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.json(await runConversationIntelligence(new Date(), { manual: true }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/events/conversations/:id/ack", async (request, response, next) => {
+    try {
+      const payload = z.object({ note: z.string().trim().max(2000).optional() }).parse(request.body ?? {});
+      response.json(await acknowledgeConversationInsight(request.params.id, request.user!, payload.note));
     } catch (error) {
       next(error);
     }

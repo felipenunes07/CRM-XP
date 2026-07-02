@@ -121,8 +121,9 @@ const envSchema = z.object({
   WHATSAPP_INCOMING_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(90),
   WHATSAPP_ACTIVITY_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(90),
   WHATSAPP_ROLLUP_RETENTION_DAYS: z.coerce.number().int().min(30).max(3650).default(90),
-  EVENTS_RESOLVED_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
-  EVENTS_LOW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(60),
+  // Pedido do gestor: dados da aba de eventos somem depois de ~30 dias.
+  EVENTS_RESOLVED_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+  EVENTS_LOW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   EVENTS_SENTIMENT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
   EVENTS_AI_BATCH_ENABLED: z
     .enum(["true", "false"])
@@ -136,11 +137,18 @@ const envSchema = z.object({
   EVENTS_AI_BUSINESS_END_HOUR: z.coerce.number().int().min(1).max(24).default(18),
   EVENTS_AI_BUSINESS_DAYS: z.string().default("1,2,3,4,5"),
   EVENTS_AI_BATCH_INTERVAL_MINUTES: z.coerce.number().int().min(15).max(24 * 60).default(60),
-  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(1000).default(6),
-  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(2_000_000).default(120_000),
+  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(2000).default(300),
+  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(20_000_000).default(2_000_000),
   EVENTS_AI_MAX_EVENTS_PER_BATCH: z.coerce.number().int().min(10).max(1000).default(200),
   EVENTS_AI_LOOKBACK_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   EVENTS_AI_SUMMARY_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+  // Inteligencia de Mensagens v2: analise de conversas inteiras por IA.
+  EVENTS_AI_MAX_CONVERSATIONS_PER_RUN: z.coerce.number().int().min(5).max(200).default(40),
+  EVENTS_AI_CONVERSATIONS_PER_REQUEST: z.coerce.number().int().min(1).max(20).default(6),
+  EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION: z.coerce.number().int().min(10).max(200).default(48),
+  // Quantos dias as analises de conversa e briefings ficam guardados antes da
+  // limpeza diaria apagar (pedido do gestor: ~30 dias e some).
+  EVENTS_INTELLIGENCE_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(30),
   GEMINI_API_KEY: z.string().default(""),
   CEREBRAS_API_KEY: z.string().default(""),
   DATABASE_CLEANUP_BATCH_SIZE: z.coerce.number().int().min(100).max(50_000).default(5_000),

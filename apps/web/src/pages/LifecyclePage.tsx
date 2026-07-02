@@ -6,7 +6,7 @@ import { api, type LifecycleStage } from "../lib/api";
 
 const STAGE_ORDER: LifecycleStage[] = ["ATENCAO_1", "ATENCAO_2", "INATIVO", "INATIVO_30"];
 
-// Escala sóbria (família azul/índigo) ââ‚¬â€ diferencia os estágios sem poluir.
+// Escala sóbria (família azul/índigo) — diferencia os estágios sem poluir.
 const STAGE_META: Record<LifecycleStage, { short: string; range: string; color: string }> = {
   ATENCAO_1: { short: "Atenção 1", range: "31-60 dias", color: "#eab308" },
   ATENCAO_2: { short: "Atenção 2", range: "61-89 dias", color: "#f97316" },
@@ -506,7 +506,7 @@ export function LifecyclePage() {
 
       {activeTab === "flow" && (
         <>
-          {/* ââ€â‚¬ââ€â‚¬ Pipeline Horizontal ââ€â‚¬ââ€â‚¬ */}
+          {/* ── Pipeline Horizontal ── */}
           <section className="lc-card" style={{ marginBottom: "1.25rem", padding: "1.5rem 1.8rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.2rem" }}>
               <div>
@@ -536,7 +536,7 @@ export function LifecyclePage() {
                   <Eye size={18} color="#059669" />
                 </div>
                 <div className="lc-pipe-label">Monitorando</div>
-                <div className="lc-pipe-detail"><b>{overview?.totalWatched ?? "ââ‚¬â€"}</b> clientes</div>
+                <div className="lc-pipe-detail"><b>{overview?.totalWatched ?? "—"}</b> clientes</div>
               </div>
               <div className="lc-pipe-connector active" />
 
@@ -574,20 +574,20 @@ export function LifecyclePage() {
             </div>
           </section>
 
-          {/* ââ€â‚¬ââ€â‚¬ KPIs Strip ââ€â‚¬ââ€â‚¬ */}
+          {/* ── KPIs Strip ── */}
           <div className="lc-kpis-strip">
             {kpis.map((k: any, i: number) => (
               <div key={i} className="lc-kpi">
                 <span className="lc-kpi-ic" style={{ background: k.gradient, color: k.color }}>{k.icon}</span>
                 <div className="lc-kpi-info">
-                  <div className="lc-kpi-n">{k.n ?? "ââ‚¬â€"}</div>
+                  <div className="lc-kpi-n">{k.n ?? "—"}</div>
                   <div className="lc-kpi-l">{k.l}</div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* ââ€â‚¬ââ€â‚¬ Two-Column: Conversão + Cérebro IA ââ€â‚¬ââ€â‚¬ */}
+          {/* ── Two-Column: Conversão + Cérebro IA ── */}
           <div className="lc-flow-dashboard">
             {/* Esquerda: Conversão elegante */}
             <section className="lc-card" style={{ margin: 0, display: "flex", flexDirection: "column" }}>
@@ -735,7 +735,7 @@ export function LifecyclePage() {
           </div>
 
           {scheduledQuery.isLoading ? (
-            <div className="lc-empty">Carregandoââ‚¬Â¦</div>
+            <div className="lc-empty">Carregando...</div>
           ) : filteredScheduled.length === 0 ? (
             <div className="lc-empty">Nenhum cliente encontrado na fila para os próximos 14 dias.</div>
           ) : (
@@ -844,7 +844,7 @@ export function LifecyclePage() {
           <div className="lc-card-head" style={{ marginBottom: "1rem" }}>
             <div>
               <h2>Regras de disparo por estágio</h2>
-              <span className="lc-card-sub">condiçàµes e mensagens automatizadas de cada régua</span>
+              <span className="lc-card-sub">condições e mensagens automatizadas de cada régua</span>
             </div>
           </div>
           <div className="lc-rules-grid">
@@ -952,7 +952,7 @@ export function LifecyclePage() {
           </div>
 
           {journeysQuery.isLoading ? (
-            <div className="lc-empty">Carregandoââ‚¬Â¦</div>
+            <div className="lc-empty">Carregando...</div>
           ) : journeys.length === 0 ? (
             <div className="lc-empty">Nenhum cliente passou pela régua ainda. Rode a verificação para começar.</div>
           ) : searchedJourneys.length === 0 ? (
@@ -1022,7 +1022,7 @@ export function LifecyclePage() {
                         <>
                           <span className="lc-step-link win" />
                           <span className="lc-step outcome">
-                            <span className="lc-step-n" style={{ background: "#16a34a" }}>âÅ“â€œ</span>
+                            <span className="lc-step-n" style={{ background: "#16a34a" }}>✓</span>
                             <span className="lc-step-txt"><b>Comprou</b><small>{j.attributedStage ? `após ${STAGE_META[j.attributedStage as LifecycleStage].short}` : "recuperado"}</small></span>
                           </span>
                         </>
@@ -1031,18 +1031,18 @@ export function LifecyclePage() {
 
                     {j.status === "RESPONDEU" ? (
                       <div className="lc-j-action">
-                        <span className="lc-muted">Ã°Å¸â€™Â¬ Cliente respondeu ââ‚¬â€ vale uma vendedora assumir.</span>
+                        <span className="lc-muted">💬 Cliente respondeu — vale uma vendedora assumir.</span>
                         <button
                           className="lc-handoff"
                           disabled={handoff.isPending}
                           onClick={() => handoff.mutate(j.customerId)}
                         >
-                          {handoff.isPending && handoff.variables === j.customerId ? "Avisandoââ‚¬Â¦" : "Avisar vendedora"}
+                          {handoff.isPending && handoff.variables === j.customerId ? "Avisando..." : "Avisar vendedora"}
                         </button>
                       </div>
                     ) : null}
                     {handoff.isSuccess && handoff.variables === j.customerId ? (
-                      <div className="lc-j-done">{handoff.data?.sent ? "âÅ“â€œ Vendedora avisada no grupo." : handoff.data?.detail}</div>
+                      <div className="lc-j-done">{handoff.data?.sent ? "✓ Vendedora avisada no grupo." : handoff.data?.detail}</div>
                     ) : null}
                   </div>
                 );
@@ -1835,7 +1835,7 @@ const LC_STYLES = `
   }
 
   /* Conversão Radial CSS */
-  /* Conversão — consolidado */
+  /* ── Conversion Card ── */
   .lc-conv-body {
     display: flex;
     flex-direction: column;
@@ -2477,7 +2477,7 @@ const LC_STYLES = `
     to { transform: rotate(360deg); }
   }
 
-  /* â”€â”€ Pipeline Stepper â”€â”€ */
+  /* ── Pipeline Stepper ── */
   .lc-pipeline {
     display: flex;
     align-items: flex-start;
@@ -2573,7 +2573,7 @@ const LC_STYLES = `
     100% { opacity: 0; transform: scale(2); }
   }
 
-  /* â”€â”€ KPIs Strip â”€â”€ */
+  /* ── KPIs Strip ── */
   .lc-kpis-strip {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -2622,7 +2622,7 @@ const LC_STYLES = `
     font-weight: 500;
   }
 
-  /* â”€â”€ Conversion Card â”€â”€ */
+  /* ── Conversion Card ── */
   .lc-conv-body {
     display: flex;
     flex-direction: column;

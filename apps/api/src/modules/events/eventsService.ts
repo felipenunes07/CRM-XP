@@ -199,6 +199,11 @@ export function isInternalSender(senderJid: string | null | undefined, senderNam
   if (senderName && INTERNAL_SENDER_NAMES.has(senderName)) return true;
   return false;
 }
+
+/** Raw lists for SQL-side filtering (ANY($n::text[])) by the conversation AI. */
+export const INTERNAL_GROUP_JID_LIST = [...INTERNAL_GROUP_BLOCKLIST];
+export const INTERNAL_SENDER_JID_LIST = [...INTERNAL_SENDER_BLOCKLIST];
+export const INTERNAL_SENDER_NAME_LIST = [...INTERNAL_SENDER_NAMES];
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
@@ -1818,6 +1823,38 @@ export async function purgeOldEventsData() {
       )
       `,
       [env.EVENTS_SENTIMENT_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    // Inteligencia de Mensagens v2: analises de conversa e briefings expiram
+    // apos EVENTS_INTELLIGENCE_RETENTION_DAYS (default 30) para nao acumular.
+    results.conversationInsights = await deleteInBatches(
+      "conversation_insights",
+      `
+      DELETE FROM conversation_insights
+      WHERE ctid IN (
+        SELECT ctid
+        FROM conversation_insights
+        WHERE window_date < CURRENT_DATE - $1::int
+        ORDER BY window_date
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_INTELLIGENCE_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
+    );
+
+    results.dailyBriefings = await deleteInBatches(
+      "daily_briefings",
+      `
+      DELETE FROM daily_briefings
+      WHERE ctid IN (
+        SELECT ctid
+        FROM daily_briefings
+        WHERE briefing_date < CURRENT_DATE - $1::int
+        ORDER BY briefing_date
+        LIMIT $2::int
+      )
+      `,
+      [env.EVENTS_INTELLIGENCE_RETENTION_DAYS, env.DATABASE_CLEANUP_BATCH_SIZE],
     );
 
     results.aiBatches = await deleteInBatches(

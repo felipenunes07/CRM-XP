@@ -78,7 +78,7 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Sat: 6,
 };
 
-function getLocalParts(date: Date, timezone: string) {
+export function getLocalParts(date: Date, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     weekday: "short",
@@ -103,7 +103,7 @@ function getLocalParts(date: Date, timezone: string) {
   };
 }
 
-function zonedDateToUtc(
+export function zonedDateToUtc(
   timezone: string,
   local: { year: number; month: number; day: number; hour: number; minute?: number; second?: number },
 ) {
@@ -299,7 +299,7 @@ function buildBatchPrompt(events: EventForAi[]) {
   ].join("\n");
 }
 
-async function fetchGeminiSummary(prompt: string, runtime: EventsAiProviderRuntime): Promise<AiSummaryResult> {
+async function fetchGeminiSummary(prompt: string, runtime: EventsAiProviderRuntime, maxOutputTokens = 1200): Promise<AiSummaryResult> {
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(runtime.model)}:generateContent?key=${encodeURIComponent(runtime.apiKey)}`,
     {
@@ -309,7 +309,7 @@ async function fetchGeminiSummary(prompt: string, runtime: EventsAiProviderRunti
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.2,
-          maxOutputTokens: 1200,
+          maxOutputTokens,
           responseMimeType: "application/json",
         },
       }),
@@ -338,7 +338,7 @@ async function fetchGeminiSummary(prompt: string, runtime: EventsAiProviderRunti
   };
 }
 
-async function fetchCerebrasSummary(prompt: string, runtime: EventsAiProviderRuntime): Promise<AiSummaryResult> {
+async function fetchCerebrasSummary(prompt: string, runtime: EventsAiProviderRuntime, maxOutputTokens = 1200): Promise<AiSummaryResult> {
   const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -352,7 +352,7 @@ async function fetchCerebrasSummary(prompt: string, runtime: EventsAiProviderRun
         { role: "user", content: prompt },
       ],
       temperature: 0.2,
-      max_tokens: 1200,
+      max_tokens: maxOutputTokens,
       response_format: { type: "json_object" },
     }),
   });
@@ -378,15 +378,15 @@ async function fetchCerebrasSummary(prompt: string, runtime: EventsAiProviderRun
   };
 }
 
-async function fetchAiSummary(prompt: string, config: EventsAiBatchConfig) {
+export async function fetchAiJson(prompt: string, config: EventsAiBatchConfig, maxOutputTokens = 1200) {
   const providers = selectEventsAiProviders(config);
   const errors: string[] = [];
 
   for (const runtime of providers) {
     try {
       return runtime.provider === "cerebras"
-        ? await fetchCerebrasSummary(prompt, runtime)
-        : await fetchGeminiSummary(prompt, runtime);
+        ? await fetchCerebrasSummary(prompt, runtime, maxOutputTokens)
+        : await fetchGeminiSummary(prompt, runtime, maxOutputTokens);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       errors.push(`${runtime.provider}: ${message}`);
@@ -401,7 +401,7 @@ async function fetchAiSummary(prompt: string, config: EventsAiBatchConfig) {
   throw new Error(errors.join(" | ") || "No configured AI providers");
 }
 
-async function getBatchUsage(now: Date): Promise<EventsAiBatchUsage> {
+export async function getBatchUsage(now: Date): Promise<EventsAiBatchUsage> {
   const result = await pool.query(`
     SELECT
       COALESCE(SUM(request_count), 0)::int as request_count,
@@ -611,7 +611,7 @@ export async function runEventsAiBatch(now = new Date(), options: { manual?: boo
   }
 
   try {
-    const result = await fetchAiSummary(prompt, config);
+    const result = await fetchAiJson(prompt, config);
     await recordBatch({
       now,
       config,

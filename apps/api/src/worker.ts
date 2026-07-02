@@ -9,7 +9,7 @@ import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/what
 import { refreshCustomerCreditOverview } from "./modules/crm/customerCreditService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
-import { runEventsAiBatch } from "./modules/events/eventsBatchAi.js";
+import { runConversationIntelligence } from "./modules/events/conversationAi.js";
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
@@ -102,10 +102,11 @@ async function main() {
     );
   }
 
-  // 5.5. Optional AI batch summary for message intelligence. The job itself
-  // enforces business hours, API key presence, cadence, and daily budget caps.
+  // 5.5. Inteligencia de Mensagens: analise de conversas por IA + briefing do
+  // dia. O proprio job aplica horario comercial, presenca de chave, cadencia e
+  // orcamento diario de requests/tokens.
   if (env.EVENTS_AI_BATCH_ENABLED) {
-    logger.info("scheduled events AI batch enabled", {
+    logger.info("scheduled conversation intelligence enabled", {
       intervalMinutes: env.EVENTS_AI_BATCH_INTERVAL_MINUTES,
       provider: env.EVENTS_AI_PROVIDER,
       model: env.EVENTS_AI_MODEL,
@@ -113,14 +114,19 @@ async function main() {
       timezone: env.EVENTS_AI_TIMEZONE,
       businessStartHour: env.EVENTS_AI_BUSINESS_START_HOUR,
       businessEndHour: env.EVENTS_AI_BUSINESS_END_HOUR,
+      maxConversationsPerRun: env.EVENTS_AI_MAX_CONVERSATIONS_PER_RUN,
     });
+
+    const runIntelligence = () => {
+      runConversationIntelligence().catch((error) => {
+        logger.error("failed scheduled conversation intelligence", { error: String(error) });
+      });
+    };
+
+    runIntelligence();
     intervals.push(
       setInterval(
-        () => {
-          runEventsAiBatch().catch((error) => {
-            logger.error("failed scheduled events AI batch", { error: String(error) });
-          });
-        },
+        runIntelligence,
         env.EVENTS_AI_BATCH_INTERVAL_MINUTES * 60 * 1000,
       )
     );

@@ -1,0 +1,1227 @@
+/**
+ * Inteligencia de Mensagens v2: analise de CONVERSAS inteiras por IA.
+ *
+ * Em vez de classificar mensagem por mensagem com palavra-chave, o motor:
+ *  1. Seleciona as conversas do dia com mensagens novas de CLIENTE
+ *     (grupos deduplicados por remote_jid — a mesma conversa chega por
+ *     2-3 instancias das vendedoras).
+ *  2. Monta o transcript do dia (equipe + cliente, com horario) e manda
+ *     lotes de conversas para a IA (Gemini/Cerebras) com resposta JSON.
+ *  3. Grava uma leitura estruturada por conversa em conversation_insights:
+ *     resumo, sentimento do cliente, nivel de atencao, flags, topicos,
+ *     citacoes e acoes sugeridas.
+ *  4. Regenera o briefing gerencial do dia (daily_briefings) — a narrativa
+ *     que o gestor le sem precisar acompanhar o WhatsApp.
+ *
+ * Orcamento diario (requests/tokens), horario comercial e retencao sao
+ * controlados por env e compartilhados com o event_ai_batches existente.
+ */
+import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
+import { logger } from "../../lib/logger.js";
+import { HttpError } from "../../lib/httpError.js";
+import type { JwtUser } from "../platform/authService.js";
+import type {
+  ConversationAgentStat,
+  ConversationAttentionLevel,
+  ConversationInsight,
+  ConversationInsightHighlight,
+  ConversationInsightsListResponse,
+  ConversationIntelligenceRunResult,
+  ConversationTopicStat,
+  DailyBriefing,
+  EventsIntelligenceStatus,
+  EventsOverviewResponse,
+} from "@olist-crm/shared";
+import {
+  type EventsAiBatchConfig,
+  estimatePromptTokens,
+  fetchAiJson,
+  getBatchUsage,
+  getEventsAiBatchConfig,
+  getLocalParts,
+  shouldRunEventsAiBatch,
+  zonedDateToUtc,
+} from "./eventsBatchAi.js";
+import {
+  INTERNAL_GROUP_JID_LIST,
+  INTERNAL_SENDER_JID_LIST,
+  INTERNAL_SENDER_NAME_LIST,
+  isInternalSender,
+} from "./eventsService.js";
+
+const ATTENTION_LEVELS: ConversationAttentionLevel[] = ["none", "low", "medium", "high", "critical"];
+
+const ATTENTION_FROM_AI: Record<string, ConversationAttentionLevel> = {
+  nenhum: "none",
+  nenhuma: "none",
+  none: "none",
+  baixo: "low",
+  baixa: "low",
+  low: "low",
+  medio: "medium",
+  media: "medium",
+  medium: "medium",
+  alto: "high",
+  alta: "high",
+  high: "high",
+  critico: "critical",
+  critica: "critical",
+  critical: "critical",
+};
+
+const KNOWN_FLAGS = [
+  "reclamacao",
+  "risco_perda",
+  "urgente",
+  "sem_resposta",
+  "oportunidade",
+  "elogio",
+  "problema_entrega",
+  "problema_produto",
+  "problema_pagamento",
+] as const;
+
+// ── Day window helpers (America/Sao_Paulo) ──────────────────
+
+export function getDayWindow(now: Date, timezone: string) {
+  const local = getLocalParts(now, timezone);
+  const windowStart = zonedDateToUtc(timezone, { year: local.year, month: local.month, day: local.day, hour: 0 });
+  const windowEnd = new Date(windowStart.getTime() + 24 * 60 * 60 * 1000);
+  const windowDate = `${local.year}-${String(local.month).padStart(2, "0")}-${String(local.day).padStart(2, "0")}`;
+  return { windowStart, windowEnd, windowDate };
+}
+
+// ── Pure helpers (unit-tested) ──────────────────────────────
+
+/**
+ * Mascara leve para dados sensiveis antes de enviar ao provedor de IA.
+ * Diferente da versao antiga, NAO destroi nomes/produtos (que sao o
+ * proprio sinal da analise) — so documentos e e-mails.
+ */
+export function maskSensitiveText(value: string) {
+  return value
+    .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/giu, "[email]")
+    .replace(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/gu, "[cpf]")
+    .replace(/\b\d{2}\.?\d{3}\.?\d{3}\/\d{4}-?\d{2}\b/gu, "[cnpj]");
+}
+
+export interface TranscriptMessage {
+  messageId: string;
+  fromMe: boolean;
+  senderName: string | null;
+  senderJid: string | null;
+  content: string;
+  createdAt: string | Date;
+}
+
+/**
+ * Monta o texto do transcript priorizando o FIM da conversa (o desfecho e o
+ * que mais importa para o gestor): caminha de tras pra frente ate estourar o
+ * orcamento de mensagens/caracteres.
+ */
+export function buildTranscriptText(
+  messages: TranscriptMessage[],
+  options: { timezone: string; maxMessages: number; maxCharsPerMessage?: number; maxTotalChars?: number },
+) {
+  const maxPerMessage = options.maxCharsPerMessage ?? 350;
+  const maxTotal = options.maxTotalChars ?? 6500;
+  const lines: string[] = [];
+  let total = 0;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (lines.length >= options.maxMessages) break;
+    const message = messages[index]!;
+    const content = message.content.replace(/\s+/g, " ").trim();
+    if (!content) continue;
+
+    const local = getLocalParts(new Date(message.createdAt), options.timezone);
+    const time = `${String(local.hour).padStart(2, "0")}:${String(local.minute).padStart(2, "0")}`;
+    const companySide = message.fromMe || isInternalSender(message.senderJid, message.senderName);
+    const name = (message.senderName ?? "").trim();
+    const speaker = companySide
+      ? (name ? `EQUIPE ${name}` : "EQUIPE")
+      : (name ? `CLIENTE ${name}` : "CLIENTE");
+
+    let text = maskSensitiveText(content);
+    if (text.length > maxPerMessage) {
+      text = `${text.slice(0, maxPerMessage)}...`;
+    }
+
+    const line = `[${time}] ${speaker}: ${text}`;
+    if (total + line.length + 1 > maxTotal && lines.length > 0) break;
+    total += line.length + 1;
+    lines.push(line);
+  }
+
+  return lines.reverse().join("\n");
+}
+
+export function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += Math.max(1, size)) {
+    chunks.push(items.slice(index, index + Math.max(1, size)));
+  }
+  return chunks;
+}
+
+export interface ConversationForAi {
+  chave: string;
+  tipo: "grupo" | "privado";
+  nome: string;
+  vendedora: string;
+  vip: boolean;
+  mensagens: string;
+}
+
+export function buildConversationsPrompt(conversations: ConversationForAi[]) {
+  return [
+    "Voce e o analista de qualidade de atendimento da XP Factory, distribuidora de pecas e telas de celular.",
+    "Os clientes sao lojistas e assistencias tecnicas que compram no atacado pelo WhatsApp, atendidos pelas vendedoras da equipe.",
+    "Analise as conversas do dia abaixo (transcritos reais). Para CADA conversa devolva um objeto no array \"conversas\".",
+    "",
+    "Regras:",
+    "- Seja concreto: baseie tudo no transcript, nunca invente. Cite quem falou o que.",
+    "- \"atencao\" e o que um gestor precisa ver HOJE:",
+    "  critico = cliente muito irritado, ameaca de perda/processo, problema grave sem solucao ate o fim da conversa;",
+    "  alto = reclamacao clara, cliente sem resposta da equipe, risco real de perder o cliente, defeito/troca mal resolvidos;",
+    "  medio = insatisfacao leve, oportunidade de venda parada, pedido pendente;",
+    "  baixo = pontos menores que valem registro;",
+    "  nenhum = conversa comercial normal (orcamento, lista de precos, pedido fluindo, conversa social).",
+    "- Lista de precos enviada pela equipe, cotacao e negociacao normal NAO sao motivo de atencao.",
+    "- \"sentimento\" e o humor do CLIENTE na conversa, de -1 (pessimo) a 1 (otimo).",
+    "- \"sem_resposta\" = a ultima coisa relevante foi o cliente pedindo algo e ninguem da equipe respondeu.",
+    "- \"topicos\": 1 a 3 palavras cada, minusculas, concretos (ex: \"tela quebrada\", \"atraso entrega\", \"preco\", \"troca\", \"pedido atacado\").",
+    "- \"citacoes\": ate 3 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
+    "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
+    "",
+    "Responda APENAS JSON valido neste formato:",
+    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"topicos\":[\"...\"],\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"]}]}",
+    "",
+    "CONVERSAS:",
+    JSON.stringify(conversations),
+  ].join("\n");
+}
+
+export interface ParsedConversationAnalysis {
+  resumo: string;
+  sentimento: number;
+  atencao: ConversationAttentionLevel;
+  motivoAtencao: string | null;
+  flags: Record<string, boolean>;
+  topicos: string[];
+  citacoes: ConversationInsightHighlight[];
+  acoes: string[];
+}
+
+function readString(value: unknown, maxLength = 800): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.replace(/\s+/g, " ").trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}...` : trimmed;
+}
+
+function clampSentiment(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(-1, Math.min(1, numeric));
+}
+
+export function sentimentLabelFromScore(score: number) {
+  if (score <= -0.6) return "muito negativo";
+  if (score <= -0.2) return "negativo";
+  if (score < 0.2) return "neutro";
+  if (score < 0.6) return "positivo";
+  return "muito positivo";
+}
+
+function normalizeAttention(value: unknown): ConversationAttentionLevel {
+  const normalized = readString(value, 40)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return ATTENTION_FROM_AI[normalized] ?? "none";
+}
+
+export function parseConversationAnalyses(summary: Record<string, unknown>): Map<string, ParsedConversationAnalysis> {
+  const parsed = new Map<string, ParsedConversationAnalysis>();
+  const list = Array.isArray(summary.conversas) ? summary.conversas : [];
+
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    const key = readString(record.chave, 250);
+    if (!key) continue;
+
+    const flags: Record<string, boolean> = {};
+    const rawFlags = record.flags && typeof record.flags === "object" && !Array.isArray(record.flags)
+      ? record.flags as Record<string, unknown>
+      : {};
+    for (const flag of KNOWN_FLAGS) {
+      flags[flag] = rawFlags[flag] === true;
+    }
+
+    const topicos = (Array.isArray(record.topicos) ? record.topicos : [])
+      .map((topic) => readString(topic, 40).toLowerCase())
+      .filter(Boolean)
+      .slice(0, 6);
+
+    const citacoes = (Array.isArray(record.citacoes) ? record.citacoes : [])
+      .map((quote) => {
+        if (!quote || typeof quote !== "object" || Array.isArray(quote)) return null;
+        const quoteRecord = quote as Record<string, unknown>;
+        const texto = readString(quoteRecord.texto, 220);
+        if (!texto) return null;
+        return {
+          autor: readString(quoteRecord.autor, 80) || "Cliente",
+          texto,
+          tipo: readString(quoteRecord.tipo, 30) || "outro",
+        };
+      })
+      .filter((quote): quote is ConversationInsightHighlight => quote !== null)
+      .slice(0, 4);
+
+    const acoes = (Array.isArray(record.acoes) ? record.acoes : [])
+      .map((action) => readString(action, 180))
+      .filter(Boolean)
+      .slice(0, 4);
+
+    parsed.set(key, {
+      resumo: readString(record.resumo, 700),
+      sentimento: clampSentiment(record.sentimento),
+      atencao: normalizeAttention(record.atencao),
+      motivoAtencao: readString(record.motivo_atencao, 300) || null,
+      flags,
+      topicos,
+      citacoes,
+      acoes,
+    });
+  }
+
+  return parsed;
+}
+
+// ── Candidate selection & transcripts ───────────────────────
+
+export interface ConversationCandidate {
+  conversationKey: string;
+  dealId: string;
+  remoteJid: string | null;
+  isGroup: boolean;
+  chatName: string | null;
+  agentName: string | null;
+  firstMessageAt: Date;
+  lastMessageAt: Date;
+  messageCount: number;
+  customerMessageCount: number;
+  isVip: boolean;
+}
+
+async function selectConversationCandidates(
+  windowStart: Date,
+  windowEnd: Date,
+  windowDate: string,
+  limit: number,
+): Promise<ConversationCandidate[]> {
+  const result = await pool.query(`
+    WITH convs AS (
+      SELECT
+        COALESCE(NULLIF(wmm.remote_jid, ''), wmm.deal_id::text) AS conversation_key,
+        BOOL_OR(COALESCE(wmm.remote_jid, '') LIKE '%@g.us') AS is_group,
+        MIN(wmm.created_at) AS first_message_at,
+        MAX(wmm.created_at) AS last_message_at,
+        MAX(wmm.remote_jid) AS remote_jid,
+        COUNT(DISTINCT wmm.message_id)::int AS message_count,
+        COUNT(DISTINCT wmm.message_id) FILTER (
+          WHERE wmm.from_me = false
+            AND COALESCE(wmm.sender_jid, '') <> ALL($3::text[])
+            AND COALESCE(wmm.sender_name, '') <> ALL($4::text[])
+        )::int AS customer_message_count,
+        (ARRAY_AGG(wmm.deal_id ORDER BY wmm.created_at DESC))[1] AS deal_id
+      FROM whatsapp_monitor_messages wmm
+      WHERE wmm.created_at >= $1
+        AND wmm.created_at < $2
+        AND COALESCE(wmm.content, '') <> ''
+        AND COALESCE(wmm.remote_jid, '') <> ALL($5::text[])
+      GROUP BY 1
+    )
+    SELECT
+      convs.*,
+      COALESCE(c.display_name, d.title) AS chat_name,
+      d.assigned_to_name AS agent_name,
+      COALESCE(cs.total_spent > 5000 OR cs.total_orders > 10 OR cs.value_score > 80, false) AS is_vip
+    FROM convs
+    JOIN deals d ON d.id = convs.deal_id
+    LEFT JOIN customers c ON c.id = d.customer_id
+    LEFT JOIN customer_snapshot cs ON cs.customer_id = d.customer_id
+    LEFT JOIN conversation_insights ci
+      ON ci.conversation_key = convs.conversation_key
+     AND ci.window_date = $6::date
+    WHERE convs.customer_message_count > 0
+      AND (ci.id IS NULL OR convs.last_message_at > ci.last_message_at)
+    ORDER BY convs.customer_message_count DESC, convs.last_message_at DESC
+    LIMIT $7
+  `, [
+    windowStart,
+    windowEnd,
+    INTERNAL_SENDER_JID_LIST,
+    INTERNAL_SENDER_NAME_LIST,
+    INTERNAL_GROUP_JID_LIST,
+    windowDate,
+    limit,
+  ]);
+
+  return result.rows.map((row) => ({
+    conversationKey: String(row.conversation_key),
+    dealId: String(row.deal_id),
+    remoteJid: row.remote_jid ? String(row.remote_jid) : null,
+    isGroup: Boolean(row.is_group),
+    chatName: row.chat_name ? String(row.chat_name) : null,
+    agentName: row.agent_name ? String(row.agent_name) : null,
+    firstMessageAt: new Date(row.first_message_at),
+    lastMessageAt: new Date(row.last_message_at),
+    messageCount: Number(row.message_count ?? 0),
+    customerMessageCount: Number(row.customer_message_count ?? 0),
+    isVip: Boolean(row.is_vip),
+  }));
+}
+
+async function fetchConversationMessages(
+  candidate: ConversationCandidate,
+  windowStart: Date,
+  windowEnd: Date,
+): Promise<TranscriptMessage[]> {
+  // remote_jid = key usa indice; fallback por deal cobre privados sem remote_jid.
+  const result = await pool.query(`
+    SELECT DISTINCT ON (wmm.message_id)
+      wmm.message_id,
+      wmm.from_me,
+      wmm.sender_name,
+      wmm.sender_jid,
+      wmm.content,
+      wmm.created_at
+    FROM whatsapp_monitor_messages wmm
+    WHERE (wmm.remote_jid = $1 OR wmm.deal_id = $2)
+      AND wmm.created_at >= $3
+      AND wmm.created_at < $4
+      AND COALESCE(wmm.content, '') <> ''
+    ORDER BY wmm.message_id, wmm.created_at ASC
+  `, [candidate.conversationKey, candidate.dealId, windowStart, windowEnd]);
+
+  return result.rows
+    .map((row) => ({
+      messageId: String(row.message_id),
+      fromMe: Boolean(row.from_me),
+      senderName: row.sender_name ? String(row.sender_name) : null,
+      senderJid: row.sender_jid ? String(row.sender_jid) : null,
+      content: String(row.content ?? ""),
+      createdAt: new Date(row.created_at),
+    }))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+}
+
+// ── Persistence ─────────────────────────────────────────────
+
+async function upsertConversationInsight(
+  candidate: ConversationCandidate,
+  analysis: ParsedConversationAnalysis,
+  context: { windowDate: string; provider: string; model: string },
+) {
+  const flags = { ...analysis.flags, vip: candidate.isVip };
+  const sentimentLabel = sentimentLabelFromScore(analysis.sentimento);
+
+  await pool.query(`
+    INSERT INTO conversation_insights (
+      conversation_key, deal_id, remote_jid, is_group, chat_name, agent_name, window_date,
+      first_message_at, last_message_at, message_count, customer_message_count,
+      analyzed_at, provider, model, summary, sentiment_score, sentiment_label,
+      attention_level, attention_reason, flags, topics, highlights, action_items, updated_at
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7::date,
+      $8, $9, $10, $11,
+      NOW(), $12, $13, $14, $15, $16,
+      $17, $18, $19::jsonb, $20::text[], $21::jsonb, $22::jsonb, NOW()
+    )
+    ON CONFLICT (conversation_key, window_date) DO UPDATE SET
+      deal_id = EXCLUDED.deal_id,
+      remote_jid = EXCLUDED.remote_jid,
+      is_group = EXCLUDED.is_group,
+      chat_name = EXCLUDED.chat_name,
+      agent_name = EXCLUDED.agent_name,
+      first_message_at = EXCLUDED.first_message_at,
+      last_message_at = EXCLUDED.last_message_at,
+      message_count = EXCLUDED.message_count,
+      customer_message_count = EXCLUDED.customer_message_count,
+      analyzed_at = NOW(),
+      provider = EXCLUDED.provider,
+      model = EXCLUDED.model,
+      summary = EXCLUDED.summary,
+      sentiment_score = EXCLUDED.sentiment_score,
+      sentiment_label = EXCLUDED.sentiment_label,
+      attention_level = EXCLUDED.attention_level,
+      attention_reason = EXCLUDED.attention_reason,
+      flags = EXCLUDED.flags,
+      topics = EXCLUDED.topics,
+      highlights = EXCLUDED.highlights,
+      action_items = EXCLUDED.action_items,
+      -- Se a leitura PIOROU (ex.: de medio para critico), reabre o alerta
+      -- mesmo que alguem ja tivesse marcado como visto.
+      acknowledged_at = CASE
+        WHEN ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], EXCLUDED.attention_level)
+           > ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], conversation_insights.attention_level)
+        THEN NULL
+        ELSE conversation_insights.acknowledged_at
+      END,
+      updated_at = NOW()
+  `, [
+    candidate.conversationKey,
+    candidate.dealId,
+    candidate.remoteJid,
+    candidate.isGroup,
+    candidate.chatName,
+    candidate.agentName,
+    context.windowDate,
+    candidate.firstMessageAt,
+    candidate.lastMessageAt,
+    candidate.messageCount,
+    candidate.customerMessageCount,
+    context.provider,
+    context.model,
+    analysis.resumo,
+    analysis.sentimento,
+    sentimentLabel,
+    analysis.atencao,
+    analysis.motivoAtencao,
+    JSON.stringify(flags),
+    analysis.topicos,
+    JSON.stringify(analysis.citacoes),
+    JSON.stringify(analysis.acoes),
+  ]);
+}
+
+async function recordIntelligenceRun(input: {
+  now: Date;
+  kind: "conversations" | "briefing";
+  runSource: "manual" | "automatic";
+  provider: string;
+  model: string;
+  status: "SKIPPED" | "SUCCEEDED" | "FAILED";
+  reason: string;
+  periodFrom: Date;
+  periodTo: Date;
+  eventCount: number;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  errorMessage?: string | null;
+}) {
+  await pool.query(`
+    INSERT INTO event_ai_batches (
+      batch_date, provider, model, run_source, status, status_reason, period_from, period_to,
+      event_count, request_count, input_tokens_estimated, output_tokens_estimated,
+      summary_json, error_message, started_at, finished_at, kind
+    ) VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13, $14, NOW(), $15)
+  `, [
+    input.now.toISOString().slice(0, 10),
+    input.provider,
+    input.model,
+    input.runSource,
+    input.status,
+    input.reason,
+    input.periodFrom,
+    input.periodTo,
+    input.eventCount,
+    input.requestCount,
+    input.inputTokens,
+    input.outputTokens,
+    input.errorMessage ?? null,
+    input.now,
+    input.kind,
+  ]);
+}
+
+// ── Briefing ────────────────────────────────────────────────
+
+export function buildBriefingPrompt(input: {
+  windowDate: string;
+  stats: Record<string, unknown>;
+  insights: Array<Record<string, unknown>>;
+}) {
+  return [
+    "Voce e o braco direito do gestor comercial da XP Factory (distribuidora de pecas e telas de celular).",
+    "O gestor NAO acompanhou o WhatsApp hoje. Com base nas analises de conversas abaixo (feitas por IA a partir dos transcritos reais), escreva o briefing do dia.",
+    "",
+    "Regras:",
+    "- Direto e concreto: nomes de clientes/grupos e vendedoras quando relevante, nada de generico.",
+    "- Priorize o que exige acao: reclamacoes fortes, risco de perder cliente, cliente sem resposta, problemas repetidos.",
+    "- Aponte tambem o que foi bem (elogios, vendas encaminhadas).",
+    "- Se um mesmo problema aparece em varias conversas (ex.: atraso de entrega), destaque como padrao do dia.",
+    "- Nao invente nada que nao esteja nos dados.",
+    "",
+    "Responda APENAS JSON valido:",
+    "{\"narrativa\":\"2 a 3 paragrafos objetivos contando o dia\",\"alertas\":[{\"titulo\":\"...\",\"detalhe\":\"...\"}],\"reclamacoes\":[{\"titulo\":\"...\",\"detalhe\":\"...\"}],\"oportunidades\":[{\"titulo\":\"...\",\"detalhe\":\"...\"}],\"elogios\":[{\"titulo\":\"...\",\"detalhe\":\"...\"}],\"vendedoras\":[{\"nome\":\"...\",\"observacao\":\"...\"}],\"pendencias\":[{\"titulo\":\"...\",\"detalhe\":\"...\"}]}",
+    "",
+    `DATA: ${input.windowDate}`,
+    `NUMEROS DO DIA: ${JSON.stringify(input.stats)}`,
+    "ANALISES DE CONVERSAS:",
+    JSON.stringify(input.insights),
+  ].join("\n");
+}
+
+async function generateDailyBriefing(
+  now: Date,
+  config: EventsAiBatchConfig,
+  windowDate: string,
+  runSource: "manual" | "automatic",
+): Promise<boolean> {
+  const insightsResult = await pool.query(`
+    SELECT
+      chat_name, agent_name, is_group, attention_level, attention_reason,
+      sentiment_label, summary, topics, flags, customer_message_count
+    FROM conversation_insights
+    WHERE window_date = $1::date
+    ORDER BY
+      ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], attention_level) DESC,
+      customer_message_count DESC
+    LIMIT 120
+  `, [windowDate]);
+
+  if (insightsResult.rows.length === 0) {
+    return false;
+  }
+
+  const statsResult = await pool.query(`
+    SELECT
+      COUNT(*)::int AS conversations,
+      COUNT(*) FILTER (WHERE attention_level IN ('high', 'critical'))::int AS attention_high,
+      COUNT(*) FILTER (WHERE (flags->>'reclamacao')::boolean)::int AS complaints,
+      COUNT(*) FILTER (WHERE (flags->>'risco_perda')::boolean)::int AS churn_risks,
+      COUNT(*) FILTER (WHERE (flags->>'sem_resposta')::boolean)::int AS unanswered,
+      COUNT(*) FILTER (WHERE (flags->>'oportunidade')::boolean)::int AS opportunities,
+      COUNT(*) FILTER (WHERE (flags->>'elogio')::boolean)::int AS praises,
+      ROUND(AVG(sentiment_score)::numeric, 2) AS average_sentiment
+    FROM conversation_insights
+    WHERE window_date = $1::date
+  `, [windowDate]);
+
+  const stats = statsResult.rows[0] ?? {};
+  const compactInsights = insightsResult.rows.map((row) => ({
+    conversa: row.chat_name ?? "(sem nome)",
+    tipo: row.is_group ? "grupo" : "privado",
+    vendedora: row.agent_name ?? "sem vendedora",
+    atencao: row.attention_level,
+    motivo: row.attention_reason ?? undefined,
+    sentimento: row.sentiment_label ?? undefined,
+    resumo: row.summary,
+    topicos: row.topics ?? [],
+    flags: Object.entries(row.flags ?? {})
+      .filter(([, value]) => value === true)
+      .map(([key]) => key),
+    mensagens_cliente: Number(row.customer_message_count ?? 0),
+  }));
+
+  const prompt = buildBriefingPrompt({ windowDate, stats, insights: compactInsights });
+  const inputTokens = estimatePromptTokens(prompt);
+  const { windowStart, windowEnd } = getDayWindow(now, config.timezone);
+
+  try {
+    const result = await fetchAiJson(prompt, config, 2500);
+    const narrative = readString(result.summary.narrativa, 4000);
+    const { narrativa: _ignored, ...payload } = result.summary;
+
+    await pool.query(`
+      INSERT INTO daily_briefings (briefing_date, generated_at, provider, model, narrative, payload, stats)
+      VALUES ($1::date, NOW(), $2, $3, $4, $5::jsonb, $6::jsonb)
+      ON CONFLICT (briefing_date) DO UPDATE SET
+        generated_at = NOW(),
+        provider = EXCLUDED.provider,
+        model = EXCLUDED.model,
+        narrative = EXCLUDED.narrative,
+        payload = EXCLUDED.payload,
+        stats = EXCLUDED.stats
+    `, [
+      windowDate,
+      result.provider,
+      result.model,
+      narrative,
+      JSON.stringify(payload),
+      JSON.stringify(stats),
+    ]);
+
+    await recordIntelligenceRun({
+      now,
+      kind: "briefing",
+      runSource,
+      provider: result.provider,
+      model: result.model,
+      status: "SUCCEEDED",
+      reason: "ok",
+      periodFrom: windowStart,
+      periodTo: windowEnd,
+      eventCount: insightsResult.rows.length,
+      requestCount: 1,
+      inputTokens,
+      outputTokens: result.outputTokens,
+    });
+
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn("daily briefing generation failed", { error: message });
+    await recordIntelligenceRun({
+      now,
+      kind: "briefing",
+      runSource,
+      provider: config.provider,
+      model: config.model,
+      status: "FAILED",
+      reason: "provider_error",
+      periodFrom: windowStart,
+      periodTo: windowEnd,
+      eventCount: insightsResult.rows.length,
+      requestCount: 1,
+      inputTokens,
+      outputTokens: 0,
+      errorMessage: message,
+    });
+    return false;
+  }
+}
+
+// ── Main runner ─────────────────────────────────────────────
+
+export async function runConversationIntelligence(
+  now = new Date(),
+  options: { manual?: boolean } = {},
+): Promise<ConversationIntelligenceRunResult> {
+  const config = getEventsAiBatchConfig();
+  const runSource = options.manual === true ? "manual" as const : "automatic" as const;
+  const usage = await getBatchUsage(now);
+  // Cadencia propria baseada em started_at: o finished_at do run anterior cai
+  // depois do tick seguinte do setInterval e faria o job pular execucoes.
+  const decision = shouldRunEventsAiBatch({
+    now,
+    config,
+    usage,
+    ignoreCadence: true,
+    ignoreBusinessHours: options.manual === true,
+  });
+
+  if (!decision.allowed) {
+    logger.info("conversation intelligence skipped", { reason: decision.reason });
+    return { status: "SKIPPED", reason: decision.reason };
+  }
+
+  if (options.manual !== true) {
+    const lastStartResult = await pool.query(`
+      SELECT MAX(started_at) AS last_started_at
+      FROM event_ai_batches
+      WHERE kind = 'conversations' AND status IN ('SUCCEEDED', 'FAILED')
+    `);
+    const lastStartedAt = lastStartResult.rows[0]?.last_started_at
+      ? new Date(lastStartResult.rows[0].last_started_at)
+      : null;
+    const cadenceMs = Math.max(1, config.intervalMinutes - 1) * 60 * 1000;
+    if (lastStartedAt && now.getTime() - lastStartedAt.getTime() < cadenceMs) {
+      return { status: "SKIPPED", reason: "cadence_wait" };
+    }
+  }
+
+  const { windowStart, windowEnd, windowDate } = getDayWindow(now, config.timezone);
+  const candidates = await selectConversationCandidates(
+    windowStart,
+    windowEnd,
+    windowDate,
+    env.EVENTS_AI_MAX_CONVERSATIONS_PER_RUN,
+  );
+
+  if (candidates.length === 0) {
+    // Nada novo para analisar; ainda assim garante o briefing quando ha
+    // analises do dia sem briefing (ex.: apos restart).
+    let briefingUpdated = false;
+    if (options.manual) {
+      briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
+    }
+    return { status: "SKIPPED", reason: "no_conversations", briefingUpdated };
+  }
+
+  const prepared: Array<{ candidate: ConversationCandidate; payload: ConversationForAi }> = [];
+  for (const candidate of candidates) {
+    const messages = await fetchConversationMessages(candidate, windowStart, windowEnd);
+    const transcript = buildTranscriptText(messages, {
+      timezone: config.timezone,
+      maxMessages: env.EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION,
+    });
+    if (!transcript) continue;
+
+    prepared.push({
+      candidate,
+      payload: {
+        chave: candidate.conversationKey,
+        tipo: candidate.isGroup ? "grupo" : "privado",
+        nome: candidate.chatName ?? "(sem nome)",
+        vendedora: candidate.agentName ?? "sem vendedora",
+        vip: candidate.isVip,
+        mensagens: transcript,
+      },
+    });
+  }
+
+  const chunks = chunkArray(prepared, env.EVENTS_AI_CONVERSATIONS_PER_REQUEST);
+  let requestCount = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let tokensSoFar = usage.tokenCount;
+  let analyzed = 0;
+  let provider = config.provider;
+  let model = config.model;
+  const errors: string[] = [];
+
+  for (const chunk of chunks) {
+    if (usage.requestCount + requestCount >= config.dailyRequestLimit) {
+      errors.push("daily_request_cap");
+      break;
+    }
+
+    const prompt = buildConversationsPrompt(chunk.map((item) => item.payload));
+    const promptTokens = estimatePromptTokens(prompt);
+    if (tokensSoFar + promptTokens >= config.dailyTokenLimit) {
+      errors.push("daily_token_cap");
+      break;
+    }
+
+    try {
+      const result = await fetchAiJson(prompt, config, 4000);
+      requestCount += 1;
+      inputTokens += promptTokens;
+      outputTokens += result.outputTokens;
+      tokensSoFar += result.totalTokens;
+      provider = result.provider;
+      model = result.model;
+
+      const parsed = parseConversationAnalyses(result.summary);
+      for (const item of chunk) {
+        const analysis = parsed.get(item.payload.chave);
+        if (!analysis || !analysis.resumo) continue;
+        await upsertConversationInsight(item.candidate, analysis, {
+          windowDate,
+          provider: result.provider,
+          model: result.model,
+        });
+        analyzed += 1;
+      }
+    } catch (error) {
+      requestCount += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message);
+      logger.warn("conversation intelligence chunk failed", { error: message });
+    }
+  }
+
+  const status = analyzed > 0 ? "SUCCEEDED" as const : "FAILED" as const;
+  await recordIntelligenceRun({
+    now,
+    kind: "conversations",
+    runSource,
+    provider,
+    model,
+    status,
+    reason: analyzed > 0 ? "ok" : (errors[0]?.slice(0, 80) || "no_results"),
+    periodFrom: windowStart,
+    periodTo: windowEnd,
+    eventCount: analyzed,
+    requestCount,
+    inputTokens,
+    outputTokens,
+    errorMessage: errors.length ? errors.join(" | ").slice(0, 1500) : null,
+  });
+
+  let briefingUpdated = false;
+  if (analyzed > 0) {
+    briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
+  }
+
+  logger.info("conversation intelligence finished", {
+    analyzed,
+    requestCount,
+    briefingUpdated,
+    errors: errors.length,
+  });
+
+  return {
+    status,
+    analyzedConversations: analyzed,
+    briefingUpdated,
+    ...(errors.length ? { error: errors.join(" | ").slice(0, 500) } : {}),
+  };
+}
+
+// ── Read APIs ───────────────────────────────────────────────
+
+function mapInsightRow(row: any): ConversationInsight {
+  return {
+    id: String(row.id),
+    conversationKey: String(row.conversation_key),
+    dealId: row.deal_id ? String(row.deal_id) : null,
+    remoteJid: row.remote_jid ? String(row.remote_jid) : null,
+    isGroup: Boolean(row.is_group),
+    chatName: row.chat_name ? String(row.chat_name) : null,
+    agentName: row.agent_name ? String(row.agent_name) : null,
+    windowDate: row.window_date instanceof Date
+      ? row.window_date.toISOString().slice(0, 10)
+      : String(row.window_date),
+    firstMessageAt: row.first_message_at ? new Date(row.first_message_at).toISOString() : null,
+    lastMessageAt: row.last_message_at ? new Date(row.last_message_at).toISOString() : null,
+    messageCount: Number(row.message_count ?? 0),
+    customerMessageCount: Number(row.customer_message_count ?? 0),
+    analyzedAt: new Date(row.analyzed_at).toISOString(),
+    provider: row.provider ? String(row.provider) : null,
+    model: row.model ? String(row.model) : null,
+    summary: String(row.summary ?? ""),
+    sentimentScore: row.sentiment_score === null || row.sentiment_score === undefined
+      ? null
+      : Number(row.sentiment_score),
+    sentimentLabel: row.sentiment_label ? String(row.sentiment_label) : null,
+    attentionLevel: (ATTENTION_LEVELS.includes(row.attention_level) ? row.attention_level : "none") as ConversationAttentionLevel,
+    attentionReason: row.attention_reason ? String(row.attention_reason) : null,
+    flags: row.flags && typeof row.flags === "object" ? row.flags : {},
+    topics: Array.isArray(row.topics) ? row.topics.map(String) : [],
+    highlights: Array.isArray(row.highlights) ? row.highlights : [],
+    actionItems: Array.isArray(row.action_items) ? row.action_items.map(String) : [],
+    acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at).toISOString() : null,
+    acknowledgedBy: row.acknowledged_by ? String(row.acknowledged_by) : null,
+    ackNote: row.ack_note ? String(row.ack_note) : null,
+  };
+}
+
+function mapBriefingRow(row: any): DailyBriefing {
+  return {
+    id: String(row.id),
+    briefingDate: row.briefing_date instanceof Date
+      ? row.briefing_date.toISOString().slice(0, 10)
+      : String(row.briefing_date),
+    generatedAt: new Date(row.generated_at).toISOString(),
+    provider: row.provider ? String(row.provider) : null,
+    model: row.model ? String(row.model) : null,
+    narrative: String(row.narrative ?? ""),
+    payload: row.payload && typeof row.payload === "object" ? row.payload : {},
+    stats: row.stats && typeof row.stats === "object" ? row.stats : {},
+  };
+}
+
+function sellerScope(user: JwtUser, params: any[]) {
+  if (user.role !== "SELLER") return "";
+  params.push(user.name);
+  return ` AND ci.agent_name = $${params.length}`;
+}
+
+export interface ConversationInsightsFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  attention?: ConversationAttentionLevel[];
+  flag?: string;
+  search?: string;
+  isGroup?: boolean;
+  agentName?: string;
+  onlyOpen?: boolean;
+}
+
+export async function listConversationInsights(
+  user: JwtUser,
+  filters: ConversationInsightsFilters,
+  pagination: { page: number; pageSize: number },
+): Promise<ConversationInsightsListResponse> {
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  const from = filters.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const to = filters.dateTo || new Date().toISOString().slice(0, 10);
+  params.push(from);
+  conditions.push(`ci.window_date >= $${params.length}::date`);
+  params.push(to);
+  conditions.push(`ci.window_date <= $${params.length}::date`);
+
+  if (filters.attention && filters.attention.length > 0) {
+    params.push(filters.attention);
+    conditions.push(`ci.attention_level = ANY($${params.length}::text[])`);
+  }
+
+  if (filters.flag && /^[a-z_]+$/.test(filters.flag)) {
+    conditions.push(`COALESCE((ci.flags->>'${filters.flag}')::boolean, false) = true`);
+  }
+
+  if (filters.isGroup !== undefined) {
+    params.push(filters.isGroup);
+    conditions.push(`ci.is_group = $${params.length}`);
+  }
+
+  if (filters.agentName) {
+    params.push(filters.agentName);
+    conditions.push(`ci.agent_name = $${params.length}`);
+  }
+
+  if (filters.onlyOpen) {
+    conditions.push(`ci.acknowledged_at IS NULL AND ci.attention_level IN ('medium', 'high', 'critical')`);
+  }
+
+  if (filters.search) {
+    params.push(`%${filters.search}%`);
+    conditions.push(`(
+      ci.chat_name ILIKE $${params.length}
+      OR ci.summary ILIKE $${params.length}
+      OR ARRAY_TO_STRING(ci.topics, ' ') ILIKE $${params.length}
+    )`);
+  }
+
+  let whereClause = `WHERE ${conditions.join(" AND ")}`;
+  whereClause += sellerScope(user, params);
+
+  const totalResult = await pool.query(
+    `SELECT COUNT(*)::int AS total FROM conversation_insights ci ${whereClause}`,
+    params,
+  );
+
+  params.push(pagination.pageSize, (pagination.page - 1) * pagination.pageSize);
+  const listResult = await pool.query(`
+    SELECT ci.*
+    FROM conversation_insights ci
+    ${whereClause}
+    ORDER BY
+      ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], ci.attention_level) DESC,
+      ci.last_message_at DESC NULLS LAST
+    LIMIT $${params.length - 1} OFFSET $${params.length}
+  `, params);
+
+  return {
+    insights: listResult.rows.map(mapInsightRow),
+    total: Number(totalResult.rows[0]?.total ?? 0),
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+  };
+}
+
+export async function acknowledgeConversationInsight(
+  insightId: string,
+  user: JwtUser,
+  note?: string,
+): Promise<ConversationInsight> {
+  const existing = await pool.query(
+    `SELECT * FROM conversation_insights WHERE id = $1`,
+    [insightId],
+  );
+
+  if (existing.rows.length === 0) {
+    throw new HttpError(404, "Analise de conversa nao encontrada.");
+  }
+
+  if (user.role === "SELLER" && existing.rows[0].agent_name !== user.name) {
+    throw new HttpError(403, "Sem permissao para marcar esta conversa.");
+  }
+
+  const result = await pool.query(`
+    UPDATE conversation_insights
+    SET acknowledged_at = NOW(), acknowledged_by = $1, ack_note = $2, updated_at = NOW()
+    WHERE id = $3
+    RETURNING *
+  `, [user.id, note?.trim() || null, insightId]);
+
+  return mapInsightRow(result.rows[0]);
+}
+
+export async function getIntelligenceStatus(now = new Date()): Promise<EventsIntelligenceStatus> {
+  const config = getEventsAiBatchConfig();
+  const usage = await getBatchUsage(now);
+  const manualDecision = shouldRunEventsAiBatch({
+    now,
+    config,
+    usage,
+    ignoreCadence: true,
+    ignoreBusinessHours: true,
+  });
+
+  const { windowDate } = getDayWindow(now, config.timezone);
+  const [lastRunResult, analyzedTodayResult, lastErrorResult] = await Promise.all([
+    pool.query(`
+      SELECT finished_at FROM event_ai_batches
+      WHERE kind = 'conversations' AND status = 'SUCCEEDED'
+      ORDER BY finished_at DESC NULLS LAST
+      LIMIT 1
+    `),
+    pool.query(
+      `SELECT COUNT(*)::int AS total FROM conversation_insights WHERE window_date = $1::date`,
+      [windowDate],
+    ),
+    pool.query(`
+      SELECT error_message FROM event_ai_batches
+      WHERE kind IN ('conversations', 'briefing') AND status = 'FAILED' AND batch_date = $1::date
+      ORDER BY finished_at DESC NULLS LAST
+      LIMIT 1
+    `, [now.toISOString().slice(0, 10)]),
+  ]);
+
+  return {
+    enabled: config.enabled,
+    provider: config.provider,
+    model: config.provider === "cerebras" ? config.cerebrasModel : config.model,
+    lastAnalysisAt: lastRunResult.rows[0]?.finished_at
+      ? new Date(lastRunResult.rows[0].finished_at).toISOString()
+      : null,
+    conversationsAnalyzedToday: Number(analyzedTodayResult.rows[0]?.total ?? 0),
+    usage: {
+      requestCount: usage.requestCount,
+      tokenCount: usage.tokenCount,
+      requestLimit: config.dailyRequestLimit,
+      tokenLimit: config.dailyTokenLimit,
+    },
+    canRunManually: manualDecision.allowed,
+    manualBlockedReason: manualDecision.allowed ? null : manualDecision.reason,
+    retentionDays: env.EVENTS_INTELLIGENCE_RETENTION_DAYS,
+    lastError: lastErrorResult.rows[0]?.error_message
+      ? String(lastErrorResult.rows[0].error_message).slice(0, 300)
+      : null,
+  };
+}
+
+export async function getEventsOverview(
+  user: JwtUser,
+  filters: { dateFrom?: string; dateTo?: string },
+  now = new Date(),
+): Promise<EventsOverviewResponse> {
+  const from = filters.dateFrom || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const to = filters.dateTo || new Date().toISOString().slice(0, 10);
+
+  const scopeParams: any[] = [from, to];
+  const scope = sellerScope(user, scopeParams);
+
+  const statsPromise = pool.query(`
+    SELECT
+      COUNT(*)::int AS conversations,
+      COUNT(*) FILTER (WHERE attention_level = 'none')::int AS attention_none,
+      COUNT(*) FILTER (WHERE attention_level = 'low')::int AS attention_low,
+      COUNT(*) FILTER (WHERE attention_level = 'medium')::int AS attention_medium,
+      COUNT(*) FILTER (WHERE attention_level = 'high')::int AS attention_high,
+      COUNT(*) FILTER (WHERE attention_level = 'critical')::int AS attention_critical,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'reclamacao')::boolean, false))::int AS complaints,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'risco_perda')::boolean, false))::int AS churn_risks,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'sem_resposta')::boolean, false))::int AS unanswered,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'oportunidade')::boolean, false))::int AS opportunities,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'elogio')::boolean, false))::int AS praises,
+      COUNT(*) FILTER (WHERE is_group)::int AS groups,
+      COUNT(*) FILTER (WHERE NOT is_group)::int AS privates,
+      COUNT(*) FILTER (
+        WHERE attention_level IN ('high', 'critical') AND acknowledged_at IS NULL
+      )::int AS open_radar,
+      AVG(sentiment_score)::float AS average_sentiment
+    FROM conversation_insights ci
+    WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date${scope}
+  `, scopeParams);
+
+  const radarParams: any[] = [from, to];
+  const radarScope = sellerScope(user, radarParams);
+  const radarPromise = pool.query(`
+    SELECT ci.*
+    FROM conversation_insights ci
+    WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date
+      AND ci.attention_level IN ('high', 'critical')
+      AND ci.acknowledged_at IS NULL${radarScope}
+    ORDER BY
+      ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], ci.attention_level) DESC,
+      ci.last_message_at DESC NULLS LAST
+    LIMIT 30
+  `, radarParams);
+
+  const topicsParams: any[] = [from, to];
+  const topicsScope = sellerScope(user, topicsParams);
+  const topicsPromise = pool.query(`
+    SELECT
+      topic,
+      COUNT(*)::int AS count,
+      COUNT(*) FILTER (WHERE ci.sentiment_score < -0.1)::int AS negative_count
+    FROM conversation_insights ci, UNNEST(ci.topics) AS topic
+    WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date${topicsScope}
+    GROUP BY topic
+    ORDER BY count DESC, negative_count DESC
+    LIMIT 24
+  `, topicsParams);
+
+  const agentsParams: any[] = [from, to];
+  const agentsScope = sellerScope(user, agentsParams);
+  const agentsPromise = pool.query(`
+    SELECT
+      ci.agent_name,
+      COUNT(*)::int AS conversations,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'reclamacao')::boolean, false))::int AS complaints,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'oportunidade')::boolean, false))::int AS opportunities,
+      COUNT(*) FILTER (WHERE COALESCE((flags->>'elogio')::boolean, false))::int AS praises,
+      AVG(ci.sentiment_score)::float AS average_sentiment
+    FROM conversation_insights ci
+    WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date
+      AND ci.agent_name IS NOT NULL${agentsScope}
+    GROUP BY ci.agent_name
+    ORDER BY conversations DESC
+    LIMIT 12
+  `, agentsParams);
+
+  const briefingPromise = user.role === "SELLER"
+    ? Promise.resolve(null)
+    : pool.query(`
+        SELECT * FROM daily_briefings
+        WHERE briefing_date <= $1::date
+        ORDER BY briefing_date DESC
+        LIMIT 1
+      `, [to]).then((result) => (result.rows[0] ? mapBriefingRow(result.rows[0]) : null));
+
+  const [statsResult, radarResult, topicsResult, agentsResult, briefing, status] = await Promise.all([
+    statsPromise,
+    radarPromise,
+    topicsPromise,
+    agentsPromise,
+    briefingPromise,
+    getIntelligenceStatus(now),
+  ]);
+
+  const statsRow = statsResult.rows[0] ?? {};
+
+  return {
+    generatedAt: now.toISOString(),
+    period: { from, to },
+    briefing,
+    status,
+    stats: {
+      conversations: Number(statsRow.conversations ?? 0),
+      byAttention: {
+        none: Number(statsRow.attention_none ?? 0),
+        low: Number(statsRow.attention_low ?? 0),
+        medium: Number(statsRow.attention_medium ?? 0),
+        high: Number(statsRow.attention_high ?? 0),
+        critical: Number(statsRow.attention_critical ?? 0),
+      },
+      complaints: Number(statsRow.complaints ?? 0),
+      churnRisks: Number(statsRow.churn_risks ?? 0),
+      unanswered: Number(statsRow.unanswered ?? 0),
+      opportunities: Number(statsRow.opportunities ?? 0),
+      praises: Number(statsRow.praises ?? 0),
+      groups: Number(statsRow.groups ?? 0),
+      privates: Number(statsRow.privates ?? 0),
+      averageSentiment: statsRow.average_sentiment === null || statsRow.average_sentiment === undefined
+        ? null
+        : Number(statsRow.average_sentiment),
+      openRadar: Number(statsRow.open_radar ?? 0),
+    },
+    radar: radarResult.rows.map(mapInsightRow),
+    topics: topicsResult.rows.map((row): ConversationTopicStat => ({
+      topic: String(row.topic),
+      count: Number(row.count ?? 0),
+      negativeCount: Number(row.negative_count ?? 0),
+    })),
+    agents: agentsResult.rows.map((row): ConversationAgentStat => ({
+      agentName: String(row.agent_name),
+      conversations: Number(row.conversations ?? 0),
+      complaints: Number(row.complaints ?? 0),
+      opportunities: Number(row.opportunities ?? 0),
+      praises: Number(row.praises ?? 0),
+      averageSentiment: row.average_sentiment === null || row.average_sentiment === undefined
+        ? null
+        : Number(row.average_sentiment),
+    })),
+  };
+}

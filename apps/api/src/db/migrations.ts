@@ -3957,5 +3957,70 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_customer_lifecycle_customer_stage
     ON customer_lifecycle_events(customer_id, stage);
+  `,
+  `
+  -- Inteligencia de Mensagens v2: a IA passa a analisar CONVERSAS inteiras
+  -- (nao mais mensagem isolada por regra). Cada linha = leitura de uma conversa
+  -- (grupo ou privado) em um dia. Grupos sao deduplicados por remote_jid porque
+  -- a mesma conversa chega por 2-3 instancias.
+  CREATE TABLE IF NOT EXISTS conversation_insights (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_key TEXT NOT NULL,
+    deal_id UUID,
+    remote_jid TEXT,
+    is_group BOOLEAN NOT NULL DEFAULT FALSE,
+    chat_name TEXT,
+    agent_name TEXT,
+    window_date DATE NOT NULL,
+    first_message_at TIMESTAMPTZ,
+    last_message_at TIMESTAMPTZ,
+    message_count INTEGER NOT NULL DEFAULT 0,
+    customer_message_count INTEGER NOT NULL DEFAULT 0,
+    analyzed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    provider TEXT,
+    model TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    sentiment_score REAL,
+    sentiment_label TEXT,
+    attention_level TEXT NOT NULL DEFAULT 'none'
+      CHECK (attention_level IN ('none', 'low', 'medium', 'high', 'critical')),
+    attention_reason TEXT,
+    flags JSONB NOT NULL DEFAULT '{}'::jsonb,
+    topics TEXT[] NOT NULL DEFAULT '{}',
+    highlights JSONB NOT NULL DEFAULT '[]'::jsonb,
+    action_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    acknowledged_at TIMESTAMPTZ,
+    acknowledged_by UUID,
+    ack_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (conversation_key, window_date)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_conversation_insights_window_attention
+    ON conversation_insights(window_date DESC, attention_level);
+  CREATE INDEX IF NOT EXISTS idx_conversation_insights_last_message
+    ON conversation_insights(last_message_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_conversation_insights_agent
+    ON conversation_insights(agent_name, window_date DESC);
+
+  -- Briefing gerencial do dia: narrativa gerada pela IA a partir das analises
+  -- de conversas, regenerada ao longo do dia ("leitura do dia ate agora").
+  CREATE TABLE IF NOT EXISTS daily_briefings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    briefing_date DATE NOT NULL UNIQUE,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    provider TEXT,
+    model TEXT,
+    narrative TEXT NOT NULL DEFAULT '',
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    stats JSONB NOT NULL DEFAULT '{}'::jsonb
+  );
+
+  -- event_ai_batches passa a registrar tambem as execucoes do novo motor
+  -- (analise de conversas e briefing), mantendo o orcamento diario unificado.
+  ALTER TABLE event_ai_batches ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'summary';
+  CREATE INDEX IF NOT EXISTS idx_event_ai_batches_kind_date
+    ON event_ai_batches(kind, batch_date DESC);
   `
 ];

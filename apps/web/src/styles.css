@@ -21130,3 +21130,592 @@ body:has(.whatsapp-monitor-page) .main-content {
   border-color: rgba(37, 99, 235, 0.12);
 }
 
+/* ── Inteligencia de Mensagens v2 (wa-intel-*) ─────────────── */
+
+.wa-intel-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.wa-intel-section-title h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wa-intel-subtle {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.wa-intel-empty-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* Briefing */
+.wa-intel-briefing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.34fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.wa-intel-briefing-main,
+.wa-intel-engine {
+  min-width: 0;
+  padding: 1.1rem;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.045);
+}
+
+.wa-intel-narrative p {
+  margin: 0 0 0.65rem;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  color: #1e293b;
+}
+
+.wa-intel-briefing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.wa-intel-briefing-block {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid #94a3b8;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.wa-intel-briefing-block.alertas { border-left-color: #ef4444; }
+.wa-intel-briefing-block.reclamacoes { border-left-color: #f97316; }
+.wa-intel-briefing-block.pendencias { border-left-color: #f59e0b; }
+.wa-intel-briefing-block.oportunidades { border-left-color: #2563eb; }
+.wa-intel-briefing-block.elogios { border-left-color: #10b981; }
+.wa-intel-briefing-block.vendedoras { border-left-color: #8b5cf6; }
+
+.wa-intel-briefing-block strong {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  margin-bottom: 0.35rem;
+}
+
+.wa-intel-briefing-block ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.wa-intel-briefing-block li {
+  font-size: 0.82rem;
+  color: #334155;
+  margin-bottom: 0.25rem;
+  line-height: 1.4;
+}
+
+/* Engine card */
+.wa-intel-engine-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  color: #0f172a;
+}
+
+.wa-intel-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-left: auto;
+}
+
+.wa-intel-dot.on { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18); }
+.wa-intel-dot.off { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+
+.wa-intel-engine dl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.85rem;
+}
+
+.wa-intel-engine dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.wa-intel-engine dt {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.wa-intel-engine dd {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wa-intel-engine-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+
+.wa-intel-run-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.wa-intel-run-button:hover:not(:disabled) { background: #1e293b; }
+.wa-intel-run-button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.wa-intel-run-message {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  color: #334155;
+}
+
+/* Stats strip */
+.wa-intel-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.6rem;
+}
+
+.wa-intel-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  color: #475569;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.wa-intel-stat:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.wa-intel-stat strong {
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.wa-intel-stat span {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.wa-intel-stat.danger svg { color: #dc2626; }
+.wa-intel-stat.warning svg { color: #d97706; }
+.wa-intel-stat.info svg { color: #2563eb; }
+.wa-intel-stat.positive svg { color: #059669; }
+.wa-intel-stat.sentiment { cursor: default; }
+.wa-intel-stat.sentiment strong { font-size: 0.9rem; }
+
+/* Radar */
+.wa-intel-radar-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: #059669;
+}
+
+.wa-intel-radar-empty p { margin: 0; color: #334155; font-size: 0.88rem; }
+
+.wa-intel-radar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 0.75rem;
+}
+
+.wa-intel-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid #f59e0b;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.wa-intel-alert.critical { border-left-color: #dc2626; background: #fff7f7; }
+.wa-intel-alert.high { border-left-color: #ea580c; }
+
+.wa-intel-alert header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.wa-intel-alert h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.wa-intel-agent {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.wa-intel-time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.wa-intel-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.wa-intel-reason {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #7c2d12;
+}
+
+.wa-intel-alert blockquote {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: #475569;
+}
+
+.wa-intel-alert blockquote cite {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  font-style: normal;
+  color: var(--muted);
+}
+
+.wa-intel-actions-list {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.wa-intel-actions-list li {
+  font-size: 0.78rem;
+  color: #1d4ed8;
+}
+
+.wa-intel-alert footer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.wa-intel-open-chat,
+.wa-intel-ack {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.wa-intel-open-chat:hover { background: #eff6ff; border-color: #bfdbfe; }
+.wa-intel-ack:hover { background: #ecfdf5; border-color: #a7f3d0; }
+.wa-intel-ack:disabled { opacity: 0.5; cursor: wait; }
+
+/* Badges / chips */
+.wa-intel-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.wa-intel-attention.critical { background: #fee2e2; color: #b91c1c; }
+.wa-intel-attention.high { background: #ffedd5; color: #c2410c; }
+.wa-intel-attention.medium { background: #fef3c7; color: #92400e; }
+.wa-intel-attention.low { background: #f1f5f9; color: #475569; }
+.wa-intel-attention.none { background: #f1f5f9; color: #64748b; }
+
+.wa-intel-chat-kind {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.wa-intel-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.wa-intel-flag.vip { background: #fef9c3; color: #a16207; }
+.wa-intel-flag.seen { background: #ecfdf5; color: #047857; }
+
+.wa-intel-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.wa-intel-sentiment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.wa-intel-sentiment.critical, .wa-intel-sentiment.negative { color: #dc2626; }
+.wa-intel-sentiment.positive { color: #059669; }
+
+/* Middle grid: topics + agents */
+.wa-intel-middle-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.55fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.wa-intel-topic-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wa-intel-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.wa-intel-topic strong { font-size: 0.75rem; color: #0f172a; }
+.wa-intel-topic:hover { background: #f8fafc; }
+.wa-intel-topic.negative { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.wa-intel-topic.warning { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+
+.wa-intel-topic-chip {
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  color: #475569;
+}
+
+.wa-intel-agents-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.wa-intel-agents-table th {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.wa-intel-agents-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+
+.wa-intel-agents-table td.danger { color: #dc2626; font-weight: 700; }
+
+/* Conversations list */
+.wa-intel-list-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+}
+
+.wa-intel-list-filters select {
+  min-height: 36px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #ffffff;
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.wa-intel-search {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 220px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #ffffff;
+  color: var(--muted);
+}
+
+.wa-intel-search input {
+  flex: 1;
+  min-height: 36px;
+  border: 0;
+  outline: none;
+  font-size: 0.83rem;
+  color: #0f172a;
+  background: transparent;
+}
+
+.wa-intel-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.wa-intel-conversation-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.wa-intel-conv-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.wa-intel-conv-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.wa-intel-conv-title strong { font-size: 0.9rem; color: #0f172a; }
+
+.wa-intel-conv-meta {
+  display: flex;
+  gap: 0.7rem;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.wa-intel-conv-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Legacy section */
+.wa-intel-legacy-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.wa-intel-legacy-toggle svg { transition: transform 0.15s ease; }
+.wa-intel-legacy-toggle svg.open { transform: rotate(180deg); }
+
+.wa-intel-legacy-body {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+@media (max-width: 1080px) {
+  .wa-intel-briefing,
+  .wa-intel-middle-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

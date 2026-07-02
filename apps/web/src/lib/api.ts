@@ -68,6 +68,10 @@ import type {
   EventsIntelligenceResponse,
   MessageEvent,
   DailySentiment,
+  ConversationInsight,
+  ConversationInsightsListResponse,
+  ConversationIntelligenceRunResult,
+  EventsOverviewResponse,
 } from "@olist-crm/shared";
 
 export interface ChartAnnotation {
@@ -1390,6 +1394,47 @@ export const api = {
       { method: "POST" },
       token,
     );
+  },
+  getEventsOverview(token: string, query: { dateFrom?: string; dateTo?: string } = {}) {
+    const search = new URLSearchParams();
+    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
+    if (query.dateTo) search.set("dateTo", query.dateTo);
+    return request<EventsOverviewResponse>(`/api/events/overview?${search.toString()}`, {}, token);
+  },
+  listConversationInsights(
+    token: string,
+    filters: {
+      dateFrom?: string;
+      dateTo?: string;
+      attention?: string;
+      flag?: string;
+      search?: string;
+      isGroup?: boolean;
+      agentName?: string;
+      onlyOpen?: boolean;
+    },
+    pagination: { page: number; pageSize: number },
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    search.set("page", String(pagination.page));
+    search.set("pageSize", String(pagination.pageSize));
+    return request<ConversationInsightsListResponse>(`/api/events/conversations?${search.toString()}`, {}, token);
+  },
+  runEventsAnalysis(token: string) {
+    return request<ConversationIntelligenceRunResult>(
+      "/api/events/intelligence/run",
+      { method: "POST" },
+      token,
+    );
+  },
+  ackConversationInsight(token: string, id: string, note?: string) {
+    return request<ConversationInsight>(`/api/events/conversations/${id}/ack`, {
+      method: "PATCH",
+      body: JSON.stringify({ note }),
+    }, token);
   },
   resolveEvent(token: string, id: string, input: { resolutionNote: string }) {
     return request<MessageEvent>(`/api/events/${id}/resolve`, {
