@@ -103,11 +103,20 @@ async function main() {
   }
 
   // 5.5. Inteligencia de Mensagens: analise de conversas por IA + briefing do
-  // dia. O proprio job aplica horario comercial, presenca de chave, cadencia e
-  // orcamento diario de requests/tokens.
+  // dia. O proprio job aplica horario comercial, presenca de chave, agenda
+  // (1x/dia as 16h por padrao, ou por intervalo) e orcamento diario.
   if (env.EVENTS_AI_BATCH_ENABLED) {
+    // No modo diario o tick e so uma checagem barata ("ja passou das 16h e
+    // ainda nao rodou hoje?"), entao pode ser frequente para nao perder a
+    // janela; a execucao real acontece uma vez por dia.
+    const tickMinutes = env.EVENTS_AI_SCHEDULE_MODE === "daily"
+      ? Math.min(10, env.EVENTS_AI_BATCH_INTERVAL_MINUTES)
+      : env.EVENTS_AI_BATCH_INTERVAL_MINUTES;
+
     logger.info("scheduled conversation intelligence enabled", {
-      intervalMinutes: env.EVENTS_AI_BATCH_INTERVAL_MINUTES,
+      scheduleMode: env.EVENTS_AI_SCHEDULE_MODE,
+      dailyRunHour: env.EVENTS_AI_DAILY_RUN_HOUR,
+      tickMinutes,
       provider: env.EVENTS_AI_PROVIDER,
       model: env.EVENTS_AI_MODEL,
       cerebrasModel: env.CEREBRAS_MODEL,
@@ -127,7 +136,7 @@ async function main() {
     intervals.push(
       setInterval(
         runIntelligence,
-        env.EVENTS_AI_BATCH_INTERVAL_MINUTES * 60 * 1000,
+        tickMinutes * 60 * 1000,
       )
     );
   }

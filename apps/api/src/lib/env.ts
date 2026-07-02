@@ -152,6 +152,10 @@ const envSchema = z.object({
   EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION: z.coerce.number().int().min(10).max(200).default(40),
   // Trava do briefing: regenera no maximo a cada N minutos (manual ignora).
   EVENTS_AI_BRIEFING_MIN_INTERVAL_MINUTES: z.coerce.number().int().min(0).max(24 * 60).default(110),
+  // Pedido do Felipe: analise automatica UMA vez por dia (16h), e durante o
+  // dia quem quiser roda manualmente. "hourly" volta ao ciclo por intervalo.
+  EVENTS_AI_SCHEDULE_MODE: z.enum(["daily", "hourly"]).default("daily"),
+  EVENTS_AI_DAILY_RUN_HOUR: z.coerce.number().int().min(0).max(23).default(16),
   // Quantos dias as analises de conversa e briefings ficam guardados antes da
   // limpeza diaria apagar (pedido do gestor: ~30 dias e some).
   EVENTS_INTELLIGENCE_RETENTION_DAYS: z.coerce.number().int().min(7).max(365).default(30),

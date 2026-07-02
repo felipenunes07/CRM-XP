@@ -2842,10 +2842,22 @@ export function createApp() {
     }
   });
 
+  // O run manual devolve falha estruturada (o front mostra a mensagem) em vez
+  // de estourar 500 generico.
+  const runIntelligenceSafely = async () => {
+    try {
+      return await runConversationIntelligence(new Date(), { manual: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("manual conversation intelligence run failed", { error: message });
+      return { status: "FAILED" as const, error: message.slice(0, 300) };
+    }
+  };
+
   // Rota legada: agora dispara o motor novo (analise de conversas + briefing).
   app.post("/api/events/ai-batch/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
-      response.json(await runConversationIntelligence(new Date(), { manual: true }));
+      response.json(await runIntelligenceSafely());
     } catch (error) {
       next(error);
     }
@@ -2892,7 +2904,7 @@ export function createApp() {
 
   app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
-      response.json(await runConversationIntelligence(new Date(), { manual: true }));
+      response.json(await runIntelligenceSafely());
     } catch (error) {
       next(error);
     }

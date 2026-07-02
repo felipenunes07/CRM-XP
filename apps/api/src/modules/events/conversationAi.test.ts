@@ -110,7 +110,7 @@ describe("buildConversationsPrompt", () => {
 });
 
 describe("parseConversationAnalyses", () => {
-  it("parses a full valid response", () => {
+  it("parses a full valid response with a single main theme", () => {
     const parsed = parseConversationAnalyses({
       conversas: [{
         chave: "abc",
@@ -119,7 +119,7 @@ describe("parseConversationAnalyses", () => {
         atencao: "alto",
         motivo_atencao: "Troca sem resposta",
         flags: { reclamacao: true, problema_produto: true, invented_flag: true },
-        topicos: ["Tela Quebrada", "troca"],
+        tema: "Tela Quebrada",
         citacoes: [{ autor: "Ze", texto: "a tela veio trincada", tipo: "reclamacao" }],
         acoes: ["Responder o cliente sobre a troca"],
       }],
@@ -133,9 +133,23 @@ describe("parseConversationAnalyses", () => {
     expect(analysis.flags.reclamacao).toBe(true);
     expect(analysis.flags.problema_produto).toBe(true);
     expect(analysis.flags).not.toHaveProperty("invented_flag");
-    expect(analysis.topicos).toEqual(["tela quebrada", "troca"]);
+    expect(analysis.topicos).toEqual(["tela quebrada"]);
     expect(analysis.citacoes[0]!.texto).toBe("a tela veio trincada");
     expect(analysis.acoes).toHaveLength(1);
+  });
+
+  it("keeps only the first topic when the model returns a legacy topicos array", () => {
+    const parsed = parseConversationAnalyses({
+      conversas: [{
+        chave: "abc",
+        resumo: "ok",
+        sentimento: 0,
+        atencao: "nenhum",
+        topicos: ["indicacao", "mercadoria sumida", "perda confianca"],
+      }],
+    });
+
+    expect(parsed.get("abc")!.topicos).toEqual(["indicacao"]);
   });
 
   it("maps accented attention levels and clamps sentiment", () => {

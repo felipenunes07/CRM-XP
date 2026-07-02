@@ -191,12 +191,12 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "- Lista de precos enviada pela equipe, cotacao e negociacao normal NAO sao motivo de atencao.",
     "- \"sentimento\" e o humor do CLIENTE na conversa, de -1 (pessimo) a 1 (otimo).",
     "- \"sem_resposta\" = a ultima coisa relevante foi o cliente pedindo algo e ninguem da equipe respondeu.",
-    "- \"topicos\": 1 a 3 palavras cada, minusculas, concretos (ex: \"tela quebrada\", \"atraso entrega\", \"preco\", \"troca\", \"pedido atacado\").",
+    "- \"tema\": UM UNICO tema principal que resume a conversa, em 1 a 3 palavras minusculas (ex: \"tela quebrada\", \"atraso entrega\", \"orcamento\", \"troca\"). NUNCA mais de um tema por conversa; escolha o assunto dominante. Use sempre o mesmo termo para o mesmo assunto (nao invente sinonimos).",
     "- \"citacoes\": ate 3 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
     "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
     "",
     "Responda APENAS JSON valido neste formato:",
-    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"topicos\":[\"...\"],\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"]}]}",
+    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"]}]}",
     "",
     "CONVERSAS:",
     JSON.stringify(conversations),
@@ -260,10 +260,15 @@ export function parseConversationAnalyses(summary: Record<string, unknown>): Map
       flags[flag] = rawFlags[flag] === true;
     }
 
-    const topicos = (Array.isArray(record.topicos) ? record.topicos : [])
-      .map((topic) => readString(topic, 40).toLowerCase())
-      .filter(Boolean)
-      .slice(0, 6);
+    // Um unico tema por conversa (pedido do gestor: o mesmo caso nao pode
+    // virar 3 categorias). Aceita "topicos" antigo como fallback, mas so o 1o.
+    const temaPrincipal = readString(record.tema, 40).toLowerCase();
+    const topicos = (temaPrincipal
+      ? [temaPrincipal]
+      : (Array.isArray(record.topicos) ? record.topicos : [])
+          .map((topic) => readString(topic, 40).toLowerCase())
+          .slice(0, 1)
+    ).filter(Boolean);
 
     const citacoes = (Array.isArray(record.citacoes) ? record.citacoes : [])
       .map((quote) => {
@@ -531,29 +536,39 @@ async function recordIntelligenceRun(input: {
   outputTokens: number;
   errorMessage?: string | null;
 }) {
-  await pool.query(`
-    INSERT INTO event_ai_batches (
-      batch_date, provider, model, run_source, status, status_reason, period_from, period_to,
-      event_count, request_count, input_tokens_estimated, output_tokens_estimated,
-      summary_json, error_message, started_at, finished_at, kind
-    ) VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13, $14, NOW(), $15)
-  `, [
-    input.now.toISOString().slice(0, 10),
-    input.provider,
-    input.model,
-    input.runSource,
-    input.status,
-    input.reason,
-    input.periodFrom,
-    input.periodTo,
-    input.eventCount,
-    input.requestCount,
-    input.inputTokens,
-    input.outputTokens,
-    input.errorMessage ?? null,
-    input.now,
-    input.kind,
-  ]);
+  // Telemetria/orcamento nunca pode derrubar uma analise que ja funcionou:
+  // se este INSERT falhar, loga e segue (o usuario ja tem os insights).
+  try {
+    await pool.query(`
+      INSERT INTO event_ai_batches (
+        batch_date, provider, model, run_source, status, status_reason, period_from, period_to,
+        event_count, request_count, input_tokens_estimated, output_tokens_estimated,
+        summary_json, error_message, started_at, finished_at, kind
+      ) VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, $13, $14, NOW(), $15)
+    `, [
+      input.now.toISOString().slice(0, 10),
+      input.provider,
+      input.model,
+      input.runSource,
+      input.status,
+      input.reason,
+      input.periodFrom,
+      input.periodTo,
+      input.eventCount,
+      input.requestCount,
+      input.inputTokens,
+      input.outputTokens,
+      input.errorMessage ?? null,
+      input.now,
+      input.kind,
+    ]);
+  } catch (error) {
+    logger.error("failed to record intelligence run", {
+      kind: input.kind,
+      status: input.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 // ── Briefing ────────────────────────────────────────────────
@@ -746,17 +761,41 @@ export async function runConversationIntelligence(
   }
 
   if (options.manual !== true) {
-    const lastStartResult = await pool.query(`
-      SELECT MAX(started_at) AS last_started_at
-      FROM event_ai_batches
-      WHERE kind = 'conversations' AND status IN ('SUCCEEDED', 'FAILED')
-    `);
-    const lastStartedAt = lastStartResult.rows[0]?.last_started_at
-      ? new Date(lastStartResult.rows[0].last_started_at)
-      : null;
-    const cadenceMs = Math.max(1, config.intervalMinutes - 1) * 60 * 1000;
-    if (lastStartedAt && now.getTime() - lastStartedAt.getTime() < cadenceMs) {
-      return { status: "SKIPPED", reason: "cadence_wait" };
+    if (env.EVENTS_AI_SCHEDULE_MODE === "daily") {
+      // Modo diario: uma unica rodada automatica por dia, a partir da hora
+      // configurada (16h). Se o worker estava fora do ar as 16h, roda no
+      // primeiro tick seguinte. Durante o dia, o botao manual cobre.
+      const local = getLocalParts(now, config.timezone);
+      if (local.hour < env.EVENTS_AI_DAILY_RUN_HOUR) {
+        return { status: "SKIPPED", reason: "cadence_wait" };
+      }
+      const ranTodayResult = await pool.query(`
+        SELECT 1
+        FROM event_ai_batches
+        WHERE kind = 'conversations'
+          AND run_source = 'automatic'
+          AND status IN ('SUCCEEDED', 'FAILED')
+          AND batch_date = $1::date
+        LIMIT 1
+      `, [now.toISOString().slice(0, 10)]);
+      if (ranTodayResult.rows.length > 0) {
+        return { status: "SKIPPED", reason: "cadence_wait" };
+      }
+    } else {
+      // Cadencia por started_at (o finished_at do run anterior cai depois do
+      // tick seguinte do setInterval e faria o job pular execucoes).
+      const lastStartResult = await pool.query(`
+        SELECT MAX(started_at) AS last_started_at
+        FROM event_ai_batches
+        WHERE kind = 'conversations' AND status IN ('SUCCEEDED', 'FAILED')
+      `);
+      const lastStartedAt = lastStartResult.rows[0]?.last_started_at
+        ? new Date(lastStartResult.rows[0].last_started_at)
+        : null;
+      const cadenceMs = Math.max(1, config.intervalMinutes - 1) * 60 * 1000;
+      if (lastStartedAt && now.getTime() - lastStartedAt.getTime() < cadenceMs) {
+        return { status: "SKIPPED", reason: "cadence_wait" };
+      }
     }
   }
 
@@ -773,7 +812,12 @@ export async function runConversationIntelligence(
     // analises do dia sem briefing (ex.: apos restart).
     let briefingUpdated = false;
     if (options.manual) {
-      briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
+      briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource).catch((error) => {
+        logger.error("daily briefing step failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return false;
+      });
     }
     return { status: "SKIPPED", reason: "no_conversations", briefingUpdated };
   }
@@ -870,8 +914,16 @@ export async function runConversationIntelligence(
   });
 
   let briefingUpdated = false;
-  if (analyzed > 0 && (options.manual === true || !(await briefingIsFresh(windowDate, now)))) {
-    briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
+  try {
+    if (analyzed > 0 && (options.manual === true || !(await briefingIsFresh(windowDate, now)))) {
+      briefingUpdated = await generateDailyBriefing(now, config, windowDate, runSource);
+    }
+  } catch (error) {
+    // O briefing e um extra: nunca pode transformar uma analise bem-sucedida
+    // em erro para o usuario.
+    logger.error("daily briefing step failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   logger.info("conversation intelligence finished", {
@@ -1121,6 +1173,8 @@ export async function getIntelligenceStatus(now = new Date()): Promise<EventsInt
     lastError: lastErrorResult.rows[0]?.error_message
       ? String(lastErrorResult.rows[0].error_message).slice(0, 300)
       : null,
+    scheduleMode: env.EVENTS_AI_SCHEDULE_MODE,
+    dailyRunHour: env.EVENTS_AI_DAILY_RUN_HOUR,
   };
 }
 

@@ -2428,6 +2428,8 @@ export interface EventsIntelligenceStatus {
   manualBlockedReason: string | null;
   retentionDays: number;
   lastError: string | null;
+  scheduleMode: "daily" | "hourly";
+  dailyRunHour: number;
 }
 
 export interface EventsOverviewStats {

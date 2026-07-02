@@ -15,7 +15,6 @@ import {
   Smile,
   Sparkles,
   ThumbsUp,
-  Users,
   Zap,
 } from "lucide-react";
 import type {
@@ -123,6 +122,18 @@ function formatTime(value: string | null | undefined) {
 function formatShortDate(value: string) {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year?.slice(2)}`;
+}
+
+function formatPhoneFromJid(jid: string | null) {
+  if (!jid || jid.endsWith("@g.us") || jid.endsWith("@lid")) return null;
+  const digits = jid.split("@")[0]?.replace(/\D/g, "") ?? "";
+  if (digits.length < 10) return digits || null;
+  const hasCountry = digits.startsWith("55") && digits.length >= 12;
+  const rest = hasCountry ? digits.slice(2) : digits;
+  const ddd = rest.slice(0, 2);
+  const num = rest.slice(2);
+  const split = num.length > 4 ? `${num.slice(0, num.length - 4)}-${num.slice(-4)}` : num;
+  return `${hasCountry ? "+55 " : ""}(${ddd}) ${split}`;
 }
 
 function initialsOf(name: string) {
@@ -359,7 +370,6 @@ export function EventsPage() {
   const stats = overview?.stats;
   const radar = overview?.radar ?? [];
   const topics = overview?.topics ?? [];
-  const agents = overview?.agents ?? [];
   const insights = insightsQuery.data?.insights ?? [];
   const insightsTotal = insightsQuery.data?.total ?? 0;
   const briefingSections = BRIEFING_SECTIONS
@@ -369,12 +379,18 @@ export function EventsPage() {
 
   const criticalCount = stats?.byAttention.critical ?? 0;
   const highCount = stats?.byAttention.high ?? 0;
+  const alertCount = criticalCount + highCount;
+  const complaintCount = stats?.complaints ?? 0;
   const mood = !stats || stats.conversations === 0
     ? { tone: "waiting", title: "Aguardando leituras", detail: "A IA ainda não analisou conversas neste período." }
     : criticalCount > 0
-      ? { tone: "critical", title: "Dia com pontos críticos", detail: `${criticalCount} conversa${criticalCount > 1 ? "s" : ""} crítica${criticalCount > 1 ? "s" : ""} em aberto.` }
-      : highCount > 0 || (stats.complaints ?? 0) > 0
-        ? { tone: "warning", title: "Dia pede atenção", detail: `${highCount + criticalCount} alerta${highCount + criticalCount === 1 ? "" : "s"} e ${stats.complaints} reclamação${stats.complaints === 1 ? "" : "ões"}.` }
+      ? { tone: "critical", title: "Dia com pontos críticos", detail: criticalCount === 1 ? "1 conversa crítica em aberto." : `${criticalCount} conversas críticas em aberto.` }
+      : highCount > 0 || complaintCount > 0
+        ? {
+            tone: "warning",
+            title: "Dia pede atenção",
+            detail: `${alertCount === 1 ? "1 alerta" : `${alertCount} alertas`} e ${complaintCount === 1 ? "1 reclamação" : `${complaintCount} reclamações`}.`,
+          }
         : { tone: "calm", title: "Dia tranquilo", detail: "Nenhum alerta relevante nas conversas analisadas." };
 
   const usagePercent = status && status.usage.requestLimit > 0
@@ -447,14 +463,18 @@ export function EventsPage() {
               <span className="itl-how-icon"><Bot size={16} /></span>
               <div>
                 <strong>2. Leitura por IA</strong>
-                <p>A cada ciclo (horário comercial), a IA lê as conversas com mensagens novas de cliente — as com sinal de reclamação/risco primeiro — e resume: humor, alertas, temas e ações.</p>
+                <p>
+                  {status?.scheduleMode === "hourly"
+                    ? "A cada ciclo do horário comercial, a IA lê as conversas com mensagens novas de cliente — as com sinal de reclamação/risco primeiro — e resume: humor, alertas, temas e ações."
+                    : `Uma vez por dia (às ${status?.dailyRunHour ?? 16}h) a IA lê as conversas do dia — as com sinal de reclamação/risco primeiro — e resume: humor, alertas, temas e ações. Quer a leitura antes? Use "Analisar agora".`}
+                </p>
               </div>
             </div>
             <div className="itl-how-step">
               <span className="itl-how-icon"><Zap size={16} /></span>
               <div>
                 <strong>3. Entrega</strong>
-                <p>Você recebe o briefing do dia e o radar de atenção aqui, sem precisar acompanhar o WhatsApp. Tudo é apagado após {status?.retentionDays ?? 30} dias. O botão &ldquo;Analisar agora&rdquo; roda a leitura na hora, sem esperar o ciclo.</p>
+                <p>Você recebe o briefing do dia e o radar de atenção aqui, sem precisar acompanhar o WhatsApp. Tudo é apagado após {status?.retentionDays ?? 30} dias.</p>
               </div>
             </div>
           </div>
@@ -462,6 +482,15 @@ export function EventsPage() {
 
         <div className="itl-hero-body">
           <div className="itl-briefing">
+            {runMutation.isPending && (
+              <div className="itl-analyzing">
+                <span className="itl-spinner dark" />
+                <div>
+                  <strong>A IA está lendo as conversas de hoje...</strong>
+                  <span>Reclamações e riscos primeiro. Isso leva menos de um minuto — o painel atualiza sozinho.</span>
+                </div>
+              </div>
+            )}
             {isManager && briefing?.narrative ? (
               <>
                 <div className="itl-briefing-head">
@@ -527,7 +556,9 @@ export function EventsPage() {
                       ? runMessage
                       : runBlockedHint && !status?.canRunManually
                         ? runBlockedHint
-                        : "Lê agora as conversas novas de hoje (críticas primeiro) e atualiza briefing e radar. Leva menos de um minuto."}
+                        : status?.scheduleMode === "hourly"
+                          ? "Lê agora as conversas novas de hoje (críticas primeiro) e atualiza briefing e radar. Leva menos de um minuto."
+                          : `A leitura automática roda 1x por dia às ${status?.dailyRunHour ?? 16}h. Este botão roda a mesma leitura agora, na hora que você quiser.`}
                 </p>
                 {status && status.usage.requestLimit > 0 && (
                   <div className="itl-usage" title={`${status.usage.requestCount} de ${status.usage.requestLimit} chamadas de IA usadas hoje`}>
@@ -605,7 +636,11 @@ export function EventsPage() {
                     <span className="itl-avatar">{initialsOf(insight.chatName || "?")}</span>
                     <div>
                       <strong>{insight.chatName || "Conversa sem nome"}</strong>
-                      <small>{insight.isGroup ? "Grupo" : "Privado"} · {insight.agentName || "sem vendedora"}</small>
+                      <small>
+                        {insight.isGroup
+                          ? `Grupo${insight.agentName ? ` · vendedora ${insight.agentName}` : ""}`
+                          : `Privado${formatPhoneFromJid(insight.remoteJid) ? ` · ${formatPhoneFromJid(insight.remoteJid)}` : ""}${insight.agentName ? ` · vendedora ${insight.agentName}` : ""}`}
+                      </small>
                     </div>
                   </div>
                   <p className="itl-alert-summary">{insight.summary}</p>
@@ -648,74 +683,38 @@ export function EventsPage() {
         )}
       </section>
 
-      {/* ── Temas + vendedoras ── */}
-      <div className="itl-two-col">
-        <section className="itl-card" aria-label="Temas das conversas">
-          <header className="itl-card-head">
-            <span className="itl-card-icon info"><Sparkles size={17} /></span>
-            <div>
-              <h2>Do que os clientes estão falando</h2>
-              <p>Temas identificados pela IA — clique para filtrar as conversas</p>
-            </div>
-          </header>
-          {topics.length === 0 ? (
-            <div className="itl-empty"><p>Os temas aparecem depois das primeiras análises.</p></div>
-          ) : (
-            <div className="itl-topics">
-              {topics.slice(0, 12).map((topic) => {
-                const width = maxTopicCount > 0 ? Math.max(8, Math.round((topic.count / maxTopicCount) * 100)) : 0;
-                const negWidth = topic.count > 0 ? Math.round((topic.negativeCount / topic.count) * width) : 0;
-                return (
-                  <button key={topic.topic} type="button" className="itl-topic-row" onClick={() => applyStatFilter({ search: topic.topic })}>
-                    <span className="itl-topic-name">{topic.topic}</span>
-                    <span className="itl-topic-bar">
-                      <span className="itl-topic-fill" style={{ width: `${width}%` }} />
-                      {negWidth > 0 && <span className="itl-topic-neg" style={{ width: `${negWidth}%` }} />}
-                    </span>
-                    <span className="itl-topic-count" title={topic.negativeCount > 0 ? `${topic.negativeCount} com clima negativo` : undefined}>
-                      {topic.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="itl-card" aria-label="Visão por vendedora">
-          <header className="itl-card-head">
-            <span className="itl-card-icon violet"><Users size={17} /></span>
-            <div>
-              <h2>Por vendedora</h2>
-              <p>Como estão as conversas de cada uma</p>
-            </div>
-          </header>
-          {agents.length === 0 ? (
-            <div className="itl-empty"><p>Sem dados por vendedora neste período.</p></div>
-          ) : (
-            <div className="itl-agents">
-              {agents.map((agent) => {
-                const sentiment = sentimentInfo(agent.averageSentiment);
-                return (
-                  <div key={agent.agentName} className="itl-agent-row">
-                    <span className="itl-avatar violet">{initialsOf(agent.agentName)}</span>
-                    <div className="itl-agent-info">
-                      <strong>{agent.agentName}</strong>
-                      <small>{agent.conversations} conversa{agent.conversations === 1 ? "" : "s"} lida{agent.conversations === 1 ? "" : "s"}</small>
-                    </div>
-                    <div className="itl-agent-nums">
-                      <span className={agent.complaints > 0 ? "bad" : ""} title="Reclamações">{agent.complaints} <small>recl.</small></span>
-                      <span title="Oportunidades">{agent.opportunities} <small>oport.</small></span>
-                      <span className={agent.praises > 0 ? "good" : ""} title="Elogios">{agent.praises} <small>elog.</small></span>
-                      <span className={`itl-sentiment ${sentiment.tone}`} title={`Humor médio: ${sentiment.label}`}>{sentiment.icon}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
+      {/* ── Temas ── */}
+      <section className="itl-card" aria-label="Temas das conversas">
+        <header className="itl-card-head">
+          <span className="itl-card-icon info"><Sparkles size={17} /></span>
+          <div>
+            <h2>Do que os clientes estão falando</h2>
+            <p>Um tema principal por conversa, identificado pela IA — clique para filtrar</p>
+          </div>
+        </header>
+        {topics.length === 0 ? (
+          <div className="itl-empty"><p>Os temas aparecem depois das primeiras análises.</p></div>
+        ) : (
+          <div className="itl-topics">
+            {topics.slice(0, 12).map((topic) => {
+              const width = maxTopicCount > 0 ? Math.max(8, Math.round((topic.count / maxTopicCount) * 100)) : 0;
+              const negWidth = topic.count > 0 ? Math.round((topic.negativeCount / topic.count) * width) : 0;
+              return (
+                <button key={topic.topic} type="button" className="itl-topic-row" onClick={() => applyStatFilter({ search: topic.topic })}>
+                  <span className="itl-topic-name">{topic.topic}</span>
+                  <span className="itl-topic-bar">
+                    <span className="itl-topic-fill" style={{ width: `${width}%` }} />
+                    {negWidth > 0 && <span className="itl-topic-neg" style={{ width: `${negWidth}%` }} />}
+                  </span>
+                  <span className="itl-topic-count" title={topic.negativeCount > 0 ? `${topic.negativeCount} com clima negativo` : undefined}>
+                    {topic.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* ── Conversas analisadas ── */}
       <section className="itl-card" id="itl-conversas" aria-label="Conversas analisadas">
@@ -747,28 +746,16 @@ export function EventsPage() {
             value={insightFilters.search}
             onChange={(event) => setInsightFilters((current) => ({ ...current, search: event.target.value, page: 1 }))}
           />
-          <select
-            value={insightFilters.flag ?? ""}
-            onChange={(event) => setInsightFilters((current) => ({ ...current, flag: event.target.value || undefined, page: 1 }))}
-          >
-            <option value="">Todos os sinais</option>
-            <option value="reclamacao">Reclamação</option>
-            <option value="risco_perda">Risco de perda</option>
-            <option value="sem_resposta">Sem resposta</option>
-            <option value="oportunidade">Oportunidade</option>
-            <option value="elogio">Elogio</option>
-            <option value="problema_entrega">Problema de entrega</option>
-            <option value="problema_produto">Problema de produto</option>
-            <option value="problema_pagamento">Problema de pagamento</option>
-          </select>
-          <select
-            value={insightFilters.isGroup ?? ""}
-            onChange={(event) => setInsightFilters((current) => ({ ...current, isGroup: event.target.value || undefined, page: 1 }))}
-          >
-            <option value="">Grupos e privados</option>
-            <option value="true">Só grupos</option>
-            <option value="false">Só privados</option>
-          </select>
+          {insightFilters.flag && (
+            <button
+              type="button"
+              className="itl-active-filter"
+              title="Remover filtro"
+              onClick={() => setInsightFilters((current) => ({ ...current, flag: undefined, page: 1 }))}
+            >
+              {FLAG_LABELS[insightFilters.flag] ?? insightFilters.flag} ✕
+            </button>
+          )}
         </div>
 
         {insightsQuery.isLoading ? (
@@ -816,7 +803,11 @@ export function EventsPage() {
                     </div>
                   </div>
                   <div className="itl-conv-side">
-                    <small>{insight.agentName || "sem vendedora"}</small>
+                    <small>
+                      {insight.isGroup
+                        ? (insight.agentName || "grupo")
+                        : (formatPhoneFromJid(insight.remoteJid) || insight.agentName || "privado")}
+                    </small>
                     <small>{formatDateTime(insight.lastMessageAt)}</small>
                     <button type="button" className="itl-btn-ghost" onClick={() => openConversation(seedFromInsight(insight))}>
                       <Smartphone size={14} /> Abrir

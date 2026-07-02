@@ -10,11 +10,60 @@ export interface MiniChatMessage {
   status?: "sent" | "delivered" | "read" | "failed";
   senderName?: string | null;
   senderAvatarUrl?: string | null;
+  media?: {
+    type: string;
+    src: string;
+    fileName?: string | null;
+  };
   highlight?: {
     severity: "CRITICAL" | "HIGH" | "MODERATE" | "LOW";
     label: string;
     reason?: string | null;
   };
+}
+
+function MessageMedia({ media }: { media: NonNullable<MiniChatMessage["media"]> }) {
+  if (media.type === "audio") {
+    return (
+      <audio
+        controls
+        preload="metadata"
+        src={media.src}
+        style={{ width: "230px", maxWidth: "100%", height: "38px", marginBottom: "4px" }}
+      />
+    );
+  }
+
+  if (media.type === "image") {
+    return (
+      <img
+        src={media.src}
+        alt={media.fileName ?? "Imagem"}
+        style={{ maxWidth: "100%", maxHeight: "220px", borderRadius: "8px", marginBottom: "4px", display: "block" }}
+      />
+    );
+  }
+
+  if (media.type === "video") {
+    return (
+      <video
+        controls
+        preload="metadata"
+        src={media.src}
+        style={{ maxWidth: "100%", maxHeight: "220px", borderRadius: "8px", marginBottom: "4px", display: "block" }}
+      />
+    );
+  }
+
+  return (
+    <a
+      href={media.src}
+      download={media.fileName ?? "arquivo"}
+      style={{ display: "inline-block", fontSize: "0.8rem", color: "#2563eb", marginBottom: "4px" }}
+    >
+      {media.fileName ?? "Baixar arquivo"}
+    </a>
+  );
 }
 
 function highlightTone(severity: NonNullable<MiniChatMessage["highlight"]>["severity"] | undefined) {
@@ -398,18 +447,21 @@ export function MiniChatDrawer({
                           {isOutbound ? "EQUIPE" : "CLIENTE"}
                         </span>
                       </div>
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: "0.9rem",
-                          color: "#1a1a1a",
-                          lineHeight: 1.45,
-                          wordWrap: "break-word",
-                          whiteSpace: "pre-wrap",
-                        }}
-                      >
-                        {message.content}
-                      </p>
+                      {message.media && <MessageMedia media={message.media} />}
+                      {(!message.media || !/^\[(Audio|Áudio|Imagem|Video|Vídeo|Documento|Arquivo)/iu.test(message.content.trim())) && (
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: "0.9rem",
+                            color: "#1a1a1a",
+                            lineHeight: 1.45,
+                            wordWrap: "break-word",
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {message.content}
+                        </p>
+                      )}
                       <div
                         style={{
                           display: "flex",
