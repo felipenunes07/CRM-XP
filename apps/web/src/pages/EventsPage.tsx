@@ -444,7 +444,10 @@ export function EventsPage() {
                     {(status.messagesToday ?? 0).toLocaleString("pt-BR")} mensagens hoje · {status.conversationsAnalyzedToday} conversas lidas pela IA · leitura automática às {status.dailyRunHour}h
                     <button type="button" className="wtl-how-link" onClick={() => setHowOpen((open) => !open)}>como funciona?</button>
                   </>
-                : "IA desligada no servidor — ative EVENTS_AI_BATCH_ENABLED e configure a chave."}
+                : <>
+                    <span className="wtl-live-dot off" />
+                    Captura ativa · IA desligada — veja como ligar logo abaixo
+                  </>}
             </p>
           </div>
         </div>
@@ -513,22 +516,55 @@ export function EventsPage() {
         </div>
       )}
 
+      {/* ── IA desligada: como ligar ── */}
+      {isManager && status && !status.enabled && (
+        <div className="wtl-setup">
+          <span className="wtl-setup-icon"><Bot size={20} /></span>
+          <div>
+            <strong>A inteligência está desligada neste servidor</strong>
+            <p>
+              As mensagens continuam sendo capturadas normalmente (veja a &ldquo;Coleta ao vivo&rdquo; abaixo), mas a IA não está lendo as conversas.
+              Para ligar: no painel do servidor, defina <code>EVENTS_AI_BATCH_ENABLED=true</code> e configure a chave <code>CEREBRAS_API_KEY</code> (ou <code>GEMINI_API_KEY</code>).
+              No próximo restart, tudo aqui liga sozinho.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Pulso + números ── */}
       <div className="wtl-pulseband">
         <div className={`wtl-mood ${mood.tone}`}>
-          {mood.icon}
+          <span className="wtl-mood-icon">{mood.icon}</span>
           <div>
             <strong>{mood.title}</strong>
             <span>{mood.detail}</span>
           </div>
         </div>
         <div className="wtl-counters">
-          <button type="button" onClick={() => selectTab("all")}><strong>{stats?.conversations ?? 0}</strong><span>conversas lidas</span></button>
-          <button type="button" className="danger" onClick={() => selectTab("radar")}><strong>{radarCount}</strong><span>no radar</span></button>
-          <button type="button" className="danger" onClick={() => selectTab("reclamacao")}><strong>{stats?.complaints ?? 0}</strong><span>reclamações</span></button>
-          <button type="button" className="warning" onClick={() => selectTab("sem_resposta")}><strong>{stats?.unanswered ?? 0}</strong><span>sem resposta</span></button>
-          <button type="button" className="info" onClick={() => selectTab("oportunidade")}><strong>{stats?.opportunities ?? 0}</strong><span>oportunidades</span></button>
-          <button type="button" className="positive" onClick={() => selectTab("elogio")}><strong>{stats?.praises ?? 0}</strong><span>elogios</span></button>
+          <button type="button" onClick={() => selectTab("all")}>
+            <span className="wtl-counter-ic neutral"><MessageSquare size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{stats?.conversations ?? 0}</strong><span>conversas lidas</span></span>
+          </button>
+          <button type="button" className="danger" onClick={() => selectTab("radar")}>
+            <span className="wtl-counter-ic danger"><Flame size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{radarCount}</strong><span>no radar</span></span>
+          </button>
+          <button type="button" className="danger" onClick={() => selectTab("reclamacao")}>
+            <span className="wtl-counter-ic danger"><AlertTriangle size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{stats?.complaints ?? 0}</strong><span>reclamações</span></span>
+          </button>
+          <button type="button" className="warning" onClick={() => selectTab("sem_resposta")}>
+            <span className="wtl-counter-ic warning"><Frown size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{stats?.unanswered ?? 0}</strong><span>sem resposta</span></span>
+          </button>
+          <button type="button" className="info" onClick={() => selectTab("oportunidade")}>
+            <span className="wtl-counter-ic info"><Sparkles size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{stats?.opportunities ?? 0}</strong><span>oportunidades</span></span>
+          </button>
+          <button type="button" className="positive" onClick={() => selectTab("elogio")}>
+            <span className="wtl-counter-ic positive"><ThumbsUp size={16} /></span>
+            <span className="wtl-counter-txt"><strong>{stats?.praises ?? 0}</strong><span>elogios</span></span>
+          </button>
         </div>
       </div>
 
@@ -567,8 +603,14 @@ export function EventsPage() {
                 <span style={{ width: `${coveragePercent}%` }} />
               </div>
               <small>
-                IA leu <strong>{capture.analyzedToday}</strong> de <strong>{capture.conversationsWithCustomer}</strong> conversas com cliente ({coveragePercent}%)
-                {capture.pendingToday > 0 && <> · <strong>{capture.pendingToday}</strong> aguardando a leitura das {status?.dailyRunHour ?? 16}h ou o botão</>}
+                {status?.enabled ? (
+                  <>
+                    IA leu <strong>{capture.analyzedToday}</strong> de <strong>{capture.conversationsWithCustomer}</strong> conversas com cliente ({coveragePercent}%)
+                    {capture.pendingToday > 0 && <> · <strong>{capture.pendingToday}</strong> aguardando a leitura das {status?.dailyRunHour ?? 16}h ou o botão</>}
+                  </>
+                ) : (
+                  <>Captura funcionando — <strong>{capture.conversationsWithCustomer}</strong> conversas com cliente prontas para a IA ler quando for ligada.</>
+                )}
               </small>
             </div>
           </div>
@@ -634,7 +676,7 @@ export function EventsPage() {
                   ? (status.messagesToday ?? 0) > 0
                     ? `Já capturei ${status.messagesToday.toLocaleString("pt-BR")} mensagens hoje. Às ${status.dailyRunHour}h eu leio tudo e escrevo aqui o resumo do dia — ou clique em "Analisar agora" para eu ler já.`
                     : "Ainda não chegou mensagem hoje. Assim que os grupos movimentarem, eu começo a leitura."
-                  : "Estou desligado no servidor — sem chave de IA configurada, não consigo ler as conversas."}
+                  : "Estou de olho nas mensagens que chegam, mas minha leitura está desligada. Assim que ligarem a chave de IA no servidor, eu escrevo aqui o resumo do dia."}
               </p>
             )}
           </div>
