@@ -4022,5 +4022,15 @@ export const migrations = [
   ALTER TABLE event_ai_batches ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'summary';
   CREATE INDEX IF NOT EXISTS idx_event_ai_batches_kind_date
     ON event_ai_batches(kind, batch_date DESC);
+  `,
+  `
+  -- FIX producao (03/07/2026): a tabela event_ai_batches em prod estava SEM a
+  -- coluna run_source (migracao antiga aplicada parcialmente). Toda query nova
+  -- que le run_source estourava 500 e derrubava o overview da Inteligencia
+  -- ("Indisponivel no momento" no botao). Idempotente.
+  ALTER TABLE event_ai_batches ADD COLUMN IF NOT EXISTS run_source TEXT NOT NULL DEFAULT 'automatic';
+  ALTER TABLE event_ai_batches DROP CONSTRAINT IF EXISTS event_ai_batches_run_source_check;
+  ALTER TABLE event_ai_batches
+    ADD CONSTRAINT event_ai_batches_run_source_check CHECK (run_source IN ('manual', 'automatic'));
   `
 ];

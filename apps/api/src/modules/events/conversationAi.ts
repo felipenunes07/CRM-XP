@@ -1411,13 +1411,20 @@ export async function getEventsOverview(
     ORDER BY 1
   `, [windowStart, windowEnd, config.timezone, INTERNAL_GROUP_JID_LIST]);
 
+  // Diagnostico e um extra: se alguma dessas queries falhar (ex.: coluna
+  // faltando por migracao parcial), o overview inteiro NAO pode cair.
   const runsPromise = pool.query(`
     SELECT kind, run_source, status, event_count, finished_at, error_message
     FROM event_ai_batches
     WHERE kind IN ('conversations', 'briefing')
     ORDER BY finished_at DESC NULLS LAST
     LIMIT 8
-  `);
+  `).catch((error) => {
+    logger.warn("events overview: runs query failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { rows: [] as any[] };
+  });
 
   const [statsResult, radarResult, topicsResult, agentsResult, briefing, status, captureResult, hourlyResult, runsResult] = await Promise.all([
     statsPromise,

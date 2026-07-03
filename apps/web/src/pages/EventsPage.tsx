@@ -388,6 +388,8 @@ export function EventsPage() {
   };
 
   const overview = overviewQuery.data;
+  const overviewFailed = overviewQuery.isError;
+  const overviewErrorMessage = overviewQuery.error instanceof Error ? overviewQuery.error.message : "";
   const briefing = overview?.briefing ?? null;
   const status = overview?.status;
   const stats = overview?.stats;
@@ -453,16 +455,21 @@ export function EventsPage() {
           <div>
             <h1>Inteligência do WhatsApp</h1>
             <p>
-              {status?.enabled
+              {overviewFailed
                 ? <>
-                    <span className="wtl-live-dot" />
-                    {(status.messagesToday ?? 0).toLocaleString("pt-BR")} mensagens hoje · {status.conversationsAnalyzedToday} conversas lidas pela IA · leitura automática às {status.dailyRunHour}h
-                    <button type="button" className="wtl-how-link" onClick={() => setHowOpen((open) => !open)}>como funciona?</button>
-                  </>
-                : <>
                     <span className="wtl-live-dot off" />
-                    Captura ativa · IA desligada — veja como ligar logo abaixo
-                  </>}
+                    Sem resposta do servidor de inteligência — o backend precisa do deploy novo
+                  </>
+                : status?.enabled
+                  ? <>
+                      <span className="wtl-live-dot" />
+                      {(status.messagesToday ?? 0).toLocaleString("pt-BR")} mensagens hoje · {status.conversationsAnalyzedToday} conversas lidas pela IA · leitura automática às {status.dailyRunHour}h
+                      <button type="button" className="wtl-how-link" onClick={() => setHowOpen((open) => !open)}>como funciona?</button>
+                    </>
+                  : <>
+                      <span className="wtl-live-dot off" />
+                      Captura ativa · IA desligada — veja como ligar logo abaixo
+                    </>}
             </p>
           </div>
         </div>
@@ -487,7 +494,11 @@ export function EventsPage() {
                 {progress?.active || runMutation.isPending ? <Loader2 size={17} className="spin" /> : <Zap size={17} />}
                 {progress?.active ? "Analisando..." : "Analisar agora"}
               </button>
-              {status && !status.canRunManually && (
+              {overviewFailed ? (
+                <small className="wtl-run-blocked" title={overviewErrorMessage}>
+                  O servidor não respondeu a rota de inteligência — faça o deploy do backend no EasyPanel (o front já está na versão nova).
+                </small>
+              ) : status && !status.canRunManually && (
                 <small className="wtl-run-blocked">{blockedReasonLabel(status.manualBlockedReason)}</small>
               )}
             </div>
@@ -534,6 +545,23 @@ export function EventsPage() {
             {!progress.active && (
               <button type="button" onClick={() => setProgressDismissed(true)}>fechar</button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Backend desatualizado / fora do ar ── */}
+      {isManager && overviewFailed && (
+        <div className="wtl-setup">
+          <span className="wtl-setup-icon"><AlertTriangle size={20} /></span>
+          <div>
+            <strong>O servidor ainda não tem a versão nova da inteligência</strong>
+            <p>
+              Esta tela é nova, mas a API no servidor não respondeu a rota da inteligência
+              {overviewErrorMessage ? <> (erro: <code>{overviewErrorMessage.slice(0, 80)}</code>)</> : null}.
+              Quase sempre é o deploy do backend que não rodou: no EasyPanel, abra o serviço da API e verifique
+              se o último deploy da branch <code>main</code> concluiu (aba Deployments) — se falhou, rode de novo.
+              O front na Vercel já está atualizado.
+            </p>
           </div>
         </div>
       )}
