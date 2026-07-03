@@ -21296,6 +21296,21 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wtl-run-btn:hover:not(:disabled) { background: #3ce07a; }
 .wtl-run-btn:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 
+.wtl-run-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.wtl-run-blocked {
+  max-width: 260px;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: #fde68a;
+  text-align: right;
+}
+
 /* ── Como funciona ── */
 .wtl-how {
   display: grid;

@@ -179,6 +179,21 @@ function readBriefingSection(briefing: DailyBriefing | null, key: string): strin
   return value.map(briefingItemText).filter(Boolean).slice(0, 6);
 }
 
+function blockedReasonLabel(reason: string | null | undefined) {
+  switch (reason) {
+    case "disabled":
+      return "IA desligada no servidor (EVENTS_AI_BATCH_ENABLED)";
+    case "missing_api_key":
+      return "Sem chave de IA no servidor (CEREBRAS_API_KEY ou GEMINI_API_KEY)";
+    case "daily_request_cap":
+      return "Limite diário de chamadas de IA atingido — volta amanhã (env EVENTS_AI_DAILY_REQUEST_LIMIT)";
+    case "daily_token_cap":
+      return "Limite diário de tokens de IA atingido — volta amanhã (env EVENTS_AI_DAILY_TOKEN_LIMIT)";
+    default:
+      return reason ? `Indisponível: ${reason}` : "Indisponível no momento";
+  }
+}
+
 function originLabel(insight: ConversationInsight) {
   if (insight.isGroup) {
     return { kind: "GRUPO", detail: insight.agentName ? `vendedora ${insight.agentName}` : null };
@@ -459,16 +474,23 @@ export function EventsPage() {
             <button type="button" onClick={() => setPresetDays(30)}>30 dias</button>
           </div>
           {isManager && (
-            <button
-              type="button"
-              className="wtl-run-btn"
-              disabled={Boolean(progress?.active) || runMutation.isPending || !status?.canRunManually}
-              title={status?.canRunManually ? "Pede para a IA reler as conversas de hoje agora" : "Sem orçamento de IA disponível agora"}
-              onClick={() => runMutation.mutate()}
-            >
-              {progress?.active || runMutation.isPending ? <Loader2 size={17} className="spin" /> : <Zap size={17} />}
-              {progress?.active ? "Analisando..." : "Analisar agora"}
-            </button>
+            <div className="wtl-run-wrap">
+              <button
+                type="button"
+                className="wtl-run-btn"
+                disabled={Boolean(progress?.active) || runMutation.isPending || !status?.canRunManually}
+                title={status?.canRunManually
+                  ? "Pede para a IA reler as conversas de hoje agora"
+                  : blockedReasonLabel(status?.manualBlockedReason)}
+                onClick={() => runMutation.mutate()}
+              >
+                {progress?.active || runMutation.isPending ? <Loader2 size={17} className="spin" /> : <Zap size={17} />}
+                {progress?.active ? "Analisando..." : "Analisar agora"}
+              </button>
+              {status && !status.canRunManually && (
+                <small className="wtl-run-blocked">{blockedReasonLabel(status.manualBlockedReason)}</small>
+              )}
+            </div>
           )}
         </div>
       </header>

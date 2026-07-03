@@ -10,6 +10,20 @@ for (const candidate of [
   dotenv.config({ path: candidate, override: false });
 }
 
+/**
+ * Boolean tolerante para env de painel (EasyPanel etc.): aceita "true"/"True"/
+ * "TRUE"/"1"/"yes"/"on" (e as variantes de false), com espacos. O enum estrito
+ * ["true","false"] derruba a API inteira se alguem digitar "True".
+ */
+const flexibleBoolean = (defaultValue: boolean) =>
+  z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return defaultValue;
+    const normalized = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "on", "sim"].includes(normalized)) return true;
+    if (["false", "0", "no", "off", "nao"].includes(normalized)) return false;
+    return defaultValue;
+  }, z.boolean());
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(4000),
@@ -125,10 +139,7 @@ const envSchema = z.object({
   EVENTS_RESOLVED_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   EVENTS_LOW_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
   EVENTS_SENTIMENT_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
-  EVENTS_AI_BATCH_ENABLED: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((value) => value === "true"),
+  EVENTS_AI_BATCH_ENABLED: flexibleBoolean(false),
   EVENTS_AI_PROVIDER: z.enum(["gemini", "cerebras", "auto"]).default("auto"),
   EVENTS_AI_MODEL: z.string().default("gemini-2.5-flash-lite"),
   CEREBRAS_MODEL: z.string().default("gpt-oss-120b"),
