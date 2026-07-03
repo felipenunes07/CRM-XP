@@ -141,8 +141,9 @@ import {
 import {
   acknowledgeConversationInsight,
   getEventsOverview,
+  getIntelligenceProgress,
   listConversationInsights,
-  runConversationIntelligence,
+  startManualIntelligenceRun,
 } from "./modules/events/conversationAi.js";
 import {
   cancelWhatsappCampaign,
@@ -2842,22 +2843,10 @@ export function createApp() {
     }
   });
 
-  // O run manual devolve falha estruturada (o front mostra a mensagem) em vez
-  // de estourar 500 generico.
-  const runIntelligenceSafely = async () => {
-    try {
-      return await runConversationIntelligence(new Date(), { manual: true });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error("manual conversation intelligence run failed", { error: message });
-      return { status: "FAILED" as const, error: message.slice(0, 300) };
-    }
-  };
-
   // Rota legada: agora dispara o motor novo (analise de conversas + briefing).
-  app.post("/api/events/ai-batch/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+  app.post("/api/events/ai-batch/run", requireRole(["ADMIN", "MANAGER"]), (_request, response, next) => {
     try {
-      response.json(await runIntelligenceSafely());
+      response.json(startManualIntelligenceRun());
     } catch (error) {
       next(error);
     }
@@ -2902,9 +2891,19 @@ export function createApp() {
     }
   });
 
-  app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+  // Dispara o run manual em background e devolve o snapshot inicial do
+  // progresso; o front acompanha pela rota de progresso abaixo.
+  app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), (_request, response, next) => {
     try {
-      response.json(await runIntelligenceSafely());
+      response.json(startManualIntelligenceRun());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/intelligence/progress", (_request, response, next) => {
+    try {
+      response.json(getIntelligenceProgress());
     } catch (error) {
       next(error);
     }

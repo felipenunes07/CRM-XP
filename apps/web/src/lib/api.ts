@@ -70,7 +70,7 @@ import type {
   DailySentiment,
   ConversationInsight,
   ConversationInsightsListResponse,
-  ConversationIntelligenceRunResult,
+  EventsIntelligenceProgress,
   EventsOverviewResponse,
 } from "@olist-crm/shared";
 
@@ -1424,9 +1424,16 @@ export const api = {
     return request<ConversationInsightsListResponse>(`/api/events/conversations?${search.toString()}`, {}, token);
   },
   runEventsAnalysis(token: string) {
-    return request<ConversationIntelligenceRunResult>(
+    return request<EventsIntelligenceProgress>(
       "/api/events/intelligence/run",
       { method: "POST" },
+      token,
+    );
+  },
+  getEventsAnalysisProgress(token: string) {
+    return request<EventsIntelligenceProgress | null>(
+      "/api/events/intelligence/progress",
+      {},
       token,
     );
   },

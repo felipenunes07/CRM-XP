@@ -16,6 +16,7 @@
  * Orcamento diario (requests/tokens), horario comercial e retencao sao
  * controlados por env e compartilhados com o event_ai_batches existente.
  */
+import { randomUUID } from "node:crypto";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
@@ -30,6 +31,7 @@ import type {
   ConversationIntelligenceRunResult,
   ConversationTopicStat,
   DailyBriefing,
+  EventsIntelligenceProgress,
   EventsIntelligenceStatus,
   EventsOverviewResponse,
 } from "@olist-crm/shared";
@@ -51,6 +53,74 @@ import {
 } from "./eventsService.js";
 
 const ATTENTION_LEVELS: ConversationAttentionLevel[] = ["none", "low", "medium", "high", "critical"];
+
+// ── Progresso ao vivo do run manual ─────────────────────────
+// O usuario clica em "Analisar agora" e o front mostra a esteira: coletando →
+// IA lendo lote i/n → briefing → pronto. Estado em memoria: o run manual
+// executa no mesmo processo da API que responde o poll.
+
+let currentProgress: EventsIntelligenceProgress | null = null;
+
+function updateProgress(patch: Partial<EventsIntelligenceProgress>) {
+  if (!currentProgress) return;
+  currentProgress = { ...currentProgress, ...patch };
+}
+
+export function getIntelligenceProgress(): EventsIntelligenceProgress | null {
+  return currentProgress;
+}
+
+/**
+ * Dispara o run manual em background (com reanalise do dia) e devolve o
+ * snapshot inicial do progresso para o front comecar o poll.
+ */
+export function startManualIntelligenceRun(): EventsIntelligenceProgress {
+  if (currentProgress?.active) {
+    return currentProgress;
+  }
+
+  currentProgress = {
+    runId: randomUUID(),
+    active: true,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    phase: "queued",
+    message: "Preparando a análise...",
+    totalConversations: 0,
+    analyzedConversations: 0,
+    chunkIndex: 0,
+    chunkCount: 0,
+    result: null,
+  };
+
+  runConversationIntelligence(new Date(), { manual: true, force: true, onProgress: updateProgress })
+    .then((result) => {
+      updateProgress({
+        active: false,
+        finishedAt: new Date().toISOString(),
+        phase: result.status === "FAILED" ? "error" : "done",
+        message: result.status === "SUCCEEDED"
+          ? `Pronto: ${result.analyzedConversations ?? 0} conversas lidas.`
+          : result.status === "SKIPPED"
+            ? `Nada para analisar (${result.reason ?? "sem conversas"}).`
+            : `Falhou: ${result.error ?? "erro no provedor de IA"}`,
+        result,
+      });
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error("manual intelligence run crashed", { error: message });
+      updateProgress({
+        active: false,
+        finishedAt: new Date().toISOString(),
+        phase: "error",
+        message: `Falhou: ${message.slice(0, 200)}`,
+        result: { status: "FAILED", error: message.slice(0, 300) },
+      });
+    });
+
+  return currentProgress;
+}
 
 const ATTENTION_FROM_AI: Record<string, ConversationAttentionLevel> = {
   nenhum: "none",
@@ -326,6 +396,7 @@ async function selectConversationCandidates(
   windowEnd: Date,
   windowDate: string,
   limit: number,
+  options: { includeAnalyzed?: boolean } = {},
 ): Promise<ConversationCandidate[]> {
   const result = await pool.query(`
     WITH convs AS (
@@ -376,7 +447,9 @@ async function selectConversationCandidates(
         )
     ) signals ON true
     WHERE convs.customer_message_count > 0
-      AND (ci.id IS NULL OR convs.last_message_at > ci.last_message_at)
+      -- includeAnalyzed=true (run manual): reanalisa o dia inteiro mesmo sem
+      -- mensagem nova — o botao sempre produz uma leitura fresca.
+      AND (ci.id IS NULL OR convs.last_message_at > ci.last_message_at OR $8::boolean)
     ORDER BY
       signals.signal_count DESC,
       convs.customer_message_count DESC,
@@ -390,6 +463,7 @@ async function selectConversationCandidates(
     INTERNAL_GROUP_JID_LIST,
     windowDate,
     limit,
+    options.includeAnalyzed === true,
   ]);
 
   return result.rows.map((row) => ({
@@ -740,10 +814,15 @@ async function generateDailyBriefing(
 
 export async function runConversationIntelligence(
   now = new Date(),
-  options: { manual?: boolean } = {},
+  options: {
+    manual?: boolean;
+    force?: boolean;
+    onProgress?: (patch: Partial<EventsIntelligenceProgress>) => void;
+  } = {},
 ): Promise<ConversationIntelligenceRunResult> {
   const config = getEventsAiBatchConfig();
   const runSource = options.manual === true ? "manual" as const : "automatic" as const;
+  const onProgress = options.onProgress ?? (() => {});
   const usage = await getBatchUsage(now);
   // Cadencia propria baseada em started_at: o finished_at do run anterior cai
   // depois do tick seguinte do setInterval e faria o job pular execucoes.
@@ -800,11 +879,13 @@ export async function runConversationIntelligence(
   }
 
   const { windowStart, windowEnd, windowDate } = getDayWindow(now, config.timezone);
+  onProgress({ phase: "selecting", message: "Coletando as conversas do dia no monitor..." });
   const candidates = await selectConversationCandidates(
     windowStart,
     windowEnd,
     windowDate,
     env.EVENTS_AI_MAX_CONVERSATIONS_PER_RUN,
+    { includeAnalyzed: options.force === true },
   );
 
   if (candidates.length === 0) {
@@ -821,6 +902,12 @@ export async function runConversationIntelligence(
     }
     return { status: "SKIPPED", reason: "no_conversations", briefingUpdated };
   }
+
+  onProgress({
+    phase: "reading",
+    totalConversations: candidates.length,
+    message: `Montando o transcript de ${candidates.length} conversas...`,
+  });
 
   const prepared: Array<{ candidate: ConversationCandidate; payload: ConversationForAi }> = [];
   for (const candidate of candidates) {
@@ -854,7 +941,21 @@ export async function runConversationIntelligence(
   let model = config.model;
   const errors: string[] = [];
 
+  onProgress({
+    phase: "analyzing",
+    chunkCount: chunks.length,
+    message: `IA lendo ${prepared.length} conversas em ${chunks.length} lote${chunks.length === 1 ? "" : "s"}...`,
+  });
+
+  let chunkIndex = 0;
   for (const chunk of chunks) {
+    chunkIndex += 1;
+    onProgress({
+      chunkIndex,
+      analyzedConversations: analyzed,
+      message: `IA lendo lote ${chunkIndex} de ${chunks.length} (${analyzed} conversas prontas)...`,
+    });
+
     if (usage.requestCount + requestCount >= config.dailyRequestLimit) {
       errors.push("daily_request_cap");
       break;
@@ -911,6 +1012,12 @@ export async function runConversationIntelligence(
     inputTokens,
     outputTokens,
     errorMessage: errors.length ? errors.join(" | ").slice(0, 1500) : null,
+  });
+
+  onProgress({
+    phase: "briefing",
+    analyzedConversations: analyzed,
+    message: "Gerando o briefing do dia...",
   });
 
   let briefingUpdated = false;

@@ -2471,3 +2471,26 @@ export interface ConversationIntelligenceRunResult {
   briefingUpdated?: boolean;
   error?: string;
 }
+
+export type EventsIntelligenceProgressPhase =
+  | "queued"
+  | "selecting"
+  | "reading"
+  | "analyzing"
+  | "briefing"
+  | "done"
+  | "error";
+
+export interface EventsIntelligenceProgress {
+  runId: string;
+  active: boolean;
+  startedAt: string;
+  finishedAt: string | null;
+  phase: EventsIntelligenceProgressPhase;
+  message: string;
+  totalConversations: number;
+  analyzedConversations: number;
+  chunkIndex: number;
+  chunkCount: number;
+  result: ConversationIntelligenceRunResult | null;
+}

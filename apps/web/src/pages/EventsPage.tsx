@@ -1,27 +1,31 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
-  CheckCircle2,
+  Check,
+  CheckCheck,
   ChevronDown,
   Flame,
   Frown,
+  Loader2,
   Meh,
   MessageSquare,
-  Radio,
+  Phone,
+  Search,
   ShieldCheck,
   Smartphone,
   Smile,
   Sparkles,
   ThumbsUp,
+  Users,
   Zap,
 } from "lucide-react";
 import type {
   ConversationAttentionLevel,
   ConversationInsight,
-  ConversationIntelligenceRunResult,
   DailyBriefing,
+  EventsIntelligenceProgress,
   MessageEvent,
   WhatsappMonitorConversationDetail,
 } from "@olist-crm/shared";
@@ -67,9 +71,9 @@ const FLAG_LABELS: Record<string, string> = {
   sem_resposta: "Sem resposta",
   oportunidade: "Oportunidade",
   elogio: "Elogio",
-  problema_entrega: "Entrega",
-  problema_produto: "Produto",
-  problema_pagamento: "Pagamento",
+  problema_entrega: "Problema de entrega",
+  problema_produto: "Problema de produto",
+  problema_pagamento: "Problema de pagamento",
   vip: "VIP",
 };
 
@@ -82,23 +86,25 @@ const BRIEFING_SECTIONS: Array<{ key: string; title: string }> = [
   { key: "vendedoras", title: "Vendedoras" },
 ];
 
-const ATTENTION_SEGMENTS: Array<{ id: string; label: string; value?: string }> = [
+type FeedTabId = "radar" | "all" | "reclamacao" | "oportunidade" | "elogio" | "sem_resposta";
+
+const FEED_TABS: Array<{ id: FeedTabId; label: string; flag?: string }> = [
+  { id: "radar", label: "Radar" },
   { id: "all", label: "Todas" },
-  { id: "critical", label: "Críticas", value: "critical" },
-  { id: "high", label: "Alta +", value: "high,critical" },
-  { id: "medium", label: "Média", value: "medium" },
-  { id: "calm", label: "Tranquilas", value: "none,low" },
+  { id: "reclamacao", label: "Reclamações", flag: "reclamacao" },
+  { id: "oportunidade", label: "Oportunidades", flag: "oportunidade" },
+  { id: "elogio", label: "Elogios", flag: "elogio" },
+  { id: "sem_resposta", label: "Sem resposta", flag: "sem_resposta" },
 ];
 
-interface InsightListFilters {
-  attention?: string;
-  flag?: string;
-  isGroup?: string;
-  search: string;
-  page: number;
-}
+const AVATAR_COLORS = ["#0e7490", "#7c3aed", "#be185d", "#b45309", "#047857", "#1d4ed8", "#b91c1c", "#4d7c0f"];
 
-const defaultInsightFilters: InsightListFilters = { search: "", page: 1 };
+const PROGRESS_STEPS: Array<{ phases: EventsIntelligenceProgress["phase"][]; label: string }> = [
+  { phases: ["queued", "selecting"], label: "Coletando conversas" },
+  { phases: ["reading"], label: "Montando transcripts" },
+  { phases: ["analyzing"], label: "IA lendo as conversas" },
+  { phases: ["briefing"], label: "Gerando briefing" },
+];
 
 function toDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -117,11 +123,6 @@ function formatDateTime(value: string | null | undefined) {
 function formatTime(value: string | null | undefined) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value));
-}
-
-function formatShortDate(value: string) {
-  const [year, month, day] = value.split("-");
-  return `${day}/${month}/${year?.slice(2)}`;
 }
 
 function formatPhoneFromJid(jid: string | null) {
@@ -143,6 +144,14 @@ function initialsOf(name: string) {
   return `${first}${last}`.toUpperCase();
 }
 
+function avatarColor(name: string) {
+  let hash = 0;
+  for (const char of name) {
+    hash = ((hash * 31) + char.charCodeAt(0)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
 function sentimentInfo(score: number | null) {
   if (score === null) return { icon: <Meh size={15} />, label: "sem leitura", tone: "neutral" };
   if (score <= -0.6) return { icon: <Flame size={15} />, label: "muito negativo", tone: "negative" };
@@ -150,38 +159,6 @@ function sentimentInfo(score: number | null) {
   if (score < 0.2) return { icon: <Meh size={15} />, label: "neutro", tone: "neutral" };
   if (score < 0.6) return { icon: <Smile size={15} />, label: "positivo", tone: "positive" };
   return { icon: <ThumbsUp size={15} />, label: "muito positivo", tone: "positive" };
-}
-
-function formatBlockedReason(reason: string | null | undefined) {
-  switch (reason) {
-    case "disabled":
-      return "A IA está desligada no servidor (EVENTS_AI_BATCH_ENABLED)";
-    case "missing_api_key":
-      return "Nenhuma chave de IA configurada no servidor";
-    case "outside_business_hours":
-      return "Fora do horário comercial — a análise automática volta no próximo dia útil";
-    case "cadence_wait":
-      return "Aguardando o próximo ciclo automático";
-    case "daily_request_cap":
-      return "Limite diário de chamadas de IA atingido — volta amanhã";
-    case "daily_token_cap":
-      return "Limite diário de tokens de IA atingido — volta amanhã";
-    case "no_conversations":
-      return "Nenhuma conversa nova desde a última análise";
-    default:
-      return reason || "Pronto para rodar";
-  }
-}
-
-function formatRunResult(result: ConversationIntelligenceRunResult) {
-  if (result.status === "SUCCEEDED") {
-    const briefing = result.briefingUpdated ? " O briefing do dia foi atualizado." : "";
-    return `Pronto: a IA leu ${result.analyzedConversations ?? 0} conversas.${briefing}`;
-  }
-  if (result.status === "SKIPPED") {
-    return formatBlockedReason(result.reason) + ".";
-  }
-  return `A análise falhou: ${result.error || "erro no provedor de IA"}.`;
 }
 
 function briefingItemText(item: unknown): string {
@@ -200,6 +177,17 @@ function readBriefingSection(briefing: DailyBriefing | null, key: string): strin
   const value = briefing?.payload?.[key];
   if (!Array.isArray(value)) return [];
   return value.map(briefingItemText).filter(Boolean).slice(0, 6);
+}
+
+function originLabel(insight: ConversationInsight) {
+  if (insight.isGroup) {
+    return { kind: "GRUPO", detail: insight.agentName ? `vendedora ${insight.agentName}` : null };
+  }
+  const phone = formatPhoneFromJid(insight.remoteJid);
+  return {
+    kind: "PRIVADO",
+    detail: [phone, insight.agentName ? `vendedora ${insight.agentName}` : null].filter(Boolean).join(" · ") || null,
+  };
 }
 
 function seedFromInsight(insight: ConversationInsight): EventConversationSeed {
@@ -262,20 +250,19 @@ export function EventsPage() {
     from: toDateInput(new Date()),
     to: toDateInput(new Date()),
   });
-  const [insightFilters, setInsightFilters] = useState<InsightListFilters>(defaultInsightFilters);
-  const [runMessage, setRunMessage] = useState<string | null>(null);
-  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const [feedTab, setFeedTab] = useState<FeedTabId>("radar");
+  const [feedSearch, setFeedSearch] = useState("");
+  const [feedPage, setFeedPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [howOpen, setHowOpen] = useState(false);
+  const [progressDismissed, setProgressDismissed] = useState(false);
   const [chatState, setChatState] = useState<ChatState>(emptyChatState);
   const [legacyFilters, setLegacyFilters] = useState<EventsFilterState>({ page: 1, pageSize: 20 });
   const [legacyOpen, setLegacyOpen] = useState(false);
+  const wasActiveRef = useRef(false);
 
   const period = useMemo(() => ({ dateFrom: dateRange.from, dateTo: dateRange.to }), [dateRange]);
-  const isToday = dateRange.from === dateRange.to && dateRange.to === toDateInput(new Date());
-  const periodLabel = isToday
-    ? "Hoje no WhatsApp"
-    : dateRange.from === dateRange.to
-      ? `Dia ${formatShortDate(dateRange.from)}`
-      : `De ${formatShortDate(dateRange.from)} a ${formatShortDate(dateRange.to)}`;
+  const activeTab = FEED_TABS.find((tab) => tab.id === feedTab) ?? FEED_TABS[0]!;
 
   const overviewQuery = useQuery({
     queryKey: ["events-overview", period],
@@ -285,15 +272,64 @@ export function EventsPage() {
   });
 
   const insightsQuery = useQuery({
-    queryKey: ["events-conversations", period, insightFilters],
+    queryKey: ["events-conversations", period, feedTab, feedSearch, feedPage],
     queryFn: () => api.listConversationInsights(token!, {
       ...period,
-      attention: insightFilters.attention,
-      flag: insightFilters.flag,
-      isGroup: insightFilters.isGroup === undefined ? undefined : insightFilters.isGroup === "true",
-      search: insightFilters.search || undefined,
-    }, { page: insightFilters.page, pageSize: 20 }),
+      flag: activeTab.flag,
+      attention: feedTab === "radar" ? "high,critical" : undefined,
+      onlyOpen: feedTab === "radar" ? true : undefined,
+      search: feedSearch || undefined,
+    }, { page: feedPage, pageSize: 25 }),
     enabled: Boolean(token),
+  });
+
+  const progressQuery = useQuery({
+    queryKey: ["events-analysis-progress"],
+    queryFn: () => api.getEventsAnalysisProgress(token!),
+    enabled: Boolean(token),
+    refetchInterval: (query) => (query.state.data?.active ? 1200 : false),
+  });
+
+  const progress = progressQuery.data ?? null;
+
+  const invalidateIntelligence = () => {
+    queryClient.invalidateQueries({ queryKey: ["events-overview"] });
+    queryClient.invalidateQueries({ queryKey: ["events-conversations"] });
+  };
+
+  // Quando o run termina (ativo → inativo), recarrega os dados na hora.
+  useEffect(() => {
+    if (progress?.active) {
+      wasActiveRef.current = true;
+      setProgressDismissed(false);
+      return;
+    }
+    if (wasActiveRef.current && progress && !progress.active) {
+      wasActiveRef.current = false;
+      invalidateIntelligence();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress?.active]);
+
+  const runMutation = useMutation({
+    mutationFn: () => api.runEventsAnalysis(token!),
+    onSuccess: () => {
+      setProgressDismissed(false);
+      queryClient.invalidateQueries({ queryKey: ["events-analysis-progress"] });
+    },
+  });
+
+  const ackMutation = useMutation({
+    mutationFn: ({ id }: { id: string }) => api.ackConversationInsight(token!, id),
+    onSuccess: invalidateIntelligence,
+  });
+
+  const resolveMutation = useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string }) =>
+      api.resolveEvent(token!, id, { resolutionNote: note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["events-list"] });
+    },
   });
 
   const legacyEventsQuery = useQuery({
@@ -309,35 +345,6 @@ export function EventsPage() {
       agentId: legacyFilters.agentId,
     }, { page: legacyFilters.page ?? 1, pageSize: legacyFilters.pageSize ?? 20 }),
     enabled: Boolean(token) && legacyOpen,
-  });
-
-  const invalidateIntelligence = () => {
-    queryClient.invalidateQueries({ queryKey: ["events-overview"] });
-    queryClient.invalidateQueries({ queryKey: ["events-conversations"] });
-  };
-
-  const runMutation = useMutation({
-    mutationFn: () => api.runEventsAnalysis(token!),
-    onSuccess: (result) => {
-      setRunMessage(formatRunResult(result));
-      invalidateIntelligence();
-    },
-    onError: (error) => {
-      setRunMessage(error instanceof Error ? error.message : "Não foi possível rodar a análise.");
-    },
-  });
-
-  const ackMutation = useMutation({
-    mutationFn: ({ id }: { id: string }) => api.ackConversationInsight(token!, id),
-    onSuccess: invalidateIntelligence,
-  });
-
-  const resolveMutation = useMutation({
-    mutationFn: ({ id, note }: { id: string; note: string }) =>
-      api.resolveEvent(token!, id, { resolutionNote: note }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["events-list"] });
-    },
   });
 
   const openConversation = async (seed: EventConversationSeed) => {
@@ -356,496 +363,430 @@ export function EventsPage() {
       from: toDateInput(new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000)),
       to: toDateInput(new Date()),
     });
-    setInsightFilters((current) => ({ ...current, page: 1 }));
+    setFeedPage(1);
   };
 
-  const applyStatFilter = (patch: Partial<InsightListFilters>) => {
-    setInsightFilters({ ...defaultInsightFilters, ...patch });
-    document.getElementById("itl-conversas")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const selectTab = (tab: FeedTabId) => {
+    setFeedTab(tab);
+    setFeedPage(1);
+    setSelectedId(null);
   };
 
   const overview = overviewQuery.data;
   const briefing = overview?.briefing ?? null;
   const status = overview?.status;
   const stats = overview?.stats;
-  const radar = overview?.radar ?? [];
+  const radarCount = stats?.openRadar ?? 0;
   const topics = overview?.topics ?? [];
   const insights = insightsQuery.data?.insights ?? [];
   const insightsTotal = insightsQuery.data?.total ?? 0;
+  const maxTopicCount = topics.reduce((max, topic) => Math.max(max, topic.count), 0);
   const briefingSections = BRIEFING_SECTIONS
     .map((section) => ({ ...section, items: readBriefingSection(briefing, section.key) }))
     .filter((section) => section.items.length > 0);
-  const maxTopicCount = topics.reduce((max, topic) => Math.max(max, topic.count), 0);
+
+  const selected = useMemo(() => {
+    if (!insights.length) return null;
+    return insights.find((insight) => insight.id === selectedId) ?? insights[0]!;
+  }, [insights, selectedId]);
 
   const criticalCount = stats?.byAttention.critical ?? 0;
   const highCount = stats?.byAttention.high ?? 0;
-  const alertCount = criticalCount + highCount;
-  const complaintCount = stats?.complaints ?? 0;
   const mood = !stats || stats.conversations === 0
-    ? { tone: "waiting", title: "Aguardando leituras", detail: "A IA ainda não analisou conversas neste período." }
+    ? { tone: "waiting", icon: <Bot size={19} />, title: "Aguardando leituras", detail: "A IA ainda não leu conversas neste período." }
     : criticalCount > 0
-      ? { tone: "critical", title: "Dia com pontos críticos", detail: criticalCount === 1 ? "1 conversa crítica em aberto." : `${criticalCount} conversas críticas em aberto.` }
-      : highCount > 0 || complaintCount > 0
-        ? {
-            tone: "warning",
-            title: "Dia pede atenção",
-            detail: `${alertCount === 1 ? "1 alerta" : `${alertCount} alertas`} e ${complaintCount === 1 ? "1 reclamação" : `${complaintCount} reclamações`}.`,
-          }
-        : { tone: "calm", title: "Dia tranquilo", detail: "Nenhum alerta relevante nas conversas analisadas." };
+      ? { tone: "critical", icon: <Flame size={19} />, title: "Dia com pontos críticos", detail: criticalCount === 1 ? "1 conversa crítica em aberto" : `${criticalCount} conversas críticas em aberto` }
+      : highCount > 0 || (stats.complaints ?? 0) > 0
+        ? { tone: "warning", icon: <AlertTriangle size={19} />, title: "Dia pede atenção", detail: `${highCount + criticalCount === 1 ? "1 alerta" : `${highCount + criticalCount} alertas`} · ${stats.complaints === 1 ? "1 reclamação" : `${stats.complaints} reclamações`}` }
+        : { tone: "calm", icon: <ShieldCheck size={19} />, title: "Dia tranquilo", detail: "Nenhum alerta relevante nas conversas lidas" };
 
-  const usagePercent = status && status.usage.requestLimit > 0
-    ? Math.min(100, Math.round((status.usage.requestCount / status.usage.requestLimit) * 100))
+  const showProgress = Boolean(progress) && !progressDismissed && (
+    progress!.active || (progress!.finishedAt && Date.now() - new Date(progress!.finishedAt).getTime() < 5 * 60 * 1000)
+  );
+
+  const currentStepIndex = progress
+    ? progress.phase === "done" || progress.phase === "error"
+      ? PROGRESS_STEPS.length
+      : Math.max(0, PROGRESS_STEPS.findIndex((step) => step.phases.includes(progress.phase)))
     : 0;
 
-  const runBlockedHint = status?.manualBlockedReason ? formatBlockedReason(status.manualBlockedReason) : null;
-  const hasAnyIntel = (stats?.conversations ?? 0) > 0 || Boolean(briefing?.narrative);
+  const selectedOrigin = selected ? originLabel(selected) : null;
+  const selectedSentiment = selected ? sentimentInfo(selected.sentimentScore) : null;
+  const selectedFlags = selected ? Object.entries(selected.flags).filter(([, value]) => value) : [];
 
   return (
-    <div className="itl-page">
-      {/* ── Hero: briefing + pulso do dia ── */}
-      <section className={`itl-hero ${mood.tone}`}>
-        <div className="itl-hero-top">
+    <div className="wtl-page">
+      {/* ── Faixa superior ── */}
+      <header className="wtl-band">
+        <div className="wtl-band-left">
+          <span className="wtl-band-logo"><MessageSquare size={22} /></span>
           <div>
-            <div className="itl-hero-eyebrow">
-              <Bot size={14} />
-              Inteligência de Mensagens
-              <button type="button" className="itl-how-link" onClick={() => setHowItWorksOpen((open) => !open)}>
-                como funciona?
-              </button>
-            </div>
-            <h1>{periodLabel}</h1>
-            <p className="itl-hero-status">
-              <Radio size={13} className={status?.enabled ? "itl-live" : "itl-off"} />
+            <h1>Inteligência do WhatsApp</h1>
+            <p>
               {status?.enabled
-                ? <>{(status.messagesToday ?? 0).toLocaleString("pt-BR")} mensagens capturadas hoje · {status.conversationsAnalyzedToday} conversas lidas pela IA · última análise {status.lastAnalysisAt ? formatTime(status.lastAnalysisAt) : "ainda não rodou"}</>
+                ? <>
+                    <span className="wtl-live-dot" />
+                    {(status.messagesToday ?? 0).toLocaleString("pt-BR")} mensagens hoje · {status.conversationsAnalyzedToday} conversas lidas pela IA · leitura automática às {status.dailyRunHour}h
+                    <button type="button" className="wtl-how-link" onClick={() => setHowOpen((open) => !open)}>como funciona?</button>
+                  </>
                 : "IA desligada no servidor — ative EVENTS_AI_BATCH_ENABLED e configure a chave."}
             </p>
           </div>
-
-          <div className="itl-hero-controls">
-            <div className="itl-presets">
-              <button type="button" className={isToday ? "active" : ""} onClick={() => setPresetDays(1)}>Hoje</button>
-              <button type="button" onClick={() => setPresetDays(7)}>7 dias</button>
-              <button type="button" onClick={() => setPresetDays(30)}>30 dias</button>
-            </div>
-            <div className="itl-dates">
-              <input
-                type="date"
-                value={dateRange.from}
-                onChange={(event) => {
-                  setDateRange((prev) => ({ ...prev, from: event.target.value }));
-                  setInsightFilters((current) => ({ ...current, page: 1 }));
-                }}
-              />
-              <span>—</span>
-              <input
-                type="date"
-                value={dateRange.to}
-                onChange={(event) => {
-                  setDateRange((prev) => ({ ...prev, to: event.target.value }));
-                  setInsightFilters((current) => ({ ...current, page: 1 }));
-                }}
-              />
-            </div>
-          </div>
         </div>
 
-        {howItWorksOpen && (
-          <div className="itl-how">
-            <div className="itl-how-step">
-              <span className="itl-how-icon"><MessageSquare size={16} /></span>
-              <div>
-                <strong>1. Captura</strong>
-                <p>Toda mensagem dos grupos e privados das vendedoras entra no monitor automaticamente, o dia inteiro.</p>
-              </div>
-            </div>
-            <div className="itl-how-step">
-              <span className="itl-how-icon"><Bot size={16} /></span>
-              <div>
-                <strong>2. Leitura por IA</strong>
-                <p>
-                  {status?.scheduleMode === "hourly"
-                    ? "A cada ciclo do horário comercial, a IA lê as conversas com mensagens novas de cliente — as com sinal de reclamação/risco primeiro — e resume: humor, alertas, temas e ações."
-                    : `Uma vez por dia (às ${status?.dailyRunHour ?? 16}h) a IA lê as conversas do dia — as com sinal de reclamação/risco primeiro — e resume: humor, alertas, temas e ações. Quer a leitura antes? Use "Analisar agora".`}
-                </p>
-              </div>
-            </div>
-            <div className="itl-how-step">
-              <span className="itl-how-icon"><Zap size={16} /></span>
-              <div>
-                <strong>3. Entrega</strong>
-                <p>Você recebe o briefing do dia e o radar de atenção aqui, sem precisar acompanhar o WhatsApp. Tudo é apagado após {status?.retentionDays ?? 30} dias.</p>
-              </div>
+        <div className="wtl-band-right">
+          <div className="wtl-presets">
+            <button type="button" className={dateRange.from === toDateInput(new Date()) && dateRange.to === dateRange.from ? "active" : ""} onClick={() => setPresetDays(1)}>Hoje</button>
+            <button type="button" onClick={() => setPresetDays(7)}>7 dias</button>
+            <button type="button" onClick={() => setPresetDays(30)}>30 dias</button>
+          </div>
+          {isManager && (
+            <button
+              type="button"
+              className="wtl-run-btn"
+              disabled={Boolean(progress?.active) || runMutation.isPending || !status?.canRunManually}
+              title={status?.canRunManually ? "Pede para a IA reler as conversas de hoje agora" : "Sem orçamento de IA disponível agora"}
+              onClick={() => runMutation.mutate()}
+            >
+              {progress?.active || runMutation.isPending ? <Loader2 size={17} className="spin" /> : <Zap size={17} />}
+              {progress?.active ? "Analisando..." : "Analisar agora"}
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* ── Como funciona ── */}
+      {howOpen && (
+        <div className="wtl-how">
+          <div><strong>1 · Captura</strong><p>Toda mensagem dos grupos e privados das vendedoras entra no monitor, o dia inteiro, sozinha.</p></div>
+          <div><strong>2 · Leitura</strong><p>Às {status?.dailyRunHour ?? 16}h a IA lê as conversas do dia (reclamações e riscos primeiro) e resume cada uma: humor do cliente, alerta, tema e próximo passo. O botão &ldquo;Analisar agora&rdquo; faz essa mesma leitura na hora, relendo o dia inteiro.</p></div>
+          <div><strong>3 · Entrega</strong><p>O que exige ação aparece no Radar; o resumo gerencial vira o briefing. Tudo é apagado após {status?.retentionDays ?? 30} dias.</p></div>
+        </div>
+      )}
+
+      {/* ── Esteira de progresso da IA ── */}
+      {showProgress && progress && (
+        <div className={`wtl-progress ${progress.phase}`}>
+          <div className="wtl-progress-steps">
+            {PROGRESS_STEPS.map((step, index) => {
+              const state = index < currentStepIndex ? "done" : index === currentStepIndex && progress.active ? "current" : "pending";
+              return (
+                <div key={step.label} className={`wtl-step ${state}`}>
+                  <span className="wtl-step-dot">
+                    {state === "done" ? <Check size={12} /> : state === "current" ? <Loader2 size={12} className="spin" /> : index + 1}
+                  </span>
+                  <span className="wtl-step-label">
+                    {step.label}
+                    {state === "current" && progress.phase === "analyzing" && progress.chunkCount > 0 && (
+                      <em> lote {progress.chunkIndex}/{progress.chunkCount}</em>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            <div className={`wtl-step ${progress.phase === "done" ? "done final" : progress.phase === "error" ? "error final" : "pending"}`}>
+              <span className="wtl-step-dot">{progress.phase === "done" ? <CheckCheck size={12} /> : progress.phase === "error" ? "!" : PROGRESS_STEPS.length + 1}</span>
+              <span className="wtl-step-label">Pronto</span>
             </div>
           </div>
-        )}
-
-        <div className="itl-hero-body">
-          <div className="itl-briefing">
-            {runMutation.isPending && (
-              <div className="itl-analyzing">
-                <span className="itl-spinner dark" />
-                <div>
-                  <strong>A IA está lendo as conversas de hoje...</strong>
-                  <span>Reclamações e riscos primeiro. Isso leva menos de um minuto — o painel atualiza sozinho.</span>
-                </div>
-              </div>
+          <div className="wtl-progress-msg">
+            <span>{progress.message}</span>
+            {!progress.active && (
+              <button type="button" onClick={() => setProgressDismissed(true)}>fechar</button>
             )}
-            {isManager && briefing?.narrative ? (
+          </div>
+        </div>
+      )}
+
+      {/* ── Pulso + números ── */}
+      <div className="wtl-pulseband">
+        <div className={`wtl-mood ${mood.tone}`}>
+          {mood.icon}
+          <div>
+            <strong>{mood.title}</strong>
+            <span>{mood.detail}</span>
+          </div>
+        </div>
+        <div className="wtl-counters">
+          <button type="button" onClick={() => selectTab("all")}><strong>{stats?.conversations ?? 0}</strong><span>conversas lidas</span></button>
+          <button type="button" className="danger" onClick={() => selectTab("radar")}><strong>{radarCount}</strong><span>no radar</span></button>
+          <button type="button" className="danger" onClick={() => selectTab("reclamacao")}><strong>{stats?.complaints ?? 0}</strong><span>reclamações</span></button>
+          <button type="button" className="warning" onClick={() => selectTab("sem_resposta")}><strong>{stats?.unanswered ?? 0}</strong><span>sem resposta</span></button>
+          <button type="button" className="info" onClick={() => selectTab("oportunidade")}><strong>{stats?.opportunities ?? 0}</strong><span>oportunidades</span></button>
+          <button type="button" className="positive" onClick={() => selectTab("elogio")}><strong>{stats?.praises ?? 0}</strong><span>elogios</span></button>
+        </div>
+      </div>
+
+      {/* ── Briefing: mensagem do assistente ── */}
+      {isManager && (
+        <section className="wtl-assistant">
+          <span className="wtl-assistant-avatar"><Bot size={19} /></span>
+          <div className="wtl-assistant-bubble">
+            <div className="wtl-assistant-head">
+              <strong>Assistente XP · Briefing do dia</strong>
+              <small>{briefing ? formatDateTime(briefing.generatedAt) : ""}</small>
+            </div>
+            {briefing?.narrative ? (
               <>
-                <div className="itl-briefing-head">
-                  <Sparkles size={15} />
-                  <span>Briefing do dia · gerado {formatDateTime(briefing.generatedAt)}</span>
-                </div>
                 {briefing.narrative.split(/\n{1,2}/).filter(Boolean).map((paragraph, index) => (
                   <p key={index}>{paragraph}</p>
                 ))}
                 {briefingSections.length > 0 && (
-                  <div className="itl-briefing-sections">
+                  <div className="wtl-assistant-sections">
                     {briefingSections.map((section) => (
-                      <details key={section.key} className={`itl-briefing-sec ${section.key}`} open={section.key === "alertas"}>
+                      <details key={section.key} className={section.key}>
                         <summary>{section.title} <em>{section.items.length}</em></summary>
-                        <ul>
-                          {section.items.map((item) => <li key={item}>{item}</li>)}
-                        </ul>
+                        <ul>{section.items.map((item) => <li key={item}>{item}</li>)}</ul>
                       </details>
                     ))}
                   </div>
                 )}
               </>
             ) : (
-              <div className="itl-briefing-empty">
-                <Sparkles size={18} />
-                <div>
-                  <strong>{isManager ? "O briefing do dia aparece aqui" : "Suas conversas analisadas aparecem abaixo"}</strong>
-                  <p>
-                    {status?.enabled
-                      ? (status.messagesToday ?? 0) > 0
-                        ? `Já capturamos ${status.messagesToday.toLocaleString("pt-BR")} mensagens hoje. Assim que a IA rodar (automático, ou pelo botão ao lado), o resumo gerencial do dia aparece neste espaço.`
-                        : "Nenhuma mensagem capturada hoje ainda. Assim que os grupos e privados movimentarem, a IA começa a leitura."
-                      : "A IA está desligada no servidor, então nada será analisado por enquanto."}
-                  </p>
-                </div>
-              </div>
+              <p className="wtl-assistant-empty">
+                {status?.enabled
+                  ? (status.messagesToday ?? 0) > 0
+                    ? `Já capturei ${status.messagesToday.toLocaleString("pt-BR")} mensagens hoje. Às ${status.dailyRunHour}h eu leio tudo e escrevo aqui o resumo do dia — ou clique em "Analisar agora" para eu ler já.`
+                    : "Ainda não chegou mensagem hoje. Assim que os grupos movimentarem, eu começo a leitura."
+                  : "Estou desligado no servidor — sem chave de IA configurada, não consigo ler as conversas."}
+              </p>
             )}
           </div>
+        </section>
+      )}
 
-          <aside className="itl-pulse">
-            <div className={`itl-mood ${mood.tone}`}>
-              {mood.tone === "critical" ? <Flame size={22} /> : mood.tone === "warning" ? <AlertTriangle size={22} /> : mood.tone === "calm" ? <ShieldCheck size={22} /> : <Bot size={22} />}
-              <div>
-                <strong>{mood.title}</strong>
-                <span>{mood.detail}</span>
-              </div>
-            </div>
-
-            {isManager && (
-              <div className="itl-run">
-                <button
-                  type="button"
-                  disabled={!status?.canRunManually || runMutation.isPending}
-                  onClick={() => runMutation.mutate()}
-                >
-                  {runMutation.isPending ? <span className="itl-spinner" /> : <Zap size={16} />}
-                  {runMutation.isPending ? "Lendo conversas..." : "Analisar agora"}
-                </button>
-                <p className="itl-run-hint">
-                  {runMutation.isPending
-                    ? "A IA está lendo as conversas de hoje que ainda não foram analisadas."
-                    : runMessage
-                      ? runMessage
-                      : runBlockedHint && !status?.canRunManually
-                        ? runBlockedHint
-                        : status?.scheduleMode === "hourly"
-                          ? "Lê agora as conversas novas de hoje (críticas primeiro) e atualiza briefing e radar. Leva menos de um minuto."
-                          : `A leitura automática roda 1x por dia às ${status?.dailyRunHour ?? 16}h. Este botão roda a mesma leitura agora, na hora que você quiser.`}
-                </p>
-                {status && status.usage.requestLimit > 0 && (
-                  <div className="itl-usage" title={`${status.usage.requestCount} de ${status.usage.requestLimit} chamadas de IA usadas hoje`}>
-                    <div className="itl-usage-bar"><span style={{ width: `${usagePercent}%` }} /></div>
-                    <small>{status.usage.requestCount}/{status.usage.requestLimit} chamadas de IA hoje</small>
-                  </div>
-                )}
-                {status?.lastError && (
-                  <p className="itl-run-error" title={status.lastError}>
-                    <AlertTriangle size={12} /> Último erro da IA: {status.lastError.slice(0, 90)}...
-                  </p>
-                )}
-              </div>
-            )}
-          </aside>
-        </div>
-
-        <div className="itl-hero-stats">
-          <button type="button" onClick={() => applyStatFilter({})}>
-            <strong>{stats?.conversations ?? 0}</strong> conversas lidas
-          </button>
-          <button type="button" className="danger" onClick={() => applyStatFilter({ attention: "high,critical" })}>
-            <strong>{(stats?.byAttention.high ?? 0) + (stats?.byAttention.critical ?? 0)}</strong> precisam de atenção
-          </button>
-          <button type="button" className="danger" onClick={() => applyStatFilter({ flag: "reclamacao" })}>
-            <strong>{stats?.complaints ?? 0}</strong> reclamações
-          </button>
-          <button type="button" className="warning" onClick={() => applyStatFilter({ flag: "risco_perda" })}>
-            <strong>{stats?.churnRisks ?? 0}</strong> risco de perda
-          </button>
-          <button type="button" className="warning" onClick={() => applyStatFilter({ flag: "sem_resposta" })}>
-            <strong>{stats?.unanswered ?? 0}</strong> sem resposta
-          </button>
-          <button type="button" className="info" onClick={() => applyStatFilter({ flag: "oportunidade" })}>
-            <strong>{stats?.opportunities ?? 0}</strong> oportunidades
-          </button>
-          <button type="button" className="positive" onClick={() => applyStatFilter({ flag: "elogio" })}>
-            <strong>{stats?.praises ?? 0}</strong> elogios
-          </button>
-        </div>
-      </section>
-
-      {/* ── Radar de atenção ── */}
-      <section className="itl-card" aria-label="Radar de atenção">
-        <header className="itl-card-head">
-          <span className="itl-card-icon danger"><Flame size={17} /></span>
-          <div>
-            <h2>Radar de atenção</h2>
-            <p>Conversas que a IA marcou como alta ou crítica e ninguém marcou como vistas</p>
-          </div>
-          {radar.length > 0 && <span className="itl-count-pill">{radar.length}</span>}
-        </header>
-
-        {radar.length === 0 ? (
-          <div className="itl-empty calm">
-            <ShieldCheck size={20} />
-            <p>{hasAnyIntel ? "Nenhuma conversa crítica em aberto. Tudo sob controle." : "Quando a IA encontrar uma conversa que exige ação do gestor, ela aparece aqui em destaque."}</p>
-          </div>
-        ) : (
-          <div className="itl-radar-grid">
-            {radar.map((insight) => {
-              const quote = insight.highlights[0];
-              const sentiment = sentimentInfo(insight.sentimentScore);
-              return (
-                <article key={insight.id} className={`itl-alert ${insight.attentionLevel}`}>
-                  <header>
-                    <span className={`itl-attention ${insight.attentionLevel}`}>
-                      {insight.attentionLevel === "critical" ? <Flame size={12} /> : <AlertTriangle size={12} />}
-                      {ATTENTION_LABELS[insight.attentionLevel]}
-                    </span>
-                    {insight.flags.vip && <span className="itl-chip vip">VIP</span>}
-                    <span className="itl-alert-time">{formatTime(insight.lastMessageAt)}</span>
-                  </header>
-                  <div className="itl-alert-title">
-                    <span className="itl-avatar">{initialsOf(insight.chatName || "?")}</span>
-                    <div>
-                      <strong>{insight.chatName || "Conversa sem nome"}</strong>
-                      <small>
-                        {insight.isGroup
-                          ? `Grupo${insight.agentName ? ` · vendedora ${insight.agentName}` : ""}`
-                          : `Privado${formatPhoneFromJid(insight.remoteJid) ? ` · ${formatPhoneFromJid(insight.remoteJid)}` : ""}${insight.agentName ? ` · vendedora ${insight.agentName}` : ""}`}
-                      </small>
-                    </div>
-                  </div>
-                  <p className="itl-alert-summary">{insight.summary}</p>
-                  {insight.attentionReason && (
-                    <p className="itl-alert-why">{insight.attentionReason}</p>
-                  )}
-                  {quote && (
-                    <div className="itl-quote">
-                      <p>{quote.texto}</p>
-                      <span>— {quote.autor}</span>
-                    </div>
-                  )}
-                  {insight.actionItems.length > 0 && (
-                    <div className="itl-next">
-                      <strong>Próximo passo</strong>
-                      <span>{insight.actionItems[0]}</span>
-                    </div>
-                  )}
-                  <footer>
-                    <span className={`itl-sentiment ${sentiment.tone}`}>{sentiment.icon} {sentiment.label}</span>
-                    <div className="itl-alert-buttons">
-                      <button type="button" className="itl-btn-primary" onClick={() => openConversation(seedFromInsight(insight))}>
-                        <Smartphone size={14} /> Abrir conversa
-                      </button>
-                      <button
-                        type="button"
-                        className="itl-btn-ghost"
-                        disabled={ackMutation.isPending}
-                        onClick={() => ackMutation.mutate({ id: insight.id })}
-                        title="Tira do radar (volta se a conversa piorar)"
-                      >
-                        <CheckCircle2 size={14} /> Visto
-                      </button>
-                    </div>
-                  </footer>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── Temas ── */}
-      <section className="itl-card" aria-label="Temas das conversas">
-        <header className="itl-card-head">
-          <span className="itl-card-icon info"><Sparkles size={17} /></span>
-          <div>
-            <h2>Do que os clientes estão falando</h2>
-            <p>Um tema principal por conversa, identificado pela IA — clique para filtrar</p>
-          </div>
-        </header>
-        {topics.length === 0 ? (
-          <div className="itl-empty"><p>Os temas aparecem depois das primeiras análises.</p></div>
-        ) : (
-          <div className="itl-topics">
-            {topics.slice(0, 12).map((topic) => {
-              const width = maxTopicCount > 0 ? Math.max(8, Math.round((topic.count / maxTopicCount) * 100)) : 0;
-              const negWidth = topic.count > 0 ? Math.round((topic.negativeCount / topic.count) * width) : 0;
-              return (
-                <button key={topic.topic} type="button" className="itl-topic-row" onClick={() => applyStatFilter({ search: topic.topic })}>
-                  <span className="itl-topic-name">{topic.topic}</span>
-                  <span className="itl-topic-bar">
-                    <span className="itl-topic-fill" style={{ width: `${width}%` }} />
-                    {negWidth > 0 && <span className="itl-topic-neg" style={{ width: `${negWidth}%` }} />}
-                  </span>
-                  <span className="itl-topic-count" title={topic.negativeCount > 0 ? `${topic.negativeCount} com clima negativo` : undefined}>
-                    {topic.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ── Conversas analisadas ── */}
-      <section className="itl-card" id="itl-conversas" aria-label="Conversas analisadas">
-        <header className="itl-card-head">
-          <span className="itl-card-icon"><MessageSquare size={17} /></span>
-          <div>
-            <h2>Todas as conversas analisadas</h2>
-            <p>{insightsTotal} conversa{insightsTotal === 1 ? "" : "s"} no período — cada uma com a leitura completa da IA</p>
-          </div>
-        </header>
-
-        <div className="itl-filters">
-          <div className="itl-segments">
-            {ATTENTION_SEGMENTS.map((segment) => (
+      {/* ── Inbox: feed + detalhe ── */}
+      <div className="wtl-inbox">
+        <aside className="wtl-feed">
+          <div className="wtl-tabs">
+            {FEED_TABS.map((tab) => (
               <button
-                key={segment.id}
+                key={tab.id}
                 type="button"
-                className={(insightFilters.attention ?? "") === (segment.value ?? "") ? "active" : ""}
-                onClick={() => setInsightFilters((current) => ({ ...current, attention: segment.value, page: 1 }))}
+                className={feedTab === tab.id ? "active" : ""}
+                onClick={() => selectTab(tab.id)}
               >
-                {segment.label}
+                {tab.label}
+                {tab.id === "radar" && radarCount > 0 && <em>{radarCount}</em>}
               </button>
             ))}
           </div>
-          <input
-            type="text"
-            className="itl-search"
-            placeholder="Buscar nome, resumo ou tema..."
-            value={insightFilters.search}
-            onChange={(event) => setInsightFilters((current) => ({ ...current, search: event.target.value, page: 1 }))}
-          />
-          {insightFilters.flag && (
-            <button
-              type="button"
-              className="itl-active-filter"
-              title="Remover filtro"
-              onClick={() => setInsightFilters((current) => ({ ...current, flag: undefined, page: 1 }))}
-            >
-              {FLAG_LABELS[insightFilters.flag] ?? insightFilters.flag} ✕
-            </button>
-          )}
-        </div>
-
-        {insightsQuery.isLoading ? (
-          <div className="itl-empty"><p>Carregando conversas...</p></div>
-        ) : insights.length === 0 ? (
-          <div className="itl-empty">
-            <MessageSquare size={20} />
-            <p>
-              {hasAnyIntel
-                ? "Nenhuma conversa neste filtro."
-                : status?.enabled
-                  ? "As conversas aparecem aqui conforme a IA analisa o dia. Use \"Analisar agora\" para não esperar o ciclo."
-                  : "A IA está desligada — nenhuma conversa foi analisada."}
-            </p>
+          <div className="wtl-feed-search">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Buscar conversa, resumo ou tema..."
+              value={feedSearch}
+              onChange={(event) => {
+                setFeedSearch(event.target.value);
+                setFeedPage(1);
+              }}
+            />
           </div>
+
+          <div className="wtl-feed-list">
+            {insightsQuery.isLoading ? (
+              <div className="wtl-feed-empty"><Loader2 size={18} className="spin" /> Carregando...</div>
+            ) : insights.length === 0 ? (
+              <div className="wtl-feed-empty">
+                {feedTab === "radar"
+                  ? <><ShieldCheck size={18} /> Nada no radar. Tudo sob controle.</>
+                  : <><MessageSquare size={18} /> Nenhuma conversa aqui {status?.enabled ? "— a IA preenche conforme lê o dia." : "— a IA está desligada."}</>}
+              </div>
+            ) : (
+              insights.map((insight) => {
+                const origin = originLabel(insight);
+                const sentiment = sentimentInfo(insight.sentimentScore);
+                const isSelected = selected?.id === insight.id;
+                return (
+                  <button
+                    key={insight.id}
+                    type="button"
+                    className={`wtl-feed-item ${isSelected ? "selected" : ""} sev-${insight.attentionLevel}`}
+                    onClick={() => setSelectedId(insight.id)}
+                  >
+                    <span className="wtl-avatar" style={{ background: avatarColor(insight.chatName || "?") }}>
+                      {initialsOf(insight.chatName || "?")}
+                    </span>
+                    <span className="wtl-feed-main">
+                      <span className="wtl-feed-top">
+                        <strong>{insight.chatName || "Conversa sem nome"}</strong>
+                        <time>{formatTime(insight.lastMessageAt)}</time>
+                      </span>
+                      <span className="wtl-feed-origin">
+                        <em className={`wtl-kind ${insight.isGroup ? "group" : "private"}`}>{origin.kind}</em>
+                        {origin.detail && <span>{origin.detail}</span>}
+                      </span>
+                      <span className="wtl-feed-summary">{insight.summary}</span>
+                      <span className="wtl-feed-badges">
+                        {(insight.attentionLevel === "high" || insight.attentionLevel === "critical") && (
+                          <em className={`wtl-att ${insight.attentionLevel}`}>{ATTENTION_LABELS[insight.attentionLevel]}</em>
+                        )}
+                        {insight.topics[0] && <em className="wtl-topic-chip">{insight.topics[0]}</em>}
+                        <em className={`wtl-sent ${sentiment.tone}`}>{sentiment.icon}</em>
+                        {insight.acknowledgedAt && <em className="wtl-seen"><CheckCheck size={12} /></em>}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {insightsTotal > 25 && (
+            <div className="wtl-feed-pager">
+              <button disabled={feedPage === 1} onClick={() => setFeedPage((page) => page - 1)}>‹</button>
+              <span>{feedPage} / {Math.max(1, Math.ceil(insightsTotal / 25))}</span>
+              <button disabled={feedPage >= Math.ceil(insightsTotal / 25)} onClick={() => setFeedPage((page) => page + 1)}>›</button>
+            </div>
+          )}
+        </aside>
+
+        <section className="wtl-detail">
+          {!selected ? (
+            <div className="wtl-detail-empty">
+              <Bot size={34} />
+              <p>Selecione uma conversa na lista para ver a leitura completa da IA.</p>
+            </div>
+          ) : (
+            <>
+              <header className="wtl-detail-head">
+                <span className="wtl-avatar big" style={{ background: avatarColor(selected.chatName || "?") }}>
+                  {initialsOf(selected.chatName || "?")}
+                </span>
+                <div className="wtl-detail-id">
+                  <h2>{selected.chatName || "Conversa sem nome"}</h2>
+                  <div className="wtl-detail-meta">
+                    <em className={`wtl-kind ${selected.isGroup ? "group" : "private"}`}>{selectedOrigin?.kind}</em>
+                    {!selected.isGroup && formatPhoneFromJid(selected.remoteJid) && (
+                      <span><Phone size={12} /> {formatPhoneFromJid(selected.remoteJid)}</span>
+                    )}
+                    {selected.agentName && <span><Users size={12} /> vendedora {selected.agentName}</span>}
+                    <span>{selected.customerMessageCount} msgs do cliente · {formatDateTime(selected.lastMessageAt)}</span>
+                  </div>
+                </div>
+                {selectedSentiment && (
+                  <span className={`wtl-detail-sent ${selectedSentiment.tone}`}>
+                    {selectedSentiment.icon} {selectedSentiment.label}
+                  </span>
+                )}
+              </header>
+
+              {selected.attentionLevel !== "none" && selected.attentionLevel !== "low" && (
+                <div className={`wtl-detail-alert ${selected.attentionLevel}`}>
+                  {selected.attentionLevel === "critical" ? <Flame size={15} /> : <AlertTriangle size={15} />}
+                  <div>
+                    <strong>Atenção {ATTENTION_LABELS[selected.attentionLevel].toLowerCase()}</strong>
+                    {selected.attentionReason && <span>{selected.attentionReason}</span>}
+                  </div>
+                </div>
+              )}
+
+              <div className="wtl-detail-block">
+                <h3><Sparkles size={13} /> O que aconteceu</h3>
+                <p>{selected.summary}</p>
+              </div>
+
+              {selected.highlights.length > 0 && (
+                <div className="wtl-detail-block">
+                  <h3><MessageSquare size={13} /> Falas marcantes</h3>
+                  <div className="wtl-quotes">
+                    {selected.highlights.map((quote, index) => (
+                      <div key={index} className="wtl-quote-bubble">
+                        <p>{quote.texto}</p>
+                        <span>{quote.autor}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selected.actionItems.length > 0 && (
+                <div className="wtl-detail-block">
+                  <h3><Zap size={13} /> Próximos passos sugeridos</h3>
+                  <ul className="wtl-actions">
+                    {selected.actionItems.map((action) => <li key={action}>{action}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {(selected.topics.length > 0 || selectedFlags.length > 0) && (
+                <div className="wtl-detail-tags">
+                  {selected.topics.map((topic) => <em key={topic} className="wtl-topic-chip">{topic}</em>)}
+                  {selectedFlags.map(([key]) => (
+                    <em key={key} className={`wtl-flag ${key}`}>{FLAG_LABELS[key] ?? key}</em>
+                  ))}
+                </div>
+              )}
+
+              <footer className="wtl-detail-actions">
+                <button type="button" className="wtl-btn-whats" onClick={() => openConversation(seedFromInsight(selected))}>
+                  <Smartphone size={15} /> Abrir a conversa
+                </button>
+                {!selected.acknowledgedAt && (selected.attentionLevel === "high" || selected.attentionLevel === "critical") && (
+                  <button
+                    type="button"
+                    className="wtl-btn-plain"
+                    disabled={ackMutation.isPending}
+                    title="Tira do radar (volta se a conversa piorar)"
+                    onClick={() => ackMutation.mutate({ id: selected.id })}
+                  >
+                    <CheckCheck size={15} /> Marcar como visto
+                  </button>
+                )}
+              </footer>
+            </>
+          )}
+        </section>
+      </div>
+
+      {/* ── Temas ── */}
+      <section className="wtl-topics">
+        <header>
+          <Sparkles size={16} />
+          <div>
+            <h2>Do que os clientes falaram</h2>
+            <p>Um tema por conversa · barra vermelha = clima negativo</p>
+          </div>
+        </header>
+        {topics.length === 0 ? (
+          <p className="wtl-topics-empty">Os temas aparecem depois das primeiras leituras.</p>
         ) : (
-          <div className="itl-conv-list">
-            {insights.map((insight) => {
-              const sentiment = sentimentInfo(insight.sentimentScore);
-              const activeFlags = Object.entries(insight.flags).filter(([, value]) => value);
+          <div className="wtl-topic-rows">
+            {topics.slice(0, 10).map((topic) => {
+              const width = maxTopicCount > 0 ? Math.max(8, Math.round((topic.count / maxTopicCount) * 100)) : 0;
+              const negWidth = topic.count > 0 ? Math.round((topic.negativeCount / topic.count) * width) : 0;
               return (
-                <article key={insight.id} className={`itl-conv-row rail-${insight.attentionLevel}`}>
-                  <div className={`itl-conv-mood ${sentiment.tone}`} title={`Humor do cliente: ${sentiment.label}`}>
-                    {sentiment.icon}
-                  </div>
-                  <div className="itl-conv-main">
-                    <div className="itl-conv-title">
-                      <strong>{insight.chatName || "Conversa sem nome"}</strong>
-                      <span className="itl-chip subtle">{insight.isGroup ? "Grupo" : "Privado"}</span>
-                      {insight.attentionLevel !== "none" && insight.attentionLevel !== "low" && (
-                        <span className={`itl-attention ${insight.attentionLevel}`}>{ATTENTION_LABELS[insight.attentionLevel]}</span>
-                      )}
-                      {insight.acknowledgedAt && <span className="itl-chip seen">visto</span>}
-                    </div>
-                    <p className="itl-conv-summary">{insight.summary}</p>
-                    <div className="itl-conv-chips">
-                      {insight.topics.slice(0, 4).map((topic) => (
-                        <span key={topic} className="itl-chip subtle">{topic}</span>
-                      ))}
-                      {activeFlags.map(([key]) => (
-                        <span key={key} className={`itl-chip ${key === "vip" ? "vip" : key === "elogio" ? "good" : key === "oportunidade" ? "info" : "flag"}`}>
-                          {FLAG_LABELS[key] ?? key}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="itl-conv-side">
-                    <small>
-                      {insight.isGroup
-                        ? (insight.agentName || "grupo")
-                        : (formatPhoneFromJid(insight.remoteJid) || insight.agentName || "privado")}
-                    </small>
-                    <small>{formatDateTime(insight.lastMessageAt)}</small>
-                    <button type="button" className="itl-btn-ghost" onClick={() => openConversation(seedFromInsight(insight))}>
-                      <Smartphone size={14} /> Abrir
-                    </button>
-                  </div>
-                </article>
+                <button
+                  key={topic.topic}
+                  type="button"
+                  onClick={() => {
+                    setFeedTab("all");
+                    setFeedSearch(topic.topic);
+                    setFeedPage(1);
+                  }}
+                >
+                  <span className="wtl-topic-name">{topic.topic}</span>
+                  <span className="wtl-topic-bar">
+                    <span className="fill" style={{ width: `${width}%` }} />
+                    {negWidth > 0 && <span className="neg" style={{ width: `${negWidth}%` }} />}
+                  </span>
+                  <span className="wtl-topic-count">{topic.count}</span>
+                </button>
               );
             })}
           </div>
         )}
-
-        {insightsTotal > 20 && (
-          <div className="itl-pagination">
-            <button
-              disabled={insightFilters.page === 1}
-              onClick={() => setInsightFilters((current) => ({ ...current, page: current.page - 1 }))}
-            >
-              Anterior
-            </button>
-            <span>Página {insightFilters.page} de {Math.max(1, Math.ceil(insightsTotal / 20))}</span>
-            <button
-              disabled={insightFilters.page >= Math.ceil(insightsTotal / 20)}
-              onClick={() => setInsightFilters((current) => ({ ...current, page: current.page + 1 }))}
-            >
-              Próxima
-            </button>
-          </div>
-        )}
       </section>
 
-      {/* ── Registro bruto (regras, mensagem a mensagem) ── */}
-      <section className="itl-legacy">
-        <button type="button" className="itl-legacy-toggle" onClick={() => setLegacyOpen((open) => !open)}>
+      {/* ── Registro técnico (regras) ── */}
+      <section className="wtl-legacy">
+        <button type="button" className="wtl-legacy-toggle" onClick={() => setLegacyOpen((open) => !open)}>
           <ChevronDown size={15} className={legacyOpen ? "open" : ""} />
           Registro técnico por mensagem (detecção por regras)
         </button>
         {legacyOpen && (
-          <div className="itl-legacy-body">
+          <div className="wtl-legacy-body">
             <EventsFilters filters={legacyFilters} shortcuts={[]} onChange={setLegacyFilters} />
             <EventsListView
               events={legacyEventsQuery.data?.events || []}
@@ -855,23 +796,6 @@ export function EventsPage() {
               }}
               onViewConversation={(event) => openConversation(seedFromEvent(event))}
             />
-            {legacyEventsQuery.data && legacyEventsQuery.data.total > (legacyFilters.pageSize ?? 20) && (
-              <div className="itl-pagination">
-                <button
-                  disabled={(legacyFilters.page ?? 1) === 1}
-                  onClick={() => setLegacyFilters((current) => ({ ...current, page: (current.page ?? 1) - 1 }))}
-                >
-                  Anterior
-                </button>
-                <span>Página {legacyFilters.page ?? 1}</span>
-                <button
-                  disabled={(legacyEventsQuery.data.events.length) < (legacyFilters.pageSize ?? 20)}
-                  onClick={() => setLegacyFilters((current) => ({ ...current, page: (current.page ?? 1) + 1 }))}
-                >
-                  Próxima
-                </button>
-              </div>
-            )}
           </div>
         )}
       </section>
