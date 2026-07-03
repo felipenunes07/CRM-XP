@@ -328,8 +328,12 @@ export function EventsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [progress?.active]);
 
+  const todayStr = toDateInput(new Date());
+  const isSinglePastDay = dateRange.from === dateRange.to && dateRange.from < todayStr;
+
   const runMutation = useMutation({
-    mutationFn: () => api.runEventsAnalysis(token!),
+    // Dia passado selecionado → analise retroativa daquele dia inteiro.
+    mutationFn: () => api.runEventsAnalysis(token!, isSinglePastDay ? dateRange.from : undefined),
     onSuccess: () => {
       setProgressDismissed(false);
       queryClient.invalidateQueries({ queryKey: ["events-analysis-progress"] });
@@ -486,6 +490,29 @@ export function EventsPage() {
             <button type="button" onClick={() => setPresetDays(7)}>7 dias</button>
             <button type="button" onClick={() => setPresetDays(30)}>30 dias</button>
           </div>
+          <div className="wtl-dates" title="Escolha um dia ou período específico">
+            <input
+              type="date"
+              value={dateRange.from}
+              max={toDateInput(new Date())}
+              onChange={(event) => {
+                const from = event.target.value;
+                setDateRange((prev) => ({ from, to: prev.to < from ? from : prev.to }));
+                setFeedPage(1);
+              }}
+            />
+            <span>—</span>
+            <input
+              type="date"
+              value={dateRange.to}
+              max={toDateInput(new Date())}
+              onChange={(event) => {
+                const to = event.target.value;
+                setDateRange((prev) => ({ from: prev.from > to ? to : prev.from, to }));
+                setFeedPage(1);
+              }}
+            />
+          </div>
           {isManager && (
             <div className="wtl-run-wrap">
               <button
@@ -493,12 +520,18 @@ export function EventsPage() {
                 className="wtl-run-btn"
                 disabled={Boolean(progress?.active) || runMutation.isPending || !status?.canRunManually}
                 title={status?.canRunManually
-                  ? "Pede para a IA reler as conversas de hoje agora"
+                  ? isSinglePastDay
+                    ? `A IA lê todas as conversas de ${dateRange.from.split("-").reverse().join("/")} (análise retroativa)`
+                    : "Pede para a IA reler as conversas de hoje agora"
                   : blockedReasonLabel(status?.manualBlockedReason)}
                 onClick={() => runMutation.mutate()}
               >
                 {progress?.active || runMutation.isPending ? <Loader2 size={17} className="spin" /> : <Zap size={17} />}
-                {progress?.active ? "Analisando..." : "Analisar agora"}
+                {progress?.active
+                  ? "Analisando..."
+                  : isSinglePastDay
+                    ? `Analisar ${dateRange.from.split("-").reverse().slice(0, 2).join("/")}`
+                    : "Analisar agora"}
               </button>
               {overviewFailed ? (
                 <small className="wtl-run-blocked" title={overviewErrorMessage}>

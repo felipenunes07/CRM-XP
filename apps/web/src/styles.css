@@ -21277,6 +21277,26 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wtl-presets button:hover { background: rgba(255, 255, 255, 0.14); color: #ffffff; }
 .wtl-presets button.active { background: #ffffff; color: #075e54; }
 
+.wtl-dates {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.wtl-dates input {
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  outline: none;
+  color-scheme: dark;
+}
+
 .wtl-run-btn {
   display: inline-flex;
   align-items: center;

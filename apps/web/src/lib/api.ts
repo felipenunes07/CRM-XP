@@ -1424,10 +1424,10 @@ export const api = {
     search.set("pageSize", String(pagination.pageSize));
     return request<ConversationInsightsListResponse>(`/api/events/conversations?${search.toString()}`, {}, token);
   },
-  runEventsAnalysis(token: string) {
+  runEventsAnalysis(token: string, date?: string) {
     return request<EventsIntelligenceProgress>(
       "/api/events/intelligence/run",
-      { method: "POST" },
+      { method: "POST", body: JSON.stringify(date ? { date } : {}) },
       token,
     );
   },

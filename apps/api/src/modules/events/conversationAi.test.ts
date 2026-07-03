@@ -4,6 +4,7 @@ import {
   buildTranscriptText,
   chunkArray,
   getDayWindow,
+  getWindowForDate,
   maskSensitiveText,
   parseConversationAnalyses,
   sentimentLabelFromScore,
@@ -211,5 +212,15 @@ describe("getDayWindow", () => {
   it("uses the local date during the afternoon", () => {
     const window = getDayWindow(new Date("2026-07-02T18:00:00.000Z"), TZ);
     expect(window.windowDate).toBe("2026-07-02");
+  });
+});
+
+describe("getWindowForDate", () => {
+  it("builds the full-day window for a specific past date (retro analysis)", () => {
+    const window = getWindowForDate("2026-07-01", TZ);
+    expect(window.windowDate).toBe("2026-07-01");
+    // Meia-noite de 01/07 em SP (UTC-3) = 03:00Z
+    expect(window.windowStart.toISOString()).toBe("2026-07-01T03:00:00.000Z");
+    expect(window.windowEnd.toISOString()).toBe("2026-07-02T03:00:00.000Z");
   });
 });

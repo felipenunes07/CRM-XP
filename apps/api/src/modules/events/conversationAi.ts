@@ -76,10 +76,14 @@ export function getIntelligenceProgress(): EventsIntelligenceProgress | null {
  * Dispara o run manual em background (com reanalise do dia) e devolve o
  * snapshot inicial do progresso para o front comecar o poll.
  */
-export function startManualIntelligenceRun(): EventsIntelligenceProgress {
+export function startManualIntelligenceRun(targetDate?: string): EventsIntelligenceProgress {
   if (currentProgress?.active) {
     return currentProgress;
   }
+
+  const dayLabel = targetDate
+    ? ` do dia ${targetDate.split("-").reverse().join("/")}`
+    : "";
 
   currentProgress = {
     runId: randomUUID(),
@@ -87,7 +91,7 @@ export function startManualIntelligenceRun(): EventsIntelligenceProgress {
     startedAt: new Date().toISOString(),
     finishedAt: null,
     phase: "queued",
-    message: "Preparando a análise...",
+    message: `Preparando a análise${dayLabel}...`,
     totalConversations: 0,
     analyzedConversations: 0,
     chunkIndex: 0,
@@ -95,7 +99,7 @@ export function startManualIntelligenceRun(): EventsIntelligenceProgress {
     result: null,
   };
 
-  runConversationIntelligence(new Date(), { manual: true, force: true, onProgress: updateProgress })
+  runConversationIntelligence(new Date(), { manual: true, force: true, targetDate, onProgress: updateProgress })
     .then((result) => {
       updateProgress({
         active: false,
@@ -162,6 +166,14 @@ export function getDayWindow(now: Date, timezone: string) {
   const windowEnd = new Date(windowStart.getTime() + 24 * 60 * 60 * 1000);
   const windowDate = `${local.year}-${String(local.month).padStart(2, "0")}-${String(local.day).padStart(2, "0")}`;
   return { windowStart, windowEnd, windowDate };
+}
+
+/** Janela de um dia especifico (YYYY-MM-DD) no fuso local — analise retroativa. */
+export function getWindowForDate(dateStr: string, timezone: string) {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const windowStart = zonedDateToUtc(timezone, { year: year!, month: month!, day: day!, hour: 0 });
+  const windowEnd = new Date(windowStart.getTime() + 24 * 60 * 60 * 1000);
+  return { windowStart, windowEnd, windowDate: dateStr };
 }
 
 // ── Pure helpers (unit-tested) ──────────────────────────────
@@ -746,7 +758,8 @@ async function generateDailyBriefing(
 
   const prompt = buildBriefingPrompt({ windowDate, stats, insights: compactInsights });
   const inputTokens = estimatePromptTokens(prompt);
-  const { windowStart, windowEnd } = getDayWindow(now, config.timezone);
+  // Janela do dia do briefing (pode ser retroativo), nao do relogio de agora.
+  const { windowStart, windowEnd } = getWindowForDate(windowDate, config.timezone);
 
   try {
     const result = await fetchAiJson(prompt, config, 2500);
@@ -819,6 +832,8 @@ export async function runConversationIntelligence(
   options: {
     manual?: boolean;
     force?: boolean;
+    /** Analise retroativa: dia especifico (YYYY-MM-DD) — so em run manual. */
+    targetDate?: string;
     onProgress?: (patch: Partial<EventsIntelligenceProgress>) => void;
   } = {},
 ): Promise<ConversationIntelligenceRunResult> {
@@ -880,7 +895,9 @@ export async function runConversationIntelligence(
     }
   }
 
-  const { windowStart, windowEnd, windowDate } = getDayWindow(now, config.timezone);
+  const { windowStart, windowEnd, windowDate } = options.manual === true && options.targetDate
+    ? getWindowForDate(options.targetDate, config.timezone)
+    : getDayWindow(now, config.timezone);
   onProgress({ phase: "selecting", message: "Coletando as conversas do dia no monitor..." });
   const candidates = await selectConversationCandidates(
     windowStart,

@@ -2894,9 +2894,13 @@ export function createApp() {
 
   // Dispara o run manual em background e devolve o snapshot inicial do
   // progresso; o front acompanha pela rota de progresso abaixo.
-  app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), (_request, response, next) => {
+  // Aceita { date: "YYYY-MM-DD" } para analise retroativa de um dia inteiro.
+  app.post("/api/events/intelligence/run", requireRole(["ADMIN", "MANAGER"]), (request, response, next) => {
     try {
-      response.json(startManualIntelligenceRun());
+      const payload = z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      }).parse(request.body ?? {});
+      response.json(startManualIntelligenceRun(payload.date));
     } catch (error) {
       next(error);
     }
