@@ -2861,6 +2861,7 @@ export function createApp() {
       value ? value.split(",").filter((entry) => ["none", "low", "medium", "high", "critical"].includes(entry)) as Array<"none" | "low" | "medium" | "high" | "critical"> : undefined,
     ),
     flag: z.string().regex(/^[a-z_]+$/).optional(),
+    topic: z.string().trim().max(60).optional(),
     search: z.string().optional(),
     isGroup: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
     agentName: z.string().optional(),

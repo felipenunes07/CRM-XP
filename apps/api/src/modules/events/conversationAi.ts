@@ -1079,7 +1079,8 @@ function mapInsightRow(row: any): ConversationInsight {
     attentionLevel: (ATTENTION_LEVELS.includes(row.attention_level) ? row.attention_level : "none") as ConversationAttentionLevel,
     attentionReason: row.attention_reason ? String(row.attention_reason) : null,
     flags: row.flags && typeof row.flags === "object" ? row.flags : {},
-    topics: Array.isArray(row.topics) ? row.topics.map(String) : [],
+    // Tema unico por conversa; corta leituras antigas que gravaram varios.
+    topics: Array.isArray(row.topics) ? row.topics.slice(0, 1).map(String) : [],
     highlights: Array.isArray(row.highlights) ? row.highlights : [],
     actionItems: Array.isArray(row.action_items) ? row.action_items.map(String) : [],
     acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at).toISOString() : null,
@@ -1114,6 +1115,7 @@ export interface ConversationInsightsFilters {
   dateTo?: string;
   attention?: ConversationAttentionLevel[];
   flag?: string;
+  topic?: string;
   search?: string;
   isGroup?: boolean;
   agentName?: string;
@@ -1142,6 +1144,12 @@ export async function listConversationInsights(
 
   if (filters.flag && /^[a-z_]+$/.test(filters.flag)) {
     conditions.push(`COALESCE((ci.flags->>'${filters.flag}')::boolean, false) = true`);
+  }
+
+  if (filters.topic) {
+    // Filtro exato pelo tema principal (clique na barra do grafico).
+    params.push(filters.topic);
+    conditions.push(`ci.topics[1] = $${params.length}`);
   }
 
   if (filters.isGroup !== undefined) {
@@ -1342,7 +1350,9 @@ export async function getEventsOverview(
       topic,
       COUNT(*)::int AS count,
       COUNT(*) FILTER (WHERE ci.sentiment_score < -0.1)::int AS negative_count
-    FROM conversation_insights ci, UNNEST(ci.topics) AS topic
+    -- topics[1:1]: um unico tema por conversa, mesmo em leituras antigas que
+    -- gravaram 3 temas (senao a mesma conversa infla 3 barras do grafico).
+    FROM conversation_insights ci, UNNEST(ci.topics[1:1]) AS topic
     WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date${topicsScope}
     GROUP BY topic
     ORDER BY count DESC, negative_count DESC

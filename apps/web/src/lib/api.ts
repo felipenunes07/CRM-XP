@@ -1408,6 +1408,7 @@ export const api = {
       dateTo?: string;
       attention?: string;
       flag?: string;
+      topic?: string;
       search?: string;
       isGroup?: boolean;
       agentName?: string;

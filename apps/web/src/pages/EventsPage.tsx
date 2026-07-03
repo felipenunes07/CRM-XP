@@ -267,6 +267,7 @@ export function EventsPage() {
   });
   const [feedTab, setFeedTab] = useState<FeedTabId>("radar");
   const [feedSearch, setFeedSearch] = useState("");
+  const [feedTopic, setFeedTopic] = useState<string | null>(null);
   const [feedPage, setFeedPage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [howOpen, setHowOpen] = useState(false);
@@ -287,12 +288,13 @@ export function EventsPage() {
   });
 
   const insightsQuery = useQuery({
-    queryKey: ["events-conversations", period, feedTab, feedSearch, feedPage],
+    queryKey: ["events-conversations", period, feedTab, feedSearch, feedTopic, feedPage],
     queryFn: () => api.listConversationInsights(token!, {
       ...period,
       flag: activeTab.flag,
       attention: feedTab === "radar" ? "high,critical" : undefined,
       onlyOpen: feedTab === "radar" ? true : undefined,
+      topic: feedTopic || undefined,
       search: feedSearch || undefined,
     }, { page: feedPage, pageSize: 25 }),
     enabled: Boolean(token),
@@ -385,6 +387,10 @@ export function EventsPage() {
     setFeedTab(tab);
     setFeedPage(1);
     setSelectedId(null);
+    // Trocar de aba e uma intencao nova: filtros de texto/tema anteriores
+    // ficariam "grudados" invisiveis e fariam a lista parecer quebrada.
+    setFeedSearch("");
+    setFeedTopic(null);
   };
 
   const overview = overviewQuery.data;
@@ -760,6 +766,19 @@ export function EventsPage() {
                 setFeedPage(1);
               }}
             />
+            {feedTopic && (
+              <button
+                type="button"
+                className="wtl-topic-filter-chip"
+                title="Remover filtro de tema"
+                onClick={() => {
+                  setFeedTopic(null);
+                  setFeedPage(1);
+                }}
+              >
+                tema: {feedTopic} ✕
+              </button>
+            )}
           </div>
 
           <div className="wtl-feed-list">
@@ -933,7 +952,7 @@ export function EventsPage() {
           <Sparkles size={16} />
           <div>
             <h2>Do que os clientes falaram</h2>
-            <p>Um tema por conversa · barra vermelha = clima negativo</p>
+            <p>Um tema por conversa · <em className="wtl-legend ok">verde</em> tranquilo · <em className="wtl-legend mixed">amarelo</em> teve reclamação · <em className="wtl-legend bad">vermelho</em> clima ruim</p>
           </div>
         </header>
         {topics.length === 0 ? (
@@ -942,23 +961,32 @@ export function EventsPage() {
           <div className="wtl-topic-rows">
             {topics.slice(0, 10).map((topic) => {
               const width = maxTopicCount > 0 ? Math.max(8, Math.round((topic.count / maxTopicCount) * 100)) : 0;
-              const negWidth = topic.count > 0 ? Math.round((topic.negativeCount / topic.count) * width) : 0;
+              const tone = topic.negativeCount === 0
+                ? "ok"
+                : topic.negativeCount >= topic.count / 2 ? "bad" : "mixed";
               return (
                 <button
                   key={topic.topic}
                   type="button"
+                  title={topic.negativeCount > 0
+                    ? `${topic.count} conversas — ${topic.negativeCount} com clima negativo`
+                    : `${topic.count} conversas, clima tranquilo`}
                   onClick={() => {
                     setFeedTab("all");
-                    setFeedSearch(topic.topic);
+                    setFeedSearch("");
+                    setFeedTopic(topic.topic);
                     setFeedPage(1);
+                    setSelectedId(null);
                   }}
                 >
                   <span className="wtl-topic-name">{topic.topic}</span>
-                  <span className="wtl-topic-bar">
+                  <span className={`wtl-topic-bar ${tone}`}>
                     <span className="fill" style={{ width: `${width}%` }} />
-                    {negWidth > 0 && <span className="neg" style={{ width: `${negWidth}%` }} />}
                   </span>
-                  <span className="wtl-topic-count">{topic.count}</span>
+                  <span className="wtl-topic-count">
+                    {topic.count}
+                    {topic.negativeCount > 0 && <em className="wtl-topic-neg-count">{topic.negativeCount} 😠</em>}
+                  </span>
                 </button>
               );
             })}

@@ -21787,6 +21787,21 @@ body:has(.whatsapp-monitor-page) .main-content {
   color: #1c1917;
 }
 
+.wtl-topic-filter-chip {
+  flex: none;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: #15803d;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wtl-topic-filter-chip:hover { background: #bbf7d0; }
+
 .wtl-feed-list {
   display: flex;
   flex-direction: column;
@@ -22288,12 +22303,26 @@ body:has(.whatsapp-monitor-page) .main-content {
   background: linear-gradient(90deg, #34d399, #10b981);
 }
 
-.wtl-topic-bar .neg {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 999px;
-  background: linear-gradient(90deg, #f87171, #ef4444);
+.wtl-topic-bar.mixed .fill { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+.wtl-topic-bar.bad .fill { background: linear-gradient(90deg, #f87171, #ef4444); }
+
+.wtl-topic-neg-count {
+  font-style: normal;
+  margin-left: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #b91c1c;
+  white-space: nowrap;
 }
+
+.wtl-legend {
+  font-style: normal;
+  font-weight: 800;
+}
+
+.wtl-legend.ok { color: #15803d; }
+.wtl-legend.mixed { color: #d97706; }
+.wtl-legend.bad { color: #dc2626; }
 
 .wtl-topic-count {
   font-size: 0.8rem;
