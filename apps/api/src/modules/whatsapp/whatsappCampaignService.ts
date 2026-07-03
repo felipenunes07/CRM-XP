@@ -1,4 +1,6 @@
-﻿import type { PoolClient } from "pg";
+﻿import { promises as fsPromises } from "node:fs";
+import path from "node:path";
+import type { PoolClient } from "pg";
 import type {
   WhatsappCampaignAttributedMessage,
   CarouselSlide,
@@ -18,8 +20,10 @@ import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
+import { logger } from "../../lib/logger.js";
 import { getWhatsappGroupsByIds } from "./whatsappGroupService.js";
 import { computeRecentBlock, randomDelaySeconds } from "./whatsappCore.js";
+import { getCampaignMediaDir, getCampaignVideoObjectName } from "./whatsappMedia.js";
 
 export const WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS = 7;
 
@@ -356,7 +360,10 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
     carouselData: row.carousel_data && Array.isArray(row.carousel_data) ? (row.carousel_data as CarouselSlide[]) : null,
     menuData: parseMenuData(row.menu_data),
-    videoUrl: row.video_url ? String(row.video_url) : null,
+    // Nunca devolve vídeo em base64 (data:) na listagem: campanhas antigas chegaram
+    // a guardar o vídeo inteiro na coluna (13MB+/linha) e a resposta da lista passava
+    // de 100MB, congelando o navegador. Só URL hospedada sai daqui.
+    videoUrl: row.video_url && !String(row.video_url).startsWith("data:") ? String(row.video_url) : null,
     autoReplyText: row.auto_reply_text ? String(row.auto_reply_text) : null,
     minDelaySeconds: Number(row.min_delay_seconds ?? 0),
     maxDelaySeconds: Number(row.max_delay_seconds ?? 0),
@@ -1066,6 +1073,16 @@ export async function createWhatsappCampaign(
     const menuData = input.menuData ?? null;
     const videoUrl = input.videoUrl ?? null;
     const autoReplyText = input.autoReplyText?.trim() || null;
+
+    // Vídeo só entra como URL hospedada (upload via /api/messages/upload-video).
+    // Guardar o vídeo em base64 na coluna infla a tabela (13MB+/linha) e já derrubou
+    // a listagem do Disparador (resposta de 107MB congelava o navegador).
+    if (videoUrl && videoUrl.startsWith("data:")) {
+      throw new HttpError(400, "Envie o video pelo upload em vez de base64. Recarregue a pagina e tente novamente.");
+    }
+    if (videoUrl && videoUrl.length > 2048) {
+      throw new HttpError(400, "URL de video invalida (longa demais).");
+    }
 
     const campaignInsert = await campaignClient.query(
       `
@@ -2334,7 +2351,7 @@ export async function refreshWhatsappCampaignStatus(campaignId: string) {
 
     const campaignResult = await client.query(
       `
-        SELECT id, status, cancelled_at, started_at, finished_at
+        SELECT id, status, cancelled_at, started_at, finished_at, video_url
         FROM whatsapp_campaigns
         WHERE id = $1
         FOR UPDATE
@@ -2413,11 +2430,77 @@ export async function refreshWhatsappCampaignStatus(campaignId: string) {
     );
 
     await client.query("COMMIT");
+
+    // Campanha terminou (enviou/cancelou tudo): o vídeo hospedado no disco já não é
+    // mais necessário — apaga pra não acumular arquivos grandes na VPS. Roda fora da
+    // transação e sem bloquear o fluxo (falha aqui não afeta o status da campanha).
+    const isFinished =
+      (nextStatus === "COMPLETED" || nextStatus === "CANCELLED") && pendingCount === 0 && sendingCount === 0;
+    if (isFinished && campaign.video_url) {
+      void deleteCampaignVideoFileIfUnused(String(campaign.video_url), campaignId).catch((error) => {
+        logger.warn("failed to delete finished campaign video file", {
+          campaignId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
     return nextStatus;
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
   } finally {
     client.release();
+  }
+}
+
+/**
+ * Apaga do disco o arquivo de vídeo de uma campanha finalizada, desde que nenhuma
+ * OUTRA campanha ainda ativa (QUEUED/IN_PROGRESS/PAUSED) use a mesma URL. O registro
+ * da campanha mantém a URL (histórico); só o arquivo físico é removido.
+ */
+export async function deleteCampaignVideoFileIfUnused(videoUrl: string, campaignId?: string): Promise<boolean> {
+  const objectName = getCampaignVideoObjectName(videoUrl);
+  if (!objectName) {
+    return false;
+  }
+
+  const params: unknown[] = [`%${objectName}`];
+  const campaignFilter = campaignId
+    ? (() => {
+        params.push(campaignId);
+        return `AND id <> $${params.length}`;
+      })()
+    : "";
+  const stillInUse = await pool.query(
+    `
+      SELECT 1
+      FROM whatsapp_campaigns
+      WHERE video_url LIKE $1
+        AND status NOT IN ('COMPLETED', 'CANCELLED')
+        ${campaignFilter}
+      LIMIT 1
+    `,
+    params,
+  );
+  if (stillInUse.rows.length > 0) {
+    return false;
+  }
+
+  const mediaDir = path.resolve(getCampaignMediaDir());
+  const filePath = path.resolve(mediaDir, objectName);
+  if (!filePath.startsWith(`${mediaDir}${path.sep}`)) {
+    return false;
+  }
+
+  try {
+    await fsPromises.unlink(filePath);
+    logger.info("campaign video file deleted after finish", { campaignId: campaignId ?? null, objectName });
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return false;
+    }
+    throw error;
   }
 }

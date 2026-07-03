@@ -18,10 +18,13 @@
  * (a tabela para de crescer). Para encolher o arquivo já existente de uma vez, rode
  * pg_repack/VACUUM FULL numa janela de manutenção DEPOIS da primeira limpeza.
  */
+import { promises as fsPromises } from "node:fs";
+import path from "node:path";
 import { Pool, type PoolClient } from "pg";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
+import { getCampaignMediaDir, getCampaignVideoObjectName } from "./whatsappMedia.js";
 
 const CLEANUP_TIMEZONE = "America/Sao_Paulo";
 const CLEANUP_CURSOR_KEY = "payload_cleanup_date";
@@ -108,6 +111,71 @@ async function stripJsonKeyInBatches(client: PoolClient, target: JsonKeyTarget, 
   return total;
 }
 
+// Varre o diretório de mídia de campanha e apaga vídeos .mp4 que não pertencem a
+// nenhuma campanha ativa (QUEUED/IN_PROGRESS/PAUSED) e têm mais de 24h — cobre
+// uploads órfãos (campanha nunca criada) e vídeos de campanhas já finalizadas cuja
+// exclusão imediata falhou. A folga de 24h protege o upload recém-feito de uma
+// campanha que ainda está sendo montada na tela.
+const ORPHAN_VIDEO_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+
+export async function cleanupOrphanCampaignVideos(): Promise<number> {
+  const mediaDir = path.resolve(getCampaignMediaDir());
+  let entries: string[];
+  try {
+    entries = await fsPromises.readdir(mediaDir);
+  } catch {
+    return 0; // diretório ainda não existe (nenhum upload feito)
+  }
+
+  const mp4Files = entries.filter((name) => name.toLowerCase().endsWith(".mp4"));
+  if (!mp4Files.length) {
+    return 0;
+  }
+
+  const activeResult = await pool.query(
+    `
+      SELECT video_url
+      FROM whatsapp_campaigns
+      WHERE video_url IS NOT NULL
+        AND status NOT IN ('COMPLETED', 'CANCELLED')
+    `,
+  );
+  const inUse = new Set(
+    activeResult.rows
+      .map((row) => getCampaignVideoObjectName(String(row.video_url)))
+      .filter((name): name is string => Boolean(name)),
+  );
+
+  let deleted = 0;
+  for (const fileName of mp4Files) {
+    if (inUse.has(fileName)) {
+      continue;
+    }
+    const filePath = path.resolve(mediaDir, fileName);
+    if (!filePath.startsWith(`${mediaDir}${path.sep}`)) {
+      continue;
+    }
+    try {
+      const stat = await fsPromises.stat(filePath);
+      if (Date.now() - stat.mtimeMs < ORPHAN_VIDEO_MIN_AGE_MS) {
+        continue;
+      }
+      await fsPromises.unlink(filePath);
+      deleted += 1;
+    } catch (error) {
+      logger.warn("orphan campaign video cleanup failed for file", {
+        fileName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (deleted > 0) {
+    logger.info("orphan campaign videos deleted", { deleted });
+  }
+  return deleted;
+}
+
 export async function cleanupHeavyPayloads(
   retentionDays = env.PAYLOAD_RETENTION_DAYS,
   mediaRetentionDays = env.MEDIA_BASE64_RETENTION_DAYS,
@@ -153,6 +221,15 @@ export async function cleanupHeavyPayloads(
     client.release();
     await cleanupPool.end();
   }
+
+  try {
+    counts["campaign-media orphan videos"] = await cleanupOrphanCampaignVideos();
+  } catch (error) {
+    logger.error("orphan campaign video cleanup failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   logger.info("payload cleanup finished", { retentionDays, mediaRetentionDays, counts });
   return { retentionDays, mediaRetentionDays, counts };
 }

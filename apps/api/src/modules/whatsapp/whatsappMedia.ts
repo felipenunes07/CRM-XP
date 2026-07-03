@@ -59,7 +59,7 @@ export function getOutboundMediaFileName(mediaType: "image" | "video" | "audio" 
   return fileName || (mediaType === "image" ? "image.png" : "file");
 }
 
-function getCampaignVideoObjectName(value: string) {
+export function getCampaignVideoObjectName(value: string) {
   const trimmed = value.trim();
   if (!trimmed || trimmed.startsWith("data:")) {
     return null;
