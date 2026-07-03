@@ -31,6 +31,8 @@ import type {
   ConversationIntelligenceRunResult,
   ConversationTopicStat,
   DailyBriefing,
+  EventsAiRunSummary,
+  EventsCaptureStats,
   EventsIntelligenceProgress,
   EventsIntelligenceStatus,
   EventsOverviewResponse,
@@ -1374,22 +1376,94 @@ export async function getEventsOverview(
         LIMIT 1
       `, [to]).then((result) => (result.rows[0] ? mapBriefingRow(result.rows[0]) : null));
 
-  const [statsResult, radarResult, topicsResult, agentsResult, briefing, status] = await Promise.all([
+  // Prova de coleta: sempre do dia atual, independente do periodo filtrado —
+  // e a resposta visual de "esta capturando e analisando certinho?".
+  const config = getEventsAiBatchConfig();
+  const { windowStart, windowEnd } = getDayWindow(now, config.timezone);
+  const capturePromise = pool.query(`
+    SELECT
+      COUNT(*)::int AS messages_today,
+      MAX(created_at) AS last_message_at,
+      COUNT(DISTINCT COALESCE(NULLIF(remote_jid, ''), deal_id::text)) FILTER (
+        WHERE COALESCE(remote_jid, '') LIKE '%@g.us'
+      )::int AS group_conversations,
+      COUNT(DISTINCT COALESCE(NULLIF(remote_jid, ''), deal_id::text)) FILTER (
+        WHERE COALESCE(remote_jid, '') NOT LIKE '%@g.us'
+      )::int AS private_conversations,
+      COUNT(DISTINCT COALESCE(NULLIF(remote_jid, ''), deal_id::text)) FILTER (
+        WHERE from_me = false
+          AND COALESCE(sender_jid, '') <> ALL($3::text[])
+          AND COALESCE(sender_name, '') <> ALL($4::text[])
+      )::int AS conversations_with_customer
+    FROM whatsapp_monitor_messages
+    WHERE created_at >= $1 AND created_at < $2
+      AND COALESCE(remote_jid, '') <> ALL($5::text[])
+  `, [windowStart, windowEnd, INTERNAL_SENDER_JID_LIST, INTERNAL_SENDER_NAME_LIST, INTERNAL_GROUP_JID_LIST]);
+
+  const hourlyPromise = pool.query(`
+    SELECT
+      EXTRACT(HOUR FROM created_at AT TIME ZONE $3)::int AS hour,
+      COUNT(*)::int AS count
+    FROM whatsapp_monitor_messages
+    WHERE created_at >= $1 AND created_at < $2
+      AND COALESCE(remote_jid, '') <> ALL($4::text[])
+    GROUP BY 1
+    ORDER BY 1
+  `, [windowStart, windowEnd, config.timezone, INTERNAL_GROUP_JID_LIST]);
+
+  const runsPromise = pool.query(`
+    SELECT kind, run_source, status, event_count, finished_at, error_message
+    FROM event_ai_batches
+    WHERE kind IN ('conversations', 'briefing')
+    ORDER BY finished_at DESC NULLS LAST
+    LIMIT 8
+  `);
+
+  const [statsResult, radarResult, topicsResult, agentsResult, briefing, status, captureResult, hourlyResult, runsResult] = await Promise.all([
     statsPromise,
     radarPromise,
     topicsPromise,
     agentsPromise,
     briefingPromise,
     getIntelligenceStatus(now),
+    capturePromise,
+    hourlyPromise,
+    runsPromise,
   ]);
 
   const statsRow = statsResult.rows[0] ?? {};
+  const captureRow = captureResult.rows[0] ?? {};
+  const conversationsWithCustomer = Number(captureRow.conversations_with_customer ?? 0);
+  const capture: EventsCaptureStats = {
+    messagesToday: Number(captureRow.messages_today ?? 0),
+    lastMessageAt: captureRow.last_message_at ? new Date(captureRow.last_message_at).toISOString() : null,
+    groupConversations: Number(captureRow.group_conversations ?? 0),
+    privateConversations: Number(captureRow.private_conversations ?? 0),
+    conversationsWithCustomer,
+    analyzedToday: status.conversationsAnalyzedToday,
+    pendingToday: Math.max(0, conversationsWithCustomer - status.conversationsAnalyzedToday),
+    hourly: hourlyResult.rows.map((row) => ({
+      hour: Number(row.hour ?? 0),
+      count: Number(row.count ?? 0),
+    })),
+  };
+
+  const runs: EventsAiRunSummary[] = runsResult.rows.map((row) => ({
+    kind: String(row.kind),
+    runSource: String(row.run_source),
+    status: String(row.status),
+    eventCount: Number(row.event_count ?? 0),
+    finishedAt: row.finished_at ? new Date(row.finished_at).toISOString() : null,
+    errorMessage: row.error_message ? String(row.error_message).slice(0, 200) : null,
+  }));
 
   return {
     generatedAt: now.toISOString(),
     period: { from, to },
     briefing,
     status,
+    capture,
+    runs,
     stats: {
       conversations: Number(statsRow.conversations ?? 0),
       byAttention: {

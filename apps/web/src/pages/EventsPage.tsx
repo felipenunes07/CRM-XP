@@ -376,6 +376,21 @@ export function EventsPage() {
   const briefing = overview?.briefing ?? null;
   const status = overview?.status;
   const stats = overview?.stats;
+  const capture = overview?.capture;
+  const runs = overview?.runs ?? [];
+  const coveragePercent = capture && capture.conversationsWithCustomer > 0
+    ? Math.min(100, Math.round((capture.analyzedToday / capture.conversationsWithCustomer) * 100))
+    : 0;
+  const maxHourly = capture?.hourly.reduce((max, point) => Math.max(max, point.count), 0) ?? 0;
+  const hourlyBars = useMemo(() => {
+    if (!capture) return [] as Array<{ hour: number; count: number }>;
+    const byHour = new Map(capture.hourly.map((point) => [point.hour, point.count]));
+    const bars: Array<{ hour: number; count: number }> = [];
+    for (let hour = 7; hour <= 20; hour += 1) {
+      bars.push({ hour, count: byHour.get(hour) ?? 0 });
+    }
+    return bars;
+  }, [capture]);
   const radarCount = stats?.openRadar ?? 0;
   const topics = overview?.topics ?? [];
   const insights = insightsQuery.data?.insights ?? [];
@@ -516,6 +531,77 @@ export function EventsPage() {
           <button type="button" className="positive" onClick={() => selectTab("elogio")}><strong>{stats?.praises ?? 0}</strong><span>elogios</span></button>
         </div>
       </div>
+
+      {/* ── Prova de coleta + atividade da IA ── */}
+      {isManager && capture && (
+        <div className="wtl-datacheck">
+          <div className="wtl-capture">
+            <header>
+              <span className="wtl-live-dot" />
+              <strong>Coleta ao vivo · hoje</strong>
+              <small>
+                {capture.lastMessageAt
+                  ? `última mensagem capturada às ${formatTime(capture.lastMessageAt)}`
+                  : "nenhuma mensagem capturada ainda"}
+              </small>
+            </header>
+            <div className="wtl-capture-numbers">
+              <div><strong>{capture.messagesToday.toLocaleString("pt-BR")}</strong><span>mensagens capturadas</span></div>
+              <div><strong>{capture.conversationsWithCustomer}</strong><span>conversas com cliente</span></div>
+              <div><strong>{capture.groupConversations}</strong><span>grupos ativos</span></div>
+              <div><strong>{capture.privateConversations}</strong><span>privados ativos</span></div>
+            </div>
+            <div className="wtl-hourly" title="Mensagens capturadas por hora (7h às 20h)">
+              {hourlyBars.map((bar) => (
+                <span key={bar.hour} className="wtl-hourly-col" title={`${bar.hour}h: ${bar.count} mensagens`}>
+                  <span
+                    className="wtl-hourly-bar"
+                    style={{ height: `${maxHourly > 0 ? Math.max(bar.count > 0 ? 8 : 2, Math.round((bar.count / maxHourly) * 100)) : 2}%` }}
+                  />
+                  <em>{bar.hour}</em>
+                </span>
+              ))}
+            </div>
+            <div className="wtl-coverage">
+              <div className="wtl-coverage-bar">
+                <span style={{ width: `${coveragePercent}%` }} />
+              </div>
+              <small>
+                IA leu <strong>{capture.analyzedToday}</strong> de <strong>{capture.conversationsWithCustomer}</strong> conversas com cliente ({coveragePercent}%)
+                {capture.pendingToday > 0 && <> · <strong>{capture.pendingToday}</strong> aguardando a leitura das {status?.dailyRunHour ?? 16}h ou o botão</>}
+              </small>
+            </div>
+          </div>
+
+          <div className="wtl-runs">
+            <header>
+              <Bot size={14} />
+              <strong>Atividade da IA</strong>
+            </header>
+            {runs.length === 0 ? (
+              <p className="wtl-runs-empty">A IA ainda não rodou. A primeira leitura acontece às {status?.dailyRunHour ?? 16}h ou pelo botão &ldquo;Analisar agora&rdquo;.</p>
+            ) : (
+              <ul>
+                {runs.slice(0, 6).map((run, index) => (
+                  <li key={`${run.finishedAt}-${index}`} className={run.status.toLowerCase()}>
+                    <span className="wtl-run-dot" />
+                    <span className="wtl-run-text">
+                      {formatDateTime(run.finishedAt)} · {run.runSource === "manual" ? "manual" : "automática"} · {run.kind === "briefing" ? "briefing do dia" : `${run.eventCount} conversas lidas`}
+                      {run.status === "FAILED" && <em title={run.errorMessage ?? undefined}> — falhou{run.errorMessage ? `: ${run.errorMessage.slice(0, 60)}...` : ""}</em>}
+                      {run.status === "SKIPPED" && <em> — sem novidade</em>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {status?.lastError && (
+              <p className="wtl-runs-error" title={status.lastError}>
+                <AlertTriangle size={12} /> Último erro: {status.lastError.slice(0, 110)}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Briefing: mensagem do assistente ── */}
       {isManager && (
@@ -662,7 +748,16 @@ export function EventsPage() {
                       <span><Phone size={12} /> {formatPhoneFromJid(selected.remoteJid)}</span>
                     )}
                     {selected.agentName && <span><Users size={12} /> vendedora {selected.agentName}</span>}
-                    <span>{selected.customerMessageCount} msgs do cliente · {formatDateTime(selected.lastMessageAt)}</span>
+                    <span>
+                      {selected.messageCount} mensagens ({selected.customerMessageCount} do cliente)
+                      {selected.firstMessageAt && selected.lastMessageAt && (
+                        <> · das {formatTime(selected.firstMessageAt)} às {formatTime(selected.lastMessageAt)}</>
+                      )}
+                    </span>
+                  </div>
+                  <div className="wtl-detail-proof">
+                    <Bot size={11} /> Lida pela IA às {formatDateTime(selected.analyzedAt)}
+                    {selected.model && <> · {selected.model}</>}
                   </div>
                 </div>
                 {selectedSentiment && (

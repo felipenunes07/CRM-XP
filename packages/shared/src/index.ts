@@ -2446,12 +2446,40 @@ export interface EventsOverviewStats {
   openRadar: number;
 }
 
+export interface EventsCaptureHourPoint {
+  hour: number;
+  count: number;
+}
+
+/** Prova de que a captura e a leitura estao funcionando (sempre do dia atual). */
+export interface EventsCaptureStats {
+  messagesToday: number;
+  lastMessageAt: string | null;
+  groupConversations: number;
+  privateConversations: number;
+  conversationsWithCustomer: number;
+  analyzedToday: number;
+  pendingToday: number;
+  hourly: EventsCaptureHourPoint[];
+}
+
+export interface EventsAiRunSummary {
+  kind: string;
+  runSource: string;
+  status: string;
+  eventCount: number;
+  finishedAt: string | null;
+  errorMessage: string | null;
+}
+
 export interface EventsOverviewResponse {
   generatedAt: string;
   period: { from: string; to: string };
   briefing: DailyBriefing | null;
   status: EventsIntelligenceStatus;
   stats: EventsOverviewStats;
+  capture: EventsCaptureStats;
+  runs: EventsAiRunSummary[];
   radar: ConversationInsight[];
   topics: ConversationTopicStat[];
   agents: ConversationAgentStat[];
