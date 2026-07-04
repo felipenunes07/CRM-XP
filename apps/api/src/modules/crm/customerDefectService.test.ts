@@ -7,6 +7,7 @@ import {
   buildCustomerDefectOverviewSummary,
   buildCustomerDefectRows,
   parseCustomerDefectWorkbook,
+  shouldRunCustomerDefectSync,
   sortCustomerDefectRows,
   type ParsedCustomerDefectAggregate,
   type ResolvedCustomerDefectRow,
@@ -287,5 +288,17 @@ describe("customerDefectService", () => {
       highReturnCustomers: 1,
       zeroPurchaseReturnCustomers: 1,
     });
+  });
+
+  it("runs the daily defect sync once per date after the configured hour", () => {
+    expect(
+      shouldRunCustomerDefectSync({ dateKey: "2026-07-04", hour: 4 }, null, 5),
+    ).toBe(false);
+    expect(
+      shouldRunCustomerDefectSync({ dateKey: "2026-07-04", hour: 5 }, "2026-07-04", 5),
+    ).toBe(false);
+    expect(
+      shouldRunCustomerDefectSync({ dateKey: "2026-07-04", hour: 6 }, "2026-07-03", 5),
+    ).toBe(true);
   });
 });

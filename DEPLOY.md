@@ -59,11 +59,15 @@ DROPBOX_REFRESH_TOKEN=...
 DROPBOX_APP_KEY=...
 DROPBOX_APP_SECRET=...
 DROPBOX_CUSTOMER_CREDIT_PATH=/XP SALDO TEMPORARIO
+DROPBOX_CUSTOMER_DEFECT_PATH=/DEFEITOS - XP
+CUSTOMER_DEFECT_WORKBOOK_PREFIX=坏品表 PLANILHA DEFEITOS 2026
+WORKER_DEFECT_SYNC_ENABLED=true
+WORKER_DEFECT_SYNC_HOUR=5
 ```
 
 No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use caminhos reais do Dropbox iniciando com `/`.
 
-Mantenha `WORKER_OLIST_SYNC_ENABLED=true` no servico worker para atualizar os dados a cada 1 hora mesmo quando ninguem estiver logado no CRM.
+Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 1 hora mesmo quando ninguem estiver logado no CRM. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`, porque a producao atual nem sempre sobe um container worker separado.
 
 Depois que o backend estiver no ar, teste:
 

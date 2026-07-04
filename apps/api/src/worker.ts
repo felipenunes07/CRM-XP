@@ -7,7 +7,7 @@ import { startWhatsappDispatchWorker } from "./modules/whatsapp/whatsappQueue.js
 import { syncGeographicData } from "./modules/crm/geographicService.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "./modules/whatsapp/whatsappGroupService.js";
 import { refreshCustomerCreditOverview } from "./modules/crm/customerCreditService.js";
-import { refreshCustomerDefectOverview } from "./modules/crm/customerDefectService.js";
+import { startDailyCustomerDefectSyncScheduler } from "./modules/crm/customerDefectService.js";
 import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 import { aggregateAllDealsSentiment } from "./modules/events/eventsService.js";
 import { runConversationIntelligence } from "./modules/events/conversationAi.js";
@@ -25,10 +25,10 @@ async function main() {
   const automationScheduler = startMessageAutomationScheduler();
   const offboardingScheduler = startDailyOffboardingScheduler();
   const lifecycleScheduler = startDailyLifecycleScheduler();
+  const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
   const recurringJobs: RecurringJobHandle[] = [];
-  let lastDefectSyncDate: string | null = null;
 
   // 1. Primary sales sync
   recurringJobs.push(
@@ -86,45 +86,6 @@ async function main() {
         env.WORKER_CREDIT_SYNC_INTERVAL_MINUTES * 60 * 1000,
       )
     );
-  }
-
-  // 4.5. Customer Defects Sync (Dropbox/Local) - daily snapshot
-  if (env.WORKER_DEFECT_SYNC_ENABLED) {
-    logger.info("scheduled defect sync enabled", { syncHour: env.WORKER_DEFECT_SYNC_HOUR });
-
-    const getSaoPauloParts = () => {
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "America/Sao_Paulo",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        hour12: false,
-      }).formatToParts(new Date());
-
-      const partValue = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-      return {
-        date: `${partValue("year")}-${partValue("month")}-${partValue("day")}`,
-        hour: Number(partValue("hour")),
-      };
-    };
-
-    const runDailyDefectSync = () => {
-      const now = getSaoPauloParts();
-      if (!Number.isFinite(now.hour) || now.hour < env.WORKER_DEFECT_SYNC_HOUR || lastDefectSyncDate === now.date) {
-        return;
-      }
-
-      lastDefectSyncDate = now.date;
-      logger.info("starting scheduled defect sync", { date: now.date });
-      refreshCustomerDefectOverview().catch((error) => {
-        lastDefectSyncDate = null;
-        logger.error("failed scheduled defect sync", { error: String(error) });
-      });
-    };
-
-    runDailyDefectSync();
-    intervals.push(setInterval(runDailyDefectSync, 60 * 60 * 1000));
   }
 
   // 5. Sentiment Aggregation
@@ -259,6 +220,7 @@ async function main() {
     await automationScheduler.close();
     await offboardingScheduler.close();
     await lifecycleScheduler.close();
+    await customerDefectSyncScheduler.close();
     await worker.close();
     await whatsappWorker.close();
     await redis.quit();

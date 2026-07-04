@@ -18,8 +18,12 @@ const CUSTOMER_DEFECT_SOURCE_TYPE = "customer_defects_xlsx";
 const CUSTOMER_DEFECT_SHEET_NAME = "DEFEITOS";
 const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
+const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
+const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
 const CUSTOMER_DEFECT_PARSER_VERSION = 1;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
+const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
+const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
 
 let activeDefectSnapshotPromise: Promise<CustomerDefectSnapshotMeta | null> | null = null;
 
@@ -98,6 +102,11 @@ export interface ParsedCustomerDefectWorkbook {
   rowsByCode: Map<string, ParsedCustomerDefectAggregate>;
 }
 
+export interface CustomerDefectSyncLocalParts {
+  dateKey: string;
+  hour: number;
+}
+
 interface SnapshotMetaRecord {
   id: string;
   sourceFileId: string | null;
@@ -133,6 +142,30 @@ function toIsoTimestamp(value: unknown) {
   }
 
   return parsed.toISOString();
+}
+
+export function getCustomerDefectSyncLocalParts(date = new Date()): CustomerDefectSyncLocalParts {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: CUSTOMER_DEFECT_SYNC_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour ?? "0"),
+  };
+}
+
+export function shouldRunCustomerDefectSync(
+  now: CustomerDefectSyncLocalParts,
+  lastRunDate: string | null,
+  syncHour: number,
+) {
+  return Number.isFinite(now.hour) && now.hour >= syncHour && lastRunDate !== now.dateKey;
 }
 
 function mapSnapshotMeta(row: Record<string, unknown>): CustomerDefectSnapshotMeta {
@@ -959,4 +992,95 @@ export async function refreshCustomerDefectOverview(): Promise<CustomerDefectOve
   }
 
   return buildOverviewResponse(snapshot);
+}
+
+async function getLastDailyCustomerDefectSyncDate() {
+  const result = await pool.query<{ cursor_value: string }>(
+    "SELECT cursor_value FROM sync_cursors WHERE key = $1",
+    [CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY],
+  );
+  return result.rows[0]?.cursor_value ?? null;
+}
+
+async function claimDailyCustomerDefectSync(dateKey: string): Promise<boolean> {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1::int, $2::int)", [CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS, 1]);
+
+    const result = await client.query<{ cursor_value: string }>(
+      "SELECT cursor_value FROM sync_cursors WHERE key = $1 FOR UPDATE",
+      [CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY],
+    );
+
+    if (result.rows[0]?.cursor_value === dateKey) {
+      await client.query("COMMIT");
+      return false;
+    }
+
+    await client.query(
+      `
+        INSERT INTO sync_cursors (key, cursor_value, updated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (key) DO UPDATE
+        SET cursor_value = EXCLUDED.cursor_value, updated_at = NOW()
+      `,
+      [CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY, dateKey],
+    );
+
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export function startDailyCustomerDefectSyncScheduler() {
+  if (!env.WORKER_DEFECT_SYNC_ENABLED) {
+    logger.info("customer defect daily sync scheduler disabled");
+    return {
+      async close() {
+        return;
+      },
+    };
+  }
+
+  const check = async () => {
+    try {
+      const now = getCustomerDefectSyncLocalParts();
+      const lastRunDate = await getLastDailyCustomerDefectSyncDate();
+      if (!shouldRunCustomerDefectSync(now, lastRunDate, env.WORKER_DEFECT_SYNC_HOUR)) {
+        return;
+      }
+
+      const claimed = await claimDailyCustomerDefectSync(now.dateKey);
+      if (!claimed) {
+        return;
+      }
+
+      logger.info("customer defect daily sync started", { dateKey: now.dateKey });
+      await refreshCustomerDefectOverview();
+      logger.info("customer defect daily sync completed", { dateKey: now.dateKey });
+    } catch (error) {
+      logger.error("customer defect daily sync failed", { error: String(error) });
+    }
+  };
+
+  const interval = setInterval(check, CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS);
+  void check();
+
+  logger.info("customer defect daily sync scheduler initialized", {
+    hour: env.WORKER_DEFECT_SYNC_HOUR,
+    timezone: CUSTOMER_DEFECT_SYNC_TIMEZONE,
+  });
+
+  return {
+    async close() {
+      clearInterval(interval);
+    },
+  };
 }

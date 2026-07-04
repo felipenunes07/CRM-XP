@@ -12,4 +12,11 @@ describe("performance migrations", () => {
     expect(sql).toContain("idx_whatsapp_incoming_remote_instance_created");
     expect(sql).toContain("idx_whatsapp_incoming_message_created");
   });
+
+  it("keeps customer defect snapshot tables in the latest append-only migration", () => {
+    const latestMigration = migrations[migrations.length - 1] ?? "";
+
+    expect(latestMigration).toContain("customer_defect_snapshots");
+    expect(latestMigration).toContain("customer_defect_snapshot_rows");
+  });
 });
