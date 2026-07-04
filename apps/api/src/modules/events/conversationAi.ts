@@ -244,6 +244,18 @@ export function buildTranscriptText(
   return lines.reverse().join("\n");
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 429: estouro de cota por minuto do provedor — esperar resolve, dividir piora. */
+export function isRateLimitError(message: string) {
+  return /with 429|per minute limit|quota_exceeded|too_many/i.test(message);
+}
+
+/** 503/UNAVAILABLE: provedor sobrecarregado — transitório, esperar e re-tentar. */
+export function isOverloadedError(message: string) {
+  return /with 503|UNAVAILABLE|overloaded|high demand/i.test(message);
+}
+
 export function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += Math.max(1, size)) {
@@ -970,6 +982,19 @@ export async function runConversationIntelligence(
   let budgetExhausted = false;
   const errors: string[] = [];
 
+  // Compasso por provedor: o free tier limita por MINUTO (Cerebras ~60k
+  // tokens/min). Cerebras espera 12s entre chamadas (lote de ~10k tokens),
+  // Gemini 5s. O "slot" e reservado antes da espera para as duas esteiras
+  // paralelas nao dispararem juntas no mesmo provedor.
+  const lastProviderCallAt: Record<string, number> = {};
+  const paceProvider = async (name: string) => {
+    const minGapMs = name === "cerebras" ? 12_000 : 5_000;
+    const readyAt = (lastProviderCallAt[name] ?? 0) + minGapMs;
+    const waitMs = readyAt - Date.now();
+    lastProviderCallAt[name] = Math.max(Date.now(), readyAt);
+    if (waitMs > 0) await sleep(waitMs);
+  };
+
   /**
    * Processa um lote com um provedor preferido; em falha (JSON cortado,
    * 503 de sobrecarga etc.):
@@ -1001,8 +1026,13 @@ export async function runConversationIntelligence(
 
     // 8000 tokens de saida: com 4000, lotes de 8 conversas estouravam e o
     // JSON vinha cortado ("Unterminated string").
-    const callProvider = (runtime: EventsAiProviderRuntime | undefined) =>
-      runtime ? fetchAiJsonWithProvider(prompt, runtime, 8000) : fetchAiJson(prompt, config, 8000);
+    const callProvider = async (runtime: EventsAiProviderRuntime | undefined) => {
+      // Compasso por provedor: o free tier do Cerebras limita tokens/minuto,
+      // entao as chamadas precisam ser espacadas. Sem isso, o paralelo virava
+      // chuva de 429 e queimava o orcamento diario com falhas.
+      await paceProvider(runtime?.provider ?? "auto");
+      return runtime ? fetchAiJsonWithProvider(prompt, runtime, 8000) : fetchAiJson(prompt, config, 8000);
+    };
 
     const persistResult = async (result: Awaited<ReturnType<typeof fetchAiJson>>) => {
       inputTokens += promptTokens;
@@ -1025,42 +1055,64 @@ export async function runConversationIntelligence(
       onProgress({ analyzedConversations: analyzed });
     };
 
-    try {
-      const result = await callProvider(primary);
-      requestCount += 1;
-      await persistResult(result);
-    } catch (error) {
-      requestCount += 1;
-      const message = error instanceof Error ? error.message : String(error);
+    // Ate 3 tentativas com o provedor principal: 429 (cota/minuto) espera
+    // 25s, 503 (sobrecarga) espera 10s. Dividir lote em cima de 429 e o
+    // remedio errado — multiplica chamadas contra um limite de chamadas.
+    let lastMessage = "";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const result = await callProvider(primary);
+        requestCount += 1;
+        await persistResult(result);
+        return;
+      } catch (error) {
+        requestCount += 1;
+        lastMessage = error instanceof Error ? error.message : String(error);
+        if (isRateLimitError(lastMessage) && attempt < 2) {
+          logger.warn("conversation intelligence rate limited, waiting", {
+            provider: primary?.provider ?? "auto",
+            attempt,
+          });
+          await sleep(25_000);
+          continue;
+        }
+        if (isOverloadedError(lastMessage) && attempt < 2) {
+          await sleep(10_000);
+          continue;
+        }
+        break;
+      }
+    }
 
-      if (batch.length > 1) {
-        logger.warn("conversation intelligence batch failed, splitting in half", {
-          size: batch.length,
-          provider: primary?.provider ?? "auto",
-          error: message.slice(0, 200),
-        });
-        const middle = Math.ceil(batch.length / 2);
-        await analyzeBatch(batch.slice(0, middle), primary, fallback);
-        await analyzeBatch(batch.slice(middle), primary, fallback);
+    // Falha persistente: se for resposta cortada/JSON invalido, dividir o
+    // lote ajuda; se for cota, tenta direto o OUTRO provedor (sem dividir).
+    if (batch.length > 1 && !isRateLimitError(lastMessage)) {
+      logger.warn("conversation intelligence batch failed, splitting in half", {
+        size: batch.length,
+        provider: primary?.provider ?? "auto",
+        error: lastMessage.slice(0, 200),
+      });
+      const middle = Math.ceil(batch.length / 2);
+      await analyzeBatch(batch.slice(0, middle), primary, fallback);
+      await analyzeBatch(batch.slice(middle), primary, fallback);
+      return;
+    }
+
+    if (fallback && fallback.provider !== primary?.provider) {
+      try {
+        const result = await callProvider(fallback);
+        requestCount += 1;
+        await persistResult(result);
+        return;
+      } catch (fallbackError) {
+        requestCount += 1;
+        errors.push(fallbackError instanceof Error ? fallbackError.message : String(fallbackError));
         return;
       }
-
-      if (fallback && fallback.provider !== primary?.provider) {
-        try {
-          const result = await callProvider(fallback);
-          requestCount += 1;
-          await persistResult(result);
-          return;
-        } catch (fallbackError) {
-          requestCount += 1;
-          errors.push(fallbackError instanceof Error ? fallbackError.message : String(fallbackError));
-          return;
-        }
-      }
-
-      errors.push(message);
-      logger.warn("conversation intelligence single conversation failed", { error: message.slice(0, 300) });
     }
+
+    errors.push(lastMessage);
+    logger.warn("conversation intelligence batch exhausted retries", { error: lastMessage.slice(0, 300) });
   };
 
   // Balanceamento: com as duas chaves configuradas, os lotes sao alternados
