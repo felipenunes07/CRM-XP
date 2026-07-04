@@ -762,7 +762,7 @@ async function generateDailyBriefing(
   const { windowStart, windowEnd } = getWindowForDate(windowDate, config.timezone);
 
   try {
-    const result = await fetchAiJson(prompt, config, 2500);
+    const result = await fetchAiJson(prompt, config, 4000);
     const narrative = readString(result.summary.narrativa, 4000);
     const { narrativa: _ignored, ...payload } = result.summary;
 
@@ -988,7 +988,9 @@ export async function runConversationIntelligence(
     }
 
     try {
-      const result = await fetchAiJson(prompt, config, 4000);
+      // 8000: com 8 conversas/lote, 4000 tokens de saida estourava e o JSON
+      // vinha cortado ("Unterminated string") — perdia o lote inteiro.
+      const result = await fetchAiJson(prompt, config, 8000);
       requestCount += 1;
       inputTokens += promptTokens;
       outputTokens += result.outputTokens;

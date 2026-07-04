@@ -13,6 +13,7 @@ import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActiv
 import { configureUazapiWebhook } from "./modules/whatsapp/uazapiService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
+import { runConversationIntelligence } from "./modules/events/conversationAi.js";
 
 /**
  * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
@@ -92,6 +93,32 @@ async function main() {
     );
   }
 
+  // Inteligencia de Mensagens: o agendamento roda na API porque em producao o
+  // container so executa server.js (o worker.ts nao sobe). O proprio
+  // runConversationIntelligence decide quando agir (modo diario 16h, horario
+  // comercial, orcamento, "ja rodou hoje") — o tick e so uma checagem barata.
+  let intelligenceInterval: NodeJS.Timeout | undefined;
+  if (env.EVENTS_AI_BATCH_ENABLED) {
+    const tickMinutes = env.EVENTS_AI_SCHEDULE_MODE === "daily"
+      ? Math.min(10, env.EVENTS_AI_BATCH_INTERVAL_MINUTES)
+      : env.EVENTS_AI_BATCH_INTERVAL_MINUTES;
+
+    logger.info("api server conversation intelligence scheduler enabled", {
+      scheduleMode: env.EVENTS_AI_SCHEDULE_MODE,
+      dailyRunHour: env.EVENTS_AI_DAILY_RUN_HOUR,
+      tickMinutes,
+    });
+
+    const runIntelligence = () => {
+      runConversationIntelligence().catch((error) => {
+        logger.error("api server failed scheduled conversation intelligence", { error: String(error) });
+      });
+    };
+
+    runIntelligence();
+    intelligenceInterval = setInterval(runIntelligence, tickMinutes * 60 * 1000);
+  }
+
   // WhatsApp Webhook Watchdog: also runs on the API server so the webhook
   // config self-heals even when the worker container is down.
   let watchdogInterval: NodeJS.Timeout | undefined;
@@ -123,6 +150,9 @@ async function main() {
     logger.info("shutting down api server");
     if (rollupInterval) {
       clearInterval(rollupInterval);
+    }
+    if (intelligenceInterval) {
+      clearInterval(intelligenceInterval);
     }
     if (watchdogInterval) {
       clearInterval(watchdogInterval);
