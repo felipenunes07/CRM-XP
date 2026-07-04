@@ -1,4 +1,4 @@
-export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment" | "geographic";
+export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment" | "defectsReturn" | "geographic";
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
 export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
 export type CreditSortBy = "urgency" | "debt_desc" | "available_desc" | "name";
@@ -22,10 +22,17 @@ export interface CustomerCreditFilters {
   onlyOverdue: string;
 }
 
+export interface CustomerDefectFilters {
+  search: string;
+  minPurchasedPieces: string;
+  onlyAboveAverage: string;
+}
+
 export interface CustomersPageState {
   activeView: CustomersPageView;
   portfolioFilters: CustomerPortfolioFilters;
   creditFilters: CustomerCreditFilters;
+  defectFilters: CustomerDefectFilters;
   creditKpiFilter: CreditKpiFilter;
   creditSort: CreditSortBy;
   creditQuickFilter: CreditQuickFilter;
@@ -43,6 +50,11 @@ export type CustomersPageAction =
   | {
       type: "updateCreditFilter";
       key: keyof CustomerCreditFilters;
+      value: string;
+    }
+  | {
+      type: "updateDefectFilter";
+      key: keyof CustomerDefectFilters;
       value: string;
     }
   | { type: "setCreditInsight"; insight: "over_credit" | "unused_credit" | "overdue" }
@@ -68,6 +80,11 @@ export function createInitialCustomersPageState(): CustomersPageState {
       onlyWithCredit: "",
       onlyUnusedCredit: "",
       onlyOverdue: "",
+    },
+    defectFilters: {
+      search: "",
+      minPurchasedPieces: "10",
+      onlyAboveAverage: "false",
     },
     creditKpiFilter: "",
     creditSort: "urgency",
@@ -105,6 +122,20 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
     return {
       ...state,
       creditKpiFilter: state.creditKpiFilter === action.value ? "" : action.value,
+    };
+  }
+
+  if (action.type === "updateDefectFilter") {
+    if (state.defectFilters[action.key] === action.value) {
+      return state;
+    }
+
+    return {
+      ...state,
+      defectFilters: {
+        ...state.defectFilters,
+        [action.key]: action.value,
+      },
     };
   }
 

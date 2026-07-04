@@ -27,6 +27,10 @@ import {
   refreshCustomerCreditOverview,
 } from "./modules/crm/customerCreditService.js";
 import {
+  getCustomerDefectOverview,
+  refreshCustomerDefectOverview,
+} from "./modules/crm/customerDefectService.js";
+import {
   getInventoryBuying,
   getInventoryIntelligence,
   getInventoryIntelligenceDetail,
@@ -1053,6 +1057,22 @@ export function createApp() {
   app.get("/api/customer-credit/opportunities", async (_request, response, next) => {
     try {
       response.json(await getCustomerCreditOpportunities());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-defects/overview", async (_request, response, next) => {
+    try {
+      response.json(await getCustomerDefectOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/customer-defects/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      response.json(await refreshCustomerDefectOverview());
     } catch (error) {
       next(error);
     }

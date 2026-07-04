@@ -607,6 +607,62 @@ export const migrations = [
     ON customer_credit_payment_entries(payment_date DESC);
   `,
   `
+  CREATE TABLE IF NOT EXISTS customer_defect_snapshots (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_file_id UUID REFERENCES source_files(id) ON DELETE SET NULL,
+    source_file_path TEXT NOT NULL,
+    source_file_name TEXT NOT NULL,
+    source_file_size_bytes BIGINT NOT NULL,
+    source_file_updated_at TIMESTAMPTZ NOT NULL,
+    parser_version INTEGER NOT NULL DEFAULT 1,
+    period_start_date DATE NOT NULL,
+    period_end_date DATE NOT NULL,
+    total_rows INTEGER NOT NULL DEFAULT 0,
+    matched_rows INTEGER NOT NULL DEFAULT 0,
+    unmatched_rows INTEGER NOT NULL DEFAULT 0,
+    imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_active BOOLEAN NOT NULL DEFAULT FALSE
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_defect_snapshots_active
+    ON customer_defect_snapshots(is_active)
+    WHERE is_active = TRUE;
+
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshots_imported_at
+    ON customer_defect_snapshots(imported_at DESC);
+
+  CREATE TABLE IF NOT EXISTS customer_defect_snapshot_rows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    snapshot_id UUID NOT NULL REFERENCES customer_defect_snapshots(id) ON DELETE CASCADE,
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    customer_code TEXT NOT NULL,
+    customer_display_name TEXT NOT NULL,
+    source_display_name TEXT,
+    revenue NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    order_count INTEGER NOT NULL DEFAULT 0,
+    purchased_pieces NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    returned_pieces NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    returned_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    return_rate NUMERIC(14, 6),
+    defect_sku_count INTEGER NOT NULL DEFAULT 0,
+    first_defect_date DATE,
+    last_defect_date DATE,
+    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_snapshot_id
+    ON customer_defect_snapshot_rows(snapshot_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_customer_id
+    ON customer_defect_snapshot_rows(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_customer_code
+    ON customer_defect_snapshot_rows(customer_code);
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_return_rate
+    ON customer_defect_snapshot_rows(return_rate DESC NULLS LAST);
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_returned_pieces
+    ON customer_defect_snapshot_rows(returned_pieces DESC);
+  `,
+  `
   CREATE TABLE IF NOT EXISTS idea_board_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,

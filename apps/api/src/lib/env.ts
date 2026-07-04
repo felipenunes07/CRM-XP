@@ -111,6 +111,11 @@ const envSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   WORKER_CREDIT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
+  WORKER_DEFECT_SYNC_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  WORKER_DEFECT_SYNC_HOUR: z.coerce.number().int().min(0).max(23).default(5),
   WORKER_SENTIMENT_AGGREGATION_ENABLED: z
     .enum(["true", "false"])
     .default("true")
@@ -197,6 +202,11 @@ const envSchema = z.object({
     .string()
     .default("C:\\Users\\Felipe\\Dropbox\\XP SALDO TEMPORARIO"),
   CUSTOMER_CREDIT_WORKBOOK_PREFIX: z.string().default("SALDO VENDAS"),
+  DROPBOX_CUSTOMER_DEFECT_PATH: z.string().default("/DEFEITOS - XP"),
+  CUSTOMER_DEFECT_WORKBOOK_DIR: z
+    .string()
+    .default("C:\\Users\\Felipe\\Dropbox\\DEFEITOS - XP"),
+  CUSTOMER_DEFECT_WORKBOOK_PREFIX: z.string().default("坏品表 PLANILHA DEFEITOS 2026"),
   INVENTORY_SHEET_SOURCE_NAME: z.string().default("APP Orçamento Facil Expor telas"),
   INVENTORY_SHEET_CSV_URL: z
     .string()

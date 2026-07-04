@@ -9,6 +9,7 @@ import type {
   CustomerOpportunityQueueResponse,
   CustomerCreditDetailResponse,
   CustomerCreditOverviewResponse,
+  CustomerDefectOverviewResponse,
   CustomerDocInsightsResponse,
   CustomerLabel,
   CustomerListItem,
@@ -414,6 +415,14 @@ export const api = {
   },
   customerDocInsights(token: string) {
     return request<CustomerDocInsightsResponse>("/api/customer-insights/doc", {}, token);
+  },
+  customerDefectOverview(token: string) {
+    return request<CustomerDefectOverviewResponse>("/api/customer-defects/overview", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
+  },
+  refreshCustomerDefectOverview(token: string) {
+    return request<CustomerDefectOverviewResponse>("/api/customer-defects/refresh", {
+      method: "POST",
+    }, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   getGeographicSalesStats(token: string) {
     return request<GeographicSalesResponse>("/api/geographic/sales", {}, token);

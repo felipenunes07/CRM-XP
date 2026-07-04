@@ -1,14 +1,15 @@
-import type { CustomerCreditRow } from "@olist-crm/shared";
+import type { CustomerCreditRow, CustomerDefectRow } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDateTime, formatNumber } from "../lib/format";
+import { formatCurrency, formatDateTime, formatNumber, formatPercent } from "../lib/format";
 import { isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
+import { CustomerDefectsTable } from "../components/CustomerDefectsTable";
 import { CustomerTable } from "../components/CustomerTable";
 import { StatCard } from "../components/StatCard";
 import { GeographicView } from "../components/GeographicView";
@@ -18,6 +19,7 @@ import {
   type CreditQuickFilter,
   type CreditSortBy,
   type CustomerCreditFilters,
+  type CustomerDefectFilters,
   type CustomerPortfolioSortBy,
   createInitialCustomersPageState,
   customersPageReducer,
@@ -41,6 +43,12 @@ const viewTabs = [
     label: "Credito & Pagamento",
     helper: "Leitura diaria de saldo, credito liberado e risco financeiro da carteira.",
     title: "Credito e pagamento da carteira",
+  },
+  {
+    value: "defectsReturn" as const,
+    label: "Defeitos & Retorno",
+    helper: "Ranking de clientes por taxa de retorno no periodo da planilha de defeitos.",
+    title: "Taxa de retorno por cliente",
   },
   {
     value: "geographic" as const,
@@ -159,6 +167,41 @@ function sortCreditRows(rows: CustomerCreditRow[], sortBy: CreditSortBy) {
         return b.debtAmount - a.debtAmount;
       });
   }
+}
+
+function applyDefectFilters(
+  rows: CustomerDefectRow[],
+  filters: CustomerDefectFilters,
+  overallReturnRate: number | null | undefined,
+) {
+  const search = filters.search.trim().toLowerCase();
+  const minPurchasedPieces = Number(filters.minPurchasedPieces || 0);
+
+  return rows.filter((row) => {
+    if (search) {
+      const haystack = [row.customerDisplayName, row.sourceDisplayName, row.customerCode]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      if (!haystack.includes(search)) {
+        return false;
+      }
+    }
+
+    if (Number.isFinite(minPurchasedPieces) && row.purchasedPieces < minPurchasedPieces) {
+      return false;
+    }
+
+    if (
+      filters.onlyAboveAverage === "true" &&
+      !(row.returnRate !== null && overallReturnRate !== null && overallReturnRate !== undefined && row.returnRate > overallReturnRate)
+    ) {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 export function CustomersPage() {
@@ -292,6 +335,12 @@ export function CustomersPage() {
     enabled: Boolean(token && state.activeView === "creditPayment"),
   });
 
+  const defectOverviewQuery = useQuery({
+    queryKey: ["customer-defect-overview"],
+    queryFn: () => api.customerDefectOverview(token!),
+    enabled: Boolean(token && state.activeView === "defectsReturn"),
+  });
+
   const refreshCreditMutation = useMutation({
     mutationFn: () => api.refreshCustomerCreditOverview(token!),
     onSuccess: (payload) => {
@@ -304,6 +353,21 @@ export function CustomersPage() {
         setToastMessage(`Sincronizado com sucesso! Arquivo: ${fileName} (${fileDate})`);
       } else {
         setToastMessage("Sincronização concluída, mas nenhum dado foi retornado.");
+      }
+    },
+  });
+
+  const refreshDefectMutation = useMutation({
+    mutationFn: () => api.refreshCustomerDefectOverview(token!),
+    onSuccess: (payload) => {
+      queryClient.setQueryData(["customer-defect-overview"], payload);
+
+      if (payload.snapshot) {
+        const fileName = payload.snapshot.sourceFileName;
+        const fileDate = formatDateTime(payload.snapshot.sourceFileUpdatedAt);
+        setToastMessage(`Snapshot de defeitos atualizado. Arquivo: ${fileName} (${fileDate})`);
+      } else {
+        setToastMessage("Atualizacao concluida, mas nenhum defeito foi retornado.");
       }
     },
   });
@@ -345,6 +409,25 @@ export function CustomersPage() {
   const filteredUnmatchedCreditRows = useMemo(
     () => applyCreditFilters(creditOverviewQuery.data?.unmatchedRows ?? [], state.creditFilters),
     [creditOverviewQuery.data?.unmatchedRows, state.creditFilters],
+  );
+
+  const displayedDefectRows = useMemo(
+    () =>
+      applyDefectFilters(
+        defectOverviewQuery.data?.rows ?? [],
+        state.defectFilters,
+        defectOverviewQuery.data?.summary.overallReturnRate ?? null,
+      ),
+    [defectOverviewQuery.data?.rows, defectOverviewQuery.data?.summary.overallReturnRate, state.defectFilters],
+  );
+  const filteredUnmatchedDefectRows = useMemo(
+    () =>
+      applyDefectFilters(
+        defectOverviewQuery.data?.unmatchedRows ?? [],
+        state.defectFilters,
+        defectOverviewQuery.data?.summary.overallReturnRate ?? null,
+      ),
+    [defectOverviewQuery.data?.unmatchedRows, defectOverviewQuery.data?.summary.overallReturnRate, state.defectFilters],
   );
 
   const kpiFilteredRows = useMemo(
@@ -778,6 +861,155 @@ export function CustomersPage() {
               </section>
 
               <CustomerDocInsightsTable ranking={docInsightsQuery.data.ranking} />
+            </>
+          ) : null}
+        </>
+      ) : state.activeView === "defectsReturn" ? (
+        <>
+          {defectOverviewQuery.isLoading ? <div className="page-loading">Carregando snapshot de defeitos...</div> : null}
+          {defectOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot de defeitos.</div> : null}
+          {defectOverviewQuery.data ? (
+            <>
+              <section className="stats-grid customers-defect-stats">
+                <StatCard
+                  title="Faturamento no periodo"
+                  value={formatCurrency(defectOverviewQuery.data.summary.totalRevenue)}
+                  helper="Compras do CRM no mesmo intervalo da planilha"
+                />
+                <StatCard
+                  title="Pecas compradas"
+                  value={formatNumber(defectOverviewQuery.data.summary.totalPurchasedPieces)}
+                  helper="Base usada para calcular a taxa"
+                  tone="success"
+                />
+                <StatCard
+                  title="Pecas retornadas"
+                  value={formatNumber(defectOverviewQuery.data.summary.totalReturnedPieces)}
+                  helper={formatCurrency(defectOverviewQuery.data.summary.totalReturnedAmount)}
+                  tone="warning"
+                />
+                <StatCard
+                  title="Taxa geral"
+                  value={
+                    defectOverviewQuery.data.summary.overallReturnRate === null
+                      ? "Sem base"
+                      : formatPercent(defectOverviewQuery.data.summary.overallReturnRate)
+                  }
+                  helper={`${formatNumber(defectOverviewQuery.data.summary.highReturnCustomers)} clientes acima da media`}
+                  tone="danger"
+                />
+              </section>
+
+              <div className="credit-snapshot-bar customer-defect-snapshot-bar">
+                <div className="credit-snapshot-info">
+                  <strong>{defectOverviewQuery.data.snapshot?.sourceFileName || "Planilha de defeitos"}</strong>
+                  <span>
+                    {defectOverviewQuery.data.snapshot
+                      ? `${defectOverviewQuery.data.snapshot.periodStartDate} ate ${defectOverviewQuery.data.snapshot.periodEndDate}`
+                      : "Sem snapshot ativo"}
+                  </span>
+                  {defectOverviewQuery.data.snapshot?.importedAt ? (
+                    <small>
+                      {defectOverviewQuery.data.snapshot.sourceFileUpdatedAt
+                        ? `Arquivo ${formatDateTime(defectOverviewQuery.data.snapshot.sourceFileUpdatedAt)} - `
+                        : ""}
+                      Atualizado {formatDateTime(defectOverviewQuery.data.snapshot.importedAt)}
+                    </small>
+                  ) : null}
+                </div>
+
+                <div className="credit-snapshot-actions">
+                  <span className="customer-defect-snapshot-badge">
+                    {formatNumber(defectOverviewQuery.data.summary.matchedCustomers)} vinculados -{" "}
+                    {formatNumber(defectOverviewQuery.data.summary.unmatchedCustomers)} nao vinculados
+                  </span>
+                  {canRefreshCredit ? (
+                    <button
+                      type="button"
+                      className="ghost-button small"
+                      onClick={() => refreshDefectMutation.mutate()}
+                      disabled={refreshDefectMutation.isPending}
+                    >
+                      {refreshDefectMutation.isPending ? "Atualizando..." : "Atualizar agora"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {refreshDefectMutation.isError ? (
+                <span className="inline-error">Nao foi possivel atualizar a planilha de defeitos agora.</span>
+              ) : null}
+
+              <section className="panel customer-defect-filters-panel">
+                <div className="filters-grid filters-grid-three">
+                  <label>
+                    Buscar
+                    <input
+                      value={state.defectFilters.search}
+                      onChange={(event) =>
+                        dispatch({ type: "updateDefectFilter", key: "search", value: event.target.value })
+                      }
+                      placeholder="Nome ou codigo"
+                    />
+                  </label>
+
+                  <label>
+                    Volume minimo
+                    <select
+                      value={state.defectFilters.minPurchasedPieces}
+                      onChange={(event) =>
+                        dispatch({ type: "updateDefectFilter", key: "minPurchasedPieces", value: event.target.value })
+                      }
+                    >
+                      <option value="0">Todos</option>
+                      <option value="10">10+ pecas compradas</option>
+                      <option value="50">50+ pecas compradas</option>
+                      <option value="100">100+ pecas compradas</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Corte
+                    <select
+                      value={state.defectFilters.onlyAboveAverage}
+                      onChange={(event) =>
+                        dispatch({ type: "updateDefectFilter", key: "onlyAboveAverage", value: event.target.value })
+                      }
+                    >
+                      <option value="false">Todos</option>
+                      <option value="true">Acima da media</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <div className="credit-results-meta">
+                <p>
+                  Exibindo {formatNumber(displayedDefectRows.length)} de{" "}
+                  {formatNumber(defectOverviewQuery.data.summary.matchedCustomers)} clientes vinculados.
+                </p>
+              </div>
+
+              <CustomerDefectsTable
+                rows={displayedDefectRows}
+                overallRate={defectOverviewQuery.data.summary.overallReturnRate}
+                emptyMessage="Nenhum cliente vinculado bate com os filtros de retorno."
+              />
+
+              <details className="panel customer-credit-unmatched-panel">
+                <summary>
+                  Nao vinculados ao CRM ({formatNumber(filteredUnmatchedDefectRows.length)}/
+                  {formatNumber(defectOverviewQuery.data.summary.unmatchedCustomers)})
+                </summary>
+                <p className="panel-subcopy">
+                  Esses codigos apareceram na aba DEFEITOS, mas ainda nao bateram com o <code>customer_code</code> do CRM.
+                </p>
+                <CustomerDefectsTable
+                  rows={filteredUnmatchedDefectRows}
+                  overallRate={defectOverviewQuery.data.summary.overallReturnRate}
+                  emptyMessage="Nenhum codigo nao vinculado bate com os filtros."
+                />
+              </details>
             </>
           ) : null}
         </>

@@ -2006,6 +2006,79 @@ a {
   text-overflow: ellipsis;
 }
 
+.customer-defects-table {
+  min-width: 1080px;
+}
+
+.customer-defects-table th:nth-child(n + 2),
+.customer-defects-table td:nth-child(n + 2) {
+  white-space: nowrap;
+}
+
+.defect-rate-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  border-radius: 999px;
+  padding: 0.34rem 0.62rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.defect-rate-pill.tone-danger {
+  background: rgba(217, 83, 79, 0.12);
+  color: #b42318;
+}
+
+.defect-rate-pill.tone-warning {
+  background: rgba(208, 154, 41, 0.14);
+  color: #9a6700;
+}
+
+.defect-rate-pill.tone-success {
+  background: rgba(47, 157, 103, 0.12);
+  color: #1f7a4d;
+}
+
+.defect-rate-pill.tone-muted {
+  background: rgba(99, 113, 134, 0.12);
+  color: var(--muted);
+}
+
+.defect-table-metric {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.defect-table-metric strong {
+  font-size: 0.96rem;
+}
+
+.defect-table-metric span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.customer-defect-filters-panel {
+  padding: 1rem;
+}
+
+.customer-defect-snapshot-bar {
+  margin-top: 0.2rem;
+}
+
+.customer-defect-snapshot-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0.42rem 0.72rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 
 
 .data-table th,
@@ -3769,6 +3842,10 @@ textarea {
 
     .credit-table-v2 {
       min-width: 1100px;
+    }
+
+    .customer-defects-table {
+      min-width: 1040px;
     }
 
     .customer-financial-header,

@@ -432,6 +432,58 @@ export interface CustomerDocInsightsResponse {
   ranking: CustomerDocInsightListItem[];
 }
 
+export interface CustomerDefectSnapshotMeta {
+  id: string;
+  sourceFileName: string;
+  sourceFilePath: string;
+  sourceFileUpdatedAt: string;
+  sourceFileSizeBytes: number;
+  importedAt: string;
+  periodStartDate: string;
+  periodEndDate: string;
+  totalRows: number;
+  matchedRows: number;
+  unmatchedRows: number;
+}
+
+export interface CustomerDefectRow {
+  id: string;
+  customerId: string | null;
+  customerCode: string;
+  customerDisplayName: string;
+  sourceDisplayName: string | null;
+  matched: boolean;
+  revenue: number;
+  orderCount: number;
+  purchasedPieces: number;
+  returnedPieces: number;
+  returnedAmount: number;
+  returnRate: number | null;
+  defectSkuCount: number;
+  firstDefectDate: string | null;
+  lastDefectDate: string | null;
+}
+
+export interface CustomerDefectOverviewSummary {
+  totalCustomers: number;
+  matchedCustomers: number;
+  unmatchedCustomers: number;
+  totalRevenue: number;
+  totalPurchasedPieces: number;
+  totalReturnedPieces: number;
+  totalReturnedAmount: number;
+  overallReturnRate: number | null;
+  highReturnCustomers: number;
+  zeroPurchaseReturnCustomers: number;
+}
+
+export interface CustomerDefectOverviewResponse {
+  snapshot: CustomerDefectSnapshotMeta | null;
+  summary: CustomerDefectOverviewSummary;
+  rows: CustomerDefectRow[];
+  unmatchedRows: CustomerDefectRow[];
+}
+
 export interface GeographicStateStat {
   state: string;
   customerCount: number;
