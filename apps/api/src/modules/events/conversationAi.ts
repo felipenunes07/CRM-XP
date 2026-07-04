@@ -39,11 +39,14 @@ import type {
 } from "@olist-crm/shared";
 import {
   type EventsAiBatchConfig,
+  type EventsAiProviderRuntime,
   estimatePromptTokens,
   fetchAiJson,
+  fetchAiJsonWithProvider,
   getBatchUsage,
   getEventsAiBatchConfig,
   getLocalParts,
+  selectEventsAiProviders,
   shouldRunEventsAiBatch,
   zonedDateToUtc,
 } from "./eventsBatchAi.js";
@@ -276,7 +279,7 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "- \"sentimento\" e o humor do CLIENTE na conversa, de -1 (pessimo) a 1 (otimo).",
     "- \"sem_resposta\" = a ultima coisa relevante foi o cliente pedindo algo e ninguem da equipe respondeu.",
     "- \"tema\": UM UNICO tema principal que resume a conversa, em 1 a 3 palavras minusculas (ex: \"tela quebrada\", \"atraso entrega\", \"orcamento\", \"troca\"). NUNCA mais de um tema por conversa; escolha o assunto dominante. Use sempre o mesmo termo para o mesmo assunto (nao invente sinonimos).",
-    "- \"citacoes\": ate 3 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
+    "- \"citacoes\": ate 2 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
     "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
     "",
     "Responda APENAS JSON valido neste formato:",
@@ -465,6 +468,12 @@ async function selectConversationCandidates(
       -- mensagem nova — o botao sempre produz uma leitura fresca.
       AND (ci.id IS NULL OR convs.last_message_at > ci.last_message_at OR $8::boolean)
     ORDER BY
+      -- Fila justa: primeiro quem NUNCA foi lida, depois quem tem mensagem
+      -- nova desde a ultima leitura; so entao releituras. Sem isso, o run
+      -- forcado gastava o orcamento relendo sempre as mesmas conversas
+      -- movimentadas e as pendentes nunca chegavam na vez.
+      (ci.id IS NULL) DESC,
+      (ci.id IS NOT NULL AND convs.last_message_at > ci.last_message_at) DESC,
       signals.signal_count DESC,
       convs.customer_message_count DESC,
       convs.last_message_at DESC
@@ -958,40 +967,44 @@ export async function runConversationIntelligence(
   let analyzed = 0;
   let provider = config.provider;
   let model = config.model;
+  let budgetExhausted = false;
   const errors: string[] = [];
 
-  onProgress({
-    phase: "analyzing",
-    chunkCount: chunks.length,
-    message: `IA lendo ${prepared.length} conversas em ${chunks.length} lote${chunks.length === 1 ? "" : "s"}...`,
-  });
-
-  let chunkIndex = 0;
-  for (const chunk of chunks) {
-    chunkIndex += 1;
-    onProgress({
-      chunkIndex,
-      analyzedConversations: analyzed,
-      message: `IA lendo lote ${chunkIndex} de ${chunks.length} (${analyzed} conversas prontas)...`,
-    });
+  /**
+   * Processa um lote com um provedor preferido; em falha (JSON cortado,
+   * 503 de sobrecarga etc.):
+   *  - lote > 1 conversa → DIVIDE ao meio e tenta as metades (resposta menor
+   *    quase sempre completa);
+   *  - lote de 1 conversa → tenta o OUTRO provedor antes de desistir.
+   * Antes, um lote falho perdia 8 conversas de uma vez.
+   */
+  const analyzeBatch = async (
+    batch: typeof prepared,
+    primary: EventsAiProviderRuntime | undefined,
+    fallback: EventsAiProviderRuntime | undefined,
+  ): Promise<void> => {
+    if (batch.length === 0 || budgetExhausted) return;
 
     if (usage.requestCount + requestCount >= config.dailyRequestLimit) {
+      budgetExhausted = true;
       errors.push("daily_request_cap");
-      break;
+      return;
     }
 
-    const prompt = buildConversationsPrompt(chunk.map((item) => item.payload));
+    const prompt = buildConversationsPrompt(batch.map((item) => item.payload));
     const promptTokens = estimatePromptTokens(prompt);
     if (tokensSoFar + promptTokens >= config.dailyTokenLimit) {
+      budgetExhausted = true;
       errors.push("daily_token_cap");
-      break;
+      return;
     }
 
-    try {
-      // 8000: com 8 conversas/lote, 4000 tokens de saida estourava e o JSON
-      // vinha cortado ("Unterminated string") — perdia o lote inteiro.
-      const result = await fetchAiJson(prompt, config, 8000);
-      requestCount += 1;
+    // 8000 tokens de saida: com 4000, lotes de 8 conversas estouravam e o
+    // JSON vinha cortado ("Unterminated string").
+    const callProvider = (runtime: EventsAiProviderRuntime | undefined) =>
+      runtime ? fetchAiJsonWithProvider(prompt, runtime, 8000) : fetchAiJson(prompt, config, 8000);
+
+    const persistResult = async (result: Awaited<ReturnType<typeof fetchAiJson>>) => {
       inputTokens += promptTokens;
       outputTokens += result.outputTokens;
       tokensSoFar += result.totalTokens;
@@ -999,7 +1012,7 @@ export async function runConversationIntelligence(
       model = result.model;
 
       const parsed = parseConversationAnalyses(result.summary);
-      for (const item of chunk) {
+      for (const item of batch) {
         const analysis = parsed.get(item.payload.chave);
         if (!analysis || !analysis.resumo) continue;
         await upsertConversationInsight(item.candidate, analysis, {
@@ -1009,12 +1022,89 @@ export async function runConversationIntelligence(
         });
         analyzed += 1;
       }
+      onProgress({ analyzedConversations: analyzed });
+    };
+
+    try {
+      const result = await callProvider(primary);
+      requestCount += 1;
+      await persistResult(result);
     } catch (error) {
       requestCount += 1;
       const message = error instanceof Error ? error.message : String(error);
+
+      if (batch.length > 1) {
+        logger.warn("conversation intelligence batch failed, splitting in half", {
+          size: batch.length,
+          provider: primary?.provider ?? "auto",
+          error: message.slice(0, 200),
+        });
+        const middle = Math.ceil(batch.length / 2);
+        await analyzeBatch(batch.slice(0, middle), primary, fallback);
+        await analyzeBatch(batch.slice(middle), primary, fallback);
+        return;
+      }
+
+      if (fallback && fallback.provider !== primary?.provider) {
+        try {
+          const result = await callProvider(fallback);
+          requestCount += 1;
+          await persistResult(result);
+          return;
+        } catch (fallbackError) {
+          requestCount += 1;
+          errors.push(fallbackError instanceof Error ? fallbackError.message : String(fallbackError));
+          return;
+        }
+      }
+
       errors.push(message);
-      logger.warn("conversation intelligence chunk failed", { error: message });
+      logger.warn("conversation intelligence single conversation failed", { error: message.slice(0, 300) });
     }
+  };
+
+  // Balanceamento: com as duas chaves configuradas, os lotes sao alternados
+  // entre Cerebras e Gemini e processados em DUAS esteiras paralelas — dobra
+  // a vazao e espalha a carga (menos 503/limite por provedor). Cada esteira
+  // usa o outro provedor como reserva.
+  const providers = selectEventsAiProviders(config);
+  const parallel = providers.length >= 2;
+  let completedChunks = 0;
+
+  onProgress({
+    phase: "analyzing",
+    chunkCount: chunks.length,
+    message: parallel
+      ? `IA lendo ${prepared.length} conversas em ${chunks.length} lotes (${providers[0]!.provider} + ${providers[1]!.provider} em paralelo)...`
+      : `IA lendo ${prepared.length} conversas em ${chunks.length} lote${chunks.length === 1 ? "" : "s"}...`,
+  });
+
+  const runLane = async (
+    laneChunks: typeof chunks,
+    primary: EventsAiProviderRuntime | undefined,
+    fallback: EventsAiProviderRuntime | undefined,
+  ) => {
+    for (const chunk of laneChunks) {
+      if (budgetExhausted) return;
+      completedChunks += 1;
+      onProgress({
+        chunkIndex: completedChunks,
+        analyzedConversations: analyzed,
+        message: parallel
+          ? `IA lendo em paralelo: lote ${completedChunks} de ${chunks.length} (${analyzed} conversas prontas)...`
+          : `IA lendo lote ${completedChunks} de ${chunks.length} (${analyzed} conversas prontas)...`,
+      });
+      await analyzeBatch(chunk, primary, fallback);
+    }
+  };
+
+  if (parallel) {
+    await Promise.all([
+      runLane(chunks.filter((_, index) => index % 2 === 0), providers[0], providers[1]),
+      runLane(chunks.filter((_, index) => index % 2 === 1), providers[1], providers[0]),
+    ]);
+  } else {
+    await runLane(chunks, providers[0], undefined);
   }
 
   const status = analyzed > 0 ? "SUCCEEDED" as const : "FAILED" as const;

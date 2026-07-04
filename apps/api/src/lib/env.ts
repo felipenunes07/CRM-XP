@@ -148,17 +148,18 @@ const envSchema = z.object({
   EVENTS_AI_BUSINESS_END_HOUR: z.coerce.number().int().min(1).max(24).default(18),
   EVENTS_AI_BUSINESS_DAYS: z.string().default("1,2,3,4,5"),
   EVENTS_AI_BATCH_INTERVAL_MINUTES: z.coerce.number().int().min(15).max(24 * 60).default(60),
-  // Orcamento diario apertado de proposito (Felipe nao quer pagar API): cabe
-  // no free tier do Cerebras (14.400 req/dia, ~1M tokens/dia) e do Gemini.
-  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(2000).default(40),
-  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(20_000_000).default(400_000),
+  // Orcamento diario dentro do free tier do Cerebras (14.400 req/dia, ~1M
+  // tokens/dia) e do Gemini: da para ler o dia inteiro (~120 conversas)
+  // algumas vezes sem pagar nada.
+  EVENTS_AI_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(0).max(2000).default(120),
+  EVENTS_AI_DAILY_TOKEN_LIMIT: z.coerce.number().int().min(0).max(20_000_000).default(900_000),
   EVENTS_AI_MAX_EVENTS_PER_BATCH: z.coerce.number().int().min(10).max(1000).default(200),
   EVENTS_AI_LOOKBACK_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   EVENTS_AI_SUMMARY_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
   // Inteligencia de Mensagens v2: analise de conversas inteiras por IA.
-  // 24 conversas/rodada em lotes de 8 = ~3 chamadas por ciclo; as conversas
-  // com sinal de reclamacao/risco (classificador por regra) vao primeiro.
-  EVENTS_AI_MAX_CONVERSATIONS_PER_RUN: z.coerce.number().int().min(5).max(200).default(24),
+  // 150 conversas/rodada em lotes de 8 cobre o dia inteiro (~120 conversas)
+  // numa unica execucao; pendentes e com sinal de reclamacao/risco primeiro.
+  EVENTS_AI_MAX_CONVERSATIONS_PER_RUN: z.coerce.number().int().min(5).max(500).default(150),
   EVENTS_AI_CONVERSATIONS_PER_REQUEST: z.coerce.number().int().min(1).max(20).default(8),
   EVENTS_AI_MAX_MESSAGES_PER_CONVERSATION: z.coerce.number().int().min(10).max(200).default(40),
   // Trava do briefing: regenera no maximo a cada N minutos (manual ignora).

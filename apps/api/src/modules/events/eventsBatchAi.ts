@@ -54,7 +54,7 @@ interface EventForAi {
   isGroup?: boolean | null;
 }
 
-interface EventsAiProviderRuntime {
+export interface EventsAiProviderRuntime {
   provider: EventsAiRuntimeProvider;
   model: string;
   apiKey: string;
@@ -376,6 +376,17 @@ async function fetchCerebrasSummary(prompt: string, runtime: EventsAiProviderRun
     outputTokens: payload.usage?.completion_tokens ?? estimatePromptTokens(text),
     totalTokens: payload.usage?.total_tokens ?? estimatePromptTokens(prompt) + estimatePromptTokens(text),
   };
+}
+
+/** Chama UM provedor especifico (balanceamento Cerebras+Gemini em paralelo). */
+export async function fetchAiJsonWithProvider(
+  prompt: string,
+  runtime: EventsAiProviderRuntime,
+  maxOutputTokens = 1200,
+) {
+  return runtime.provider === "cerebras"
+    ? fetchCerebrasSummary(prompt, runtime, maxOutputTokens)
+    : fetchGeminiSummary(prompt, runtime, maxOutputTokens);
 }
 
 export async function fetchAiJson(prompt: string, config: EventsAiBatchConfig, maxOutputTokens = 1200) {
