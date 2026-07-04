@@ -1098,6 +1098,10 @@ export function DisparadorPage() {
   const [videoFileSize, setVideoFileSize] = useState<number | null>(null);
   const [videoOrientation, setVideoOrientation] = useState<"UNKNOWN" | "VERTICAL" | "LANDSCAPE">("UNKNOWN");
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  // Campanha de imagem (texto + imagem simples)
+  const [campaignImageUrl, setCampaignImageUrl] = useState("");
+  const [campaignImageFileName, setCampaignImageFileName] = useState("");
+  const [uploadingCampaignImage, setUploadingCampaignImage] = useState(false);
 
   const selectedSenderProvider: WhatsappInstanceProvider = useMemo(() => {
     if (!selectedSenderIds.length) return "EVOLUTION";
@@ -1306,6 +1310,9 @@ export function DisparadorPage() {
           throw new Error(validationError);
         }
       }
+      if (campaignMessageType === "IMAGE" && !campaignImageUrl.trim()) {
+        throw new Error("Envie a imagem do disparo antes de disparar.");
+      }
 
       return api.createWhatsappCampaign(token!, {
         name: campaignName.trim() || `Disparo ${new Date().toLocaleDateString("pt-BR")}`,
@@ -1317,6 +1324,7 @@ export function DisparadorPage() {
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : null,
         menuData: campaignMessageType === "MENU" ? buildMenuData() : null,
         videoUrl: preparedVideoUrl,
+        imageUrl: campaignMessageType === "IMAGE" ? campaignImageUrl.trim() || null : null,
         autoReplyText: autoReplyEnabled && autoReplyText.trim() ? autoReplyText.trim() : null,
         filtersSnapshot: {
           quickFilter,
@@ -1453,12 +1461,17 @@ export function DisparadorPage() {
         }
       }
 
+      if (campaignMessageType === "IMAGE" && !campaignImageUrl.trim()) {
+        throw new Error("Envie a imagem do disparo antes de testar.");
+      }
+
       const payload = {
-        messageText: campaignMessageType === "VIDEO" ? messageText.trim() : messageText || "Mensagem de teste",
+        messageText: campaignMessageType === "VIDEO" || campaignMessageType === "IMAGE" ? messageText.trim() : messageText || "Mensagem de teste",
         messageType: campaignMessageType,
         carouselData: campaignMessageType === "CAROUSEL" ? carouselSlides : undefined,
         menuData: campaignMessageType === "MENU" ? buildMenuData() : undefined,
         videoUrl: preparedVideoUrl,
+        imageUrl: campaignMessageType === "IMAGE" ? campaignImageUrl.trim() : undefined,
         whatsappInstanceId: selectedSenderIds[0] || undefined
       };
       
@@ -1635,9 +1648,11 @@ export function DisparadorPage() {
     ? true
     : campaignMessageType === "VIDEO"
       ? Boolean(videoUrl.trim())
-      : campaignMessageType === "MENU"
-        ? Boolean(messageText.trim()) && menuChoicesCount > 0
-        : Boolean(messageText.trim());
+      : campaignMessageType === "IMAGE"
+        ? Boolean(campaignImageUrl.trim())
+        : campaignMessageType === "MENU"
+          ? Boolean(messageText.trim()) && menuChoicesCount > 0
+          : Boolean(messageText.trim());
   const isReadyToDispatch = hasMessage && selectedGroupCount > 0 && selectedSenderIds.length > 0;
   const dispatchButtonLabel = createCampaignMutation.isPending
     ? "Criando campanha..."
@@ -1646,6 +1661,8 @@ export function DisparadorPage() {
       : "Selecione grupos para disparar";
   const composeHelperText = campaignMessageType === "VIDEO" && !videoUrl
     ? "Selecione ou insira um arquivo/URL de vídeo para liberar o disparo."
+    : campaignMessageType === "IMAGE" && !campaignImageUrl
+    ? "Envie a imagem do disparo para liberar o botão."
     : campaignMessageType === "MENU" && menuChoicesCount === 0
     ? "Adicione ao menos uma opção no menu interativo para liberar o disparo."
     : !hasMessage
@@ -2678,6 +2695,14 @@ export function DisparadorPage() {
                         >
                           Texto
                         </button>
+                        <button
+                          type="button"
+                          className={`ghost-button${campaignMessageType === "IMAGE" ? " active" : ""}`}
+                          style={{ padding: "6px 14px", borderRadius: "8px", fontSize: "0.82rem", fontWeight: 600, background: campaignMessageType === "IMAGE" ? "var(--accent)" : "var(--bg-soft)", color: campaignMessageType === "IMAGE" ? "#fff" : "var(--muted)", border: "1px solid var(--line)" }}
+                          onClick={() => setCampaignMessageType("IMAGE")}
+                        >
+                          Imagem
+                        </button>
                         {selectedSenderProvider === "UAZAPI" ? (
                           <button
                             type="button"
@@ -2709,9 +2734,9 @@ export function DisparadorPage() {
                       </div>
 
                       <label className="whatsapp-message-field">
-                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : campaignMessageType === "MENU" ? " (texto principal do menu)" : " (Versão A)"}</span>
+                        <span>Texto da Mensagem{campaignMessageType === "CAROUSEL" ? " (acompanha o carrossel)" : campaignMessageType === "VIDEO" ? " (legenda do vídeo)" : campaignMessageType === "IMAGE" ? " (legenda da imagem)" : campaignMessageType === "MENU" ? " (texto principal do menu)" : " (Versão A)"}</span>
                         <textarea
-                          rows={campaignMessageType === "CAROUSEL" || campaignMessageType === "VIDEO" || campaignMessageType === "MENU" ? 4 : 8}
+                          rows={campaignMessageType === "CAROUSEL" || campaignMessageType === "VIDEO" || campaignMessageType === "IMAGE" || campaignMessageType === "MENU" ? 4 : 8}
                           value={messageText}
                           onChange={(event) => setMessageText(event.target.value)}
                           placeholder="Digite a mensagem principal que será enviada aos clientes..."
@@ -2762,6 +2787,97 @@ export function DisparadorPage() {
                           </div>
                         )}
                       </div>
+
+                      {campaignMessageType === "IMAGE" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
+                          <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0f172a" }}>Imagem do disparo</span>
+
+                          <label style={{ cursor: uploadingCampaignImage ? "not-allowed" : "pointer" }}>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                              style={{ display: "none" }}
+                              disabled={uploadingCampaignImage}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const maxSize = 10 * 1024 * 1024; // 10MB
+                                if (file.size > maxSize) {
+                                  alert(`Arquivo muito grande! Tamanho máximo: 10MB. Seu arquivo: ${formatFileSize(file.size)}`);
+                                  return;
+                                }
+                                const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+                                if (!validTypes.includes(file.type)) {
+                                  alert("Tipo de arquivo inválido! Use: JPG, PNG, GIF ou WEBP");
+                                  return;
+                                }
+                                setUploadingCampaignImage(true);
+                                try {
+                                  const fileBase64 = await new Promise<string>((resolve, reject) => {
+                                    const reader = new FileReader();
+                                    reader.onload = () => resolve(reader.result as string);
+                                    reader.onerror = () => reject(new Error("read error"));
+                                    reader.readAsDataURL(file);
+                                  });
+                                  const { url } = await api.uploadCampaignImage(token!, { fileBase64, fileName: file.name });
+                                  setCampaignImageUrl(url);
+                                  setCampaignImageFileName(file.name);
+                                } catch (uploadErr) {
+                                  console.error("Upload da imagem da campanha falhou:", uploadErr);
+                                  alert("Erro ao enviar a imagem. Verifique sua conexão e tente novamente.");
+                                } finally {
+                                  setUploadingCampaignImage(false);
+                                  e.target.value = "";
+                                }
+                              }}
+                            />
+                            <div style={{
+                              padding: "10px 14px",
+                              background: uploadingCampaignImage ? "#f0fdf4" : "#f8fafc",
+                              border: uploadingCampaignImage ? "2px solid #10b981" : "2px dashed #cbd5e1",
+                              borderRadius: "8px",
+                              textAlign: "center",
+                              fontSize: "0.82rem",
+                              fontWeight: 600,
+                              color: uploadingCampaignImage ? "#10b981" : "#475569",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: "6px",
+                            }}>
+                              {uploadingCampaignImage ? (
+                                <><LoaderCircle size={14} className="spin" /> Enviando...</>
+                              ) : (
+                                <>📁 Escolher imagem do computador</>
+                              )}
+                            </div>
+                          </label>
+
+                          {campaignImageUrl && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px", background: "#fff", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--line)" }}>
+                              <img
+                                src={campaignImageUrl}
+                                alt="Prévia da imagem"
+                                style={{ width: "64px", height: "64px", borderRadius: "8px", objectFit: "cover" }}
+                              />
+                              <span style={{ flex: 1, fontSize: "0.76rem", color: "#64748b", fontWeight: 500, wordBreak: "break-all" }}>
+                                {campaignImageFileName || campaignImageUrl}
+                              </span>
+                              <button
+                                type="button"
+                                className="ghost-button danger"
+                                style={{ padding: "2px 8px", fontSize: "0.72rem" }}
+                                onClick={() => {
+                                  setCampaignImageUrl("");
+                                  setCampaignImageFileName("");
+                                }}
+                              >
+                                <Trash2 size={12} /> Remover
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {campaignMessageType === "VIDEO" && (
                         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", padding: "1rem", background: "var(--bg-soft)", borderRadius: "12px", border: "1px solid var(--line)" }}>
@@ -2847,9 +2963,13 @@ export function DisparadorPage() {
                                           });
                                           setVideoUrl(url);
                                         } catch (uploadErr) {
-                                          // Se o hosting falhar, cai no base64 (comportamento antigo).
-                                          console.warn("Upload de vídeo para o backend falhou, usando base64 inline:", uploadErr);
-                                          setVideoUrl(base64);
+                                          // Sem fallback pra base64 inline: o backend rejeita data: (base64
+                                          // de 13MB+/linha já congelou a listagem com resposta de 107MB).
+                                          console.error("Upload de vídeo para o backend falhou:", uploadErr);
+                                          alert("Erro ao enviar o vídeo para o servidor. Verifique sua conexão e tente novamente.");
+                                          setVideoUrl("");
+                                          setVideoFileName("");
+                                          setVideoFileSize(null);
                                         } finally {
                                           setUploadingVideo(false);
                                         }

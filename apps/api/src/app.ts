@@ -531,10 +531,11 @@ const whatsappCampaignCreateSchema = z.object({
   savedSegmentId: z.string().uuid().nullable().optional(),
   whatsappInstanceId: z.string().uuid().nullable().optional(),
   messageText: z.string().optional().default(""),
-  messageType: z.enum(["TEXT", "CAROUSEL", "VIDEO", "MENU"]).optional(),
+  messageType: z.enum(["TEXT", "IMAGE", "CAROUSEL", "VIDEO", "MENU"]).optional(),
   carouselData: z.array(carouselSlideSchema).nullable().optional(),
   menuData: whatsappMenuDataSchema.nullable().optional(),
   videoUrl: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
   autoReplyText: z.string().max(4000).nullable().optional(),
   filtersSnapshot: z.record(z.unknown()).optional(),
   groupIds: z.array(z.string().uuid()).min(1),
@@ -1733,7 +1734,7 @@ export function createApp() {
 
   app.post("/api/messages/test", async (request, response, next) => {
     try {
-      const { messageText: rawTestMessageText, messageType, carouselData, menuData, videoUrl, whatsappInstanceId } = request.body;
+      const { messageText: rawTestMessageText, messageType, carouselData, menuData, videoUrl, imageUrl, whatsappInstanceId } = request.body;
       const testNumber = "5511911279702@s.whatsapp.net";
       // No teste não existe cliente real, então o {nome} é substituído por um
       // exemplo ("Cliente") para o usuário confirmar que a variável funciona.
@@ -1751,8 +1752,12 @@ export function createApp() {
         messageLength: messageText?.length || 0
       });
 
-      if (!messageText && messageType !== "CAROUSEL" && messageType !== "VIDEO") {
+      if (!messageText && messageType !== "CAROUSEL" && messageType !== "VIDEO" && messageType !== "IMAGE") {
         throw new HttpError(400, "Mensagem de texto é obrigatória");
+      }
+
+      if (messageType === "IMAGE" && !imageUrl?.trim()) {
+        throw new HttpError(400, "Imagem é obrigatória para mensagens de imagem.");
       }
 
       if (messageType === "MENU" && !menuData?.choices?.length) {
@@ -1760,7 +1765,7 @@ export function createApp() {
       }
 
       // Import services
-      const { sendUazapiCarouselMessage, sendUazapiTextMessage, sendUazapiVideoMessage, sendUazapiMenuMessage } = await import("./modules/whatsapp/uazapiService.js");
+      const { sendUazapiCarouselMessage, sendUazapiTextMessage, sendUazapiVideoMessage, sendUazapiMenuMessage, sendUazapiImageMessage } = await import("./modules/whatsapp/uazapiService.js");
       const { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage } = await import("./modules/whatsapp/evolutionService.js");
       
       // Get WhatsApp instance if specified
@@ -1856,6 +1861,14 @@ export function createApp() {
             videoUrl,
             messageText
           );
+        } else if (instanceConfig?.provider === "UAZAPI" && messageType === "IMAGE" && imageUrl) {
+          logger.info("🖼️ Sending image test via UazAPI");
+          result = await sendUazapiImageMessage(
+            { baseUrl: instanceConfig.baseUrl, token: instanceConfig.token },
+            testNumber,
+            imageUrl,
+            messageText
+          );
         } else if (instanceConfig?.provider === "UAZAPI") {
           logger.info("💬 Sending text test via UazAPI");
           result = await sendUazapiTextMessage(
@@ -1877,6 +1890,21 @@ export function createApp() {
               videoUrl,
               "video",
               "video.mp4",
+              messageText
+            );
+          } else if (messageType === "IMAGE" && imageUrl) {
+            logger.info("🖼️ Sending image test via Evolution instance");
+            const { sendWhatsappInstanceMediaMessage } = await import("./modules/whatsapp/evolutionService.js");
+            result = await sendWhatsappInstanceMediaMessage(
+              {
+                instanceName: instanceConfig.instanceName,
+                evolutionBaseUrl: instanceConfig.evolutionBaseUrl,
+                evolutionApiKey: instanceConfig.evolutionApiKey
+              },
+              testNumber,
+              imageUrl,
+              "image",
+              "image.jpg",
               messageText
             );
           } else {
@@ -1905,6 +1933,21 @@ export function createApp() {
               videoUrl,
               "video",
               "video.mp4",
+              messageText
+            );
+          } else if (messageType === "IMAGE" && imageUrl) {
+            logger.info("🖼️ Sending image test via default Evolution");
+            const { sendWhatsappInstanceMediaMessage } = await import("./modules/whatsapp/evolutionService.js");
+            result = await sendWhatsappInstanceMediaMessage(
+              {
+                instanceName: env.EVOLUTION_INSTANCE_NAME,
+                evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+                evolutionApiKey: env.EVOLUTION_API_KEY
+              },
+              testNumber,
+              imageUrl,
+              "image",
+              "image.jpg",
               messageText
             );
           } else {
@@ -2204,6 +2247,10 @@ export function createApp() {
         } catch (error) {
           throw new HttpError(400, error instanceof Error ? error.message : String(error));
         }
+      }
+
+      if (payload.messageType === "IMAGE" && !payload.imageUrl?.trim()) {
+        throw new HttpError(400, "Imagem e obrigatoria para campanhas de imagem.");
       }
 
       // Only enforce Evolution config when not using a specific instance

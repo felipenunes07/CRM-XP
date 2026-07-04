@@ -91,6 +91,7 @@ const campaign: WhatsappCampaignDetail = {
   carouselData: null,
   menuData: null,
   videoUrl: null,
+  imageUrl: null,
   autoReplyText: null,
   minDelaySeconds: 183,
   maxDelaySeconds: 304,

@@ -4032,5 +4032,11 @@ export const migrations = [
   ALTER TABLE event_ai_batches DROP CONSTRAINT IF EXISTS event_ai_batches_run_source_check;
   ALTER TABLE event_ai_batches
     ADD CONSTRAINT event_ai_batches_run_source_check CHECK (run_source IN ('manual', 'automatic'));
+  `,
+  `
+  -- Disparador: novo tipo de campanha IMAGE (texto + imagem simples, sem precisar
+  -- de menu interativo). Guarda so a URL hospedada da imagem (upload-image), nunca
+  -- base64 -- video_url em base64 ja derrubou a listagem (resposta de 107MB).
+  ALTER TABLE whatsapp_campaigns ADD COLUMN IF NOT EXISTS image_url TEXT;
   `
 ];

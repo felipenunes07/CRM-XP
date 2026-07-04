@@ -37,6 +37,7 @@ export interface CreateWhatsappCampaignInput {
   carouselData?: CarouselSlide[] | null;
   menuData?: WhatsappMenuData | null;
   videoUrl?: string | null;
+  imageUrl?: string | null;
   autoReplyText?: string | null;
   filtersSnapshot?: Record<string, unknown>;
   groupIds: string[];
@@ -102,6 +103,7 @@ interface DispatchRecipientContext {
   carouselData: CarouselSlide[] | null;
   menuData: WhatsappMenuData | null;
   videoUrl: string | null;
+  imageUrl: string | null;
   customerDisplayName: string | null;
   sourceName: string;
   sourceCode: string | null;
@@ -360,10 +362,11 @@ function mapCampaignRow(row: Record<string, unknown>): WhatsappCampaignListItem 
     messageType: (String(row.message_type ?? "TEXT")) as WhatsappCampaignMessageType,
     carouselData: row.carousel_data && Array.isArray(row.carousel_data) ? (row.carousel_data as CarouselSlide[]) : null,
     menuData: parseMenuData(row.menu_data),
-    // Nunca devolve vídeo em base64 (data:) na listagem: campanhas antigas chegaram
+    // Nunca devolve mídia em base64 (data:) na listagem: campanhas antigas chegaram
     // a guardar o vídeo inteiro na coluna (13MB+/linha) e a resposta da lista passava
     // de 100MB, congelando o navegador. Só URL hospedada sai daqui.
     videoUrl: row.video_url && !String(row.video_url).startsWith("data:") ? String(row.video_url) : null,
+    imageUrl: row.image_url && !String(row.image_url).startsWith("data:") ? String(row.image_url) : null,
     autoReplyText: row.auto_reply_text ? String(row.auto_reply_text) : null,
     minDelaySeconds: Number(row.min_delay_seconds ?? 0),
     maxDelaySeconds: Number(row.max_delay_seconds ?? 0),
@@ -1072,16 +1075,27 @@ export async function createWhatsappCampaign(
     const carouselData = input.carouselData ?? null;
     const menuData = input.menuData ?? null;
     const videoUrl = input.videoUrl ?? null;
+    const imageUrl = messageType === "IMAGE" ? input.imageUrl?.trim() || null : null;
     const autoReplyText = input.autoReplyText?.trim() || null;
 
-    // Vídeo só entra como URL hospedada (upload via /api/messages/upload-video).
-    // Guardar o vídeo em base64 na coluna infla a tabela (13MB+/linha) e já derrubou
-    // a listagem do Disparador (resposta de 107MB congelava o navegador).
+    // Mídia só entra como URL hospedada (upload via /api/messages/upload-video e
+    // /api/messages/upload-image). Guardar o arquivo em base64 na coluna infla a
+    // tabela (13MB+/linha) e já derrubou a listagem do Disparador (resposta de
+    // 107MB congelava o navegador).
     if (videoUrl && videoUrl.startsWith("data:")) {
       throw new HttpError(400, "Envie o video pelo upload em vez de base64. Recarregue a pagina e tente novamente.");
     }
     if (videoUrl && videoUrl.length > 2048) {
       throw new HttpError(400, "URL de video invalida (longa demais).");
+    }
+    if (messageType === "IMAGE" && !imageUrl) {
+      throw new HttpError(400, "Imagem e obrigatoria para campanhas de imagem.");
+    }
+    if (imageUrl && imageUrl.startsWith("data:")) {
+      throw new HttpError(400, "Envie a imagem pelo upload em vez de base64. Recarregue a pagina e tente novamente.");
+    }
+    if (imageUrl && imageUrl.length > 2048) {
+      throw new HttpError(400, "URL de imagem invalida (longa demais).");
     }
 
     const campaignInsert = await campaignClient.query(
@@ -1100,6 +1114,7 @@ export async function createWhatsappCampaign(
           carousel_data,
           menu_data,
           video_url,
+          image_url,
           auto_reply_text,
           filters_snapshot,
           min_delay_seconds,
@@ -1109,7 +1124,7 @@ export async function createWhatsappCampaign(
           created_by_name,
           scheduled_start_at
         )
-        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14::jsonb, $15, $16, $17, $18, $19, $20::timestamptz)
+        VALUES ($1, 'QUEUED', $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::jsonb, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20, $21::timestamptz)
         RETURNING id, created_at
       `,
       [
@@ -1125,6 +1140,7 @@ export async function createWhatsappCampaign(
         carouselData ? JSON.stringify(carouselData) : null,
         menuData ? JSON.stringify(menuData) : null,
         videoUrl,
+        imageUrl,
         autoReplyText,
         JSON.stringify(input.filtersSnapshot ?? {}),
         minDelaySeconds,
@@ -1715,6 +1731,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           wc.carousel_data,
           wc.menu_data,
           wc.video_url,
+          wc.image_url,
           wc.template_id,
           wc.created_by_user_id,
           wc.created_by_name,
@@ -1805,6 +1822,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       carouselData,
       menuData: parseMenuData(row.menu_data),
       videoUrl: row.video_url ? String(row.video_url) : null,
+      imageUrl: row.image_url ? String(row.image_url) : null,
       customerDisplayName: row.customer_display_name ? String(row.customer_display_name) : null,
       sourceName: String(row.source_name ?? ""),
       sourceCode: row.source_code ? String(row.source_code) : null,

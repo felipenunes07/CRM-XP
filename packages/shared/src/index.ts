@@ -1425,7 +1425,7 @@ export type WhatsappGroupMappingStatus =
   | "IGNORED";
 export type WhatsappGroupMatchMethod = "CODE" | "NAME" | "MANUAL" | "CONFIRMED_NONE" | "IGNORED";
 export type WhatsappCampaignStatus = "QUEUED" | "IN_PROGRESS" | "PAUSED" | "COMPLETED" | "CANCELLED";
-export type WhatsappCampaignMessageType = "TEXT" | "CAROUSEL" | "VIDEO" | "MENU";
+export type WhatsappCampaignMessageType = "TEXT" | "IMAGE" | "CAROUSEL" | "VIDEO" | "MENU";
 export type WhatsappInstanceProvider = "EVOLUTION" | "UAZAPI";
 
 export interface CarouselSlide {
@@ -1644,6 +1644,7 @@ export interface WhatsappCampaignListItem {
   carouselData: CarouselSlide[] | null;
   menuData: WhatsappMenuData | null;
   videoUrl: string | null;
+  imageUrl: string | null;
   autoReplyText: string | null;
   minDelaySeconds: number;
   maxDelaySeconds: number;

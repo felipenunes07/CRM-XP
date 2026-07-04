@@ -13,7 +13,7 @@ import {
   type EnqueuedRecipientJob,
 } from "./whatsappCampaignService.js";
 import { sendWhatsappInstanceTextMessage, sendWhatsappTextMessage, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
-import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage, sendUazapiMenuMessage } from "./uazapiService.js";
+import { sendUazapiTextMessage, sendUazapiCarouselMessage, sendUazapiVideoMessage, sendUazapiMenuMessage, sendUazapiImageMessage } from "./uazapiService.js";
 import { applyWhatsappMessagePlaceholders } from "./whatsappCore.js";
 
 const queueEnabled = Boolean(env.REDIS_URL);
@@ -94,6 +94,8 @@ async function processRecipientDispatch(recipientId: string) {
         payload = await sendUazapiMenuMessage(context.uazapiInstance, context.jid, messageText, context.menuData);
       } else if (context.messageType === "VIDEO" && context.videoUrl) {
         payload = await sendUazapiVideoMessage(context.uazapiInstance, context.jid, context.videoUrl, messageText);
+      } else if (context.messageType === "IMAGE" && context.imageUrl) {
+        payload = await sendUazapiImageMessage(context.uazapiInstance, context.jid, context.imageUrl, messageText);
       } else {
         payload = await sendUazapiTextMessage(context.uazapiInstance, context.jid, messageText);
       }
@@ -106,6 +108,15 @@ async function processRecipientDispatch(recipientId: string) {
           context.videoUrl,
           "video",
           "video.mp4",
+          messageText,
+        );
+      } else if (context.messageType === "IMAGE" && context.imageUrl) {
+        payload = await sendWhatsappInstanceMediaMessage(
+          context.evolutionInstance,
+          context.jid,
+          context.imageUrl,
+          "image",
+          "image.jpg",
           messageText,
         );
       } else {
@@ -124,6 +135,19 @@ async function processRecipientDispatch(recipientId: string) {
           context.videoUrl,
           "video",
           "video.mp4",
+          messageText,
+        );
+      } else if (context.messageType === "IMAGE" && context.imageUrl) {
+        payload = await sendWhatsappInstanceMediaMessage(
+          {
+            instanceName: env.EVOLUTION_INSTANCE_NAME,
+            evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+            evolutionApiKey: env.EVOLUTION_API_KEY,
+          },
+          context.jid,
+          context.imageUrl,
+          "image",
+          "image.jpg",
           messageText,
         );
       } else {
