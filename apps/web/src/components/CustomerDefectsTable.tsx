@@ -44,6 +44,7 @@ export function CustomerDefectsTable({
               <th>Taxa</th>
               <th>Comprou</th>
               <th>Retornou</th>
+              <th>Trocadas</th>
               <th>Faturamento</th>
               <th>Valor retorno</th>
               <th>Ultimo retorno</th>
@@ -76,6 +77,12 @@ export function CustomerDefectsTable({
                     <div className="defect-table-metric">
                       <strong>{formatNumber(row.returnedPieces)}</strong>
                       <span>{formatNumber(row.defectSkuCount)} SKUs</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="defect-table-metric">
+                      <strong>{formatNumber(row.replacementPieces)}</strong>
+                      <span>saidas/trocas</span>
                     </div>
                   </td>
                   <td>{formatCurrency(row.revenue)}</td>

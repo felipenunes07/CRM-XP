@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCustomerDefectOverviewSummary,
   buildCustomerDefectRows,
+  findCustomerDefectWorkbooks,
   parseCustomerDefectWorkbook,
+  parseCustomerDefectWorkbooks,
   shouldRunCustomerDefectSync,
   sortCustomerDefectRows,
   type ParsedCustomerDefectAggregate,
@@ -21,6 +23,16 @@ async function writeWorkbook(rows: Array<Record<string, unknown>>) {
   const filePath = path.join(tempDir, "defeitos.xlsx");
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "DEFEITOS");
+  XLSX.writeFile(workbook, filePath);
+  return filePath;
+}
+
+async function writeWorkbookFromRows(fileName: string, rows: unknown[][]) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "crm-defects-test-"));
+  tempDirs.push(tempDir);
+  const filePath = path.join(tempDir, fileName);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), "DEFEITOS");
   XLSX.writeFile(workbook, filePath);
   return filePath;
 }
@@ -96,12 +108,103 @@ describe("customerDefectService", () => {
     expect(cl542?.lastDefectDate).toBe("2026-07-04");
   });
 
+  it("counts only negative defect movements as returned pieces and keeps positive movements as replacements", async () => {
+    const filePath = await writeWorkbookFromRows("defeitos-2026.xlsx", [
+      ["COD", "OK", "CL", "DATA", "UND.", "Descrição", "SKU", "Valor", "Total", "Cliente", "Nota", "Vendedor", "Recusadas", "STAUS"],
+      ["DEF - CL542 45971", "OK", "CL542", "11/10/25", -2, "SM-A31 WF LCD | PRETO", "0578-1", 51, -102, "Vini Cell", "", "", "", "OK"],
+      ["DEF - CL542 45971", "OK", "CL542", "11/10/25", 1, "SM-A31 WF LCD | PRETO", "0578-1", 51, 51, "Vini Cell", "", "", "", "OK"],
+    ]);
+
+    const parsed = await parseCustomerDefectWorkbook(filePath, filePath);
+    const cl542 = parsed.rowsByCode.get("CL542") as (ParsedCustomerDefectAggregate & { replacementPieces?: number }) | undefined;
+
+    expect(parsed.totalValidRows).toBe(2);
+    expect(cl542?.returnedPieces).toBe(2);
+    expect(cl542?.returnedAmount).toBe(102);
+    expect(cl542?.replacementPieces).toBe(1);
+  });
+
+  it("parses the 2023-2024 legacy defect layout without OK and CL headers", async () => {
+    const filePath = await writeWorkbookFromRows("defeitos-2023-2024.xlsx", [
+      ["CL127", "DATA", "UND.", "Descrição", "DIF", "Valor", "Total", "Cliente/客户"],
+      ["KH19", "5/17/23", -1, "MT-ONE VISION WF ORI BLACK", "0484-3", 135, -135, "KORAI 604"],
+      ["KH19", "5/17/23", 1, "MT-ONE VISION WF ORI BLACK", "0484-3", 135, 135, "KORAI 604"],
+    ]);
+
+    const parsed = await parseCustomerDefectWorkbook(filePath, filePath);
+    const kh19 = parsed.rowsByCode.get("KH19") as (ParsedCustomerDefectAggregate & { replacementPieces?: number }) | undefined;
+
+    expect(parsed.period).toEqual({ startDate: "2023-05-17", endDate: "2023-05-17" });
+    expect(parsed.totalValidRows).toBe(2);
+    expect(kh19?.sourceDisplayName).toBe("KORAI 604");
+    expect(kh19?.returnedPieces).toBe(1);
+    expect(kh19?.replacementPieces).toBe(1);
+    expect(kh19?.defectSkuCount).toBe(1);
+  });
+
+  it("consolidates multiple annual defect workbooks into one snapshot period", async () => {
+    const legacyFilePath = await writeWorkbookFromRows("defeitos-2023-2024.xlsx", [
+      ["CL127", "DATA", "UND.", "Descrição", "DIF", "Valor", "Total", "Cliente/客户"],
+      ["KH19", "5/17/23", -1, "MT-ONE VISION WF ORI BLACK", "0484-3", 135, -135, "KORAI 604"],
+    ]);
+    const currentFilePath = await writeWorkbookFromRows("defeitos-2026.xlsx", [
+      ["COD", "OK", "CL", "DATA", "UND.", "Descrição", "SKU", "Valor", "Total", "Cliente", "Nota", "Vendedor", "Recusadas", "STAUS"],
+      ["DEF - KH19 46207", "OK", "KH19", "7/4/26", -2, "SM-A31 WF LCD | PRETO", "0578-1", 51, -102, "KORAI 604", "", "", "", "OK"],
+    ]);
+
+    const parsed = await parseCustomerDefectWorkbooks([
+      {
+        fullPath: legacyFilePath,
+        sourcePath: legacyFilePath,
+        fileName: path.basename(legacyFilePath),
+        fileSizeBytes: 1,
+        fileUpdatedAt: "2025-02-17T15:39:09.000Z",
+      },
+      {
+        fullPath: currentFilePath,
+        sourcePath: currentFilePath,
+        fileName: path.basename(currentFilePath),
+        fileSizeBytes: 1,
+        fileUpdatedAt: "2026-07-04T13:03:36.000Z",
+      },
+    ]);
+    const kh19 = parsed.rowsByCode.get("KH19");
+
+    expect(parsed.period).toEqual({ startDate: "2023-05-17", endDate: "2026-07-04" });
+    expect(parsed.totalValidRows).toBe(2);
+    expect(parsed.sourceFiles).toHaveLength(2);
+    expect(kh19?.returnedPieces).toBe(3);
+  });
+
+  it("discovers current and Antigos defect workbooks while ignoring unrelated xlsx files", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "crm-defects-test-"));
+    tempDirs.push(tempDir);
+    const antigosDir = path.join(tempDir, "Antigos");
+    await fs.mkdir(antigosDir);
+
+    await Promise.all([
+      fs.writeFile(path.join(tempDir, "坏品表 PLANILHA DEFEITOS 2026.xlsx"), ""),
+      fs.writeFile(path.join(tempDir, "Import propostas comerciais.xlsx"), ""),
+      fs.writeFile(path.join(antigosDir, "坏品表 PLANILHA DEFEITOS 2025.xlsx"), ""),
+      fs.writeFile(path.join(antigosDir, "坏品表 PLANILHA DEFEITOS 2023-2024.xlsx"), ""),
+    ]);
+
+    const candidates = await findCustomerDefectWorkbooks(tempDir);
+
+    expect(candidates.map((candidate) => candidate.fileName).sort()).toEqual([
+      "坏品表 PLANILHA DEFEITOS 2023-2024.xlsx",
+      "坏品表 PLANILHA DEFEITOS 2025.xlsx",
+      "坏品表 PLANILHA DEFEITOS 2026.xlsx",
+    ]);
+  });
+
   it("sorts by return rate before returned pieces and revenue", () => {
     const rows: ParsedCustomerDefectAggregate[] = [
       {
         customerCode: "CL100",
         sourceDisplayName: "High revenue",
         returnedPieces: 20,
+        replacementPieces: 0,
         returnedAmount: 200,
         defectSkuCount: 2,
         firstDefectDate: "2026-01-01",
@@ -116,6 +219,7 @@ describe("customerDefectService", () => {
         customerCode: "CL200",
         sourceDisplayName: "Highest rate",
         returnedPieces: 3,
+        replacementPieces: 0,
         returnedAmount: 90,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-01",
@@ -130,6 +234,7 @@ describe("customerDefectService", () => {
         customerCode: "CL300",
         sourceDisplayName: "Same rate more pieces",
         returnedPieces: 5,
+        replacementPieces: 0,
         returnedAmount: 150,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-01",
@@ -144,6 +249,7 @@ describe("customerDefectService", () => {
         customerCode: "CL400",
         sourceDisplayName: "Same rate fewer pieces",
         returnedPieces: 2,
+        replacementPieces: 0,
         returnedAmount: 60,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-01",
@@ -165,6 +271,7 @@ describe("customerDefectService", () => {
         customerCode: "CL542",
         sourceDisplayName: "Vini Cell",
         returnedPieces: 3,
+        replacementPieces: 1,
         returnedAmount: 153,
         defectSkuCount: 2,
         firstDefectDate: "2025-11-10",
@@ -179,6 +286,7 @@ describe("customerDefectService", () => {
         customerCode: "CL999",
         sourceDisplayName: "Sem compra",
         returnedPieces: 1,
+        replacementPieces: 0,
         returnedAmount: 20,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-02",
@@ -207,6 +315,7 @@ describe("customerDefectService", () => {
         revenue: 3000,
         orderCount: 4,
         returnedPieces: 3,
+        replacementPieces: 1,
         returnRate: 0.1,
       },
       {
@@ -226,6 +335,7 @@ describe("customerDefectService", () => {
         customerCode: "CL100",
         sourceDisplayName: "Cliente 100",
         returnedPieces: 10,
+        replacementPieces: 2,
         returnedAmount: 500,
         defectSkuCount: 2,
         firstDefectDate: "2026-01-01",
@@ -243,6 +353,7 @@ describe("customerDefectService", () => {
         customerCode: "CL200",
         sourceDisplayName: "Cliente 200",
         returnedPieces: 2,
+        replacementPieces: 0,
         returnedAmount: 120,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-02",
@@ -260,6 +371,7 @@ describe("customerDefectService", () => {
         customerCode: "CL999",
         sourceDisplayName: "Sem compra",
         returnedPieces: 1,
+        replacementPieces: 0,
         returnedAmount: 50,
         defectSkuCount: 1,
         firstDefectDate: "2026-01-03",
@@ -283,6 +395,7 @@ describe("customerDefectService", () => {
       totalRevenue: 18000,
       totalPurchasedPieces: 200,
       totalReturnedPieces: 13,
+      totalReplacementPieces: 2,
       totalReturnedAmount: 670,
       overallReturnRate: 0.065,
       highReturnCustomers: 1,

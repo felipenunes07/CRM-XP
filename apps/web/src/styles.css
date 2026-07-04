@@ -2007,7 +2007,7 @@ a {
 }
 
 .customer-defects-table {
-  min-width: 1080px;
+  min-width: 1180px;
 }
 
 .customer-defects-table th:nth-child(n + 2),
@@ -2077,6 +2077,12 @@ a {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.customer-defect-source-list {
+  max-width: min(840px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 
@@ -3845,7 +3851,7 @@ textarea {
     }
 
     .customer-defects-table {
-      min-width: 1040px;
+      min-width: 1160px;
     }
 
     .customer-financial-header,

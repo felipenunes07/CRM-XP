@@ -12,7 +12,12 @@ import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import { normalizeCode, normalizeText, safeNumber } from "../../lib/normalize.js";
-import { cleanupTempFile, downloadLatestFileByPrefix } from "../../lib/dropboxClient.js";
+import {
+  cleanupTempFile,
+  downloadFileByPath,
+  downloadLatestFileByPrefix,
+  listDropboxFiles,
+} from "../../lib/dropboxClient.js";
 
 const CUSTOMER_DEFECT_SOURCE_TYPE = "customer_defects_xlsx";
 const CUSTOMER_DEFECT_SHEET_NAME = "DEFEITOS";
@@ -20,10 +25,11 @@ const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
 const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
 const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
-const CUSTOMER_DEFECT_PARSER_VERSION = 1;
+const CUSTOMER_DEFECT_PARSER_VERSION = 2;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
 const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
+const CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER = "PLANILHA DEFEITOS";
 
 let activeDefectSnapshotPromise: Promise<CustomerDefectSnapshotMeta | null> | null = null;
 
@@ -33,6 +39,7 @@ export interface CustomerDefectWorkbookCandidate {
   fileName: string;
   fileSizeBytes: number;
   fileUpdatedAt: string;
+  isTemp?: boolean;
 }
 
 export interface ParsedCustomerDefectRawRow {
@@ -40,6 +47,7 @@ export interface ParsedCustomerDefectRawRow {
   sourceDisplayName: string | null;
   defectDate: string;
   returnedPieces: number;
+  replacementPieces: number;
   returnedAmount: number;
   sku: string | null;
   description: string | null;
@@ -50,6 +58,7 @@ export interface ParsedCustomerDefectAggregate {
   customerCode: string;
   sourceDisplayName: string | null;
   returnedPieces: number;
+  replacementPieces: number;
   returnedAmount: number;
   defectSkuCount: number;
   firstDefectDate: string;
@@ -85,6 +94,7 @@ export interface CustomerDefectOverviewSummary {
   totalRevenue: number;
   totalPurchasedPieces: number;
   totalReturnedPieces: number;
+  totalReplacementPieces: number;
   totalReturnedAmount: number;
   overallReturnRate: number | null;
   highReturnCustomers: number;
@@ -94,6 +104,7 @@ export interface CustomerDefectOverviewSummary {
 export interface ParsedCustomerDefectWorkbook {
   candidate: CustomerDefectWorkbookCandidate;
   sheetNames: string[];
+  sourceFiles: CustomerDefectWorkbookCandidate[];
   period: {
     startDate: string;
     endDate: string;
@@ -114,6 +125,7 @@ interface SnapshotMetaRecord {
   sourceFileName: string;
   sourceFileSizeBytes: number;
   sourceFileUpdatedAt: string;
+  sourceFiles: CustomerDefectWorkbookCandidate[];
   parserVersion: number;
   periodStartDate: string;
   periodEndDate: string;
@@ -169,12 +181,22 @@ export function shouldRunCustomerDefectSync(
 }
 
 function mapSnapshotMeta(row: Record<string, unknown>): CustomerDefectSnapshotMeta {
+  const sourceFiles = Array.isArray(row.sourceFiles)
+    ? row.sourceFiles.map((sourceFile) => ({
+        fileName: String((sourceFile as Record<string, unknown>).fileName ?? ""),
+        sourcePath: String((sourceFile as Record<string, unknown>).sourcePath ?? ""),
+        fileUpdatedAt: toIsoTimestamp((sourceFile as Record<string, unknown>).fileUpdatedAt),
+        fileSizeBytes: Number((sourceFile as Record<string, unknown>).fileSizeBytes ?? 0),
+      }))
+    : [];
+
   return {
     id: String(row.id),
     sourceFileName: String(row.sourceFileName ?? ""),
     sourceFilePath: String(row.sourceFilePath ?? ""),
     sourceFileUpdatedAt: toIsoTimestamp(row.sourceFileUpdatedAt),
     sourceFileSizeBytes: Number(row.sourceFileSizeBytes ?? 0),
+    sourceFiles,
     importedAt: toIsoTimestamp(row.importedAt),
     periodStartDate: String(row.periodStartDate ?? ""),
     periodEndDate: String(row.periodEndDate ?? ""),
@@ -196,6 +218,7 @@ function mapCustomerDefectRow(row: Record<string, unknown>): CustomerDefectRow {
     orderCount: Number(row.order_count ?? 0),
     purchasedPieces: Number(row.purchased_pieces ?? 0),
     returnedPieces: Number(row.returned_pieces ?? 0),
+    replacementPieces: Number(row.replacement_pieces ?? 0),
     returnedAmount: Number(row.returned_amount ?? 0),
     returnRate: row.return_rate === null || row.return_rate === undefined ? null : Number(row.return_rate),
     defectSkuCount: Number(row.defect_sku_count ?? 0),
@@ -280,10 +303,106 @@ function normalizeDefectSourceRow(row: Record<string, unknown>): ParsedCustomerD
     sourceDisplayName: normalizeText(String(row.Cliente ?? "")) || null,
     defectDate,
     returnedPieces,
+    replacementPieces: 0,
     returnedAmount,
     sku,
     description: normalizeText(String(row["Descrição"] ?? row.Descricao ?? "")) || null,
     rawPayload: row,
+  };
+}
+
+function normalizeHeader(value: unknown) {
+  return normalizeText(String(value ?? ""))
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+}
+
+function isDefectSku(value: unknown) {
+  const normalized = normalizeCode(String(value ?? ""));
+  return /^\d{3,6}-\d+$/.test(normalized) || normalized === "DIF" || normalized === "USED";
+}
+
+function readDefectSku(row: unknown[], startIndex: number) {
+  for (let index = startIndex; index < Math.min(row.length, startIndex + 5); index += 1) {
+    if (isDefectSku(row[index])) {
+      return normalizeCode(String(row[index]));
+    }
+  }
+  return null;
+}
+
+function buildRawPayload(headers: unknown[], row: unknown[]) {
+  return row.reduce<Record<string, unknown>>((payload, value, index) => {
+    const header = normalizeText(String(headers[index] ?? `col_${index + 1}`)) || `col_${index + 1}`;
+    payload[header] = value;
+    return payload;
+  }, {});
+}
+
+function detectDefectLayout(headers: unknown[]) {
+  const normalized = headers.map(normalizeHeader);
+  if (normalized[2] === "CL" && normalized[3] === "DATA" && normalized[4] === "UND.") {
+    return "modern" as const;
+  }
+
+  if (normalized[1] === "DATA" && normalized[2] === "UND.") {
+    return "legacy" as const;
+  }
+
+  return "unknown" as const;
+}
+
+function isOkModernDefectRow(row: unknown[]) {
+  const ok = normalizeText(String(row[1] ?? "")).toUpperCase();
+  const status = normalizeText(String(row[13] ?? row[14] ?? "")).toUpperCase();
+  return ok === "OK" || status === "OK";
+}
+
+function normalizeDefectSourceArrayRow(
+  row: unknown[],
+  headers: unknown[],
+  layout: ReturnType<typeof detectDefectLayout>,
+): ParsedCustomerDefectRawRow | null {
+  if (layout === "unknown") {
+    return null;
+  }
+
+  if (layout === "modern" && !isOkModernDefectRow(row)) {
+    return null;
+  }
+
+  const customerCode = layout === "legacy" ? normalizeCode(String(row[0] ?? "")) : normalizeCode(String(row[2] ?? ""));
+  if (!customerCode) {
+    return null;
+  }
+
+  const defectDate = parseCustomerDefectDate(layout === "legacy" ? row[1] : row[3]);
+  if (!defectDate) {
+    return null;
+  }
+
+  const movementPieces = safeNumber(layout === "legacy" ? row[2] : row[4]);
+  if (movementPieces === 0) {
+    return null;
+  }
+
+  const rawTotal = safeNumber(layout === "legacy" ? row[6] : row[8]);
+  const returnedPieces = movementPieces < 0 ? Math.abs(movementPieces) : 0;
+  const replacementPieces = movementPieces > 0 ? movementPieces : 0;
+  const returnedAmount = movementPieces < 0 ? Math.abs(rawTotal) : 0;
+  const sku = readDefectSku(row, layout === "legacy" ? 4 : 6);
+
+  return {
+    customerCode,
+    sourceDisplayName: normalizeText(String(layout === "legacy" ? row[7] ?? "" : row[9] ?? "")) || null,
+    defectDate,
+    returnedPieces,
+    replacementPieces,
+    returnedAmount,
+    sku,
+    description: normalizeText(String(layout === "legacy" ? row[3] ?? "" : row[5] ?? "")) || null,
+    rawPayload: buildRawPayload(headers, row),
   };
 }
 
@@ -292,6 +411,7 @@ function emptyAggregate(row: ParsedCustomerDefectRawRow): ParsedCustomerDefectAg
     customerCode: row.customerCode,
     sourceDisplayName: row.sourceDisplayName,
     returnedPieces: 0,
+    replacementPieces: 0,
     returnedAmount: 0,
     defectSkuCount: 0,
     firstDefectDate: row.defectDate,
@@ -312,6 +432,7 @@ function aggregateDefectRows(rows: ParsedCustomerDefectRawRow[]) {
     const current = rowsByCode.get(row.customerCode) ?? emptyAggregate(row);
     current.sourceDisplayName = current.sourceDisplayName ?? row.sourceDisplayName;
     current.returnedPieces += row.returnedPieces;
+    current.replacementPieces += row.replacementPieces;
     current.returnedAmount += row.returnedAmount;
     current.firstDefectDate = row.defectDate < current.firstDefectDate ? row.defectDate : current.firstDefectDate;
     current.lastDefectDate = row.defectDate > current.lastDefectDate ? row.defectDate : current.lastDefectDate;
@@ -352,12 +473,16 @@ export async function parseCustomerDefectWorkbook(
   }
 
   const sheet = workbook.Sheets[actualSheetName];
-  const rows = XLSX.utils
-    .sheet_to_json<Record<string, unknown>>(sheet!, {
-      defval: null,
-      raw: false,
-    })
-    .map((row) => normalizeDefectSourceRow(row))
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet!, {
+    header: 1,
+    defval: null,
+    raw: false,
+  });
+  const headers = rawRows[0] ?? [];
+  const layout = detectDefectLayout(headers);
+  const rows = rawRows
+    .slice(1)
+    .map((row) => normalizeDefectSourceArrayRow(row, headers, layout))
     .filter((row): row is ParsedCustomerDefectRawRow => Boolean(row));
 
   const rowsByCode = aggregateDefectRows(rows);
@@ -372,8 +497,51 @@ export async function parseCustomerDefectWorkbook(
       fileUpdatedAt: candidate?.fileUpdatedAt ?? stat.mtime.toISOString(),
     },
     sheetNames: workbook.SheetNames,
+    sourceFiles: [
+      {
+        fullPath: filePath,
+        sourcePath,
+        fileName: candidate?.fileName ?? path.basename(filePath),
+        fileSizeBytes: candidate?.fileSizeBytes ?? stat.size,
+        fileUpdatedAt: candidate?.fileUpdatedAt ?? stat.mtime.toISOString(),
+      },
+    ],
     period: dates.length ? { startDate: dates[0]!, endDate: dates[dates.length - 1]! } : null,
     totalValidRows: rows.length,
+    rowsByCode,
+  };
+}
+
+export async function parseCustomerDefectWorkbooks(
+  candidates: CustomerDefectWorkbookCandidate[],
+): Promise<ParsedCustomerDefectWorkbook> {
+  if (!candidates.length) {
+    throw new HttpError(500, "Nenhuma planilha de defeitos foi encontrada para consolidar.");
+  }
+
+  const parsedWorkbooks = await Promise.all(
+    candidates.map((candidate) => parseCustomerDefectWorkbook(candidate.fullPath, candidate.sourcePath, candidate)),
+  );
+  const rawRows = parsedWorkbooks.flatMap((workbook) => Array.from(workbook.rowsByCode.values()).flatMap((row) => row.rawRows));
+  const rowsByCode = aggregateDefectRows(rawRows);
+  const dates = rawRows.map((row) => row.defectDate).sort();
+  const sourceFiles = parsedWorkbooks.flatMap((workbook) => workbook.sourceFiles);
+  const latestSource = [...sourceFiles].sort((left, right) => right.fileUpdatedAt.localeCompare(left.fileUpdatedAt))[0]!;
+  const fileSizeBytes = sourceFiles.reduce((sum, sourceFile) => sum + sourceFile.fileSizeBytes, 0);
+  const sheetNames = Array.from(new Set(parsedWorkbooks.flatMap((workbook) => workbook.sheetNames)));
+
+  return {
+    candidate: {
+      fullPath: latestSource.fullPath,
+      sourcePath: sourceFiles.map((sourceFile) => sourceFile.sourcePath).join(";"),
+      fileName: `${sourceFiles.length} planilhas de defeitos`,
+      fileSizeBytes,
+      fileUpdatedAt: latestSource.fileUpdatedAt,
+    },
+    sheetNames,
+    sourceFiles,
+    period: dates.length ? { startDate: dates[0]!, endDate: dates[dates.length - 1]! } : null,
+    totalValidRows: rawRows.length,
     rowsByCode,
   };
 }
@@ -388,6 +556,7 @@ async function getActiveSnapshotRecord() {
         source_file_name AS "sourceFileName",
         source_file_size_bytes AS "sourceFileSizeBytes",
         source_file_updated_at::text AS "sourceFileUpdatedAt",
+        source_files_metadata AS "sourceFiles",
         parser_version AS "parserVersion",
         period_start_date::text AS "periodStartDate",
         period_end_date::text AS "periodEndDate",
@@ -459,6 +628,100 @@ export async function findLatestCustomerDefectWorkbook(
   return candidates[0] ?? null;
 }
 
+function isCustomerDefectWorkbookName(fileName: string, marker = CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER) {
+  return (
+    fileName.toLowerCase().endsWith(".xlsx") &&
+    normalizeText(fileName).toLowerCase().includes(normalizeText(marker).toLowerCase())
+  );
+}
+
+async function listLocalCustomerDefectWorkbooks(directory: string, marker = CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER) {
+  const directories = [directory, path.join(directory, "Antigos")];
+  const candidates: CustomerDefectWorkbookCandidate[] = [];
+
+  for (const sourceDirectory of directories) {
+    let entries: Array<import("node:fs").Dirent>;
+    try {
+      entries = await fs.readdir(sourceDirectory, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !isCustomerDefectWorkbookName(entry.name, marker)) {
+        continue;
+      }
+
+      const fullPath = path.join(sourceDirectory, entry.name);
+      const stat = await fs.stat(fullPath);
+      candidates.push({
+        fullPath,
+        sourcePath: fullPath,
+        fileName: entry.name,
+        fileSizeBytes: stat.size,
+        fileUpdatedAt: stat.mtime.toISOString(),
+      });
+    }
+  }
+
+  return candidates.sort((left, right) => left.fileName.localeCompare(right.fileName, "pt-BR"));
+}
+
+async function listDropboxCustomerDefectWorkbooks(marker = CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER) {
+  const basePath = env.DROPBOX_CUSTOMER_DEFECT_PATH.replace(/\/+$/, "");
+  const folders = [basePath, `${basePath}/Antigos`];
+  const files: CustomerDefectWorkbookCandidate[] = [];
+
+  for (const folder of folders) {
+    let entries: Awaited<ReturnType<typeof listDropboxFiles>>;
+    try {
+      entries = await listDropboxFiles(folder);
+    } catch (error) {
+      logger.warn("failed to list customer defect Dropbox folder", { folder, error: String(error) });
+      continue;
+    }
+
+    const candidates = entries
+      .filter((entry): entry is any => entry[".tag"] === "file")
+      .filter((entry) => isCustomerDefectWorkbookName(entry.name, marker));
+
+    for (const entry of candidates) {
+      const downloaded = await downloadFileByPath(entry.path_display ?? entry.path_lower);
+      files.push({
+        fullPath: downloaded.localPath,
+        sourcePath: downloaded.sourcePath,
+        fileName: downloaded.fileName,
+        fileSizeBytes: downloaded.fileSizeBytes,
+        fileUpdatedAt: downloaded.fileUpdatedAt,
+        isTemp: true,
+      });
+    }
+  }
+
+  return files.sort((left, right) => left.fileName.localeCompare(right.fileName, "pt-BR"));
+}
+
+export async function findCustomerDefectWorkbooks(
+  directory = env.CUSTOMER_DEFECT_WORKBOOK_DIR,
+  marker = CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER,
+): Promise<CustomerDefectWorkbookCandidate[]> {
+  const canUseDropbox =
+    directory === env.CUSTOMER_DEFECT_WORKBOOK_DIR &&
+    Boolean(env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY));
+
+  if (canUseDropbox) {
+    const dropboxFiles = await listDropboxCustomerDefectWorkbooks(marker);
+    if (dropboxFiles.length) {
+      return dropboxFiles;
+    }
+  }
+
+  return listLocalCustomerDefectWorkbooks(directory, marker);
+}
+
 function sortableRate(value: number | null) {
   return value === null || !Number.isFinite(value) ? -1 : value;
 }
@@ -515,13 +778,14 @@ export function buildCustomerDefectRows(
 
 type CustomerDefectSummaryRow = Pick<
   ResolvedCustomerDefectRow,
-  "matched" | "revenue" | "purchasedPieces" | "returnedPieces" | "returnedAmount" | "returnRate"
+  "matched" | "revenue" | "purchasedPieces" | "returnedPieces" | "replacementPieces" | "returnedAmount" | "returnRate"
 >;
 
 export function buildCustomerDefectOverviewSummary(rows: CustomerDefectSummaryRow[]): CustomerDefectOverviewSummary {
   const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
   const totalPurchasedPieces = rows.reduce((sum, row) => sum + row.purchasedPieces, 0);
   const totalReturnedPieces = rows.reduce((sum, row) => sum + row.returnedPieces, 0);
+  const totalReplacementPieces = rows.reduce((sum, row) => sum + row.replacementPieces, 0);
   const totalReturnedAmount = rows.reduce((sum, row) => sum + row.returnedAmount, 0);
   const overallReturnRate = totalPurchasedPieces > 0 ? totalReturnedPieces / totalPurchasedPieces : null;
 
@@ -532,6 +796,7 @@ export function buildCustomerDefectOverviewSummary(rows: CustomerDefectSummaryRo
     totalRevenue,
     totalPurchasedPieces,
     totalReturnedPieces,
+    totalReplacementPieces,
     totalReturnedAmount,
     overallReturnRate,
     highReturnCustomers:
@@ -660,6 +925,7 @@ async function registerSourceFile(client: PoolClient, workbook: ParsedCustomerDe
         period: workbook.period,
         customerRows: workbook.rowsByCode.size,
         fileUpdatedAt: workbook.candidate.fileUpdatedAt,
+        sourceFiles: workbook.sourceFiles,
       }),
     ],
   );
@@ -681,6 +947,7 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
     order_count: row.orderCount,
     purchased_pieces: row.purchasedPieces,
     returned_pieces: row.returnedPieces,
+    replacement_pieces: row.replacementPieces,
     returned_amount: row.returnedAmount,
     return_rate: row.returnRate,
     defect_sku_count: row.defectSkuCount,
@@ -706,6 +973,7 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           order_count,
           purchased_pieces,
           returned_pieces,
+          replacement_pieces,
           returned_amount,
           return_rate,
           defect_sku_count,
@@ -723,6 +991,7 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           COALESCE(entry.order_count, 0),
           COALESCE(entry.purchased_pieces, 0)::numeric(14, 2),
           COALESCE(entry.returned_pieces, 0)::numeric(14, 2),
+          COALESCE(entry.replacement_pieces, 0)::numeric(14, 2),
           COALESCE(entry.returned_amount, 0)::numeric(14, 2),
           entry.return_rate::numeric(14, 6),
           COALESCE(entry.defect_sku_count, 0),
@@ -738,6 +1007,7 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           order_count integer,
           purchased_pieces numeric,
           returned_pieces numeric,
+          replacement_pieces numeric,
           returned_amount numeric,
           return_rate numeric,
           defect_sku_count integer,
@@ -773,6 +1043,7 @@ async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: Res
           source_file_name,
           source_file_size_bytes,
           source_file_updated_at,
+          source_files_metadata,
           parser_version,
           period_start_date,
           period_end_date,
@@ -782,7 +1053,7 @@ async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: Res
           imported_at,
           is_active
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), TRUE)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), TRUE)
         RETURNING
           id,
           source_file_id AS "sourceFileId",
@@ -790,6 +1061,7 @@ async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: Res
           source_file_name AS "sourceFileName",
           source_file_size_bytes AS "sourceFileSizeBytes",
           source_file_updated_at::text AS "sourceFileUpdatedAt",
+          source_files_metadata AS "sourceFiles",
           parser_version AS "parserVersion",
           period_start_date::text AS "periodStartDate",
           period_end_date::text AS "periodEndDate",
@@ -804,6 +1076,12 @@ async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: Res
         workbook.candidate.fileName,
         workbook.candidate.fileSizeBytes,
         workbook.candidate.fileUpdatedAt,
+        JSON.stringify(workbook.sourceFiles.map((sourceFile) => ({
+          fileName: sourceFile.fileName,
+          sourcePath: sourceFile.sourcePath,
+          fileSizeBytes: sourceFile.fileSizeBytes,
+          fileUpdatedAt: sourceFile.fileUpdatedAt,
+        }))),
         CUSTOMER_DEFECT_PARSER_VERSION,
         workbook.period.startDate,
         workbook.period.endDate,
@@ -848,6 +1126,7 @@ async function loadOverviewRows(snapshotId: string) {
         order_count,
         purchased_pieces,
         returned_pieces,
+        replacement_pieces,
         returned_amount,
         return_rate,
         defect_sku_count,
@@ -873,6 +1152,7 @@ function emptyCustomerDefectOverview(): CustomerDefectOverviewResponse {
       totalRevenue: 0,
       totalPurchasedPieces: 0,
       totalReturnedPieces: 0,
+      totalReplacementPieces: 0,
       totalReturnedAmount: 0,
       overallReturnRate: null,
       highReturnCustomers: 0,
@@ -896,12 +1176,28 @@ async function buildOverviewResponse(snapshot: CustomerDefectSnapshotMeta): Prom
   };
 }
 
+function sourceFilesMatch(
+  activeSnapshot: SnapshotMetaRecord,
+  candidates: CustomerDefectWorkbookCandidate[],
+) {
+  const activeFiles = Array.isArray(activeSnapshot.sourceFiles) ? activeSnapshot.sourceFiles : [];
+  if (activeFiles.length !== candidates.length) {
+    return false;
+  }
+
+  const signature = (sourceFile: Pick<CustomerDefectWorkbookCandidate, "sourcePath" | "fileSizeBytes" | "fileUpdatedAt">) =>
+    `${sourceFile.sourcePath}|${sourceFile.fileSizeBytes}|${toIsoTimestamp(sourceFile.fileUpdatedAt)}`;
+  const activeSignatures = activeFiles.map(signature).sort();
+  const candidateSignatures = candidates.map(signature).sort();
+  return activeSignatures.every((activeSignature, index) => activeSignature === candidateSignatures[index]);
+}
+
 async function refreshSnapshotInternal(forceRefresh = false) {
   const activeSnapshot = await getActiveSnapshotRecord();
-  let latestWorkbook: (CustomerDefectWorkbookCandidate & { isTemp?: boolean }) | null = null;
+  let defectWorkbooks: CustomerDefectWorkbookCandidate[] = [];
 
   try {
-    latestWorkbook = await findLatestCustomerDefectWorkbook();
+    defectWorkbooks = await findCustomerDefectWorkbooks();
   } catch (error) {
     if (activeSnapshot && !forceRefresh) {
       logger.warn("failed to scan customer defect workbook source, using cached snapshot", { error: String(error) });
@@ -910,7 +1206,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     throw error;
   }
 
-  if (!latestWorkbook) {
+  if (!defectWorkbooks.length) {
     if (activeSnapshot && !forceRefresh) {
       logger.warn("customer defect workbook not found, using cached snapshot");
       return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
@@ -918,12 +1214,12 @@ async function refreshSnapshotInternal(forceRefresh = false) {
 
     const isDropboxConfigured = Boolean(env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY));
     const locationInfo = isDropboxConfigured
-      ? `no Dropbox (caminho: ${env.DROPBOX_CUSTOMER_DEFECT_PATH})`
-      : `na pasta local (caminho: ${env.CUSTOMER_DEFECT_WORKBOOK_DIR})`;
+      ? `no Dropbox (caminhos: ${env.DROPBOX_CUSTOMER_DEFECT_PATH} e ${env.DROPBOX_CUSTOMER_DEFECT_PATH}/Antigos)`
+      : `na pasta local (caminhos: ${env.CUSTOMER_DEFECT_WORKBOOK_DIR} e Antigos)`;
 
     throw new HttpError(
       500,
-      `Nao encontrei nenhum arquivo comecando com "${env.CUSTOMER_DEFECT_WORKBOOK_PREFIX}" ${locationInfo}.`,
+      `Nao encontrei nenhuma planilha contendo "${CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER}" ${locationInfo}.`,
     );
   }
 
@@ -931,18 +1227,14 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     activeSnapshot &&
     !forceRefresh &&
     Number(activeSnapshot.parserVersion ?? 0) === CUSTOMER_DEFECT_PARSER_VERSION &&
-    activeSnapshot.sourceFilePath === latestWorkbook.sourcePath &&
-    Number(activeSnapshot.sourceFileSizeBytes) === latestWorkbook.fileSizeBytes &&
-    toIsoTimestamp(activeSnapshot.sourceFileUpdatedAt) === latestWorkbook.fileUpdatedAt
+    sourceFilesMatch(activeSnapshot, defectWorkbooks)
   ) {
-    if (latestWorkbook.isTemp) {
-      await cleanupTempFile(latestWorkbook.fullPath);
-    }
+    await Promise.all(defectWorkbooks.filter((workbook) => workbook.isTemp).map((workbook) => cleanupTempFile(workbook.fullPath)));
     return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
   }
 
   try {
-    const workbook = await parseCustomerDefectWorkbook(latestWorkbook.fullPath, latestWorkbook.sourcePath, latestWorkbook);
+    const workbook = await parseCustomerDefectWorkbooks(defectWorkbooks);
     if (!workbook.period || workbook.rowsByCode.size === 0) {
       if (activeSnapshot && !forceRefresh) {
         logger.warn("customer defect workbook parsed with zero valid rows, using cached snapshot");
@@ -958,9 +1250,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     const rows = sortCustomerDefectRows(buildCustomerDefectRows(parsedRows, matches, stats));
     return persistSnapshot(workbook, rows);
   } finally {
-    if (latestWorkbook.isTemp) {
-      await cleanupTempFile(latestWorkbook.fullPath);
-    }
+    await Promise.all(defectWorkbooks.filter((workbook) => workbook.isTemp).map((workbook) => cleanupTempFile(workbook.fullPath)));
   }
 }
 

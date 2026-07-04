@@ -4154,5 +4154,15 @@ export const migrations = [
     ON customer_defect_snapshot_rows(return_rate DESC NULLS LAST);
   CREATE INDEX IF NOT EXISTS idx_customer_defect_snapshot_rows_returned_pieces
     ON customer_defect_snapshot_rows(returned_pieces DESC);
+  `,
+  `
+  -- Defeitos historicos (04/07/2026): snapshot consolidado passa a guardar a
+  -- lista de planilhas usadas (2023-2024, 2025, 2026) e separa pecas que
+  -- retornaram com defeito (UND. negativo) das pecas trocadas/saidas (UND. positivo).
+  ALTER TABLE customer_defect_snapshots
+    ADD COLUMN IF NOT EXISTS source_files_metadata JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+  ALTER TABLE customer_defect_snapshot_rows
+    ADD COLUMN IF NOT EXISTS replacement_pieces NUMERIC(14, 2) NOT NULL DEFAULT 0;
   `
 ];

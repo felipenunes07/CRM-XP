@@ -432,12 +432,20 @@ export interface CustomerDocInsightsResponse {
   ranking: CustomerDocInsightListItem[];
 }
 
+export interface CustomerDefectSnapshotSourceFile {
+  fileName: string;
+  sourcePath: string;
+  fileUpdatedAt: string;
+  fileSizeBytes: number;
+}
+
 export interface CustomerDefectSnapshotMeta {
   id: string;
   sourceFileName: string;
   sourceFilePath: string;
   sourceFileUpdatedAt: string;
   sourceFileSizeBytes: number;
+  sourceFiles: CustomerDefectSnapshotSourceFile[];
   importedAt: string;
   periodStartDate: string;
   periodEndDate: string;
@@ -457,6 +465,7 @@ export interface CustomerDefectRow {
   orderCount: number;
   purchasedPieces: number;
   returnedPieces: number;
+  replacementPieces: number;
   returnedAmount: number;
   returnRate: number | null;
   defectSkuCount: number;
@@ -471,6 +480,7 @@ export interface CustomerDefectOverviewSummary {
   totalRevenue: number;
   totalPurchasedPieces: number;
   totalReturnedPieces: number;
+  totalReplacementPieces: number;
   totalReturnedAmount: number;
   overallReturnRate: number | null;
   highReturnCustomers: number;

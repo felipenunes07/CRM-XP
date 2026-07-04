@@ -1,4 +1,4 @@
-import type { CustomerCreditRow, CustomerDefectRow } from "@olist-crm/shared";
+import type { CustomerCreditRow, CustomerDefectRow, CustomerDefectSnapshotMeta } from "@olist-crm/shared";
 import { useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users, X } from "lucide-react";
@@ -57,6 +57,24 @@ const viewTabs = [
     title: "Visão geográfica da carteira",
   },
 ];
+
+function getDefectSnapshotTitle(snapshot: CustomerDefectSnapshotMeta | null | undefined) {
+  const sourceCount = snapshot?.sourceFiles?.length ?? 0;
+  if (sourceCount > 1) {
+    return `${formatNumber(sourceCount)} planilhas de defeitos consolidadas`;
+  }
+
+  return snapshot?.sourceFileName || "Planilha de defeitos";
+}
+
+function getDefectSnapshotFilesLabel(snapshot: CustomerDefectSnapshotMeta | null | undefined) {
+  const files = snapshot?.sourceFiles ?? [];
+  if (files.length <= 1) {
+    return null;
+  }
+
+  return files.map((sourceFile) => sourceFile.fileName.replace(/\.xlsx$/i, "")).join(" | ");
+}
 
 function applyCreditFilters(rows: CustomerCreditRow[], filters: CustomerCreditFilters) {
   const search = filters.search.trim().toLowerCase();
@@ -363,9 +381,16 @@ export function CustomersPage() {
       queryClient.setQueryData(["customer-defect-overview"], payload);
 
       if (payload.snapshot) {
-        const fileName = payload.snapshot.sourceFileName;
-        const fileDate = formatDateTime(payload.snapshot.sourceFileUpdatedAt);
-        setToastMessage(`Snapshot de defeitos atualizado. Arquivo: ${fileName} (${fileDate})`);
+        const sourceCount = payload.snapshot.sourceFiles?.length ?? 0;
+        if (sourceCount > 1) {
+          setToastMessage(
+            `Snapshot de defeitos atualizado. ${formatNumber(sourceCount)} planilhas (${payload.snapshot.periodStartDate} ate ${payload.snapshot.periodEndDate}).`,
+          );
+        } else {
+          const fileName = payload.snapshot.sourceFileName;
+          const fileDate = formatDateTime(payload.snapshot.sourceFileUpdatedAt);
+          setToastMessage(`Snapshot de defeitos atualizado. Arquivo: ${fileName} (${fileDate})`);
+        }
       } else {
         setToastMessage("Atualizacao concluida, mas nenhum defeito foi retornado.");
       }
@@ -889,6 +914,12 @@ export function CustomersPage() {
                   tone="warning"
                 />
                 <StatCard
+                  title="Pecas trocadas"
+                  value={formatNumber(defectOverviewQuery.data.summary.totalReplacementPieces)}
+                  helper="UND. positivo separado da taxa"
+                  tone="success"
+                />
+                <StatCard
                   title="Taxa geral"
                   value={
                     defectOverviewQuery.data.summary.overallReturnRate === null
@@ -902,7 +933,7 @@ export function CustomersPage() {
 
               <div className="credit-snapshot-bar customer-defect-snapshot-bar">
                 <div className="credit-snapshot-info">
-                  <strong>{defectOverviewQuery.data.snapshot?.sourceFileName || "Planilha de defeitos"}</strong>
+                  <strong>{getDefectSnapshotTitle(defectOverviewQuery.data.snapshot)}</strong>
                   <span>
                     {defectOverviewQuery.data.snapshot
                       ? `${defectOverviewQuery.data.snapshot.periodStartDate} ate ${defectOverviewQuery.data.snapshot.periodEndDate}`
@@ -914,6 +945,11 @@ export function CustomersPage() {
                         ? `Arquivo ${formatDateTime(defectOverviewQuery.data.snapshot.sourceFileUpdatedAt)} - `
                         : ""}
                       Atualizado {formatDateTime(defectOverviewQuery.data.snapshot.importedAt)}
+                    </small>
+                  ) : null}
+                  {getDefectSnapshotFilesLabel(defectOverviewQuery.data.snapshot) ? (
+                    <small className="customer-defect-source-list">
+                      {getDefectSnapshotFilesLabel(defectOverviewQuery.data.snapshot)}
                     </small>
                   ) : null}
                 </div>
