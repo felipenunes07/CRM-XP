@@ -197,11 +197,20 @@ export async function requestUazapi(
   // "visto"/tique azul nas mensagens do cliente ao disparar ou responder
   // automaticamente — o financeiro usa esse número e não pode marcar como lida.
   // São dois flags da uazapi: readchat (marca a conversa como lida) e
-  // readmessages (marca as últimas recebidas como lidas). Vão como default; se
-  // algum body explicitar um deles, o valor do body vence.
+  // readmessages (marca as últimas recebidas como lidas).
+  //
+  // CRÍTICO: readchat/readmessages=false NÃO bastam. A instância tem um
+  // msg_delay (1-3s) que "humaniza" o envio simulando um humano — e simular
+  // humano inclui ABRIR/LER o chat antes de digitar. Esse comportamento é da
+  // instância e ignora o readchat do envio: por isso o disparo puro (sem
+  // resposta automática) ainda marcava as mensagens do cliente como lidas.
+  // Forçamos delay:0 em cada envio para pular a humanização por mensagem — o
+  // espaçamento anti-ban já é feito pelo CRM (min/max_delay_seconds entre
+  // destinatários), então o delay interno da uazapi é redundante. Se um body
+  // explicitar delay/readchat/readmessages, o valor do body vence.
   let finalBody = body;
   if (body && typeof body === "object" && !Array.isArray(body) && path.startsWith("/send/")) {
-    finalBody = { readchat: false, readmessages: false, ...(body as Record<string, unknown>) };
+    finalBody = { readchat: false, readmessages: false, delay: 0, ...(body as Record<string, unknown>) };
   }
 
   logger.info("UazAPI request", { url, method });
