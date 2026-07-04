@@ -252,6 +252,26 @@ describe("Disparador campaign performance", () => {
     expect(markup).toContain("Quero comprar");
   });
 
+  it("renders campaign autoReplyText if present in the campaign details", () => {
+    const campaignWithAutoReply: WhatsappCampaignDetail = {
+      ...campaign,
+      autoReplyText: "Mensagem de teste de resposta automatica",
+    };
+    const markup = renderToStaticMarkup(
+      <CampaignPerformancePanel
+        campaign={campaignWithAutoReply}
+        activeFilter="ALL"
+        recipients={campaignWithAutoReply.recipients}
+        onFilterChange={() => undefined}
+        onOpenMiniChat={() => undefined}
+        onRetryRecipient={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("Resposta automática configurada");
+    expect(markup).toContain("Mensagem de teste de resposta automatica");
+  });
+
   it("renders an empty state when the filtered recipient list has no rows", () => {
     const markup = renderToStaticMarkup(
       <CampaignPerformancePanel

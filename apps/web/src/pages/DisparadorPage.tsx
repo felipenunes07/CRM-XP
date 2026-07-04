@@ -903,6 +903,30 @@ export function CampaignPerformancePanel({
             </div>
           </div>
 
+          {campaign.autoReplyText && (
+            <div style={{ border: "1px solid #e4e4e7", borderRadius: "8px", background: "#fff", padding: "1rem" }}>
+              <h5 style={{ margin: "0 0 0.6rem 0", fontSize: "0.88rem", color: "#18181b", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>💬</span> Resposta automática configurada
+              </h5>
+              <div
+                style={{
+                  background: "#ecfdf5",
+                  border: "1px solid #a7f3d0",
+                  borderRadius: "8px",
+                  padding: "0.85rem",
+                  fontSize: "0.82rem",
+                  color: "#065f46",
+                  whiteSpace: "pre-wrap",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  lineHeight: 1.45,
+                }}
+              >
+                {campaign.autoReplyText}
+              </div>
+            </div>
+          )}
+
           <div style={{ border: "1px solid #e4e4e7", borderRadius: "8px", background: "#fff", padding: "1rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", marginBottom: "0.75rem" }}>
               <h5 style={{ margin: 0, fontSize: "0.88rem", color: "#18181b" }}>Mensagens da campanha</h5>
