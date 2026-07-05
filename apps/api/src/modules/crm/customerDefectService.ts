@@ -28,7 +28,7 @@ const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
 const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
 const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
-const CUSTOMER_DEFECT_PARSER_VERSION = 4;
+const CUSTOMER_DEFECT_PARSER_VERSION = 5;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
 const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
@@ -938,6 +938,47 @@ function buildRowLookup(rows: ParsedCustomerDefectAggregate[]) {
   return Array.from(new Set(rows.map((row) => row.customerCode)));
 }
 
+function customerDefectMatchedCustomersCte(customerCodesParam: string) {
+  const displayNameSql = "UPPER(COALESCE(NULLIF(s.display_name, ''), c.display_name, ''))";
+
+  return `
+    input_customer_codes AS (
+      SELECT DISTINCT UPPER(TRIM(value)) AS customer_code
+      FROM unnest(${customerCodesParam}::text[]) AS input(value)
+      WHERE TRIM(value) <> ''
+    ),
+    matched_customer_candidates AS (
+      SELECT
+        ic.customer_code AS defect_customer_code,
+        c.id,
+        COALESCE(NULLIF(s.display_name, ''), c.display_name, c.customer_code) AS display_name,
+        c.updated_at,
+        CASE
+          WHEN UPPER(c.customer_code) = ic.customer_code THEN 0
+          WHEN ${displayNameSql} LIKE ic.customer_code || ' -%' THEN 1
+          WHEN ${displayNameSql} LIKE ic.customer_code || '-%' THEN 2
+          WHEN ${displayNameSql} LIKE ic.customer_code || ' %' THEN 3
+          ELSE 4
+        END AS match_rank
+      FROM input_customer_codes ic
+      JOIN customers c ON TRUE
+      LEFT JOIN customer_snapshot s ON s.customer_id = c.id
+      WHERE UPPER(c.customer_code) = ic.customer_code
+         OR ${displayNameSql} LIKE ic.customer_code || ' -%'
+         OR ${displayNameSql} LIKE ic.customer_code || '-%'
+         OR ${displayNameSql} LIKE ic.customer_code || ' %'
+    ),
+    matched_customers AS (
+      SELECT DISTINCT ON (defect_customer_code)
+        defect_customer_code,
+        id,
+        display_name
+      FROM matched_customer_candidates
+      ORDER BY defect_customer_code, match_rank, updated_at DESC NULLS LAST
+    )
+  `;
+}
+
 async function resolveCustomerMatches(rows: ParsedCustomerDefectAggregate[]) {
   const customerCodes = buildRowLookup(rows);
   if (!customerCodes.length) {
@@ -946,19 +987,19 @@ async function resolveCustomerMatches(rows: ParsedCustomerDefectAggregate[]) {
 
   const result = await pool.query(
     `
-      SELECT id, customer_code, display_name
-      FROM customers
-      WHERE customer_code = ANY($1::text[])
+      WITH ${customerDefectMatchedCustomersCte("$1")}
+      SELECT defect_customer_code, id, display_name
+      FROM matched_customers
     `,
     [customerCodes],
   );
 
   return new Map(
     result.rows.map((row) => [
-      String(row.customer_code),
+      String(row.defect_customer_code),
       {
         id: String(row.id),
-        displayName: String(row.display_name ?? row.customer_code ?? ""),
+        displayName: String(row.display_name ?? row.defect_customer_code ?? ""),
       },
     ]),
   );
@@ -971,11 +1012,7 @@ async function loadPurchaseStats(customerCodes: string[], period: { startDate: s
 
   const result = await pool.query(
     `
-      WITH matched_customers AS (
-        SELECT id, customer_code
-        FROM customers
-        WHERE customer_code = ANY($1::text[])
-      ),
+      WITH ${customerDefectMatchedCustomersCte("$1")},
       orders_in_period AS (
         SELECT
           o.id,
@@ -994,14 +1031,14 @@ async function loadPurchaseStats(customerCodes: string[], period: { startDate: s
         GROUP BY op.id
       )
       SELECT
-        mc.customer_code,
+        mc.defect_customer_code AS customer_code,
         COUNT(op.id)::int AS order_count,
         COALESCE(SUM(op.total_amount), 0)::numeric(14, 2) AS revenue,
         COALESCE(SUM(opt.purchased_pieces), 0)::numeric(14, 2) AS purchased_pieces
       FROM matched_customers mc
       LEFT JOIN orders_in_period op ON op.customer_id = mc.id
       LEFT JOIN order_piece_totals opt ON opt.order_id = op.id
-      GROUP BY mc.customer_code
+      GROUP BY mc.defect_customer_code
     `,
     [customerCodes, period.startDate, period.endDate],
   );
