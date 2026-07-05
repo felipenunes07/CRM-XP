@@ -3,9 +3,12 @@ import path from "node:path";
 import XLSX from "xlsx";
 import type { PoolClient } from "pg";
 import type {
+  CustomerDefectCustomerDetailResponse,
+  CustomerDefectMovementRow,
   CustomerDefectOverviewResponse,
   CustomerDefectRow,
   CustomerDefectSnapshotMeta,
+  CustomerDefectYearBreakdown,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
@@ -25,7 +28,7 @@ const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
 const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
 const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
-const CUSTOMER_DEFECT_PARSER_VERSION = 3;
+const CUSTOMER_DEFECT_PARSER_VERSION = 4;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
 const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
@@ -85,6 +88,7 @@ export interface ResolvedCustomerDefectRow extends ParsedCustomerDefectAggregate
   customerId: string | null;
   customerDisplayName: string;
   matched: boolean;
+  yearlyBreakdown: CustomerDefectYearBreakdown[];
 }
 
 export interface CustomerDefectOverviewSummary {
@@ -188,6 +192,24 @@ export function getCustomerDefectPurchasePeriod(period: { startDate: string; end
   };
 }
 
+export function getCustomerDefectYearPeriods(period: { startDate: string; endDate: string }) {
+  const startYear = Number(period.startDate.slice(0, 4));
+  const endYear = Number(period.endDate.slice(0, 4));
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || startYear > endYear) {
+    return [];
+  }
+
+  return Array.from({ length: endYear - startYear + 1 }, (_, index) => {
+    const year = startYear + index;
+    const yearEnd = `${year}-12-31`;
+    return {
+      year,
+      startDate: `${year}-01-01`,
+      endDate: yearEnd > period.endDate ? period.endDate : yearEnd,
+    };
+  });
+}
+
 function mapSnapshotMeta(row: Record<string, unknown>): CustomerDefectSnapshotMeta {
   const sourceFiles = Array.isArray(row.sourceFiles)
     ? row.sourceFiles.map((sourceFile) => ({
@@ -214,7 +236,56 @@ function mapSnapshotMeta(row: Record<string, unknown>): CustomerDefectSnapshotMe
   };
 }
 
+function readRawPayload(row: Record<string, unknown>) {
+  const payload = row.raw_payload;
+  return payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+}
+
+function mapYearlyBreakdown(value: unknown): CustomerDefectYearBreakdown[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((entry) => {
+    const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    const returnRate = row.returnRate;
+    return {
+      year: Number(row.year ?? 0),
+      revenue: Number(row.revenue ?? 0),
+      orderCount: Number(row.orderCount ?? 0),
+      purchasedPieces: Number(row.purchasedPieces ?? 0),
+      returnedPieces: Number(row.returnedPieces ?? 0),
+      replacementPieces: Number(row.replacementPieces ?? 0),
+      returnedAmount: Number(row.returnedAmount ?? 0),
+      returnRate: returnRate === null || returnRate === undefined ? null : Number(returnRate),
+      defectSkuCount: Number(row.defectSkuCount ?? 0),
+      firstDefectDate: row.firstDefectDate ? String(row.firstDefectDate) : null,
+      lastDefectDate: row.lastDefectDate ? String(row.lastDefectDate) : null,
+    };
+  }).filter((entry) => entry.year > 0);
+}
+
+function mapDefectMovementRows(value: unknown): CustomerDefectMovementRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((entry) => {
+    const row = entry && typeof entry === "object" ? (entry as Record<string, unknown>) : {};
+    return {
+      defectDate: String(row.defectDate ?? ""),
+      returnedPieces: Number(row.returnedPieces ?? 0),
+      replacementPieces: Number(row.replacementPieces ?? 0),
+      returnedAmount: Number(row.returnedAmount ?? 0),
+      sku: row.sku ? String(row.sku) : null,
+      description: row.description ? String(row.description) : null,
+    };
+  }).filter((entry) => entry.defectDate);
+}
+
 function mapCustomerDefectRow(row: Record<string, unknown>): CustomerDefectRow {
+  const rawPayload = readRawPayload(row);
+
   return {
     id: String(row.id),
     customerId: row.customer_id ? String(row.customer_id) : null,
@@ -232,6 +303,7 @@ function mapCustomerDefectRow(row: Record<string, unknown>): CustomerDefectRow {
     defectSkuCount: Number(row.defect_sku_count ?? 0),
     firstDefectDate: row.first_defect_date ? String(row.first_defect_date) : null,
     lastDefectDate: row.last_defect_date ? String(row.last_defect_date) : null,
+    yearlyBreakdown: mapYearlyBreakdown(rawPayload.yearlyBreakdown),
   };
 }
 
@@ -761,6 +833,7 @@ export function buildCustomerDefectRows(
   parsedRows: ParsedCustomerDefectAggregate[],
   matches: Map<string, CustomerDefectMatch>,
   purchaseStats: Map<string, CustomerDefectPurchaseStats>,
+  yearlyBreakdownByCode = new Map<string, CustomerDefectYearBreakdown[]>(),
 ): ResolvedCustomerDefectRow[] {
   return parsedRows.map((row) => {
     const matchedCustomer = matches.get(row.customerCode) ?? null;
@@ -780,8 +853,54 @@ export function buildCustomerDefectRows(
       revenue: stats.revenue,
       orderCount: stats.orderCount,
       returnRate,
+      yearlyBreakdown: yearlyBreakdownByCode.get(row.customerCode) ?? [],
     };
   });
+}
+
+function toYearBreakdown(year: number, row: ResolvedCustomerDefectRow): CustomerDefectYearBreakdown {
+  return {
+    year,
+    revenue: row.revenue,
+    orderCount: row.orderCount,
+    purchasedPieces: row.purchasedPieces,
+    returnedPieces: row.returnedPieces,
+    replacementPieces: row.replacementPieces,
+    returnedAmount: row.returnedAmount,
+    returnRate: row.returnRate,
+    defectSkuCount: row.defectSkuCount,
+    firstDefectDate: row.firstDefectDate,
+    lastDefectDate: row.lastDefectDate,
+  };
+}
+
+async function buildCustomerDefectYearlyBreakdown(
+  parsedRows: ParsedCustomerDefectAggregate[],
+  matches: Map<string, CustomerDefectMatch>,
+  period: { startDate: string; endDate: string },
+) {
+  const breakdownByCode = new Map<string, CustomerDefectYearBreakdown[]>();
+  const rawRows = parsedRows.flatMap((row) => row.rawRows);
+
+  for (const yearPeriod of getCustomerDefectYearPeriods(period)) {
+    const yearRows = aggregateDefectRows(
+      rawRows.filter((row) => Number(row.defectDate.slice(0, 4)) === yearPeriod.year),
+    );
+    const aggregates = Array.from(yearRows.values());
+    if (!aggregates.length) {
+      continue;
+    }
+
+    const purchaseStats = await loadPurchaseStats(buildRowLookup(aggregates), yearPeriod);
+    const resolvedRows = buildCustomerDefectRows(aggregates, matches, purchaseStats);
+    for (const row of resolvedRows) {
+      const entries = breakdownByCode.get(row.customerCode) ?? [];
+      entries.push(toYearBreakdown(yearPeriod.year, row));
+      breakdownByCode.set(row.customerCode, entries);
+    }
+  }
+
+  return breakdownByCode;
 }
 
 type CustomerDefectSummaryRow = Pick<
@@ -965,6 +1084,17 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
       sourceDisplayName: row.sourceDisplayName,
       defectRowCount: row.rawRows.length,
       defectSkuCount: row.defectSkuCount,
+      yearlyBreakdown: row.yearlyBreakdown,
+      defectRows: row.rawRows
+        .map((rawRow) => ({
+          defectDate: rawRow.defectDate,
+          returnedPieces: rawRow.returnedPieces,
+          replacementPieces: rawRow.replacementPieces,
+          returnedAmount: rawRow.returnedAmount,
+          sku: rawRow.sku,
+          description: rawRow.description,
+        }))
+        .sort((left, right) => right.defectDate.localeCompare(left.defectDate)),
     },
   }));
 
@@ -1139,7 +1269,8 @@ async function loadOverviewRows(snapshotId: string) {
         return_rate,
         defect_sku_count,
         first_defect_date::text AS first_defect_date,
-        last_defect_date::text AS last_defect_date
+        last_defect_date::text AS last_defect_date,
+        raw_payload
       FROM customer_defect_snapshot_rows
       WHERE snapshot_id = $1
       ORDER BY return_rate DESC NULLS LAST, returned_pieces DESC, revenue DESC, customer_display_name ASC
@@ -1148,6 +1279,57 @@ async function loadOverviewRows(snapshotId: string) {
   );
 
   return result.rows.map((row) => mapCustomerDefectRow(row));
+}
+
+export async function getCustomerDefectCustomerDetail(customerCode: string): Promise<CustomerDefectCustomerDetailResponse> {
+  const normalizedCode = normalizeCode(customerCode);
+  if (!normalizedCode) {
+    throw new HttpError(400, "Codigo do cliente invalido.");
+  }
+
+  const snapshot = await ensureCustomerDefectSnapshot(false);
+  if (!snapshot) {
+    throw new HttpError(404, "Snapshot de defeitos nao encontrado.");
+  }
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        customer_id,
+        customer_code,
+        customer_display_name,
+        source_display_name,
+        revenue,
+        order_count,
+        purchased_pieces,
+        returned_pieces,
+        replacement_pieces,
+        returned_amount,
+        return_rate,
+        defect_sku_count,
+        first_defect_date::text AS first_defect_date,
+        last_defect_date::text AS last_defect_date,
+        raw_payload
+      FROM customer_defect_snapshot_rows
+      WHERE snapshot_id = $1
+        AND customer_code = $2
+      LIMIT 1
+    `,
+    [snapshot.id, normalizedCode],
+  );
+
+  const record = result.rows[0] as Record<string, unknown> | undefined;
+  if (!record) {
+    throw new HttpError(404, "Cliente nao encontrado no snapshot de defeitos.");
+  }
+
+  const rawPayload = readRawPayload(record);
+  return {
+    snapshot,
+    row: mapCustomerDefectRow(record),
+    defectRows: mapDefectMovementRows(rawPayload.defectRows),
+  };
 }
 
 function emptyCustomerDefectOverview(): CustomerDefectOverviewResponse {
@@ -1254,8 +1436,9 @@ async function refreshSnapshotInternal(forceRefresh = false) {
 
     const parsedRows = Array.from(workbook.rowsByCode.values());
     const matches = await resolveCustomerMatches(parsedRows);
+    const yearlyBreakdownByCode = await buildCustomerDefectYearlyBreakdown(parsedRows, matches, workbook.period);
     const stats = await loadPurchaseStats(buildRowLookup(parsedRows), getCustomerDefectPurchasePeriod(workbook.period));
-    const rows = sortCustomerDefectRows(buildCustomerDefectRows(parsedRows, matches, stats));
+    const rows = sortCustomerDefectRows(buildCustomerDefectRows(parsedRows, matches, stats, yearlyBreakdownByCode));
     return persistSnapshot(workbook, rows);
   } finally {
     await Promise.all(defectWorkbooks.filter((workbook) => workbook.isTemp).map((workbook) => cleanupTempFile(workbook.fullPath)));

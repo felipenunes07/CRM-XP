@@ -8,6 +8,7 @@ import {
   buildCustomerDefectRows,
   findCustomerDefectWorkbooks,
   getCustomerDefectPurchasePeriod,
+  getCustomerDefectYearPeriods,
   parseCustomerDefectWorkbook,
   parseCustomerDefectWorkbooks,
   shouldRunCustomerDefectSync,
@@ -204,6 +205,12 @@ describe("customerDefectService", () => {
       startDate: "2023-01-01",
       endDate: "2026-07-04",
     });
+    expect(getCustomerDefectYearPeriods({ startDate: "2023-05-17", endDate: "2026-07-04" })).toEqual([
+      { year: 2023, startDate: "2023-01-01", endDate: "2023-12-31" },
+      { year: 2024, startDate: "2024-01-01", endDate: "2024-12-31" },
+      { year: 2025, startDate: "2025-01-01", endDate: "2025-12-31" },
+      { year: 2026, startDate: "2026-01-01", endDate: "2026-07-04" },
+    ]);
   });
 
   it("sorts by return rate before returned pieces and revenue", () => {
@@ -356,6 +363,7 @@ describe("customerDefectService", () => {
         customerId: "customer-100",
         customerDisplayName: "Cliente 100",
         matched: true,
+        yearlyBreakdown: [],
       },
       {
         customerCode: "CL200",
@@ -374,6 +382,7 @@ describe("customerDefectService", () => {
         customerId: "customer-200",
         customerDisplayName: "Cliente 200",
         matched: true,
+        yearlyBreakdown: [],
       },
       {
         customerCode: "CL999",
@@ -392,6 +401,7 @@ describe("customerDefectService", () => {
         customerId: null,
         customerDisplayName: "Sem compra",
         matched: false,
+        yearlyBreakdown: [],
       },
     ];
     const summary = buildCustomerDefectOverviewSummary(rows);

@@ -1,12 +1,14 @@
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { getCustomerDefectOverviewMock, refreshCustomerDefectOverviewMock } = vi.hoisted(() => ({
+const { getCustomerDefectCustomerDetailMock, getCustomerDefectOverviewMock, refreshCustomerDefectOverviewMock } = vi.hoisted(() => ({
+  getCustomerDefectCustomerDetailMock: vi.fn(),
   getCustomerDefectOverviewMock: vi.fn(),
   refreshCustomerDefectOverviewMock: vi.fn(),
 }));
 
 vi.mock("./modules/crm/customerDefectService.js", () => ({
+  getCustomerDefectCustomerDetail: getCustomerDefectCustomerDetailMock,
   getCustomerDefectOverview: getCustomerDefectOverviewMock,
   refreshCustomerDefectOverview: refreshCustomerDefectOverviewMock,
 }));
@@ -24,6 +26,7 @@ import { createApp } from "./app.js";
 
 describe("customer defect routes", () => {
   afterEach(() => {
+    getCustomerDefectCustomerDetailMock.mockReset();
     getCustomerDefectOverviewMock.mockReset();
     refreshCustomerDefectOverviewMock.mockReset();
   });
@@ -66,6 +69,60 @@ describe("customer defect routes", () => {
     expect(response.status).toBe(200);
     expect(response.body.summary.totalReturnedPieces).toBe(12);
     expect(getCustomerDefectOverviewMock).toHaveBeenCalledWith();
+  });
+
+  it("returns customer defect detail rows", async () => {
+    getCustomerDefectCustomerDetailMock.mockResolvedValue({
+      snapshot: {
+        id: "snapshot-1",
+        sourceFileName: "defeitos.xlsx",
+        sourceFilePath: "/DEFEITOS - XP/defeitos.xlsx",
+        sourceFileUpdatedAt: "2026-07-04T13:03:36.000Z",
+        sourceFileSizeBytes: 1,
+        sourceFiles: [],
+        importedAt: "2026-07-04T14:00:00.000Z",
+        periodStartDate: "2023-05-17",
+        periodEndDate: "2026-07-04",
+        totalRows: 1,
+        matchedRows: 1,
+        unmatchedRows: 0,
+      },
+      row: {
+        id: "row-1",
+        customerId: "customer-1",
+        customerCode: "CL098",
+        customerDisplayName: "X Tec",
+        sourceDisplayName: "X TEC",
+        matched: true,
+        revenue: 19442,
+        orderCount: 8,
+        purchasedPieces: 326,
+        returnedPieces: 38,
+        replacementPieces: 27,
+        returnedAmount: 1892,
+        returnRate: 0.116564,
+        defectSkuCount: 25,
+        firstDefectDate: "2023-06-19",
+        lastDefectDate: "2023-10-06",
+        yearlyBreakdown: [],
+      },
+      defectRows: [
+        {
+          defectDate: "2023-10-06",
+          returnedPieces: 1,
+          replacementPieces: 0,
+          returnedAmount: 51,
+          sku: "0578-1",
+          description: "LCD",
+        },
+      ],
+    });
+
+    const response = await request(createApp()).get("/api/customer-defects/customers/CL098");
+
+    expect(response.status).toBe(200);
+    expect(response.body.defectRows).toHaveLength(1);
+    expect(getCustomerDefectCustomerDetailMock).toHaveBeenCalledWith("CL098");
   });
 
   it("refreshes the customer defect snapshot for admin and manager users", async () => {

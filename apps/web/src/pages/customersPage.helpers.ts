@@ -3,6 +3,16 @@ export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
 export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
 export type CreditSortBy = "urgency" | "debt_desc" | "available_desc" | "name";
 export type CreditQuickFilter = "to_charge" | "overdue" | "opportunity" | "ontrack" | "";
+export type CustomerDefectPeriod = "all" | string;
+export type CustomerDefectSortKey =
+  | "returnRate"
+  | "customer"
+  | "purchasedPieces"
+  | "returnedPieces"
+  | "replacementPieces"
+  | "revenue"
+  | "returnedAmount"
+  | "lastDefectDate";
 
 export interface CustomerPortfolioFilters {
   search: string;
@@ -24,8 +34,14 @@ export interface CustomerCreditFilters {
 
 export interface CustomerDefectFilters {
   search: string;
-  minPurchasedPieces: string;
-  onlyAboveAverage: string;
+  period: CustomerDefectPeriod;
+  minReturnedPieces: string;
+  rateCut: string;
+}
+
+export interface CustomerDefectSort {
+  key: CustomerDefectSortKey;
+  direction: "asc" | "desc";
 }
 
 export interface CustomersPageState {
@@ -36,6 +52,7 @@ export interface CustomersPageState {
   creditKpiFilter: CreditKpiFilter;
   creditSort: CreditSortBy;
   creditQuickFilter: CreditQuickFilter;
+  defectSort: CustomerDefectSort;
 }
 
 export type CustomersPageAction =
@@ -57,6 +74,7 @@ export type CustomersPageAction =
       key: keyof CustomerDefectFilters;
       value: string;
     }
+  | { type: "setDefectSort"; key: CustomerDefectSortKey }
   | { type: "setCreditInsight"; insight: "over_credit" | "unused_credit" | "overdue" }
   | { type: "setCreditSort"; value: CreditSortBy }
   | { type: "setCreditQuickFilter"; value: CreditQuickFilter }
@@ -83,12 +101,14 @@ export function createInitialCustomersPageState(): CustomersPageState {
     },
     defectFilters: {
       search: "",
-      minPurchasedPieces: "10",
-      onlyAboveAverage: "false",
+      period: "all",
+      minReturnedPieces: "0",
+      rateCut: "",
     },
     creditKpiFilter: "",
     creditSort: "urgency",
     creditQuickFilter: "",
+    defectSort: { key: "returnRate", direction: "desc" },
   };
 }
 
@@ -144,6 +164,19 @@ export function customersPageReducer(state: CustomersPageState, action: Customer
       return state;
     }
     return { ...state, creditSort: action.value };
+  }
+
+  if (action.type === "setDefectSort") {
+    if (state.defectSort.key === action.key) {
+      return {
+        ...state,
+        defectSort: {
+          key: action.key,
+          direction: state.defectSort.direction === "desc" ? "asc" : "desc",
+        },
+      };
+    }
+    return { ...state, defectSort: { key: action.key, direction: "desc" } };
   }
 
   if (action.type === "setCreditQuickFilter") {

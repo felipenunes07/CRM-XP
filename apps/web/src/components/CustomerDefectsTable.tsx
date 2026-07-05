@@ -1,6 +1,6 @@
 import type { CustomerDefectRow } from "@olist-crm/shared";
-import { Link } from "react-router-dom";
 import { formatCurrency, formatDate, formatNumber, formatPercent } from "../lib/format";
+import type { CustomerDefectSortKey } from "../pages/customersPage.helpers";
 
 function returnRateLabel(row: CustomerDefectRow) {
   if (row.returnRate === null) {
@@ -21,10 +21,16 @@ export function CustomerDefectsTable({
   rows,
   overallRate,
   emptyMessage,
+  sort,
+  onSortChange,
+  onSelectRow,
 }: {
   rows: CustomerDefectRow[];
   overallRate: number | null | undefined;
   emptyMessage: string;
+  sort: { key: CustomerDefectSortKey; direction: "asc" | "desc" };
+  onSortChange: (key: CustomerDefectSortKey) => void;
+  onSelectRow: (row: CustomerDefectRow) => void;
 }) {
   if (!rows.length) {
     return (
@@ -35,19 +41,19 @@ export function CustomerDefectsTable({
   }
 
   return (
-    <div className="panel table-panel">
+    <div className="panel table-panel customer-defects-table-panel">
       <div className="table-scroll">
         <table className="data-table customer-defects-table">
           <thead>
             <tr>
-              <th>Cliente</th>
-              <th>Taxa</th>
-              <th>Comprou</th>
-              <th>Retornou</th>
-              <th>Trocadas</th>
-              <th>Faturamento</th>
-              <th>Valor retorno</th>
-              <th>Ultimo retorno</th>
+              <SortableHeader label="Cliente" column="customer" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Taxa" column="returnRate" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Comprou" column="purchasedPieces" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Retornou" column="returnedPieces" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Trocadas" column="replacementPieces" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Faturamento" column="revenue" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Valor retorno" column="returnedAmount" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Ultimo retorno" column="lastDefectDate" sort={sort} onSortChange={onSortChange} />
             </tr>
           </thead>
           <tbody>
@@ -60,8 +66,12 @@ export function CustomerDefectsTable({
               );
 
               return (
-                <tr key={row.id}>
-                  <td>{row.customerId ? <Link to={`/clientes/${row.customerId}`}>{client}</Link> : client}</td>
+                <tr key={row.id} className="customer-defect-clickable-row" onClick={() => onSelectRow(row)}>
+                  <td>
+                    <button type="button" className="table-link-button">
+                      {client}
+                    </button>
+                  </td>
                   <td>
                     <span className={`defect-rate-pill tone-${returnRateTone(row, overallRate)}`}>
                       {returnRateLabel(row)}
@@ -95,5 +105,31 @@ export function CustomerDefectsTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function SortableHeader({
+  label,
+  column,
+  sort,
+  onSortChange,
+}: {
+  label: string;
+  column: CustomerDefectSortKey;
+  sort: { key: CustomerDefectSortKey; direction: "asc" | "desc" };
+  onSortChange: (key: CustomerDefectSortKey) => void;
+}) {
+  const active = sort.key === column;
+  return (
+    <th>
+      <button
+        type="button"
+        className={`sortable-table-header ${active ? "active" : ""}`}
+        onClick={() => onSortChange(column)}
+      >
+        <span>{label}</span>
+        <span aria-hidden="true">{active ? (sort.direction === "desc" ? "DESC" : "ASC") : "SORT"}</span>
+      </button>
+    </th>
   );
 }

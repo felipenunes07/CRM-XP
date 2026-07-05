@@ -471,6 +471,30 @@ export interface CustomerDefectRow {
   defectSkuCount: number;
   firstDefectDate: string | null;
   lastDefectDate: string | null;
+  yearlyBreakdown: CustomerDefectYearBreakdown[];
+}
+
+export interface CustomerDefectYearBreakdown {
+  year: number;
+  revenue: number;
+  orderCount: number;
+  purchasedPieces: number;
+  returnedPieces: number;
+  replacementPieces: number;
+  returnedAmount: number;
+  returnRate: number | null;
+  defectSkuCount: number;
+  firstDefectDate: string | null;
+  lastDefectDate: string | null;
+}
+
+export interface CustomerDefectMovementRow {
+  defectDate: string;
+  returnedPieces: number;
+  replacementPieces: number;
+  returnedAmount: number;
+  sku: string | null;
+  description: string | null;
 }
 
 export interface CustomerDefectOverviewSummary {
@@ -492,6 +516,12 @@ export interface CustomerDefectOverviewResponse {
   summary: CustomerDefectOverviewSummary;
   rows: CustomerDefectRow[];
   unmatchedRows: CustomerDefectRow[];
+}
+
+export interface CustomerDefectCustomerDetailResponse {
+  snapshot: CustomerDefectSnapshotMeta;
+  row: CustomerDefectRow;
+  defectRows: CustomerDefectMovementRow[];
 }
 
 export interface GeographicStateStat {

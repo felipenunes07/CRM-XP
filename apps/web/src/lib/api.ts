@@ -8,6 +8,7 @@ import type {
   CustomerOpportunityDetail,
   CustomerOpportunityQueueResponse,
   CustomerCreditDetailResponse,
+  CustomerDefectCustomerDetailResponse,
   CustomerCreditOverviewResponse,
   CustomerDefectOverviewResponse,
   CustomerDocInsightsResponse,
@@ -418,6 +419,15 @@ export const api = {
   },
   customerDefectOverview(token: string) {
     return request<CustomerDefectOverviewResponse>("/api/customer-defects/overview", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
+  },
+  customerDefectCustomerDetail(token: string, customerCode: string) {
+    return request<CustomerDefectCustomerDetailResponse>(
+      `/api/customer-defects/customers/${encodeURIComponent(customerCode)}`,
+      {},
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
   },
   refreshCustomerDefectOverview(token: string) {
     return request<CustomerDefectOverviewResponse>("/api/customer-defects/refresh", {

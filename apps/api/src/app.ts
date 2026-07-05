@@ -27,6 +27,7 @@ import {
   refreshCustomerCreditOverview,
 } from "./modules/crm/customerCreditService.js";
 import {
+  getCustomerDefectCustomerDetail,
   getCustomerDefectOverview,
   refreshCustomerDefectOverview,
 } from "./modules/crm/customerDefectService.js";
@@ -1065,6 +1066,14 @@ export function createApp() {
   app.get("/api/customer-defects/overview", async (_request, response, next) => {
     try {
       response.json(await getCustomerDefectOverview());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-defects/customers/:customerCode", async (request, response, next) => {
+    try {
+      response.json(await getCustomerDefectCustomerDetail(request.params.customerCode));
     } catch (error) {
       next(error);
     }
