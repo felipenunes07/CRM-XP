@@ -292,7 +292,6 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         FROM target_days td
         CROSS JOIN customers c
         LEFT JOIN orders o ON o.customer_id = c.id AND o.order_date <= td.day
-        WHERE td.day >= c.created_at::date
         GROUP BY td.day, c.id
       ),
       daily_items AS (
