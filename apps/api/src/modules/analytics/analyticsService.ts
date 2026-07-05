@@ -287,12 +287,11 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
       daily_customer_stats AS (
         SELECT
           td.day,
-          c.id AS customer_id,
+          o.customer_id,
           MAX(o.order_date) AS last_order_day
         FROM target_days td
-        CROSS JOIN customers c
-        LEFT JOIN orders o ON o.customer_id = c.id AND o.order_date <= td.day
-        GROUP BY td.day, c.id
+        JOIN orders o ON o.order_date <= td.day
+        GROUP BY td.day, o.customer_id
       ),
       daily_items AS (
         SELECT
@@ -308,7 +307,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         COUNT(*)::int as total_customers,
         COUNT(*) FILTER (WHERE stats.day - last_order_day <= 30)::int as active_count,
         COUNT(*) FILTER (WHERE stats.day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(*) FILTER (WHERE stats.day - last_order_day >= 90 OR last_order_day IS NULL)::int as inactive_count,
+        COUNT(*) FILTER (WHERE stats.day - last_order_day >= 90)::int as inactive_count,
         0::int as new_count,
         di.daily_items_sold
       FROM daily_customer_stats stats
