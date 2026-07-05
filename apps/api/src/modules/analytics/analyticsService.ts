@@ -272,12 +272,21 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     daily_items_sold: number;
   }>(
     `
-      WITH day_series AS (
+      WITH bounds AS (
+        SELECT
+          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today,
+          COALESCE(
+            (SELECT MIN(order_date)::date FROM orders),
+            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+          ) AS first_order_day
+      ),
+      day_series AS (
         SELECT generate_series(
-          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1),
-          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
+          GREATEST(bounds.today - ($1::int - 1), bounds.first_order_day),
+          bounds.today,
           INTERVAL '1 day'
         )::date AS day
+        FROM bounds
       ),
       target_days AS (
         SELECT day FROM day_series

@@ -8,7 +8,8 @@ import {
 
 describe("dashboardService trend range helpers", () => {
   it("caps dashboard trend windows to the supported maximum", () => {
-    expect(normalizeDashboardTrendDays(1231)).toBe(900);
+    expect(normalizeDashboardTrendDays(1231)).toBe(1231);
+    expect(normalizeDashboardTrendDays(5000)).toBe(3650);
     expect(normalizeDashboardTrendDays(365)).toBe(365);
     expect(normalizeDashboardTrendDays(0)).toBe(1);
   });
