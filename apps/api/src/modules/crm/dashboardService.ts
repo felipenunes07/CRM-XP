@@ -26,8 +26,7 @@ import type { CustomerFilters } from "./customerService.js";
 import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
-const DASHBOARD_TREND_MAX_DAYS = 3650;
-const DASHBOARD_TREND_START_DATE = "2022-01-01";
+const DASHBOARD_TREND_MAX_DAYS = 900;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
@@ -66,38 +65,6 @@ export interface TrendRangeAnalysisMonthlyRow {
 
 export function normalizeDashboardTrendDays(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   return Math.max(1, Math.min(DASHBOARD_TREND_MAX_DAYS, Math.floor(days)));
-}
-
-async function getDashboardTrendBounds(days: number) {
-  const result = await pool.query<{
-    today: string;
-    start_day: string;
-    expected_row_count: number;
-  }>(
-    `
-      WITH bounds AS (
-        SELECT
-          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date AS today,
-          GREATEST(
-            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1),
-            DATE '${DASHBOARD_TREND_START_DATE}'
-          ) AS start_day
-      )
-      SELECT
-        today::text,
-        start_day::text,
-        (today - start_day + 1)::int AS expected_row_count
-      FROM bounds
-    `,
-    [days],
-  );
-
-  const row = result.rows[0];
-  return {
-    today: row?.today ?? new Date().toISOString().slice(0, 10),
-    startDay: row?.start_day ?? DASHBOARD_TREND_START_DATE,
-    expectedRowCount: Number(row?.expected_row_count ?? days),
-  };
 }
 
 export function normalizeTrendRangeSelection(startDate: string, endDate: string): TrendRangeSelection {
@@ -645,7 +612,6 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
 
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   const validatedDays = normalizeDashboardTrendDays(days);
-  const trendBounds = await getDashboardTrendBounds(validatedDays);
 
   // Auto-healing: Check for any legacy 'NEW' status rows in dashboard_daily_metrics in production
   try {
@@ -677,16 +643,16 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
         (
           SELECT COUNT(*)::int
           FROM dashboard_daily_metrics
-          WHERE day >= $1::date
+          WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ) AS trend_row_count,
         (SELECT COUNT(*)::int FROM customer_snapshot) AS snapshot_row_count,
         (SELECT MAX(updated_at)::text FROM customer_snapshot) AS last_snapshot_refresh
     `,
-    [trendBounds.startDay],
+    [validatedDays],
   );
 
   const freshness = freshnessResult.rows[0];
-  const today = freshness?.today ?? trendBounds.today;
+  const today = freshness?.today ?? new Date().toISOString().slice(0, 10);
   const latestTrendDay = freshness?.latest_trend_day ?? null;
   const trendRowCount = Number(freshness?.trend_row_count ?? 0);
   const snapshotRowCount = Number(freshness?.snapshot_row_count ?? 0);
@@ -696,7 +662,7 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime() > 12 * 60 * 60 * 1000);
   
   const snapshotIsStale = snapshotRowCount === 0 || isStale;
-  const trendNeedsRefresh = trendRowCount < trendBounds.expectedRowCount || !latestTrendDay || latestTrendDay < today;
+  const trendNeedsRefresh = trendRowCount < validatedDays || !latestTrendDay || latestTrendDay < today;
 
   if (!snapshotIsStale && !trendNeedsRefresh) {
     return validatedDays;
@@ -723,7 +689,6 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
 async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   // Validate days parameter
   const validatedDays = normalizeDashboardTrendDays(days);
-  const trendBounds = await getDashboardTrendBounds(validatedDays);
 
   let result = await pool.query(
     `
@@ -736,13 +701,13 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
         new_count,
         daily_items_sold
       FROM dashboard_daily_metrics
-      WHERE day >= $1::date
+      WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
       ORDER BY day
     `,
-    [trendBounds.startDay],
+    [validatedDays],
   );
 
-  if ((result.rowCount ?? 0) < trendBounds.expectedRowCount) {
+  if ((result.rowCount ?? 0) < validatedDays) {
     await refreshDashboardDailyMetrics(validatedDays);
     result = await pool.query(
       `
@@ -755,10 +720,10 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
           new_count,
           daily_items_sold
         FROM dashboard_daily_metrics
-        WHERE day >= $1::date
+        WHERE day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1)
         ORDER BY day
       `,
-      [trendBounds.startDay],
+      [validatedDays],
     );
   }
 
@@ -1069,7 +1034,7 @@ export async function getTrendRangeAnalysis(startDate: string, endDate: string):
 
 /**
  * Get dashboard metrics including portfolio trends
- * @param trendDays Optional number of days for portfolio trend data (1-3650, default: 90)
+ * @param trendDays Optional number of days for portfolio trend data (1-900, default: 90)
  * @returns Complete dashboard metrics
  */
 async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactivationEntry[]> {
@@ -1442,24 +1407,6 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
   const currentMonthItemsSold = currentMonthData?.totalItems ?? 0;
   const currentMonthTarget = currentMonthTargetData.rows[0]?.target_amount ? Number(currentMonthTargetData.rows[0].target_amount) : null;
 
-  // Ensure the last trend point always matches the card values (both come
-  // from customer_snapshot). Without this, historical recalculation from
-  // orders can produce slightly different counts due to timing/logic diffs.
-  const alignedTrend = portfolioTrend.length
-    ? portfolioTrend.map((point, index) =>
-        index === portfolioTrend.length - 1
-          ? {
-              ...point,
-              totalCustomers: snapshotTotal,
-              activeCount: snapshotActive,
-              attentionCount: snapshotAttention,
-              inactiveCount: snapshotInactive,
-              newCount: snapshotNew,
-            }
-          : point,
-      )
-    : portfolioTrend;
-
   const metrics: DashboardMetrics = {
     totalCustomers: snapshotTotal,
     statusCounts: {
@@ -1479,7 +1426,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
     agendaEligibleCount,
     reactivationLeaderboard,
     reactivationHistory,
-    portfolioTrend: alignedTrend,
+    portfolioTrend,
     salesPerformance,
     newCustomerLeaderboard,
     prospectingLeaderboard,
