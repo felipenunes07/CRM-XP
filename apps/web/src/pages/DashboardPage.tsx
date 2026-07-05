@@ -48,7 +48,7 @@ const periodOptions: PeriodOption[] = [
   { value: '6m', label: '6 meses', days: 180 },
   { value: '1y', label: '1 ano', days: 365 },
   { value: '2y', label: '2 anos', days: 730 },
-  { value: 'max', label: 'Todo o Período', days: 900 },
+  { value: 'max', label: 'Todo o Período', days: 3650 },
 ];
 
 const resolvedPeriodOptions = periodOptions;

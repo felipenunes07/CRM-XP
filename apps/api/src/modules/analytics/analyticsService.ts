@@ -4,6 +4,7 @@ import { extractDisplayName, normalizeName } from "../../lib/normalize.js";
 import { computeCustomerSnapshot } from "./analyticsCore.js";
 
 const DASHBOARD_DAILY_WINDOW_DAYS = 90;
+const DASHBOARD_TREND_START_DATE = "2022-01-01";
 
 interface AggregateRow {
   customerId: string;
@@ -274,7 +275,10 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
     `
       WITH day_series AS (
         SELECT generate_series(
-          (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1),
+          GREATEST(
+            (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - ($1::int - 1),
+            DATE '${DASHBOARD_TREND_START_DATE}'
+          ),
           (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date,
           INTERVAL '1 day'
         )::date AS day
@@ -284,6 +288,16 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         WHERE day NOT IN (SELECT day FROM dashboard_daily_metrics)
            OR day >= (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - 1
       ),
+      zero_order_whatsapp_customers AS (
+        SELECT c.id AS customer_id
+        FROM customers c
+        WHERE c.source_system_first = 'WHATSAPP'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM orders existing_orders
+            WHERE existing_orders.customer_id = c.id
+          )
+      ),
       daily_customer_stats AS (
         SELECT
           td.day,
@@ -292,6 +306,15 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         FROM target_days td
         JOIN orders o ON o.order_date <= td.day
         GROUP BY td.day, o.customer_id
+
+        UNION ALL
+
+        SELECT
+          td.day,
+          z.customer_id,
+          NULL::date AS last_order_day
+        FROM target_days td
+        CROSS JOIN zero_order_whatsapp_customers z
       ),
       daily_items AS (
         SELECT
@@ -307,7 +330,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
         COUNT(*)::int as total_customers,
         COUNT(*) FILTER (WHERE stats.day - last_order_day <= 30)::int as active_count,
         COUNT(*) FILTER (WHERE stats.day - last_order_day BETWEEN 31 AND 89)::int as attention_count,
-        COUNT(*) FILTER (WHERE stats.day - last_order_day >= 90)::int as inactive_count,
+        COUNT(*) FILTER (WHERE stats.day - last_order_day >= 90 OR last_order_day IS NULL)::int as inactive_count,
         0::int as new_count,
         di.daily_items_sold
       FROM daily_customer_stats stats
