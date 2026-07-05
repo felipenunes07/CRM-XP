@@ -249,10 +249,10 @@ async function fetchAggregates(customerCodes?: string[]) {
         c.customer_code AS "customerCode",
         c.display_name AS "displayName",
         c.last_attendant AS "lastAttendant",
-        ARRAY_AGG(o.order_date::text ORDER BY o.order_date ASC) AS "orderDates",
-        ARRAY_AGG(o.total_amount::text ORDER BY o.order_date ASC) AS "orderTotals"
+        CASE WHEN COUNT(o.id) = 0 THEN '{}'::text[] ELSE ARRAY_AGG(o.order_date::text ORDER BY o.order_date ASC) END AS "orderDates",
+        CASE WHEN COUNT(o.id) = 0 THEN '{}'::text[] ELSE ARRAY_AGG(o.total_amount::text ORDER BY o.order_date ASC) END AS "orderTotals"
       FROM customers c
-      JOIN orders o ON o.customer_id = c.id
+      LEFT JOIN orders o ON o.customer_id = c.id
       WHERE ($1::text[] IS NULL OR c.customer_code = ANY($1))
       GROUP BY c.id
     `,
