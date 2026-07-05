@@ -26,7 +26,7 @@ import type { CustomerFilters } from "./customerService.js";
 import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
-const DASHBOARD_TREND_MAX_DAYS = 3650;
+const DASHBOARD_TREND_MAX_DAYS = 900;
 const AGENDA_ELIGIBILITY_TAGS = ["compra_prevista_vencida", "risco_churn"] as const;
 const AGENDA_ELIGIBILITY_SQL = `
   s.insight_tags && ARRAY['compra_prevista_vencida', 'risco_churn']::text[]
@@ -1034,7 +1034,7 @@ export async function getTrendRangeAnalysis(startDate: string, endDate: string):
 
 /**
  * Get dashboard metrics including portfolio trends
- * @param trendDays Optional number of days for portfolio trend data (1-730, default: 90)
+ * @param trendDays Optional number of days for portfolio trend data (1-900, default: 90)
  * @returns Complete dashboard metrics
  */
 async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactivationEntry[]> {
