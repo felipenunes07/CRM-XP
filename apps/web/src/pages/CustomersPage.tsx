@@ -47,7 +47,7 @@ const viewTabs = [
   {
     value: "defectsReturn" as const,
     label: "Defeitos & Retorno",
-    helper: "Ranking de clientes por taxa de retorno no periodo da planilha de defeitos.",
+    helper: "Ranking de clientes por taxa de retorno contra a base historica de compras.",
     title: "Taxa de retorno por cliente",
   },
   {
@@ -899,7 +899,7 @@ export function CustomersPage() {
                 <StatCard
                   title="Faturamento no periodo"
                   value={formatCurrency(defectOverviewQuery.data.summary.totalRevenue)}
-                  helper="Compras do CRM no mesmo intervalo da planilha"
+                  helper="Compras desde o inicio do ano do historico"
                 />
                 <StatCard
                   title="Pecas compradas"

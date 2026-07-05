@@ -25,7 +25,7 @@ const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
 const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
 const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
-const CUSTOMER_DEFECT_PARSER_VERSION = 2;
+const CUSTOMER_DEFECT_PARSER_VERSION = 3;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
 const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
@@ -178,6 +178,14 @@ export function shouldRunCustomerDefectSync(
   syncHour: number,
 ) {
   return Number.isFinite(now.hour) && now.hour >= syncHour && lastRunDate !== now.dateKey;
+}
+
+export function getCustomerDefectPurchasePeriod(period: { startDate: string; endDate: string }) {
+  const startYear = period.startDate.slice(0, 4);
+  return {
+    startDate: `${startYear}-01-01`,
+    endDate: period.endDate,
+  };
 }
 
 function mapSnapshotMeta(row: Record<string, unknown>): CustomerDefectSnapshotMeta {
@@ -1246,7 +1254,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
 
     const parsedRows = Array.from(workbook.rowsByCode.values());
     const matches = await resolveCustomerMatches(parsedRows);
-    const stats = await loadPurchaseStats(buildRowLookup(parsedRows), workbook.period);
+    const stats = await loadPurchaseStats(buildRowLookup(parsedRows), getCustomerDefectPurchasePeriod(workbook.period));
     const rows = sortCustomerDefectRows(buildCustomerDefectRows(parsedRows, matches, stats));
     return persistSnapshot(workbook, rows);
   } finally {

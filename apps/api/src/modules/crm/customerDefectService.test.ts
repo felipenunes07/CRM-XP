@@ -7,6 +7,7 @@ import {
   buildCustomerDefectOverviewSummary,
   buildCustomerDefectRows,
   findCustomerDefectWorkbooks,
+  getCustomerDefectPurchasePeriod,
   parseCustomerDefectWorkbook,
   parseCustomerDefectWorkbooks,
   shouldRunCustomerDefectSync,
@@ -196,6 +197,13 @@ describe("customerDefectService", () => {
       "坏品表 PLANILHA DEFEITOS 2025.xlsx",
       "坏品表 PLANILHA DEFEITOS 2026.xlsx",
     ]);
+  });
+
+  it("uses the full first defect year as the purchase base period", () => {
+    expect(getCustomerDefectPurchasePeriod({ startDate: "2023-05-17", endDate: "2026-07-04" })).toEqual({
+      startDate: "2023-01-01",
+      endDate: "2026-07-04",
+    });
   });
 
   it("sorts by return rate before returned pieces and revenue", () => {
