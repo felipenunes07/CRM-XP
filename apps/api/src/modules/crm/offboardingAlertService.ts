@@ -60,6 +60,18 @@ function manualSendCursorKey(groupJid: string, customerId: string): string {
   return `offboarding_manual_send:${groupJid}:${customerId}`;
 }
 
+/**
+ * Registra que estes clientes ja foram alertados no grupo. O alerta diario
+ * consulta este log e nunca repete o mesmo cliente dentro de 30 dias.
+ */
+async function logAlertedCustomers(customerIds: string[]): Promise<void> {
+  if (customerIds.length === 0) return;
+  await pool.query(
+    `INSERT INTO offboarding_alert_log (customer_id) SELECT unnest($1::uuid[])`,
+    [customerIds],
+  );
+}
+
 async function claimManualOffboardingCustomerSends(
   groupJid: string,
   customerIds: string[],
@@ -219,7 +231,18 @@ export async function findNewlyInactiveCustomers(): Promise<NewlyInactiveCustome
       newly_inactive AS (
         SELECT *
         FROM statuses
-        WHERE status_t2 = 'INACTIVE' AND status_t1 <> 'INACTIVE'
+        -- Cruzou de verdade: tinha compra, estava em ATENCAO ontem (89d) e virou
+        -- INATIVO hoje (90d). Sem o filtro de compra, clientes SEM NENHUM pedido
+        -- caiam aqui todo dia como NEW->INACTIVE (bug do flood de "999 dias").
+        WHERE status_t2 = 'INACTIVE'
+          AND status_t1 = 'ATTENTION'
+          AND last_purchase_at IS NOT NULL
+          -- Trava anti-repeticao: nunca alertar o mesmo cliente 2x em 30 dias.
+          AND NOT EXISTS (
+            SELECT 1 FROM offboarding_alert_log l
+            WHERE l.customer_id = statuses.customer_id
+              AND l.sent_at > NOW() - INTERVAL '30 days'
+          )
       ),
       pieces AS (
         SELECT
@@ -540,6 +563,8 @@ export async function sendOffboardingForCustomers(customerIds: string[]): Promis
     }
   }
 
+  await logAlertedCustomers(customers.map((customer) => customer.customerId));
+
   logger.info("offboarding manual enviado", {
     customers: customers.length,
     skippedCustomers: claim.skippedIds.length,
@@ -609,6 +634,8 @@ export async function runOffboardingAlert(options: { dryRun?: boolean } = {}): P
       await sleep(SEND_DELAY_MS);
     }
   }
+
+  await logAlertedCustomers(customers.map((customer) => customer.customerId));
 
   logger.info("offboarding alert enviado", { customers: customers.length, groupJid });
   return { customers, messages, sent: true };

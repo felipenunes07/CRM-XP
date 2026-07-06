@@ -4164,5 +4164,18 @@ export const migrations = [
 
   ALTER TABLE customer_defect_snapshot_rows
     ADD COLUMN IF NOT EXISTS replacement_pieces NUMERIC(14, 2) NOT NULL DEFAULT 0;
+  `,
+  `
+  -- Registro de quem ja foi alertado no grupo de Saida da Base. Serve de trava
+  -- anti-repeticao: o alerta diario nunca manda o mesmo cliente 2x em 30 dias
+  -- (protecao contra o flood de 06/07, quando clientes sem pedido repetiam todo dia).
+  CREATE TABLE IF NOT EXISTS offboarding_alert_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_offboarding_alert_log_customer
+    ON offboarding_alert_log(customer_id, sent_at DESC);
   `
 ];
