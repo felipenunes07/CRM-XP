@@ -1,0 +1,7 @@
+{
+  "name": "scratch-ssh",
+  "version": "1.0.0",
+  "dependencies": {
+    "ssh2": "^1.15.0"
+  }
+}

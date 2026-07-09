@@ -38,6 +38,7 @@ import {
   getInventoryModelDetail,
   getInventoryModels,
   getInventoryOverview,
+  getInventorySalesReport,
   getInventoryRestock,
   getInventoryStale,
 } from "./modules/crm/inventoryIntelligenceService.js";
@@ -1138,6 +1139,14 @@ export function createApp() {
   app.get("/api/inventory/stale", async (_request, response, next) => {
     try {
       response.json(await getInventoryStale());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/sales-report", async (_request, response, next) => {
+    try {
+      response.json(await getInventorySalesReport());
     } catch (error) {
       next(error);
     }

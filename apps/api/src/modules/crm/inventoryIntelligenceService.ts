@@ -27,6 +27,9 @@ import type {
   InventoryRestockStatus,
   InventorySellerActionItem,
   InventorySellerActionType,
+  InventorySalesCategory,
+  InventorySalesReportItem,
+  InventorySalesReportResponse,
   InventorySnapshotMeta,
   InventoryStaleAction,
   InventoryStaleListItem,
@@ -2860,6 +2863,170 @@ export async function getInventoryModels(): Promise<InventoryModelsResponse> {
       qualities: sortUnique(dataset.models.flatMap((model) => model.qualityLabels)),
     },
     items,
+  };
+}
+
+const INVENTORY_SALES_REPORT_MONTHS = 12;
+const TELA_HINT_PATTERN = /\b(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)\b/;
+
+function deriveSalesCategory(text: string, inCatalog: boolean): InventorySalesCategory {
+  const normalized = removeDiacritics(normalizeText(text)).toUpperCase();
+
+  if (normalized.includes("DOC DE CARGA")) {
+    return "DOC_DE_CARGA";
+  }
+
+  if (/\bBATERIAS?\b/.test(normalized)) {
+    return "BATERIA";
+  }
+
+  if (inCatalog || TELA_HINT_PATTERN.test(normalized)) {
+    return "TELA";
+  }
+
+  return "OUTROS";
+}
+
+function buildSalesReportMonths(count = INVENTORY_SALES_REPORT_MONTHS) {
+  const months: string[] = [];
+  const now = new Date();
+
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - offset, 1));
+    months.push(date.toISOString().slice(0, 7));
+  }
+
+  return months;
+}
+
+interface InventoryMonthlySalesRow {
+  sku: string;
+  month: string;
+  units: string | number;
+  revenue: string | number;
+  orders: number;
+  lastSaleAt: string;
+  description: string | null;
+}
+
+async function loadMonthlySalesRows(monthsCount: number) {
+  const result = await pool.query<InventoryMonthlySalesRow>(
+    `
+      SELECT
+        oi.sku,
+        to_char(date_trunc('month', o.order_date), 'YYYY-MM') AS month,
+        COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS units,
+        COALESCE(SUM(oi.line_total), 0)::numeric(14,2) AS revenue,
+        COUNT(DISTINCT o.id)::int AS orders,
+        MAX(o.order_date)::date::text AS "lastSaleAt",
+        MAX(oi.item_description) AS description
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.order_date >= date_trunc('month', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 month'
+        AND oi.sku IS NOT NULL
+        AND oi.sku <> ''
+      GROUP BY oi.sku, to_char(date_trunc('month', o.order_date), 'YYYY-MM')
+    `,
+    [monthsCount],
+  );
+
+  return result.rows;
+}
+
+export async function getInventorySalesReport(): Promise<InventorySalesReportResponse> {
+  const [{ snapshot, items: snapshotItems }, salesRows] = await Promise.all([
+    getInventorySnapshotWithItems(),
+    loadMonthlySalesRows(INVENTORY_SALES_REPORT_MONTHS),
+  ]);
+
+  const months = buildSalesReportMonths();
+  const monthIndex = new Map(months.map((month, index) => [month, index]));
+  const bySku = new Map<string, InventorySalesReportItem>();
+
+  for (const item of snapshotItems) {
+    const existing = bySku.get(item.sku);
+    if (existing) {
+      existing.stockUnits += item.stockQuantity;
+      continue;
+    }
+
+    const grouping = deriveInventoryGrouping(item.model);
+    bySku.set(item.sku, {
+      sku: item.sku,
+      modelKey: `${grouping.productKind}::${buildInventoryAnalyticsKey(item.sku)}`,
+      modelLabel: cleanInventoryModelLabel(item.model),
+      brand: grouping.brand,
+      family: grouping.family,
+      category: deriveSalesCategory(item.model, true),
+      quality: item.quality,
+      color: item.color,
+      inCatalog: true,
+      stockUnits: item.stockQuantity,
+      totalUnits: 0,
+      totalRevenue: 0,
+      totalOrders: 0,
+      lastSaleAt: null,
+      monthlyUnits: months.map(() => 0),
+      monthlyRevenue: months.map(() => 0),
+    });
+  }
+
+  for (const row of salesRows) {
+    let entry = bySku.get(row.sku);
+    if (!entry) {
+      const description = normalizeText(String(row.description ?? "")) || row.sku;
+      const grouping = deriveInventoryGrouping(description);
+      entry = {
+        sku: row.sku,
+        modelKey: null,
+        modelLabel: cleanInventoryModelLabel(description),
+        brand: grouping.brand,
+        family: grouping.family,
+        category: deriveSalesCategory(description, false),
+        quality: null,
+        color: null,
+        inCatalog: false,
+        stockUnits: 0,
+        totalUnits: 0,
+        totalRevenue: 0,
+        totalOrders: 0,
+        lastSaleAt: null,
+        monthlyUnits: months.map(() => 0),
+        monthlyRevenue: months.map(() => 0),
+      };
+      bySku.set(row.sku, entry);
+    }
+
+    const index = monthIndex.get(row.month);
+    if (index === undefined) {
+      continue;
+    }
+
+    const units = toNumber(row.units);
+    const revenue = toNumber(row.revenue);
+    entry.monthlyUnits[index] = (entry.monthlyUnits[index] ?? 0) + units;
+    entry.monthlyRevenue[index] = (entry.monthlyRevenue[index] ?? 0) + revenue;
+    entry.totalUnits += units;
+    entry.totalRevenue += revenue;
+    entry.totalOrders += Number(row.orders ?? 0);
+    if (row.lastSaleAt && (!entry.lastSaleAt || row.lastSaleAt > entry.lastSaleAt)) {
+      entry.lastSaleAt = row.lastSaleAt;
+    }
+  }
+
+  const items = [...bySku.values()]
+    .filter((item) => item.totalUnits > 0 || item.stockUnits > 0)
+    .sort((left, right) => right.totalUnits - left.totalUnits || sortLocale(left.modelLabel, right.modelLabel));
+
+  return {
+    snapshot,
+    months,
+    items,
+    filters: {
+      brands: sortUnique(items.map((item) => item.brand)),
+      families: sortUnique(items.map((item) => item.family)),
+      qualities: sortUnique(items.map((item) => item.quality ?? "SEM QUALIDADE")),
+    },
   };
 }
 

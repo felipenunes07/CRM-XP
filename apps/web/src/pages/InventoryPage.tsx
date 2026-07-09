@@ -27,10 +27,11 @@ import {
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import { InventorySalesTab } from "../components/InventorySalesTab";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, formatNumber, formatShortDate } from "../lib/format";
 
-type InventoryView = "overview" | "buying" | "restock" | "stale" | "models";
+type InventoryView = "overview" | "sales" | "buying" | "restock" | "stale" | "models";
 type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" | "hold_sales";
 type RestockWindow = "all" | "today" | "7d" | "30d";
 type StaleFilter = "30_60" | "60_90" | "90_120" | "120plus";
@@ -41,6 +42,12 @@ const viewTabs = [
     label: "Resumo",
     helper: "Visao rapida para a chefe bater o olho e entender o que fazer primeiro.",
     title: "Resumo do estoque",
+  },
+  {
+    value: "sales" as const,
+    label: "Vendas",
+    helper: "Veja quantas pecas cada modelo vendeu: por tela, DOC, bateria, marca e qualidade, mes a mes.",
+    title: "Vendas por modelo",
   },
   {
     value: "buying" as const,
@@ -1132,6 +1139,8 @@ export function InventoryPage() {
           </section>
         </>
       ) : null}
+
+      {activeView === "sales" ? <InventorySalesTab onOpenModel={openModel} /> : null}
 
       {activeView === "buying" ? (
         <>

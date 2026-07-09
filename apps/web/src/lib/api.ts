@@ -28,6 +28,7 @@ import type {
   InventoryIntelligenceResponse,
   InventoryModelDetailResponse,
   InventoryModelsResponse,
+  InventorySalesReportResponse,
   InventoryOverviewResponse,
   InventoryRestockResponse,
   InventorySnapshotMeta,
@@ -500,6 +501,9 @@ export const api = {
   },
   inventoryStale(token: string) {
     return request<InventoryStaleResponse>("/api/inventory/stale", {}, token);
+  },
+  inventorySalesReport(token: string) {
+    return request<InventorySalesReportResponse>("/api/inventory/sales-report", {}, token);
   },
   inventoryModels(token: string) {
     return request<InventoryModelsResponse>("/api/inventory/models", {}, token);

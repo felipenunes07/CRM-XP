@@ -1,0 +1,553 @@
+/* ══════════════════════════════════════════════════════════════
+   Estoque › aba Vendas por modelo
+   Escopo: tudo prefixado com .invsales- para nao colidir com styles.css
+   ══════════════════════════════════════════════════════════════ */
+
+.invsales-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* ── Barra de filtros (uma linha que governa a pagina toda) ── */
+
+.invsales-filterbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.invsales-filterbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  align-items: flex-end;
+}
+
+.invsales-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.invsales-control-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.invsales-seg {
+  display: inline-flex;
+  background: #eef2fb;
+  border: 1px solid rgba(41, 86, 215, 0.18);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.invsales-seg button {
+  border: none;
+  background: transparent;
+  padding: 0.38rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #47536b;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.invsales-seg button:hover {
+  color: #173260;
+}
+
+.invsales-seg button.active {
+  background: #173260;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(23, 50, 96, 0.3);
+}
+
+.invsales-control select,
+.invsales-control input {
+  border: 1px solid rgba(41, 86, 215, 0.22);
+  border-radius: 10px;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.88rem;
+  background: #fff;
+  color: #0f172a;
+  min-width: 140px;
+}
+
+.invsales-control input {
+  min-width: 210px;
+}
+
+.invsales-control select:focus,
+.invsales-control input:focus {
+  outline: 2px solid rgba(41, 86, 215, 0.35);
+  outline-offset: 1px;
+}
+
+/* trilha de filtros ativos (breadcrumb do drill) */
+.invsales-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(41, 86, 215, 0.1);
+}
+
+.invsales-crumbs-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.invsales-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: #173260;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.invsales-crumb:hover {
+  background: #2956d7;
+}
+
+.invsales-crumb-clear {
+  background: transparent;
+  border: none;
+  color: #2956d7;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── 1 · Retrato do periodo (stat tiles) ── */
+
+.invsales-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.invsales-kpi {
+  background: #fff;
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.invsales-kpi-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.invsales-kpi-value {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.invsales-kpi-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 26px;
+}
+
+.invsales-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
+}
+
+.invsales-delta.up {
+  color: #166534;
+  background: rgba(47, 157, 103, 0.14);
+}
+
+.invsales-delta.down {
+  color: #b42318;
+  background: rgba(196, 39, 24, 0.1);
+}
+
+.invsales-delta.flat {
+  color: #475569;
+  background: rgba(148, 163, 184, 0.18);
+}
+
+.invsales-kpi-hint {
+  font-size: 0.74rem;
+  color: #94a3b8;
+}
+
+/* sparkline generica (kpi + tabela) */
+.invsales-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 26px;
+  min-width: 64px;
+}
+
+.invsales-spark span {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: #2956d7;
+}
+
+.invsales-spark span.zero {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* ── 2 · Leitura pronta (insights) ── */
+
+.invsales-insights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.75rem;
+}
+
+.invsales-insight {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  background: linear-gradient(135deg, rgba(41, 86, 215, 0.05), rgba(41, 86, 215, 0.02));
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.86rem;
+  color: #1e293b;
+  line-height: 1.45;
+}
+
+.invsales-insight svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #2956d7;
+}
+
+.invsales-insight strong {
+  color: #173260;
+}
+
+/* ── secoes de grafico ── */
+
+.invsales-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.invsales-section-head h3 {
+  margin: 0.15rem 0 0.2rem;
+  font-size: 1.15rem;
+  color: #0f172a;
+}
+
+.invsales-section-head .eyebrow {
+  margin: 0;
+}
+
+.invsales-section-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+  max-width: 60ch;
+}
+
+.invsales-chart-duo {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.invsales-chart-card {
+  background: #fff;
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  border-radius: 16px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  min-width: 0;
+}
+
+.invsales-chart-card h4 {
+  margin: 0 0 0.15rem;
+  font-size: 0.98rem;
+  color: #0f172a;
+}
+
+.invsales-chart-card > p {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.invsales-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.invsales-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.invsales-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.invsales-empty {
+  padding: 2.2rem 1rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+/* ── 4 · tabela ── */
+
+.invsales-table-wrap {
+  overflow-x: auto;
+}
+
+.invsales-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.invsales-table th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid rgba(41, 86, 215, 0.16);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.invsales-table th.num,
+.invsales-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.invsales-table td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  vertical-align: middle;
+}
+
+.invsales-table tbody tr.group-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.invsales-table tbody tr.group-row:hover {
+  background: rgba(41, 86, 215, 0.05);
+}
+
+.invsales-table tbody tr.group-row.open {
+  background: rgba(41, 86, 215, 0.07);
+}
+
+.invsales-rank {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+}
+
+.invsales-cell-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 200px;
+}
+
+.invsales-cell-main strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.invsales-cell-main small {
+  color: #94a3b8;
+  font-size: 0.76rem;
+}
+
+.invsales-share {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.invsales-share-track {
+  width: 56px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(41, 86, 215, 0.12);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.invsales-share-track i {
+  display: block;
+  height: 100%;
+  background: #2956d7;
+  border-radius: inherit;
+}
+
+.invsales-sort-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.invsales-sort-btn:hover,
+.invsales-sort-btn.active {
+  color: #2956d7;
+}
+
+.invsales-table tr.sku-row td {
+  background: #f6f8fd;
+  font-size: 0.84rem;
+  color: #334155;
+}
+
+.invsales-table tr.sku-row code {
+  background: rgba(41, 86, 215, 0.08);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.invsales-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.invsales-pill.warn {
+  background: rgba(208, 154, 41, 0.14);
+  color: #92600a;
+}
+
+.invsales-pill.muted {
+  background: rgba(148, 163, 184, 0.16);
+  color: #475569;
+}
+
+.invsales-table-foot {
+  display: flex;
+  justify-content: center;
+  padding: 0.9rem 0 0.2rem;
+}
+
+.invsales-open-btn {
+  border: 1px solid rgba(41, 86, 215, 0.3);
+  background: #fff;
+  color: #2956d7;
+  border-radius: 8px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.invsales-open-btn:hover {
+  background: rgba(41, 86, 215, 0.07);
+}
+
+/* ── responsivo ── */
+
+@media (max-width: 1180px) {
+  .invsales-chart-duo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invsales-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .invsales-kpi-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .invsales-filterbar-row {
+    gap: 0.8rem;
+  }
+
+  .invsales-control input {
+    min-width: 100%;
+  }
+}

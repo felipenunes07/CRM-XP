@@ -1,0 +1,16 @@
+import { config } from "dotenv";
+config({ path: "C:/Users/Felipe/Desktop/CRM XP/CRM-XP/.env" });
+const { getInventorySalesReport } = await import("../apps/api/src/modules/crm/inventoryIntelligenceService.js");
+const t0 = Date.now();
+const report = await getInventorySalesReport();
+console.log("ms:", Date.now() - t0);
+console.log("months:", report.months.join(","));
+console.log("items:", report.items.length);
+console.log("brands:", report.filters.brands.length, "qualities:", report.filters.qualities.length, "families:", report.filters.families.length);
+const byCat: Record<string, number> = {};
+for (const item of report.items) byCat[item.category] = (byCat[item.category] ?? 0) + item.totalUnits;
+console.log("unidades por categoria:", byCat);
+const top = report.items.slice(0, 5).map((i) => ({ sku: i.sku, modelo: i.modelLabel, cat: i.category, un: i.totalUnits, estoque: i.stockUnits, meses: i.monthlyUnits.join("|") }));
+console.log(JSON.stringify(top, null, 1));
+console.log("payload KB:", Math.round(JSON.stringify(report).length / 1024));
+process.exit(0);

@@ -1068,6 +1068,38 @@ export interface InventoryModelsResponse {
   items: InventoryModelListItem[];
 }
 
+export type InventorySalesCategory = "TELA" | "DOC_DE_CARGA" | "BATERIA" | "OUTROS";
+
+export interface InventorySalesReportItem {
+  sku: string;
+  modelKey: string | null;
+  modelLabel: string;
+  brand: string;
+  family: string;
+  category: InventorySalesCategory;
+  quality: string | null;
+  color: string | null;
+  inCatalog: boolean;
+  stockUnits: number;
+  totalUnits: number;
+  totalRevenue: number;
+  totalOrders: number;
+  lastSaleAt: string | null;
+  monthlyUnits: number[];
+  monthlyRevenue: number[];
+}
+
+export interface InventorySalesReportResponse {
+  snapshot: InventorySnapshotMeta | null;
+  months: string[];
+  items: InventorySalesReportItem[];
+  filters: {
+    brands: string[];
+    families: string[];
+    qualities: string[];
+  };
+}
+
 export interface InventoryModelTopCustomer {
   customerId: string;
   customerCode: string;
