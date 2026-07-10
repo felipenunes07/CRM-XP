@@ -47,9 +47,9 @@ const viewTabs = [
   },
   {
     value: "defectsReturn" as const,
-    label: "Defeitos & Retorno",
-    helper: "Ranking de clientes por taxa de retorno contra a base historica de compras.",
-    title: "Taxa de retorno por cliente",
+    label: "Defeitos & Trocas",
+    helper: "Ranking de clientes por taxa de troca contra a base historica de compras.",
+    title: "Taxa de troca por cliente",
   },
   {
     value: "geographic" as const,
@@ -279,7 +279,6 @@ function buildDefectSummary(rows: CustomerDefectRow[]) {
   const totalReplacementPieces = rows.reduce((sum, row) => sum + row.replacementPieces, 0);
   const totalReturnedAmount = rows.reduce((sum, row) => sum + row.returnedAmount, 0);
   const overallReturnRate = totalPurchasedPieces > 0 ? totalReturnedPieces / totalPurchasedPieces : null;
-  const exchangeRate = totalPurchasedPieces > 0 ? totalReplacementPieces / totalPurchasedPieces : null;
 
   return {
     totalCustomers: rows.length,
@@ -291,7 +290,6 @@ function buildDefectSummary(rows: CustomerDefectRow[]) {
     totalReplacementPieces,
     totalReturnedAmount,
     overallReturnRate,
-    exchangeRate,
     highReturnCustomers:
       overallReturnRate === null
         ? 0
@@ -1042,13 +1040,13 @@ export function CustomersPage() {
                   tone="success"
                 />
                 <StatCard
-                  title="Pecas retornadas"
+                  title="Pecas trocadas"
                   value={formatNumber(defectPeriodSummary.totalReturnedPieces)}
-                  helper={formatCurrency(defectPeriodSummary.totalReturnedAmount)}
+                  helper={`${formatCurrency(defectPeriodSummary.totalReturnedAmount)} na planilha`}
                   tone="warning"
                 />
                 <StatCard
-                  title="Taxa de retorno"
+                  title="Taxa de troca"
                   value={
                     defectPeriodSummary.overallReturnRate === null
                       ? "Sem base"
@@ -1058,9 +1056,9 @@ export function CustomersPage() {
                   tone="danger"
                 />
                 <StatCard
-                  title="Taxa de troca"
-                  value={defectPeriodSummary.exchangeRate === null ? "Sem base" : formatPercent(defectPeriodSummary.exchangeRate)}
-                  helper={`${formatNumber(defectPeriodSummary.totalReplacementPieces)} pecas trocadas`}
+                  title="Reposicoes/saidas"
+                  value={formatNumber(defectPeriodSummary.totalReplacementPieces)}
+                  helper="Movimentos positivos na planilha"
                   tone="success"
                 />
               </section>
@@ -1147,7 +1145,7 @@ export function CustomersPage() {
                     {([
                       ["", "Todos"],
                       ["above_average", "Acima media"],
-                      ["with_exchange", "Com troca"],
+                      ["with_exchange", "Com reposicao"],
                       ["no_purchase", "Sem compra"],
                     ] as Array<[string, string]>).map(([value, label]) => (
                       <button
@@ -1162,7 +1160,7 @@ export function CustomersPage() {
                   </div>
 
                   <label className="customer-defect-min-return">
-                    <span>Retornos</span>
+                    <span>Trocas</span>
                     <select
                       value={state.defectFilters.minReturnedPieces}
                       onChange={(event) =>
@@ -1189,7 +1187,7 @@ export function CustomersPage() {
               <CustomerDefectsTable
                 rows={displayedDefectRows}
                 overallRate={defectPeriodSummary.overallReturnRate}
-                emptyMessage="Nenhum cliente vinculado bate com os filtros de retorno."
+                emptyMessage="Nenhum cliente vinculado bate com os filtros de troca."
                 sort={state.defectSort}
                 onSortChange={(key) => dispatch({ type: "setDefectSort", key })}
                 onSelectRow={(row) => setSelectedDefectCode(row.customerCode)}
@@ -1238,15 +1236,15 @@ export function CustomersPage() {
                             <strong>{formatNumber(defectDetailQuery.data.row.purchasedPieces)}</strong>
                           </div>
                           <div>
-                            <span>Retornou</span>
+                            <span>Trocou</span>
                             <strong>{formatNumber(defectDetailQuery.data.row.returnedPieces)}</strong>
                           </div>
                           <div>
-                            <span>Trocadas</span>
+                            <span>Reposicoes</span>
                             <strong>{formatNumber(defectDetailQuery.data.row.replacementPieces)}</strong>
                           </div>
                           <div>
-                            <span>Taxa</span>
+                            <span>Taxa troca</span>
                             <strong>
                               {defectDetailQuery.data.row.returnRate === null
                                 ? "Sem base"
@@ -1262,8 +1260,8 @@ export function CustomersPage() {
                               <div key={entry.year} className="customer-defect-year-row">
                                 <strong>{entry.year}</strong>
                                 <span>{formatNumber(entry.purchasedPieces)} compradas</span>
-                                <span>{formatNumber(entry.returnedPieces)} retornadas</span>
-                                <span>{formatNumber(entry.replacementPieces)} trocadas</span>
+                                <span>{formatNumber(entry.returnedPieces)} trocadas</span>
+                                <span>{formatNumber(entry.replacementPieces)} reposicoes</span>
                                 <span>{entry.returnRate === null ? "Sem base" : formatPercent(entry.returnRate)}</span>
                               </div>
                             ))}
@@ -1280,8 +1278,8 @@ export function CustomersPage() {
                                   <span>{formatDate(entry.defectDate)} {entry.sku ? `- ${entry.sku}` : ""}</span>
                                 </div>
                                 <div>
-                                  <span>{formatNumber(entry.returnedPieces)} ret.</span>
-                                  <span>{formatNumber(entry.replacementPieces)} troc.</span>
+                                  <span>{formatNumber(entry.returnedPieces)} troca</span>
+                                  <span>{formatNumber(entry.replacementPieces)} repos.</span>
                                   <strong>{formatCurrency(entry.returnedAmount)}</strong>
                                 </div>
                               </div>

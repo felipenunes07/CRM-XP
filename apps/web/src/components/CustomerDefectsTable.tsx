@@ -47,13 +47,13 @@ export function CustomerDefectsTable({
           <thead>
             <tr>
               <SortableHeader label="Cliente" column="customer" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Taxa" column="returnRate" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Taxa troca" column="returnRate" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Comprou" column="purchasedPieces" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Retornou" column="returnedPieces" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Trocadas" column="replacementPieces" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Trocou" column="returnedPieces" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Reposicoes" column="replacementPieces" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Faturamento" column="revenue" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Valor retorno" column="returnedAmount" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Ultimo retorno" column="lastDefectDate" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Valor troca" column="returnedAmount" sort={sort} onSortChange={onSortChange} />
+              <SortableHeader label="Ultima troca" column="lastDefectDate" sort={sort} onSortChange={onSortChange} />
             </tr>
           </thead>
           <tbody>
@@ -92,7 +92,7 @@ export function CustomerDefectsTable({
                   <td>
                     <div className="defect-table-metric">
                       <strong>{formatNumber(row.replacementPieces)}</strong>
-                      <span>saidas/trocas</span>
+                      <span>saidas registradas</span>
                     </div>
                   </td>
                   <td>{formatCurrency(row.revenue)}</td>
