@@ -13,10 +13,10 @@ describe("performance migrations", () => {
     expect(sql).toContain("idx_whatsapp_incoming_message_created");
   });
 
-  it("keeps the customer defect overview payload lightweight in the latest append-only migration", () => {
+  it("keeps indexed customer defect product aggregates in the latest append-only migration", () => {
     const latestMigration = migrations[migrations.length - 1] ?? "";
 
-    expect(latestMigration).toContain("customer_defect_snapshot_rows");
-    expect(latestMigration).toContain("yearly_breakdown");
+    expect(latestMigration).toContain("customer_defect_snapshot_product_rows");
+    expect(latestMigration).toContain("idx_customer_defect_products_snapshot_year");
   });
 });

@@ -1,15 +1,17 @@
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { getCustomerDefectCustomerDetailMock, getCustomerDefectOverviewMock, refreshCustomerDefectOverviewMock } = vi.hoisted(() => ({
+const { getCustomerDefectCustomerDetailMock, getCustomerDefectOverviewMock, getCustomerDefectProductsMock, refreshCustomerDefectOverviewMock } = vi.hoisted(() => ({
   getCustomerDefectCustomerDetailMock: vi.fn(),
   getCustomerDefectOverviewMock: vi.fn(),
+  getCustomerDefectProductsMock: vi.fn(),
   refreshCustomerDefectOverviewMock: vi.fn(),
 }));
 
 vi.mock("./modules/crm/customerDefectService.js", () => ({
   getCustomerDefectCustomerDetail: getCustomerDefectCustomerDetailMock,
   getCustomerDefectOverview: getCustomerDefectOverviewMock,
+  getCustomerDefectProducts: getCustomerDefectProductsMock,
   refreshCustomerDefectOverview: refreshCustomerDefectOverviewMock,
 }));
 
@@ -28,6 +30,7 @@ describe("customer defect routes", () => {
   afterEach(() => {
     getCustomerDefectCustomerDetailMock.mockReset();
     getCustomerDefectOverviewMock.mockReset();
+    getCustomerDefectProductsMock.mockReset();
     refreshCustomerDefectOverviewMock.mockReset();
   });
 
@@ -123,6 +126,25 @@ describe("customer defect routes", () => {
     expect(response.status).toBe(200);
     expect(response.body.defectRows).toHaveLength(1);
     expect(getCustomerDefectCustomerDetailMock).toHaveBeenCalledWith("CL098");
+  });
+
+  it("returns annual defect metrics by model and quality", async () => {
+    getCustomerDefectProductsMock.mockResolvedValue({
+      snapshot: { id: "snapshot-1" },
+      year: 2026,
+      periodStartDate: "2026-01-01",
+      periodEndDate: "2026-07-10",
+      summary: { products: 1, soldPieces: 100, returnedPieces: 5, returnedAmount: 250, returnRate: 0.05 },
+      vvSummary: { products: 1, soldPieces: 80, returnedPieces: 0, returnedAmount: 0, returnRate: 0 },
+      qualities: [],
+      rows: [],
+    });
+
+    const response = await request(createApp()).get("/api/customer-defects/products?year=2026");
+
+    expect(response.status).toBe(200);
+    expect(response.body.vvSummary.returnRate).toBe(0);
+    expect(getCustomerDefectProductsMock).toHaveBeenCalledWith(2026);
   });
 
   it("refreshes the customer defect snapshot for admin and manager users", async () => {

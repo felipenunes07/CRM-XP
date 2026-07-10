@@ -9,7 +9,6 @@ export type CustomerDefectSortKey =
   | "customer"
   | "purchasedPieces"
   | "returnedPieces"
-  | "replacementPieces"
   | "revenue"
   | "returnedAmount"
   | "lastDefectDate";

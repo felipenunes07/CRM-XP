@@ -10,6 +10,7 @@ import { isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
 import { CustomerDefectsTable } from "../components/CustomerDefectsTable";
+import { CustomerDefectProductsPanel } from "../components/CustomerDefectProductsPanel";
 import { CustomerTable } from "../components/CustomerTable";
 import { StatCard } from "../components/StatCard";
 import { GeographicView } from "../components/GeographicView";
@@ -219,10 +220,6 @@ function applyDefectFilters(
       return false;
     }
 
-    if (filters.rateCut === "with_exchange" && row.replacementPieces <= 0) {
-      return false;
-    }
-
     if (filters.rateCut === "no_purchase" && row.returnRate !== null) {
       return false;
     }
@@ -276,7 +273,6 @@ function buildDefectSummary(rows: CustomerDefectRow[]) {
   const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
   const totalPurchasedPieces = rows.reduce((sum, row) => sum + row.purchasedPieces, 0);
   const totalReturnedPieces = rows.reduce((sum, row) => sum + row.returnedPieces, 0);
-  const totalReplacementPieces = rows.reduce((sum, row) => sum + row.replacementPieces, 0);
   const totalReturnedAmount = rows.reduce((sum, row) => sum + row.returnedAmount, 0);
   const overallReturnRate = totalPurchasedPieces > 0 ? totalReturnedPieces / totalPurchasedPieces : null;
 
@@ -287,7 +283,6 @@ function buildDefectSummary(rows: CustomerDefectRow[]) {
     totalRevenue,
     totalPurchasedPieces,
     totalReturnedPieces,
-    totalReplacementPieces,
     totalReturnedAmount,
     overallReturnRate,
     highReturnCustomers:
@@ -307,8 +302,6 @@ function defectSortValue(row: CustomerDefectRow, key: CustomerDefectSortKey) {
       return row.purchasedPieces;
     case "returnedPieces":
       return row.returnedPieces;
-    case "replacementPieces":
-      return row.replacementPieces;
     case "revenue":
       return row.revenue;
     case "returnedAmount":
@@ -350,6 +343,10 @@ export function CustomersPage() {
   const [state, dispatch] = useReducer(customersPageReducer, undefined, createInitialCustomersPageState);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [selectedDefectCode, setSelectedDefectCode] = useState<string | null>(null);
+  const [defectDetailYear, setDefectDetailYear] = useState("all");
+  const [defectDetailSort, setDefectDetailSort] = useState<"most_exchanged" | "recent">("most_exchanged");
+  const [defectAnalysisTab, setDefectAnalysisTab] = useState<"customers" | "products">("customers");
+  const [selectedDefectProductYear, setSelectedDefectProductYear] = useState<number | null>(null);
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
@@ -488,6 +485,14 @@ export function CustomersPage() {
     enabled: Boolean(token && selectedDefectCode && state.activeView === "defectsReturn"),
   });
 
+  const resolvedDefectProductYear = selectedDefectProductYear
+    ?? Number(defectOverviewQuery.data?.snapshot?.periodEndDate.slice(0, 4) ?? new Date().getFullYear());
+  const defectProductsQuery = useQuery({
+    queryKey: ["customer-defect-products", resolvedDefectProductYear],
+    queryFn: () => api.customerDefectProducts(token!, resolvedDefectProductYear),
+    enabled: Boolean(token && state.activeView === "defectsReturn" && defectAnalysisTab === "products" && Number.isFinite(resolvedDefectProductYear)),
+  });
+
   const refreshCreditMutation = useMutation({
     mutationFn: () => api.refreshCustomerCreditOverview(token!),
     onSuccess: (payload) => {
@@ -599,6 +604,50 @@ export function CustomersPage() {
       ),
     [periodUnmatchedDefectRows, state.defectFilters, defectPeriodSummary.overallReturnRate, state.defectSort],
   );
+  const defectDetailYears = useMemo(
+    () => [...(defectDetailQuery.data?.row.yearlyBreakdown ?? [])].sort((left, right) => right.year - left.year),
+    [defectDetailQuery.data?.row.yearlyBreakdown],
+  );
+  const defectDetailPeriod = useMemo(() => {
+    const row = defectDetailQuery.data?.row;
+    if (!row || defectDetailYear === "all") {
+      return row ?? null;
+    }
+
+    return row.yearlyBreakdown.find((entry) => String(entry.year) === defectDetailYear) ?? null;
+  }, [defectDetailQuery.data?.row, defectDetailYear]);
+  const defectDetailYearBreakdown = useMemo(
+    () =>
+      defectDetailYear === "all"
+        ? defectDetailYears
+        : defectDetailYears.filter((entry) => String(entry.year) === defectDetailYear),
+    [defectDetailYear, defectDetailYears],
+  );
+  const defectDetailMovements = useMemo(() => {
+    const movements = (defectDetailQuery.data?.defectRows ?? []).filter(
+      (entry) =>
+        entry.returnedPieces > 0 &&
+        (defectDetailYear === "all" || entry.defectDate.startsWith(`${defectDetailYear}-`)),
+    );
+
+    return [...movements].sort((left, right) => {
+      if (defectDetailSort === "most_exchanged") {
+        const piecesDifference = right.returnedPieces - left.returnedPieces;
+        if (piecesDifference !== 0) return piecesDifference;
+
+        const amountDifference = right.returnedAmount - left.returnedAmount;
+        if (amountDifference !== 0) return amountDifference;
+      }
+
+      return right.defectDate.localeCompare(left.defectDate);
+    });
+  }, [defectDetailQuery.data?.defectRows, defectDetailSort, defectDetailYear]);
+
+  const openDefectDetail = (customerCode: string) => {
+    setDefectDetailYear("all");
+    setDefectDetailSort("most_exchanged");
+    setSelectedDefectCode(customerCode);
+  };
 
   const kpiFilteredRows = useMemo(
     () => applyCreditKpiFilter(filteredLinkedCreditRows, state.creditKpiFilter),
@@ -1036,9 +1085,29 @@ export function CustomersPage() {
         </>
       ) : state.activeView === "defectsReturn" ? (
         <>
+          <div className="customer-defect-analysis-tabs" role="tablist" aria-label="Tipo de analise de trocas">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={defectAnalysisTab === "customers"}
+              className={defectAnalysisTab === "customers" ? "active" : ""}
+              onClick={() => setDefectAnalysisTab("customers")}
+            >
+              Clientes
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={defectAnalysisTab === "products"}
+              className={defectAnalysisTab === "products" ? "active" : ""}
+              onClick={() => setDefectAnalysisTab("products")}
+            >
+              Modelos e qualidades
+            </button>
+          </div>
           {defectOverviewQuery.isLoading ? <div className="page-loading">Carregando snapshot de defeitos...</div> : null}
           {defectOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot de defeitos.</div> : null}
-          {defectOverviewQuery.data ? (
+          {defectOverviewQuery.data ? defectAnalysisTab === "customers" ? (
             <>
               <section className="stats-grid customers-defect-stats">
                 <StatCard
@@ -1062,12 +1131,6 @@ export function CustomersPage() {
                   }
                   helper={`${formatNumber(defectPeriodSummary.highReturnCustomers)} clientes acima da media`}
                   tone="danger"
-                />
-                <StatCard
-                  title="Reposicoes/saidas"
-                  value={formatNumber(defectPeriodSummary.totalReplacementPieces)}
-                  helper="Movimentos positivos na planilha"
-                  tone="success"
                 />
               </section>
 
@@ -1153,7 +1216,6 @@ export function CustomersPage() {
                     {([
                       ["", "Todos"],
                       ["above_average", "Acima media"],
-                      ["with_exchange", "Com reposicao"],
                       ["no_purchase", "Sem compra"],
                     ] as Array<[string, string]>).map(([value, label]) => (
                       <button
@@ -1198,7 +1260,7 @@ export function CustomersPage() {
                 emptyMessage="Nenhum cliente vinculado bate com os filtros de troca."
                 sort={state.defectSort}
                 onSortChange={(key) => dispatch({ type: "setDefectSort", key })}
-                onSelectRow={(row) => setSelectedDefectCode(row.customerCode)}
+                onSelectRow={(row) => openDefectDetail(row.customerCode)}
               />
 
               <details className="panel customer-credit-unmatched-panel">
@@ -1215,7 +1277,7 @@ export function CustomersPage() {
                   emptyMessage="Nenhum codigo nao vinculado bate com os filtros."
                   sort={state.defectSort}
                   onSortChange={(key) => dispatch({ type: "setDefectSort", key })}
-                  onSelectRow={(row) => setSelectedDefectCode(row.customerCode)}
+                  onSelectRow={(row) => openDefectDetail(row.customerCode)}
                 />
               </details>
 
@@ -1238,25 +1300,43 @@ export function CustomersPage() {
 
                     {defectDetailQuery.data ? (
                       <>
+                        <div className="customer-defect-detail-controls">
+                          <label>
+                            <span>Ano</span>
+                            <select value={defectDetailYear} onChange={(event) => setDefectDetailYear(event.target.value)}>
+                              <option value="all">Todo o periodo</option>
+                              {defectDetailYears.map((entry) => (
+                                <option key={entry.year} value={entry.year}>{entry.year}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            <span>Ordenar movimentos</span>
+                            <select
+                              value={defectDetailSort}
+                              onChange={(event) => setDefectDetailSort(event.target.value as "most_exchanged" | "recent")}
+                            >
+                              <option value="most_exchanged">Quem mais trocou</option>
+                              <option value="recent">Mais recentes</option>
+                            </select>
+                          </label>
+                        </div>
+
                         <div className="customer-defect-detail-kpis">
                           <div>
                             <span>Comprou</span>
-                            <strong>{formatNumber(defectDetailQuery.data.row.purchasedPieces)}</strong>
+                            <strong>{formatNumber(defectDetailPeriod?.purchasedPieces ?? 0)}</strong>
                           </div>
                           <div>
                             <span>Trocou</span>
-                            <strong>{formatNumber(defectDetailQuery.data.row.returnedPieces)}</strong>
-                          </div>
-                          <div>
-                            <span>Reposicoes</span>
-                            <strong>{formatNumber(defectDetailQuery.data.row.replacementPieces)}</strong>
+                            <strong>{formatNumber(defectDetailPeriod?.returnedPieces ?? 0)}</strong>
                           </div>
                           <div>
                             <span>Taxa troca</span>
                             <strong>
-                              {defectDetailQuery.data.row.returnRate === null
+                              {defectDetailPeriod?.returnRate === null || defectDetailPeriod?.returnRate === undefined
                                 ? "Sem base"
-                                : formatPrecisePercent(defectDetailQuery.data.row.returnRate)}
+                                : formatPrecisePercent(defectDetailPeriod.returnRate)}
                             </strong>
                           </div>
                         </div>
@@ -1264,7 +1344,7 @@ export function CustomersPage() {
                         <div className="customer-defect-detail-section">
                           <h4>Taxa por ano</h4>
                           <div className="customer-defect-year-chart">
-                            {defectDetailQuery.data.row.yearlyBreakdown.map((entry) => (
+                            {defectDetailYearBreakdown.map((entry) => (
                               <div key={entry.year} className="customer-defect-year-chart-row">
                                 <div className="customer-defect-year-chart-label">
                                   <strong>{entry.year}</strong>
@@ -1285,20 +1365,25 @@ export function CustomersPage() {
 
                         <div className="customer-defect-detail-section">
                           <h4>Movimentos da planilha</h4>
+                          <span className="customer-defect-movement-count">
+                            {formatNumber(defectDetailMovements.length)} movimentos no periodo
+                          </span>
                           <div className="customer-defect-movement-list">
-                            {defectDetailQuery.data.defectRows.map((entry, index) => (
-                              <div key={`${entry.defectDate}-${entry.sku ?? "sku"}-${index}`} className="customer-defect-movement-row">
-                                <div>
-                                  <strong>{entry.description || entry.sku || "Sem descricao"}</strong>
-                                  <span>{formatDate(entry.defectDate)} {entry.sku ? `- ${entry.sku}` : ""}</span>
+                            {defectDetailMovements.map((entry, index) => (
+                                <div
+                                  key={`${entry.defectDate}-${entry.sku ?? "sku"}-${index}`}
+                                  className="customer-defect-movement-row"
+                                >
+                                  <div>
+                                    <strong>{entry.description || entry.sku || "Sem descricao"}</strong>
+                                    <span>{formatDate(entry.defectDate)} {entry.sku ? `- ${entry.sku}` : ""}</span>
+                                  </div>
+                                  <div>
+                                    <span>{formatNumber(entry.returnedPieces)} troca</span>
+                                    <strong>{formatCurrency(entry.returnedAmount)}</strong>
+                                  </div>
                                 </div>
-                                <div>
-                                  <span>{formatNumber(entry.returnedPieces)} troca</span>
-                                  <span>{formatNumber(entry.replacementPieces)} repos.</span>
-                                  <strong>{formatCurrency(entry.returnedAmount)}</strong>
-                                </div>
-                              </div>
-                            ))}
+                              ))}
                           </div>
                         </div>
                       </>
@@ -1307,6 +1392,15 @@ export function CustomersPage() {
                 </div>
               ) : null}
             </>
+          ) : (
+            <CustomerDefectProductsPanel
+              data={defectProductsQuery.data}
+              isLoading={defectProductsQuery.isLoading}
+              isError={defectProductsQuery.isError}
+              years={availableDefectYears}
+              year={resolvedDefectProductYear}
+              onYearChange={setSelectedDefectProductYear}
+            />
           ) : null}
         </>
       ) : state.activeView === "geographic" ? (

@@ -29,6 +29,7 @@ import {
 import {
   getCustomerDefectCustomerDetail,
   getCustomerDefectOverview,
+  getCustomerDefectProducts,
   refreshCustomerDefectOverview,
 } from "./modules/crm/customerDefectService.js";
 import {
@@ -1075,6 +1076,15 @@ export function createApp() {
   app.get("/api/customer-defects/customers/:customerCode", async (request, response, next) => {
     try {
       response.json(await getCustomerDefectCustomerDetail(request.params.customerCode));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-defects/products", async (request, response, next) => {
+    try {
+      const year = z.coerce.number().int().parse(request.query.year);
+      response.json(await getCustomerDefectProducts(year));
     } catch (error) {
       next(error);
     }

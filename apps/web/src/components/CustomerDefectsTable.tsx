@@ -50,7 +50,6 @@ export function CustomerDefectsTable({
               <SortableHeader label="Taxa troca" column="returnRate" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Comprou" column="purchasedPieces" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Trocou" column="returnedPieces" sort={sort} onSortChange={onSortChange} />
-              <SortableHeader label="Reposicoes" column="replacementPieces" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Faturamento" column="revenue" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Valor troca" column="returnedAmount" sort={sort} onSortChange={onSortChange} />
               <SortableHeader label="Ultima troca" column="lastDefectDate" sort={sort} onSortChange={onSortChange} />
@@ -87,12 +86,6 @@ export function CustomerDefectsTable({
                     <div className="defect-table-metric">
                       <strong>{formatNumber(row.returnedPieces)}</strong>
                       <span>{formatNumber(row.defectSkuCount)} SKUs</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="defect-table-metric">
-                      <strong>{formatNumber(row.replacementPieces)}</strong>
-                      <span>saidas registradas</span>
                     </div>
                   </td>
                   <td>{formatCurrency(row.revenue)}</td>

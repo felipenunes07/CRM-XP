@@ -2061,6 +2061,197 @@ a {
   background: rgba(37, 99, 235, 0.04);
 }
 
+.customer-defect-analysis-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.customer-defect-analysis-tabs button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.58rem 0.85rem;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.customer-defect-analysis-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.customer-defect-products-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.customer-defect-vv-highlight {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border-left: 4px solid var(--accent);
+  background: var(--panel);
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 1px 0 var(--line);
+}
+
+.customer-defect-vv-highlight h3,
+.customer-defect-vv-highlight p {
+  margin: 0;
+}
+
+.customer-defect-vv-highlight h3 {
+  margin-top: 0.2rem;
+}
+
+.customer-defect-vv-highlight > div:first-child > span {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.customer-defect-vv-rate {
+  display: grid;
+  justify-items: end;
+  flex: 0 0 auto;
+}
+
+.customer-defect-vv-rate > strong {
+  color: var(--accent);
+  font-size: clamp(2rem, 4vw, 3.1rem);
+  line-height: 1;
+}
+
+.customer-defect-vv-rate span {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.customer-defect-product-filters {
+  display: grid;
+  grid-template-columns: 0.65fr 1fr minmax(220px, 1.5fr) 1fr;
+  gap: 0.75rem;
+  align-items: end;
+  padding: 1rem;
+}
+
+.customer-defect-product-filters label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.customer-defect-product-filters label > span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.customer-defect-product-filters input,
+.customer-defect-product-filters select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+}
+
+.customer-defect-product-toggle {
+  grid-column: 1 / -1;
+  display: flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  justify-self: start;
+}
+
+.customer-defect-product-toggle input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.customer-defect-quality-summary {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.customer-defect-quality-summary button {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 132px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customer-defect-quality-summary button.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.customer-defect-quality-summary span,
+.customer-defect-quality-summary small {
+  color: var(--muted);
+}
+
+.customer-defect-products-table {
+  min-width: 920px;
+}
+
+.customer-defect-products-table-panel .table-scroll {
+  max-height: 640px;
+  overflow: auto;
+}
+
+.customer-defect-products-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--panel);
+}
+
+.customer-defect-products-table td:first-child {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.customer-defect-products-table td:first-child span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.customer-defect-products-table tr.is-vv {
+  background: rgba(37, 99, 235, 0.055);
+}
+
+.defect-quality-pill {
+  display: inline-flex;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.09);
+  color: var(--accent);
+  padding: 0.3rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
 .table-link-button {
   border: 0;
   background: transparent;
@@ -2224,9 +2415,41 @@ a {
   font-weight: 700;
 }
 
+.customer-defect-detail-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.customer-defect-detail-controls label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.customer-defect-detail-controls label > span,
+.customer-defect-movement-count {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.customer-defect-detail-controls select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+}
+
 .customer-defect-detail-kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.65rem;
   margin-bottom: 1rem;
 }
@@ -4091,11 +4314,32 @@ textarea {
     }
 
     .customer-defects-table {
-      min-width: 1160px;
+      min-width: 1000px;
     }
 
     .customer-defect-detail-kpis {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .customer-defect-detail-controls {
+      grid-template-columns: 1fr;
+    }
+
+    .customer-defect-vv-highlight {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .customer-defect-vv-rate {
+      justify-items: start;
+    }
+
+    .customer-defect-product-filters {
+      grid-template-columns: 1fr;
+    }
+
+    .customer-defect-product-toggle {
+      grid-column: auto;
     }
 
     .customer-defect-year-row {

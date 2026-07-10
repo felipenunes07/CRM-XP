@@ -524,6 +524,40 @@ export interface CustomerDefectCustomerDetailResponse {
   defectRows: CustomerDefectMovementRow[];
 }
 
+export interface CustomerDefectProductRow {
+  sku: string;
+  model: string;
+  quality: string;
+  isVv: boolean;
+  soldPieces: number;
+  returnedPieces: number;
+  returnedAmount: number;
+  returnRate: number | null;
+}
+
+export interface CustomerDefectProductSummary {
+  products: number;
+  soldPieces: number;
+  returnedPieces: number;
+  returnedAmount: number;
+  returnRate: number | null;
+}
+
+export interface CustomerDefectQualitySummary extends CustomerDefectProductSummary {
+  quality: string;
+}
+
+export interface CustomerDefectProductsResponse {
+  snapshot: CustomerDefectSnapshotMeta;
+  year: number;
+  periodStartDate: string;
+  periodEndDate: string;
+  summary: CustomerDefectProductSummary;
+  vvSummary: CustomerDefectProductSummary;
+  qualities: CustomerDefectQualitySummary[];
+  rows: CustomerDefectProductRow[];
+}
+
 export interface GeographicStateStat {
   state: string;
   customerCount: number;

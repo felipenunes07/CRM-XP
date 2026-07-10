@@ -11,6 +11,7 @@ import type {
   CustomerDefectCustomerDetailResponse,
   CustomerCreditOverviewResponse,
   CustomerDefectOverviewResponse,
+  CustomerDefectProductsResponse,
   CustomerDocInsightsResponse,
   CustomerLabel,
   CustomerListItem,
@@ -424,6 +425,15 @@ export const api = {
   customerDefectCustomerDetail(token: string, customerCode: string) {
     return request<CustomerDefectCustomerDetailResponse>(
       `/api/customer-defects/customers/${encodeURIComponent(customerCode)}`,
+      {},
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
+  },
+  customerDefectProducts(token: string, year: number) {
+    return request<CustomerDefectProductsResponse>(
+      `/api/customer-defects/products?year=${encodeURIComponent(year)}`,
       {},
       token,
       false,

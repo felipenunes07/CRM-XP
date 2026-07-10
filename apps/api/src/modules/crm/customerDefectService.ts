@@ -6,6 +6,10 @@ import type {
   CustomerDefectCustomerDetailResponse,
   CustomerDefectMovementRow,
   CustomerDefectOverviewResponse,
+  CustomerDefectProductRow,
+  CustomerDefectProductsResponse,
+  CustomerDefectProductSummary,
+  CustomerDefectQualitySummary,
   CustomerDefectRow,
   CustomerDefectSnapshotMeta,
   CustomerDefectYearBreakdown,
@@ -28,13 +32,15 @@ const CUSTOMER_DEFECT_LOCK_NS = 8203;
 const CUSTOMER_DEFECT_LOCK_KEY = 1;
 const CUSTOMER_DEFECT_DAILY_SYNC_LOCK_NS = 8204;
 const CUSTOMER_DEFECT_DAILY_SYNC_CURSOR_KEY = "customer_defect_snapshot_date";
-const CUSTOMER_DEFECT_PARSER_VERSION = 5;
+const CUSTOMER_DEFECT_PARSER_VERSION = 6;
 const CUSTOMER_DEFECT_INSERT_CHUNK_SIZE = 5000;
 const CUSTOMER_DEFECT_SYNC_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const CUSTOMER_DEFECT_SYNC_TIMEZONE = "America/Sao_Paulo";
 const CUSTOMER_DEFECT_WORKBOOK_NAME_MARKER = "PLANILHA DEFEITOS";
+const CUSTOMER_DEFECT_PRODUCT_INSERT_CHUNK_SIZE = 3000;
 
 let activeDefectSnapshotPromise: Promise<CustomerDefectSnapshotMeta | null> | null = null;
+const activeProductBackfills = new Map<string, Promise<void>>();
 
 export interface CustomerDefectWorkbookCandidate {
   fullPath: string;
@@ -400,7 +406,7 @@ function normalizeHeader(value: unknown) {
 
 function isDefectSku(value: unknown) {
   const normalized = normalizeCode(String(value ?? ""));
-  return /^\d{3,6}-\d+$/.test(normalized) || normalized === "DIF" || normalized === "USED";
+  return /^(?:\d{3,6}|[A-Z]{1,5}\d{2,6})-\d+$/.test(normalized) || normalized === "DIF" || normalized === "USED";
 }
 
 function readDefectSku(row: unknown[], startIndex: number) {
@@ -531,6 +537,82 @@ function aggregateDefectRows(rows: ParsedCustomerDefectRawRow[]) {
   }
 
   return rowsByCode;
+}
+
+const CUSTOMER_DEFECT_QUALITY_PATTERNS: Array<[RegExp, string]> = [
+  [/\bPREMIER\s+MAX\b/i, "PREMIER MAX"],
+  [/\bSELECT\s+MAX\b/i, "SELECT MAX"],
+  [/\bSOFT\s+OLED\b/i, "SOFT OLED"],
+  [/\bPREMIER\b/i, "PREMIER"],
+  [/\bAMOLED\b/i, "AMOLED"],
+  [/\bOLED\b/i, "OLED"],
+  [/\b(?:INCELL|ONCELL|LCD)\b/i, "LCD"],
+  [/\bORI\b/i, "ORI"],
+  [/\bSELECT\b/i, "SELECT"],
+];
+
+export function classifyCustomerDefectProduct(sku: string, description: string) {
+  const normalizedDescription = normalizeText(description).toUpperCase();
+  const isVv = /(?:^|\s|\[)VV(?:\]|\s|$)/i.test(normalizedDescription);
+  const baseQuality = CUSTOMER_DEFECT_QUALITY_PATTERNS.find(([pattern]) => pattern.test(normalizedDescription))?.[1]
+    ?? "SEM QUALIDADE";
+  const quality = isVv ? `${baseQuality} VV` : baseQuality;
+  const model = normalizeText(normalizedDescription
+    .replace(/\[\s*N[ÃA]O\s+XP\s*\]/gi, " ")
+    .replace(/\[\s*VV\s*\]/gi, " ")
+    .replace(/\bVV\b/gi, " ")
+    .replace(/\|.*$/g, " ")
+    .replace(/\b(?:PREMIER\s+MAX|SELECT\s+MAX|SOFT\s+OLED|PREMIER|AMOLED|OLED|INCELL|ONCELL|LCD|ORI|SELECT)\b/gi, " ")
+    .replace(/\b(?:WF|BLACK|WHITE|PRETO|BRANCO)\b/gi, " ")
+    .replace(/\s+/g, " ")) || normalizeCode(sku) || "SEM MODELO";
+
+  return {
+    sku: normalizeCode(sku),
+    model,
+    quality,
+    isVv,
+  };
+}
+
+interface CustomerDefectProductAggregateRow {
+  year: number;
+  sku: string;
+  description: string;
+  returnedPieces: number;
+  returnedAmount: number;
+}
+
+export function buildCustomerDefectProductAggregates(rows: ResolvedCustomerDefectRow[]) {
+  const aggregates = new Map<string, CustomerDefectProductAggregateRow>();
+
+  for (const customer of rows) {
+    for (const movement of customer.rawRows) {
+      if (movement.returnedPieces <= 0 || !movement.sku) {
+        continue;
+      }
+
+      const year = Number(movement.defectDate.slice(0, 4));
+      const sku = normalizeCode(movement.sku);
+      const description = normalizeText(movement.description ?? "");
+      if (!Number.isFinite(year) || !sku) {
+        continue;
+      }
+
+      const key = `${year}|${sku}|${description.toUpperCase()}`;
+      const current = aggregates.get(key) ?? {
+        year,
+        sku,
+        description,
+        returnedPieces: 0,
+        returnedAmount: 0,
+      };
+      current.returnedPieces += movement.returnedPieces;
+      current.returnedAmount += movement.returnedAmount;
+      aggregates.set(key, current);
+    }
+  }
+
+  return Array.from(aggregates.values());
 }
 
 export async function parseCustomerDefectWorkbook(
@@ -1200,6 +1282,50 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
   }
 }
 
+async function insertSnapshotProductRows(client: PoolClient, snapshotId: string, rows: ResolvedCustomerDefectRow[]) {
+  const payload = buildCustomerDefectProductAggregates(rows).map((row) => ({
+    defect_year: row.year,
+    sku: row.sku,
+    description: row.description,
+    returned_pieces: row.returnedPieces,
+    returned_amount: row.returnedAmount,
+  }));
+
+  for (const chunk of chunkArray(payload, CUSTOMER_DEFECT_PRODUCT_INSERT_CHUNK_SIZE)) {
+    await client.query(
+      `
+        INSERT INTO customer_defect_snapshot_product_rows (
+          snapshot_id,
+          defect_year,
+          sku,
+          description,
+          returned_pieces,
+          returned_amount
+        )
+        SELECT
+          $1::uuid,
+          entry.defect_year,
+          entry.sku,
+          COALESCE(entry.description, ''),
+          COALESCE(entry.returned_pieces, 0),
+          COALESCE(entry.returned_amount, 0)
+        FROM jsonb_to_recordset($2::jsonb) AS entry(
+          defect_year integer,
+          sku text,
+          description text,
+          returned_pieces numeric,
+          returned_amount numeric
+        )
+        ON CONFLICT (snapshot_id, defect_year, sku, description) DO UPDATE
+        SET
+          returned_pieces = EXCLUDED.returned_pieces,
+          returned_amount = EXCLUDED.returned_amount
+      `,
+      [snapshotId, JSON.stringify(chunk)],
+    );
+  }
+}
+
 async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: ResolvedCustomerDefectRow[]) {
   if (!workbook.period) {
     throw new HttpError(500, "A planilha de defeitos nao trouxe nenhuma linha valida para gerar periodo.");
@@ -1272,6 +1398,7 @@ async function persistSnapshot(workbook: ParsedCustomerDefectWorkbook, rows: Res
 
     const snapshot = snapshotResult.rows[0] as SnapshotMetaRecord;
     await insertSnapshotRows(client, String(snapshot.id), rows);
+    await insertSnapshotProductRows(client, String(snapshot.id), rows);
     await client.query("COMMIT");
 
     logger.info("customer defect snapshot refreshed", {
@@ -1417,6 +1544,179 @@ async function getReadableCustomerDefectSnapshot(): Promise<CustomerDefectSnapsh
   // Only bootstrap from the workbooks when the database has no snapshot yet.
   // Regular page reads must never wait for Dropbox downloads or XLSX parsing.
   return ensureCustomerDefectSnapshot(false);
+}
+
+async function backfillSnapshotProductRows(snapshotId: string) {
+  const existing = await pool.query(
+    "SELECT 1 FROM customer_defect_snapshot_product_rows WHERE snapshot_id = $1 LIMIT 1",
+    [snapshotId],
+  );
+  if (existing.rowCount) {
+    return;
+  }
+
+  await pool.query(
+    `
+      INSERT INTO customer_defect_snapshot_product_rows (
+        snapshot_id,
+        defect_year,
+        sku,
+        description,
+        returned_pieces,
+        returned_amount
+      )
+      SELECT
+        source.snapshot_id,
+        EXTRACT(YEAR FROM (movement ->> 'defectDate')::date)::int,
+        UPPER(TRIM(movement ->> 'sku')),
+        COALESCE(TRIM(movement ->> 'description'), ''),
+        SUM(COALESCE((movement ->> 'returnedPieces')::numeric, 0)),
+        SUM(COALESCE((movement ->> 'returnedAmount')::numeric, 0))
+      FROM customer_defect_snapshot_rows source
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(source.raw_payload -> 'defectRows', '[]'::jsonb)) movement
+      WHERE source.snapshot_id = $1
+        AND COALESCE((movement ->> 'returnedPieces')::numeric, 0) > 0
+        AND NULLIF(TRIM(movement ->> 'sku'), '') IS NOT NULL
+        AND (movement ->> 'defectDate') ~ '^\\d{4}-\\d{2}-\\d{2}$'
+      GROUP BY
+        source.snapshot_id,
+        EXTRACT(YEAR FROM (movement ->> 'defectDate')::date),
+        UPPER(TRIM(movement ->> 'sku')),
+        COALESCE(TRIM(movement ->> 'description'), '')
+      ON CONFLICT (snapshot_id, defect_year, sku, description) DO NOTHING
+    `,
+    [snapshotId],
+  );
+}
+
+async function ensureSnapshotProductRows(snapshotId: string) {
+  const current = activeProductBackfills.get(snapshotId);
+  if (current) {
+    return current;
+  }
+
+  const backfill = backfillSnapshotProductRows(snapshotId).finally(() => {
+    activeProductBackfills.delete(snapshotId);
+  });
+  activeProductBackfills.set(snapshotId, backfill);
+  return backfill;
+}
+
+function summarizeProductRows(rows: CustomerDefectProductRow[]): CustomerDefectProductSummary {
+  const soldPieces = rows.reduce((sum, row) => sum + row.soldPieces, 0);
+  const returnedPieces = rows.reduce((sum, row) => sum + row.returnedPieces, 0);
+  return {
+    products: rows.length,
+    soldPieces,
+    returnedPieces,
+    returnedAmount: rows.reduce((sum, row) => sum + row.returnedAmount, 0),
+    returnRate: soldPieces > 0 ? returnedPieces / soldPieces : null,
+  };
+}
+
+export async function getCustomerDefectProducts(year: number): Promise<CustomerDefectProductsResponse> {
+  const snapshot = await getReadableCustomerDefectSnapshot();
+  if (!snapshot) {
+    throw new HttpError(404, "Snapshot de defeitos nao encontrado.");
+  }
+
+  const firstYear = Number(snapshot.periodStartDate.slice(0, 4));
+  const lastYear = Number(snapshot.periodEndDate.slice(0, 4));
+  if (!Number.isInteger(year) || year < firstYear || year > lastYear) {
+    throw new HttpError(400, `Ano deve estar entre ${firstYear} e ${lastYear}.`);
+  }
+
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const periodStartDate = year === firstYear && snapshot.periodStartDate > yearStart ? snapshot.periodStartDate : yearStart;
+  const periodEndDate = year === lastYear && snapshot.periodEndDate < yearEnd ? snapshot.periodEndDate : yearEnd;
+
+  await ensureSnapshotProductRows(snapshot.id);
+  const [defectResult, salesResult] = await Promise.all([
+    pool.query(
+      `
+        SELECT sku, description, returned_pieces, returned_amount
+        FROM customer_defect_snapshot_product_rows
+        WHERE snapshot_id = $1 AND defect_year = $2
+      `,
+      [snapshot.id, year],
+    ),
+    pool.query(
+      `
+        SELECT
+          UPPER(TRIM(oi.sku)) AS sku,
+          oi.item_description AS description,
+          COALESCE(SUM(oi.quantity), 0)::numeric(14, 2) AS sold_pieces
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.order_date BETWEEN $1::date AND $2::date
+          AND oi.quantity > 0
+          AND NULLIF(TRIM(oi.sku), '') IS NOT NULL
+        GROUP BY UPPER(TRIM(oi.sku)), oi.item_description
+      `,
+      [periodStartDate, periodEndDate],
+    ),
+  ]);
+
+  const products = new Map<string, CustomerDefectProductRow>();
+  const upsert = (input: { sku: string; description: string; soldPieces?: number; returnedPieces?: number; returnedAmount?: number }) => {
+    const classified = classifyCustomerDefectProduct(input.sku, input.description);
+    if (!classified.sku) return;
+    const key = `${classified.sku}|${classified.quality}`;
+    const current = products.get(key) ?? {
+      ...classified,
+      soldPieces: 0,
+      returnedPieces: 0,
+      returnedAmount: 0,
+      returnRate: null,
+    };
+    current.model = current.model === "SEM MODELO" ? classified.model : current.model;
+    current.soldPieces += input.soldPieces ?? 0;
+    current.returnedPieces += input.returnedPieces ?? 0;
+    current.returnedAmount += input.returnedAmount ?? 0;
+    products.set(key, current);
+  };
+
+  defectResult.rows.forEach((row) => upsert({
+    sku: String(row.sku ?? ""),
+    description: String(row.description ?? ""),
+    returnedPieces: Number(row.returned_pieces ?? 0),
+    returnedAmount: Number(row.returned_amount ?? 0),
+  }));
+  salesResult.rows.forEach((row) => upsert({
+    sku: String(row.sku ?? ""),
+    description: String(row.description ?? ""),
+    soldPieces: Number(row.sold_pieces ?? 0),
+  }));
+
+  const rows = Array.from(products.values())
+    .map((row) => ({
+      ...row,
+      returnRate: row.soldPieces > 0 ? row.returnedPieces / row.soldPieces : null,
+    }))
+    .filter((row) => row.soldPieces > 0 || row.returnedPieces > 0)
+    .sort((left, right) =>
+      right.returnedPieces - left.returnedPieces ||
+      (right.returnRate ?? -1) - (left.returnRate ?? -1) ||
+      left.model.localeCompare(right.model, "pt-BR"),
+    );
+
+  const qualityGroups = new Map<string, CustomerDefectProductRow[]>();
+  rows.forEach((row) => qualityGroups.set(row.quality, [...(qualityGroups.get(row.quality) ?? []), row]));
+  const qualities: CustomerDefectQualitySummary[] = Array.from(qualityGroups.entries())
+    .map(([quality, qualityRows]) => ({ quality, ...summarizeProductRows(qualityRows) }))
+    .sort((left, right) => right.returnedPieces - left.returnedPieces || (right.returnRate ?? -1) - (left.returnRate ?? -1));
+
+  return {
+    snapshot,
+    year,
+    periodStartDate,
+    periodEndDate,
+    summary: summarizeProductRows(rows),
+    vvSummary: summarizeProductRows(rows.filter((row) => row.isVv)),
+    qualities,
+    rows,
+  };
 }
 
 function sourceFilesMatch(

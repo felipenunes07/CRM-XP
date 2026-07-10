@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   buildCustomerDefectOverviewSummary,
   buildCustomerDefectRows,
+  classifyCustomerDefectProduct,
   findCustomerDefectWorkbooks,
   getCustomerDefectPurchasePeriod,
   getCustomerDefectYearPeriods,
@@ -42,6 +43,32 @@ async function writeWorkbookFromRows(fileName: string, rows: unknown[][]) {
 describe("customerDefectService", () => {
   afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
+  });
+
+  it("classifies VV only as an isolated product-line token", () => {
+    expect(classifyCustomerDefectProduct("CX059-1", "[NÃO XP] [ VV ] IP-XR ORI | PRETO")).toEqual({
+      sku: "CX059-1",
+      model: "IP-XR",
+      quality: "ORI VV",
+      isVv: true,
+    });
+    expect(classifyCustomerDefectProduct("CX156-1", "IP-11 (TROCA CI) ORI VV | PRETO")).toMatchObject({
+      quality: "ORI VV",
+      isVv: true,
+    });
+    expect(classifyCustomerDefectProduct("CX022-1", "SM-A22 VIVID")).toMatchObject({
+      isVv: false,
+    });
+  });
+
+  it("keeps alphanumeric CX SKUs from modern defect rows", async () => {
+    const filePath = await writeWorkbookFromRows("defeitos-vv-2026.xlsx", [
+      ["COD", "OK", "CL", "DATA", "UND.", "Descricao", "SKU", "Valor", "Total", "Cliente", "Nota", "Vendedor", "Recusadas", "STAUS"],
+      ["DEF - CL753 46184", "OK", "CL753", "2026-06-11", -1, "[NÃO XP] IP-12/12 PRO (TROCA CI) LCD VV | PRETO", "CX232-1", 62, -62, "Anderson", "", "", "", "OK"],
+    ]);
+
+    const parsed = await parseCustomerDefectWorkbook(filePath, filePath);
+    expect(parsed.rowsByCode.get("CL753")?.rawRows[0]?.sku).toBe("CX232-1");
   });
 
   it("parses valid OK defect rows and aggregates by customer over the real workbook period", async () => {

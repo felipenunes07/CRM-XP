@@ -4188,5 +4188,21 @@ export const migrations = [
   SET yearly_breakdown = COALESCE(raw_payload -> 'yearlyBreakdown', '[]'::jsonb)
   WHERE yearly_breakdown = '[]'::jsonb
     AND raw_payload ? 'yearlyBreakdown';
+  `,
+  `
+  -- Agregados leves por SKU/descricao para a analise anual de modelos e
+  -- qualidades, sem reabrir as planilhas ou varrer todo o JSON a cada acesso.
+  CREATE TABLE IF NOT EXISTS customer_defect_snapshot_product_rows (
+    snapshot_id UUID NOT NULL REFERENCES customer_defect_snapshots(id) ON DELETE CASCADE,
+    defect_year INTEGER NOT NULL,
+    sku TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    returned_pieces NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    returned_amount NUMERIC(14, 2) NOT NULL DEFAULT 0,
+    PRIMARY KEY (snapshot_id, defect_year, sku, description)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_defect_products_snapshot_year
+    ON customer_defect_snapshot_product_rows(snapshot_id, defect_year);
   `
 ];
