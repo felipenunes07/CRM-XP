@@ -2240,7 +2240,8 @@ a {
 }
 
 .customer-defect-detail-kpis span,
-.customer-defect-year-row span,
+.customer-defect-year-chart-label span,
+.customer-defect-year-chart-meta span,
 .customer-defect-movement-row span {
   color: var(--muted);
   font-size: 0.78rem;
@@ -2257,9 +2258,39 @@ a {
 }
 
 .customer-defect-year-list,
+.customer-defect-year-chart,
 .customer-defect-movement-list {
   display: grid;
   gap: 0.5rem;
+}
+
+.customer-defect-year-chart-row {
+  display: grid;
+  gap: 0.45rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.7rem 0;
+}
+
+.customer-defect-year-chart-label,
+.customer-defect-year-chart-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.customer-defect-year-chart-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(102, 123, 163, 0.16);
+}
+
+.customer-defect-year-chart-track div {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #16a34a);
 }
 
 .customer-defect-year-row,

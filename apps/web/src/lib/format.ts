@@ -145,6 +145,17 @@ export function formatPercent(value: number | null | undefined) {
   }).format(safeValue * 100)}%`;
 }
 
+export function formatPrecisePercent(value: number | null | undefined) {
+  const safeValue = toSafeNumber(value);
+  const percentage = safeValue * 100;
+  const fractionDigits = Math.abs(percentage) > 0 && Math.abs(percentage) < 1 ? 2 : 1;
+
+  return `${new Intl.NumberFormat(activeLocale, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(percentage)}%`;
+}
+
 export function statusLabel(status: "ACTIVE" | "ATTENTION" | "INACTIVE" | "NEW") {
   if (status === "ACTIVE") return localizedLabel("Ativo", "活跃");
   if (status === "ATTENTION") return localizedLabel("Atencao", "关注");

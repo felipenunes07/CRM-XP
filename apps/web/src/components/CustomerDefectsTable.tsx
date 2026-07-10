@@ -1,5 +1,5 @@
 import type { CustomerDefectRow } from "@olist-crm/shared";
-import { formatCurrency, formatDate, formatNumber, formatPercent } from "../lib/format";
+import { formatCurrency, formatDate, formatNumber, formatPrecisePercent } from "../lib/format";
 import type { CustomerDefectSortKey } from "../pages/customersPage.helpers";
 
 function returnRateLabel(row: CustomerDefectRow) {
@@ -7,7 +7,7 @@ function returnRateLabel(row: CustomerDefectRow) {
     return "Sem compra";
   }
 
-  return formatPercent(row.returnRate);
+  return formatPrecisePercent(row.returnRate);
 }
 
 function returnRateTone(row: CustomerDefectRow, overallRate: number | null | undefined) {

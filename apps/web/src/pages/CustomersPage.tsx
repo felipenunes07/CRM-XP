@@ -5,7 +5,7 @@ import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, S
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPercent } from "../lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPrecisePercent } from "../lib/format";
 import { isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
@@ -334,6 +334,14 @@ function sortDefectRows(rows: CustomerDefectRow[], sort: { key: CustomerDefectSo
     }
     return left.customerCode.localeCompare(right.customerCode, "pt-BR");
   });
+}
+
+function defectRateBarWidth(rate: number | null) {
+  if (rate === null || rate <= 0) {
+    return 0;
+  }
+
+  return Math.min(100, Math.max(3, rate * 1000));
 }
 
 export function CustomersPage() {
@@ -1050,7 +1058,7 @@ export function CustomersPage() {
                   value={
                     defectPeriodSummary.overallReturnRate === null
                       ? "Sem base"
-                      : formatPercent(defectPeriodSummary.overallReturnRate)
+                      : formatPrecisePercent(defectPeriodSummary.overallReturnRate)
                   }
                   helper={`${formatNumber(defectPeriodSummary.highReturnCustomers)} clientes acima da media`}
                   tone="danger"
@@ -1248,21 +1256,28 @@ export function CustomersPage() {
                             <strong>
                               {defectDetailQuery.data.row.returnRate === null
                                 ? "Sem base"
-                                : formatPercent(defectDetailQuery.data.row.returnRate)}
+                                : formatPrecisePercent(defectDetailQuery.data.row.returnRate)}
                             </strong>
                           </div>
                         </div>
 
                         <div className="customer-defect-detail-section">
-                          <h4>Por ano</h4>
-                          <div className="customer-defect-year-list">
+                          <h4>Taxa por ano</h4>
+                          <div className="customer-defect-year-chart">
                             {defectDetailQuery.data.row.yearlyBreakdown.map((entry) => (
-                              <div key={entry.year} className="customer-defect-year-row">
-                                <strong>{entry.year}</strong>
-                                <span>{formatNumber(entry.purchasedPieces)} compradas</span>
-                                <span>{formatNumber(entry.returnedPieces)} trocadas</span>
-                                <span>{formatNumber(entry.replacementPieces)} reposicoes</span>
-                                <span>{entry.returnRate === null ? "Sem base" : formatPercent(entry.returnRate)}</span>
+                              <div key={entry.year} className="customer-defect-year-chart-row">
+                                <div className="customer-defect-year-chart-label">
+                                  <strong>{entry.year}</strong>
+                                  <span>{entry.returnRate === null ? "Sem base" : formatPrecisePercent(entry.returnRate)}</span>
+                                </div>
+                                <div className="customer-defect-year-chart-track" aria-hidden="true">
+                                  <div style={{ width: `${defectRateBarWidth(entry.returnRate)}%` }} />
+                                </div>
+                                <div className="customer-defect-year-chart-meta">
+                                  <span>{formatNumber(entry.purchasedPieces)} compradas</span>
+                                  <span>{formatNumber(entry.returnedPieces)} trocas</span>
+                                  <span>{formatCurrency(entry.returnedAmount)}</span>
+                                </div>
                               </div>
                             ))}
                           </div>
