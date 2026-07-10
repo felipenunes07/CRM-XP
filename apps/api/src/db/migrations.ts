@@ -4177,5 +4177,16 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_offboarding_alert_log_customer
     ON offboarding_alert_log(customer_id, sent_at DESC);
+  `,
+  `
+  -- A abertura da aba de defeitos precisa ler apenas o resumo anual. Os
+  -- movimentos completos continuam no raw_payload e so sao lidos no detalhe.
+  ALTER TABLE customer_defect_snapshot_rows
+    ADD COLUMN IF NOT EXISTS yearly_breakdown JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+  UPDATE customer_defect_snapshot_rows
+  SET yearly_breakdown = COALESCE(raw_payload -> 'yearlyBreakdown', '[]'::jsonb)
+  WHERE yearly_breakdown = '[]'::jsonb
+    AND raw_payload ? 'yearlyBreakdown';
   `
 ];

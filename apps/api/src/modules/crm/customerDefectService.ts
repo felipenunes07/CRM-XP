@@ -303,7 +303,7 @@ function mapCustomerDefectRow(row: Record<string, unknown>): CustomerDefectRow {
     defectSkuCount: Number(row.defect_sku_count ?? 0),
     firstDefectDate: row.first_defect_date ? String(row.first_defect_date) : null,
     lastDefectDate: row.last_defect_date ? String(row.last_defect_date) : null,
-    yearlyBreakdown: mapYearlyBreakdown(rawPayload.yearlyBreakdown),
+    yearlyBreakdown: mapYearlyBreakdown(row.yearly_breakdown ?? rawPayload.yearlyBreakdown),
   };
 }
 
@@ -1133,6 +1133,7 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
         }))
         .sort((left, right) => right.defectDate.localeCompare(left.defectDate)),
     },
+    yearly_breakdown: row.yearlyBreakdown,
   }));
 
   for (const chunk of chunkArray(payload, CUSTOMER_DEFECT_INSERT_CHUNK_SIZE)) {
@@ -1154,7 +1155,8 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           defect_sku_count,
           first_defect_date,
           last_defect_date,
-          raw_payload
+          raw_payload,
+          yearly_breakdown
         )
         SELECT
           $1::uuid,
@@ -1172,7 +1174,8 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           COALESCE(entry.defect_sku_count, 0),
           NULLIF(entry.first_defect_date, '')::date,
           NULLIF(entry.last_defect_date, '')::date,
-          COALESCE(entry.raw_payload, '{}'::jsonb)
+          COALESCE(entry.raw_payload, '{}'::jsonb),
+          COALESCE(entry.yearly_breakdown, '[]'::jsonb)
         FROM jsonb_to_recordset($2::jsonb) AS entry(
           customer_id text,
           customer_code text,
@@ -1188,7 +1191,8 @@ async function insertSnapshotRows(client: PoolClient, snapshotId: string, rows: 
           defect_sku_count integer,
           first_defect_date text,
           last_defect_date text,
-          raw_payload jsonb
+          raw_payload jsonb,
+          yearly_breakdown jsonb
         )
       `,
       [snapshotId, JSON.stringify(chunk)],
@@ -1307,7 +1311,7 @@ async function loadOverviewRows(snapshotId: string) {
         defect_sku_count,
         first_defect_date::text AS first_defect_date,
         last_defect_date::text AS last_defect_date,
-        raw_payload
+        yearly_breakdown
       FROM customer_defect_snapshot_rows
       WHERE snapshot_id = $1
       ORDER BY return_rate DESC NULLS LAST, returned_pieces DESC, revenue DESC, customer_display_name ASC
@@ -1324,7 +1328,7 @@ export async function getCustomerDefectCustomerDetail(customerCode: string): Pro
     throw new HttpError(400, "Codigo do cliente invalido.");
   }
 
-  const snapshot = await ensureCustomerDefectSnapshot(false);
+  const snapshot = await getReadableCustomerDefectSnapshot();
   if (!snapshot) {
     throw new HttpError(404, "Snapshot de defeitos nao encontrado.");
   }
@@ -1347,6 +1351,7 @@ export async function getCustomerDefectCustomerDetail(customerCode: string): Pro
         defect_sku_count,
         first_defect_date::text AS first_defect_date,
         last_defect_date::text AS last_defect_date,
+        yearly_breakdown,
         raw_payload
       FROM customer_defect_snapshot_rows
       WHERE snapshot_id = $1
@@ -1401,6 +1406,17 @@ async function buildOverviewResponse(snapshot: CustomerDefectSnapshotMeta): Prom
     rows: linkedRows,
     unmatchedRows,
   };
+}
+
+async function getReadableCustomerDefectSnapshot(): Promise<CustomerDefectSnapshotMeta | null> {
+  const activeSnapshot = await getActiveSnapshotRecord();
+  if (activeSnapshot) {
+    return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
+  }
+
+  // Only bootstrap from the workbooks when the database has no snapshot yet.
+  // Regular page reads must never wait for Dropbox downloads or XLSX parsing.
+  return ensureCustomerDefectSnapshot(false);
 }
 
 function sourceFilesMatch(
@@ -1495,7 +1511,7 @@ export async function ensureCustomerDefectSnapshot(forceRefresh = false): Promis
 }
 
 export async function getCustomerDefectOverview(): Promise<CustomerDefectOverviewResponse> {
-  const snapshot = await ensureCustomerDefectSnapshot(false);
+  const snapshot = await getReadableCustomerDefectSnapshot();
   if (!snapshot) {
     return emptyCustomerDefectOverview();
   }
