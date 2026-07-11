@@ -7,6 +7,7 @@ import {
   buildCustomerDefectOverviewSummary,
   buildCustomerDefectRows,
   classifyCustomerDefectProduct,
+  buildCustomerDefectProductRows,
   findCustomerDefectWorkbooks,
   getCustomerDefectPurchasePeriod,
   getCustomerDefectYearPeriods,
@@ -69,6 +70,23 @@ describe("customerDefectService", () => {
     expect(classifyCustomerDefectProduct("1", "[ DE ] MT-G54 LCD | PRETO")).toMatchObject({ brand: "MOTOROLA", factory: "DE" });
     expect(classifyCustomerDefectProduct("2", "MI-REDMI 12 LCD | PRETO")).toMatchObject({ brand: "XIAOMI", factory: "XP" });
     expect(classifyCustomerDefectProduct("3", "BATERIA SM-A15 | PRETO")).toMatchObject({ factory: "BATERIA" });
+    expect(classifyCustomerDefectProduct("4", "DOC DE CARGA | SM-A15 LCD")).toMatchObject({ factory: "XP" });
+  });
+
+  it("consolidates the sales denominator by SKU despite description changes", () => {
+    const rows = buildCustomerDefectProductRows(
+      [
+        { sku: "0196-1", description: "IP-12 PRO MAX (TROCA CI) OLED | PRETO", returned_pieces: 44, returned_amount: 12112 },
+      ],
+      [
+        { sku: "0196-1", description: "IP-12 PRO MAX OLED - BLACK", sold_pieces: 308 },
+        { sku: "0196-1", description: "IP-12 PRO MAX (TROCA CI) OLED | PRETO", sold_pieces: 946 },
+      ],
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ sku: "0196-1", soldPieces: 1254, returnedPieces: 44 });
+    expect(rows[0]?.returnRate).toBeCloseTo(44 / 1254, 8);
   });
 
   it("keeps alphanumeric CX SKUs from modern defect rows", async () => {

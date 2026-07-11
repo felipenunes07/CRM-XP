@@ -554,6 +554,7 @@ export interface CustomerDefectProductsResponse {
   year: number;
   periodStartDate: string;
   periodEndDate: string;
+  salesBaseStartDate: string;
   summary: CustomerDefectProductSummary;
   vvSummary: CustomerDefectProductSummary;
   qualities: CustomerDefectQualitySummary[];

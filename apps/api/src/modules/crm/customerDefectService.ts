@@ -554,7 +554,7 @@ const CUSTOMER_DEFECT_QUALITY_PATTERNS: Array<[RegExp, string]> = [
 export function classifyCustomerDefectProduct(sku: string, description: string) {
   const normalizedDescription = normalizeText(description).toUpperCase();
   const isVv = /(?:^|\s|\[)VV(?:\]|\s|$)/i.test(normalizedDescription);
-  const isDe = /(?:^|\s|\[)DE(?:\]|\s|$)/i.test(normalizedDescription);
+  const isDe = /\[\s*DE\s*\]/i.test(normalizedDescription);
   const isBattery = /\bBATERIA\b/i.test(normalizedDescription);
   const baseQuality = CUSTOMER_DEFECT_QUALITY_PATTERNS.find(([pattern]) => pattern.test(normalizedDescription))?.[1]
     ?? "SEM QUALIDADE";
@@ -1631,6 +1631,46 @@ function summarizeProductRows(rows: CustomerDefectProductRow[]): CustomerDefectP
   };
 }
 
+export function buildCustomerDefectProductRows(
+  defectRows: Array<{ sku: unknown; description: unknown; returned_pieces: unknown; returned_amount: unknown }>,
+  salesRows: Array<{ sku: unknown; description: unknown; sold_pieces: unknown }>,
+) {
+  const products = new Map<string, CustomerDefectProductRow>();
+  const upsert = (input: { sku: string; description: string; soldPieces?: number; returnedPieces?: number; returnedAmount?: number }) => {
+    const classified = classifyCustomerDefectProduct(input.sku, input.description);
+    if (!classified.sku) return;
+    const current = products.get(classified.sku) ?? {
+      ...classified,
+      soldPieces: 0,
+      returnedPieces: 0,
+      returnedAmount: 0,
+      returnRate: null,
+    };
+    current.model = current.model === "SEM MODELO" ? classified.model : current.model;
+    current.soldPieces += input.soldPieces ?? 0;
+    current.returnedPieces += input.returnedPieces ?? 0;
+    current.returnedAmount += input.returnedAmount ?? 0;
+    products.set(classified.sku, current);
+  };
+
+  defectRows.forEach((row) => upsert({
+    sku: String(row.sku ?? ""),
+    description: String(row.description ?? ""),
+    returnedPieces: Number(row.returned_pieces ?? 0),
+    returnedAmount: Number(row.returned_amount ?? 0),
+  }));
+  salesRows.forEach((row) => upsert({
+    sku: String(row.sku ?? ""),
+    description: String(row.description ?? ""),
+    soldPieces: Number(row.sold_pieces ?? 0),
+  }));
+
+  return Array.from(products.values())
+    .map((row) => ({ ...row, returnRate: row.soldPieces > 0 ? row.returnedPieces / row.soldPieces : null }))
+    .filter((row) => row.soldPieces > 0 || row.returnedPieces > 0)
+    .sort((left, right) => right.returnedPieces - left.returnedPieces || (right.returnRate ?? -1) - (left.returnRate ?? -1) || left.model.localeCompare(right.model, "pt-BR"));
+}
+
 export async function getCustomerDefectProducts(year: number): Promise<CustomerDefectProductsResponse> {
   const snapshot = await getReadableCustomerDefectSnapshot();
   if (!snapshot) {
@@ -1647,6 +1687,9 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
   const yearEnd = `${year}-12-31`;
   const periodStartDate = year === firstYear && snapshot.periodStartDate > yearStart ? snapshot.periodStartDate : yearStart;
   const periodEndDate = year === lastYear && snapshot.periodEndDate < yearEnd ? snapshot.periodEndDate : yearEnd;
+  // Trocas registradas no ano frequentemente pertencem a pecas vendidas em anos anteriores.
+  // A base acumulada evita taxas artificiais de milhares por cento para SKUs descontinuados.
+  const salesBaseStartDate = `${firstYear}-01-01`;
 
   await ensureSnapshotProductRows(snapshot.id);
   const [defectResult, salesResult] = await Promise.all([
@@ -1655,6 +1698,7 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
         SELECT sku, description, returned_pieces, returned_amount
         FROM customer_defect_snapshot_product_rows
         WHERE snapshot_id = $1 AND defect_year = $2
+        ORDER BY returned_pieces DESC, sku, description
       `,
       [snapshot.id, year],
     ),
@@ -1662,61 +1706,20 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
       `
         SELECT
           UPPER(TRIM(oi.sku)) AS sku,
-          oi.item_description AS description,
+          (ARRAY_AGG(oi.item_description ORDER BY o.order_date DESC, o.created_at DESC))[1] AS description,
           COALESCE(SUM(oi.quantity), 0)::numeric(14, 2) AS sold_pieces
         FROM orders o
         JOIN order_items oi ON oi.order_id = o.id
         WHERE o.order_date BETWEEN $1::date AND $2::date
           AND oi.quantity > 0
           AND NULLIF(TRIM(oi.sku), '') IS NOT NULL
-        GROUP BY UPPER(TRIM(oi.sku)), oi.item_description
+        GROUP BY UPPER(TRIM(oi.sku))
       `,
-      [periodStartDate, periodEndDate],
+      [salesBaseStartDate, periodEndDate],
     ),
   ]);
 
-  const products = new Map<string, CustomerDefectProductRow>();
-  const upsert = (input: { sku: string; description: string; soldPieces?: number; returnedPieces?: number; returnedAmount?: number }) => {
-    const classified = classifyCustomerDefectProduct(input.sku, input.description);
-    if (!classified.sku) return;
-    const key = `${classified.sku}|${classified.quality}`;
-    const current = products.get(key) ?? {
-      ...classified,
-      soldPieces: 0,
-      returnedPieces: 0,
-      returnedAmount: 0,
-      returnRate: null,
-    };
-    current.model = current.model === "SEM MODELO" ? classified.model : current.model;
-    current.soldPieces += input.soldPieces ?? 0;
-    current.returnedPieces += input.returnedPieces ?? 0;
-    current.returnedAmount += input.returnedAmount ?? 0;
-    products.set(key, current);
-  };
-
-  defectResult.rows.forEach((row) => upsert({
-    sku: String(row.sku ?? ""),
-    description: String(row.description ?? ""),
-    returnedPieces: Number(row.returned_pieces ?? 0),
-    returnedAmount: Number(row.returned_amount ?? 0),
-  }));
-  salesResult.rows.forEach((row) => upsert({
-    sku: String(row.sku ?? ""),
-    description: String(row.description ?? ""),
-    soldPieces: Number(row.sold_pieces ?? 0),
-  }));
-
-  const rows = Array.from(products.values())
-    .map((row) => ({
-      ...row,
-      returnRate: row.soldPieces > 0 ? row.returnedPieces / row.soldPieces : null,
-    }))
-    .filter((row) => row.soldPieces > 0 || row.returnedPieces > 0)
-    .sort((left, right) =>
-      right.returnedPieces - left.returnedPieces ||
-      (right.returnRate ?? -1) - (left.returnRate ?? -1) ||
-      left.model.localeCompare(right.model, "pt-BR"),
-    );
+  const rows = buildCustomerDefectProductRows(defectResult.rows, salesResult.rows);
 
   const qualityGroups = new Map<string, CustomerDefectProductRow[]>();
   rows.forEach((row) => qualityGroups.set(row.quality, [...(qualityGroups.get(row.quality) ?? []), row]));
@@ -1729,6 +1732,7 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
     year,
     periodStartDate,
     periodEndDate,
+    salesBaseStartDate,
     summary: summarizeProductRows(rows),
     vvSummary: summarizeProductRows(rows.filter((row) => row.isVv)),
     qualities,
