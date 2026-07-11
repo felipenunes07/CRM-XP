@@ -554,21 +554,38 @@ const CUSTOMER_DEFECT_QUALITY_PATTERNS: Array<[RegExp, string]> = [
 export function classifyCustomerDefectProduct(sku: string, description: string) {
   const normalizedDescription = normalizeText(description).toUpperCase();
   const isVv = /(?:^|\s|\[)VV(?:\]|\s|$)/i.test(normalizedDescription);
+  const isDe = /(?:^|\s|\[)DE(?:\]|\s|$)/i.test(normalizedDescription);
+  const isBattery = /\bBATERIA\b/i.test(normalizedDescription);
   const baseQuality = CUSTOMER_DEFECT_QUALITY_PATTERNS.find(([pattern]) => pattern.test(normalizedDescription))?.[1]
     ?? "SEM QUALIDADE";
   const quality = isVv ? `${baseQuality} VV` : baseQuality;
   const model = normalizeText(normalizedDescription
     .replace(/\[\s*N[ÃA]O\s+XP\s*\]/gi, " ")
     .replace(/\[\s*VV\s*\]/gi, " ")
+    .replace(/\[\s*DE\s*\]/gi, " ")
     .replace(/\bVV\b/gi, " ")
     .replace(/\|.*$/g, " ")
     .replace(/\b(?:PREMIER\s+MAX|SELECT\s+MAX|SOFT\s+OLED|PREMIER|AMOLED|OLED|INCELL|ONCELL|LCD|ORI|SELECT)\b/gi, " ")
     .replace(/\b(?:WF|BLACK|WHITE|PRETO|BRANCO)\b/gi, " ")
     .replace(/\s+/g, " ")) || normalizeCode(sku) || "SEM MODELO";
 
+  const brandToken = model.match(/^[A-Z]+/)?.[0] ?? "OUTROS";
+  const brandAliases: Record<string, string> = {
+    IP: "IPHONE",
+    IPHONE: "IPHONE",
+    SM: "SAMSUNG",
+    SAMSUNG: "SAMSUNG",
+    MT: "MOTOROLA",
+    MOTOROLA: "MOTOROLA",
+    MI: "XIAOMI",
+    XIAOMI: "XIAOMI",
+  };
+
   return {
     sku: normalizeCode(sku),
     model,
+    brand: brandAliases[brandToken] ?? brandToken,
+    factory: (isBattery ? "BATERIA" : isVv ? "VV" : isDe ? "DE" : "XP") as "XP" | "VV" | "DE" | "BATERIA",
     quality,
     isVv,
   };

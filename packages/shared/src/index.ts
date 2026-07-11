@@ -527,6 +527,8 @@ export interface CustomerDefectCustomerDetailResponse {
 export interface CustomerDefectProductRow {
   sku: string;
   model: string;
+  brand: string;
+  factory: "XP" | "VV" | "DE" | "BATERIA";
   quality: string;
   isVv: boolean;
   soldPieces: number;

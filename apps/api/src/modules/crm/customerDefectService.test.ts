@@ -49,6 +49,8 @@ describe("customerDefectService", () => {
     expect(classifyCustomerDefectProduct("CX059-1", "[NÃO XP] [ VV ] IP-XR ORI | PRETO")).toEqual({
       sku: "CX059-1",
       model: "IP-XR",
+      brand: "IPHONE",
+      factory: "VV",
       quality: "ORI VV",
       isVv: true,
     });
@@ -57,8 +59,16 @@ describe("customerDefectService", () => {
       isVv: true,
     });
     expect(classifyCustomerDefectProduct("CX022-1", "SM-A22 VIVID")).toMatchObject({
+      brand: "SAMSUNG",
+      factory: "XP",
       isVv: false,
     });
+  });
+
+  it("classifies product factory and canonical brand for defect analytics", () => {
+    expect(classifyCustomerDefectProduct("1", "[ DE ] MT-G54 LCD | PRETO")).toMatchObject({ brand: "MOTOROLA", factory: "DE" });
+    expect(classifyCustomerDefectProduct("2", "MI-REDMI 12 LCD | PRETO")).toMatchObject({ brand: "XIAOMI", factory: "XP" });
+    expect(classifyCustomerDefectProduct("3", "BATERIA SM-A15 | PRETO")).toMatchObject({ factory: "BATERIA" });
   });
 
   it("keeps alphanumeric CX SKUs from modern defect rows", async () => {

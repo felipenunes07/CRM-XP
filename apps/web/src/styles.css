@@ -2103,6 +2103,34 @@ a {
   box-shadow: 0 1px 0 var(--line);
 }
 
+.customer-defect-brand-highlight {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, var(--panel)), var(--panel) 48%);
+}
+
+.customer-defect-highlight-select {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 170px;
+}
+
+.customer-defect-highlight-select span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.customer-defect-highlight-select select {
+  min-height: 40px;
+  border: 0;
+  border-bottom: 2px solid var(--accent);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 800;
+}
+
 .customer-defect-vv-highlight h3,
 .customer-defect-vv-highlight p {
   margin: 0;
@@ -2140,7 +2168,7 @@ a {
 
 .customer-defect-product-filters {
   display: grid;
-  grid-template-columns: 0.65fr 1fr minmax(220px, 1.5fr) 1fr;
+  grid-template-columns: 0.65fr 1fr 0.8fr minmax(220px, 1.5fr);
   gap: 0.75rem;
   align-items: end;
   padding: 1rem;
@@ -2184,7 +2212,7 @@ a {
 
 .customer-defect-quality-summary {
   display: flex;
-  gap: 0.5rem;
+  gap: 0;
   overflow-x: auto;
   padding-bottom: 0.2rem;
 }
@@ -2193,9 +2221,11 @@ a {
   display: grid;
   gap: 0.1rem;
   min-width: 132px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
   padding: 0.7rem 0.8rem;
   text-align: left;
@@ -2203,8 +2233,16 @@ a {
 }
 
 .customer-defect-quality-summary button.active {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-bottom-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.customer-defect-quality-summary button:hover {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.customer-defect-quality-summary button strong {
+  font-size: 1.05rem;
 }
 
 .customer-defect-quality-summary span,
@@ -2226,6 +2264,24 @@ a {
   top: 0;
   z-index: 3;
   background: var(--panel);
+}
+
+.customer-defect-products-table thead th button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.customer-defect-products-table thead th button span {
+  color: var(--accent);
+  font-size: 0.85rem;
 }
 
 .customer-defect-products-table td:first-child {
