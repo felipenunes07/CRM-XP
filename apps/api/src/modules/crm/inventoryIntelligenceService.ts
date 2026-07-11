@@ -224,7 +224,14 @@ function tokenizeInventoryValue(value: string) {
 
 function deriveInventoryGrouping(model: string) {
   const tokens = tokenizeInventoryValue(model);
-  const brand = tokens[0]?.toUpperCase() ?? "OUTROS";
+  const rawBrand = tokens[0]?.toUpperCase() ?? "OUTROS";
+  const brandAliases: Record<string, string> = {
+    IP: "IPHONE",
+    SM: "SAMSUNG",
+    MT: "MOTOROLA",
+    MI: "XIAOMI",
+  };
+  const brand = brandAliases[rawBrand] ?? rawBrand;
   const familyTokens = tokens.slice(1, 4);
 
   return {
@@ -232,6 +239,14 @@ function deriveInventoryGrouping(model: string) {
     family: familyTokens.length ? familyTokens.join(" ").toUpperCase() : brand,
     productKind: deriveInventoryProductKind(model),
   };
+}
+
+function deriveInventoryFactory(model: string, category: InventorySalesCategory) {
+  if (category === "BATERIA") return "BATERIA" as const;
+  const normalized = removeDiacritics(normalizeText(model)).toUpperCase();
+  if (/(?:^|[\s\[])VV(?:[\s\]]|$)/.test(normalized)) return "VV" as const;
+  if (/(?:^|[\s\[])DE(?:[\s\]]|$)/.test(normalized)) return "DE" as const;
+  return "XP" as const;
 }
 
 function toNumber(value: unknown) {
@@ -2951,13 +2966,15 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
     }
 
     const grouping = deriveInventoryGrouping(item.model);
+    const category = deriveSalesCategory(item.model, true);
     bySku.set(item.sku, {
       sku: item.sku,
       modelKey: `${grouping.productKind}::${buildInventoryAnalyticsKey(item.sku)}`,
       modelLabel: cleanInventoryModelLabel(item.model),
       brand: grouping.brand,
+      factory: deriveInventoryFactory(item.model, category),
       family: grouping.family,
-      category: deriveSalesCategory(item.model, true),
+      category,
       quality: item.quality,
       color: item.color,
       inCatalog: true,
@@ -2976,13 +2993,15 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
     if (!entry) {
       const description = normalizeText(String(row.description ?? "")) || row.sku;
       const grouping = deriveInventoryGrouping(description);
+      const category = deriveSalesCategory(description, false);
       entry = {
         sku: row.sku,
         modelKey: null,
         modelLabel: cleanInventoryModelLabel(description),
         brand: grouping.brand,
+        factory: deriveInventoryFactory(description, category),
         family: grouping.family,
-        category: deriveSalesCategory(description, false),
+        category,
         quality: null,
         color: null,
         inCatalog: false,
@@ -3024,6 +3043,7 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
     items,
     filters: {
       brands: sortUnique(items.map((item) => item.brand)),
+      factories: sortUnique(items.map((item) => item.factory)) as Array<"XP" | "VV" | "DE" | "BATERIA">,
       families: sortUnique(items.map((item) => item.family)),
       qualities: sortUnique(items.map((item) => item.quality ?? "SEM QUALIDADE")),
     },

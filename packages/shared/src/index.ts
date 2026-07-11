@@ -1109,6 +1109,7 @@ export interface InventorySalesReportItem {
   modelKey: string | null;
   modelLabel: string;
   brand: string;
+  factory: "XP" | "VV" | "DE" | "BATERIA";
   family: string;
   category: InventorySalesCategory;
   quality: string | null;
@@ -1129,6 +1130,7 @@ export interface InventorySalesReportResponse {
   items: InventorySalesReportItem[];
   filters: {
     brands: string[];
+    factories: Array<"XP" | "VV" | "DE" | "BATERIA">;
     families: string[];
     qualities: string[];
   };

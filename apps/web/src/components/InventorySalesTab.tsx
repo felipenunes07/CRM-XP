@@ -22,9 +22,9 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import "./inventorySales.css";
 
-type SalesPeriod = 3 | 6 | 12;
+type SalesPeriod = 1 | 3 | 6 | 12;
 type SalesMetric = "units" | "revenue";
-type SalesGroupBy = "modelo" | "marca" | "qualidade" | "tipo" | "familia";
+type SalesGroupBy = "modelo" | "marca" | "fabrica" | "qualidade" | "tipo" | "familia";
 type SalesCategoryFilter = "all" | InventorySalesCategory;
 type SalesSortKey = "units" | "revenue" | "avgPrice" | "stock" | "lastSale";
 
@@ -45,6 +45,7 @@ const CATEGORY_COLORS: Record<InventorySalesCategory, string> = {
 const groupByOptions: { value: SalesGroupBy; label: string }[] = [
   { value: "modelo", label: "Modelo" },
   { value: "marca", label: "Marca" },
+  { value: "fabrica", label: "Fábrica" },
   { value: "qualidade", label: "Qualidade" },
   { value: "tipo", label: "Tipo" },
   { value: "familia", label: "Familia" },
@@ -258,6 +259,10 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
         key = item.brand;
         label = item.brand;
         sublabel = "Marca";
+      } else if (groupBy === "fabrica") {
+        key = item.factory;
+        label = item.factory;
+        sublabel = "Fábrica";
       } else if (groupBy === "qualidade") {
         key = item.quality ?? "SEM QUALIDADE";
         label = item.quality ?? "Sem qualidade";
@@ -567,7 +572,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
           <div className="invsales-control">
             <span className="invsales-control-label">Periodo</span>
             <div className="invsales-seg" role="group" aria-label="Periodo">
-              {([3, 6, 12] as const).map((value) => (
+              {([1, 3, 6, 12] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
