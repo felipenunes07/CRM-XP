@@ -28,6 +28,11 @@ function summarizeRows(rows: CustomerDefectProductRow[]) {
   return { soldPieces, returnedPieces, returnRate: soldPieces > 0 ? returnedPieces / soldPieces : null };
 }
 
+function annualRateLabel(rate: number | null, soldPieces: number, returnedPieces: number) {
+  if (soldPieces <= 0 || returnedPieces > soldPieces) return "Base não comparável";
+  return rateLabel(rate);
+}
+
 export function CustomerDefectProductsPanel({ data, isLoading, isError, years, year, onYearChange }: {
   data: CustomerDefectProductsResponse | undefined;
   isLoading: boolean;
@@ -44,7 +49,7 @@ export function CustomerDefectProductsPanel({ data, isLoading, isError, years, y
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [onlyWithReturns, setOnlyWithReturns] = useState(true);
 
-  const brands = useMemo(() => [...new Set((data?.rows ?? []).map((row) => row.brand))].sort((a, b) => a.localeCompare(b, "pt-BR")), [data?.rows]);
+  const brands = useMemo(() => [...new Set((data?.rows ?? []).map((row) => row.brand).filter((brand) => brand !== "OUTROS"))].sort((a, b) => a.localeCompare(b, "pt-BR")), [data?.rows]);
   const productTypes = useMemo(() => {
     const available = new Set((data?.rows ?? []).map((row) => row.factory));
     return ["XP", "VV", "DE", "BATERIA"].filter((entry) => available.has(entry as CustomerDefectProductRow["factory"]));
@@ -81,15 +86,15 @@ export function CustomerDefectProductsPanel({ data, isLoading, isError, years, y
         <div>
           <p className="eyebrow">Análise por marca</p>
           <h3>Percentual de troca de {highlightBrand}</h3>
-          <span>Trocas do ano selecionado sobre as vendas acumuladas desde o início do histórico.</span>
+          <span>Trocas e vendas usam exatamente o mesmo período do ano selecionado.</span>
         </div>
-        <div className="customer-defect-brand-selector" aria-label="Marca analisada">
+        <label className="customer-defect-highlight-select">
           <span>Marca analisada</span>
-          <div>{brands.map((brand) => <button type="button" key={brand} className={highlightBrand === brand ? "active" : ""} onClick={() => setHighlightBrand(brand)}>{brand}</button>)}</div>
-        </div>
+          <select value={highlightBrand} onChange={(event) => setHighlightBrand(event.target.value)}>{brands.map((brand) => <option key={brand} value={brand}>{brand}</option>)}</select>
+        </label>
         <div className="customer-defect-vv-rate">
-          <strong>{data ? rateLabel(highlightSummary.returnRate) : "--"}</strong>
-          <span>{formatNumber(highlightSummary.returnedPieces)} trocadas de {formatNumber(highlightSummary.soldPieces)} vendidas</span>
+          <strong>{data ? annualRateLabel(highlightSummary.returnRate, highlightSummary.soldPieces, highlightSummary.returnedPieces) : "--"}</strong>
+          <span>{formatNumber(highlightSummary.returnedPieces)} trocas ÷ {formatNumber(highlightSummary.soldPieces)} vendas no ano</span>
         </div>
       </section>
 
@@ -116,14 +121,14 @@ export function CustomerDefectProductsPanel({ data, isLoading, isError, years, y
           <div className="customer-defect-quality-summary">
             {data.qualities.slice(0, 8).map((entry) => {
               const intensity = Math.min((entry.returnRate ?? 0) * 600, 100);
-              return <button type="button" key={entry.quality} style={{ "--quality-rate": `${intensity}%` } as CSSProperties} className={quality === entry.quality ? "active" : ""} onClick={() => setQuality(quality === entry.quality ? "" : entry.quality)}><span>{entry.quality}</span><strong>{rateLabel(entry.returnRate)}</strong><small>{formatNumber(entry.returnedPieces)} trocas</small><i aria-hidden /></button>;
+              return <button type="button" key={entry.quality} style={{ "--quality-rate": `${intensity}%` } as CSSProperties} className={quality === entry.quality ? "active" : ""} onClick={() => setQuality(quality === entry.quality ? "" : entry.quality)}><span>{entry.quality}</span><strong>{annualRateLabel(entry.returnRate, entry.soldPieces, entry.returnedPieces)}</strong><small>{formatNumber(entry.returnedPieces)} trocas em {formatNumber(entry.soldPieces)} vendas</small><i aria-hidden /></button>;
             })}
           </div>
         </section>
-        <div className="credit-results-meta"><p>{formatNumber(filteredRows.length)} modelos · trocas de {data.periodStartDate} a {data.periodEndDate} · base de vendas de {data.salesBaseStartDate} a {data.periodEndDate}.</p></div>
+        <div className="credit-results-meta"><p>{formatNumber(filteredRows.length)} modelos · trocas e vendas de {data.periodStartDate} a {data.periodEndDate}.</p></div>
         <div className="panel table-panel customer-defect-products-table-panel"><div className="table-scroll"><table className="data-table customer-defect-products-table">
-          <thead><tr><th>{sortableHeader("model", "Modelo")}</th><th>{sortableHeader("quality", "Qualidade")}</th><th>{sortableHeader("sold", "Vendidas")}</th><th>{sortableHeader("returned", "Trocadas")}</th><th>{sortableHeader("rate", "Taxa")}</th><th>{sortableHeader("amount", "Valor das trocas")}</th></tr></thead>
-          <tbody>{filteredRows.map((row) => <tr key={`${row.sku}-${row.quality}`} className={row.isVv ? "is-vv" : ""}><td><strong>{row.model}</strong><span>{row.sku} · {row.brand} · {row.factory}</span></td><td><span className="defect-quality-pill">{row.quality}</span></td><td>{formatNumber(row.soldPieces)}</td><td><strong>{formatNumber(row.returnedPieces)}</strong></td><td><span className="defect-rate-pill">{rateLabel(row.returnRate)}</span></td><td>{formatCurrency(row.returnedAmount)}</td></tr>)}</tbody>
+          <thead><tr><th>{sortableHeader("model", "Modelo")}</th><th>{sortableHeader("quality", "Qualidade")}</th><th>{sortableHeader("sold", "Vendas no ano")}</th><th>{sortableHeader("returned", "Trocadas")}</th><th>{sortableHeader("rate", "Taxa do ano")}</th><th>{sortableHeader("amount", "Valor das trocas")}</th></tr></thead>
+          <tbody>{filteredRows.map((row) => <tr key={`${row.sku}-${row.quality}`} className={row.isVv ? "is-vv" : ""}><td><strong>{row.model}</strong><span>{row.sku} · {row.brand} · {row.factory}</span></td><td><span className="defect-quality-pill">{row.quality}</span></td><td>{formatNumber(row.soldPieces)}</td><td><strong>{formatNumber(row.returnedPieces)}</strong></td><td><span className="defect-rate-pill">{annualRateLabel(row.returnRate, row.soldPieces, row.returnedPieces)}</span></td><td>{formatCurrency(row.returnedAmount)}</td></tr>)}</tbody>
         </table></div></div>
       </> : null}
     </div>

@@ -551,6 +551,24 @@ const CUSTOMER_DEFECT_QUALITY_PATTERNS: Array<[RegExp, string]> = [
   [/\bSELECT\b/i, "SELECT"],
 ];
 
+function deriveCustomerDefectBrand(description: string) {
+  const patterns: Array<[RegExp, string]> = [
+    [/(?:^|[^A-Z])(?:IPHONE|IP)(?=[\s\-_/]|$)/, "IPHONE"],
+    [/(?:^|[^A-Z])(?:SAMSUNG|SM)(?=[\s\-_/]|$)/, "SAMSUNG"],
+    [/(?:^|[^A-Z])(?:MOTOROLA|MT)(?=[\s\-_/]|$)/, "MOTOROLA"],
+    [/(?:^|[^A-Z])(?:XIAOMI|MI|REDMI|POCO)(?=[\s\-_/]|$)/, "XIAOMI"],
+    [/(?:^|[^A-Z])(?:NOKIA|NK)(?=[\s\-_/]|$)/, "NOKIA"],
+    [/(?:^|[^A-Z])HONOR(?=[\s\-_/]|$)/, "HONOR"],
+    [/(?:^|[^A-Z])HUAWEI(?=[\s\-_/]|$)/, "HUAWEI"],
+    [/(?:^|[^A-Z])INFINIX(?=[\s\-_/]|$)/, "INFINIX"],
+    [/(?:^|[^A-Z])LG(?=[\s\-_/]|$)/, "LG"],
+    [/(?:^|[^A-Z])OPPO(?=[\s\-_/]|$)/, "OPPO"],
+    [/(?:^|[^A-Z])REALME(?=[\s\-_/]|$)/, "REALME"],
+    [/(?:^|[^A-Z])ZF(?=[\s\-_/]|$)/, "ZF"],
+  ];
+  return patterns.find(([pattern]) => pattern.test(description))?.[1] ?? "OUTROS";
+}
+
 export function classifyCustomerDefectProduct(sku: string, description: string) {
   const normalizedDescription = normalizeText(description).toUpperCase();
   const isVv = /(?:^|\s|\[)VV(?:\]|\s|$)/i.test(normalizedDescription);
@@ -569,22 +587,10 @@ export function classifyCustomerDefectProduct(sku: string, description: string) 
     .replace(/\b(?:WF|BLACK|WHITE|PRETO|BRANCO)\b/gi, " ")
     .replace(/\s+/g, " ")) || normalizeCode(sku) || "SEM MODELO";
 
-  const brandToken = model.match(/^[A-Z]+/)?.[0] ?? "OUTROS";
-  const brandAliases: Record<string, string> = {
-    IP: "IPHONE",
-    IPHONE: "IPHONE",
-    SM: "SAMSUNG",
-    SAMSUNG: "SAMSUNG",
-    MT: "MOTOROLA",
-    MOTOROLA: "MOTOROLA",
-    MI: "XIAOMI",
-    XIAOMI: "XIAOMI",
-  };
-
   return {
     sku: normalizeCode(sku),
     model,
-    brand: brandAliases[brandToken] ?? brandToken,
+    brand: deriveCustomerDefectBrand(normalizedDescription),
     factory: (isBattery ? "BATERIA" : isVv ? "VV" : isDe ? "DE" : "XP") as "XP" | "VV" | "DE" | "BATERIA",
     quality,
     isVv,
@@ -1666,7 +1672,10 @@ export function buildCustomerDefectProductRows(
   }));
 
   return Array.from(products.values())
-    .map((row) => ({ ...row, returnRate: row.soldPieces > 0 ? row.returnedPieces / row.soldPieces : null }))
+    .map((row) => ({
+      ...row,
+      returnRate: row.soldPieces > 0 ? row.returnedPieces / row.soldPieces : null,
+    }))
     .filter((row) => row.soldPieces > 0 || row.returnedPieces > 0)
     .sort((left, right) => right.returnedPieces - left.returnedPieces || (right.returnRate ?? -1) - (left.returnRate ?? -1) || left.model.localeCompare(right.model, "pt-BR"));
 }
@@ -1687,9 +1696,6 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
   const yearEnd = `${year}-12-31`;
   const periodStartDate = year === firstYear && snapshot.periodStartDate > yearStart ? snapshot.periodStartDate : yearStart;
   const periodEndDate = year === lastYear && snapshot.periodEndDate < yearEnd ? snapshot.periodEndDate : yearEnd;
-  // Trocas registradas no ano frequentemente pertencem a pecas vendidas em anos anteriores.
-  // A base acumulada evita taxas artificiais de milhares por cento para SKUs descontinuados.
-  const salesBaseStartDate = `${firstYear}-01-01`;
 
   await ensureSnapshotProductRows(snapshot.id);
   const [defectResult, salesResult] = await Promise.all([
@@ -1715,7 +1721,7 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
           AND NULLIF(TRIM(oi.sku), '') IS NOT NULL
         GROUP BY UPPER(TRIM(oi.sku))
       `,
-      [salesBaseStartDate, periodEndDate],
+      [periodStartDate, periodEndDate],
     ),
   ]);
 
@@ -1732,7 +1738,6 @@ export async function getCustomerDefectProducts(year: number): Promise<CustomerD
     year,
     periodStartDate,
     periodEndDate,
-    salesBaseStartDate,
     summary: summarizeProductRows(rows),
     vvSummary: summarizeProductRows(rows.filter((row) => row.isVv)),
     qualities,

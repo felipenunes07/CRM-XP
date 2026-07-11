@@ -2155,6 +2155,31 @@ a {
   color: #fff;
 }
 
+.customer-defect-highlight-select {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 190px;
+}
+
+.customer-defect-highlight-select span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.customer-defect-highlight-select select {
+  min-height: 42px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  font: inherit;
+  font-weight: 800;
+}
+
 .customer-defect-vv-highlight h3,
 .customer-defect-vv-highlight p {
   margin: 0;
@@ -2187,6 +2212,13 @@ a {
   margin-top: 0.35rem;
   color: var(--muted);
   font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.customer-defect-vv-rate small {
+  margin-top: 0.22rem;
+  color: var(--muted);
+  font-size: 0.72rem;
   font-weight: 700;
 }
 

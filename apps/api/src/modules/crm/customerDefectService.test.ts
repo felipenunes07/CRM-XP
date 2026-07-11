@@ -71,6 +71,12 @@ describe("customerDefectService", () => {
     expect(classifyCustomerDefectProduct("2", "MI-REDMI 12 LCD | PRETO")).toMatchObject({ brand: "XIAOMI", factory: "XP" });
     expect(classifyCustomerDefectProduct("3", "BATERIA SM-A15 | PRETO")).toMatchObject({ factory: "BATERIA" });
     expect(classifyCustomerDefectProduct("4", "DOC DE CARGA | SM-A15 LCD")).toMatchObject({ factory: "XP" });
+    expect(classifyCustomerDefectProduct("5", "DISPLAY IP-11 OLED")).toMatchObject({ brand: "IPHONE" });
+    expect(classifyCustomerDefectProduct("6", "DOC DE CARGA | SM-A15 LCD")).toMatchObject({ brand: "SAMSUNG" });
+    expect(classifyCustomerDefectProduct("7", "REDMI NOTE 12 OLED")).toMatchObject({ brand: "XIAOMI" });
+    expect(classifyCustomerDefectProduct("8", "POCO X5 OLED")).toMatchObject({ brand: "XIAOMI" });
+    expect(classifyCustomerDefectProduct("9", "NK-G20 LCD")).toMatchObject({ brand: "NOKIA" });
+    expect(classifyCustomerDefectProduct("10", "CANCEL LIXEIRA DISPLAY TOUCH")).toMatchObject({ brand: "OUTROS" });
   });
 
   it("consolidates the sales denominator by SKU despite description changes", () => {
