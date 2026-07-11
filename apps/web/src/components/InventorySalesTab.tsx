@@ -177,6 +177,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const [groupBy, setGroupBy] = useState<SalesGroupBy>("marca");
   const [categoryFilter, setCategoryFilter] = useState<SalesCategoryFilter>("all");
   const [brandFilter, setBrandFilter] = useState("");
+  const [factoryFilter, setFactoryFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
   const [familyFilter, setFamilyFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -225,6 +226,9 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
       if (brandFilter && item.brand !== brandFilter) {
         return false;
       }
+      if (factoryFilter && item.factory !== factoryFilter) {
+        return false;
+      }
       if (qualityFilter && (item.quality ?? "SEM QUALIDADE") !== qualityFilter) {
         return false;
       }
@@ -232,14 +236,14 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
         return false;
       }
       if (term) {
-        const haystack = `${item.sku} ${item.modelLabel} ${item.brand} ${item.family} ${item.quality ?? ""}`.toLowerCase();
+        const haystack = `${item.sku} ${item.modelLabel} ${item.brand} ${item.factory} ${item.family} ${item.quality ?? ""}`.toLowerCase();
         if (!haystack.includes(term)) {
           return false;
         }
       }
       return true;
     });
-  }, [brandFilter, categoryFilter, familyFilter, qualityFilter, report?.items, search]);
+  }, [brandFilter, categoryFilter, factoryFilter, familyFilter, qualityFilter, report?.items, search]);
 
   const groups = useMemo(() => {
     const map = new Map<string, SalesGroup>();
@@ -508,6 +512,9 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     if (groupBy === "marca") {
       setBrandFilter(group.label);
       setGroupBy("modelo");
+    } else if (groupBy === "fabrica") {
+      setFactoryFilter(group.key);
+      setGroupBy("modelo");
     } else if (groupBy === "qualidade") {
       setQualityFilter(group.key);
       setGroupBy("modelo");
@@ -527,6 +534,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const activeCrumbs = [
     categoryFilter !== "all" ? { label: `Tipo: ${categoryLabel(categoryFilter)}`, clear: () => setCategoryFilter("all") } : null,
     brandFilter ? { label: `Marca: ${brandFilter}`, clear: () => setBrandFilter("") } : null,
+    factoryFilter ? { label: `Fábrica: ${factoryFilter}`, clear: () => setFactoryFilter("") } : null,
     qualityFilter ? { label: `Qualidade: ${qualityFilter}`, clear: () => setQualityFilter("") } : null,
     familyFilter ? { label: `Familia: ${familyFilter}`, clear: () => setFamilyFilter("") } : null,
   ].filter((crumb): crumb is { label: string; clear: () => void } => Boolean(crumb));
@@ -534,6 +542,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   function clearAllFilters() {
     setCategoryFilter("all");
     setBrandFilter("");
+    setFactoryFilter("");
     setQualityFilter("");
     setFamilyFilter("");
     setSearch("");
@@ -678,6 +687,24 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
           </div>
 
           <div className="invsales-control">
+            <span className="invsales-control-label">Fábrica</span>
+            <select
+              value={factoryFilter}
+              onChange={(event) => {
+                setFactoryFilter(event.target.value);
+                resetPagination();
+              }}
+            >
+              <option value="">Todas</option>
+              {report.filters.factories.map((factory) => (
+                <option key={factory} value={factory}>
+                  {factory}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="invsales-control">
             <span className="invsales-control-label">Buscar</span>
             <input
               value={search}
@@ -685,7 +712,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                 setSearch(event.target.value);
                 resetPagination();
               }}
-              placeholder="Modelo, SKU, marca ou qualidade"
+              placeholder="Modelo, SKU, marca, fábrica ou qualidade"
             />
           </div>
         </div>
