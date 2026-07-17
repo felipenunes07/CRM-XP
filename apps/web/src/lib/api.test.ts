@@ -90,4 +90,63 @@ describe("api request timeouts", () => {
       expect.objectContaining({ method: "POST" }),
     );
   });
+
+  it("forwards monitor cancellation and requests lightweight agents", async () => {
+    let callCount = 0;
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Promise<Response>((_resolve, reject) => {
+          const rejectAsAborted = () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          };
+          if (init?.signal?.aborted) {
+            rejectAsAborted();
+            return;
+          }
+          init?.signal?.addEventListener("abort", rejectAsAborted);
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const controller = new AbortController();
+    controller.abort();
+    const conversationsRequest = api.whatsappMonitorConversations(
+      "token-1",
+      { group: "contacts", limit: 25 },
+      { signal: controller.signal },
+    );
+
+    await expect(conversationsRequest).rejects.toMatchObject({ name: "AbortError" });
+    await api.whatsappMonitorAgents("token-1", { includeStats: false, signal: new AbortController().signal });
+    await api.whatsappMonitorConversation(
+      "token-1",
+      "deal-1",
+      { limit: 20 },
+      { signal: new AbortController().signal },
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/whatsapp-monitor/conversations?group=contacts&limit=25",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/whatsapp-monitor/agents?includeStats=false",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/whatsapp-monitor/conversations/deal-1?limit=20",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
 });

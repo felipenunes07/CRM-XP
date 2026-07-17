@@ -2680,6 +2680,10 @@ export function createApp() {
     assignedUserName: z.string().nullable().optional(),
   });
 
+  const whatsappMonitorAgentsQuerySchema = z.object({
+    includeStats: optionalQueryBoolean,
+  });
+
   const whatsappMonitorQuerySchema = z.object({
     instanceId: z.string().uuid().optional(),
     search: z.string().optional(),
@@ -2775,10 +2779,12 @@ export function createApp() {
   app.get("/api/whatsapp-monitor/agents", async (request, response, next) => {
     const startedAt = Date.now();
     try {
-      const agents = await listWhatsappMonitorAgents(request.user!);
+      const query = whatsappMonitorAgentsQuerySchema.parse(request.query);
+      const agents = await listWhatsappMonitorAgents(request.user!, query);
       response.json(agents);
       logWhatsappMonitorEndpointTiming("agents", startedAt, {
         count: agents.length,
+        includeStats: query.includeStats !== false,
       });
     } catch (error) {
       logWhatsappMonitorEndpointTiming("agents", startedAt, {

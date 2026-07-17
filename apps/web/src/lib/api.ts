@@ -321,7 +321,11 @@ function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: num
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
 
   const abortFromUpstream = () => controller.abort();
-  upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+  if (upstreamSignal?.aborted) {
+    controller.abort();
+  } else {
+    upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+  }
 
   return {
     signal: controller.signal,
@@ -1162,6 +1166,7 @@ export const api = {
       cursor?: string;
       updatedSince?: string;
     } = {},
+    options: { signal?: AbortSignal } = {},
   ) {
     const search = new URLSearchParams();
     if (query.instanceId) {
@@ -1199,13 +1204,24 @@ export const api = {
     }
     return request<WhatsappMonitorConversationsResponse>(
       `/api/whatsapp-monitor/conversations${search.toString() ? `?${search.toString()}` : ""}`,
-      {},
+      { signal: options.signal },
       token,
     );
   },
 
-  whatsappMonitorAgents(token: string) {
-    return request<WhatsappMonitorAgent[]>("/api/whatsapp-monitor/agents", {}, token);
+  whatsappMonitorAgents(
+    token: string,
+    options: { includeStats?: boolean; signal?: AbortSignal } = {},
+  ) {
+    const search = new URLSearchParams();
+    if (options.includeStats !== undefined) {
+      search.set("includeStats", String(options.includeStats));
+    }
+    return request<WhatsappMonitorAgent[]>(
+      `/api/whatsapp-monitor/agents${search.toString() ? `?${search.toString()}` : ""}`,
+      { signal: options.signal },
+      token,
+    );
   },
 
   whatsappMonitorConversation(
@@ -1217,6 +1233,7 @@ export const api = {
       before?: string;
       after?: string;
     } = {},
+    options: { signal?: AbortSignal } = {},
   ) {
     const search = new URLSearchParams();
     if (query.instanceId) {
@@ -1233,7 +1250,7 @@ export const api = {
     }
     return request<WhatsappMonitorConversationDetail>(
       `/api/whatsapp-monitor/conversations/${id}${search.toString() ? `?${search.toString()}` : ""}`,
-      {},
+      { signal: options.signal },
       token,
     );
   },

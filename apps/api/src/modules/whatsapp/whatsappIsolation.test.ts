@@ -67,6 +67,7 @@ import {
   getWhatsappDailySummaryReport,
   getWhatsappMonitorConversation,
   isInternalWhatsappReportChat,
+  listWhatsappMonitorAgents,
   listWhatsappMonitorConversations,
   setWhatsappConversationReadState,
 } from "./whatsappMonitorService.js";
@@ -163,6 +164,39 @@ describe("whatsapp conversation isolation", () => {
     mocks.getAliases.mockImplementation((_instanceName, remoteJid) => remoteJid ? [remoteJid] : []);
     mocks.upsertAliases.mockResolvedValue(undefined);
     mocks.refreshRollups.mockResolvedValue({ refreshed: true, deleted: 0, inserted: 1 });
+  });
+  it("lists agent identity, health, and lightweight risk alerts without scanning monitor messages", async () => {
+    mocks.query.mockResolvedValue({
+      rows: [{
+        id: "instance-amanda",
+        instance_name: "amanda",
+        display_label: "Amanda",
+        phone_number: "+5511912345678",
+        status: "ACTIVE",
+        is_default: true,
+        provider: "EVOLUTION",
+        assigned_user_id: "user-amanda",
+        assigned_user_name: "Amanda",
+        last_health_status: "CONNECTED",
+        last_health_check_at: new Date("2026-07-17T12:00:00.000Z"),
+        profile_picture_url: null,
+        risk_count: 2,
+        contact_email: "amanda@example.com",
+      }],
+    });
+
+    const agents = await listWhatsappMonitorAgents(undefined, { includeStats: false });
+    const sql = String(mocks.monitorQuery.mock.calls.at(-1)?.[0] ?? "");
+
+    expect(sql).not.toContain("conversation_instances");
+    expect(sql).not.toContain("FROM whatsapp_monitor_messages");
+    expect(sql).toContain("FROM message_events me");
+    expect(sql).toContain("0::int AS conversation_count");
+    expect(agents[0]).toEqual(expect.objectContaining({
+      id: "instance-amanda",
+      conversationCount: 0,
+      riskCount: 2,
+    }));
   });
 
   it("schedules empty activity rollup refresh and uses direct fallback for the heatmap report", async () => {

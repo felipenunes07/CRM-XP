@@ -78,6 +78,8 @@ const WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT = 100;
 const WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION = "v2";
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
+const whatsappMonitorAgentInFlight = new Map<string, Promise<WhatsappMonitorAgent[]>>();
+const whatsappMonitorConversationInFlight = new Map<string, Promise<WhatsappMonitorConversationsResponse>>();
 const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
 let whatsappActivityReportRefreshPromise: Promise<void> | null = null;
 
@@ -1289,13 +1291,10 @@ function unreadConversationSql(scopedInstanceIdParamIndex?: number) {
   `;
 }
 
-export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<WhatsappMonitorAgent[]> {
-  const cacheKey = userCacheKey(user);
-  const cached = whatsappMonitorAgentCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.agents;
-  }
-
+async function queryWhatsappMonitorAgents(
+  user: JwtUser | undefined,
+  includeStats: boolean,
+): Promise<WhatsappMonitorAgent[]> {
   const params: unknown[] = [];
   const where: string[] = [];
 
@@ -1321,29 +1320,63 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
     `);
   }
 
+  // The messages page only needs agent identity/health plus the risk badge.
+  // In lightweight mode, read that badge from the indexed event read model;
+  // never rebuild conversation ownership or scan whatsapp_monitor_messages.
+  // Full statistics remain available for existing API consumers.
+  const messageStatsSql = includeStats
+    ? `
+      WITH conversation_instances AS (
+        SELECT DISTINCT
+          d.id AS deal_id,
+          wi_match.id AS whatsapp_instance_id
+        FROM deals d
+        JOIN whatsapp_instances wi_match
+          ON ${conversationMatchesInstanceSql("wi_match")}
+        WHERE ${monitorableWhatsappJidSql("d.whatsapp_jid")}
+      ),
+      message_stats AS (
+        SELECT
+          ci.whatsapp_instance_id::text AS whatsapp_instance_id,
+          COUNT(DISTINCT ci.deal_id)::int AS conversation_count,
+          COUNT(DISTINCT wmm.id) FILTER (
+            WHERE ${riskSql("wmm")}
+          )::int AS risk_count,
+          MAX(wmm.created_at) AS last_message_at
+        FROM conversation_instances ci
+        LEFT JOIN whatsapp_monitor_messages wmm ON wmm.deal_id = ci.deal_id
+        GROUP BY ci.whatsapp_instance_id
+      )
+    `
+    : `
+      WITH message_stats AS (
+        SELECT
+          resolved.whatsapp_instance_id,
+          0::int AS conversation_count,
+          COUNT(*)::int AS risk_count,
+          NULL::timestamptz AS last_message_at
+        FROM (
+          SELECT COALESCE(
+            NULLIF(me.metadata ->> 'instanceId', ''),
+            wi_event.id::text,
+            d.whatsapp_instance_id::text
+          ) AS whatsapp_instance_id
+          FROM message_events me
+          JOIN deals d ON d.id = me.deal_id
+          LEFT JOIN whatsapp_instances wi_event
+            ON NULLIF(me.metadata ->> 'instanceId', '') IS NULL
+            AND NULLIF(me.metadata ->> 'instance', '') IS NOT NULL
+            AND LOWER(wi_event.instance_name) = LOWER(me.metadata ->> 'instance')
+          WHERE me.detected_at >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
+            AND me.event_type IN ('RISK', 'ESCALATION', 'CHURN_RISK', 'COMPLAINT')
+        ) resolved
+        WHERE resolved.whatsapp_instance_id IS NOT NULL
+        GROUP BY resolved.whatsapp_instance_id
+      )
+    `;
   const result = await pool.query(
     `
-    WITH conversation_instances AS (
-      SELECT DISTINCT
-        d.id AS deal_id,
-        wi_match.id AS whatsapp_instance_id
-      FROM deals d
-      JOIN whatsapp_instances wi_match
-        ON ${conversationMatchesInstanceSql("wi_match")}
-      WHERE ${monitorableWhatsappJidSql("d.whatsapp_jid")}
-    ),
-    message_stats AS (
-      SELECT
-        ci.whatsapp_instance_id,
-        COUNT(DISTINCT ci.deal_id)::int AS conversation_count,
-        COUNT(DISTINCT wmm.id) FILTER (
-          WHERE ${riskSql("wmm")}
-        )::int AS risk_count,
-        MAX(wmm.created_at) AS last_message_at
-      FROM conversation_instances ci
-      LEFT JOIN whatsapp_monitor_messages wmm ON wmm.deal_id = ci.deal_id
-      GROUP BY ci.whatsapp_instance_id
-    )
+    ${messageStatsSql}
     SELECT
       wi.*,
       u.email AS contact_email,
@@ -1354,22 +1387,96 @@ export async function listWhatsappMonitorAgents(user?: JwtUser): Promise<Whatsap
       NULL::text AS manager_name
     FROM whatsapp_instances wi
     LEFT JOIN users u ON u.id = wi.assigned_user_id
-    LEFT JOIN message_stats ms ON ms.whatsapp_instance_id = wi.id
+    LEFT JOIN message_stats ms ON ms.whatsapp_instance_id = wi.id::text
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY wi.is_default DESC, wi.display_label ASC
     `,
     params,
   );
 
-  const agents = result.rows.map(mapAgentRow);
-  whatsappMonitorAgentCache.set(cacheKey, {
-    expiresAt: Date.now() + WHATSAPP_MONITOR_AGENT_CACHE_MS,
-    agents,
-  });
-  return agents;
+  return result.rows.map(mapAgentRow);
+}
+export async function listWhatsappMonitorAgents(
+  user?: JwtUser,
+  options: { includeStats?: boolean } = {},
+): Promise<WhatsappMonitorAgent[]> {
+  const includeStats = options.includeStats !== false;
+
+  if (process.env.NODE_ENV === "test") {
+    return queryWhatsappMonitorAgents(user, includeStats);
+  }
+
+  const cacheKey = `${userCacheKey(user)}:${includeStats ? "stats" : "basic"}`;
+  const cached = whatsappMonitorAgentCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.agents;
+  }
+
+  const inFlight = whatsappMonitorAgentInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = queryWhatsappMonitorAgents(user, includeStats);
+  whatsappMonitorAgentInFlight.set(cacheKey, request);
+  try {
+    const agents = await request;
+    whatsappMonitorAgentCache.set(cacheKey, {
+      expiresAt: Date.now() + WHATSAPP_MONITOR_AGENT_CACHE_MS,
+      agents,
+    });
+    return agents;
+  } finally {
+    if (whatsappMonitorAgentInFlight.get(cacheKey) === request) {
+      whatsappMonitorAgentInFlight.delete(cacheKey);
+    }
+  }
+}
+
+function whatsappMonitorConversationRequestKey(
+  user: JwtUser,
+  filters: ConversationFilters,
+) {
+  return `${userCacheKey(user)}:${JSON.stringify({
+    instanceId: filters.instanceId ?? null,
+    search: filters.search ?? null,
+    contactName: filters.contactName ?? null,
+    contactPhone: filters.contactPhone ?? null,
+    period: filters.period ?? null,
+    status: filters.status ?? null,
+    group: filters.group ?? null,
+    agentInteraction: filters.agentInteraction ?? null,
+    limit: filters.limit ?? WHATSAPP_MONITOR_CONVERSATION_LIMIT,
+    cursor: filters.cursor ?? null,
+    updatedSince: filters.updatedSince ?? null,
+  })}`;
 }
 
 export async function listWhatsappMonitorConversations(
+  user: JwtUser,
+  filters: ConversationFilters = {},
+): Promise<WhatsappMonitorConversationsResponse> {
+  if (process.env.NODE_ENV === "test") {
+    return queryWhatsappMonitorConversations(user, filters);
+  }
+
+  const cacheKey = whatsappMonitorConversationRequestKey(user, filters);
+  const inFlight = whatsappMonitorConversationInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = queryWhatsappMonitorConversations(user, filters);
+  whatsappMonitorConversationInFlight.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    if (whatsappMonitorConversationInFlight.get(cacheKey) === request) {
+      whatsappMonitorConversationInFlight.delete(cacheKey);
+    }
+  }
+}
+async function queryWhatsappMonitorConversations(
   user: JwtUser,
   filters: ConversationFilters = {},
 ): Promise<WhatsappMonitorConversationsResponse> {

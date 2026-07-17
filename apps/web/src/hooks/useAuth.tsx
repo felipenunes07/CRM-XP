@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, isApiAuthError } from "../lib/api";
 import { supabase } from "../lib/supabase";
 
@@ -27,6 +27,7 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+type LoadUserOutcome = "ok" | "auth-error" | "transient";
 
 const isLocalAddress = () => {
   return (
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const resilientLoadsRef = useRef<Map<string, Promise<LoadUserOutcome>>>(new Map());
 
   const loadUser = useCallback(async (accessToken: string) => {
     const result = await api.me(accessToken);
@@ -58,21 +60,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * e a sessao persistida NUNCA e apagada — assim um soluco no backend nao desloga o usuario.
    */
   const loadUserResilient = useCallback(
-    async (accessToken: string, attempts = 4): Promise<"ok" | "auth-error" | "transient"> => {
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        try {
-          await loadUser(accessToken);
-          return "ok";
-        } catch (error) {
-          if (isApiAuthError(error)) {
-            return "auth-error";
-          }
-          if (attempt < attempts - 1) {
-            await delay(600 * (attempt + 1));
+    (accessToken: string, attempts = 4): Promise<LoadUserOutcome> => {
+      const existing = resilientLoadsRef.current.get(accessToken);
+      if (existing) {
+        return existing;
+      }
+
+      const pending = (async (): Promise<LoadUserOutcome> => {
+        for (let attempt = 0; attempt < attempts; attempt += 1) {
+          try {
+            await loadUser(accessToken);
+            return "ok";
+          } catch (error) {
+            if (isApiAuthError(error)) {
+              return "auth-error";
+            }
+            if (attempt < attempts - 1) {
+              await delay(600 * (attempt + 1));
+            }
           }
         }
-      }
-      return "transient";
+        return "transient";
+      })();
+
+      resilientLoadsRef.current.set(accessToken, pending);
+      const clearPending = () => {
+        if (resilientLoadsRef.current.get(accessToken) === pending) {
+          resilientLoadsRef.current.delete(accessToken);
+        }
+      };
+      void pending.then(clearPending, clearPending);
+      return pending;
     },
     [loadUser],
   );
@@ -176,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       subscription.subscription.unsubscribe();
     };
-  }, [clearSession, loadUser]);
+  }, [clearSession, loadUserResilient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
