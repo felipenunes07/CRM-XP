@@ -153,6 +153,7 @@ import {
   startManualIntelligenceRun,
 } from "./modules/events/conversationAi.js";
 import {
+  getProductComplaintsModelReport,
   getProductComplaintsOverview,
   listProductComplaints,
 } from "./modules/events/productComplaintsService.js";
@@ -3076,11 +3077,21 @@ export function createApp() {
 
   const productComplaintsQuerySchema = z.object({
     model: z.string().trim().max(80).optional(),
+    exact: z.enum(["true", "false"]).optional().transform((value) => value === "true"),
     category: z.enum(["reclamacao", "defeito", "troca", "duvida", "outro"]).optional(),
     dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     page: z.coerce.number().int().min(1).optional(),
     pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/product-complaints/models", async (request, response, next) => {
+    try {
+      const query = productComplaintsQuerySchema.parse(request.query);
+      response.json(await getProductComplaintsModelReport(query));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/product-complaints", async (request, response, next) => {

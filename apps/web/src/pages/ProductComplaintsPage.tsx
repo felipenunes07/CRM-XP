@@ -2,41 +2,59 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowLeft,
-  ChevronLeft,
+  ChevronDown,
   ChevronRight,
   MessageSquareWarning,
   PackageSearch,
-  RefreshCw,
-  Search,
   Users,
   Wrench,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { api, type ProductComplaintsFilters } from "../lib/api";
+import { api, type ProductComplaintModelRow } from "../lib/api";
+import "../components/inventorySales.css";
+
+type PeriodDays = 30 | 90 | 365 | 0;
+type CategoryFilter = "" | "reclamacao" | "defeito" | "troca" | "duvida";
+type SortKey = "total" | "clients" | "lastDate";
+
+const PERIOD_OPTIONS: { label: string; value: PeriodDays }[] = [
+  { label: "30 dias", value: 30 },
+  { label: "90 dias", value: 90 },
+  { label: "12 meses", value: 365 },
+  { label: "Tudo", value: 0 },
+];
+
+const CATEGORY_OPTIONS: { label: string; value: CategoryFilter }[] = [
+  { label: "Todas", value: "" },
+  { label: "Reclamação", value: "reclamacao" },
+  { label: "Defeito", value: "defeito" },
+  { label: "Troca", value: "troca" },
+  { label: "Dúvida", value: "duvida" },
+];
 
 const CATEGORY_META: Record<string, { label: string; color: string; soft: string }> = {
-  reclamacao: { label: "Reclamação", color: "#ef4444", soft: "rgba(239, 68, 68, 0.1)" },
-  defeito: { label: "Defeito", color: "#f97316", soft: "rgba(249, 115, 22, 0.1)" },
-  troca: { label: "Troca / Devolução", color: "#eab308", soft: "rgba(234, 179, 8, 0.12)" },
-  duvida: { label: "Dúvida técnica", color: "#3b82f6", soft: "rgba(59, 130, 246, 0.1)" },
-  outro: { label: "Outro", color: "#64748b", soft: "rgba(100, 116, 139, 0.1)" },
+  reclamacao: { label: "Reclamação", color: "#c2410c", soft: "rgba(194, 65, 12, 0.12)" },
+  defeito: { label: "Defeito", color: "#dc2626", soft: "rgba(220, 38, 38, 0.1)" },
+  troca: { label: "Troca", color: "#92600a", soft: "rgba(208, 154, 41, 0.16)" },
+  duvida: { label: "Dúvida", color: "#2956d7", soft: "rgba(41, 86, 215, 0.1)" },
+  outro: { label: "Outro", color: "#475569", soft: "rgba(148, 163, 184, 0.16)" },
 };
 
-const SEVERITY_META: Record<string, { label: string; color: string }> = {
-  critical: { label: "Crítico", color: "#dc2626" },
-  high: { label: "Alto", color: "#ea580c" },
-  medium: { label: "Médio", color: "#ca8a04" },
-  low: { label: "Baixo", color: "#0891b2" },
-  none: { label: "—", color: "#94a3b8" },
+const SEVERITY_META: Record<string, { label: string; color: string; soft: string }> = {
+  critical: { label: "Crítico", color: "#b91c1c", soft: "rgba(185, 28, 28, 0.12)" },
+  high: { label: "Alto", color: "#c2410c", soft: "rgba(194, 65, 12, 0.12)" },
+  medium: { label: "Médio", color: "#92600a", soft: "rgba(208, 154, 41, 0.16)" },
+  low: { label: "Baixo", color: "#0e7490", soft: "rgba(8, 145, 178, 0.1)" },
+  none: { label: "—", color: "#64748b", soft: "rgba(148, 163, 184, 0.14)" },
 };
 
-const PERIOD_OPTIONS: { label: string; days: number | null }[] = [
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
-  { label: "12 meses", days: 365 },
-  { label: "Tudo", days: null },
-];
+const MONTH_NAMES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function formatMonthLabel(month: string) {
+  const [year, monthPart] = month.split("-");
+  const index = Number(monthPart) - 1;
+  return `${MONTH_NAMES[index] ?? monthPart}/${(year ?? "").slice(2)}`;
+}
 
 function formatBrDate(isoDate: string | null): string {
   if (!isoDate) return "—";
@@ -44,382 +62,426 @@ function formatBrDate(isoDate: string | null): string {
   return y && m && d ? `${d}/${m}/${y}` : "—";
 }
 
-function formatMonthLabel(month: string): string {
-  const [y, m] = month.split("-");
-  const names = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-  const index = Number(m) - 1;
-  return names[index] ? `${names[index]}/${y?.slice(2)}` : month;
-}
-
 function isoDaysAgo(days: number): string {
   const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return date.toISOString().slice(0, 10);
 }
 
-function CategoryBadge({ category }: { category: string }) {
-  const meta = CATEGORY_META[category] ?? CATEGORY_META.outro!;
-  return (
-    <span style={{
-      display: "inline-block", padding: "0.2rem 0.6rem", borderRadius: "999px",
-      fontSize: "0.75rem", fontWeight: 600, color: meta.color, background: meta.soft,
-      border: `1px solid ${meta.color}33`, whiteSpace: "nowrap",
-    }}>
-      {meta.label}
-    </span>
-  );
+function formatPercent(value: number) {
+  return `${value.toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 0 })}%`;
 }
 
-function StatCard({ icon, label, value, hint, color }: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  hint?: string;
-  color: string;
-}) {
+function Sparkline({ values, months }: { values: number[]; months: string[] }) {
+  const max = Math.max(...values, 1);
   return (
-    <div className="panel" style={{ padding: "1.1rem 1.25rem", display: "flex", gap: "0.9rem", alignItems: "center" }}>
-      <div style={{
-        width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center",
-        justifyContent: "center", color, background: `${color}1a`, flexShrink: 0,
-      }}>
-        {icon}
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <p className="eyebrow" style={{ margin: 0 }}>{label}</p>
-        <p style={{ margin: "0.1rem 0 0 0", fontSize: "1.45rem", fontWeight: 700, lineHeight: 1.1 }}>{value}</p>
-        {hint ? <p style={{ margin: "0.15rem 0 0 0", fontSize: "0.78rem", color: "var(--muted-foreground, #64748b)" }}>{hint}</p> : null}
-      </div>
-    </div>
-  );
-}
-
-function MonthlyBars({ monthly }: { monthly: Array<{ month: string; total: number; distinctClients: number }> }) {
-  const max = Math.max(1, ...monthly.map((entry) => entry.total));
-  if (monthly.length === 0) {
-    return <p style={{ color: "var(--muted-foreground, #64748b)", fontSize: "0.9rem" }}>Sem registros no período.</p>;
-  }
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: "0.65rem", height: 130, paddingTop: "0.5rem" }}>
-      {monthly.map((entry) => (
-        <div key={entry.month} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3rem", minWidth: 0 }}>
-          <span style={{ fontSize: "0.75rem", fontWeight: 700 }}>{entry.total}</span>
-          <div
-            title={`${entry.total} registro(s), ${entry.distinctClients} cliente(s)`}
-            style={{
-              width: "100%", maxWidth: 42, borderRadius: "8px 8px 3px 3px",
-              height: `${Math.max(6, Math.round((entry.total / max) * 90))}px`,
-              background: "linear-gradient(180deg, #f87171, #dc2626)",
-            }}
-          />
-          <span style={{ fontSize: "0.7rem", color: "var(--muted-foreground, #64748b)", whiteSpace: "nowrap" }}>
-            {formatMonthLabel(entry.month)}
-          </span>
-        </div>
+    <div
+      className="invsales-spark"
+      title={months.map((month, index) => `${formatMonthLabel(month)}: ${values[index] ?? 0}`).join(" · ")}
+      aria-hidden
+    >
+      {values.map((value, index) => (
+        <span
+          key={index}
+          className={value > 0 ? "" : "zero"}
+          style={{
+            height: `${value > 0 ? Math.max((value / max) * 100, 12) : 6}%`,
+            backgroundColor: value > 0 ? "#dc2626" : undefined,
+          }}
+        />
       ))}
     </div>
   );
 }
 
-export function ProductComplaintsPage() {
+function CategoryPill({ category, count }: { category: string; count?: number }) {
+  const meta = CATEGORY_META[category] ?? CATEGORY_META.outro!;
+  return (
+    <span className="invsales-pill" style={{ background: meta.soft, color: meta.color }}>
+      {count !== undefined ? `${count} ` : ""}{meta.label.toLowerCase()}
+    </span>
+  );
+}
+
+function SeverityPill({ severity }: { severity: string }) {
+  const meta = SEVERITY_META[severity] ?? SEVERITY_META.none!;
+  return (
+    <span className="invsales-pill" style={{ background: meta.soft, color: meta.color }}>
+      {meta.label}
+    </span>
+  );
+}
+
+/** Sub-linhas do drill-down: as ocorrências reais do modelo. */
+function ModelOccurrences({ model, dateFrom, category }: {
+  model: string;
+  dateFrom?: string;
+  category?: CategoryFilter;
+}) {
   const { token } = useAuth();
-  const [searchInput, setSearchInput] = useState("");
-  const [model, setModel] = useState("");
-  const [category, setCategory] = useState<"" | "reclamacao" | "defeito" | "troca" | "duvida">("");
-  const [periodDays, setPeriodDays] = useState<number | null>(90);
-  const [page, setPage] = useState(1);
-  const pageSize = 25;
-
-  const filters = useMemo<ProductComplaintsFilters>(() => ({
-    model: model || undefined,
-    category: category || undefined,
-    dateFrom: periodDays ? isoDaysAgo(periodDays) : undefined,
-  }), [model, category, periodDays]);
-
-  const overviewQuery = useQuery({
-    queryKey: ["product-complaints-overview", filters],
-    queryFn: () => api.getProductComplaintsOverview(token!, filters),
+  const occurrencesQuery = useQuery({
+    queryKey: ["product-complaints-occurrences", model, dateFrom, category],
+    queryFn: () => api.listProductComplaints(
+      token!,
+      { model, exact: true, dateFrom, category: category || undefined },
+      { page: 1, pageSize: 100 },
+    ),
     enabled: Boolean(token),
+    staleTime: 60 * 1000,
   });
 
-  const listQuery = useQuery({
-    queryKey: ["product-complaints-list", filters, page],
-    queryFn: () => api.listProductComplaints(token!, filters, { page, pageSize }),
-    enabled: Boolean(token),
-  });
+  if (occurrencesQuery.isLoading) {
+    return (
+      <tr className="sku-row">
+        <td colSpan={9}>Carregando ocorrências…</td>
+      </tr>
+    );
+  }
 
-  const overview = overviewQuery.data;
-  const list = listQuery.data;
-  const totalPages = list ? Math.max(1, Math.ceil(list.total / pageSize)) : 1;
-
-  const applySearch = (value: string) => {
-    setModel(value.trim());
-    setPage(1);
-  };
+  const items = occurrencesQuery.data?.items ?? [];
+  if (items.length === 0) {
+    return (
+      <tr className="sku-row">
+        <td colSpan={9}>Nenhuma ocorrência neste recorte.</td>
+      </tr>
+    );
+  }
 
   return (
-    <div className="page-stack">
+    <>
+      {items.map((item) => (
+        <tr key={item.id} className="sku-row">
+          <td />
+          <td style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatBrDate(item.windowDate)}</td>
+          <td colSpan={2}>
+            <strong style={{ fontSize: "0.84rem" }}>{item.customerName ?? item.chatName ?? "—"}</strong>
+            {item.isGroup ? <small style={{ color: "#94a3b8" }}> (grupo)</small> : null}
+            {item.agentName ? <small style={{ color: "#94a3b8" }}> · {item.agentName}</small> : null}
+          </td>
+          <td><CategoryPill category={item.category} /></td>
+          <td><SeverityPill severity={item.severity} /></td>
+          <td colSpan={3}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem", minWidth: 260, maxWidth: 560 }}>
+              <span>{item.detail || "—"}</span>
+              {item.quote ? (
+                <span style={{ fontStyle: "italic", color: "#64748b", fontSize: "0.8rem" }}>“{item.quote}”</span>
+              ) : null}
+            </div>
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+export function ProductComplaintsPage() {
+  const { token } = useAuth();
+  const [periodDays, setPeriodDays] = useState<PeriodDays>(90);
+  const [category, setCategory] = useState<CategoryFilter>("");
+  const [search, setSearch] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("total");
+  const [expandedModel, setExpandedModel] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  const dateFrom = periodDays > 0 ? isoDaysAgo(periodDays) : undefined;
+
+  const reportQuery = useQuery({
+    queryKey: ["product-complaints-models", dateFrom, category],
+    queryFn: () => api.getProductComplaintsModelReport(token!, {
+      dateFrom,
+      category: category || undefined,
+    }),
+    enabled: Boolean(token),
+    staleTime: 60 * 1000,
+  });
+
+  const months = reportQuery.data?.months ?? [];
+  const allModels = useMemo(() => reportQuery.data?.models ?? [], [reportQuery.data?.models]);
+
+  const filteredModels = useMemo(() => {
+    const term = search.trim().toUpperCase();
+    const rows = term ? allModels.filter((row) => row.model.includes(term)) : allModels;
+    const sorted = [...rows];
+    if (sortKey === "clients") {
+      sorted.sort((left, right) => right.distinctClients - left.distinctClients || right.total - left.total);
+    } else if (sortKey === "lastDate") {
+      sorted.sort((left, right) => right.lastDate.localeCompare(left.lastDate) || right.total - left.total);
+    } else {
+      sorted.sort((left, right) => right.total - left.total || right.lastDate.localeCompare(left.lastDate));
+    }
+    return sorted;
+  }, [allModels, search, sortKey]);
+
+  const totals = useMemo(() => {
+    let records = 0;
+    let defectsReturns = 0;
+    let multiClient = 0;
+    for (const row of filteredModels) {
+      records += row.total;
+      defectsReturns += row.defects + row.returns;
+      if (row.distinctClients >= 3) multiClient += 1;
+    }
+    return { records, defectsReturns, multiClient, models: filteredModels.length };
+  }, [filteredModels]);
+
+  const visibleModels = filteredModels.slice(0, visibleCount);
+
+  function toggleModel(model: string) {
+    setExpandedModel((current) => (current === model ? null : model));
+  }
+
+  return (
+    <div className="page-stack invsales-stack">
       {/* Header */}
       <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        flexWrap: "wrap", gap: "1rem", marginBottom: "0.5rem",
-        borderBottom: "1px solid var(--border-color)", paddingBottom: "1rem",
+        display: "flex", justifyContent: "space-between", alignItems: "flex-end",
+        flexWrap: "wrap", gap: "1rem",
       }}>
         <div>
           <p className="eyebrow" style={{ margin: 0 }}>WhatsApp × Produtos</p>
           <h2 className="premium-header-title" style={{ margin: "0.25rem 0 0 0" }}>Reclamações de Produto</h2>
-          <p style={{ margin: "0.35rem 0 0 0", fontSize: "0.88rem", color: "var(--muted-foreground, #64748b)", maxWidth: 640 }}>
-            Histórico permanente de reclamações, defeitos, trocas e dúvidas capturadas pela IA nas conversas do WhatsApp,
-            ligadas ao modelo do produto. Busque um modelo (ex.: A15) para ver quem reclamou e quando.
+          <p className="invsales-section-sub" style={{ marginTop: "0.35rem", maxWidth: 640 }}>
+            Cada linha é um modelo com problema relatado no WhatsApp (capturado pela IA). Clique na linha para ver
+            quem reclamou, quando e o que foi dito. 3+ clientes distintos = indício de defeito do produto.
           </p>
         </div>
-        <button
-          type="button"
-          className="ghost-button"
-          onClick={() => { overviewQuery.refetch(); listQuery.refetch(); }}
-          style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
-        >
-          <RefreshCw size={15} /> Atualizar
-        </button>
       </div>
 
-      {/* Filters */}
-      <div className="panel" style={{ padding: "1rem 1.25rem", display: "flex", flexWrap: "wrap", gap: "0.85rem", alignItems: "center" }}>
-        <form
-          onSubmit={(event) => { event.preventDefault(); applySearch(searchInput); }}
-          style={{ display: "flex", gap: "0.5rem", alignItems: "center", flex: "1 1 280px", minWidth: 240 }}
-        >
-          <div style={{ position: "relative", flex: 1 }}>
-            <Search size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }} />
+      {/* Filtros */}
+      <section className="invsales-filterbar">
+        <div className="invsales-filterbar-row">
+          <div className="invsales-control">
+            <span className="invsales-control-label">Período</span>
+            <div className="invsales-seg" role="group" aria-label="Período">
+              {PERIOD_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={periodDays === option.value ? "active" : ""}
+                  onClick={() => { setPeriodDays(option.value); setExpandedModel(null); setVisibleCount(40); }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="invsales-control">
+            <span className="invsales-control-label">Categoria</span>
+            <div className="invsales-seg" role="group" aria-label="Categoria">
+              {CATEGORY_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={category === option.value ? "active" : ""}
+                  onClick={() => { setCategory(option.value); setExpandedModel(null); setVisibleCount(40); }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="invsales-control">
+            <span className="invsales-control-label">Buscar modelo</span>
             <input
-              type="text"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Buscar modelo — ex.: A15, IPHONE 11, MOTO G54"
-              style={{ width: "100%", paddingLeft: "2.2rem" }}
+              value={search}
+              onChange={(event) => { setSearch(event.target.value); setVisibleCount(40); }}
+              placeholder="Ex.: A15, IPHONE 11, REDMI"
             />
           </div>
-          <button type="submit" className="primary-button" style={{ whiteSpace: "nowrap" }}>Buscar</button>
-        </form>
-
-        <select
-          value={category}
-          onChange={(event) => { setCategory(event.target.value as typeof category); setPage(1); }}
-          style={{ minWidth: 160 }}
-        >
-          <option value="">Todas as categorias</option>
-          <option value="reclamacao">Reclamação</option>
-          <option value="defeito">Defeito</option>
-          <option value="troca">Troca / Devolução</option>
-          <option value="duvida">Dúvida técnica</option>
-        </select>
-
-        <div className="customers-view-switcher" role="tablist" style={{ margin: 0, padding: "0.2rem" }}>
-          {PERIOD_OPTIONS.map((option) => (
-            <button
-              key={option.label}
-              type="button"
-              role="tab"
-              aria-selected={periodDays === option.days}
-              className={`chart-switch-button ${periodDays === option.days ? "active" : ""}`}
-              onClick={() => { setPeriodDays(option.days); setPage(1); }}
-              style={{ padding: "0.4rem 0.9rem", borderRadius: "12px", fontSize: "0.82rem" }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-
-        {model ? (
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => { setModel(""); setSearchInput(""); setPage(1); }}
-            style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem", fontSize: "0.83rem" }}
-          >
-            <ArrowLeft size={14} /> Limpar filtro: <strong>{model.toUpperCase()}</strong>
-          </button>
-        ) : null}
-      </div>
-
-      {/* Summary cards */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "0.9rem" }}>
-        <StatCard
-          icon={<MessageSquareWarning size={20} />}
-          label={model ? `Registros (${model.toUpperCase()})` : "Registros no período"}
-          value={overview?.summary.total ?? "…"}
-          hint={overview?.summary.lastDate ? `Último em ${formatBrDate(overview.summary.lastDate)}` : undefined}
-          color="#dc2626"
-        />
-        <StatCard
-          icon={<Users size={20} />}
-          label="Clientes distintos"
-          value={overview?.summary.distinctClients ?? "…"}
-          hint={
-            model && overview
-              ? overview.summary.distinctClients >= 3
-                ? "3+ clientes: indício de problema do PRODUTO"
-                : overview.summary.distinctClients === 1 && overview.summary.total > 1
-                  ? "1 cliente repetindo: caso pontual"
-                  : undefined
-              : undefined
-          }
-          color="#2563eb"
-        />
-        <StatCard
-          icon={<PackageSearch size={20} />}
-          label="Modelos afetados"
-          value={overview?.summary.distinctModels ?? "…"}
-          color="#7c3aed"
-        />
-        <StatCard
-          icon={<Wrench size={20} />}
-          label="Defeitos + trocas"
-          value={overview ? overview.summary.defects + overview.summary.returns : "…"}
-          hint={overview ? `${overview.summary.complaints} reclamações, ${overview.summary.questions} dúvidas` : undefined}
-          color="#ea580c"
-        />
-      </section>
-
-      <section className="grid-two" style={{ alignItems: "start" }}>
-        {/* Monthly trend */}
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Evolução mensal</p>
-              <h3>{model ? `Ocorrências do ${model.toUpperCase()}` : "Ocorrências por mês"}</h3>
-            </div>
-          </div>
-          <MonthlyBars monthly={overview?.monthly ?? []} />
-        </div>
-
-        {/* Top models or top clients */}
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">{model ? "Quem reclamou" : "Ranking"}</p>
-              <h3>{model ? "Clientes deste modelo" : "Modelos com mais problemas"}</h3>
-            </div>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
-            {(model ? (overview?.topClients ?? []) : []).map((client) => (
-              <div key={client.client} style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem",
-                padding: "0.55rem 0.75rem", borderRadius: 10, border: "1px solid var(--border-color)",
-              }}>
-                <span style={{ fontWeight: 600, fontSize: "0.9rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {client.client}
-                </span>
-                <span style={{ fontSize: "0.8rem", color: "var(--muted-foreground, #64748b)", whiteSpace: "nowrap" }}>
-                  {client.total}× · último {formatBrDate(client.lastDate)}
-                </span>
-              </div>
-            ))}
-            {(!model ? (overview?.topModels ?? []) : []).map((entry) => (
-              <button
-                key={entry.model}
-                type="button"
-                onClick={() => { setSearchInput(entry.model); applySearch(entry.model); }}
-                style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem",
-                  padding: "0.55rem 0.75rem", borderRadius: 10, border: "1px solid var(--border-color)",
-                  background: "transparent", cursor: "pointer", textAlign: "left", width: "100%",
-                  color: "inherit", font: "inherit",
-                }}
-                title={`Filtrar por ${entry.model}`}
-              >
-                <span style={{ fontWeight: 700, fontSize: "0.9rem" }}>{entry.model}</span>
-                <span style={{ fontSize: "0.8rem", color: "var(--muted-foreground, #64748b)", whiteSpace: "nowrap" }}>
-                  {entry.total} registro(s) · {entry.distinctClients} cliente(s)
-                </span>
-              </button>
-            ))}
-            {overview && (model ? overview.topClients.length === 0 : overview.topModels.length === 0) ? (
-              <p style={{ color: "var(--muted-foreground, #64748b)", fontSize: "0.9rem", margin: 0 }}>
-                Nenhum registro ainda. Os dados aparecem conforme a IA analisa as conversas do dia.
-              </p>
-            ) : null}
-          </div>
         </div>
       </section>
 
-      {/* History list */}
-      <div className="panel">
-        <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
+      {/* KPIs compactos */}
+      <section className="invsales-kpi-grid">
+        <article className="invsales-kpi">
+          <span className="invsales-kpi-label">
+            <PackageSearch size={14} /> Modelos com problema
+          </span>
+          <strong className="invsales-kpi-value">{reportQuery.isLoading ? "…" : totals.models}</strong>
+          <div className="invsales-kpi-foot">
+            <span className="invsales-kpi-hint">no recorte selecionado</span>
+          </div>
+        </article>
+        <article className="invsales-kpi">
+          <span className="invsales-kpi-label">
+            <MessageSquareWarning size={14} /> Ocorrências
+          </span>
+          <strong className="invsales-kpi-value">{reportQuery.isLoading ? "…" : totals.records}</strong>
+          <div className="invsales-kpi-foot">
+            <span className="invsales-kpi-hint">conversas com problema de produto</span>
+          </div>
+        </article>
+        <article className="invsales-kpi">
+          <span className="invsales-kpi-label">
+            <Wrench size={14} /> Defeitos + trocas
+          </span>
+          <strong className="invsales-kpi-value">{reportQuery.isLoading ? "…" : totals.defectsReturns}</strong>
+          <div className="invsales-kpi-foot">
+            <span className="invsales-kpi-hint">ocorrências mais graves</span>
+          </div>
+        </article>
+        <article className="invsales-kpi">
+          <span className="invsales-kpi-label">
+            <Users size={14} /> Modelos com 3+ clientes
+          </span>
+          <strong className="invsales-kpi-value" style={totals.multiClient > 0 ? { color: "#dc2626" } : undefined}>
+            {reportQuery.isLoading ? "…" : totals.multiClient}
+          </strong>
+          <div className="invsales-kpi-foot">
+            <span className="invsales-kpi-hint">indício de defeito do produto</span>
+          </div>
+        </article>
+      </section>
+
+      {/* Tabela de modelos */}
+      <section className="panel">
+        <div className="invsales-section-head">
           <div>
-            <p className="eyebrow">Histórico</p>
-            <h3>
-              {model ? `Ocorrências do ${model.toUpperCase()}` : "Todas as ocorrências"}
-              {list ? ` (${list.total})` : ""}
-            </h3>
-          </div>
-          {totalPages > 1 ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <button type="button" className="ghost-button" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>
-                <ChevronLeft size={15} />
-              </button>
-              <span style={{ fontSize: "0.85rem" }}>{page} / {totalPages}</span>
-              <button type="button" className="ghost-button" disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}>
-                <ChevronRight size={15} />
-              </button>
-            </div>
-          ) : null}
-        </div>
-
-        {listQuery.isLoading ? (
-          <p style={{ color: "var(--muted-foreground, #64748b)" }}>Carregando…</p>
-        ) : (list?.items.length ?? 0) === 0 ? (
-          <div style={{ textAlign: "center", padding: "2.5rem 1rem", color: "var(--muted-foreground, #64748b)" }}>
-            <AlertTriangle size={28} style={{ opacity: 0.5 }} />
-            <p style={{ margin: "0.75rem 0 0.25rem 0", fontWeight: 600 }}>Nenhuma ocorrência encontrada</p>
-            <p style={{ margin: 0, fontSize: "0.88rem" }}>
-              {model
-                ? `Nenhum registro para "${model.toUpperCase()}" no período selecionado.`
-                : "O histórico é alimentado automaticamente pela análise diária de conversas da Inteligência de Mensagens."}
+            <p className="eyebrow">A lista completa</p>
+            <h3>Modelos com reclamação</h3>
+            <p className="invsales-section-sub">
+              Clique numa linha para abrir as ocorrências do modelo (cliente, data e o que foi dito).
+              Clique nos títulos das colunas para reordenar.
             </p>
           </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            {list!.items.map((item) => {
-              const severity = SEVERITY_META[item.severity] ?? SEVERITY_META.none!;
-              return (
-                <div key={item.id} style={{
-                  border: "1px solid var(--border-color)", borderRadius: 12, padding: "0.85rem 1rem",
-                  display: "flex", flexDirection: "column", gap: "0.4rem",
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                      <strong style={{ fontSize: "0.95rem" }}>{item.modelNormalized}</strong>
-                      <CategoryBadge category={item.category} />
-                      {item.severity !== "none" ? (
-                        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: severity.color }}>
-                          Atenção: {severity.label}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span style={{ fontSize: "0.8rem", color: "var(--muted-foreground, #64748b)", whiteSpace: "nowrap" }}>
-                      {formatBrDate(item.windowDate)}
-                    </span>
-                  </div>
-                  {item.detail ? <p style={{ margin: 0, fontSize: "0.9rem" }}>{item.detail}</p> : null}
-                  {item.quote ? (
-                    <p style={{
-                      margin: 0, fontSize: "0.85rem", fontStyle: "italic",
-                      color: "var(--muted-foreground, #64748b)", borderLeft: "3px solid var(--border-color)", paddingLeft: "0.6rem",
-                    }}>
-                      “{item.quote}”
-                    </p>
-                  ) : null}
-                  <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.78rem", color: "var(--muted-foreground, #64748b)" }}>
-                    <span>Cliente: <strong style={{ color: "var(--foreground)" }}>{item.customerName ?? item.chatName ?? "—"}</strong>{item.isGroup ? " (grupo)" : ""}</span>
-                    {item.agentName ? <span>Vendedora: {item.agentName}</span> : null}
-                    <span>Origem: {item.source === "ai" ? "análise IA" : "backfill"}</span>
-                  </div>
-                </div>
-              );
-            })}
+        </div>
+
+        <div className="invsales-table-wrap">
+          <table className="invsales-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Modelo</th>
+                <th className="num">
+                  <button
+                    type="button"
+                    className={`invsales-sort-btn ${sortKey === "total" ? "active" : ""}`}
+                    onClick={() => setSortKey("total")}
+                  >
+                    Ocorrências
+                  </button>
+                </th>
+                <th className="num">% do total</th>
+                <th className="num">
+                  <button
+                    type="button"
+                    className={`invsales-sort-btn ${sortKey === "clients" ? "active" : ""}`}
+                    onClick={() => setSortKey("clients")}
+                  >
+                    Clientes
+                  </button>
+                </th>
+                <th>Categorias</th>
+                <th>Pior atenção</th>
+                <th>Mês a mês</th>
+                <th>
+                  <button
+                    type="button"
+                    className={`invsales-sort-btn ${sortKey === "lastDate" ? "active" : ""}`}
+                    onClick={() => setSortKey("lastDate")}
+                  >
+                    Última
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleModels.map((row: ProductComplaintModelRow, index) => {
+                const isExpanded = expandedModel === row.model;
+                const share = totals.records > 0 ? (row.total / totals.records) * 100 : 0;
+                return (
+                  <ModelRowGroup
+                    key={row.model}
+                    row={row}
+                    rank={index + 1}
+                    share={share}
+                    months={months}
+                    isExpanded={isExpanded}
+                    onToggle={() => toggleModel(row.model)}
+                    dateFrom={dateFrom}
+                    category={category}
+                  />
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {filteredModels.length > visibleCount ? (
+          <div className="invsales-table-foot">
+            <button type="button" className="ghost-button" onClick={() => setVisibleCount((current) => current + 40)}>
+              Mostrar mais {Math.min(40, filteredModels.length - visibleCount)}
+            </button>
           </div>
-        )}
-      </div>
+        ) : null}
+
+        {!reportQuery.isLoading && filteredModels.length === 0 ? (
+          <div className="invsales-empty">
+            <AlertTriangle size={16} style={{ verticalAlign: "-3px", marginRight: 6 }} />
+            {search
+              ? `Nenhum modelo bate com "${search.trim().toUpperCase()}" neste recorte.`
+              : "Nenhuma ocorrência ainda — o histórico é alimentado pela análise diária de conversas da Inteligência de Mensagens."}
+          </div>
+        ) : null}
+      </section>
     </div>
+  );
+}
+
+function ModelRowGroup({ row, rank, share, months, isExpanded, onToggle, dateFrom, category }: {
+  row: ProductComplaintModelRow;
+  rank: number;
+  share: number;
+  months: string[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  dateFrom?: string;
+  category?: CategoryFilter;
+}) {
+  const isProductIssue = row.distinctClients >= 3;
+  return (
+    <>
+      <tr className={`group-row ${isExpanded ? "open" : ""}`} onClick={onToggle}>
+        <td className="invsales-rank">{rank}</td>
+        <td>
+          <div className="invsales-cell-main" style={{ minWidth: 150 }}>
+            <strong>
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              {row.model}
+            </strong>
+            {isProductIssue ? (
+              <small style={{ color: "#dc2626", fontWeight: 700 }}>{row.distinctClients} clientes — possível defeito do produto</small>
+            ) : (
+              <small>desde {formatBrDate(row.firstDate)}</small>
+            )}
+          </div>
+        </td>
+        <td className="num"><strong>{row.total}</strong></td>
+        <td className="num">
+          <div className="invsales-share">
+            <span className="invsales-share-track">
+              <i style={{ width: `${Math.min(share, 100)}%`, background: "#dc2626" }} />
+            </span>
+            {share >= 0.1 ? formatPercent(share) : "<0,1%"}
+          </div>
+        </td>
+        <td className="num" style={isProductIssue ? { color: "#dc2626", fontWeight: 700 } : undefined}>
+          {row.distinctClients}
+        </td>
+        <td>
+          <div style={{ display: "flex", gap: "0.25rem", flexWrap: "wrap" }}>
+            {row.complaints > 0 ? <CategoryPill category="reclamacao" count={row.complaints} /> : null}
+            {row.defects > 0 ? <CategoryPill category="defeito" count={row.defects} /> : null}
+            {row.returns > 0 ? <CategoryPill category="troca" count={row.returns} /> : null}
+            {row.questions > 0 ? <CategoryPill category="duvida" count={row.questions} /> : null}
+          </div>
+        </td>
+        <td><SeverityPill severity={row.worstSeverity} /></td>
+        <td><Sparkline values={row.monthly} months={months} /></td>
+        <td style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatBrDate(row.lastDate)}</td>
+      </tr>
+      {isExpanded ? <ModelOccurrences model={row.model} dateFrom={dateFrom} category={category} /> : null}
+    </>
   );
 }

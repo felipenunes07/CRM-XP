@@ -7,6 +7,8 @@ import { normalizeProductModel } from "./conversationAi.js";
 
 export interface ProductComplaintsFilters {
   model?: string;
+  /** true = match exato do modelo normalizado (drill-down); false/ausente = busca ILIKE */
+  exact?: boolean;
   category?: string;
   dateFrom?: string;
   dateTo?: string;
@@ -22,7 +24,10 @@ function buildFilters(filters: ProductComplaintsFilters): BuiltFilters {
   const params: unknown[] = [];
 
   const model = filters.model ? normalizeProductModel(filters.model) : "";
-  if (model) {
+  if (model && filters.exact) {
+    params.push(model);
+    conditions.push(`pc.model_normalized = $${params.length}`);
+  } else if (model) {
     params.push(`%${model}%`);
     conditions.push(`pc.model_normalized ILIKE $${params.length}`);
   }
@@ -104,6 +109,88 @@ export async function listProductComplaints(
     total,
     page: pagination.page,
     pageSize: pagination.pageSize,
+  };
+}
+
+/** Ultimos 12 meses (YYYY-MM), do mais antigo ao atual. */
+function lastTwelveMonths(): string[] {
+  const months: string[] = [];
+  const now = new Date();
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    months.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return months;
+}
+
+/**
+ * Relatorio por modelo (visual "Vendas por modelo" do estoque): uma linha por
+ * modelo com totais, clientes distintos, quebra por categoria, pior atencao e
+ * serie mensal de 12 meses para o sparkline.
+ */
+export async function getProductComplaintsModelReport(
+  filters: Omit<ProductComplaintsFilters, "model" | "exact">,
+) {
+  const { where, params } = buildFilters(filters);
+
+  const [modelsResult, monthlyResult] = await Promise.all([
+    pool.query(`
+      SELECT
+        pc.model_normalized AS model,
+        COUNT(*)::int AS total,
+        COUNT(DISTINCT ${CLIENT_KEY_SQL})::int AS distinct_clients,
+        COUNT(*) FILTER (WHERE pc.category = 'reclamacao')::int AS complaints,
+        COUNT(*) FILTER (WHERE pc.category = 'defeito')::int AS defects,
+        COUNT(*) FILTER (WHERE pc.category = 'troca')::int AS returns,
+        COUNT(*) FILTER (WHERE pc.category = 'duvida')::int AS questions,
+        MIN(pc.window_date)::text AS first_date,
+        MAX(pc.window_date)::text AS last_date,
+        (ARRAY['none','low','medium','high','critical'])[
+          MAX(COALESCE(ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], pc.severity), 1))
+        ] AS worst_severity
+      FROM product_complaints pc
+      ${where}
+      GROUP BY 1
+      ORDER BY COUNT(*) DESC, MAX(pc.window_date) DESC
+    `, params),
+    pool.query(`
+      SELECT
+        pc.model_normalized AS model,
+        TO_CHAR(DATE_TRUNC('month', pc.window_date), 'YYYY-MM') AS month,
+        COUNT(*)::int AS total
+      FROM product_complaints pc
+      ${where}
+      GROUP BY 1, 2
+    `, params),
+  ]);
+
+  const months = lastTwelveMonths();
+  const monthIndex = new Map(months.map((month, index) => [month, index]));
+  const monthlyByModel = new Map<string, number[]>();
+  for (const row of monthlyResult.rows) {
+    const model = String(row.model);
+    const index = monthIndex.get(String(row.month));
+    if (index === undefined) continue;
+    const series = monthlyByModel.get(model) ?? months.map(() => 0);
+    series[index] = Number(row.total ?? 0);
+    monthlyByModel.set(model, series);
+  }
+
+  return {
+    months,
+    models: modelsResult.rows.map((row) => ({
+      model: String(row.model),
+      total: Number(row.total ?? 0),
+      distinctClients: Number(row.distinct_clients ?? 0),
+      complaints: Number(row.complaints ?? 0),
+      defects: Number(row.defects ?? 0),
+      returns: Number(row.returns ?? 0),
+      questions: Number(row.questions ?? 0),
+      firstDate: String(row.first_date),
+      lastDate: String(row.last_date),
+      worstSeverity: String(row.worst_severity ?? "none"),
+      monthly: monthlyByModel.get(String(row.model)) ?? months.map(() => 0),
+    })),
   };
 }
 

@@ -249,9 +249,29 @@ export interface AdminUserInput {
 
 export interface ProductComplaintsFilters {
   model?: string;
+  exact?: boolean;
   category?: "reclamacao" | "defeito" | "troca" | "duvida" | "outro";
   dateFrom?: string;
   dateTo?: string;
+}
+
+export interface ProductComplaintModelRow {
+  model: string;
+  total: number;
+  distinctClients: number;
+  complaints: number;
+  defects: number;
+  returns: number;
+  questions: number;
+  firstDate: string;
+  lastDate: string;
+  worstSeverity: string;
+  monthly: number[];
+}
+
+export interface ProductComplaintsModelReport {
+  months: string[];
+  models: ProductComplaintModelRow[];
 }
 
 export interface ProductComplaintItem {
@@ -1557,6 +1577,13 @@ export const api = {
 
   // ── Reclamacoes por produto ─────────────────────────────────
 
+  getProductComplaintsModelReport(token: string, filters: Omit<ProductComplaintsFilters, "model" | "exact"> = {}) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    return request<ProductComplaintsModelReport>(`/api/product-complaints/models?${search.toString()}`, {}, token);
+  },
   getProductComplaintsOverview(token: string, filters: ProductComplaintsFilters = {}) {
     const search = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
