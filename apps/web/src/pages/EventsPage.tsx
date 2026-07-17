@@ -13,12 +13,14 @@ import {
   MessageSquare,
   Phone,
   Search,
+  Send,
   ShieldCheck,
   Smartphone,
   Smile,
   Sparkles,
   ThumbsUp,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import type {
@@ -275,6 +277,7 @@ export function EventsPage() {
   const [chatState, setChatState] = useState<ChatState>(emptyChatState);
   const [legacyFilters, setLegacyFilters] = useState<EventsFilterState>({ page: 1, pageSize: 20 });
   const [legacyOpen, setLegacyOpen] = useState(false);
+  const [radarWhatsappOpen, setRadarWhatsappOpen] = useState(false);
   const wasActiveRef = useRef(false);
 
   const period = useMemo(() => ({ dateFrom: dateRange.from, dateTo: dateRange.to }), [dateRange]);
@@ -344,6 +347,21 @@ export function EventsPage() {
     mutationFn: ({ id }: { id: string }) => api.ackConversationInsight(token!, id),
     onSuccess: invalidateIntelligence,
   });
+
+  const radarWhatsappPreviewMutation = useMutation({
+    mutationFn: () => api.previewRadarWhatsapp(token!, period),
+  });
+
+  const radarWhatsappSendMutation = useMutation({
+    mutationFn: () => api.sendRadarWhatsapp(token!, period),
+  });
+
+  const openRadarWhatsappPreview = () => {
+    radarWhatsappSendMutation.reset();
+    radarWhatsappPreviewMutation.reset();
+    setRadarWhatsappOpen(true);
+    radarWhatsappPreviewMutation.mutate();
+  };
 
   const resolveMutation = useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
@@ -513,6 +531,16 @@ export function EventsPage() {
               }}
             />
           </div>
+          {isManager && (
+            <button
+              type="button"
+              className="wtl-radar-whatsapp-btn"
+              onClick={openRadarWhatsappPreview}
+              title="Ver o resumo antes de enviar para o WhatsApp da Lili"
+            >
+              <Send size={16} /> Enviar radar
+            </button>
+          )}
           {isManager && (
             <div className="wtl-run-wrap">
               <button
@@ -1047,6 +1075,99 @@ export function EventsPage() {
           </div>
         )}
       </section>
+
+      {radarWhatsappOpen && (
+        <div className="wtl-radar-modal-backdrop" role="presentation" onMouseDown={() => {
+          if (!radarWhatsappSendMutation.isPending) setRadarWhatsappOpen(false);
+        }}>
+          <section
+            className="wtl-radar-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wtl-radar-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="wtl-radar-modal-head">
+              <span className="wtl-radar-modal-icon"><Send size={19} /></span>
+              <div>
+                <h2 id="wtl-radar-modal-title">Preview do radar</h2>
+                <p>Confira exatamente o que será enviado antes de confirmar.</p>
+              </div>
+              <button
+                type="button"
+                className="wtl-radar-modal-close"
+                aria-label="Fechar preview"
+                disabled={radarWhatsappSendMutation.isPending}
+                onClick={() => setRadarWhatsappOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            {radarWhatsappPreviewMutation.isPending ? (
+              <div className="wtl-radar-modal-loading"><Loader2 size={22} className="spin" /> Montando resumo do radar...</div>
+            ) : radarWhatsappPreviewMutation.isError ? (
+              <div className="wtl-radar-modal-error">
+                <AlertTriangle size={18} />
+                <div>
+                  <strong>Não foi possível montar o preview</strong>
+                  <span>{radarWhatsappPreviewMutation.error instanceof Error ? radarWhatsappPreviewMutation.error.message : "Tente novamente."}</span>
+                </div>
+              </div>
+            ) : radarWhatsappPreviewMutation.data ? (
+              <>
+                <div className="wtl-radar-route">
+                  <div><span>Instância de envio</span><strong>{radarWhatsappPreviewMutation.data.instanceLabel}</strong></div>
+                  <span className="wtl-radar-route-arrow">→</span>
+                  <div><span>Destino padrão</span><strong>Lili · (11) 99743-1733</strong></div>
+                </div>
+
+                <label className="wtl-radar-preview-label" htmlFor="wtl-radar-preview-message">
+                  Mensagem que será enviada
+                  <span>{radarWhatsappPreviewMutation.data.radarCount} {radarWhatsappPreviewMutation.data.radarCount === 1 ? "ponto aberto" : "pontos abertos"}</span>
+                </label>
+                <textarea
+                  id="wtl-radar-preview-message"
+                  className="wtl-radar-preview-message"
+                  value={radarWhatsappPreviewMutation.data.message}
+                  readOnly
+                  rows={18}
+                />
+
+                {radarWhatsappSendMutation.isSuccess && (
+                  <div className="wtl-radar-modal-success">
+                    <CheckCheck size={18} />
+                    <div><strong>Resumo enviado com sucesso</strong><span>Enviado pela {radarWhatsappSendMutation.data.instanceLabel} para (11) 99743-1733.</span></div>
+                  </div>
+                )}
+                {radarWhatsappSendMutation.isError && (
+                  <div className="wtl-radar-modal-error compact">
+                    <AlertTriangle size={18} />
+                    <div><strong>O envio falhou</strong><span>{radarWhatsappSendMutation.error instanceof Error ? radarWhatsappSendMutation.error.message : "Tente novamente."}</span></div>
+                  </div>
+                )}
+
+                <footer className="wtl-radar-modal-actions">
+                  <button type="button" className="wtl-radar-cancel" disabled={radarWhatsappSendMutation.isPending} onClick={() => setRadarWhatsappOpen(false)}>
+                    {radarWhatsappSendMutation.isSuccess ? "Fechar" : "Cancelar"}
+                  </button>
+                  {!radarWhatsappSendMutation.isSuccess && (
+                    <button
+                      type="button"
+                      className="wtl-radar-confirm"
+                      disabled={radarWhatsappSendMutation.isPending}
+                      onClick={() => radarWhatsappSendMutation.mutate()}
+                    >
+                      {radarWhatsappSendMutation.isPending ? <Loader2 size={17} className="spin" /> : <Send size={17} />}
+                      {radarWhatsappSendMutation.isPending ? "Enviando..." : "Confirmar e enviar"}
+                    </button>
+                  )}
+                </footer>
+              </>
+            ) : null}
+          </section>
+        </div>
+      )}
 
       <MiniChatDrawer
         open={chatState.open}

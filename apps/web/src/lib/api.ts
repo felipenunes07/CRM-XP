@@ -75,6 +75,8 @@ import type {
   ConversationInsight,
   ConversationInsightsListResponse,
   EventsIntelligenceProgress,
+  RadarWhatsappPreview,
+  RadarWhatsappSendResult,
   EventsOverviewResponse,
 } from "@olist-crm/shared";
 
@@ -1524,6 +1526,18 @@ export const api = {
     return request<ConversationInsight>(`/api/events/conversations/${id}/ack`, {
       method: "PATCH",
       body: JSON.stringify({ note }),
+    }, token);
+  },
+  previewRadarWhatsapp(token: string, query: { dateFrom?: string; dateTo?: string } = {}) {
+    const search = new URLSearchParams();
+    if (query.dateFrom) search.set("dateFrom", query.dateFrom);
+    if (query.dateTo) search.set("dateTo", query.dateTo);
+    return request<RadarWhatsappPreview>(`/api/events/radar-whatsapp/preview?${search.toString()}`, {}, token);
+  },
+  sendRadarWhatsapp(token: string, input: { dateFrom?: string; dateTo?: string }) {
+    return request<RadarWhatsappSendResult>("/api/events/radar-whatsapp/send", {
+      method: "POST",
+      body: JSON.stringify(input),
     }, token);
   },
   resolveEvent(token: string, id: string, input: { resolutionNote: string }) {

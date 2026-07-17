@@ -157,6 +157,10 @@ import {
   listProductComplaints,
 } from "./modules/events/productComplaintsService.js";
 import {
+  previewRadarWhatsapp,
+  sendRadarWhatsapp,
+} from "./modules/events/radarWhatsappService.js";
+import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
   getWhatsappCampaignAccess,
@@ -3017,6 +3021,27 @@ export function createApp() {
     try {
       const payload = z.object({ note: z.string().trim().max(2000).optional() }).parse(request.body ?? {});
       response.json(await acknowledgeConversationInsight(request.params.id, request.user!, payload.note));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/events/radar-whatsapp/preview", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const query = conversationInsightsQuerySchema.pick({ dateFrom: true, dateTo: true }).parse(request.query);
+      response.json(await previewRadarWhatsapp(request.user!, query));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/events/radar-whatsapp/send", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = z.object({
+        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      }).parse(request.body ?? {});
+      response.status(201).json(await sendRadarWhatsapp(request.user!, payload));
     } catch (error) {
       next(error);
     }

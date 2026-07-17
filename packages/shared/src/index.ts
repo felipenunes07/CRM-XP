@@ -2648,6 +2648,24 @@ export interface EventsOverviewResponse {
   agents: ConversationAgentStat[];
 }
 
+export interface RadarWhatsappPreview {
+  destinationPhone: string;
+  destinationLabel: string;
+  instanceLabel: string;
+  period: { from: string; to: string };
+  radarCount: number;
+  message: string;
+}
+
+export interface RadarWhatsappSendResult {
+  ok: true;
+  sentAt: string;
+  destinationPhone: string;
+  instanceLabel: string;
+  provider: string;
+  providerPayload: unknown;
+}
+
 export interface ConversationInsightsListResponse {
   insights: ConversationInsight[];
   total: number;
