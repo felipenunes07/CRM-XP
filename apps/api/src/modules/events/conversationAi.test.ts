@@ -214,17 +214,19 @@ describe("parseProductMentions", () => {
     expect(mentions[1]!.modeloNormalizado).toBe("IPHONE 11");
   });
 
-  it("falls back to 'outro' for unknown tipo and drops garbage entries", () => {
+  it("drops mentions whose tipo is not a real problem (duvida/unknown) and garbage entries", () => {
     const mentions = parseProductMentions([
       { modelo: "A32", tipo: "explodiu" },
+      { modelo: "A50", tipo: "duvida", detalhe: "pergunta de disponibilidade" },
       { modelo: "", tipo: "defeito" },
       "texto solto",
       null,
-      { tipo: "defeito" },
+      { modelo: "A16", tipo: "defeito", detalhe: "tela nao liga" },
     ]);
 
     expect(mentions).toHaveLength(1);
-    expect(mentions[0]!.tipo).toBe("outro");
+    expect(mentions[0]!.modeloNormalizado).toBe("A16");
+    expect(mentions[0]!.tipo).toBe("defeito");
   });
 
   it("returns empty list for missing or non-array input", () => {

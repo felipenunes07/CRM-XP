@@ -293,10 +293,10 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "- \"tema\": UM UNICO tema principal que resume a conversa, em 1 a 3 palavras minusculas (ex: \"tela quebrada\", \"atraso entrega\", \"orcamento\", \"troca\"). NUNCA mais de um tema por conversa; escolha o assunto dominante. Use sempre o mesmo termo para o mesmo assunto (nao invente sinonimos).",
     "- \"citacoes\": ate 2 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
     "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
-    "- \"produtos\": modelos de produto citados APENAS quando ha problema ligado ao produto: reclamacao, defeito, tela ruim, troca/devolucao ou duvida tecnica sobre qualidade.",
+    "- \"produtos\": modelos de produto citados APENAS quando ha PROBLEMA REAL de qualidade ligado ao produto: reclamacao, defeito ou troca/devolucao por defeito.",
     "  Use o nome CURTO do modelo em maiusculas, como o cliente fala (ex: \"A15\", \"IPHONE 11\", \"MOTO G54\", \"REDMI NOTE 12\").",
-    "  tipo: reclamacao = cliente insatisfeito com o produto; defeito = produto com falha/nao funciona; troca = devolucao/retorno/garantia; duvida = pergunta tecnica sobre qualidade.",
-    "  NUNCA liste produto de cotacao, orcamento ou pedido normal fluindo bem. Vazio se nenhum produto teve problema.",
+    "  tipo: reclamacao = cliente insatisfeito com a qualidade do produto; defeito = produto com falha/nao funciona/tela ruim; troca = devolucao/retorno por defeito.",
+    "  NUNCA liste: cotacao, orcamento, lista de preco, pedido normal, pergunta de disponibilidade, duvida simples, envio errado/logistica, ou dano fisico causado pelo cliente (queda). Vazio se nenhum produto teve problema real.",
     "",
     "Responda APENAS JSON valido neste formato:",
     "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"],\"produtos\":[{\"modelo\":\"A15\",\"tipo\":\"reclamacao|defeito|troca|duvida\",\"detalhe\":\"1 frase: qual foi o problema e de quem\"}]}]}",
@@ -325,7 +325,9 @@ export interface ParsedConversationAnalysis {
   produtos: ParsedProductMention[];
 }
 
-const PRODUCT_MENTION_TYPES = new Set(["reclamacao", "defeito", "troca", "duvida"]);
+// A pedido do gestor, o backfill/analise so registra problema REAL de produto —
+// "duvida" nao entra (nao e reclamacao). Se a IA devolver duvida, e descartada.
+const PRODUCT_MENTION_TYPES = new Set(["reclamacao", "defeito", "troca"]);
 
 /**
  * Chave de busca do modelo: maiusculas, sem acento, espacos colapsados.
@@ -355,10 +357,12 @@ export function parseProductMentions(value: unknown): ParsedProductMention[] {
         .normalize("NFD")
         .replace(/[̀-ͯ]/g, "")
         .toLowerCase();
+      // Fora reclamacao/defeito/troca (ex.: duvida) nao vira reclamacao de produto.
+      if (!PRODUCT_MENTION_TYPES.has(rawTipo)) return null;
       return {
         modelo,
         modeloNormalizado,
-        tipo: (PRODUCT_MENTION_TYPES.has(rawTipo) ? rawTipo : "outro") as ParsedProductMention["tipo"],
+        tipo: rawTipo as ParsedProductMention["tipo"],
         detalhe: readString(record.detalhe, 300),
       };
     })

@@ -29,7 +29,6 @@ const CATEGORY_OPTIONS: { label: string; value: CategoryFilter }[] = [
   { label: "Reclamação", value: "reclamacao" },
   { label: "Defeito", value: "defeito" },
   { label: "Troca", value: "troca" },
-  { label: "Dúvida", value: "duvida" },
 ];
 
 const CATEGORY_META: Record<string, { label: string; color: string; soft: string }> = {
