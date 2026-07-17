@@ -23416,6 +23416,78 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wtl-radar-route strong { color: #065f46; font-size: 0.82rem; }
 .wtl-radar-route-arrow { color: #10b981 !important; font-size: 1.15rem !important; }
 
+.wtl-radar-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 0.8rem;
+  margin: 0.9rem 1.1rem 0;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid #e7e2d9;
+}
+
+.wtl-radar-option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.wtl-radar-option-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.wtl-radar-option-label strong {
+  color: #44403c;
+  font-size: 0.73rem;
+}
+
+.wtl-radar-option-label span {
+  min-height: 1rem;
+  color: #78716c;
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.wtl-radar-segments {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 11px;
+  background: #efede8;
+}
+
+.wtl-radar-segments.compact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wtl-radar-segments button {
+  min-height: 32px;
+  padding: 0 0.45rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #57534e;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.wtl-radar-segments button:hover:not(:disabled):not(.active) {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.wtl-radar-segments button.active {
+  background: #ffffff;
+  color: #047857;
+  box-shadow: 0 2px 8px rgba(28, 25, 23, 0.1);
+}
+
+.wtl-radar-segments button:disabled { opacity: 0.58; cursor: wait; }
+
 .wtl-radar-preview-label {
   display: flex;
   align-items: center;
@@ -23502,6 +23574,7 @@ body:has(.whatsapp-monitor-page) .main-content {
   .wtl-radar-modal { width: 100%; max-height: 94vh; border-radius: 20px 20px 0 0; }
   .wtl-radar-route { grid-template-columns: 1fr; gap: 0.35rem; }
   .wtl-radar-route-arrow { transform: rotate(90deg); justify-self: start; }
+  .wtl-radar-options { grid-template-columns: 1fr; }
   .wtl-radar-modal-actions { flex-direction: column-reverse; }
   .wtl-radar-cancel, .wtl-radar-confirm { width: 100%; justify-content: center; }
 }

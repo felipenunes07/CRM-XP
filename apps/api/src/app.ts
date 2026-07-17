@@ -3027,10 +3027,24 @@ export function createApp() {
     }
   });
 
+  const radarWhatsappOptionsSchema = z.object({
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    detailLevel: z.enum(["summary", "standard", "complete"]).default("standard"),
+    alertLimit: z.coerce.number().int()
+      .refine((value) => [3, 5, 10, 20].includes(value))
+      .transform((value) => value as 3 | 5 | 10 | 20)
+      .default(5),
+  });
+
   app.get("/api/events/radar-whatsapp/preview", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
-      const query = conversationInsightsQuerySchema.pick({ dateFrom: true, dateTo: true }).parse(request.query);
-      response.json(await previewRadarWhatsapp(request.user!, query));
+      const query = radarWhatsappOptionsSchema.parse(request.query);
+      response.json(await previewRadarWhatsapp(
+        request.user!,
+        { dateFrom: query.dateFrom, dateTo: query.dateTo },
+        { detailLevel: query.detailLevel, alertLimit: query.alertLimit },
+      ));
     } catch (error) {
       next(error);
     }
@@ -3038,11 +3052,12 @@ export function createApp() {
 
   app.post("/api/events/radar-whatsapp/send", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
-      const payload = z.object({
-        dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      }).parse(request.body ?? {});
-      response.status(201).json(await sendRadarWhatsapp(request.user!, payload));
+      const payload = radarWhatsappOptionsSchema.parse(request.body ?? {});
+      response.status(201).json(await sendRadarWhatsapp(
+        request.user!,
+        { dateFrom: payload.dateFrom, dateTo: payload.dateTo },
+        { detailLevel: payload.detailLevel, alertLimit: payload.alertLimit },
+      ));
     } catch (error) {
       next(error);
     }

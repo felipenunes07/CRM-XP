@@ -2648,12 +2648,21 @@ export interface EventsOverviewResponse {
   agents: ConversationAgentStat[];
 }
 
-export interface RadarWhatsappPreview {
+export type RadarWhatsappDetailLevel = "summary" | "standard" | "complete";
+export type RadarWhatsappAlertLimit = 3 | 5 | 10 | 20;
+
+export interface RadarWhatsappOptions {
+  detailLevel: RadarWhatsappDetailLevel;
+  alertLimit: RadarWhatsappAlertLimit;
+}
+
+export interface RadarWhatsappPreview extends RadarWhatsappOptions {
   destinationPhone: string;
   destinationLabel: string;
   instanceLabel: string;
   period: { from: string; to: string };
   radarCount: number;
+  includedAlertCount: number;
   message: string;
 }
 

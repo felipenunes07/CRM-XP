@@ -29,6 +29,8 @@ import type {
   DailyBriefing,
   EventsIntelligenceProgress,
   MessageEvent,
+  RadarWhatsappAlertLimit,
+  RadarWhatsappDetailLevel,
   WhatsappMonitorConversationDetail,
 } from "@olist-crm/shared";
 import { api } from "../lib/api";
@@ -107,6 +109,18 @@ const PROGRESS_STEPS: Array<{ phases: EventsIntelligenceProgress["phase"][]; lab
   { phases: ["analyzing"], label: "IA lendo as conversas" },
   { phases: ["briefing"], label: "Gerando briefing" },
 ];
+
+const RADAR_DETAIL_OPTIONS: Array<{
+  id: RadarWhatsappDetailLevel;
+  label: string;
+  description: string;
+}> = [
+  { id: "summary", label: "Resumido", description: "Somente prioridade e motivo principal." },
+  { id: "standard", label: "Padrão", description: "Inclui responsável e próximo passo." },
+  { id: "complete", label: "Completo", description: "Inclui resumo, canal, temas e até 3 ações." },
+];
+
+const RADAR_ALERT_LIMITS: RadarWhatsappAlertLimit[] = [3, 5, 10, 20];
 
 function toDateInput(date: Date) {
   return date.toISOString().slice(0, 10);
@@ -278,6 +292,8 @@ export function EventsPage() {
   const [legacyFilters, setLegacyFilters] = useState<EventsFilterState>({ page: 1, pageSize: 20 });
   const [legacyOpen, setLegacyOpen] = useState(false);
   const [radarWhatsappOpen, setRadarWhatsappOpen] = useState(false);
+  const [radarDetailLevel, setRadarDetailLevel] = useState<RadarWhatsappDetailLevel>("standard");
+  const [radarAlertLimit, setRadarAlertLimit] = useState<RadarWhatsappAlertLimit>(5);
   const wasActiveRef = useRef(false);
 
   const period = useMemo(() => ({ dateFrom: dateRange.from, dateTo: dateRange.to }), [dateRange]);
@@ -349,18 +365,33 @@ export function EventsPage() {
   });
 
   const radarWhatsappPreviewMutation = useMutation({
-    mutationFn: () => api.previewRadarWhatsapp(token!, period),
+    mutationFn: (options: { detailLevel: RadarWhatsappDetailLevel; alertLimit: RadarWhatsappAlertLimit }) =>
+      api.previewRadarWhatsapp(token!, { ...period, ...options }),
   });
 
   const radarWhatsappSendMutation = useMutation({
-    mutationFn: () => api.sendRadarWhatsapp(token!, period),
+    mutationFn: () => api.sendRadarWhatsapp(token!, {
+      ...period,
+      detailLevel: radarDetailLevel,
+      alertLimit: radarAlertLimit,
+    }),
   });
+
+  const refreshRadarWhatsappPreview = (
+    detailLevel: RadarWhatsappDetailLevel,
+    alertLimit: RadarWhatsappAlertLimit,
+  ) => {
+    setRadarDetailLevel(detailLevel);
+    setRadarAlertLimit(alertLimit);
+    radarWhatsappSendMutation.reset();
+    radarWhatsappPreviewMutation.mutate({ detailLevel, alertLimit });
+  };
 
   const openRadarWhatsappPreview = () => {
     radarWhatsappSendMutation.reset();
     radarWhatsappPreviewMutation.reset();
     setRadarWhatsappOpen(true);
-    radarWhatsappPreviewMutation.mutate();
+    radarWhatsappPreviewMutation.mutate({ detailLevel: radarDetailLevel, alertLimit: radarAlertLimit });
   };
 
   const resolveMutation = useMutation({
@@ -1122,9 +1153,54 @@ export function EventsPage() {
                   <div><span>Destino padrão</span><strong>Lili · (11) 99743-1733</strong></div>
                 </div>
 
+                <div className="wtl-radar-options">
+                  <div className="wtl-radar-option-group">
+                    <div className="wtl-radar-option-label">
+                      <strong>Nível de detalhe</strong>
+                      <span>{RADAR_DETAIL_OPTIONS.find((option) => option.id === radarDetailLevel)?.description}</span>
+                    </div>
+                    <div className="wtl-radar-segments" role="group" aria-label="Nível de detalhe da mensagem">
+                      {RADAR_DETAIL_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={radarDetailLevel === option.id ? "active" : ""}
+                          disabled={radarWhatsappPreviewMutation.isPending || radarWhatsappSendMutation.isPending}
+                          title={option.description}
+                          onClick={() => refreshRadarWhatsappPreview(option.id, radarAlertLimit)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="wtl-radar-option-group alerts">
+                    <div className="wtl-radar-option-label">
+                      <strong>Quantidade de alertas</strong>
+                      <span>Sempre em ordem: Crítico → Alto → mais recente.</span>
+                    </div>
+                    <div className="wtl-radar-segments compact" role="group" aria-label="Quantidade máxima de alertas">
+                      {RADAR_ALERT_LIMITS.map((limit) => (
+                        <button
+                          key={limit}
+                          type="button"
+                          className={radarAlertLimit === limit ? "active" : ""}
+                          disabled={radarWhatsappPreviewMutation.isPending || radarWhatsappSendMutation.isPending}
+                          onClick={() => refreshRadarWhatsappPreview(radarDetailLevel, limit)}
+                        >
+                          {limit}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <label className="wtl-radar-preview-label" htmlFor="wtl-radar-preview-message">
                   Mensagem que será enviada
-                  <span>{radarWhatsappPreviewMutation.data.radarCount} {radarWhatsappPreviewMutation.data.radarCount === 1 ? "ponto aberto" : "pontos abertos"}</span>
+                  <span>
+                    {radarWhatsappPreviewMutation.data.includedAlertCount} de {radarWhatsappPreviewMutation.data.radarCount} {radarWhatsappPreviewMutation.data.radarCount === 1 ? "alerta" : "alertas"}
+                  </span>
                 </label>
                 <textarea
                   id="wtl-radar-preview-message"

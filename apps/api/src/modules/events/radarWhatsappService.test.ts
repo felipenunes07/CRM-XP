@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationInsight, EventsOverviewResponse } from "@olist-crm/shared";
-import { buildRadarWhatsappMessage } from "./radarWhatsappService.js";
+import { buildRadarWhatsappMessage, sortRadarByPriority } from "./radarWhatsappService.js";
 
 function insight(overrides: Partial<ConversationInsight> = {}): ConversationInsight {
   return {
@@ -79,5 +79,32 @@ describe("buildRadarWhatsappMessage", () => {
   it("shows a calm state when there are no open radar items", () => {
     const message = buildRadarWhatsappMessage(overview([]), []);
     expect(message).toContain("Nenhum problema prioritário em aberto");
+  });
+
+  it("always orders critical alerts before high alerts and then by recency", () => {
+    const high = insight({ id: "high", attentionLevel: "high", lastMessageAt: "2026-07-17T13:00:00.000Z" });
+    const olderCritical = insight({ id: "critical-old", lastMessageAt: "2026-07-17T11:00:00.000Z" });
+    const newerCritical = insight({ id: "critical-new", lastMessageAt: "2026-07-17T12:00:00.000Z" });
+
+    expect(sortRadarByPriority([high, olderCritical, newerCritical]).map((item) => item.id))
+      .toEqual(["critical-new", "critical-old", "high"]);
+  });
+
+  it("supports summary and complete message formats", () => {
+    const item = insight({
+      summary: "Resumo completo diferente do motivo.",
+      topics: ["atraso", "logística"],
+      actionItems: ["Retornar ao cliente", "Confirmar a entrega"],
+    });
+    const shortMessage = buildRadarWhatsappMessage(overview([item]), [item], { detailLevel: "summary", alertLimit: 3 });
+    const completeMessage = buildRadarWhatsappMessage(overview([item]), [item], { detailLevel: "complete", alertLimit: 3 });
+
+    expect(shortMessage).not.toContain("Responsável: Ana");
+    expect(shortMessage).not.toContain("Próximo passo:");
+    expect(completeMessage).toContain("Responsável: Ana");
+    expect(completeMessage).toContain("Resumo: Resumo completo diferente do motivo.");
+    expect(completeMessage).toContain("Canal: privado");
+    expect(completeMessage).toContain("Tema: atraso · logística");
+    expect(completeMessage).toContain("Também fazer: Confirmar a entrega");
   });
 });

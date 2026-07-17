@@ -77,6 +77,7 @@ import type {
   EventsIntelligenceProgress,
   RadarWhatsappPreview,
   RadarWhatsappSendResult,
+  RadarWhatsappOptions,
   EventsOverviewResponse,
 } from "@olist-crm/shared";
 
@@ -1548,13 +1549,15 @@ export const api = {
       body: JSON.stringify({ note }),
     }, token);
   },
-  previewRadarWhatsapp(token: string, query: { dateFrom?: string; dateTo?: string } = {}) {
+  previewRadarWhatsapp(token: string, query: { dateFrom?: string; dateTo?: string } & RadarWhatsappOptions) {
     const search = new URLSearchParams();
     if (query.dateFrom) search.set("dateFrom", query.dateFrom);
     if (query.dateTo) search.set("dateTo", query.dateTo);
+    search.set("detailLevel", query.detailLevel);
+    search.set("alertLimit", String(query.alertLimit));
     return request<RadarWhatsappPreview>(`/api/events/radar-whatsapp/preview?${search.toString()}`, {}, token);
   },
-  sendRadarWhatsapp(token: string, input: { dateFrom?: string; dateTo?: string }) {
+  sendRadarWhatsapp(token: string, input: { dateFrom?: string; dateTo?: string } & RadarWhatsappOptions) {
     return request<RadarWhatsappSendResult>("/api/events/radar-whatsapp/send", {
       method: "POST",
       body: JSON.stringify(input),

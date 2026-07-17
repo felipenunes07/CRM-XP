@@ -1,16 +1,22 @@
-import type { ConversationInsight, EventsOverviewResponse } from "@olist-crm/shared";
+import type {
+  ConversationInsight,
+  EventsOverviewResponse,
+  RadarWhatsappAlertLimit,
+  RadarWhatsappDetailLevel,
+  RadarWhatsappOptions,
+} from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
+import type { JwtUser } from "../platform/authService.js";
 import { sendWhatsappInstanceTextMessage } from "../whatsapp/evolutionService.js";
 import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
-import type { JwtUser } from "../platform/authService.js";
 import { getEventsOverview, listConversationInsights } from "./conversationAi.js";
 
 const RADAR_WHATSAPP_DESTINATION = "5511997431733@s.whatsapp.net";
 const RADAR_WHATSAPP_PHONE = "11997431733";
 const RADAR_WHATSAPP_INSTANCE_LABEL = "Lili Assistente";
-const MAX_RADAR_ITEMS = 5;
+const DEFAULT_RADAR_OPTIONS: RadarWhatsappOptions = { detailLevel: "standard", alertLimit: 5 };
 
 interface RadarWhatsappInstanceRow {
   id: string;
@@ -29,6 +35,9 @@ export interface RadarWhatsappPreview {
   instanceLabel: string;
   period: { from: string; to: string };
   radarCount: number;
+  includedAlertCount: number;
+  detailLevel: RadarWhatsappDetailLevel;
+  alertLimit: RadarWhatsappAlertLimit;
   message: string;
 }
 
@@ -38,10 +47,7 @@ function formatBrDate(value: string) {
 }
 
 function cleanLine(value: string | null | undefined, maxLength = 240) {
-  return String(value ?? "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxLength);
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 function attentionLabel(level: ConversationInsight["attentionLevel"]) {
@@ -53,9 +59,28 @@ function insightTitle(insight: ConversationInsight) {
   return insight.isGroup ? `${name} (grupo)` : name;
 }
 
+const ATTENTION_PRIORITY: Record<ConversationInsight["attentionLevel"], number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  none: 1,
+};
+
+export function sortRadarByPriority(radar: ConversationInsight[]) {
+  return [...radar].sort((left, right) => {
+    const priorityDifference = ATTENTION_PRIORITY[right.attentionLevel] - ATTENTION_PRIORITY[left.attentionLevel];
+    if (priorityDifference !== 0) return priorityDifference;
+    const rightDate = Date.parse(right.lastMessageAt || right.analyzedAt || "") || 0;
+    const leftDate = Date.parse(left.lastMessageAt || left.analyzedAt || "") || 0;
+    return rightDate - leftDate;
+  });
+}
+
 export function buildRadarWhatsappMessage(
   overview: EventsOverviewResponse,
   radar: ConversationInsight[],
+  options: RadarWhatsappOptions = DEFAULT_RADAR_OPTIONS,
 ) {
   const { from, to } = overview.period;
   const periodLabel = from === to ? formatBrDate(from) : `${formatBrDate(from)} a ${formatBrDate(to)}`;
@@ -63,32 +88,44 @@ export function buildRadarWhatsappMessage(
   const openCount = stats.openRadar;
   const criticalCount = stats.byAttention.critical ?? 0;
   const highCount = stats.byAttention.high ?? 0;
+  const prioritizedRadar = sortRadarByPriority(radar).slice(0, options.alertLimit);
 
   const lines = [
-    `📡 *RADAR — INTELIGÊNCIA DO WHATSAPP*`,
+    "📡 *RADAR — INTELIGÊNCIA DO WHATSAPP*",
     `🗓️ ${periodLabel}`,
     "",
-    `*Resumo rápido*`,
+    "*Resumo rápido*",
     `• ${openCount} ${openCount === 1 ? "ponto aberto" : "pontos abertos"} no radar`,
     `• ${criticalCount} ${criticalCount === 1 ? "crítico" : "críticos"} e ${highCount} de atenção alta`,
     `• ${stats.complaints} ${stats.complaints === 1 ? "reclamação" : "reclamações"} · ${stats.unanswered} sem resposta · ${stats.churnRisks} com risco de perda`,
   ];
 
-  if (radar.length === 0) {
+  if (prioritizedRadar.length === 0) {
     lines.push("", "✅ *Nenhum problema prioritário em aberto neste período.*");
   } else {
-    lines.push("", "⚠️ *Principais pontos que pedem ação*");
-    radar.slice(0, MAX_RADAR_ITEMS).forEach((insight, index) => {
+    lines.push("", "⚠️ *Principais pontos que pedem ação — por prioridade*");
+    prioritizedRadar.forEach((insight, index) => {
       const reason = cleanLine(insight.attentionReason) || cleanLine(insight.summary);
-      const action = cleanLine(insight.actionItems[0]);
+      const summary = cleanLine(insight.summary, 320);
+      const actions = insight.actionItems.map((action) => cleanLine(action)).filter(Boolean);
       const agent = cleanLine(insight.agentName, 70);
       lines.push(
         "",
         `${index + 1}. *${insightTitle(insight)}* — ${attentionLabel(insight.attentionLevel)}`,
         `   ${reason || "Conversa sinalizada para acompanhamento."}`,
       );
+
+      if (options.detailLevel === "summary") return;
+
       if (agent) lines.push(`   👤 Responsável: ${agent}`);
-      if (action) lines.push(`   ➜ Próximo passo: ${action}`);
+      if (actions[0]) lines.push(`   ➜ Próximo passo: ${actions[0]}`);
+
+      if (options.detailLevel === "complete") {
+        if (summary && summary !== reason) lines.push(`   💬 Resumo: ${summary}`);
+        lines.push(`   📱 Canal: ${insight.isGroup ? "grupo" : "privado"}`);
+        if (insight.topics.length > 0) lines.push(`   🏷️ Tema: ${insight.topics.slice(0, 3).join(" · ")}`);
+        actions.slice(1, 3).forEach((action) => lines.push(`   ➜ Também fazer: ${action}`));
+      }
     });
   }
 
@@ -107,6 +144,7 @@ export function buildRadarWhatsappMessage(
 async function loadRadarWhatsappData(
   user: JwtUser,
   period: { dateFrom?: string; dateTo?: string },
+  alertLimit: RadarWhatsappAlertLimit,
 ) {
   const [overview, insightResult] = await Promise.all([
     getEventsOverview(user, period),
@@ -114,23 +152,27 @@ async function loadRadarWhatsappData(
       ...period,
       attention: ["high", "critical"],
       onlyOpen: true,
-    }, { page: 1, pageSize: MAX_RADAR_ITEMS }),
+    }, { page: 1, pageSize: alertLimit }),
   ]);
-  return { overview, radar: insightResult.insights };
+  return { overview, radar: sortRadarByPriority(insightResult.insights) };
 }
 
 export async function previewRadarWhatsapp(
   user: JwtUser,
   period: { dateFrom?: string; dateTo?: string },
+  options: RadarWhatsappOptions = DEFAULT_RADAR_OPTIONS,
 ): Promise<RadarWhatsappPreview> {
-  const { overview, radar } = await loadRadarWhatsappData(user, period);
+  const { overview, radar } = await loadRadarWhatsappData(user, period, options.alertLimit);
   return {
     destinationPhone: RADAR_WHATSAPP_PHONE,
     destinationLabel: "Lili",
     instanceLabel: RADAR_WHATSAPP_INSTANCE_LABEL,
     period: overview.period,
     radarCount: overview.stats.openRadar,
-    message: buildRadarWhatsappMessage(overview, radar),
+    includedAlertCount: radar.length,
+    detailLevel: options.detailLevel,
+    alertLimit: options.alertLimit,
+    message: buildRadarWhatsappMessage(overview, radar, options),
   };
 }
 
@@ -160,9 +202,10 @@ async function resolveLiliAssistantInstance(): Promise<RadarWhatsappInstanceRow>
 export async function sendRadarWhatsapp(
   user: JwtUser,
   period: { dateFrom?: string; dateTo?: string },
+  options: RadarWhatsappOptions = DEFAULT_RADAR_OPTIONS,
 ) {
   const [preview, instance] = await Promise.all([
-    previewRadarWhatsapp(user, period),
+    previewRadarWhatsapp(user, period, options),
     resolveLiliAssistantInstance(),
   ]);
 
@@ -195,6 +238,8 @@ export async function sendRadarWhatsapp(
     destinationPhone: RADAR_WHATSAPP_PHONE,
     period: preview.period,
     radarCount: preview.radarCount,
+    includedAlertCount: preview.includedAlertCount,
+    detailLevel: preview.detailLevel,
   });
 
   return {
