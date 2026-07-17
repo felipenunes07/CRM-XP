@@ -23578,3 +23578,13 @@ body:has(.whatsapp-monitor-page) .main-content {
   .wtl-radar-modal-actions { flex-direction: column-reverse; }
   .wtl-radar-cancel, .wtl-radar-confirm { width: 100%; justify-content: center; }
 }
+
+/* Hide number input spinners for page jump inputs */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}

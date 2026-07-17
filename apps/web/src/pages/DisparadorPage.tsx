@@ -2399,6 +2399,74 @@ export function DisparadorPage() {
 
                   {groupsQuery.data?.items.length ? (
                     <>
+                      {/* Top Pagination Control Bar */}
+                      {totalPages > 1 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem", background: "#f8fafc", padding: "0.75rem 1.25rem", borderRadius: "12px", border: "1px solid #e4e4e7" }}>
+                          <span style={{ fontSize: "0.82rem", color: "#64748b", fontWeight: 500 }}>
+                            Mostrando <strong>{filteredGroups.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}-{Math.min(filteredGroups.length, currentPage * itemsPerPage)}</strong> de <strong>{formatNumber(filteredGroups.length)}</strong> destinatários
+                          </span>
+                          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={currentPage === 1}
+                              style={{
+                                display: "flex", alignItems: "center", gap: "4px",
+                                padding: "0.4rem 0.8rem", fontSize: "0.82rem", fontWeight: 600,
+                                borderRadius: "6px", border: "1px solid #e4e4e7", backgroundColor: "#ffffff",
+                                color: currentPage === 1 ? "#a1a1aa" : "#3f3f46",
+                                cursor: currentPage === 1 ? "not-allowed" : "pointer", transition: "all 0.2s"
+                              }}
+                            >
+                              <ChevronLeft size={16} />
+                              Anterior
+                            </button>
+                            <span style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 600, padding: "0 0.25rem", display: "flex", alignItems: "center", gap: "4px" }}>
+                              Página
+                              <input
+                                type="number"
+                                min={1}
+                                max={totalPages}
+                                value={currentPage}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  if (!isNaN(val) && val >= 1 && val <= totalPages) {
+                                    setCurrentPage(val);
+                                  }
+                                }}
+                                onBlur={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  if (isNaN(val) || val < 1) setCurrentPage(1);
+                                  else if (val > totalPages) setCurrentPage(totalPages);
+                                }}
+                                style={{
+                                  width: "52px", textAlign: "center", padding: "0.3rem 0.25rem",
+                                  fontSize: "0.82rem", fontWeight: 700, borderRadius: "6px",
+                                  border: "1px solid #cbd5e1", backgroundColor: "#fff", color: "#18181b",
+                                  outline: "none", MozAppearance: "textfield"
+                                }}
+                              />
+                              de {totalPages}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                              disabled={currentPage === totalPages}
+                              style={{
+                                display: "flex", alignItems: "center", gap: "4px",
+                                padding: "0.4rem 0.8rem", fontSize: "0.82rem", fontWeight: 600,
+                                borderRadius: "6px", border: "1px solid #e4e4e7", backgroundColor: "#ffffff",
+                                color: currentPage === totalPages ? "#a1a1aa" : "#3f3f46",
+                                cursor: currentPage === totalPages ? "not-allowed" : "pointer", transition: "all 0.2s"
+                              }}
+                            >
+                              Próximo
+                              <ChevronRight size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="table-scroll" style={{ overflowX: "auto", border: "1px solid #e4e4e7", borderRadius: "12px", background: "#fff", marginTop: "1rem" }}>
                       <table className="z-table">
                         <thead>
@@ -2584,7 +2652,7 @@ export function DisparadorPage() {
                       </table>
                     </div>
 
-                    {/* Premium Client-Side Pagination Control Bar */}
+                    {/* Bottom Pagination Control Bar */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem", background: "#f8fafc", padding: "0.75rem 1.25rem", borderRadius: "12px", border: "1px solid #e4e4e7" }}>
                       <span style={{ fontSize: "0.82rem", color: "#64748b", fontWeight: 500 }}>
                         Mostrando <strong>{filteredGroups.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1}-{Math.min(filteredGroups.length, currentPage * itemsPerPage)}</strong> de <strong>{formatNumber(filteredGroups.length)}</strong> destinatários
@@ -2597,45 +2665,53 @@ export function DisparadorPage() {
                             onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                             disabled={currentPage === 1}
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "4px",
-                              padding: "0.4rem 0.8rem",
-                              fontSize: "0.82rem",
-                              fontWeight: 600,
-                              borderRadius: "6px",
-                              border: "1px solid #e4e4e7",
-                              backgroundColor: "#ffffff",
+                              display: "flex", alignItems: "center", gap: "4px",
+                              padding: "0.4rem 0.8rem", fontSize: "0.82rem", fontWeight: 600,
+                              borderRadius: "6px", border: "1px solid #e4e4e7", backgroundColor: "#ffffff",
                               color: currentPage === 1 ? "#a1a1aa" : "#3f3f46",
-                              cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                              transition: "all 0.2s"
+                              cursor: currentPage === 1 ? "not-allowed" : "pointer", transition: "all 0.2s"
                             }}
                           >
                             <ChevronLeft size={16} />
                             Anterior
                           </button>
-                          
-                          <span style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 600, padding: "0 0.5rem" }}>
-                            Página {currentPage} de {totalPages}
+                          <span style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 600, padding: "0 0.25rem", display: "flex", alignItems: "center", gap: "4px" }}>
+                            Página
+                            <input
+                              type="number"
+                              min={1}
+                              max={totalPages}
+                              value={currentPage}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (!isNaN(val) && val >= 1 && val <= totalPages) {
+                                  setCurrentPage(val);
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (isNaN(val) || val < 1) setCurrentPage(1);
+                                else if (val > totalPages) setCurrentPage(totalPages);
+                              }}
+                              style={{
+                                width: "52px", textAlign: "center", padding: "0.3rem 0.25rem",
+                                fontSize: "0.82rem", fontWeight: 700, borderRadius: "6px",
+                                border: "1px solid #cbd5e1", backgroundColor: "#fff", color: "#18181b",
+                                outline: "none", MozAppearance: "textfield"
+                              }}
+                            />
+                            de {totalPages}
                           </span>
-                          
                           <button
                             type="button"
                             onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                             disabled={currentPage === totalPages}
                             style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "4px",
-                              padding: "0.4rem 0.8rem",
-                              fontSize: "0.82rem",
-                              fontWeight: 600,
-                              borderRadius: "6px",
-                              border: "1px solid #e4e4e7",
-                              backgroundColor: "#ffffff",
+                              display: "flex", alignItems: "center", gap: "4px",
+                              padding: "0.4rem 0.8rem", fontSize: "0.82rem", fontWeight: 600,
+                              borderRadius: "6px", border: "1px solid #e4e4e7", backgroundColor: "#ffffff",
                               color: currentPage === totalPages ? "#a1a1aa" : "#3f3f46",
-                              cursor: currentPage === totalPages ? "not-allowed" : "pointer",
-                              transition: "all 0.2s"
+                              cursor: currentPage === totalPages ? "not-allowed" : "pointer", transition: "all 0.2s"
                             }}
                           >
                             Próximo
