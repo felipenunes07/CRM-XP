@@ -245,6 +245,54 @@ export interface AdminUserInput {
   password?: string;
 }
 
+export interface ProductComplaintsFilters {
+  model?: string;
+  category?: "reclamacao" | "defeito" | "troca" | "duvida" | "outro";
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface ProductComplaintItem {
+  id: string;
+  windowDate: string;
+  dealId: string | null;
+  isGroup: boolean;
+  chatName: string | null;
+  agentName: string | null;
+  customerName: string | null;
+  modelRaw: string;
+  modelNormalized: string;
+  category: string;
+  severity: string;
+  detail: string;
+  quote: string | null;
+  source: string;
+  occurredAt: string | null;
+}
+
+export interface ProductComplaintsListResponse {
+  items: ProductComplaintItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface ProductComplaintsOverview {
+  summary: {
+    total: number;
+    distinctClients: number;
+    distinctModels: number;
+    complaints: number;
+    defects: number;
+    returns: number;
+    questions: number;
+    lastDate: string | null;
+  };
+  monthly: Array<{ month: string; total: number; distinctClients: number }>;
+  topModels: Array<{ model: string; total: number; distinctClients: number; lastDate: string }>;
+  topClients: Array<{ client: string; total: number; distinctModels: number; lastDate: string }>;
+}
+
 function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: number = API_REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
@@ -1491,6 +1539,29 @@ export const api = {
     search.set("dateFrom", from);
     search.set("dateTo", to);
     return request<DailySentiment[]>(`/api/events/sentiments/daily?${search.toString()}`, {}, token);
+  },
+
+  // ── Reclamacoes por produto ─────────────────────────────────
+
+  getProductComplaintsOverview(token: string, filters: ProductComplaintsFilters = {}) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    return request<ProductComplaintsOverview>(`/api/product-complaints/overview?${search.toString()}`, {}, token);
+  },
+  listProductComplaints(
+    token: string,
+    filters: ProductComplaintsFilters,
+    pagination: { page: number; pageSize: number },
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    search.set("page", String(pagination.page));
+    search.set("pageSize", String(pagination.pageSize));
+    return request<ProductComplaintsListResponse>(`/api/product-complaints?${search.toString()}`, {}, token);
   },
 
   // ── Strategies ──────────────────────────────────────────────

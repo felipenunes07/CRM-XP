@@ -293,13 +293,24 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "- \"tema\": UM UNICO tema principal que resume a conversa, em 1 a 3 palavras minusculas (ex: \"tela quebrada\", \"atraso entrega\", \"orcamento\", \"troca\"). NUNCA mais de um tema por conversa; escolha o assunto dominante. Use sempre o mesmo termo para o mesmo assunto (nao invente sinonimos).",
     "- \"citacoes\": ate 2 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
     "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
+    "- \"produtos\": modelos de produto citados APENAS quando ha problema ligado ao produto: reclamacao, defeito, tela ruim, troca/devolucao ou duvida tecnica sobre qualidade.",
+    "  Use o nome CURTO do modelo em maiusculas, como o cliente fala (ex: \"A15\", \"IPHONE 11\", \"MOTO G54\", \"REDMI NOTE 12\").",
+    "  tipo: reclamacao = cliente insatisfeito com o produto; defeito = produto com falha/nao funciona; troca = devolucao/retorno/garantia; duvida = pergunta tecnica sobre qualidade.",
+    "  NUNCA liste produto de cotacao, orcamento ou pedido normal fluindo bem. Vazio se nenhum produto teve problema.",
     "",
     "Responda APENAS JSON valido neste formato:",
-    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"]}]}",
+    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"],\"produtos\":[{\"modelo\":\"A15\",\"tipo\":\"reclamacao|defeito|troca|duvida\",\"detalhe\":\"1 frase: qual foi o problema e de quem\"}]}]}",
     "",
     "CONVERSAS:",
     JSON.stringify(conversations),
   ].join("\n");
+}
+
+export interface ParsedProductMention {
+  modelo: string;
+  modeloNormalizado: string;
+  tipo: "reclamacao" | "defeito" | "troca" | "duvida" | "outro";
+  detalhe: string;
 }
 
 export interface ParsedConversationAnalysis {
@@ -311,6 +322,48 @@ export interface ParsedConversationAnalysis {
   topicos: string[];
   citacoes: ConversationInsightHighlight[];
   acoes: string[];
+  produtos: ParsedProductMention[];
+}
+
+const PRODUCT_MENTION_TYPES = new Set(["reclamacao", "defeito", "troca", "duvida"]);
+
+/**
+ * Chave de busca do modelo: maiusculas, sem acento, espacos colapsados.
+ * "sm-a15 4g" e "A15" viram tokens comparaveis; a pagina busca por ILIKE
+ * sobre esta coluna, entao a normalizacao so precisa ser estavel.
+ */
+export function normalizeProductModel(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9+/ .-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function parseProductMentions(value: unknown): ParsedProductMention[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const record = entry as Record<string, unknown>;
+      const modelo = readString(record.modelo, 80);
+      if (!modelo) return null;
+      const modeloNormalizado = normalizeProductModel(modelo);
+      if (!modeloNormalizado || modeloNormalizado.length < 2) return null;
+      const rawTipo = readString(record.tipo, 20)
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase();
+      return {
+        modelo,
+        modeloNormalizado,
+        tipo: (PRODUCT_MENTION_TYPES.has(rawTipo) ? rawTipo : "outro") as ParsedProductMention["tipo"],
+        detalhe: readString(record.detalhe, 300),
+      };
+    })
+    .filter((mention): mention is ParsedProductMention => mention !== null)
+    .slice(0, 8);
 }
 
 function readString(value: unknown, maxLength = 800): string {
@@ -398,6 +451,7 @@ export function parseConversationAnalyses(summary: Record<string, unknown>): Map
       topicos,
       citacoes,
       acoes,
+      produtos: parseProductMentions(record.produtos),
     });
   }
 
@@ -627,6 +681,63 @@ async function upsertConversationInsight(
     JSON.stringify(analysis.citacoes),
     JSON.stringify(analysis.acoes),
   ]);
+}
+
+/**
+ * Historico permanente de reclamacoes por produto: cada produto citado com
+ * problema vira 1 linha em product_complaints (tabela FORA da retencao de 30
+ * dias). Nunca pode derrubar a analise — falha aqui so loga.
+ */
+async function persistProductComplaints(
+  candidate: ConversationCandidate,
+  analysis: ParsedConversationAnalysis,
+  windowDate: string,
+) {
+  if (analysis.produtos.length === 0) return;
+  try {
+    for (const mention of analysis.produtos) {
+      await pool.query(`
+        INSERT INTO product_complaints (
+          conversation_key, window_date, deal_id, remote_jid, is_group, chat_name,
+          agent_name, customer_name, model_raw, model_normalized, category, severity,
+          detail, quote, source, occurred_at, updated_at
+        ) VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'ai', $15, NOW())
+        ON CONFLICT (conversation_key, window_date, model_normalized, category) DO UPDATE SET
+          deal_id = EXCLUDED.deal_id,
+          chat_name = EXCLUDED.chat_name,
+          agent_name = EXCLUDED.agent_name,
+          customer_name = EXCLUDED.customer_name,
+          model_raw = EXCLUDED.model_raw,
+          severity = EXCLUDED.severity,
+          detail = EXCLUDED.detail,
+          quote = EXCLUDED.quote,
+          source = EXCLUDED.source,
+          occurred_at = EXCLUDED.occurred_at,
+          updated_at = NOW()
+      `, [
+        candidate.conversationKey,
+        windowDate,
+        candidate.dealId,
+        candidate.remoteJid,
+        candidate.isGroup,
+        candidate.chatName,
+        candidate.agentName,
+        candidate.isGroup ? null : candidate.chatName,
+        mention.modelo,
+        mention.modeloNormalizado,
+        mention.tipo,
+        analysis.atencao,
+        mention.detalhe,
+        analysis.citacoes[0]?.texto ?? null,
+        candidate.lastMessageAt,
+      ]);
+    }
+  } catch (error) {
+    logger.warn("failed to persist product complaints", {
+      conversationKey: candidate.conversationKey,
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error),
+    });
+  }
 }
 
 async function recordIntelligenceRun(input: {
@@ -1050,6 +1161,7 @@ export async function runConversationIntelligence(
           provider: result.provider,
           model: result.model,
         });
+        await persistProductComplaints(item.candidate, analysis, windowDate);
         analyzed += 1;
       }
       onProgress({ analyzedConversations: analyzed });

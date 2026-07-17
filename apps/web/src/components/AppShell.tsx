@@ -85,7 +85,7 @@ function permissionForPath(path: string) {
   if (path === "/config/whatsapp") return "integrations.manage";
   if (path === "/clientes/financeiro") return "finance.view";
   if (path === "/automacoes") return "automations.view";
-  if (path === "/mensagens" || path === "/eventos") return "messages.view";
+  if (path === "/mensagens" || path === "/eventos" || path === "/reclamacoes-produto") return "messages.view";
   if (path === "/disparador" || path === "/templates" || path === "/saida-base" || path === "/automacao-carteira")
     return "messages.manage";
   if (path === "/metas") return "finance.manage";
@@ -126,6 +126,7 @@ const sidebarMenu: SidebarEntry[] = [
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
       { to: "/eventos", labelPt: "Inteligencia / Eventos" },
+      { to: "/reclamacoes-produto", labelPt: "Reclamações de Produto" },
       { to: "/templates", labelPt: "Templates" },
       { to: "/saida-base", labelPt: "Offboarding" },
       { to: "/automacao-carteira", labelPt: "Automação de Carteira" },

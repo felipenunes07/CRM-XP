@@ -4204,5 +4204,91 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_customer_defect_products_snapshot_year
     ON customer_defect_snapshot_product_rows(snapshot_id, defect_year);
+  `,
+  `
+  -- Reclamacoes por produto: historico PERMANENTE (fora da retencao de 30 dias
+  -- da Inteligencia de Mensagens) ligando mencoes de problema no WhatsApp a um
+  -- modelo de produto (ex.: A15). Alimentada pela analise de conversas da IA e
+  -- pelo backfill. Cada linha = 1 produto citado com problema em 1 conversa/dia.
+  CREATE TABLE IF NOT EXISTS product_complaints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_key TEXT NOT NULL,
+    window_date DATE NOT NULL,
+    deal_id UUID,
+    remote_jid TEXT,
+    is_group BOOLEAN NOT NULL DEFAULT FALSE,
+    chat_name TEXT,
+    agent_name TEXT,
+    customer_name TEXT,
+    model_raw TEXT NOT NULL,
+    model_normalized TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'reclamacao'
+      CHECK (category IN ('reclamacao', 'defeito', 'troca', 'duvida', 'outro')),
+    severity TEXT NOT NULL DEFAULT 'none'
+      CHECK (severity IN ('none', 'low', 'medium', 'high', 'critical')),
+    detail TEXT NOT NULL DEFAULT '',
+    quote TEXT,
+    source TEXT NOT NULL DEFAULT 'ai'
+      CHECK (source IN ('ai', 'backfill')),
+    occurred_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (conversation_key, window_date, model_normalized, category)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_product_complaints_model
+    ON product_complaints(model_normalized, window_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_product_complaints_window_date
+    ON product_complaints(window_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_product_complaints_deal
+    ON product_complaints(deal_id);
+  `,
+  `
+  -- Backfill de reclamacoes por produto a partir das analises de conversa que
+  -- ainda estao na retencao de 30 dias: extrai modelos citados (A15, IPHONE 11,
+  -- MOTO G54, REDMI NOTE 12...) do resumo das conversas com flag de reclamacao
+  -- ou problema de produto. Dali pra frente quem alimenta e a propria IA.
+  INSERT INTO product_complaints (
+    conversation_key, window_date, deal_id, remote_jid, is_group, chat_name,
+    agent_name, customer_name, model_raw, model_normalized, category, severity,
+    detail, quote, source, occurred_at
+  )
+  SELECT DISTINCT ON (ci.conversation_key, ci.window_date, m.model, cat.category)
+    ci.conversation_key,
+    ci.window_date,
+    ci.deal_id,
+    ci.remote_jid,
+    ci.is_group,
+    ci.chat_name,
+    ci.agent_name,
+    CASE WHEN ci.is_group THEN NULL ELSE ci.chat_name END,
+    m.model,
+    m.model,
+    cat.category,
+    ci.attention_level,
+    LEFT(ci.summary, 300),
+    ci.highlights -> 0 ->> 'texto',
+    'backfill',
+    ci.last_message_at
+  FROM conversation_insights ci
+  CROSS JOIN LATERAL (
+    SELECT DISTINCT BTRIM(REGEXP_REPLACE((REGEXP_MATCHES(
+      UPPER(ci.summary || ' ' || COALESCE(ci.attention_reason, '')),
+      '\\m(IPHONE ?[0-9]{1,2}(?: ?PRO(?: ?MAX)?| ?PLUS| ?MINI)?|A[0-9]{2,3}S?|M[0-9]{2}|MOTO ?[GE][0-9]{1,3}|REDMI(?: ?NOTE)? ?[0-9]{1,2}|NOTE ?[0-9]{1,2}|POCO ?[A-Z][0-9]{1,2})\\M',
+      'g'
+    ))[1], ' +', ' ', 'g')) AS model
+  ) m
+  CROSS JOIN LATERAL (
+    SELECT CASE
+      WHEN COALESCE((ci.flags ->> 'problema_produto')::boolean, false) THEN 'defeito'
+      WHEN 'troca' = ANY(ci.topics) THEN 'troca'
+      ELSE 'reclamacao'
+    END AS category
+  ) cat
+  WHERE (
+    COALESCE((ci.flags ->> 'reclamacao')::boolean, false)
+    OR COALESCE((ci.flags ->> 'problema_produto')::boolean, false)
+  )
+  ON CONFLICT (conversation_key, window_date, model_normalized, category) DO NOTHING;
   `
 ];

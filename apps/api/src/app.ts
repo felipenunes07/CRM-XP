@@ -153,6 +153,10 @@ import {
   startManualIntelligenceRun,
 } from "./modules/events/conversationAi.js";
 import {
+  getProductComplaintsOverview,
+  listProductComplaints,
+} from "./modules/events/productComplaintsService.js";
+import {
   cancelWhatsappCampaign,
   createWhatsappCampaign,
   getWhatsappCampaignAccess,
@@ -3038,6 +3042,38 @@ export function createApp() {
       const payload = eventResolutionSchema.parse(request.body);
       const event = await resolveEvent(request.params.id, request.user!, payload);
       response.json(event);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Reclamacoes por produto (historico permanente) ──
+
+  const productComplaintsQuerySchema = z.object({
+    model: z.string().trim().max(80).optional(),
+    category: z.enum(["reclamacao", "defeito", "troca", "duvida", "outro"]).optional(),
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/product-complaints", async (request, response, next) => {
+    try {
+      const query = productComplaintsQuerySchema.parse(request.query);
+      response.json(await listProductComplaints(query, {
+        page: query.page || 1,
+        pageSize: query.pageSize || 25,
+      }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/product-complaints/overview", async (request, response, next) => {
+    try {
+      const query = productComplaintsQuerySchema.parse(request.query);
+      response.json(await getProductComplaintsOverview(query));
     } catch (error) {
       next(error);
     }

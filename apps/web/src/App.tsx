@@ -35,6 +35,7 @@ const MetasPage = lazy(async () => ({ default: (await import("./pages/MetasPage"
 const PipelinePage = lazy(async () => ({ default: (await import("./pages/PipelinePage")).PipelinePage }));
 const WhatsappConfigPage = lazy(async () => ({ default: (await import("./pages/WhatsappConfigPage")).WhatsappConfigPage }));
 const EventsPage = lazy(async () => ({ default: (await import("./pages/EventsPage")).EventsPage }));
+const ProductComplaintsPage = lazy(async () => ({ default: (await import("./pages/ProductComplaintsPage")).ProductComplaintsPage }));
 const LoginPage = lazy(async () => ({ default: (await import("./pages/LoginPage")).LoginPage }));
 const AccessDeniedPage = lazy(async () => ({ default: (await import("./pages/AccessDeniedPage")).AccessDeniedPage }));
 const AdminUsersPage = lazy(async () => ({ default: (await import("./pages/AdminUsersPage")).AdminUsersPage }));
@@ -90,6 +91,7 @@ export default function App() {
             <Route path="/prospeccao" element={<PermissionElement permission="commercial.view"><ProspectingPage /></PermissionElement>} />
             <Route path="/metas" element={<PermissionElement permission="finance.manage"><MetasPage /></PermissionElement>} />
             <Route path="/eventos" element={<PermissionElement permission="messages.view"><EventsPage /></PermissionElement>} />
+            <Route path="/reclamacoes-produto" element={<PermissionElement permission="messages.view"><ProductComplaintsPage /></PermissionElement>} />
             <Route path="/usuarios" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
             <Route path="/admin/usuarios" element={<PermissionElement permission="admin.users.manage"><AdminUsersPage /></PermissionElement>} />
             <Route path="/config/whatsapp" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />

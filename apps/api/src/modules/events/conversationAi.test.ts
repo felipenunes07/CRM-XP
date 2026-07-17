@@ -6,7 +6,9 @@ import {
   getDayWindow,
   getWindowForDate,
   maskSensitiveText,
+  normalizeProductModel,
   parseConversationAnalyses,
+  parseProductMentions,
   sentimentLabelFromScore,
   type TranscriptMessage,
 } from "./conversationAi.js";
@@ -187,6 +189,68 @@ describe("parseConversationAnalyses", () => {
   it("returns empty map when conversas is missing", () => {
     expect(parseConversationAnalyses({}).size).toBe(0);
     expect(parseConversationAnalyses({ conversas: "nada" }).size).toBe(0);
+  });
+});
+
+describe("normalizeProductModel", () => {
+  it("uppercases, strips accents and collapses whitespace", () => {
+    expect(normalizeProductModel("  a15  ")).toBe("A15");
+    expect(normalizeProductModel("sm-a15 4g/a15 5g")).toBe("SM-A15 4G/A15 5G");
+    expect(normalizeProductModel("Redmi Nôte 12")).toBe("REDMI NOTE 12");
+    expect(normalizeProductModel("iphone   11 * com aro *")).toBe("IPHONE 11 COM ARO");
+  });
+});
+
+describe("parseProductMentions", () => {
+  it("parses valid mentions and normalizes the model", () => {
+    const mentions = parseProductMentions([
+      { modelo: "a15", tipo: "defeito", detalhe: "Tela veio trincada segundo o cliente Ze" },
+      { modelo: "IPHONE 11", tipo: "troca", detalhe: "Devolucao de 3 pecas" },
+    ]);
+
+    expect(mentions).toHaveLength(2);
+    expect(mentions[0]!.modeloNormalizado).toBe("A15");
+    expect(mentions[0]!.tipo).toBe("defeito");
+    expect(mentions[1]!.modeloNormalizado).toBe("IPHONE 11");
+  });
+
+  it("falls back to 'outro' for unknown tipo and drops garbage entries", () => {
+    const mentions = parseProductMentions([
+      { modelo: "A32", tipo: "explodiu" },
+      { modelo: "", tipo: "defeito" },
+      "texto solto",
+      null,
+      { tipo: "defeito" },
+    ]);
+
+    expect(mentions).toHaveLength(1);
+    expect(mentions[0]!.tipo).toBe("outro");
+  });
+
+  it("returns empty list for missing or non-array input", () => {
+    expect(parseProductMentions(undefined)).toEqual([]);
+    expect(parseProductMentions("nada")).toEqual([]);
+  });
+});
+
+describe("parseConversationAnalyses produtos", () => {
+  it("exposes produtos from the AI response and defaults to empty", () => {
+    const parsed = parseConversationAnalyses({
+      conversas: [
+        {
+          chave: "com-produto",
+          resumo: "Cliente reclamou do A15.",
+          sentimento: -0.5,
+          atencao: "alto",
+          produtos: [{ modelo: "A15", tipo: "reclamacao", detalhe: "Cliente Josias reclamou do retorno de telas" }],
+        },
+        { chave: "sem-produto", resumo: "ok", sentimento: 0, atencao: "nenhum" },
+      ],
+    });
+
+    expect(parsed.get("com-produto")!.produtos).toHaveLength(1);
+    expect(parsed.get("com-produto")!.produtos[0]!.modeloNormalizado).toBe("A15");
+    expect(parsed.get("sem-produto")!.produtos).toEqual([]);
   });
 });
 
