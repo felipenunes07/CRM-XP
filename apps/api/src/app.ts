@@ -158,6 +158,10 @@ import {
   listProductComplaints,
 } from "./modules/events/productComplaintsService.js";
 import {
+  getGeneralComplaintsOverview,
+  listGeneralComplaints,
+} from "./modules/events/generalComplaintsService.js";
+import {
   previewRadarWhatsapp,
   sendRadarWhatsapp,
 } from "./modules/events/radarWhatsappService.js";
@@ -3099,7 +3103,7 @@ export function createApp() {
   const productComplaintsQuerySchema = z.object({
     model: z.string().trim().max(80).optional(),
     exact: z.enum(["true", "false"]).optional().transform((value) => value === "true"),
-    category: z.enum(["reclamacao", "defeito", "troca", "duvida", "outro"]).optional(),
+    category: z.enum(["reclamacao", "defeito"]).optional(),
     dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     page: z.coerce.number().int().min(1).optional(),
@@ -3131,6 +3135,38 @@ export function createApp() {
     try {
       const query = productComplaintsQuerySchema.parse(request.query);
       response.json(await getProductComplaintsOverview(query));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ── Reclamacoes gerais (nao ligadas a produto: atendimento/vendedora) ──
+
+  const generalComplaintsQuerySchema = z.object({
+    category: z.enum(["atendimento", "vendedora", "entrega", "cobranca", "outro"]).optional(),
+    agentName: z.string().trim().max(80).optional(),
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  });
+
+  app.get("/api/general-complaints", async (request, response, next) => {
+    try {
+      const query = generalComplaintsQuerySchema.parse(request.query);
+      response.json(await listGeneralComplaints(query, {
+        page: query.page || 1,
+        pageSize: query.pageSize || 25,
+      }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/general-complaints/overview", async (request, response, next) => {
+    try {
+      const query = generalComplaintsQuerySchema.parse(request.query);
+      response.json(await getGeneralComplaintsOverview(query));
     } catch (error) {
       next(error);
     }

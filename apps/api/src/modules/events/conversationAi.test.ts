@@ -5,9 +5,11 @@ import {
   chunkArray,
   getDayWindow,
   getWindowForDate,
+  dedupeDuplicateInstanceMessages,
   maskSensitiveText,
   normalizeProductModel,
   parseConversationAnalyses,
+  parseGeneralComplaints,
   parseProductMentions,
   sentimentLabelFromScore,
   type TranscriptMessage,
@@ -192,6 +194,39 @@ describe("parseConversationAnalyses", () => {
   });
 });
 
+describe("dedupeDuplicateInstanceMessages", () => {
+  it("collapses the same text from the same side arriving via multiple instances within the window", () => {
+    const messages = dedupeDuplicateInstanceMessages([
+      message({ content: "Bom dia", createdAt: "2026-07-17T12:00:00.000Z" }),
+      message({ content: "Bom dia", createdAt: "2026-07-17T12:00:01.000Z" }),
+      message({ content: "Bom dia", createdAt: "2026-07-17T12:00:02.000Z" }),
+      message({ content: "Tudo bem?", createdAt: "2026-07-17T12:00:05.000Z" }),
+    ]);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.content).toBe("Bom dia");
+    expect(messages[1]!.content).toBe("Tudo bem?");
+  });
+
+  it("keeps repeats of the same text if they are far apart in time (real repetition, not instance echo)", () => {
+    const messages = dedupeDuplicateInstanceMessages([
+      message({ content: "Ok", createdAt: "2026-07-17T12:00:00.000Z" }),
+      message({ content: "Ok", createdAt: "2026-07-17T12:10:00.000Z" }),
+    ]);
+
+    expect(messages).toHaveLength(2);
+  });
+
+  it("does not collapse the same text from different sides (customer vs team)", () => {
+    const messages = dedupeDuplicateInstanceMessages([
+      message({ content: "Obrigado", fromMe: false, createdAt: "2026-07-17T12:00:00.000Z" }),
+      message({ content: "Obrigado", fromMe: true, createdAt: "2026-07-17T12:00:01.000Z" }),
+    ]);
+
+    expect(messages).toHaveLength(2);
+  });
+});
+
 describe("normalizeProductModel", () => {
   it("uppercases, strips accents and collapses whitespace", () => {
     expect(normalizeProductModel("  a15  ")).toBe("A15");
@@ -205,7 +240,7 @@ describe("parseProductMentions", () => {
   it("parses valid mentions and normalizes the model", () => {
     const mentions = parseProductMentions([
       { modelo: "a15", tipo: "defeito", detalhe: "Tela veio trincada segundo o cliente Ze" },
-      { modelo: "IPHONE 11", tipo: "troca", detalhe: "Devolucao de 3 pecas" },
+      { modelo: "IPHONE 11", tipo: "reclamacao", detalhe: "Cliente insatisfeito com a qualidade" },
     ]);
 
     expect(mentions).toHaveLength(2);
@@ -214,10 +249,11 @@ describe("parseProductMentions", () => {
     expect(mentions[1]!.modeloNormalizado).toBe("IPHONE 11");
   });
 
-  it("drops mentions whose tipo is not a real problem (duvida/unknown) and garbage entries", () => {
+  it("drops mentions whose tipo is not reclamacao/defeito (troca/duvida/unknown) and garbage entries", () => {
     const mentions = parseProductMentions([
       { modelo: "A32", tipo: "explodiu" },
       { modelo: "A50", tipo: "duvida", detalhe: "pergunta de disponibilidade" },
+      { modelo: "IPHONE 11", tipo: "troca", detalhe: "Devolucao de rotina sem reclamar de qualidade" },
       { modelo: "", tipo: "defeito" },
       "texto solto",
       null,
@@ -253,6 +289,59 @@ describe("parseConversationAnalyses produtos", () => {
     expect(parsed.get("com-produto")!.produtos).toHaveLength(1);
     expect(parsed.get("com-produto")!.produtos[0]!.modeloNormalizado).toBe("A15");
     expect(parsed.get("sem-produto")!.produtos).toEqual([]);
+  });
+});
+
+describe("parseGeneralComplaints", () => {
+  it("parses valid complaints and defaults unknown categoria to outro", () => {
+    const complaints = parseGeneralComplaints([
+      { categoria: "vendedora", vendedora: "Thais", detalhe: "Cliente reclamou de grosseria no atendimento" },
+      { categoria: "cobranca_estranha", detalhe: "Cliente reclamou de cobranca duplicada" },
+    ]);
+
+    expect(complaints).toHaveLength(2);
+    expect(complaints[0]!.categoria).toBe("vendedora");
+    expect(complaints[0]!.vendedora).toBe("Thais");
+    expect(complaints[1]!.categoria).toBe("outro");
+    expect(complaints[1]!.vendedora).toBeNull();
+  });
+
+  it("drops entries without detalhe and garbage entries", () => {
+    const complaints = parseGeneralComplaints([
+      { categoria: "atendimento" },
+      "texto solto",
+      null,
+      { categoria: "entrega", detalhe: "Atraso de 5 dias sem aviso" },
+    ]);
+
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]!.categoria).toBe("entrega");
+  });
+
+  it("returns empty list for missing or non-array input", () => {
+    expect(parseGeneralComplaints(undefined)).toEqual([]);
+    expect(parseGeneralComplaints("nada")).toEqual([]);
+  });
+});
+
+describe("parseConversationAnalyses reclamacoesGerais", () => {
+  it("exposes reclamacoesGerais from the AI response and defaults to empty", () => {
+    const parsed = parseConversationAnalyses({
+      conversas: [
+        {
+          chave: "com-reclamacao",
+          resumo: "Cliente reclamou do atendimento.",
+          sentimento: -0.4,
+          atencao: "medio",
+          reclamacoes_gerais: [{ categoria: "atendimento", vendedora: "Amanda", detalhe: "Demorou 3 dias para responder" }],
+        },
+        { chave: "sem-reclamacao", resumo: "ok", sentimento: 0, atencao: "nenhum" },
+      ],
+    });
+
+    expect(parsed.get("com-reclamacao")!.reclamacoesGerais).toHaveLength(1);
+    expect(parsed.get("com-reclamacao")!.reclamacoesGerais[0]!.vendedora).toBe("Amanda");
+    expect(parsed.get("sem-reclamacao")!.reclamacoesGerais).toEqual([]);
   });
 });
 

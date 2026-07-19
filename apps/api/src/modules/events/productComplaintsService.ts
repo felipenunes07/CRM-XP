@@ -141,8 +141,6 @@ export async function getProductComplaintsModelReport(
         COUNT(DISTINCT ${CLIENT_KEY_SQL})::int AS distinct_clients,
         COUNT(*) FILTER (WHERE pc.category = 'reclamacao')::int AS complaints,
         COUNT(*) FILTER (WHERE pc.category = 'defeito')::int AS defects,
-        COUNT(*) FILTER (WHERE pc.category = 'troca')::int AS returns,
-        COUNT(*) FILTER (WHERE pc.category = 'duvida')::int AS questions,
         MIN(pc.window_date)::text AS first_date,
         MAX(pc.window_date)::text AS last_date,
         (ARRAY['none','low','medium','high','critical'])[
@@ -184,8 +182,6 @@ export async function getProductComplaintsModelReport(
       distinctClients: Number(row.distinct_clients ?? 0),
       complaints: Number(row.complaints ?? 0),
       defects: Number(row.defects ?? 0),
-      returns: Number(row.returns ?? 0),
-      questions: Number(row.questions ?? 0),
       firstDate: String(row.first_date),
       lastDate: String(row.last_date),
       worstSeverity: String(row.worst_severity ?? "none"),
@@ -205,8 +201,6 @@ export async function getProductComplaintsOverview(filters: ProductComplaintsFil
         COUNT(DISTINCT pc.model_normalized)::int AS distinct_models,
         COUNT(*) FILTER (WHERE pc.category = 'reclamacao')::int AS complaints,
         COUNT(*) FILTER (WHERE pc.category = 'defeito')::int AS defects,
-        COUNT(*) FILTER (WHERE pc.category = 'troca')::int AS returns,
-        COUNT(*) FILTER (WHERE pc.category = 'duvida')::int AS questions,
         MAX(pc.window_date)::text AS last_date
       FROM product_complaints pc
       ${where}
@@ -257,8 +251,6 @@ export async function getProductComplaintsOverview(filters: ProductComplaintsFil
       distinctModels: Number(summaryRow.distinct_models ?? 0),
       complaints: Number(summaryRow.complaints ?? 0),
       defects: Number(summaryRow.defects ?? 0),
-      returns: Number(summaryRow.returns ?? 0),
-      questions: Number(summaryRow.questions ?? 0),
       lastDate: summaryRow.last_date ? String(summaryRow.last_date) : null,
     },
     monthly: monthlyResult.rows

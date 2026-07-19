@@ -126,7 +126,7 @@ const sidebarMenu: SidebarEntry[] = [
     children: [
       { to: "/mensagens", labelPt: "Mensagens" },
       { to: "/eventos", labelPt: "Inteligencia / Eventos" },
-      { to: "/reclamacoes-produto", labelPt: "Reclamações de Produto" },
+      { to: "/reclamacoes-produto", labelPt: "Reclamações" },
       { to: "/templates", labelPt: "Templates" },
       { to: "/saida-base", labelPt: "Offboarding" },
       { to: "/automacao-carteira", labelPt: "Automação de Carteira" },

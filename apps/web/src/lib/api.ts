@@ -251,7 +251,7 @@ export interface AdminUserInput {
 export interface ProductComplaintsFilters {
   model?: string;
   exact?: boolean;
-  category?: "reclamacao" | "defeito" | "troca" | "duvida" | "outro";
+  category?: "reclamacao" | "defeito";
   dateFrom?: string;
   dateTo?: string;
 }
@@ -262,8 +262,6 @@ export interface ProductComplaintModelRow {
   distinctClients: number;
   complaints: number;
   defects: number;
-  returns: number;
-  questions: number;
   firstDate: string;
   lastDate: string;
   worstSeverity: string;
@@ -307,13 +305,53 @@ export interface ProductComplaintsOverview {
     distinctModels: number;
     complaints: number;
     defects: number;
-    returns: number;
-    questions: number;
     lastDate: string | null;
   };
   monthly: Array<{ month: string; total: number; distinctClients: number }>;
   topModels: Array<{ model: string; total: number; distinctClients: number; lastDate: string }>;
   topClients: Array<{ client: string; total: number; distinctModels: number; lastDate: string }>;
+}
+
+export interface GeneralComplaintsFilters {
+  category?: "atendimento" | "vendedora" | "entrega" | "cobranca" | "outro";
+  agentName?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface GeneralComplaintItem {
+  id: string;
+  windowDate: string;
+  dealId: string | null;
+  isGroup: boolean;
+  chatName: string | null;
+  customerName: string | null;
+  agentName: string | null;
+  category: string;
+  severity: string;
+  detail: string;
+  quote: string | null;
+  source: string;
+  occurredAt: string | null;
+}
+
+export interface GeneralComplaintsListResponse {
+  items: GeneralComplaintItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface GeneralComplaintsOverview {
+  summary: {
+    total: number;
+    distinctClients: number;
+    distinctAgents: number;
+    lastDate: string | null;
+  };
+  agentRanking: Array<{ agent: string; total: number; distinctClients: number; lastDate: string }>;
+  byCategory: Array<{ category: string; total: number }>;
+  monthly: Array<{ month: string; total: number }>;
 }
 
 function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: number = API_REQUEST_TIMEOUT_MS) {
@@ -1623,6 +1661,29 @@ export const api = {
     search.set("page", String(pagination.page));
     search.set("pageSize", String(pagination.pageSize));
     return request<ProductComplaintsListResponse>(`/api/product-complaints?${search.toString()}`, {}, token);
+  },
+
+  // ── Reclamacoes gerais (nao ligadas a produto) ──────────────
+
+  getGeneralComplaintsOverview(token: string, filters: GeneralComplaintsFilters = {}) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    return request<GeneralComplaintsOverview>(`/api/general-complaints/overview?${search.toString()}`, {}, token);
+  },
+  listGeneralComplaints(
+    token: string,
+    filters: GeneralComplaintsFilters,
+    pagination: { page: number; pageSize: number },
+  ) {
+    const search = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") search.set(key, String(value));
+    });
+    search.set("page", String(pagination.page));
+    search.set("pageSize", String(pagination.pageSize));
+    return request<GeneralComplaintsListResponse>(`/api/general-complaints?${search.toString()}`, {}, token);
   },
 
   // ── Strategies ──────────────────────────────────────────────

@@ -4290,5 +4290,46 @@ export const migrations = [
     OR COALESCE((ci.flags ->> 'problema_produto')::boolean, false)
   )
   ON CONFLICT (conversation_key, window_date, model_normalized, category) DO NOTHING;
+  `,
+  `
+  -- A pedido do gestor: reclamacao de produto fica so em reclamacao/defeito.
+  -- "troca" e "duvida" nao sao reclamacao (o cliente pode estar so pedindo uma
+  -- devolucao de rotina ou tirando duvida, sem reclamar da qualidade).
+  DELETE FROM product_complaints WHERE category IN ('troca', 'duvida');
+  `,
+  `
+  -- Reclamacoes GERAIS: insatisfacao do cliente que NAO e sobre o produto em
+  -- si (atendimento, vendedora, prazo, cobranca). Separada de product_complaints
+  -- para poder rankear atendimento por vendedora sem misturar com defeito de peca.
+  CREATE TABLE IF NOT EXISTS general_complaints (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_key TEXT NOT NULL,
+    window_date DATE NOT NULL,
+    deal_id UUID,
+    remote_jid TEXT,
+    is_group BOOLEAN NOT NULL DEFAULT FALSE,
+    chat_name TEXT,
+    customer_name TEXT,
+    agent_name TEXT,
+    category TEXT NOT NULL DEFAULT 'outro'
+      CHECK (category IN ('atendimento', 'vendedora', 'entrega', 'cobranca', 'outro')),
+    severity TEXT NOT NULL DEFAULT 'none'
+      CHECK (severity IN ('none', 'low', 'medium', 'high', 'critical')),
+    detail TEXT NOT NULL DEFAULT '',
+    quote TEXT,
+    source TEXT NOT NULL DEFAULT 'ai'
+      CHECK (source IN ('ai', 'backfill')),
+    occurred_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (conversation_key, window_date, category)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_general_complaints_window_date
+    ON general_complaints(window_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_general_complaints_agent
+    ON general_complaints(agent_name, window_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_general_complaints_category
+    ON general_complaints(category, window_date DESC);
   `
 ];

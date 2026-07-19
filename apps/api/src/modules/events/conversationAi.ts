@@ -293,13 +293,17 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "- \"tema\": UM UNICO tema principal que resume a conversa, em 1 a 3 palavras minusculas (ex: \"tela quebrada\", \"atraso entrega\", \"orcamento\", \"troca\"). NUNCA mais de um tema por conversa; escolha o assunto dominante. Use sempre o mesmo termo para o mesmo assunto (nao invente sinonimos).",
     "- \"citacoes\": ate 2 falas curtas e marcantes do transcript (copiadas literalmente), com autor.",
     "- \"acoes\": o que a equipe deveria fazer em seguida (ate 3 itens curtos); vazio se nada pendente.",
-    "- \"produtos\": modelos de produto citados APENAS quando ha PROBLEMA REAL de qualidade ligado ao produto: reclamacao, defeito ou troca/devolucao por defeito.",
+    "- \"produtos\": modelos de produto citados APENAS quando ha PROBLEMA REAL de qualidade ligado ao produto: reclamacao ou defeito.",
     "  Use o nome CURTO do modelo em maiusculas, como o cliente fala (ex: \"A15\", \"IPHONE 11\", \"MOTO G54\", \"REDMI NOTE 12\").",
-    "  tipo: reclamacao = cliente insatisfeito com a qualidade do produto; defeito = produto com falha/nao funciona/tela ruim; troca = devolucao/retorno por defeito.",
-    "  NUNCA liste: cotacao, orcamento, lista de preco, pedido normal, pergunta de disponibilidade, duvida simples, envio errado/logistica, ou dano fisico causado pelo cliente (queda). Vazio se nenhum produto teve problema real.",
+    "  tipo: reclamacao = cliente insatisfeito com a qualidade do produto; defeito = produto com falha/nao funciona/tela ruim.",
+    "  NUNCA liste: cotacao, orcamento, lista de preco, pedido normal, pergunta de disponibilidade, duvida simples, troca/devolucao sem reclamar de qualidade, envio errado/logistica, ou dano fisico causado pelo cliente (queda). Vazio se nenhum produto teve problema real.",
+    "- \"reclamacoes_gerais\": reclamacoes do cliente que NAO sao sobre o produto em si: atendimento lento/ruim, vendedora rude ou mal educada, cobranca/preco errado, prazo de entrega, promessa nao cumprida, falta de resposta, comportamento inadequado de algum lado.",
+    "  categoria: atendimento | vendedora | entrega | cobranca | outro.",
+    "  vendedora: nome de quem atendeu do lado da equipe, se identificavel no transcript (campo EQUIPE); vazio se nao der para saber.",
+    "  NUNCA liste reclamacao de produto aqui (essa vai em \"produtos\"). Vazio se nao houve reclamacao geral.",
     "",
     "Responda APENAS JSON valido neste formato:",
-    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"],\"produtos\":[{\"modelo\":\"A15\",\"tipo\":\"reclamacao|defeito|troca|duvida\",\"detalhe\":\"1 frase: qual foi o problema e de quem\"}]}]}",
+    "{\"conversas\":[{\"chave\":\"...\",\"resumo\":\"2 a 3 frases: o que aconteceu e como terminou\",\"sentimento\":0.0,\"atencao\":\"nenhum|baixo|medio|alto|critico\",\"motivo_atencao\":\"por que o gestor deve olhar (ou vazio)\",\"flags\":{\"reclamacao\":false,\"risco_perda\":false,\"urgente\":false,\"sem_resposta\":false,\"oportunidade\":false,\"elogio\":false,\"problema_entrega\":false,\"problema_produto\":false,\"problema_pagamento\":false},\"tema\":\"...\",\"citacoes\":[{\"autor\":\"...\",\"texto\":\"...\",\"tipo\":\"reclamacao|elogio|oportunidade|risco|outro\"}],\"acoes\":[\"...\"],\"produtos\":[{\"modelo\":\"A15\",\"tipo\":\"reclamacao|defeito\",\"detalhe\":\"1 frase: qual foi o problema e de quem\"}],\"reclamacoes_gerais\":[{\"categoria\":\"atendimento|vendedora|entrega|cobranca|outro\",\"vendedora\":\"...\",\"detalhe\":\"1 frase: o que o cliente reclamou\"}]}]}",
     "",
     "CONVERSAS:",
     JSON.stringify(conversations),
@@ -313,6 +317,12 @@ export interface ParsedProductMention {
   detalhe: string;
 }
 
+export interface ParsedGeneralComplaint {
+  categoria: "atendimento" | "vendedora" | "entrega" | "cobranca" | "outro";
+  vendedora: string | null;
+  detalhe: string;
+}
+
 export interface ParsedConversationAnalysis {
   resumo: string;
   sentimento: number;
@@ -323,11 +333,15 @@ export interface ParsedConversationAnalysis {
   citacoes: ConversationInsightHighlight[];
   acoes: string[];
   produtos: ParsedProductMention[];
+  reclamacoesGerais: ParsedGeneralComplaint[];
 }
 
 // A pedido do gestor, o backfill/analise so registra problema REAL de produto —
-// "duvida" nao entra (nao e reclamacao). Se a IA devolver duvida, e descartada.
-const PRODUCT_MENTION_TYPES = new Set(["reclamacao", "defeito", "troca"]);
+// "duvida" e "troca" nao entram (nao sao reclamacao/defeito). Se a IA devolver
+// esses tipos, sao descartados.
+const PRODUCT_MENTION_TYPES = new Set(["reclamacao", "defeito"]);
+
+const GENERAL_COMPLAINT_CATEGORIES = new Set(["atendimento", "vendedora", "entrega", "cobranca", "outro"]);
 
 /**
  * Chave de busca do modelo: maiusculas, sem acento, espacos colapsados.
@@ -368,6 +382,25 @@ export function parseProductMentions(value: unknown): ParsedProductMention[] {
     })
     .filter((mention): mention is ParsedProductMention => mention !== null)
     .slice(0, 8);
+}
+
+export function parseGeneralComplaints(value: unknown): ParsedGeneralComplaint[] {
+  return (Array.isArray(value) ? value : [])
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const record = entry as Record<string, unknown>;
+      const detalhe = readString(record.detalhe, 300);
+      if (!detalhe) return null;
+      const rawCategoria = readString(record.categoria, 20)
+        .normalize("NFD")
+        .replace(/[̀-ͯ]/g, "")
+        .toLowerCase();
+      const categoria = (GENERAL_COMPLAINT_CATEGORIES.has(rawCategoria) ? rawCategoria : "outro") as ParsedGeneralComplaint["categoria"];
+      const vendedora = readString(record.vendedora, 80) || null;
+      return { categoria, vendedora, detalhe };
+    })
+    .filter((complaint): complaint is ParsedGeneralComplaint => complaint !== null)
+    .slice(0, 6);
 }
 
 function readString(value: unknown, maxLength = 800): string {
@@ -456,6 +489,7 @@ export function parseConversationAnalyses(summary: Record<string, unknown>): Map
       citacoes,
       acoes,
       produtos: parseProductMentions(record.produtos),
+      reclamacoesGerais: parseGeneralComplaints(record.reclamacoes_gerais),
     });
   }
 
@@ -596,7 +630,7 @@ async function fetchConversationMessages(
     ORDER BY wmm.message_id, wmm.created_at ASC
   `, [candidate.conversationKey, candidate.dealId, windowStart, windowEnd]);
 
-  return result.rows
+  const messages = result.rows
     .map((row) => ({
       messageId: String(row.message_id),
       fromMe: Boolean(row.from_me),
@@ -606,6 +640,36 @@ async function fetchConversationMessages(
       createdAt: new Date(row.created_at),
     }))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return dedupeDuplicateInstanceMessages(messages);
+}
+
+/**
+ * Grupos de cliente costumam ter 3-5 instancias (vendedoras) da equipe como
+ * membros; cada instancia recebe o webhook do MESMO texto do cliente e grava
+ * com um message_id diferente — DISTINCT ON message_id acima nao pega isso.
+ * Sem este passo a mesma fala aparece repetida 3-5x no transcript, inflando
+ * o contexto e confundindo a analise (visto em transcritos reais 17/07/2026).
+ * Colapsa mensagens com mesmo lado (from_me) + mesmo texto dentro de uma
+ * janela curta, mantendo so a primeira.
+ */
+export function dedupeDuplicateInstanceMessages(messages: TranscriptMessage[], windowMs = 2 * 60 * 1000): TranscriptMessage[] {
+  const kept: TranscriptMessage[] = [];
+  const lastSeenAt = new Map<string, number>();
+
+  for (const message of messages) {
+    const key = `${message.fromMe ? "E" : "C"}::${message.content.trim()}`;
+    const now = new Date(message.createdAt).getTime();
+    const previous = lastSeenAt.get(key);
+    if (previous !== undefined && now - previous <= windowMs) {
+      lastSeenAt.set(key, now);
+      continue;
+    }
+    lastSeenAt.set(key, now);
+    kept.push(message);
+  }
+
+  return kept;
 }
 
 // ── Persistence ─────────────────────────────────────────────
@@ -738,6 +802,59 @@ async function persistProductComplaints(
     }
   } catch (error) {
     logger.warn("failed to persist product complaints", {
+      conversationKey: candidate.conversationKey,
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error),
+    });
+  }
+}
+
+/**
+ * Historico permanente de reclamacoes GERAIS (nao ligadas a produto): atendimento,
+ * vendedora, prazo, cobranca. Fica fora da retencao de 30 dias, igual product_complaints.
+ * Nunca pode derrubar a analise — falha aqui so loga.
+ */
+async function persistGeneralComplaints(
+  candidate: ConversationCandidate,
+  analysis: ParsedConversationAnalysis,
+  windowDate: string,
+) {
+  if (analysis.reclamacoesGerais.length === 0) return;
+  try {
+    for (const complaint of analysis.reclamacoesGerais) {
+      await pool.query(`
+        INSERT INTO general_complaints (
+          conversation_key, window_date, deal_id, remote_jid, is_group, chat_name,
+          customer_name, agent_name, category, severity, detail, quote, source, occurred_at, updated_at
+        ) VALUES ($1, $2::date, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ai', $13, NOW())
+        ON CONFLICT (conversation_key, window_date, category) DO UPDATE SET
+          deal_id = EXCLUDED.deal_id,
+          chat_name = EXCLUDED.chat_name,
+          customer_name = EXCLUDED.customer_name,
+          agent_name = EXCLUDED.agent_name,
+          severity = EXCLUDED.severity,
+          detail = EXCLUDED.detail,
+          quote = EXCLUDED.quote,
+          source = EXCLUDED.source,
+          occurred_at = EXCLUDED.occurred_at,
+          updated_at = NOW()
+      `, [
+        candidate.conversationKey,
+        windowDate,
+        candidate.dealId,
+        candidate.remoteJid,
+        candidate.isGroup,
+        candidate.chatName,
+        candidate.isGroup ? null : candidate.chatName,
+        complaint.vendedora ?? candidate.agentName,
+        complaint.categoria,
+        analysis.atencao,
+        complaint.detalhe,
+        analysis.citacoes[0]?.texto ?? null,
+        candidate.lastMessageAt,
+      ]);
+    }
+  } catch (error) {
+    logger.warn("failed to persist general complaints", {
       conversationKey: candidate.conversationKey,
       error: error instanceof Error ? error.message.slice(0, 300) : String(error),
     });
@@ -1165,6 +1282,7 @@ export async function runConversationIntelligence(
           provider: result.provider,
           model: result.model,
         });
+        await persistGeneralComplaints(item.candidate, analysis, windowDate);
         await persistProductComplaints(item.candidate, analysis, windowDate);
         analyzed += 1;
       }
