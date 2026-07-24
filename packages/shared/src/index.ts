@@ -153,6 +153,42 @@ export interface AttendantTrendPoint {
   orders: number;
   pieces: number;
   uniqueCustomers: number;
+  newCustomers: number;
+  recoveredCustomers: number;
+  sentMessages: number;
+  receivedMessages: number;
+  attendedConversations: number;
+  targetPieces: number | null;
+  targetRevenue: number | null;
+}
+
+export interface AttendantWhatsappIdentity {
+  instanceName: string | null;
+  displayLabel: string | null;
+  phoneNumber: string | null;
+  profilePictureUrl: string | null;
+}
+
+export interface AttendantActivitySnapshot {
+  sentMessages: number;
+  receivedMessages: number;
+  attendedConversations: number;
+  activeDays: number;
+  averageFirstResponseSeconds: number | null;
+}
+
+export interface AttendantActivityHeatmapCell {
+  date: string;
+  hour: number;
+  sentMessages: number;
+  receivedMessages: number;
+}
+
+export interface AttendantGoalSnapshot {
+  targetPieces: number | null;
+  targetRevenue: number | null;
+  piecesProgressRatio: number | null;
+  revenueProgressRatio: number | null;
 }
 
 export interface AttendantTopCustomer {
@@ -184,10 +220,17 @@ export interface AttendantSummary {
 
 export interface AttendantListItem {
   attendant: string;
+  whatsapp: AttendantWhatsappIdentity;
   currentPeriod: AttendantMetricSnapshot;
   previousPeriod: AttendantMetricSnapshot;
   growth: AttendantGrowthRatios;
   portfolio: AttendantPortfolioSnapshot;
+  currentActivity: AttendantActivitySnapshot;
+  currentNewCustomers: number;
+  currentRecoveredCustomers: number;
+  currentRecoveredRevenue: number;
+  goal: AttendantGoalSnapshot;
+  activityHeatmap: AttendantActivityHeatmapCell[];
   monthlyTrend: AttendantTrendPoint[];
   topCustomers: AttendantTopCustomer[];
   topProducts: TopProduct[];

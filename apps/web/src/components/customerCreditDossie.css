@@ -581,16 +581,6 @@
   color: #a3231e;
 }
 
-.bankfin-status-note {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: #9a5300;
-}
-
 /* Pedidos ja liquidados ficam discretos: o olho vai para o que esta aberto. */
 .bankfin-ledger-table tbody tr.is-paid .is-doc strong,
 .bankfin-ledger-table tbody tr.is-paid .is-money {

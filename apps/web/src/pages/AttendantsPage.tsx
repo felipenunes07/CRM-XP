@@ -1,5 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { AttendantListItem } from "@olist-crm/shared";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  BadgeCheck,
+  ChevronRight,
+  CircleDot,
+  MessageCircleMore,
+  RotateCcw,
+  Sparkles,
+  Target,
+  TrendingUp,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -17,59 +32,34 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber, statusLabel } from "../lib/format";
 import {
   type AttendantChartMetric,
-  type AttendantSortKey,
   buildTrendChartData,
   chartMetricLabel,
   getAttendantColor,
-  getInitialSelectedAttendants,
-  sortAttendantsForBoard,
-  toggleComparedAttendant,
 } from "./attendantsPage.helpers";
 
 type WindowMonths = 3 | 6 | 12 | 24;
+type AttendantScope = "all" | string;
 
-const metricOptions: AttendantChartMetric[] = ["revenue", "orders", "pieces", "uniqueCustomers"];
 const windowOptions: WindowMonths[] = [3, 6, 12, 24];
+const metricOptions: AttendantChartMetric[] = [
+  "pieces",
+  "revenue",
+  "uniqueCustomers",
+  "newCustomers",
+  "recoveredCustomers",
+  "sentMessages",
+  "attendedConversations",
+];
+const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const businessHours = Array.from({ length: 14 }, (_, index) => index + 7);
+
+function safeDivide(numerator: number, denominator: number) {
+  return denominator > 0 ? numerator / denominator : 0;
+}
 
 function formatMonthLabel(value: string) {
   const matched = value.match(/^(\d{4})-(\d{2})$/);
-  if (!matched) {
-    return value;
-  }
-
-  const [, year = "", month = ""] = matched;
-  return `${month}/${year.slice(2)}`;
-}
-
-function formatGrowth(value: number | null) {
-  if (value === null || value === undefined) {
-    return "Sem base";
-  }
-
-  const percent = value * 100;
-  const prefix = percent > 0 ? "+" : "";
-
-  return `${prefix}${percent.toFixed(1).replace(".", ",")}%`;
-}
-
-function growthClass(value: number | null) {
-  if (value === null || value === undefined) {
-    return "neutral";
-  }
-
-  if (value > 0) {
-    return "success";
-  }
-
-  if (value < 0) {
-    return "danger";
-  }
-
-  return "neutral";
-}
-
-function formatMetricValue(value: number, metric: AttendantChartMetric) {
-  return metric === "revenue" ? formatCurrency(value) : formatNumber(value);
+  return matched ? `${matched[2]}/${matched[1]?.slice(2)}` : value;
 }
 
 function formatDecimal(value: number, digits = 1) {
@@ -83,44 +73,98 @@ function formatPercent(value: number) {
   return `${formatDecimal(value * 100, 1)}%`;
 }
 
-function safeDivide(numerator: number, denominator: number) {
-  if (!denominator) {
-    return 0;
-  }
-
-  return numerator / denominator;
+function formatGrowth(value: number | null) {
+  if (value === null) return "Sem base anterior";
+  const percent = value * 100;
+  return `${percent > 0 ? "+" : ""}${formatDecimal(percent, 1)}%`;
 }
 
-function activeShare(totalCustomers: number, activeCustomers: number) {
-  return safeDivide(activeCustomers, totalCustomers);
-}
-
-function reactivationPressure(totalCustomers: number, attentionCustomers: number, inactiveCustomers: number) {
-  return safeDivide(attentionCustomers + inactiveCustomers, totalCustomers);
-}
-
-function repeatIntensity(orders: number, uniqueCustomers: number) {
-  return safeDivide(orders, uniqueCustomers);
+function formatResponseTime(seconds: number | null) {
+  if (seconds === null) return "Sem base";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  return `${formatDecimal(seconds / 3600, 1)} h`;
 }
 
 function formatMetricAxis(value: number, metric: AttendantChartMetric) {
   if (metric !== "revenue") {
+    if (Math.abs(value) >= 1000) return `${formatDecimal(value / 1000, 1)}k`;
     return formatNumber(value);
   }
-
-  const absoluteValue = Math.abs(value);
-  if (absoluteValue >= 1_000_000) {
-    return `R$ ${(value / 1_000_000).toFixed(1).replace(".", ",")} mi`;
-  }
-
-  if (absoluteValue >= 1_000) {
-    return `R$ ${(value / 1_000).toFixed(0)}k`;
-  }
-
+  if (Math.abs(value) >= 1_000_000) return `R$ ${formatDecimal(value / 1_000_000, 1)} mi`;
+  if (Math.abs(value) >= 1_000) return `R$ ${formatDecimal(value / 1_000, 0)}k`;
   return formatCurrency(value);
 }
 
-function TrendTooltip({
+function Avatar({ item, size = "normal" }: { item: AttendantListItem; size?: "normal" | "large" }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initials = item.attendant
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toLocaleUpperCase("pt-BR");
+
+  return (
+    <span
+      className={`attendant-avatar attendant-avatar-${size}`}
+      style={{ "--attendant-color": getAttendantColor(item.attendant) } as React.CSSProperties}
+    >
+      {item.whatsapp.profilePictureUrl && !imageFailed ? (
+        <img
+          src={item.whatsapp.profilePictureUrl}
+          alt={`Foto de ${item.attendant} no WhatsApp`}
+          onError={() => setImageFailed(true)}
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <span>{initials}</span>
+      )}
+      <i aria-label="WhatsApp ativo" />
+    </span>
+  );
+}
+
+function GrowthBadge({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
+  const positive = value !== null && (inverse ? value <= 0 : value >= 0);
+  const negative = value !== null && !positive;
+  return (
+    <span className={`attendant-growth ${positive ? "is-positive" : negative ? "is-negative" : "is-neutral"}`}>
+      {positive ? <ArrowUpRight size={14} /> : negative ? <ArrowDownRight size={14} /> : <CircleDot size={12} />}
+      {formatGrowth(value)}
+    </span>
+  );
+}
+
+function MetricTile({
+  label,
+  value,
+  detail,
+  growth,
+  icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  growth?: number | null;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="attendant-metric-tile">
+      <div className="attendant-metric-label">
+        <span>{icon}</span>
+        {label}
+      </div>
+      <strong>{value}</strong>
+      <div className="attendant-metric-detail">
+        <span>{detail}</span>
+        {growth !== undefined ? <GrowthBadge value={growth} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function ChartTooltip({
   active,
   payload,
   label,
@@ -131,62 +175,94 @@ function TrendTooltip({
   label?: string;
   metric: AttendantChartMetric;
 }) {
-  if (!active || !payload?.length || !label) {
-    return null;
-  }
-
+  if (!active || !payload?.length || !label) return null;
   return (
-    <div className="chart-tooltip trend-tooltip">
-      <strong>{formatMonthLabel(label)}</strong>
-      <div className="trend-tooltip-list">
-        {payload.map((entry) => (
-          <div key={String(entry.dataKey ?? entry.name)} className="trend-tooltip-item">
-            <span className="trend-tooltip-label">
-              <span className="trend-tooltip-dot" style={{ backgroundColor: entry.color ?? "#2956d7" }} />
-              {entry.name}
-            </span>
-            <div className="trend-tooltip-metric">
-              <strong>{formatMetricValue(Number(entry.value ?? 0), metric)}</strong>
-              <span>{chartMetricLabel(metric)} no mes</span>
-            </div>
-          </div>
-        ))}
+    <div className="attendant-chart-tooltip">
+      <span>{formatMonthLabel(label)}</span>
+      {payload.map((entry) => (
+        <div key={String(entry.dataKey)}>
+          <i style={{ background: entry.color }} />
+          <span>{entry.name}</span>
+          <strong>
+            {metric === "revenue" ? formatCurrency(Number(entry.value ?? 0)) : formatNumber(Number(entry.value ?? 0))}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GoalProgress({
+  label,
+  current,
+  target,
+  formatter,
+}: {
+  label: string;
+  current: number;
+  target: number | null;
+  formatter: (value: number) => string;
+}) {
+  const progress = target && target > 0 ? current / target : null;
+  return (
+    <div className="attendant-goal-row">
+      <div>
+        <span>{label}</span>
+        <strong>{progress === null ? "Meta ainda não definida" : `${formatPercent(progress)} realizado`}</strong>
+      </div>
+      <div className="attendant-goal-values">
+        <strong>{formatter(current)}</strong>
+        <span>{target === null ? "—" : `de ${formatter(target)}`}</span>
+      </div>
+      <div className="attendant-goal-track">
+        <i style={{ width: `${Math.min(100, (progress ?? 0) * 100)}%` }} />
       </div>
     </div>
   );
 }
 
-function HealthTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ value?: number; color?: string; name?: string }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length || !label) {
-    return null;
-  }
-
-  const total = payload.reduce((sum, entry) => sum + Number(entry.value ?? 0), 0);
+function ActivityHeatmap({ item }: { item: AttendantListItem }) {
+  const cells = useMemo(() => {
+    const totals = new Map<string, number>();
+    item.activityHeatmap.forEach((cell) => {
+      const weekday = new Date(`${cell.date}T12:00:00`).getDay();
+      const key = `${weekday}-${cell.hour}`;
+      totals.set(key, (totals.get(key) ?? 0) + cell.sentMessages + cell.receivedMessages);
+    });
+    const maximum = Math.max(0, ...totals.values());
+    return { totals, maximum };
+  }, [item]);
 
   return (
-    <div className="chart-tooltip">
-      <strong>{label}</strong>
-      <div className="trend-tooltip-list">
-        {payload.map((entry) => (
-          <div key={entry.name} className="trend-tooltip-item">
-            <span className="trend-tooltip-label">
-              <span className="trend-tooltip-dot" style={{ backgroundColor: entry.color ?? "#2956d7" }} />
-              {entry.name}
-            </span>
-            <div className="trend-tooltip-metric">
-              <strong>{formatNumber(Number(entry.value ?? 0))}</strong>
-              <span>{formatPercent(safeDivide(Number(entry.value ?? 0), total))} da carteira</span>
-            </div>
-          </div>
+    <div className="attendant-heatmap">
+      <div className="attendant-heatmap-hours">
+        <span />
+        {businessHours.map((hour) => (
+          <span key={hour}>{hour}h</span>
         ))}
+      </div>
+      {weekdayLabels.map((weekday, weekdayIndex) => (
+        <div className="attendant-heatmap-row" key={weekday}>
+          <span>{weekday}</span>
+          {businessHours.map((hour) => {
+            const value = cells.totals.get(`${weekdayIndex}-${hour}`) ?? 0;
+            const level = cells.maximum ? Math.ceil((value / cells.maximum) * 4) : 0;
+            return (
+              <i
+                key={hour}
+                className={`heat-level-${level}`}
+                title={`${weekday}, ${hour}h: ${formatNumber(value)} mensagens`}
+              />
+            );
+          })}
+        </div>
+      ))}
+      <div className="attendant-heatmap-legend">
+        <span>Menos atividade</span>
+        {[0, 1, 2, 3, 4].map((level) => (
+          <i key={level} className={`heat-level-${level}`} />
+        ))}
+        <span>Mais atividade</span>
       </div>
     </div>
   );
@@ -195,11 +271,8 @@ function HealthTooltip({
 export function AttendantsPage() {
   const { token } = useAuth();
   const [windowMonths, setWindowMonths] = useState<WindowMonths>(12);
-  const [chartMetric, setChartMetric] = useState<AttendantChartMetric>("uniqueCustomers");
-  const [search, setSearch] = useState("");
-  const [sortKey, setSortKey] = useState<AttendantSortKey>("customers");
-  const [selectedAttendants, setSelectedAttendants] = useState<string[]>([]);
-  const [focusedAttendant, setFocusedAttendant] = useState("");
+  const [scope, setScope] = useState<AttendantScope>("all");
+  const [chartMetric, setChartMetric] = useState<AttendantChartMetric>("pieces");
 
   const attendantsQuery = useQuery({
     queryKey: ["attendants", windowMonths],
@@ -208,284 +281,280 @@ export function AttendantsPage() {
   });
 
   const data = attendantsQuery.data;
-  const allAttendants = data?.attendants ?? [];
-  const portfolioSummary = useMemo(
+  const attendants = data?.attendants ?? [];
+  const selectedItem = scope === "all" ? null : attendants.find((item) => item.attendant === scope) ?? null;
+  const selectedNames = selectedItem ? [selectedItem.attendant] : attendants.map((item) => item.attendant);
+  const { data: trendData, series: trendSeries } = useMemo(
+    () => buildTrendChartData(attendants, selectedNames, chartMetric),
+    [attendants, chartMetric, selectedNames.join("\u0000")],
+  );
+
+  const teamTotals = useMemo(
     () =>
-      allAttendants.reduce(
-        (totals, item) => ({
-          totalCustomers: totals.totalCustomers + item.portfolio.totalCustomers,
-          active: totals.active + item.portfolio.statusCounts.ACTIVE,
-          attention: totals.attention + item.portfolio.statusCounts.ATTENTION,
-          inactive: totals.inactive + item.portfolio.statusCounts.INACTIVE,
+      attendants.reduce(
+        (total, item) => ({
+          newCustomers: total.newCustomers + item.currentNewCustomers,
+          recoveredCustomers: total.recoveredCustomers + item.currentRecoveredCustomers,
+          sentMessages: total.sentMessages + item.currentActivity.sentMessages,
+          attendedConversations: total.attendedConversations + item.currentActivity.attendedConversations,
+          targetPieces: total.targetPieces + (item.goal.targetPieces ?? 0),
+          targetRevenue: total.targetRevenue + (item.goal.targetRevenue ?? 0),
+          hasPiecesTarget: total.hasPiecesTarget || item.goal.targetPieces !== null,
+          hasRevenueTarget: total.hasRevenueTarget || item.goal.targetRevenue !== null,
         }),
         {
-          totalCustomers: 0,
-          active: 0,
-          attention: 0,
-          inactive: 0,
+          newCustomers: 0,
+          recoveredCustomers: 0,
+          sentMessages: 0,
+          attendedConversations: 0,
+          targetPieces: 0,
+          targetRevenue: 0,
+          hasPiecesTarget: false,
+          hasRevenueTarget: false,
         },
       ),
-    [allAttendants],
-  );
-  const teamRepeatIntensity = repeatIntensity(data?.summary.currentPeriodOrders ?? 0, data?.summary.currentPeriodCustomers ?? 0);
-  const teamPiecesPerOrder = safeDivide(data?.summary.currentPeriodPieces ?? 0, data?.summary.currentPeriodOrders ?? 0);
-
-  useEffect(() => {
-    if (!allAttendants.length) {
-      if (selectedAttendants.length) {
-        setSelectedAttendants([]);
-      }
-      return;
-    }
-
-    setSelectedAttendants((current) => {
-      const validSelections = current.filter((item) => allAttendants.some((entry) => entry.attendant === item));
-      if (!current.length) {
-        return getInitialSelectedAttendants(allAttendants, 3);
-      }
-
-      return validSelections;
-    });
-  }, [allAttendants]);
-
-  useEffect(() => {
-    if (!allAttendants.length) {
-      if (focusedAttendant) {
-        setFocusedAttendant("");
-      }
-      return;
-    }
-
-    const exists = allAttendants.some((item) => item.attendant === focusedAttendant);
-    if (!focusedAttendant || !exists) {
-      setFocusedAttendant(allAttendants[0]?.attendant ?? "");
-    }
-  }, [allAttendants, focusedAttendant]);
-
-  const visibleAttendants = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase("pt-BR");
-
-    return sortAttendantsForBoard(
-      allAttendants.filter((item) => {
-        if (!normalizedSearch) {
-          return true;
-        }
-
-        return item.attendant.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
-      }),
-      sortKey,
-    );
-  }, [allAttendants, search, sortKey]);
-
-  const { data: trendData, series: trendSeries } = useMemo(
-    () => buildTrendChartData(allAttendants, selectedAttendants, chartMetric),
-    [allAttendants, chartMetric, selectedAttendants],
-  );
-  const selectedSeriesByAttendant = useMemo(
-    () => new Map(trendSeries.map((series) => [series.attendant, series.color])),
-    [trendSeries],
-  );
-  const compareOptions = useMemo(
-    () =>
-      allAttendants.map((item) => ({
-        attendant: item.attendant,
-        color: getAttendantColor(item.attendant),
-      })),
-    [allAttendants],
-  );
-  const healthChartData = useMemo(
-    () =>
-      [...visibleAttendants]
-        .sort((left, right) => {
-          const activeShareDiff =
-            activeShare(right.portfolio.totalCustomers, right.portfolio.statusCounts.ACTIVE) -
-            activeShare(left.portfolio.totalCustomers, left.portfolio.statusCounts.ACTIVE);
-          if (activeShareDiff !== 0) {
-            return activeShareDiff;
-          }
-
-          return right.portfolio.totalCustomers - left.portfolio.totalCustomers;
-        })
-        .map((item) => ({
-          attendant: item.attendant,
-          active: item.portfolio.statusCounts.ACTIVE,
-          attention: item.portfolio.statusCounts.ATTENTION,
-          inactive: item.portfolio.statusCounts.INACTIVE,
-          totalCustomers: item.portfolio.totalCustomers,
-        })),
-    [visibleAttendants],
+    [attendants],
   );
 
-  const focusedItem =
-    allAttendants.find((item) => item.attendant === focusedAttendant) ??
-    allAttendants.find((item) => item.attendant === selectedAttendants[0]) ??
-    visibleAttendants[0] ??
-    null;
+  const ranking = useMemo(
+    () => [...attendants].sort((left, right) => right.currentPeriod.pieces - left.currentPeriod.pieces),
+    [attendants],
+  );
 
   if (attendantsQuery.isLoading) {
-    return <div className="page-loading">Carregando aba de atendentes...</div>;
+    return <div className="page-loading">Carregando contribuição das atendentes...</div>;
   }
 
   if (attendantsQuery.isError || !data) {
-    return <div className="page-error">Nao foi possivel carregar o painel de atendentes.</div>;
+    return <div className="page-error">Não foi possível carregar os dados das atendentes.</div>;
   }
 
   return (
-    <div className="page-stack attendants-page">
-      <section className="hero-panel attendants-hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Performance comercial</p>
-          <h2 className="premium-header-title">Atendentes</h2>
+    <div className="attendants-workspace">
+      <header className="attendants-topbar">
+        <div>
+          <span className="attendants-kicker">Performance comercial</span>
+          <h1>Atendentes</h1>
           <p>
-            Compare faturamento, vendas, pecas e clientes por vendedora, enxergando o corte atual, o historico mensal
-            fechado e a carteira de cada nome.
+            {scope === "all"
+              ? "Compare a contribuição do time em vendas, clientes e relacionamento."
+              : `Acompanhe a evolução completa de ${selectedItem?.attendant ?? "uma atendente"}.`}
           </p>
         </div>
-
-        <div className="hero-meta attendants-hero-meta">
-          <div className="hero-meta-item">
-            <span>Janela atual</span>
-            <strong>
-              {formatDate(data.summary.currentPeriodStart)} ate {formatDate(data.summary.currentPeriodEnd)}
-            </strong>
-          </div>
-          <div className="hero-meta-item">
-            <span>Comparativo</span>
-            <strong>
-              {formatDate(data.summary.previousPeriodStart)} ate {formatDate(data.summary.previousPeriodEnd)}
-            </strong>
-          </div>
-          <div className="attendants-window-toggle" role="tablist" aria-label="Selecionar janela mensal">
+        <div className="attendants-period-control">
+          <span>
+            Mês atual · {formatDate(data.summary.currentPeriodStart)} a {formatDate(data.summary.currentPeriodEnd)}
+          </span>
+          <div role="tablist" aria-label="Período do histórico">
             {windowOptions.map((option) => (
               <button
                 key={option}
                 type="button"
-                className={`attendants-window-button ${windowMonths === option ? "active" : ""}`}
+                className={windowMonths === option ? "is-active" : ""}
                 onClick={() => setWindowMonths(option)}
               >
-                {option} meses
+                {option}m
               </button>
             ))}
           </div>
         </div>
-      </section>
+      </header>
 
-      <section className="stats-grid attendants-summary-grid">
-        <article className="stat-card">
-          <p className="eyebrow">Time monitorado</p>
-          <strong>{formatNumber(data.summary.totalAttendants)}</strong>
-          <span>{formatNumber(data.summary.activeAttendants)} com venda no corte atual</span>
-        </article>
-
-        <article className="stat-card">
-          <p className="eyebrow">Clientes do mes</p>
-          <strong>{formatNumber(data.summary.currentPeriodCustomers)}</strong>
-          <span>{formatNumber(data.summary.currentPeriodOrders)} vendas fechadas no corte</span>
-        </article>
-
-        <article className="stat-card">
-          <p className="eyebrow">Recorrencia do time</p>
-          <strong>{formatDecimal(teamRepeatIntensity, 2)}</strong>
-          <span>{formatDecimal(teamPiecesPerOrder, 1)} pecas por venda em media</span>
-        </article>
-
-        <article className="stat-card">
-          <p className="eyebrow">Clientes para reativar</p>
-          <strong>{formatNumber(portfolioSummary.attention + portfolioSummary.inactive)}</strong>
-          <span>
-            {formatPercent(
-              reactivationPressure(portfolioSummary.totalCustomers, portfolioSummary.attention, portfolioSummary.inactive),
-            )}{" "}
-            da carteira pedindo contato
+      <nav className="attendant-switcher" aria-label="Selecionar atendente">
+        <button type="button" className={scope === "all" ? "is-active" : ""} onClick={() => setScope("all")}>
+          <span className="attendant-all-avatar">
+            <Users size={19} />
           </span>
-        </article>
-      </section>
+          <span>
+            <strong>Todas</strong>
+            <small>{attendants.length} no WhatsApp</small>
+          </span>
+          <ChevronRight size={16} />
+        </button>
+        {attendants.map((item) => (
+          <button
+            key={item.attendant}
+            type="button"
+            className={scope === item.attendant ? "is-active" : ""}
+            onClick={() => setScope(item.attendant)}
+          >
+            <Avatar item={item} />
+            <span>
+              <strong>{item.attendant}</strong>
+              <small>{formatNumber(item.currentPeriod.pieces)} telas no mês</small>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        ))}
+      </nav>
 
-      <section className="grid-two attendants-dashboard-grid">
-        <article className="panel chart-panel attendants-trend-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Evolucao mensal</p>
-              <h3>Comparativo entre vendedoras</h3>
-              <p className="panel-subcopy">
-                Selecione quem entra no comparativo e acompanhe {chartMetricLabel(chartMetric).toLocaleLowerCase("pt-BR")} ao longo de{" "}
-                {windowMonths} meses fechados.
-              </p>
+      {!attendants.length ? (
+        <section className="attendants-empty">
+          <MessageCircleMore size={28} />
+          <h2>Nenhuma vendedora vinculada ao WhatsApp</h2>
+          <p>
+            A aba agora mostra somente instâncias ativas com uma atendente atribuída. Vincule a vendedora à instância
+            para que ela apareça aqui.
+          </p>
+        </section>
+      ) : selectedItem ? (
+        <>
+          <section className="attendant-profile-strip">
+            <div className="attendant-profile-person">
+              <Avatar item={selectedItem} size="large" />
+              <div>
+                <span className="attendants-kicker">Visão individual</span>
+                <h2>{selectedItem.attendant}</h2>
+                <p>
+                  <BadgeCheck size={15} />
+                  {selectedItem.whatsapp.displayLabel || selectedItem.whatsapp.instanceName || "Instância WhatsApp"}
+                  {selectedItem.whatsapp.phoneNumber ? ` · ${selectedItem.whatsapp.phoneNumber}` : ""}
+                </p>
+              </div>
             </div>
-          </div>
+            <div className="attendant-profile-outcome">
+              <span>Contribuição em telas no mês</span>
+              <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.pieces, data.summary.currentPeriodPieces))}</strong>
+              <small>{formatNumber(selectedItem.currentPeriod.pieces)} de {formatNumber(data.summary.currentPeriodPieces)} telas do time</small>
+            </div>
+          </section>
 
-          <div className="attendants-toolbar">
-            <div className="attendants-toolbar-main">
-              <div className="ambassador-chart-toggle" role="tablist" aria-label="Selecionar metrica do grafico">
+          <section className="attendant-metrics-grid">
+            <MetricTile
+              label="Telas vendidas"
+              value={formatNumber(selectedItem.currentPeriod.pieces)}
+              detail={`${formatDecimal(selectedItem.currentPeriod.piecesPerOrder, 1)} por venda`}
+              growth={selectedItem.growth.pieces}
+              icon={<Sparkles size={17} />}
+            />
+            <MetricTile
+              label="Faturamento"
+              value={formatCurrency(selectedItem.currentPeriod.revenue)}
+              detail={`Ticket médio ${formatCurrency(selectedItem.currentPeriod.avgTicket)}`}
+              growth={selectedItem.growth.revenue}
+              icon={<TrendingUp size={17} />}
+            />
+            <MetricTile
+              label="Clientes compradores"
+              value={formatNumber(selectedItem.currentPeriod.uniqueCustomers)}
+              detail={`${formatNumber(selectedItem.currentPeriod.orders)} vendas fechadas`}
+              growth={selectedItem.growth.uniqueCustomers}
+              icon={<Users size={17} />}
+            />
+            <MetricTile
+              label="Clientes novos"
+              value={formatNumber(selectedItem.currentNewCustomers)}
+              detail="Primeira compra com a empresa"
+              icon={<UserPlus size={17} />}
+            />
+            <MetricTile
+              label="Clientes recuperados"
+              value={formatNumber(selectedItem.currentRecoveredCustomers)}
+              detail={formatCurrency(selectedItem.currentRecoveredRevenue)}
+              icon={<RotateCcw size={17} />}
+            />
+            <MetricTile
+              label="Mensagens enviadas"
+              value={formatNumber(selectedItem.currentActivity.sentMessages)}
+              detail={`${formatNumber(selectedItem.currentActivity.attendedConversations)} clientes atendidos`}
+              icon={<MessageCircleMore size={17} />}
+            />
+          </section>
+
+          <section className="attendants-split attendants-goal-and-portfolio">
+            <article className="attendant-section">
+              <div className="attendant-section-heading">
+                <div>
+                  <span className="attendants-kicker">Meta do mês</span>
+                  <h3>Ritmo para alcançar o alvo</h3>
+                </div>
+                <Target size={22} />
+              </div>
+              <GoalProgress
+                label="Telas"
+                current={selectedItem.currentPeriod.pieces}
+                target={selectedItem.goal.targetPieces}
+                formatter={formatNumber}
+              />
+              <GoalProgress
+                label="Faturamento"
+                current={selectedItem.currentPeriod.revenue}
+                target={selectedItem.goal.targetRevenue}
+                formatter={formatCurrency}
+              />
+            </article>
+
+            <article className="attendant-section">
+              <div className="attendant-section-heading">
+                <div>
+                  <span className="attendants-kicker">Carteira atual</span>
+                  <h3>{formatNumber(selectedItem.portfolio.totalCustomers)} clientes sob responsabilidade</h3>
+                </div>
+              </div>
+              <div className="attendant-portfolio-bar">
+                {(["ACTIVE", "ATTENTION", "INACTIVE"] as const).map((status) => (
+                  <i
+                    key={status}
+                    className={`is-${status.toLocaleLowerCase()}`}
+                    style={{
+                      width: `${safeDivide(
+                        selectedItem.portfolio.statusCounts[status],
+                        selectedItem.portfolio.totalCustomers,
+                      ) * 100}%`,
+                    }}
+                  />
+                ))}
+              </div>
+              <div className="attendant-portfolio-legend">
+                <span><i className="is-active" />Ativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)}</strong></span>
+                <span><i className="is-attention" />Atenção <strong>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION)}</strong></span>
+                <span><i className="is-inactive" />Inativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.INACTIVE)}</strong></span>
+              </div>
+              <p className="attendant-section-note">
+                {formatNumber(selectedItem.portfolio.statusCounts.ATTENTION + selectedItem.portfolio.statusCounts.INACTIVE)} clientes têm oportunidade de reativação.
+              </p>
+            </article>
+          </section>
+        </>
+      ) : (
+        <section className="attendant-metrics-grid attendants-team-metrics">
+          <MetricTile label="Telas vendidas" value={formatNumber(data.summary.currentPeriodPieces)} detail={`${formatNumber(data.summary.currentPeriodOrders)} vendas no mês`} growth={null} icon={<Sparkles size={17} />} />
+          <MetricTile label="Faturamento" value={formatCurrency(data.summary.currentPeriodRevenue)} detail={`${formatNumber(data.summary.currentPeriodCustomers)} clientes compradores`} growth={data.summary.revenueGrowthRatio} icon={<TrendingUp size={17} />} />
+          <MetricTile label="Clientes novos" value={formatNumber(teamTotals.newCustomers)} detail="Primeira compra no mês" icon={<UserPlus size={17} />} />
+          <MetricTile label="Recuperados" value={formatNumber(teamTotals.recoveredCustomers)} detail="Voltaram após 90+ dias" icon={<RotateCcw size={17} />} />
+          <MetricTile label="Mensagens enviadas" value={formatNumber(teamTotals.sentMessages)} detail={`${formatNumber(teamTotals.attendedConversations)} atendimentos`} icon={<MessageCircleMore size={17} />} />
+        </section>
+      )}
+
+      {attendants.length ? (
+        <>
+          <section className="attendant-section attendants-trend-section">
+            <div className="attendant-section-heading attendants-chart-heading">
+              <div>
+                <span className="attendants-kicker">Evolução mensal</span>
+                <h3>{selectedItem ? `Histórico de ${selectedItem.attendant}` : "Comparação entre as atendentes"}</h3>
+                <p>{windowMonths} meses fechados · passe o mouse para ver os valores</p>
+              </div>
+              <div className="attendant-metric-tabs" role="tablist" aria-label="Métrica do histórico">
                 {metricOptions.map((metric) => (
                   <button
-                    key={metric}
                     type="button"
-                    className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`}
+                    key={metric}
+                    className={chartMetric === metric ? "is-active" : ""}
                     onClick={() => setChartMetric(metric)}
                   >
                     {chartMetricLabel(metric)}
                   </button>
                 ))}
               </div>
-
-              <div className="attendants-compare-picker" aria-label="Selecionar atendentes para comparar">
-                {compareOptions.map((option) => {
-                  const isSelected = selectedAttendants.includes(option.attendant);
-                  const compareDisabled = !isSelected && selectedAttendants.length >= 5;
-
-                  return (
-                    <button
-                      key={option.attendant}
-                      type="button"
-                      className={`attendants-compare-chip ${isSelected ? "active" : ""}`}
-                      onClick={() => setSelectedAttendants((current) => toggleComparedAttendant(current, option.attendant, 5))}
-                      disabled={compareDisabled}
-                    >
-                      <span className="trend-tooltip-dot" style={{ backgroundColor: option.color }} />
-                      {option.attendant}
-                    </button>
-                  );
-                })}
-              </div>
             </div>
-
-            <div className="attendants-compare-summary">
-              <span>Comparando {selectedAttendants.length}/5</span>
-              <div className="attendants-compare-tags">
-                {selectedAttendants.map((attendant) => (
-                  <span
-                    key={attendant}
-                    className="tag attendants-compare-tag"
-                    style={{
-                      borderColor: `${selectedSeriesByAttendant.get(attendant) ?? getAttendantColor(attendant)}44`,
-                      color: selectedSeriesByAttendant.get(attendant) ?? getAttendantColor(attendant),
-                    }}
-                  >
-                    <span
-                      className="trend-tooltip-dot"
-                      style={{ backgroundColor: selectedSeriesByAttendant.get(attendant) ?? getAttendantColor(attendant) }}
-                    />
-                    {attendant}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="trend-chart-wrap attendants-trend-wrap">
-            {trendSeries.length ? (
-              <ResponsiveContainer width="100%" height={340}>
-                <LineChart data={trendData} margin={{ top: 12, right: 18, left: 8, bottom: 4 }}>
-                  <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    tickFormatter={(value) => formatMonthLabel(String(value))}
-                    stroke="#5f6f95"
-                    minTickGap={20}
-                  />
-                  <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#5f6f95" />
-                  <Tooltip content={<TrendTooltip metric={chartMetric} />} />
+            <div className="attendant-trend-chart">
+              <ResponsiveContainer width="100%" height={360}>
+                <LineChart data={trendData} margin={{ top: 16, right: 18, left: 4, bottom: 0 }}>
+                  <CartesianGrid stroke="rgba(28, 48, 86, 0.08)" vertical={false} />
+                  <XAxis dataKey="month" tickFormatter={formatMonthLabel} stroke="#77849d" tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#77849d" tickLine={false} axisLine={false} width={72} />
+                  <Tooltip content={<ChartTooltip metric={chartMetric} />} />
                   {trendSeries.map((series) => (
                     <Line
                       key={series.dataKey}
@@ -493,327 +562,155 @@ export function AttendantsPage() {
                       dataKey={series.dataKey}
                       name={series.attendant}
                       stroke={series.color}
-                      strokeWidth={3}
+                      strokeWidth={selectedItem ? 3.5 : 2.5}
                       dot={false}
-                      activeDot={{ r: 5 }}
+                      activeDot={{ r: 5, strokeWidth: 3, stroke: "#fff" }}
                     />
                   ))}
                 </LineChart>
               </ResponsiveContainer>
-            ) : (
-              <div className="empty-state">Selecione pelo menos uma atendente para montar o comparativo.</div>
-            )}
-          </div>
-
-          {trendSeries.length ? (
-            <div className="trend-legend attendants-legend" aria-label="Legenda do grafico de comparacao">
-              {trendSeries.map((series) => (
-                <span key={series.dataKey} className="trend-legend-item">
-                  <span className="trend-legend-dot" style={{ backgroundColor: series.color }} />
-                  {series.attendant}
-                </span>
-              ))}
             </div>
-          ) : null}
-        </article>
-
-        <article className="panel attendants-ranking-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Carteira hoje</p>
-              <h3>Distribuicao por status</h3>
-              <p className="panel-subcopy">
-                Troquei o ranking de faturamento por uma leitura mais util: quantos clientes cada atendente tem em ativo,
-                atencao e inativo hoje.
-              </p>
-            </div>
-          </div>
-
-          <div className="trend-chart-wrap attendants-ranking-wrap">
-            {healthChartData.length ? (
-              <ResponsiveContainer width="100%" height={340}>
-                <BarChart
-                  data={healthChartData}
-                  layout="vertical"
-                  margin={{ top: 8, right: 16, left: 16, bottom: 4 }}
-                >
-                  <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" horizontal={false} />
-                  <XAxis type="number" stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
-                  <YAxis type="category" dataKey="attendant" width={92} stroke="#5f6f95" />
-                  <Tooltip content={<HealthTooltip />} cursor={{ fill: "rgba(41, 86, 215, 0.04)" }} />
-                  <Bar dataKey="active" name="Ativos" stackId="portfolio" fill="#2f9d67" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="attention" name="Atencao" stackId="portfolio" fill="#d09a29" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="inactive" name="Inativos" stackId="portfolio" fill="#d9534f" radius={[0, 8, 8, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="empty-state">Nenhuma atendente encontrada para esse filtro.</div>
-            )}
-          </div>
-
-          <div className="trend-legend attendants-health-legend">
-            <span className="trend-legend-item">
-              <span className="trend-legend-dot" style={{ backgroundColor: "#2f9d67" }} />
-              Ativos
-            </span>
-            <span className="trend-legend-item">
-              <span className="trend-legend-dot" style={{ backgroundColor: "#d09a29" }} />
-              Atencao
-            </span>
-            <span className="trend-legend-item">
-              <span className="trend-legend-dot" style={{ backgroundColor: "#d9534f" }} />
-              Inativos
-            </span>
-          </div>
-        </article>
-      </section>
-
-      <section className="grid-two attendants-detail-grid">
-        <article className="panel attendants-board-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Leaderboard</p>
-              <h3>Quem esta puxando relacionamento e carteira</h3>
-              <p className="panel-subcopy">
-                Busque uma vendedora, ordene a lista e use os botoes para comparar ou abrir o painel detalhado.
-              </p>
-            </div>
-          </div>
-
-          <div className="filters-grid filters-grid-four attendants-filters">
-            <label>
-              Buscar
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nome da atendente" />
-            </label>
-
-            <label>
-              Ordenar por
-              <select value={sortKey} onChange={(event) => setSortKey(event.target.value as AttendantSortKey)}>
-                <option value="customers">Clientes atendidos</option>
-                <option value="orders">Vendas</option>
-                <option value="recurrence">Recorrencia</option>
-                <option value="activeShare">Carteira ativa</option>
-                <option value="reactivationRisk">Pressao de reativacao</option>
-                <option value="pieces">Pecas</option>
-                <option value="portfolio">Carteira total</option>
-                <option value="growth">Crescimento de clientes</option>
-                <option value="name">Nome</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="attendants-board-list">
-            {visibleAttendants.length ? (
-              visibleAttendants.map((item, index) => {
-                const isCompared = selectedAttendants.includes(item.attendant);
-                const isFocused = focusedItem?.attendant === item.attendant;
-                const compareDisabled = !isCompared && selectedAttendants.length >= 5;
-
-                return (
-                  <article
-                    key={item.attendant}
-                    className={`attendants-board-card ${isFocused ? "is-focused" : ""}`}
-                    onClick={() => setFocusedAttendant(item.attendant)}
-                  >
-                    <div className="attendants-board-header">
-                      <div className="leaderboard-rank">#{index + 1}</div>
-                      <div className="attendants-board-copy">
-                        <strong>{item.attendant}</strong>
-                        <span>
-                          {formatNumber(item.currentPeriod.uniqueCustomers)} clientes - {formatNumber(item.currentPeriod.orders)} vendas -{" "}
-                          {formatPercent(activeShare(item.portfolio.totalCustomers, item.portfolio.statusCounts.ACTIVE))} da carteira ativa
-                        </span>
-                      </div>
-                      <div className="attendants-board-growth">
-                        <span>Crescimento de clientes</span>
-                        <strong className={`attendants-growth ${growthClass(item.growth.uniqueCustomers)}`}>
-                          {formatGrowth(item.growth.uniqueCustomers)}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div className="attendants-board-metrics">
-                      <span>Recorrencia: {formatDecimal(repeatIntensity(item.currentPeriod.orders, item.currentPeriod.uniqueCustomers), 2)} vendas/cliente</span>
-                      <span>Pecas por venda: {formatDecimal(item.currentPeriod.piecesPerOrder, 1)}</span>
-                      <span>Reativar: {formatNumber(item.portfolio.statusCounts.ATTENTION + item.portfolio.statusCounts.INACTIVE)}</span>
-                      <span>Carteira: {formatNumber(item.portfolio.totalCustomers)}</span>
-                      <span>Ultima venda: {formatDate(item.currentPeriod.lastOrderAt)}</span>
-                    </div>
-
-                    <div className="attendants-board-actions">
-                      <button
-                        type="button"
-                        className={`ghost-button ${isFocused ? "attendants-focus-button active" : ""}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setFocusedAttendant(item.attendant);
-                        }}
-                      >
-                        {isFocused ? "No painel" : "Ver painel"}
-                      </button>
-                      <button
-                        type="button"
-                        className={`ghost-button ${isCompared ? "attendants-focus-button active" : ""}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelectedAttendants((current) => toggleComparedAttendant(current, item.attendant, 5));
-                        }}
-                        disabled={compareDisabled}
-                      >
-                        {isCompared ? "Remover do grafico" : compareDisabled ? "Limite de 5" : "Comparar"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              })
-            ) : (
-              <div className="empty-state">Nenhuma atendente encontrada para esse recorte.</div>
-            )}
-          </div>
-        </article>
-
-        <article className="panel attendants-focus-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Drill-down</p>
-              <h3>{focusedItem?.attendant ?? "Selecione uma atendente"}</h3>
-              <p className="panel-subcopy">Resumo do corte atual, carteira sob responsabilidade e os destaques do mes.</p>
-            </div>
-          </div>
-
-          {focusedItem ? (
-            <div className="attendants-focus-shell">
-              <div className="attendants-focus-grid">
-                <div className="attendants-focus-card">
-                  <span>Clientes do mes</span>
-                  <strong>{formatNumber(focusedItem.currentPeriod.uniqueCustomers)}</strong>
-                  <p>{formatNumber(focusedItem.currentPeriod.orders)} vendas no corte atual</p>
-                </div>
-                <div className="attendants-focus-card">
-                  <span>Recorrencia</span>
-                  <strong>{formatDecimal(repeatIntensity(focusedItem.currentPeriod.orders, focusedItem.currentPeriod.uniqueCustomers), 2)}</strong>
-                  <p>vendas por cliente no mes</p>
-                </div>
-                <div className="attendants-focus-card">
-                  <span>Pecas por venda</span>
-                  <strong>{formatDecimal(focusedItem.currentPeriod.piecesPerOrder, 1)}</strong>
-                  <p>{formatNumber(focusedItem.currentPeriod.pieces)} pecas no corte</p>
-                </div>
-                <div className="attendants-focus-card">
-                  <span>Pressao de reativacao</span>
-                  <strong>
-                    {formatPercent(
-                      reactivationPressure(
-                        focusedItem.portfolio.totalCustomers,
-                        focusedItem.portfolio.statusCounts.ATTENTION,
-                        focusedItem.portfolio.statusCounts.INACTIVE,
-                      ),
-                    )}
-                  </strong>
-                  <p>
-                    {formatNumber(focusedItem.portfolio.statusCounts.ATTENTION + focusedItem.portfolio.statusCounts.INACTIVE)} clientes pedindo contato
-                  </p>
-                </div>
+            {!selectedItem ? (
+              <div className="attendant-chart-legend">
+                {trendSeries.map((series) => (
+                  <button type="button" key={series.attendant} onClick={() => setScope(series.attendant)}>
+                    <i style={{ background: series.color }} />
+                    {series.attendant}
+                  </button>
+                ))}
               </div>
+            ) : null}
+          </section>
 
-              <div className="attendants-portfolio-card">
-                <div>
-                  <span className="eyebrow">Carteira atual</span>
-                  <h4>{formatNumber(focusedItem.portfolio.totalCustomers)} clientes</h4>
-                </div>
-
-                <div className="attendants-portfolio-metrics">
-                  <span className="status-badge status-active">
-                    {formatNumber(focusedItem.portfolio.statusCounts.ACTIVE)} ativos
-                  </span>
-                  <span className="status-badge status-attention">
-                    {formatNumber(focusedItem.portfolio.statusCounts.ATTENTION)} atencao
-                  </span>
-                  <span className="status-badge status-inactive">
-                    {formatNumber(focusedItem.portfolio.statusCounts.INACTIVE)} inativos
-                  </span>
-                </div>
-
-                <div className="attendants-board-metrics">
-                  <span>Faturamento: {formatCurrency(focusedItem.currentPeriod.revenue)}</span>
-                  <span>Ticket medio: {formatCurrency(focusedItem.currentPeriod.avgTicket)}</span>
-                  <span>Receita por cliente: {formatCurrency(focusedItem.currentPeriod.revenuePerCustomer)}</span>
-                  <span>Ultima venda: {formatDate(focusedItem.currentPeriod.lastOrderAt)}</span>
-                </div>
-              </div>
-
-              <div className="attendants-focus-section">
-                <div className="panel-header compact">
+          {!selectedItem ? (
+            <>
+              <section className="attendant-section attendants-ranking-section">
+                <div className="attendant-section-heading">
                   <div>
-                    <p className="eyebrow">Top clientes</p>
-                    <h4>Quem mais comprou no corte</h4>
+                    <span className="attendants-kicker">Contribuição no mês</span>
+                    <h3>Leitura lado a lado</h3>
+                    <p>Ranking por telas vendidas com meta, aquisição, recuperação e relacionamento.</p>
                   </div>
                 </div>
-
-                {focusedItem.topCustomers.length ? (
-                  <div className="attendants-customer-list">
-                    {focusedItem.topCustomers.map((customer) => (
-                      <article key={customer.customerId} className="attendants-customer-card">
-                        <div className="attendants-customer-main">
-                          <div className="attendants-customer-copy">
-                            <strong>{customer.displayName}</strong>
-                            <span>{customer.customerCode || "Sem codigo"}</span>
-                          </div>
-                          <span className={`status-badge status-${customer.status.toLowerCase()}`}>
-                            {statusLabel(customer.status)}
-                          </span>
-                        </div>
-                        <div className="attendants-board-metrics">
-                          <span>{formatCurrency(customer.revenue)}</span>
-                          <span>{formatNumber(customer.orders)} vendas</span>
-                          <span>{formatNumber(customer.pieces)} pecas</span>
-                          <span>Ultima: {formatDate(customer.lastOrderAt)}</span>
-                        </div>
-                        <div className="attendants-board-actions">
-                          <Link className="ghost-button" to={`/clientes/${customer.customerId}`}>
-                            Abrir cliente
-                          </Link>
-                        </div>
-                      </article>
-                    ))}
+                <div className="attendants-ranking-table">
+                  <div className="attendants-ranking-row is-header">
+                    <span>Atendente</span><span>Telas</span><span>Meta</span><span>Clientes</span><span>Novos</span><span>Recuperados</span><span>Mensagens</span><span />
                   </div>
-                ) : (
-                  <div className="empty-state">Sem clientes no corte atual para esta atendente.</div>
-                )}
-              </div>
-
-              <div className="attendants-focus-section">
-                <div className="panel-header compact">
-                  <div>
-                    <p className="eyebrow">Top produtos</p>
-                    <h4>Mix vendido no corte</h4>
-                  </div>
-                </div>
-
-                {focusedItem.topProducts.length ? (
-                  <div className="ambassador-top-products">
-                    {focusedItem.topProducts.map((product) => (
-                      <article key={`${focusedItem.attendant}-${product.sku ?? product.itemDescription}`} className="ambassador-top-product">
-                        <strong>{product.itemDescription}</strong>
-                        <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
-                        <span>
-                          {formatNumber(product.totalQuantity)} pecas - {formatNumber(product.orderCount)} vendas
+                  {ranking.map((item, index) => {
+                    const progress = item.goal.targetPieces
+                      ? item.currentPeriod.pieces / item.goal.targetPieces
+                      : null;
+                    return (
+                      <button type="button" className="attendants-ranking-row" key={item.attendant} onClick={() => setScope(item.attendant)}>
+                        <span className="attendants-ranking-person">
+                          <b>{index + 1}</b><Avatar item={item} />
+                          <span><strong>{item.attendant}</strong><small>{item.whatsapp.displayLabel || item.whatsapp.instanceName}</small></span>
                         </span>
-                        <span>Ultima venda: {formatDate(product.lastBoughtAt)}</span>
-                      </article>
-                    ))}
+                        <span><strong>{formatNumber(item.currentPeriod.pieces)}</strong><GrowthBadge value={item.growth.pieces} /></span>
+                        <span className="attendants-ranking-goal">
+                          <strong>{progress === null ? "Sem meta" : formatPercent(progress)}</strong>
+                          <i><b style={{ width: `${Math.min(100, (progress ?? 0) * 100)}%` }} /></i>
+                        </span>
+                        <span><strong>{formatNumber(item.currentPeriod.uniqueCustomers)}</strong><small>compradores</small></span>
+                        <span><strong>{formatNumber(item.currentNewCustomers)}</strong><small>adquiridos</small></span>
+                        <span><strong>{formatNumber(item.currentRecoveredCustomers)}</strong><small>reativados</small></span>
+                        <span><strong>{formatNumber(item.currentActivity.sentMessages)}</strong><small>enviadas</small></span>
+                        <span><ChevronRight size={18} /></span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="attendants-split attendants-team-bottom">
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div><span className="attendants-kicker">Meta consolidada</span><h3>Time versus objetivo</h3></div>
+                    <Target size={22} />
                   </div>
-                ) : (
-                  <div className="empty-state">Sem produtos registrados no corte atual para esta atendente.</div>
-                )}
-              </div>
-            </div>
+                  <GoalProgress label="Telas" current={data.summary.currentPeriodPieces} target={teamTotals.hasPiecesTarget ? teamTotals.targetPieces : null} formatter={formatNumber} />
+                  <GoalProgress label="Faturamento" current={data.summary.currentPeriodRevenue} target={teamTotals.hasRevenueTarget ? teamTotals.targetRevenue : null} formatter={formatCurrency} />
+                </article>
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div><span className="attendants-kicker">Carteira por atendente</span><h3>Clientes sob responsabilidade</h3></div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={ranking} layout="vertical" margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
+                      <CartesianGrid stroke="rgba(28, 48, 86, 0.08)" horizontal={false} />
+                      <XAxis type="number" axisLine={false} tickLine={false} stroke="#77849d" />
+                      <YAxis type="category" dataKey="attendant" width={76} axisLine={false} tickLine={false} stroke="#77849d" />
+                      <Tooltip formatter={(value) => [formatNumber(Number(value)), "Clientes"]} cursor={{ fill: "rgba(38, 91, 219, 0.04)" }} />
+                      <Bar dataKey="portfolio.statusCounts.ACTIVE" stackId="portfolio" fill="#27a36a" />
+                      <Bar dataKey="portfolio.statusCounts.ATTENTION" stackId="portfolio" fill="#e0a82e" />
+                      <Bar dataKey="portfolio.statusCounts.INACTIVE" stackId="portfolio" fill="#dc5b59" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </article>
+              </section>
+            </>
           ) : (
-            <div className="empty-state">Selecione uma atendente no leaderboard para abrir o drill-down.</div>
+            <>
+              <section className="attendants-split attendants-communication">
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div>
+                      <span className="attendants-kicker">Atividade no WhatsApp</span>
+                      <h3>Quando {selectedItem.attendant} mais conversa</h3>
+                      <p>Mensagens enviadas e recebidas, agrupadas por dia da semana e hora.</p>
+                    </div>
+                  </div>
+                  <ActivityHeatmap item={selectedItem} />
+                </article>
+                <article className="attendant-section attendant-relationship-summary">
+                  <div className="attendant-section-heading">
+                    <div><span className="attendants-kicker">Ritmo de atendimento</span><h3>Relacionamento no mês</h3></div>
+                  </div>
+                  <dl>
+                    <div><dt>Mensagens enviadas</dt><dd>{formatNumber(selectedItem.currentActivity.sentMessages)}</dd></div>
+                    <div><dt>Mensagens recebidas</dt><dd>{formatNumber(selectedItem.currentActivity.receivedMessages)}</dd></div>
+                    <div><dt>Conversas atendidas</dt><dd>{formatNumber(selectedItem.currentActivity.attendedConversations)}</dd></div>
+                    <div><dt>Dias com atividade</dt><dd>{formatNumber(selectedItem.currentActivity.activeDays)}</dd></div>
+                    <div><dt>Primeira resposta média</dt><dd>{formatResponseTime(selectedItem.currentActivity.averageFirstResponseSeconds)}</dd></div>
+                  </dl>
+                </article>
+              </section>
+
+              <section className="attendants-split attendants-commercial-detail">
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div><span className="attendants-kicker">Top clientes</span><h3>Quem mais comprou no mês</h3></div>
+                  </div>
+                  <div className="attendant-detail-list">
+                    {selectedItem.topCustomers.length ? selectedItem.topCustomers.map((customer, index) => (
+                      <Link to={`/clientes/${customer.customerId}`} key={customer.customerId}>
+                        <b>{index + 1}</b>
+                        <span><strong>{customer.displayName}</strong><small>{customer.customerCode || "Sem código"} · {statusLabel(customer.status)}</small></span>
+                        <span><strong>{formatCurrency(customer.revenue)}</strong><small>{formatNumber(customer.pieces)} telas</small></span>
+                        <ChevronRight size={17} />
+                      </Link>
+                    )) : <div className="attendant-list-empty">Nenhum cliente comprador neste corte.</div>}
+                  </div>
+                </article>
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div><span className="attendants-kicker">Mix vendido</span><h3>Produtos com maior saída</h3></div>
+                  </div>
+                  <div className="attendant-detail-list">
+                    {selectedItem.topProducts.length ? selectedItem.topProducts.map((product, index) => (
+                      <div key={`${product.sku}-${product.itemDescription}`}>
+                        <b>{index + 1}</b>
+                        <span><strong>{product.itemDescription}</strong><small>{product.sku ? `SKU ${product.sku}` : "SKU não informado"}</small></span>
+                        <span><strong>{formatNumber(product.totalQuantity)} telas</strong><small>{formatNumber(product.orderCount)} vendas</small></span>
+                      </div>
+                    )) : <div className="attendant-list-empty">Nenhum produto vendido neste corte.</div>}
+                  </div>
+                </article>
+              </section>
+            </>
           )}
-        </article>
-      </section>
+        </>
+      ) : null}
     </div>
   );
 }
-

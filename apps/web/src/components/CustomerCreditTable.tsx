@@ -3,9 +3,9 @@ import { ExternalLink, MessageCircle, MoreHorizontal, PanelRightOpen, Pencil, Us
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CustomerCreditDrawer } from "./CustomerCreditDrawer";
-import { CustomerCreditLimitCell } from "./CustomerCreditLimitCell";
+import { CustomerCreditLimitCell, CustomerCreditTermCell } from "./CustomerCreditLimitCell";
 import { EditCustomerCreditModal } from "./EditCustomerCreditModal";
-import { formatCurrency, formatDate } from "../lib/format";
+import { calculateDaysSince, formatCurrency, formatDate } from "../lib/format";
 import { customerCreditRiskLabel, getCustomerCreditDeadline } from "../lib/customerCredit";
 import "./customerCreditBank.css";
 
@@ -143,7 +143,8 @@ export function CustomerCreditTable({
             <tbody>
               {rows.map((row) => {
                 const due = deadlineInfo(row);
-                const since = sinceLabel(row.daysSinceLastPayment);
+                // days_since_last_payment vem nulo em boa parte do snapshot: calculamos pela data.
+                const since = sinceLabel(row.daysSinceLastPayment ?? calculateDaysSince(row.lastPaymentDate));
                 const isSelected = selected.has(row.customerCode);
                 const riskClass = (row.riskLevel || "NORMAL").toLowerCase();
 
@@ -191,15 +192,7 @@ export function CustomerCreditTable({
                     </td>
 
                     <td>
-                      <span className={`bankfin-due tone-${due.tone}`}>
-                        {due.label}
-                        {due.helper ? <small>{due.helper}</small> : null}
-                      </span>
-                      {due.progress !== null ? (
-                        <span className="bankfin-due-track">
-                          <i className={`tone-${due.tone}`} style={{ width: `${due.progress}%` }} />
-                        </span>
-                      ) : null}
+                      <CustomerCreditTermCell row={row} status={due} />
                     </td>
 
                     <td className="is-right bankfin-col-limit">

@@ -71,6 +71,12 @@ describe("attendantService helpers", () => {
 
   it("sorts attendants by current revenue, then orders, then name", () => {
     const baseItem = {
+      whatsapp: {
+        instanceName: "xp-test",
+        displayLabel: "XP Test",
+        phoneNumber: null,
+        profilePictureUrl: null,
+      },
       currentPeriod: {
         revenue: 0,
         orders: 0,
@@ -109,6 +115,23 @@ describe("attendantService helpers", () => {
           NEW: 0,
         },
       },
+      currentActivity: {
+        sentMessages: 0,
+        receivedMessages: 0,
+        attendedConversations: 0,
+        activeDays: 0,
+        averageFirstResponseSeconds: null,
+      },
+      currentNewCustomers: 0,
+      currentRecoveredCustomers: 0,
+      currentRecoveredRevenue: 0,
+      goal: {
+        targetPieces: null,
+        targetRevenue: null,
+        piecesProgressRatio: null,
+        revenueProgressRatio: null,
+      },
+      activityHeatmap: [],
       monthlyTrend: [],
       topCustomers: [],
       topProducts: [],

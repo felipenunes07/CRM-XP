@@ -55,8 +55,6 @@ export function CustomerCreditOrdersTable({
                 ) : (
                   <span className="bankfin-status-cell none">—</span>
                 )}
-                {/* Marca de conferência que vem da planilha, quando existe. */}
-                {order.status === "VERIFICAR" ? <span className="bankfin-status-note">verificar</span> : null}
               </td>
             </tr>
           );

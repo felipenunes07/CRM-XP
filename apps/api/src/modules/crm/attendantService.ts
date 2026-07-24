@@ -1,5 +1,8 @@
 import type {
   AttendantGrowthRatios,
+  AttendantActivityHeatmapCell,
+  AttendantActivitySnapshot,
+  AttendantGoalSnapshot,
   AttendantListItem,
   AttendantMetricSnapshot,
   AttendantPortfolioSnapshot,
@@ -70,6 +73,40 @@ interface TrendRow {
   orders: number;
   pieces: number;
   uniqueCustomers: number;
+}
+
+interface AttendantIdentityRow {
+  attendant: string;
+  instanceName: string | null;
+  displayLabel: string | null;
+  phoneNumber: string | null;
+  profilePictureUrl: string | null;
+}
+
+interface ActivityRow {
+  attendant: string;
+  month: string;
+  sentMessages: number;
+  receivedMessages: number;
+  attendedConversations: number;
+  activeDays: number;
+  responseCount: number;
+  responseSecondsTotal: number;
+}
+
+interface CustomerMovementRow {
+  attendant: string;
+  month: string;
+  newCustomers: number;
+  recoveredCustomers: number;
+  recoveredRevenue: number;
+}
+
+interface TargetRow {
+  attendant: string;
+  month: string;
+  targetPieces: number | null;
+  targetRevenue: number | null;
 }
 
 const EMPTY_RAW_SNAPSHOT: RawMetricSnapshot = {
@@ -238,8 +275,59 @@ function mapTopCustomers(value: unknown): AttendantTopCustomer[] {
     .filter((entry): entry is AttendantTopCustomer => Boolean(entry?.customerId));
 }
 
-async function listAttendantNames() {
-  return [...FOCUSED_ATTENDANTS];
+async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
+  const result = await pool.query(
+    `
+      WITH focused_names AS (
+        SELECT UNNEST($1::text[]) AS name
+      ),
+      candidates AS (
+        SELECT
+          COALESCE(focused.name, NULLIF(BTRIM(wi.assigned_user_name), '')) AS attendant,
+          wi.instance_name,
+          wi.display_label,
+          wi.phone_number,
+          wi.profile_picture_url,
+          wi.updated_at
+        FROM whatsapp_instances wi
+        LEFT JOIN LATERAL (
+          SELECT name
+          FROM focused_names
+          WHERE LOWER(COALESCE(wi.assigned_user_name, wi.display_label, wi.instance_name, '')) LIKE '%' || LOWER(name) || '%'
+             OR LOWER(COALESCE(wi.display_label, '')) LIKE '%' || LOWER(name) || '%'
+             OR LOWER(COALESCE(wi.instance_name, '')) LIKE '%' || LOWER(name) || '%'
+          ORDER BY LENGTH(name) DESC
+          LIMIT 1
+        ) focused ON true
+        WHERE UPPER(COALESCE(wi.status, 'ACTIVE')) = 'ACTIVE'
+          AND (
+            NULLIF(BTRIM(wi.assigned_user_name), '') IS NOT NULL
+            OR focused.name IS NOT NULL
+          )
+      )
+      SELECT DISTINCT ON (LOWER(attendant))
+        attendant,
+        instance_name,
+        display_label,
+        phone_number,
+        profile_picture_url
+      FROM candidates
+      WHERE NULLIF(BTRIM(attendant), '') IS NOT NULL
+      ORDER BY
+        LOWER(attendant),
+        (NULLIF(profile_picture_url, '') IS NOT NULL) DESC,
+        updated_at DESC
+    `,
+    [[...FOCUSED_ATTENDANTS]],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant),
+    instanceName: row.instance_name ? String(row.instance_name) : null,
+    displayLabel: row.display_label ? String(row.display_label) : null,
+    phoneNumber: row.phone_number ? String(row.phone_number) : null,
+    profilePictureUrl: row.profile_picture_url ? String(row.profile_picture_url) : null,
+  }));
 }
 
 async function getSummaryRow(windows: AttendantComparisonWindows, attendants: readonly string[]): Promise<SummaryRow> {
@@ -430,6 +518,223 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
   }));
 }
 
+async function getActivityRows(
+  windows: AttendantComparisonWindows,
+  identities: readonly AttendantIdentityRow[],
+): Promise<ActivityRow[]> {
+  const result = await pool.query(
+    `
+      WITH identities AS (
+        SELECT *
+        FROM UNNEST($3::text[], $4::text[]) AS identity(attendant, instance_name)
+      ),
+      conversation_months AS (
+        SELECT
+          identity.attendant,
+          TO_CHAR(DATE_TRUNC('month', war.period_date), 'YYYY-MM') AS month,
+          war.remote_jid,
+          SUM(war.sent_messages)::int AS sent_messages,
+          SUM(war.received_messages)::int AS received_messages,
+          COUNT(DISTINCT war.period_date) FILTER (
+            WHERE war.sent_messages > 0 OR war.received_messages > 0
+          )::int AS active_days,
+          SUM(war.response_count)::int AS response_count,
+          SUM(war.response_seconds_total)::numeric AS response_seconds_total
+        FROM identities identity
+        JOIN whatsapp_activity_rollups war
+          ON LOWER(war.instance_name) = LOWER(identity.instance_name)
+        WHERE war.period_date BETWEEN $1::date AND $2::date
+        GROUP BY identity.attendant, DATE_TRUNC('month', war.period_date), war.remote_jid
+      )
+      SELECT
+        attendant,
+        month,
+        COALESCE(SUM(sent_messages), 0)::int AS sent_messages,
+        COALESCE(SUM(received_messages), 0)::int AS received_messages,
+        COUNT(*) FILTER (WHERE sent_messages > 0 AND received_messages > 0)::int AS attended_conversations,
+        COALESCE(MAX(active_days), 0)::int AS active_days,
+        COALESCE(SUM(response_count), 0)::int AS response_count,
+        COALESCE(SUM(response_seconds_total), 0)::numeric AS response_seconds_total
+      FROM conversation_months
+      GROUP BY attendant, month
+      ORDER BY attendant, month
+    `,
+    [
+      windows.trendStartMonth,
+      windows.currentPeriodEnd,
+      identities.map((item) => item.attendant),
+      identities.map((item) => item.instanceName ?? ""),
+    ],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant),
+    month: String(row.month),
+    sentMessages: Number(row.sent_messages ?? 0),
+    receivedMessages: Number(row.received_messages ?? 0),
+    attendedConversations: Number(row.attended_conversations ?? 0),
+    activeDays: Number(row.active_days ?? 0),
+    responseCount: Number(row.response_count ?? 0),
+    responseSecondsTotal: Number(row.response_seconds_total ?? 0),
+  }));
+}
+
+async function getCustomerMovementRows(
+  windows: AttendantComparisonWindows,
+  attendants: readonly string[],
+): Promise<CustomerMovementRow[]> {
+  const result = await pool.query(
+    `
+      WITH scoped_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          o.order_date::date AS order_date,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_amount,
+          ROW_NUMBER() OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+          ) AS lifetime_rank,
+          LAG(o.order_date::date) OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+          ) AS previous_order_date
+        FROM orders o
+        WHERE COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') = ANY($3::text[])
+      ),
+      monthly_reactivations AS (
+        SELECT
+          *,
+          ROW_NUMBER() OVER (
+            PARTITION BY customer_id, DATE_TRUNC('month', order_date)
+            ORDER BY order_date ASC, id ASC
+          ) AS month_rank
+        FROM scoped_orders
+        WHERE previous_order_date IS NOT NULL
+          AND (order_date - previous_order_date) >= 90
+      ),
+      movements AS (
+        SELECT
+          attendant,
+          TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
+          COUNT(*) FILTER (WHERE lifetime_rank = 1)::int AS new_customers,
+          0::int AS recovered_customers,
+          0::numeric(14,2) AS recovered_revenue
+        FROM scoped_orders
+        WHERE order_date BETWEEN $1::date AND $2::date
+        GROUP BY attendant, DATE_TRUNC('month', order_date)
+
+        UNION ALL
+
+        SELECT
+          attendant,
+          TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
+          0::int AS new_customers,
+          COUNT(*)::int AS recovered_customers,
+          COALESCE(SUM(total_amount), 0)::numeric(14,2) AS recovered_revenue
+        FROM monthly_reactivations
+        WHERE month_rank = 1
+          AND order_date BETWEEN $1::date AND $2::date
+        GROUP BY attendant, DATE_TRUNC('month', order_date)
+      )
+      SELECT
+        attendant,
+        month,
+        SUM(new_customers)::int AS new_customers,
+        SUM(recovered_customers)::int AS recovered_customers,
+        SUM(recovered_revenue)::numeric(14,2) AS recovered_revenue
+      FROM movements
+      GROUP BY attendant, month
+      ORDER BY attendant, month
+    `,
+    [windows.trendStartMonth, windows.currentPeriodEnd, attendants],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant),
+    month: String(row.month),
+    newCustomers: Number(row.new_customers ?? 0),
+    recoveredCustomers: Number(row.recovered_customers ?? 0),
+    recoveredRevenue: Number(row.recovered_revenue ?? 0),
+  }));
+}
+
+async function getTargetRows(windows: AttendantComparisonWindows, attendants: readonly string[]): Promise<TargetRow[]> {
+  const result = await pool.query(
+    `
+      SELECT
+        matched.attendant,
+        TO_CHAR(MAKE_DATE(mt.year, mt.month, 1), 'YYYY-MM') AS month,
+        mt.target_amount,
+        mt.target_revenue
+      FROM monthly_targets mt
+      JOIN LATERAL (
+        SELECT attendant
+        FROM UNNEST($3::text[]) AS attendant
+        WHERE LOWER(attendant) = LOWER(mt.attendant)
+        LIMIT 1
+      ) matched ON true
+      WHERE MAKE_DATE(mt.year, mt.month, 1) BETWEEN $1::date AND DATE_TRUNC('month', $2::date)::date
+      ORDER BY matched.attendant, mt.year, mt.month
+    `,
+    [windows.trendStartMonth, windows.currentPeriodEnd, attendants],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant),
+    month: String(row.month),
+    targetPieces: row.target_amount === null ? null : Number(row.target_amount),
+    targetRevenue: row.target_revenue === null ? null : Number(row.target_revenue),
+  }));
+}
+
+async function getActivityHeatmap(
+  windows: AttendantComparisonWindows,
+  identities: readonly AttendantIdentityRow[],
+): Promise<Map<string, AttendantActivityHeatmapCell[]>> {
+  const result = await pool.query(
+    `
+      WITH identities AS (
+        SELECT *
+        FROM UNNEST($3::text[], $4::text[]) AS identity(attendant, instance_name)
+      )
+      SELECT
+        identity.attendant,
+        war.period_date::text AS date,
+        war.hour::int AS hour,
+        COALESCE(SUM(war.sent_messages), 0)::int AS sent_messages,
+        COALESCE(SUM(war.received_messages), 0)::int AS received_messages
+      FROM identities identity
+      JOIN whatsapp_activity_rollups war
+        ON LOWER(war.instance_name) = LOWER(identity.instance_name)
+      WHERE war.period_date BETWEEN $1::date AND $2::date
+      GROUP BY identity.attendant, war.period_date, war.hour
+      ORDER BY identity.attendant, war.period_date, war.hour
+    `,
+    [
+      windows.currentPeriodStart,
+      windows.currentPeriodEnd,
+      identities.map((item) => item.attendant),
+      identities.map((item) => item.instanceName ?? ""),
+    ],
+  );
+
+  const heatmap = new Map<string, AttendantActivityHeatmapCell[]>();
+  result.rows.forEach((row) => {
+    const attendant = String(row.attendant);
+    const cells = heatmap.get(attendant) ?? [];
+    cells.push({
+      date: String(row.date),
+      hour: Number(row.hour),
+      sentMessages: Number(row.sent_messages ?? 0),
+      receivedMessages: Number(row.received_messages ?? 0),
+    });
+    heatmap.set(attendant, cells);
+  });
+  return heatmap;
+}
+
 async function getTopCustomersByAttendant(windows: AttendantComparisonWindows, attendants: readonly string[]) {
   const result = await pool.query(
     `
@@ -556,14 +861,30 @@ async function getTopProductsByAttendant(windows: AttendantComparisonWindows, at
 
 export async function getAttendantsOverview(windowMonths: AttendantWindowMonths = 12, referenceDate = new Date()): Promise<AttendantsResponse> {
   const windows = buildAttendantComparisonWindows(referenceDate, windowMonths);
-  const attendantNames = await listAttendantNames();
+  const attendantIdentities = await listAttendantIdentities();
+  const attendantNames = attendantIdentities.map((item) => item.attendant);
 
-  const [summaryRow, performanceRows, portfolioRows, trendRows, topCustomersByAttendant, topProductsByAttendant] =
+  const [
+    summaryRow,
+    performanceRows,
+    portfolioRows,
+    trendRows,
+    activityRows,
+    customerMovementRows,
+    targetRows,
+    activityHeatmapByAttendant,
+    topCustomersByAttendant,
+    topProductsByAttendant,
+  ] =
     await Promise.all([
       getSummaryRow(windows, attendantNames),
       getAttendantPerformanceRows(windows, attendantNames),
       getPortfolioRows(attendantNames),
       getTrendRows(windows, attendantNames),
+      getActivityRows(windows, attendantIdentities),
+      getCustomerMovementRows(windows, attendantNames),
+      getTargetRows(windows, attendantNames),
+      getActivityHeatmap(windows, attendantIdentities),
       getTopCustomersByAttendant(windows, attendantNames),
       getTopProductsByAttendant(windows, attendantNames),
     ]);
@@ -586,22 +907,47 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
     ]),
   );
   const trendByAttendant = new Map<string, AttendantTrendPoint[]>();
+  const identityByAttendant = new Map(attendantIdentities.map((item) => [item.attendant, item]));
+  const activityByAttendantMonth = new Map(
+    activityRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
+  );
+  const movementByAttendantMonth = new Map(
+    customerMovementRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
+  );
+  const targetByAttendantMonth = new Map(
+    targetRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
+  );
 
   trendRows.forEach((row) => {
     const current = trendByAttendant.get(row.attendant) ?? [];
+    const activity = activityByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
+    const movement = movementByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
+    const target = targetByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
     current.push({
       month: row.month,
       revenue: row.revenue,
       orders: row.orders,
       pieces: row.pieces,
       uniqueCustomers: row.uniqueCustomers,
+      newCustomers: movement?.newCustomers ?? 0,
+      recoveredCustomers: movement?.recoveredCustomers ?? 0,
+      sentMessages: activity?.sentMessages ?? 0,
+      receivedMessages: activity?.receivedMessages ?? 0,
+      attendedConversations: activity?.attendedConversations ?? 0,
+      targetPieces: target?.targetPieces ?? null,
+      targetRevenue: target?.targetRevenue ?? null,
     });
     trendByAttendant.set(row.attendant, current);
   });
 
+  const currentMonth = windows.currentPeriodStart.slice(0, 7);
   const attendants = sortAttendants(
     attendantNames.map((attendant) => {
+      const identity = identityByAttendant.get(attendant);
       const performance = performanceByAttendant.get(attendant);
+      const currentActivityRow = activityByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
+      const currentMovement = movementByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
+      const currentTarget = targetByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
       const currentRaw: RawMetricSnapshot = performance
         ? {
             revenue: performance.currentRevenue,
@@ -622,13 +968,47 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
         : EMPTY_RAW_SNAPSHOT;
       const currentPeriod = buildMetricSnapshot(currentRaw);
       const previousPeriod = buildMetricSnapshot(previousRaw);
+      const currentActivity: AttendantActivitySnapshot = {
+        sentMessages: currentActivityRow?.sentMessages ?? 0,
+        receivedMessages: currentActivityRow?.receivedMessages ?? 0,
+        attendedConversations: currentActivityRow?.attendedConversations ?? 0,
+        activeDays: currentActivityRow?.activeDays ?? 0,
+        averageFirstResponseSeconds:
+          currentActivityRow && currentActivityRow.responseCount > 0
+            ? currentActivityRow.responseSecondsTotal / currentActivityRow.responseCount
+            : null,
+      };
+      const goal: AttendantGoalSnapshot = {
+        targetPieces: currentTarget?.targetPieces ?? null,
+        targetRevenue: currentTarget?.targetRevenue ?? null,
+        piecesProgressRatio:
+          currentTarget?.targetPieces && currentTarget.targetPieces > 0
+            ? currentPeriod.pieces / currentTarget.targetPieces
+            : null,
+        revenueProgressRatio:
+          currentTarget?.targetRevenue && currentTarget.targetRevenue > 0
+            ? currentPeriod.revenue / currentTarget.targetRevenue
+            : null,
+      };
 
       return {
         attendant,
+        whatsapp: {
+          instanceName: identity?.instanceName ?? null,
+          displayLabel: identity?.displayLabel ?? null,
+          phoneNumber: identity?.phoneNumber ?? null,
+          profilePictureUrl: identity?.profilePictureUrl ?? null,
+        },
         currentPeriod,
         previousPeriod,
         growth: buildGrowthRatios(currentPeriod, previousPeriod),
         portfolio: portfolioByAttendant.get(attendant) ?? EMPTY_PORTFOLIO,
+        currentActivity,
+        currentNewCustomers: currentMovement?.newCustomers ?? 0,
+        currentRecoveredCustomers: currentMovement?.recoveredCustomers ?? 0,
+        currentRecoveredRevenue: currentMovement?.recoveredRevenue ?? 0,
+        goal,
+        activityHeatmap: activityHeatmapByAttendant.get(attendant) ?? [],
         monthlyTrend: trendByAttendant.get(attendant) ?? [],
         topCustomers: topCustomersByAttendant.get(attendant) ?? [],
         topProducts: topProductsByAttendant.get(attendant) ?? [],

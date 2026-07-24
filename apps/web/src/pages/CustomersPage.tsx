@@ -839,7 +839,7 @@ export function CustomersPage() {
             ) : null}
           </div>
 
-          <div className="chart-switcher customers-view-switcher" role="tablist" aria-label="Alternar visao da pagina de clientes">
+          <div className="bankfin bankfin-tabs" role="tablist" aria-label="Alternar visao da pagina de clientes">
             {viewTabs.map((tab) => (
               <button
                 key={tab.value}
@@ -848,7 +848,7 @@ export function CustomersPage() {
                 title={tab.helper}
                 aria-selected={state.activeView === tab.value}
                 aria-pressed={state.activeView === tab.value}
-                className={`chart-switch-button ${state.activeView === tab.value ? "active" : ""}`}
+                className={`bankfin-tab ${state.activeView === tab.value ? "active" : ""}`}
                 onClick={() => selectView(tab.value)}
               >
                 <strong>{tab.label}</strong>

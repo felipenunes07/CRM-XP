@@ -1,6 +1,14 @@
 import type { AttendantListItem } from "@olist-crm/shared";
 
-export type AttendantChartMetric = "revenue" | "orders" | "pieces" | "uniqueCustomers";
+export type AttendantChartMetric =
+  | "revenue"
+  | "orders"
+  | "pieces"
+  | "uniqueCustomers"
+  | "newCustomers"
+  | "recoveredCustomers"
+  | "sentMessages"
+  | "attendedConversations";
 export type AttendantSortKey =
   | "orders"
   | "pieces"
@@ -56,6 +64,22 @@ export function chartMetricLabel(metric: AttendantChartMetric) {
     return "Clientes";
   }
 
+  if (metric === "newCustomers") {
+    return "Clientes novos";
+  }
+
+  if (metric === "recoveredCustomers") {
+    return "Recuperados";
+  }
+
+  if (metric === "sentMessages") {
+    return "Mensagens";
+  }
+
+  if (metric === "attendedConversations") {
+    return "Atendimentos";
+  }
+
   return "Faturamento";
 }
 
@@ -70,6 +94,22 @@ export function getCurrentMetricValue(item: AttendantListItem, metric: Attendant
 
   if (metric === "uniqueCustomers") {
     return item.currentPeriod.uniqueCustomers;
+  }
+
+  if (metric === "newCustomers") {
+    return item.currentNewCustomers;
+  }
+
+  if (metric === "recoveredCustomers") {
+    return item.currentRecoveredCustomers;
+  }
+
+  if (metric === "sentMessages") {
+    return item.currentActivity.sentMessages;
+  }
+
+  if (metric === "attendedConversations") {
+    return item.currentActivity.attendedConversations;
   }
 
   return item.currentPeriod.revenue;
@@ -198,7 +238,15 @@ export function buildTrendChartData(items: AttendantListItem[], selectedAttendan
             ? point.pieces
             : metric === "uniqueCustomers"
               ? point.uniqueCustomers
-              : point.revenue;
+              : metric === "newCustomers"
+                ? point.newCustomers
+                : metric === "recoveredCustomers"
+                  ? point.recoveredCustomers
+                  : metric === "sentMessages"
+                    ? point.sentMessages
+                    : metric === "attendedConversations"
+                      ? point.attendedConversations
+                      : point.revenue;
     });
 
     data.forEach((row) => {
