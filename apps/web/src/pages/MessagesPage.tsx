@@ -34,7 +34,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { api, API_BASE_URL } from "../lib/api";
 import { healthInfo } from "../lib/whatsappHealth";
-import { buildMessageTimelineItems } from "./messagesPage.helpers";
+import { buildMessageTimelineItems, isNearChatTop } from "./messagesPage.helpers";
 import { PhoneLoadingScreen } from "../components/PhoneLoadingScreen";
 
 const brokenWhatsappAvatarUrls = new Set<string>();
@@ -767,7 +767,6 @@ export function MessagesPage() {
   const lastScrolledConversationRef = useRef<string | null>(null);
   const conversationSyncSinceRef = useRef<string | null>(null);
   const conversationsEndRef = useRef<HTMLDivElement | null>(null);
-  const chatTopSentinelRef = useRef<HTMLDivElement | null>(null);
   const chatScrollAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
   // Set when we load OLDER messages so the scroll-to-bottom effect doesn't yank
   // the user back down after a prepend.
@@ -1275,36 +1274,28 @@ export function MessagesPage() {
     return () => window.clearInterval(interval);
   }, [conversationDetailQueryKey, detail?.pageInfo.nextCursor, detailInstanceId, detailMatchesSelection, queryClient, selectedConversationId, token]);
 
-  // Load older messages when the top sentinel scrolls into view. More reliable
-  // than a scrollTop threshold, and mirrors the conversation-list infinite
-  // scroll. Captures an anchor + sets the skip flag so the restore keeps the
-  // viewport steady and the bottom-scroll effect doesn't fire.
-  useEffect(() => {
-    const sentinel = chatTopSentinelRef.current;
+  // Fetch the preceding page as the user approaches the top. Capturing the
+  // current dimensions lets the layout effect restore the same visible
+  // message after older rows are prepended.
+  const loadOlderMessages = useCallback(() => {
     const element = chatBodyRef.current;
     if (
-      !sentinel ||
       !element ||
       !conversationDetailQuery.hasNextPage ||
-      conversationDetailQuery.isFetchingNextPage
+      conversationDetailQuery.isFetchingNextPage ||
+      chatScrollAnchorRef.current
     ) {
       return;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting) && !chatScrollAnchorRef.current) {
-          chatScrollAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
-          skipBottomScrollRef.current = true;
-          void conversationDetailQuery.fetchNextPage();
-        }
-      },
-      { root: element, rootMargin: "160px" },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [conversationDetailQuery.hasNextPage, conversationDetailQuery.isFetchingNextPage, selectedConversationId, messages.length]);
+    chatScrollAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
+    skipBottomScrollRef.current = true;
+    void conversationDetailQuery.fetchNextPage();
+  }, [
+    conversationDetailQuery.fetchNextPage,
+    conversationDetailQuery.hasNextPage,
+    conversationDetailQuery.isFetchingNextPage,
+  ]);
 
   // After older messages are prepended, restore the visual position so the
   // chat doesn't jump to the top of the newly loaded page.
@@ -1665,27 +1656,22 @@ export function MessagesPage() {
                   const element = event.currentTarget;
                   const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
                   stickToBottomRef.current = distanceFromBottom < 160;
+                  if (isNearChatTop(element.scrollTop)) {
+                    loadOlderMessages();
+                  }
                 }}
               >
                 {conversationDetailQuery.isLoading ? (
                   <ChatSkeleton />
                 ) : timelineItems.length ? (
                   <>
-                    <div ref={chatTopSentinelRef} aria-hidden="true" />
                     {conversationDetailQuery.hasNextPage ? (
                       <div className="wa-load-more-row chat">
                         <button
                           type="button"
                           className="wa-load-more-button"
                           disabled={conversationDetailQuery.isFetchingNextPage}
-                          onClick={() => {
-                            const element = chatBodyRef.current;
-                            if (element && !chatScrollAnchorRef.current) {
-                              chatScrollAnchorRef.current = { scrollHeight: element.scrollHeight, scrollTop: element.scrollTop };
-                              skipBottomScrollRef.current = true;
-                            }
-                            void conversationDetailQuery.fetchNextPage();
-                          }}
+                          onClick={loadOlderMessages}
                         >
                           {conversationDetailQuery.isFetchingNextPage ? "Carregando..." : "Carregar mensagens antigas"}
                         </button>

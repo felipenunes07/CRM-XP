@@ -1,14 +1,15 @@
 import type { CustomerCreditRow, CustomerDefectRow, CustomerDefectSnapshotMeta } from "@olist-crm/shared";
-import { useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BadgeDollarSign, Copy, Download, Repeat, Search, Send, ShieldAlert, SlidersHorizontal, TrendingUp, Users, X } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Copy, Download, Repeat, Search, Send, SlidersHorizontal, Users, X } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPrecisePercent } from "../lib/format";
-import { isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
+import { getCustomerCreditDeadline, isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
 import { CustomerCreditTable } from "../components/CustomerCreditTable";
+import { CustomerCreditExecutiveSummary } from "../components/CustomerCreditExecutiveSummary";
 import { CustomerDefectsTable } from "../components/CustomerDefectsTable";
 import { CustomerDefectProductsPanel } from "../components/CustomerDefectProductsPanel";
 import { CustomerTable } from "../components/CustomerTable";
@@ -43,8 +44,8 @@ const viewTabs = [
   {
     value: "creditPayment" as const,
     label: "Credito & Pagamento",
-    helper: "Leitura diaria de saldo, credito liberado e risco financeiro da carteira.",
-    title: "Credito e pagamento da carteira",
+    helper: "Cobranças, limites e vencimentos da carteira.",
+    title: "Financeiro",
   },
   {
     value: "defectsReturn" as const,
@@ -59,6 +60,8 @@ const viewTabs = [
     title: "Visão geográfica da carteira",
   },
 ];
+
+const CREDIT_PAGE_SIZE = 50;
 
 function getDefectSnapshotTitle(snapshot: CustomerDefectSnapshotMeta | null | undefined) {
   const sourceCount = snapshot?.sourceFiles?.length ?? 0;
@@ -148,6 +151,8 @@ function matchesCreditQuickFilter(row: CustomerCreditRow, quick: CreditQuickFilt
       return creditNeedsCharge(row);
     case "overdue":
       return isOverdueCreditRow(row);
+    case "due_soon":
+      return getCustomerCreditDeadline(row).status === "due_soon";
     case "opportunity":
       return row.operationalState === "UNUSED_CREDIT";
     case "ontrack":
@@ -340,6 +345,7 @@ function defectRateBarWidth(rate: number | null) {
 export function CustomersPage() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [state, dispatch] = useReducer(customersPageReducer, undefined, createInitialCustomersPageState);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [selectedDefectCode, setSelectedDefectCode] = useState<string | null>(null);
@@ -347,9 +353,29 @@ export function CustomersPage() {
   const [defectDetailSort, setDefectDetailSort] = useState<"most_exchanged" | "recent">("most_exchanged");
   const [defectAnalysisTab, setDefectAnalysisTab] = useState<"customers" | "products">("customers");
   const [selectedDefectProductYear, setSelectedDefectProductYear] = useState<number | null>(null);
+  const [creditPage, setCreditPage] = useState(1);
+  const [showUnmatchedCredit, setShowUnmatchedCredit] = useState(false);
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const requestedView = searchParams.get("view");
+
+  useEffect(() => {
+    if (requestedView === "creditPayment" && state.activeView !== "creditPayment") {
+      dispatch({ type: "setView", view: "creditPayment" });
+    }
+  }, [requestedView, state.activeView]);
+
+  const selectView = (view: (typeof viewTabs)[number]["value"]) => {
+    dispatch({ type: "setView", view });
+    const nextSearchParams = new URLSearchParams(searchParams);
+    if (view === "portfolio") {
+      nextSearchParams.delete("view");
+    } else {
+      nextSearchParams.set("view", view);
+    }
+    setSearchParams(nextSearchParams, { replace: true });
+  };
 
   const [downloadingFiltered, setDownloadingFiltered] = useState(false);
 
@@ -659,12 +685,27 @@ export function CustomersPage() {
     () => sortCreditRows(applyCreditQuickFilter(kpiFilteredRows, state.creditQuickFilter), state.creditSort),
     [kpiFilteredRows, state.creditQuickFilter, state.creditSort],
   );
+  const totalCreditPages = Math.max(1, Math.ceil(displayedCreditRows.length / CREDIT_PAGE_SIZE));
+  const currentCreditPage = Math.min(creditPage, totalCreditPages);
+  const visibleCreditRows = useMemo(
+    () =>
+      displayedCreditRows.slice(
+        (currentCreditPage - 1) * CREDIT_PAGE_SIZE,
+        currentCreditPage * CREDIT_PAGE_SIZE,
+      ),
+    [currentCreditPage, displayedCreditRows],
+  );
+
+  useEffect(() => {
+    setCreditPage(1);
+  }, [state.creditFilters, state.creditKpiFilter, state.creditQuickFilter, state.creditSort]);
 
   // Contagens dos atalhos de triagem (sobre a base filtrada por busca/avancados)
   const quickFilterCounts = useMemo(
     () => ({
       to_charge: filteredLinkedCreditRows.filter((row) => creditNeedsCharge(row)).length,
       overdue: filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
+      due_soon: filteredLinkedCreditRows.filter((row) => getCustomerCreditDeadline(row).status === "due_soon").length,
       opportunity: filteredLinkedCreditRows.filter((row) => row.operationalState === "UNUSED_CREDIT").length,
       ontrack: filteredLinkedCreditRows.filter((row) => !row.hasOverCredit && !isOverdueCreditRow(row)).length,
     }),
@@ -680,12 +721,11 @@ export function CustomersPage() {
     [filteredLinkedCreditRows],
   );
 
-  const filteredCreditBalanceAmount = useMemo(
-    () => filteredLinkedCreditRows.reduce((sum, row) => sum + row.creditBalanceAmount, 0),
-    [filteredLinkedCreditRows],
-  );
-  const filteredCreditBalanceCount = useMemo(
-    () => filteredLinkedCreditRows.filter((row) => row.creditBalanceAmount > 0).length,
+  const filteredOverdueDebtAmount = useMemo(
+    () =>
+      filteredLinkedCreditRows
+        .filter((row) => isOverdueCreditRow(row))
+        .reduce((sum, row) => sum + row.debtAmount, 0),
     [filteredLinkedCreditRows],
   );
 
@@ -719,6 +759,10 @@ export function CustomersPage() {
     () => displayedCreditRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
     [displayedCreditRows, selectedCreditCodes],
   );
+  const selectedVisibleCreditRows = useMemo(
+    () => visibleCreditRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
+    [selectedCreditCodes, visibleCreditRows],
+  );
   const selectedCreditDebt = useMemo(
     () => selectedCreditRows.reduce((sum, row) => sum + Math.max(0, row.debtAmount), 0),
     [selectedCreditRows],
@@ -727,7 +771,7 @@ export function CustomersPage() {
   const toggleAllVisibleCredit = (checked: boolean) => {
     setSelectedCreditCodes((current) => {
       const next = new Set(current);
-      for (const row of displayedCreditRows) {
+      for (const row of visibleCreditRows) {
         if (!row.customerId) continue;
         if (checked) {
           next.add(row.customerCode);
@@ -790,6 +834,9 @@ export function CustomersPage() {
           <div>
             <p className="eyebrow">Clientes</p>
             <h2 className="premium-header-title">{activeTab.title}</h2>
+            {state.activeView === "creditPayment" ? (
+              <p className="panel-subcopy credit-page-subtitle">{activeTab.helper}</p>
+            ) : null}
           </div>
 
           <div className="chart-switcher customers-view-switcher" role="tablist" aria-label="Alternar visao da pagina de clientes">
@@ -802,7 +849,7 @@ export function CustomersPage() {
                 aria-selected={state.activeView === tab.value}
                 aria-pressed={state.activeView === tab.value}
                 className={`chart-switch-button ${state.activeView === tab.value ? "active" : ""}`}
-                onClick={() => dispatch({ type: "setView", view: tab.value })}
+                onClick={() => selectView(tab.value)}
               >
                 <strong>{tab.label}</strong>
               </button>
@@ -913,7 +960,7 @@ export function CustomersPage() {
             Mapa com leitura espacial da carteira, ranking por cidade e filtros de estado para aproximar a experiencia do Power BI.
           </p>
         ) : (
-          <div className="credit-filter-wrap">
+          <div className="bankfin credit-filter-wrap">
             <div className="credit-filter-bar">
               <div className="credit-search-field">
                 <Search size={17} className="credit-search-icon" />
@@ -1406,7 +1453,7 @@ export function CustomersPage() {
       ) : state.activeView === "geographic" ? (
         <GeographicView />
       ) : (
-        <>
+        <div className="bankfin page-stack">
           {creditOverviewQuery.isLoading ? (
             <div className="credit-skeleton" aria-busy="true" aria-label="Carregando credito e pagamento">
               <div className="credit-skeleton-strip">
@@ -1425,168 +1472,62 @@ export function CustomersPage() {
           {creditOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot financeiro.</div> : null}
           {creditOverviewQuery.data ? (
             <>
-              {/* KPI Strip - Interactive */}
-              <div className="credit-kpi-strip">
-                <button
-                  type="button"
-                  className={`credit-kpi-card tone-warning ${state.creditKpiFilter === "owing" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "owing" })}
-                >
-                  <div className="credit-kpi-header">
-                    <span className="credit-kpi-label">Em aberto</span>
-                    <div className="credit-kpi-icon tone-warning"><BadgeDollarSign size={18} /></div>
-                  </div>
-                  <strong className="credit-kpi-value">{formatCurrency(filteredDebtAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(filteredDebtCount)} clientes com divida</span>
-                </button>
+              <CustomerCreditExecutiveSummary
+                rows={filteredLinkedCreditRows}
+                snapshot={creditOverviewQuery.data.snapshot}
+                linkedCount={creditOverviewQuery.data.summary.totalLinkedCustomers}
+                unmatchedCount={creditOverviewQuery.data.summary.totalUnmatchedRows}
+                quickFilter={state.creditQuickFilter}
+                kpiFilter={state.creditKpiFilter}
+                sort={state.creditSort}
+                quickCounts={quickFilterCounts}
+                debtAmount={filteredDebtAmount}
+                debtCount={filteredDebtCount}
+                overdueDebtAmount={filteredOverdueDebtAmount}
+                overdueCount={filteredOverdueCount}
+                availableCreditAmount={filteredAvailableCreditAmount}
+                unusedCreditCount={filteredUnusedCreditCount}
+                excessAmount={filteredTotalExcessAmount}
+                overCreditCount={filteredOverCreditCount}
+                hasActiveFilters={Boolean(
+                  state.creditKpiFilter ||
+                    state.creditQuickFilter ||
+                    Object.values(state.creditFilters).some((value) => value !== ""),
+                )}
+                canRefresh={canRefreshCredit}
+                isRefreshing={refreshCreditMutation.isPending}
+                refreshError={refreshCreditMutation.isError}
+                onQuickFilter={(value) => dispatch({ type: "setCreditQuickFilter", value })}
+                onKpiFilter={(value) => dispatch({ type: "setCreditKpiFilter", value })}
+                onSort={(value) => dispatch({ type: "setCreditSort", value })}
+                onClearFilters={() => dispatch({ type: "clearCreditFilters" })}
+                onRefresh={() => refreshCreditMutation.mutate()}
+              />
 
-                <button
-                  type="button"
-                  className={`credit-kpi-card tone-success ${state.creditKpiFilter === "credit_balance" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "credit_balance" })}
-                >
-                  <div className="credit-kpi-header">
-                    <span className="credit-kpi-label">Saldo a favor</span>
-                    <div className="credit-kpi-icon tone-success"><TrendingUp size={18} /></div>
-                  </div>
-                  <strong className="credit-kpi-value">{formatCurrency(filteredCreditBalanceAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(filteredCreditBalanceCount)} clientes com saldo positivo</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`credit-kpi-card tone-info ${state.creditKpiFilter === "unused_credit" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "unused_credit" })}
-                >
-                  <div className="credit-kpi-header">
-                    <span className="credit-kpi-label">Credito livre</span>
-                    <div className="credit-kpi-icon tone-info"><TrendingUp size={18} /></div>
-                  </div>
-                  <strong className="credit-kpi-value">{formatCurrency(filteredAvailableCreditAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(filteredUnusedCreditCount)} clientes para empurrar venda</span>
-                </button>
-
-                <button
-                  type="button"
-                  className={`credit-kpi-card tone-danger ${state.creditKpiFilter === "over_credit" ? "active" : ""}`}
-                  onClick={() => dispatch({ type: "setCreditKpiFilter", value: "over_credit" })}
-                >
-                  <div className="credit-kpi-header">
-                    <span className="credit-kpi-label">Acima do limite</span>
-                    <div className="credit-kpi-icon tone-danger"><ShieldAlert size={18} /></div>
-                  </div>
-                  <strong className="credit-kpi-value">{formatCurrency(filteredTotalExcessAmount)}</strong>
-                  <span className="credit-kpi-helper">{formatNumber(filteredOverCreditCount)} acima e {formatNumber(filteredOverdueCount)} com atraso</span>
-                </button>
-              </div>
-
-              {/* Snapshot bar + Meta */}
-              <div className="credit-snapshot-bar">
-                <div className="credit-snapshot-info">
-                  <strong>{creditOverviewQuery.data.snapshot?.sourceFileName || "Planilha de saldos"}</strong>
-                  <span>
-                    {`${formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} vinculados · ${formatNumber(creditOverviewQuery.data.summary.totalUnmatchedRows)} nao vinculados`}
-                  </span>
-                  {creditOverviewQuery.data.snapshot?.importedAt ? (
-                    <small>
-                      {creditOverviewQuery.data.snapshot.sourceFileUpdatedAt
-                        ? `Arquivo ${formatDateTime(creditOverviewQuery.data.snapshot.sourceFileUpdatedAt)} · `
-                        : ""}
-                      Atualizado {formatDateTime(creditOverviewQuery.data.snapshot.importedAt)}
-                    </small>
-                  ) : null}
-                </div>
-
-                <div className="credit-snapshot-actions">
-                  {state.creditKpiFilter || state.creditQuickFilter || Object.values(state.creditFilters).some(v => v !== "") ? (
-                    <button
-                      type="button"
-                      className="ghost-button small"
-                      onClick={() => dispatch({ type: "clearCreditFilters" })}
-                    >
-                      Limpar filtro
-                    </button>
-                  ) : null}
-
-                  {canRefreshCredit ? (
-                    <button
-                      type="button"
-                      className="ghost-button small"
-                      onClick={() => refreshCreditMutation.mutate()}
-                      disabled={refreshCreditMutation.isPending}
-                    >
-                      {refreshCreditMutation.isPending ? "Atualizando..." : "Atualizar agora"}
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              {refreshCreditMutation.isError ? (
-                <span className="inline-error">Nao foi possivel atualizar o arquivo agora.</span>
-              ) : null}
-
-              {/* Atalhos de triagem + ordenacao */}
-              <div className="credit-triage-bar">
-                <div className="credit-triage-chips" role="group" aria-label="Atalhos de triagem">
-                  {([
-                    { value: "to_charge", label: "Cobrar hoje", tone: "danger", count: quickFilterCounts.to_charge },
-                    { value: "overdue", label: "Vencidos", tone: "warning", count: quickFilterCounts.overdue },
-                    { value: "opportunity", label: "Oportunidades", tone: "success", count: quickFilterCounts.opportunity },
-                    { value: "ontrack", label: "Em dia", tone: "muted", count: quickFilterCounts.ontrack },
-                  ] as const).map((chip) => (
-                    <button
-                      key={chip.value}
-                      type="button"
-                      className={`credit-chip tone-${chip.tone} ${state.creditQuickFilter === chip.value ? "active" : ""}`}
-                      aria-pressed={state.creditQuickFilter === chip.value}
-                      onClick={() => dispatch({ type: "setCreditQuickFilter", value: chip.value })}
-                    >
-                      {chip.label}
-                      <span className="credit-chip-count">{formatNumber(chip.count)}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <label className="credit-sort-field">
-                  <span>Ordenar por</span>
-                  <select
-                    value={state.creditSort}
-                    onChange={(event) =>
-                      dispatch({ type: "setCreditSort", value: event.target.value as CreditSortBy })
-                    }
-                  >
-                    <option value="urgency">Urgencia</option>
-                    <option value="debt_desc">Maior em aberto</option>
-                    <option value="available_desc">Maior credito livre</option>
-                    <option value="name">Nome (A-Z)</option>
-                  </select>
-                </label>
-              </div>
-
-              {/* Results meta */}
-              <div className="credit-results-meta">
+              <div className="bankfin-listhead">
+                <h3>Clientes para acompanhar</h3>
                 <p>
-                  Exibindo {formatNumber(displayedCreditRows.length)} de{" "}
-                  {formatNumber(creditOverviewQuery.data.summary.totalLinkedCustomers)} clientes vinculados.
-                  {state.creditKpiFilter || state.creditQuickFilter ? (
-                    <button
-                      type="button"
-                      className="credit-clear-filter-inline"
-                      onClick={() => dispatch({ type: "clearCreditFilters" })}
-                    >
-                      Mostrar todos
-                    </button>
+                  {formatNumber(displayedCreditRows.length ? (currentCreditPage - 1) * CREDIT_PAGE_SIZE + 1 : 0)}
+                  {"–"}
+                  {formatNumber(Math.min(currentCreditPage * CREDIT_PAGE_SIZE, displayedCreditRows.length))} de{" "}
+                  {formatNumber(displayedCreditRows.length)}
+                  {displayedCreditRows.length > 0 ? (
+                    <>
+                      {" · "}
+                      <button
+                        type="button"
+                        className="bankfin-linkbtn"
+                        onClick={() =>
+                          toggleAllVisibleCredit(selectedVisibleCreditRows.length !== visibleCreditRows.length)
+                        }
+                      >
+                        {selectedVisibleCreditRows.length === visibleCreditRows.length
+                          ? "desmarcar página"
+                          : "selecionar página"}
+                      </button>
+                    </>
                   ) : null}
                 </p>
-                {displayedCreditRows.length > 0 ? (
-                  <button
-                    type="button"
-                    className="ghost-button small"
-                    onClick={() => toggleAllVisibleCredit(selectedCreditRows.length !== displayedCreditRows.length)}
-                  >
-                    {selectedCreditRows.length === displayedCreditRows.length ? "Desmarcar todos" : "Selecionar todos os visiveis"}
-                  </button>
-                ) : null}
               </div>
 
               {/* Barra de acao do publico de cobranca */}
@@ -1631,16 +1572,9 @@ export function CustomersPage() {
                 </div>
               ) : null}
 
-              {selectedCreditRows.length === 0 && displayedCreditRows.length > 0 ? (
-                <p className="credit-select-hint">
-                  <Users size={14} /> Marque os clientes na primeira coluna para criar um publico e disparar a cobranca no
-                  WhatsApp. Use os atalhos acima (ex.: "Cobrar hoje") para filtrar quem precisa de cobranca.
-                </p>
-              ) : null}
-
               {/* Table */}
               <CustomerCreditTable
-                rows={displayedCreditRows}
+                rows={visibleCreditRows}
                 emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
                 selectable
                 selectedCodes={selectedCreditCodes}
@@ -1648,25 +1582,54 @@ export function CustomersPage() {
                 onToggleAll={toggleAllVisibleCredit}
               />
 
+              {totalCreditPages > 1 ? (
+                <nav className="bankfin-pagination" aria-label="Paginas da carteira de credito">
+                  <button
+                    type="button"
+                    onClick={() => setCreditPage((page) => Math.max(1, page - 1))}
+                    disabled={currentCreditPage === 1}
+                  >
+                    Anterior
+                  </button>
+                  <span>
+                    Página {formatNumber(currentCreditPage)} de {formatNumber(totalCreditPages)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCreditPage((page) => Math.min(totalCreditPages, page + 1))}
+                    disabled={currentCreditPage === totalCreditPages}
+                  >
+                    Próxima
+                  </button>
+                </nav>
+              ) : null}
+
               {/* Unmatched */}
-              <details className="panel customer-credit-unmatched-panel">
+              <details
+                className="panel customer-credit-unmatched-panel"
+                onToggle={(event) => setShowUnmatchedCredit(event.currentTarget.open)}
+              >
                 <summary>
                   Nao vinculados ao CRM ({formatNumber(filteredUnmatchedCreditRows.length)}/
                   {formatNumber(creditOverviewQuery.data.summary.totalUnmatchedRows)})
                 </summary>
-                <p className="panel-subcopy">
-                  Esses codigos existem no Excel diario, mas ainda nao encontraram correspondencia pelo{" "}
-                  <code>customer_code</code> do CRM. Eles ficam visiveis para revisao sem poluir a operacao principal.
-                </p>
-                <CustomerCreditTable
-                  rows={filteredUnmatchedCreditRows}
-                  linkedOnly={false}
-                  emptyMessage="Nenhum codigo nao vinculado bate com esse filtro."
-                />
+                {showUnmatchedCredit ? (
+                  <>
+                    <p className="panel-subcopy">
+                      Esses codigos existem no Excel diario, mas ainda nao encontraram correspondencia pelo{" "}
+                      <code>customer_code</code> do CRM. Eles ficam visiveis para revisao sem poluir a operacao principal.
+                    </p>
+                    <CustomerCreditTable
+                      rows={filteredUnmatchedCreditRows.slice(0, CREDIT_PAGE_SIZE)}
+                      linkedOnly={false}
+                      emptyMessage="Nenhum codigo nao vinculado bate com esse filtro."
+                    />
+                  </>
+                ) : null}
               </details>
             </>
           ) : null}
-        </>
+        </div>
       )}
 
       {audienceModal ? (

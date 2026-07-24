@@ -104,6 +104,8 @@ export interface WhatsappGroupFilters {
   limit?: number;
   offset?: number;
   customerStatus?: string;
+  state?: string;
+  city?: string;
 }
 
 export interface UpdateWhatsappGroupMatchInput {
@@ -275,6 +277,8 @@ function mapWhatsappGroupRow(row: Record<string, unknown>): WhatsappGroup {
     customerCode: row.customer_code ? String(row.customer_code) : null,
     customerDisplayName: row.customer_display_name ? String(row.customer_display_name) : null,
     customerStatus: row.customer_status ? (String(row.customer_status) as CustomerStatus) : null,
+    state: row.state ? String(row.state) : null,
+    city: row.city ? String(row.city) : null,
     lastAttendant: row.last_attendant ? String(row.last_attendant) : null,
     lastContactAt: row.last_contact_at ? new Date(String(row.last_contact_at)).toISOString() : null,
     lastCampaignId: row.last_campaign_id ? String(row.last_campaign_id) : null,
@@ -357,6 +361,14 @@ function buildGroupsWhere(filters: WhatsappGroupFilters, customerIds: string[]) 
     push((index) => `cs.status = $${index}`, filters.customerStatus);
   }
 
+  if (filters.state) {
+    push((index) => `COALESCE(cs.state, c.state) = $${index}`, filters.state);
+  }
+
+  if (filters.city) {
+    push((index) => `COALESCE(cs.city, c.city) = $${index}`, filters.city);
+  }
+
   if (filters.onlyRecentlyBlocked) {
     push(
       (index) => `wg.last_contact_at IS NOT NULL AND wg.last_contact_at > NOW() - make_interval(days => $${index}::int)`,
@@ -374,6 +386,8 @@ export interface WhatsappMappingSummaryFilters {
   search?: string;
   savedSegmentId?: string;
   recentBlock?: "AVAILABLE_ONLY" | "BLOCKED_ONLY" | "ALL";
+  state?: string;
+  city?: string;
 }
 
 function emptyMappingSummary(): WhatsappMappingSummary {
@@ -406,7 +420,10 @@ export async function getWhatsappMappingSummary(
   }
 
   // WHERE base = apenas Busca + Público salvo (sem classificação/status/bloqueio).
-  const { whereSql, params } = buildGroupsWhere({ search: filters.search }, customerIds);
+  const { whereSql, params } = buildGroupsWhere(
+    { search: filters.search, state: filters.state, city: filters.city },
+    customerIds,
+  );
 
   params.push(env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS);
   const blockDaysIndex = params.length;
@@ -525,6 +542,8 @@ export async function listWhatsappGroups(filters: WhatsappGroupFilters = {}): Pr
           c.customer_code,
           COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS customer_display_name,
           cs.status AS customer_status,
+          COALESCE(cs.state, c.state) AS state,
+          COALESCE(cs.city, c.city) AS city,
           COALESCE(cs.last_attendant, c.last_attendant) AS last_attendant,
           ct.trend AS purchase_trend,
           (

@@ -1,6 +1,10 @@
 import type { WhatsappMonitorMessage } from "@olist-crm/shared";
 import { describe, expect, it } from "vitest";
-import { buildMessageTimelineItems, formatMessageDayLabel } from "./messagesPage.helpers";
+import {
+  buildMessageTimelineItems,
+  formatMessageDayLabel,
+  isNearChatTop,
+} from "./messagesPage.helpers";
 
 function message(id: string, createdAt: string): WhatsappMonitorMessage {
   return {
@@ -20,6 +24,12 @@ function message(id: string, createdAt: string): WhatsappMonitorMessage {
 }
 
 describe("messagesPage helpers", () => {
+  it("starts loading older messages shortly before the chat reaches the top", () => {
+    expect(isNearChatTop(900)).toBe(false);
+    expect(isNearChatTop(480)).toBe(true);
+    expect(isNearChatTop(0)).toBe(true);
+  });
+
   it("adds a visible date marker when the chat crosses days", () => {
     const now = new Date("2026-05-28T15:00:00-03:00");
     const items = buildMessageTimelineItems(

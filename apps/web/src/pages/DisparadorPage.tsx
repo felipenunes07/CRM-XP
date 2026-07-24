@@ -76,6 +76,17 @@ const quickFilters: Array<{ value: QuickFilter; label: string; description: stri
   { value: "SELECTED", label: "Selecionados", description: "Visualizar apenas contatos selecionados para envio." },
 ];
 
+const BRAZILIAN_STATE_LABELS: Record<string, string> = {
+  AC: "Acre", AL: "Alagoas", AP: "Amapá", AM: "Amazonas", BA: "Bahia", CE: "Ceará", DF: "Distrito Federal",
+  ES: "Espírito Santo", GO: "Goiás", MA: "Maranhão", MT: "Mato Grosso", MS: "Mato Grosso do Sul", MG: "Minas Gerais",
+  PA: "Pará", PB: "Paraíba", PR: "Paraná", PE: "Pernambuco", PI: "Piauí", RJ: "Rio de Janeiro", RN: "Rio Grande do Norte",
+  RS: "Rio Grande do Sul", RO: "Rondônia", RR: "Roraima", SC: "Santa Catarina", SP: "São Paulo", SE: "Sergipe", TO: "Tocantins",
+};
+
+function stateLabel(state: string) {
+  return BRAZILIAN_STATE_LABELS[state] ? `${BRAZILIAN_STATE_LABELS[state]} (${state})` : state;
+}
+
 const campaignPerformanceFilters: Array<{ value: CampaignPerformanceFilter; label: string }> = [
   { value: "ALL", label: "Todos" },
   { value: "SENT", label: "Enviados" },
@@ -141,11 +152,15 @@ function buildGroupsQueryParams(input: {
   search: string;
   savedSegmentId: string;
   onlyRecentlyBlocked: boolean;
+  state: string;
+  city: string;
 }) {
   const params: Record<string, string | boolean | undefined> = {
     search: input.search || undefined,
     savedSegmentId: input.savedSegmentId || undefined,
     onlyRecentlyBlocked: input.onlyRecentlyBlocked || undefined,
+    state: input.state || undefined,
+    city: input.city || undefined,
   };
 
   if (input.quickFilter === "WITH_ORDER" || input.quickFilter === "NO_ORDER_EXCEL" || input.quickFilter === "OTHER") {
@@ -991,6 +1006,8 @@ export function DisparadorPage() {
   const [dispatchesFilter, setDispatchesFilter] = useState<"ALL" | "ZERO" | "SOME" | "FEW" | "MANY">("ALL");
   const [search, setSearch] = useState("");
   const [savedSegmentId, setSavedSegmentId] = useState("");
+  const [selectedState, setSelectedState] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
   const [recentBlockFilter, setRecentBlockFilter] = useState<RecentBlockFilter>("AVAILABLE_ONLY");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -1185,6 +1202,21 @@ export function DisparadorPage() {
         search,
         savedSegmentId,
         onlyRecentlyBlocked: recentBlockFilter === "BLOCKED_ONLY",
+        state: selectedState,
+        city: selectedCity,
+      }),
+    [quickFilter, recentBlockFilter, savedSegmentId, search, selectedCity, selectedState],
+  );
+
+  const locationFacetQueryParams = useMemo(
+    () =>
+      buildGroupsQueryParams({
+        quickFilter,
+        search,
+        savedSegmentId,
+        onlyRecentlyBlocked: recentBlockFilter === "BLOCKED_ONLY",
+        state: "",
+        city: "",
       }),
     [quickFilter, recentBlockFilter, savedSegmentId, search],
   );
@@ -1220,8 +1252,10 @@ export function DisparadorPage() {
       search: search || undefined,
       savedSegmentId: savedSegmentId || undefined,
       recentBlock: recentBlockFilter,
+      state: selectedState || undefined,
+      city: selectedCity || undefined,
     }),
-    [search, savedSegmentId, recentBlockFilter],
+    [search, savedSegmentId, recentBlockFilter, selectedCity, selectedState],
   );
 
   const mappingSummaryQuery = useQuery({
@@ -1233,6 +1267,12 @@ export function DisparadorPage() {
   const groupsQuery = useQuery({
     queryKey: ["whatsapp-groups", groupQueryParams],
     queryFn: () => api.whatsappGroups(token!, groupQueryParams),
+    enabled: Boolean(token),
+  });
+
+  const locationFacetGroupsQuery = useQuery({
+    queryKey: ["whatsapp-groups-location-facets", locationFacetQueryParams],
+    queryFn: () => api.whatsappGroups(token!, locationFacetQueryParams),
     enabled: Boolean(token),
   });
 
@@ -1516,6 +1556,14 @@ export function DisparadorPage() {
   }, []);
 
   const loadedGroups = groupsQuery.data?.items ?? [];
+  const availableStates = useMemo(
+    () => [...new Set([...((locationFacetGroupsQuery.data?.items ?? []).map((group) => group.state).filter((state): state is string => Boolean(state))), selectedState].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [locationFacetGroupsQuery.data?.items, selectedState],
+  );
+  const availableCities = useMemo(
+    () => [...new Set([...loadedGroups.map((group) => group.city).filter((city): city is string => Boolean(city)), selectedCity].filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    [loadedGroups, selectedCity],
+  );
   const filteredGroups = useMemo(() => {
     let result = loadedGroups;
 
@@ -1556,7 +1604,7 @@ export function DisparadorPage() {
   // Reset page to 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [quickFilter, recentBlockFilter, savedSegmentId, search, dispatchesFilter]);
+  }, [quickFilter, recentBlockFilter, savedSegmentId, search, dispatchesFilter, selectedState, selectedCity]);
 
   const itemsPerPage = 50;
   const totalPages = Math.ceil(filteredGroups.length / itemsPerPage);
@@ -2052,7 +2100,7 @@ export function DisparadorPage() {
                   </div>
 
                   {/* Filter Toolbar (Row 1 of inputs exactly like screenshot) */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.25rem", margin: "1.25rem 0" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "1.25rem", margin: "1.25rem 0" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Público salvo</span>
                       <select
@@ -2084,6 +2132,36 @@ export function DisparadorPage() {
                         className="wp-card-input"
                         style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem" }}
                       />
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Estado</span>
+                      <select
+                        value={selectedState}
+                        onChange={(event) => {
+                          setSelectedState(event.target.value);
+                          setSelectedCity("");
+                        }}
+                        className="wp-card-input"
+                        style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem", background: "#fff" }}
+                      >
+                        <option value="">Todos os estados</option>
+                        {availableStates.map((state) => <option key={state} value={state}>{stateLabel(state)}</option>)}
+                      </select>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      <span style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155" }}>Cidade</span>
+                      <select
+                        value={selectedCity}
+                        onChange={(event) => setSelectedCity(event.target.value)}
+                        disabled={!selectedState}
+                        className="wp-card-input"
+                        style={{ padding: "0.625rem 0.75rem", fontSize: "0.9rem", background: "#fff", opacity: selectedState ? 1 : 0.6, cursor: selectedState ? "pointer" : "not-allowed" }}
+                      >
+                        <option value="">{selectedState ? "Todas as cidades" : "Selecione um estado primeiro"}</option>
+                        {availableCities.map((city) => <option key={city} value={city}>{city}</option>)}
+                      </select>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>

@@ -108,9 +108,9 @@ const envSchema = z.object({
   WORKER_WHATSAPP_SYNC_INTERVAL_HOURS: z.coerce.number().int().positive().default(12),
   WORKER_CREDIT_SYNC_ENABLED: z
     .enum(["true", "false"])
-    .default("false")
+    .default("true")
     .transform((value) => value === "true"),
-  WORKER_CREDIT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(60),
+  WORKER_CREDIT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
   WORKER_DEFECT_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

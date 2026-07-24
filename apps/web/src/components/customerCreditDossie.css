@@ -1,0 +1,628 @@
+/* ==========================================================================
+   Dossiê financeiro do cliente — foco nas duas tabelas.
+   Depende dos tokens definidos em customerCreditBank.css (.bankfin).
+   ========================================================================== */
+
+.bankfin-dossie {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.bankfin-dossie-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bankfin-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--bf-accent);
+  text-decoration: none;
+}
+
+.bankfin-back:hover {
+  text-decoration: underline;
+}
+
+.bankfin-dossie-top > span {
+  font-size: 0.75rem;
+  color: var(--bf-muted);
+}
+
+/* Identificação do cliente ------------------------------------------------ */
+
+.bankfin-dossie-id {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bankfin-dossie-id h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--bf-navy);
+}
+
+.bankfin-dossie-id p {
+  margin: 0.2rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.79rem;
+  color: var(--bf-muted);
+}
+
+.bankfin-dossie-open {
+  text-align: right;
+}
+
+.bankfin-dossie-open span {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bf-muted);
+}
+
+.bankfin-dossie-open strong {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Faixa de números -------------------------------------------------------- */
+
+.bankfin-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr) auto;
+  background: var(--bf-surface);
+  border: 1px solid var(--bf-line);
+  border-radius: var(--bf-radius);
+  box-shadow: 0 1px 2px rgba(11, 36, 71, 0.04);
+  overflow: hidden;
+}
+
+.bankfin-strip-cell {
+  padding: 0.75rem 1rem;
+  border-left: 1px solid var(--bf-line);
+}
+
+.bankfin-strip-cell:first-child {
+  border-left: 0;
+}
+
+.bankfin-strip-cell span {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--bf-muted);
+}
+
+.bankfin-strip-cell strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1.12rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--bf-navy);
+}
+
+.bankfin-strip-cell small {
+  display: block;
+  font-size: 0.73rem;
+  color: var(--bf-muted);
+}
+
+.bankfin-strip-cell.tone-danger strong {
+  color: var(--bf-danger);
+}
+
+.bankfin-strip-cell.tone-warning strong {
+  color: var(--bf-warning);
+}
+
+.bankfin-strip-cell.tone-success strong {
+  color: var(--bf-success);
+}
+
+.bankfin-strip-action {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-left: 1px solid var(--bf-line);
+  background: var(--bf-surface-soft);
+}
+
+/* Alerta de uma linha ----------------------------------------------------- */
+
+.bankfin-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.84rem;
+  border: 1px solid transparent;
+}
+
+.bankfin-alert strong {
+  font-weight: 700;
+}
+
+.bankfin-alert.tone-danger {
+  background: var(--bf-danger-soft);
+  border-color: rgba(197, 58, 53, 0.2);
+  color: var(--bf-danger);
+}
+
+.bankfin-alert.tone-warning {
+  background: var(--bf-warning-soft);
+  border-color: rgba(181, 125, 20, 0.22);
+  color: var(--bf-warning);
+}
+
+.bankfin-alert.tone-success {
+  background: var(--bf-success-soft);
+  border-color: rgba(31, 122, 77, 0.2);
+  color: var(--bf-success);
+}
+
+/* Detalhes recolhíveis ---------------------------------------------------- */
+
+.bankfin-more {
+  border: 1px solid var(--bf-line);
+  border-radius: var(--bf-radius);
+  background: var(--bf-surface);
+}
+
+.bankfin-more > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--bf-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.bankfin-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bankfin-more > summary:hover {
+  color: var(--bf-accent);
+}
+
+.bankfin-more[open] > summary {
+  border-bottom: 1px solid var(--bf-line);
+}
+
+.bankfin-more-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.bankfin-more-body > div {
+  padding: 0.75rem 1rem;
+  border-right: 1px solid var(--bf-line);
+  border-top: 1px solid var(--bf-line);
+}
+
+.bankfin-more-body > div:first-child {
+  border-top: 0;
+}
+
+.bankfin-more-body > div span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--bf-muted);
+  margin-bottom: 0.15rem;
+}
+
+.bankfin-more-body > div strong {
+  font-size: 0.88rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--bf-navy);
+}
+
+.bankfin-more-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.2rem;
+}
+
+/* Editor inline de limite e prazo ---------------------------------------- */
+
+.bankfin-editor {
+  border: 1px solid var(--bf-accent);
+  border-radius: var(--bf-radius);
+  background: var(--bf-surface);
+  padding: 0.9rem 1rem;
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.bankfin-editor .bankfin-field {
+  min-width: 180px;
+}
+
+.bankfin-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.bankfin-editor-msg {
+  flex-basis: 100%;
+  font-size: 0.77rem;
+  color: var(--bf-muted);
+}
+
+.bankfin-editor-msg.is-error {
+  color: var(--bf-danger);
+  font-weight: 600;
+}
+
+.bankfin-editor-msg.is-ok {
+  color: var(--bf-success);
+  font-weight: 600;
+}
+
+/* Tabelas de pedidos e pagamentos ---------------------------------------- */
+
+.bankfin-ledger-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.85rem;
+}
+
+.bankfin-ledger {
+  display: flex;
+  flex-direction: column;
+  background: var(--bf-surface);
+  border: 1px solid var(--bf-line);
+  border-radius: var(--bf-radius);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(11, 36, 71, 0.04);
+}
+
+.bankfin-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--bf-line-strong);
+  background: var(--bf-surface-soft);
+}
+
+.bankfin-ledger-head h4 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--bf-navy);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.bankfin-ledger-total {
+  text-align: right;
+}
+
+.bankfin-ledger-total strong {
+  display: block;
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--bf-navy);
+}
+
+.bankfin-ledger-total span {
+  font-size: 0.72rem;
+  color: var(--bf-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bankfin-ledger-scroll {
+  height: clamp(420px, calc(100vh - 400px), 820px);
+  overflow: auto;
+}
+
+.bankfin-ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.bankfin-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bf-surface);
+  border-bottom: 1px solid var(--bf-line-strong);
+  padding: 0.5rem 0.9rem;
+  font-size: 0.71rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bf-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bankfin-ledger-table th.is-right,
+.bankfin-ledger-table td.is-right {
+  text-align: right;
+}
+
+.bankfin-ledger-table tbody td {
+  padding: 0.62rem 0.9rem;
+  border-bottom: 1px solid var(--bf-line);
+  color: var(--bf-navy);
+  white-space: nowrap;
+}
+
+.bankfin-ledger-table tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.bankfin-ledger-table tbody tr:hover {
+  background: var(--bf-accent-soft);
+}
+
+.bankfin-ledger-table .is-date {
+  font-variant-numeric: tabular-nums;
+  color: var(--bf-muted);
+  width: 98px;
+}
+
+.bankfin-ledger-table .is-doc strong {
+  font-weight: 600;
+}
+
+.bankfin-ledger-table .is-doc span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--bf-muted);
+}
+
+.bankfin-ledger-table .is-money {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.bankfin-ledger-table .is-money.in {
+  color: var(--bf-success);
+}
+
+.bankfin-ledger-table .is-note {
+  color: var(--bf-muted);
+  font-size: 0.8rem;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bankfin-tag {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 5px;
+  background: var(--bf-surface-soft);
+  border: 1px solid var(--bf-line-strong);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--bf-muted);
+}
+
+.bankfin-ledger-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--bf-muted);
+  font-size: 0.86rem;
+}
+
+.bankfin-ledger-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.55rem;
+  border-top: 1px solid var(--bf-line);
+  background: var(--bf-surface-soft);
+  font-size: 0.78rem;
+  color: var(--bf-muted);
+}
+
+@media (max-width: 1100px) {
+  .bankfin-ledger-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bankfin-ledger-scroll {
+    height: 440px;
+  }
+
+  .bankfin-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bankfin-strip-action {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 1px solid var(--bf-line);
+  }
+}
+
+/* Gráfico de dívida x limite ---------------------------------------------- */
+
+.bankfin-chart-card {
+  padding: 0.95rem 1.1rem 0.8rem;
+}
+
+.bankfin-chart-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, auto)) 1fr;
+  align-items: center;
+  gap: 0.4rem 1.6rem;
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--bf-line);
+}
+
+.bankfin-chart-stats > div span {
+  display: block;
+  font-size: 0.71rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--bf-muted);
+}
+
+.bankfin-chart-stats > div strong {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--bf-navy);
+  line-height: 1.2;
+}
+
+.bankfin-chart-stats > div small {
+  font-size: 0.72rem;
+  color: var(--bf-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bankfin-chart-stats > div.tone-danger strong {
+  color: var(--bf-danger);
+}
+
+.bankfin-chart-stats > div.tone-warning strong {
+  color: var(--bf-warning);
+}
+
+.bankfin-chart-stats > div.tone-success strong {
+  color: var(--bf-success);
+}
+
+.bankfin-chart-verdict {
+  margin: 0;
+  text-align: right;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.bankfin-chart-verdict.tone-danger {
+  color: var(--bf-danger);
+}
+
+.bankfin-chart-verdict.tone-warning {
+  color: var(--bf-warning);
+}
+
+.bankfin-chart-verdict.tone-success {
+  color: var(--bf-success);
+}
+
+.bankfin-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.bankfin-chart-grid {
+  stroke: var(--bf-line);
+  stroke-width: 1;
+}
+
+.bankfin-chart-axis {
+  fill: var(--bf-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bankfin-chart-area {
+  fill: rgba(41, 86, 215, 0.12);
+}
+
+.bankfin-chart-area.over {
+  fill: rgba(197, 58, 53, 0.18);
+}
+
+.bankfin-chart-line {
+  fill: none;
+  stroke: var(--bf-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.bankfin-chart-limit {
+  stroke: var(--bf-danger);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.bankfin-chart-limit-label {
+  fill: var(--bf-danger);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.bankfin-chart-cursor {
+  stroke: var(--bf-navy);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
+}
+
+.bankfin-chart-dot {
+  fill: var(--bf-accent);
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.bankfin-chart-dot.over {
+  fill: var(--bf-danger);
+}
+
+.bankfin-chart-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  color: var(--bf-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .bankfin-chart-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bankfin-chart-verdict {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}

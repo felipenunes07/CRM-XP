@@ -8,6 +8,7 @@ import type {
   CustomerOpportunityDetail,
   CustomerOpportunityQueueResponse,
   CustomerCreditDetailResponse,
+  CustomerCreditSettingsUpdate,
   CustomerDefectCustomerDetailResponse,
   CustomerCreditOverviewResponse,
   CustomerDefectOverviewResponse,
@@ -637,8 +638,29 @@ export const api = {
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);
   },
-  customerCreditDetail(token: string, id: string) {
-    return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit`, {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
+  customerCreditDetail(
+    token: string,
+    id: string,
+    pagination: { ordersOffset?: number; paymentsOffset?: number; pageSize?: number } = {},
+  ) {
+    const search = new URLSearchParams();
+    if (pagination.ordersOffset) search.set("ordersOffset", String(pagination.ordersOffset));
+    if (pagination.paymentsOffset) search.set("paymentsOffset", String(pagination.paymentsOffset));
+    if (pagination.pageSize) search.set("pageSize", String(pagination.pageSize));
+    const query = search.toString();
+    return request<CustomerCreditDetailResponse>(
+      `/api/customers/${id}/credit${query ? `?${query}` : ""}`,
+      {},
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
+  },
+  updateCustomerCreditSettings(token: string, id: string, input: CustomerCreditSettingsUpdate) {
+    return request<CustomerCreditDetailResponse>(`/api/customers/${id}/credit-settings`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }, token);
   },
   customerOpportunity(token: string, id: string) {
     return request<CustomerOpportunityDetail>(`/api/customers/${id}/opportunity`, {}, token);

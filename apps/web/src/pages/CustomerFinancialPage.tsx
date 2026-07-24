@@ -176,7 +176,7 @@ export function CustomerFinancialPageView({
     creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
 
   return (
-    <div className="page-stack customer-financial-page">
+    <div className="page-stack customer-financial-page bankfin">
       <section className="panel customer-financial-command-panel">
         <div className="panel-header customer-financial-header">
           <div>
@@ -266,9 +266,9 @@ export function CustomerFinancialPageView({
                     <span className={`tag credit-badge ${customerCreditRiskClassName(creditRow.riskLevel)}`}>
                       {customerCreditRiskLabel(creditRow.riskLevel)}
                     </span>
-                    <Link className="ghost-button small" to={`/clientes/${creditRow.customerId}`}>
+                    <Link className="ghost-button small" to={`/clientes/financeiro/${creditRow.customerId}`}>
                       <ExternalLink size={14} />
-                      Abrir ficha
+                      Abrir dossiê financeiro
                     </Link>
                   </div>
                 </div>
@@ -315,7 +315,12 @@ export function CustomerFinancialPageView({
               {isDetailLoading ? <div className="page-loading">Carregando historico financeiro...</div> : null}
               {isDetailError ? <div className="page-error">Falha ao carregar o historico desse cliente.</div> : null}
               {!isDetailLoading && !isDetailError ? (
-                <CustomerCreditLedgerSections orders={orders} payments={payments} />
+                <CustomerCreditLedgerSections
+                  orders={orders}
+                  payments={payments}
+                  totalOrders={detail?.totalOrders ?? orders.length}
+                  totalPayments={detail?.totalPayments ?? payments.length}
+                />
               ) : null}
             </>
           )}
@@ -336,6 +341,8 @@ export function CustomerFinancialPage() {
     queryKey: ["customer-credit-overview"],
     queryFn: () => api.customerCreditOverview(token!),
     enabled: Boolean(token),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 
   const linkedRows = overviewQuery.data?.linkedRows ?? [];

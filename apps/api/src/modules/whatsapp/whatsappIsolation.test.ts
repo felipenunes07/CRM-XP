@@ -20,7 +20,10 @@ vi.mock("../../db/client.js", () => ({
   whatsappMonitorPool: {
     query: (sql: unknown, params: unknown) => {
       const sqlStr = String(sql ?? "");
-      mocks.monitorQuery(sql, params);
+      const mockedMonitorResult = mocks.monitorQuery(sql, params);
+      if (mockedMonitorResult !== undefined) {
+        return Promise.resolve(mockedMonitorResult);
+      }
       if (sqlStr.includes("FROM whatsapp_monitor_messages") && !sqlStr.includes("deals")) {
         return Promise.resolve({ rows: [] });
       }
@@ -1454,6 +1457,65 @@ describe("whatsapp conversation isolation", () => {
     // 1:1 chats are scoped by deal_id; the remote scope only excludes group rows.
     expect(String(fastReadCall![0])).toContain("NOT LIKE '%@g.us'");
     expect(fastReadCall![1]).toContain(selectedInstanceId);
+  });
+
+  it("keeps legacy history pageable when the fast table only has the recent tail", async () => {
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "deal-1",
+          title: "CL438 - Youssef / XP EXPOR",
+          customer_display_name: "CL438 - Youssef / XP EXPOR",
+          whatsapp_jid: "120363000000000000@g.us",
+          whatsapp_instance_id: null,
+          instance_name: "amanda",
+          instance_display_label: "Amanda",
+          stage_name: "Contato Inicial",
+          last_message_at: "2026-07-17T19:11:00.000Z",
+          event_count: 243,
+          inbound_count: 120,
+          unread_after_read: 0,
+          marked_unread: false,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: "deal-1" }] });
+
+    mocks.monitorQuery.mockImplementation((sql) => {
+      const text = String(sql);
+      if (!text.includes("FROM whatsapp_monitor_messages wmm") || !text.includes("wmm.message_id")) {
+        return undefined;
+      }
+      return {
+        rows: [{
+          id: "00000000-0000-0000-0000-000000000006",
+          message_id: "recent-message-6",
+          direction: "INBOUND",
+          from_me: false,
+          sender_name: "Youssef",
+          sender_jid: "5511999999999@s.whatsapp.net",
+          sender_pic_url: null,
+          content: "Mensagem recente",
+          media_json: {},
+          source: "incoming",
+          created_at: "2026-07-17T19:11:00.000Z",
+        }],
+      };
+    });
+
+    const detail = await getWhatsappMonitorConversation(
+      "deal-1",
+      {
+        id: "admin-1",
+        name: "Admin",
+        email: "admin@example.com",
+        role: "ADMIN",
+      } as any,
+      { limit: 20 },
+    );
+
+    expect(detail.messages).toHaveLength(1);
+    expect(detail.pageInfo.hasPreviousPage).toBe(true);
+    expect(detail.pageInfo.previousCursor).toBeTruthy();
   });
 
   it("hydrates group display names from incoming messages before stale numeric chat profiles", async () => {

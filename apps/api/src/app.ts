@@ -25,6 +25,7 @@ import {
   getCustomerCreditDetail,
   getCustomerCreditOverview,
   refreshCustomerCreditOverview,
+  updateCustomerCreditSettings,
 } from "./modules/crm/customerCreditService.js";
 import {
   getCustomerDefectCustomerDetail,
@@ -264,6 +265,24 @@ const customerQuerySchema = z.object({
   city: z.string().optional(),
   minTotalOrders: z.coerce.number().optional(),
 });
+
+const customerCreditDetailQuerySchema = z.object({
+  ordersOffset: z.coerce.number().int().min(0).default(0),
+  paymentsOffset: z.coerce.number().int().min(0).default(0),
+  pageSize: z.coerce.number().int().min(1).max(200).default(100),
+});
+
+const customerCreditSettingsSchema = z
+  .object({
+    creditLimit: z.number().min(0).max(1_000_000_000).nullable().optional(),
+    paymentTerm: z.number().int().min(1).max(365).nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      Object.prototype.hasOwnProperty.call(value, "creditLimit") ||
+      Object.prototype.hasOwnProperty.call(value, "paymentTerm"),
+    "Informe o limite ou o prazo para atualizar",
+  );
 
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(3650).optional(),
@@ -507,12 +526,16 @@ const whatsappGroupFiltersQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   offset: z.coerce.number().int().min(0).optional(),
   customerStatus: z.string().optional(),
+  state: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional(),
 });
 
 const whatsappMappingSummaryQuerySchema = z.object({
   search: z.string().optional(),
   savedSegmentId: z.string().uuid().optional(),
   recentBlock: z.enum(["AVAILABLE_ONLY", "BLOCKED_ONLY", "ALL"]).optional(),
+  state: z.string().trim().min(1).optional(),
+  city: z.string().trim().min(1).optional(),
 });
 
 const whatsappImportSchema = z.object({
@@ -1211,15 +1234,32 @@ export function createApp() {
     }
   });
 
-/*
   app.get("/api/customers/:id/credit", async (request, response, next) => {
     try {
-      response.json(await getCustomerCreditDetail(request.params.id));
+      const query = customerCreditDetailQuerySchema.parse(request.query);
+      response.json(await getCustomerCreditDetail(request.params.id, query));
     } catch (error) {
       next(error);
     }
   });
-*/
+
+  app.patch(
+    "/api/customers/:id/credit-settings",
+    requireRole(["ADMIN", "MANAGER"]),
+    async (request, response, next) => {
+      try {
+        response.json(
+          await updateCustomerCreditSettings(
+            String(request.params.id),
+            customerCreditSettingsSchema.parse(request.body),
+            request.user!,
+          ),
+        );
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.get("/api/customers/:id/opportunity", async (request, response, next) => {
     try {

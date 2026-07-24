@@ -13,10 +13,26 @@ describe("performance migrations", () => {
     expect(sql).toContain("idx_whatsapp_incoming_message_created");
   });
 
-  it("keeps indexed customer defect product aggregates in the latest append-only migration", () => {
+  it("keeps indexed customer defect product aggregates", () => {
+    const sql = migrations.join("\n");
+
+    expect(sql).toContain("customer_defect_snapshot_product_rows");
+    expect(sql).toContain("idx_customer_defect_products_snapshot_year");
+  });
+
+  it("indexes the customer credit dossier read path by snapshot, customer and date", () => {
+    const sql = migrations.join("\n");
+
+    expect(sql).toContain("idx_customer_credit_rows_snapshot_customer");
+    expect(sql).toContain("idx_customer_credit_orders_snapshot_customer_date");
+    expect(sql).toContain("idx_customer_credit_payments_snapshot_customer_date");
+  });
+
+  it("keeps manual credit overrides independent from spreadsheet snapshots", () => {
     const latestMigration = migrations[migrations.length - 1] ?? "";
 
-    expect(latestMigration).toContain("customer_defect_snapshot_product_rows");
-    expect(latestMigration).toContain("idx_customer_defect_products_snapshot_year");
+    expect(latestMigration).toContain("customer_credit_overrides");
+    expect(latestMigration).toContain("credit_limit");
+    expect(latestMigration).toContain("payment_term");
   });
 });

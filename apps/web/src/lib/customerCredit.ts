@@ -1,8 +1,184 @@
 import type {
+  CustomerCreditOrderEntry,
+  CustomerCreditPaymentEntry,
   CustomerCreditOperationalState,
   CustomerCreditRiskLevel,
   CustomerCreditRow,
 } from "@olist-crm/shared";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function parseCreditDate(value: string | null | undefined) {
+  if (!value) return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+}
+
+function calendarDayDiff(from: Date, to: Date) {
+  return Math.floor((to.getTime() - from.getTime()) / DAY_MS);
+}
+
+export type CustomerCreditDeadlineStatus = {
+  status: "settled" | "unknown" | "on_time" | "due_soon" | "overdue";
+  dueDate: string | null;
+  daysSinceOrder: number | null;
+  daysRemaining: number | null;
+  overdueDays: number;
+};
+
+export function getCustomerCreditDeadline(
+  row: CustomerCreditRow,
+  today = new Date(),
+): CustomerCreditDeadlineStatus {
+  if (row.debtAmount <= 0) {
+    return {
+      status: "settled",
+      dueDate: null,
+      daysSinceOrder: null,
+      daysRemaining: null,
+      overdueDays: 0,
+    };
+  }
+
+  const orderDate = parseCreditDate(row.lastOrderDate);
+  if (!orderDate || !row.paymentTerm || row.paymentTerm <= 0) {
+    return {
+      status: "unknown",
+      dueDate: null,
+      daysSinceOrder: orderDate ? Math.max(0, calendarDayDiff(orderDate, today)) : null,
+      daysRemaining: null,
+      overdueDays: 0,
+    };
+  }
+
+  const dueDate = new Date(orderDate.getTime() + row.paymentTerm * DAY_MS);
+  const todayUtc = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const daysRemaining = calendarDayDiff(todayUtc, dueDate);
+  const overdueDays = Math.max(0, -daysRemaining);
+
+  return {
+    status: overdueDays > 0 ? "overdue" : daysRemaining <= 7 ? "due_soon" : "on_time",
+    dueDate: dueDate.toISOString().slice(0, 10),
+    daysSinceOrder: Math.max(0, calendarDayDiff(orderDate, todayUtc)),
+    daysRemaining,
+    overdueDays,
+  };
+}
+
+export type CustomerPaymentBehavior = {
+  averageDays: number | null;
+  sampleSize: number;
+  onTimeRate: number | null;
+};
+
+export function estimateCustomerPaymentBehavior(
+  orders: CustomerCreditOrderEntry[],
+  payments: CustomerCreditPaymentEntry[],
+  paymentTerm: number | null,
+): CustomerPaymentBehavior {
+  const orderDates = orders
+    .map((order) => parseCreditDate(order.orderDate))
+    .filter((date): date is Date => Boolean(date))
+    .sort((left, right) => left.getTime() - right.getTime());
+
+  const findPrecedingOrder = (paymentDate: Date) => {
+    let low = 0;
+    let high = orderDates.length - 1;
+    let match: Date | null = null;
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      const candidate = orderDates[middle]!;
+      if (candidate.getTime() <= paymentDate.getTime()) {
+        match = candidate;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return match;
+  };
+
+  const intervals = payments
+    .map((payment) => {
+      const paymentDate = parseCreditDate(payment.paymentDate);
+      if (!paymentDate) return null;
+      const precedingOrder = findPrecedingOrder(paymentDate);
+      if (!precedingOrder) return null;
+      const days = calendarDayDiff(precedingOrder, paymentDate);
+      return days >= 0 && days <= 365 ? days : null;
+    })
+    .filter((days): days is number => days !== null);
+
+  if (!intervals.length) {
+    return { averageDays: null, sampleSize: 0, onTimeRate: null };
+  }
+
+  const averageDays = Math.round(intervals.reduce((sum, days) => sum + days, 0) / intervals.length);
+  const onTimeRate =
+    paymentTerm && paymentTerm > 0
+      ? intervals.filter((days) => days <= paymentTerm).length / intervals.length
+      : null;
+
+  return { averageDays, sampleSize: intervals.length, onTimeRate };
+}
+
+export function getCustomerFinancialAssessment(
+  row: CustomerCreditRow,
+  behavior: CustomerPaymentBehavior,
+) {
+  const deadline = getCustomerCreditDeadline(row);
+
+  if (row.hasOverCredit || row.operationalState === "OVER_CREDIT") {
+    return {
+      tone: "danger" as const,
+      label: "Risco alto",
+      summary: "Cliente ultrapassou o limite de crédito e precisa de revisão imediata.",
+    };
+  }
+
+  if (deadline.status === "overdue" || row.hasSeverelyOverduePayment || row.hasOverduePayment) {
+    return {
+      tone: "danger" as const,
+      label: "Pagamento atrasado",
+      summary: "Há saldo em aberto acima do prazo estimado. Priorize a cobrança.",
+    };
+  }
+
+  if (
+    behavior.averageDays !== null &&
+    row.paymentTerm !== null &&
+    behavior.averageDays > row.paymentTerm
+  ) {
+    return {
+      tone: "warning" as const,
+      label: "Costuma pagar depois do prazo",
+      summary: `Média estimada de ${behavior.averageDays} dias para um prazo de ${row.paymentTerm} dias.`,
+    };
+  }
+
+  if (deadline.status === "due_soon") {
+    return {
+      tone: "warning" as const,
+      label: "Vencimento próximo",
+      summary: "O prazo estimado está próximo. Acompanhe antes de virar atraso.",
+    };
+  }
+
+  if (behavior.averageDays !== null && row.paymentTerm !== null) {
+    return {
+      tone: "success" as const,
+      label: "Histórico saudável",
+      summary: `Média estimada de ${behavior.averageDays} dias, dentro do prazo de ${row.paymentTerm} dias.`,
+    };
+  }
+
+  return {
+    tone: "neutral" as const,
+    label: "Histórico insuficiente",
+    summary: "Ainda não há pares suficientes de pedidos e pagamentos para avaliar o comportamento.",
+  };
+}
 
 export function customerCreditRiskLabel(value: CustomerCreditRiskLevel) {
   if (value === "CRITICO") return "Crítico";
@@ -65,17 +241,7 @@ export function isOverdueCreditRow(row: CustomerCreditRow) {
     return true;
   }
 
-  // Date-based detection (Days since last payment > payment term)
-  if (
-    row.daysSinceLastPayment !== null &&
-    row.paymentTerm !== null &&
-    row.daysSinceLastPayment > row.paymentTerm &&
-    row.daysSinceLastPayment > 1 // Avoid false positives for 1-day differences
-  ) {
-    return true;
-  }
-
-  return false;
+  return getCustomerCreditDeadline(row).status === "overdue";
 }
 
 export function customerCreditPrimaryLabel(row: CustomerCreditRow) {

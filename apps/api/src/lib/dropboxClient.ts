@@ -14,6 +14,13 @@ const dbx = new Dropbox({
   fetch,
 });
 
+export interface DropboxFileMetadata {
+  sourcePath: string;
+  fileName: string;
+  fileSizeBytes: number;
+  fileUpdatedAt: string;
+}
+
 export async function listDropboxFiles(folderPath: string) {
   try {
     const response = await dbx.filesListFolder({ path: folderPath });
@@ -24,11 +31,13 @@ export async function listDropboxFiles(folderPath: string) {
   }
 }
 
-export async function downloadLatestFileByPrefix(folderPath: string, prefix: string) {
+export async function findLatestDropboxFileByPrefix(
+  folderPath: string,
+  prefix: string,
+): Promise<DropboxFileMetadata | null> {
   try {
     const entries = await listDropboxFiles(folderPath);
-    
-    // Filter by .xlsx and prefix
+
     const candidates = entries
       .filter((entry): entry is any => entry[".tag"] === "file")
       .filter((entry) => entry.name.toLowerCase().endsWith(".xlsx"))
@@ -38,34 +47,36 @@ export async function downloadLatestFileByPrefix(folderPath: string, prefix: str
       return null;
     }
 
-    // Sort by server_modified descending
     candidates.sort((a, b) => {
       return new Date(b.server_modified).getTime() - new Date(a.server_modified).getTime();
     });
 
     const latest = candidates[0];
-    const response = await dbx.filesDownload({ path: latest.path_lower });
-    
-    // In Node.js, the file content is in 'fileBinary'
-    const fileBuffer = (response.result as any).fileBinary;
-    
-    // Create a temp file
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "crm-xp-"));
-    const tempFilePath = path.join(tempDir, latest.name);
-    
-    await fs.writeFile(tempFilePath, fileBuffer);
-    
     return {
-      localPath: tempFilePath,
       sourcePath: latest.path_display ?? latest.path_lower ?? latest.name,
       fileName: latest.name,
       fileSizeBytes: latest.size,
       fileUpdatedAt: latest.server_modified,
-    }
+    };
   } catch (error) {
-    logger.error("Error downloading file from Dropbox", { folderPath, prefix, error });
+    logger.error("Error finding latest file in Dropbox", { folderPath, prefix, error });
     throw error;
   }
+}
+
+export async function downloadLatestFileByPrefix(folderPath: string, prefix: string) {
+  const latest = await findLatestDropboxFileByPrefix(folderPath, prefix);
+  if (!latest) {
+    return null;
+  }
+
+  const downloaded = await downloadFileByPath(latest.sourcePath);
+  return {
+    ...downloaded,
+    fileName: latest.fileName,
+    fileSizeBytes: latest.fileSizeBytes,
+    fileUpdatedAt: latest.fileUpdatedAt,
+  };
 }
 
 export async function downloadFileByPath(dropboxPath: string) {

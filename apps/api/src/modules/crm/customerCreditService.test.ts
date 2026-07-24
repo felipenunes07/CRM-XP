@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   deriveCustomerCreditOperationalState,
   findLatestCustomerCreditWorkbook,
+  isCustomerCreditSourceCurrent,
   parseCustomerCreditWorkbook,
   reconcileCustomerCreditRowWithPayments,
   resolveParsedCreditOrders,
@@ -57,6 +58,26 @@ describe("findLatestCustomerCreditWorkbook", () => {
     const file = await findLatestCustomerCreditWorkbook(dir, "SALDO VENDAS");
 
     expect(file?.fileName).toBe("SALDO VENDAS - 11.04.xlsx");
+  });
+});
+
+describe("isCustomerCreditSourceCurrent", () => {
+  it("treats equivalent Dropbox and PostgreSQL timestamps as the same file", () => {
+    expect(
+      isCustomerCreditSourceCurrent(
+        {
+          parserVersion: 7,
+          sourceFilePath: "/XP SALDO TEMPORARIO/SALDO VENDAS - 22.07.xlsx",
+          sourceFileSizeBytes: 62_333_071,
+          sourceFileUpdatedAt: "2026-07-22 20:01:10+00",
+        },
+        {
+          sourcePath: "/XP SALDO TEMPORARIO/SALDO VENDAS - 22.07.xlsx",
+          fileSizeBytes: 62_333_071,
+          fileUpdatedAt: "2026-07-22T20:01:10Z",
+        },
+      ),
+    ).toBe(true);
   });
 });
 

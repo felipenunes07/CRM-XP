@@ -4331,5 +4331,48 @@ export const migrations = [
     ON general_complaints(agent_name, window_date DESC);
   CREATE INDEX IF NOT EXISTS idx_general_complaints_category
     ON general_complaints(category, window_date DESC);
+  `,
+  `
+  -- Customer credit: detail pages always filter by the active snapshot and one
+  -- customer, then sort by date. Composite indexes avoid scanning hundreds of
+  -- thousands of workbook movements for every dossier open.
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_rows_snapshot_customer
+    ON customer_credit_snapshot_rows(snapshot_id, customer_id);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_orders_snapshot_customer_date
+    ON customer_credit_order_entries(snapshot_id, customer_id, order_date DESC, order_number DESC);
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_payments_snapshot_customer_date
+    ON customer_credit_payment_entries(snapshot_id, customer_id, payment_date DESC, payment_number DESC);
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS customer_credit_overrides (
+    customer_id UUID PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE,
+    credit_limit NUMERIC(14, 2),
+    payment_term INTEGER,
+    updated_by_user_id TEXT,
+    updated_by_name TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (credit_limit IS NULL OR credit_limit >= 0),
+    CHECK (payment_term IS NULL OR (payment_term >= 1 AND payment_term <= 365))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_overrides_updated_at
+    ON customer_credit_overrides(updated_at DESC);
+  `,
+  `
+  -- Repair migration for environments whose migration counter was already
+  -- ahead of the source list when manual credit settings were introduced.
+  CREATE TABLE IF NOT EXISTS customer_credit_overrides (
+    customer_id UUID PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE,
+    credit_limit NUMERIC(14, 2),
+    payment_term INTEGER,
+    updated_by_user_id TEXT,
+    updated_by_name TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (credit_limit IS NULL OR credit_limit >= 0),
+    CHECK (payment_term IS NULL OR (payment_term >= 1 AND payment_term <= 365))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_overrides_updated_at
+    ON customer_credit_overrides(updated_at DESC);
   `
 ];

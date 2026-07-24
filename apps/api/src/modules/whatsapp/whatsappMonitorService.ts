@@ -2236,12 +2236,22 @@ export async function getWhatsappMonitorConversation(
         : fastMessages.slice(-messageLimit);
       const oldestMessage = visibleMessages[0];
       const newestMessage = visibleMessages.at(-1);
+      const hasOlderFastMessages = fastMessages.length > messageLimit;
+      // Some conversations predate whatsapp_monitor_messages. When the flat
+      // read model only contains the recent tail, eventCount tells us that an
+      // older legacy page still exists. Advertising that page lets the next
+      // `before` request fall through to deal_activities/incoming_messages
+      // instead of making the UI stop after the recent tail.
+      const hasLegacyHistoryBeforeFastTail =
+        mode !== "after" && conversation.eventCount > fastMessages.length;
 
       return {
         ...conversation,
         messages: visibleMessages,
         pageInfo: {
-          hasPreviousPage: mode === "after" ? false : fastMessages.length > messageLimit,
+          hasPreviousPage: mode === "after"
+            ? false
+            : hasOlderFastMessages || hasLegacyHistoryBeforeFastTail,
           previousCursor: oldestMessage ? messageCursorFor(oldestMessage, sourceByMessageId) : null,
           hasNextPage: mode === "after" ? fastMessages.length > messageLimit : false,
           nextCursor: newestMessage ? messageCursorFor(newestMessage, sourceByMessageId) : null,

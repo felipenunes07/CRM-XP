@@ -1,6 +1,14 @@
 import type { WhatsappMonitorMessage } from "@olist-crm/shared";
 
 const CHAT_TIMEZONE = "America/Sao_Paulo";
+export const CHAT_OLDER_MESSAGES_THRESHOLD_PX = 480;
+
+export function isNearChatTop(
+  scrollTop: number,
+  threshold = CHAT_OLDER_MESSAGES_THRESHOLD_PX,
+) {
+  return scrollTop <= threshold;
+}
 
 function localDateKey(value: Date) {
   return new Intl.DateTimeFormat("sv-SE", {

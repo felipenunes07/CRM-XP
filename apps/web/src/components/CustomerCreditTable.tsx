@@ -1,17 +1,18 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
+import { ExternalLink, MessageCircle, MoreHorizontal, PanelRightOpen, Pencil, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { formatCurrency, formatDate, calculateDaysSince } from "../lib/format";
-import {
-  customerCreditRiskClassName,
-  customerCreditRiskLabel,
-  customerCreditStatusBadge,
-} from "../lib/customerCredit";
+import { CustomerCreditDrawer } from "./CustomerCreditDrawer";
+import { CustomerCreditLimitCell } from "./CustomerCreditLimitCell";
+import { EditCustomerCreditModal } from "./EditCustomerCreditModal";
+import { formatCurrency, formatDate } from "../lib/format";
+import { customerCreditRiskLabel, getCustomerCreditDeadline } from "../lib/customerCredit";
+import "./customerCreditBank.css";
 
 interface CustomerCreditTableProps {
   rows: CustomerCreditRow[];
   emptyMessage: string;
   linkedOnly?: boolean;
-  /** Habilita as caixas de selecao para montar um publico de disparo. */
   selectable?: boolean;
   selectedCodes?: ReadonlySet<string>;
   onToggleRow?: (customerCode: string) => void;
@@ -19,72 +20,68 @@ interface CustomerCreditTableProps {
 }
 
 function creditUsagePercent(row: CustomerCreditRow) {
-  if (row.creditLimit <= 0) {
-    return row.debtAmount > 0 ? 100 : 0;
-  }
-  return Math.min((row.debtAmount / row.creditLimit) * 100, 120);
+  if (row.creditLimit <= 0) return row.debtAmount > 0 ? 100 : 0;
+  return (row.debtAmount / row.creditLimit) * 100;
 }
 
-function usageBarColor(row: CustomerCreditRow) {
-  if (row.hasOverCredit) return "danger";
-  if (row.creditLimit <= 0 && row.debtAmount > 0) return "danger";
-  const pct = creditUsagePercent(row);
-  if (pct > 80) return "warning";
-  if (pct > 0) return "info";
-  return "success";
+/** Rotulo, tom e barra de progresso do prazo (quanto do prazo ja foi consumido). */
+function deadlineInfo(row: CustomerCreditRow) {
+  const deadline = getCustomerCreditDeadline(row);
+  const term = row.paymentTerm ?? 0;
+  const elapsed = deadline.daysSinceOrder ?? 0;
+  const progress = term > 0 ? Math.min((elapsed / term) * 100, 100) : null;
+
+  if (deadline.status === "settled") {
+    return { label: "Quitado", helper: "", tone: "muted", progress: null };
+  }
+  if (deadline.status === "unknown") {
+    return { label: "Sem prazo", helper: "cadastrar prazo", tone: "muted", progress: null };
+  }
+  if (deadline.status === "overdue") {
+    return {
+      label: `${deadline.overdueDays}d em atraso`,
+      helper: deadline.dueDate ? `venceu ${formatDate(deadline.dueDate)}` : "",
+      tone: "danger",
+      progress: 100,
+    };
+  }
+  if (deadline.daysRemaining === 0) {
+    return { label: "Vence hoje", helper: "", tone: "warning", progress: 100 };
+  }
+  return {
+    label: `faltam ${deadline.daysRemaining}d`,
+    helper: deadline.dueDate ? `vence ${formatDate(deadline.dueDate)}` : "",
+    tone: (deadline.daysRemaining ?? 0) <= 7 ? "warning" : "success",
+    progress,
+  };
 }
 
-function prazoLabel(days: number | null, term: number | null) {
-  if (days === null || days === undefined) return "—";
-  const daysStr = days === 0 ? "Hoje" : `${days}d`;
-  if (term) return `${daysStr} / ${term}d`;
-  return daysStr;
+/** "há 12 dias" — o sinal que mostra se o cliente sumiu do caixa. */
+function sinceLabel(days: number | null) {
+  if (days === null) return { text: "sem registro", tone: "muted" };
+  if (days === 0) return { text: "hoje", tone: "success" };
+  if (days === 1) return { text: "há 1 dia", tone: "success" };
+  return {
+    text: `há ${days} dias`,
+    tone: days >= 60 ? "danger" : days >= 30 ? "warning" : "success",
+  };
 }
 
-function prazoTone(days: number | null, term: number | null) {
-  if (days === null || days === undefined) return "";
-  if (term && days > term) return "credit-prazo-danger";
-  if (days > 90) return "credit-prazo-danger";
-  if (days > 30) return "credit-prazo-warning";
-  return "";
-}
+/**
+ * O snapshot financeiro nao traz telefone: `customerCode` e codigo do cliente.
+ * So usamos como numero quando o codigo realmente parece um telefone brasileiro,
+ * senao abrimos o WhatsApp com a mensagem pronta e sem destinatario.
+ */
+function buildWhatsappCollectionUrl(row: CustomerCreditRow) {
+  const digits = (row.customerCode ?? "").replace(/\D/g, "");
+  const looksLikePhone = digits.length === 10 || digits.length === 11;
+  const text = encodeURIComponent(
+    `Olá ${row.customerDisplayName}, tudo bem? Passando para falar do saldo em aberto de ${formatCurrency(
+      row.debtAmount,
+    )}. Podemos enviar a segunda via dos títulos para pagamento hoje?`,
+  );
 
-type SuggestedAction = {
-  label: string;
-  tone: "danger" | "success" | "warning" | "info" | "muted";
-  hint: string;
-};
-
-function suggestAction(row: CustomerCreditRow): SuggestedAction {
-  if (row.hasOverCredit) {
-    return { label: "Cobrar", tone: "danger", hint: "Ultrapassou o limite — prioridade de cobranca" };
-  }
-  if (row.debtAmount > 0 && (row.hasOverduePayment || row.hasSeverelyOverduePayment)) {
-    return { label: "Cobrar", tone: "danger", hint: "Pagamento vencido — acionar cobranca" };
-  }
-  if (row.debtAmount > 0 && row.hasNoPayment) {
-    return { label: "Cobrar", tone: "danger", hint: "Nunca pagou — verificar situacao" };
-  }
-  if (row.operationalState === "UNUSED_CREDIT") {
-    return { label: "Vender", tone: "success", hint: "Credito disponivel — oportunidade de venda" };
-  }
-  if (row.debtAmount > 0 && row.withinCreditLimit) {
-    return { label: "Acompanhar", tone: "info", hint: "Dentro do limite — monitorar prazo" };
-  }
-  if (row.debtAmount > 0 && row.creditLimit <= 0) {
-    return { label: "Verificar", tone: "warning", hint: "Devendo sem limite — avaliar credito" };
-  }
-  if (row.creditBalanceAmount > 0) {
-    return { label: "Vender", tone: "success", hint: "Saldo a favor — oportunidade de recompra" };
-  }
-  return { label: "—", tone: "muted", hint: "Sem acao necessaria" };
-}
-
-function rowClassName(row: CustomerCreditRow) {
-  if (row.hasOverCredit) return "credit-row-danger";
-  if (row.debtAmount > 0 && (row.hasOverduePayment || row.hasSeverelyOverduePayment)) return "credit-row-warn";
-  if (row.operationalState === "UNUSED_CREDIT") return "credit-row-opportunity";
-  return "";
+  return looksLikePhone ? `https://wa.me/55${digits}?text=${text}` : `https://wa.me/?text=${text}`;
 }
 
 export function CustomerCreditTable({
@@ -96,11 +93,24 @@ export function CustomerCreditTable({
   onToggleAll,
 }: CustomerCreditTableProps) {
   const navigate = useNavigate();
+  const [editingRow, setEditingRow] = useState<CustomerCreditRow | null>(null);
+  const [detailRow, setDetailRow] = useState<CustomerCreditRow | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!openMenuId) return undefined;
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setOpenMenuId(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [openMenuId]);
 
   if (!rows.length) {
     return (
-      <div className="panel table-panel empty-panel">
-        <div className="empty-state">{emptyMessage}</div>
+      <div className="bankfin-table-wrap">
+        <p className="bankfin-empty">{emptyMessage}</p>
       </div>
     );
   }
@@ -110,157 +120,211 @@ export function CustomerCreditTable({
   const allSelected = selectableCodes.length > 0 && selectableCodes.every((code) => selected.has(code));
 
   return (
-    <div className="panel table-panel">
-      <div className="table-scroll">
-        <table className="data-table credit-table-v2">
-          <thead>
-            <tr>
-              {selectable ? (
-                <th className="credit-select-col">
-                  <input
-                    type="checkbox"
-                    aria-label="Selecionar todos os clientes visiveis"
-                    checked={allSelected}
-                    onChange={(event) => onToggleAll?.(event.target.checked)}
-                  />
-                </th>
-              ) : null}
-              <th>Cliente</th>
-              <th>Em aberto</th>
-              <th>Crédito</th>
-              <th>Vencimento</th>
-              <th>Risco</th>
-              <th>Ação</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => {
-              const statusBadge = customerCreditStatusBadge(row);
-              const pct = creditUsagePercent(row);
-              const barColor = usageBarColor(row);
-              const hasBalance = row.creditBalanceAmount > 0;
-              const action = suggestAction(row);
-              const actualDays = calculateDaysSince(row.lastPaymentDate);
+    <>
+      <div className="bankfin-table-wrap">
+        <div className="bankfin-table-scroll">
+          <table className="bankfin-table">
+            <thead>
+              <tr>
+                {selectable ? (
+                  <th className="bankfin-check-col">
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todos os clientes visíveis"
+                      checked={allSelected}
+                      onChange={(event) => onToggleAll?.(event.target.checked)}
+                    />
+                  </th>
+                ) : null}
+                <th className="col-client">Cliente</th>
+                <th className="is-right col-open">Em aberto</th>
+                <th className="col-status">Situação</th>
+                <th className="col-due">Prazo</th>
+                <th className="is-right bankfin-col-limit col-limit">Limite</th>
+                <th className="bankfin-col-payment col-payment">Últ. pagamento</th>
+                <th className="is-right col-action">Ação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const due = deadlineInfo(row);
+                const since = sinceLabel(row.daysSinceLastPayment);
+                const isSelected = selected.has(row.customerCode);
+                const riskClass = (row.riskLevel || "NORMAL").toLowerCase();
 
-              const isSelected = selected.has(row.customerCode);
-              const isClickable = Boolean(row.customerId);
+                return (
+                  <tr
+                    key={row.id}
+                    className={isSelected ? "is-selected" : ""}
+                    onClick={() => setDetailRow(row)}
+                  >
+                    {selectable ? (
+                      <td className="bankfin-check-col" onClick={(event) => event.stopPropagation()}>
+                        {row.customerId ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar ${row.customerDisplayName}`}
+                            checked={isSelected}
+                            onChange={() => onToggleRow?.(row.customerCode)}
+                          />
+                        ) : null}
+                      </td>
+                    ) : null}
 
-              return (
-                <tr
-                  key={row.id}
-                  className={`${rowClassName(row)} ${isSelected ? "credit-row-selected" : ""} ${isClickable ? "credit-row-clickable" : ""}`}
-                  onClick={isClickable ? () => navigate(`/clientes/${row.customerId}`) : undefined}
-                  role={isClickable ? "link" : undefined}
-                  tabIndex={isClickable ? 0 : undefined}
-                  onKeyDown={
-                    isClickable
-                      ? (event) => {
-                          if (event.key === "Enter") navigate(`/clientes/${row.customerId}`);
-                        }
-                      : undefined
-                  }
-                >
-                  {selectable ? (
-                    <td className="credit-select-col" onClick={(event) => event.stopPropagation()}>
-                      {row.customerId ? (
-                        <input
-                          type="checkbox"
-                          aria-label={`Selecionar ${row.customerDisplayName}`}
-                          checked={isSelected}
-                          onChange={() => onToggleRow?.(row.customerCode)}
-                        />
+                    <td className="bankfin-client">
+                      <strong>{row.customerDisplayName}</strong>
+                      <span>{row.customerCode || "Sem código"}</span>
+                    </td>
+
+                    <td className="is-right">
+                      {row.debtAmount > 0 ? (
+                        <span className="bankfin-amount is-debt">{formatCurrency(row.debtAmount)}</span>
+                      ) : row.creditBalanceAmount > 0 ? (
+                        <span className="bankfin-amount is-credit">
+                          {formatCurrency(row.creditBalanceAmount)}
+                        </span>
+                      ) : (
+                        <span className="bankfin-amount is-zero">{formatCurrency(0)}</span>
+                      )}
+                    </td>
+
+                    <td>
+                      <span className="bankfin-status">
+                        <i className={`bankfin-dot ${riskClass}`} />
+                        {customerCreditRiskLabel(row.riskLevel)}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span className={`bankfin-due tone-${due.tone}`}>
+                        {due.label}
+                        {due.helper ? <small>{due.helper}</small> : null}
+                      </span>
+                      {due.progress !== null ? (
+                        <span className="bankfin-due-track">
+                          <i className={`tone-${due.tone}`} style={{ width: `${due.progress}%` }} />
+                        </span>
                       ) : null}
                     </td>
-                  ) : null}
 
-                  {/* Cliente */}
-                  <td>
-                    <div className="credit-cell-client">
-                      <div className="credit-cell-client-link">
-                        <strong>{row.customerId ? row.customerDisplayName : row.sourceDisplayName ?? row.customerDisplayName}</strong>
-                        <span>{row.customerCode}</span>
-                      </div>
-                      <span className={`credit-status-pill ${statusBadge.className}`}>{statusBadge.label}</span>
-                    </div>
-                  </td>
+                    <td className="is-right bankfin-col-limit">
+                      <CustomerCreditLimitCell row={row} />
+                    </td>
 
-                  {/* Dívida / Saldo */}
-                  <td>
-                    <div className="credit-cell-amount">
-                      {row.debtAmount > 0 ? (
-                        <>
-                          <strong className="credit-amount-debt">{formatCurrency(row.debtAmount)}</strong>
-                          <span>Em aberto</span>
-                        </>
-                      ) : hasBalance ? (
-                        <>
-                          <strong className="credit-amount-positive">{formatCurrency(row.creditBalanceAmount)}</strong>
-                          <span>Saldo a favor</span>
-                        </>
-                      ) : (
-                        <>
-                          <strong>R$ 0,00</strong>
-                          <span>Sem saldo</span>
-                        </>
-                      )}
-                    </div>
-                  </td>
+                    <td className="bankfin-date bankfin-col-payment">
+                      {formatDate(row.lastPaymentDate)}
+                      <small className={`bankfin-since tone-${since.tone}`}>{since.text}</small>
+                    </td>
 
-                  {/* Crédito: limite + uso + disponivel num lugar so */}
-                  <td>
-                    {row.creditLimit > 0 ? (
-                      <div className="credit-cell-credit">
-                        <strong>{formatCurrency(row.creditLimit)}</strong>
-                        <div className="credit-usage-track">
-                          <div
-                            className={`credit-usage-fill ${barColor}`}
-                            style={{ width: `${Math.min(pct, 100)}%` }}
-                          />
+                    <td onClick={(event) => event.stopPropagation()}>
+                      <div className="bankfin-actions">
+                        {row.debtAmount > 0 ? (
+                          <a
+                            className="bankfin-btn-primary"
+                            href={buildWhatsappCollectionUrl(row)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Cobrar no WhatsApp"
+                          >
+                            <MessageCircle size={14} />
+                            Cobrar
+                          </a>
+                        ) : null}
+
+                        <div
+                          className="bankfin-menu-anchor"
+                          ref={openMenuId === row.id ? menuRef : undefined}
+                        >
+                          <button
+                            type="button"
+                            className="bankfin-btn-icon"
+                            aria-label={`Mais ações para ${row.customerDisplayName}`}
+                            aria-expanded={openMenuId === row.id}
+                            onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)}
+                          >
+                            <MoreHorizontal size={17} />
+                          </button>
+
+                          {openMenuId === row.id ? (
+                            <div className="bankfin-menu" role="menu">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  setDetailRow(row);
+                                }}
+                              >
+                                <PanelRightOpen size={15} />
+                                Ver detalhes
+                              </button>
+                              {row.customerId ? (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    setEditingRow(row);
+                                  }}
+                                >
+                                  <Pencil size={15} />
+                                  Editar limite e prazo
+                                </button>
+                              ) : null}
+                              {row.customerId ? (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    navigate(`/clientes/financeiro/${row.customerId}`);
+                                  }}
+                                >
+                                  <ExternalLink size={15} />
+                                  Abrir dossiê financeiro
+                                </button>
+                              ) : null}
+                              {row.customerId ? (
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    navigate(`/clientes/${row.customerId}`);
+                                  }}
+                                >
+                                  <User size={15} />
+                                  Abrir ficha do cliente
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
-                        <span className={row.availableCreditAmount < 0 ? "credit-amount-debt" : "credit-amount-positive"}>
-                          {formatCurrency(row.availableCreditAmount)} {row.availableCreditAmount < 0 ? "excesso" : "livre"}
-                        </span>
                       </div>
-                    ) : (
-                      <span className="credit-usage-nolimit">{row.debtAmount > 0 ? "Sem limite" : "—"}</span>
-                    )}
-                  </td>
-
-                  {/* Vencimento (dias sem pagar) */}
-                  <td>
-                    <div className="credit-cell-prazo">
-                      <strong className={prazoTone(actualDays, row.paymentTerm)}>
-                        {prazoLabel(actualDays, row.paymentTerm)}
-                      </strong>
-                      {row.lastPaymentDate ? (
-                        <span>{formatDate(row.lastPaymentDate)}</span>
-                      ) : (
-                        <span>Sem pagamento</span>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Risco */}
-                  <td>
-                    <span className={`credit-risk-pill ${customerCreditRiskClassName(row.riskLevel)}`}>
-                      {customerCreditRiskLabel(row.riskLevel)}
-                    </span>
-                  </td>
-
-                  {/* Acao sugerida */}
-                  <td>
-                    <div className="credit-cell-action-merged">
-                      <span className={`credit-action-pill tone-${action.tone}`} title={action.hint}>
-                        {action.label}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      <CustomerCreditDrawer
+        row={detailRow}
+        onClose={() => setDetailRow(null)}
+        onEdit={(row) => {
+          setDetailRow(null);
+          setEditingRow(row);
+        }}
+        chargeUrl={buildWhatsappCollectionUrl}
+      />
+
+      <EditCustomerCreditModal
+        row={editingRow}
+        isOpen={Boolean(editingRow)}
+        onClose={() => setEditingRow(null)}
+      />
+    </>
   );
 }

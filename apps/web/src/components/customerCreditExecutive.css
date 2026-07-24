@@ -1,0 +1,685 @@
+/* ==========================================
+   CENTRO DE MONITORAMENTO DE CRÉDITO E RISCO
+   Style system matching /eventos WhatsApp Intelligence
+   ========================================== */
+
+.credit-exec-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.credit-page-subtitle {
+  max-width: 700px;
+  margin-top: 0.45rem;
+}
+
+/* ------------------------------------------
+   Command Center Top Banner Header
+   ------------------------------------------ */
+.credit-command-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.35rem 1.6rem;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f172a 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 30px -8px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.credit-command-header::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -10%;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0) 70%);
+  pointer-events: none;
+}
+
+.credit-command-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  z-index: 1;
+}
+
+.credit-command-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(147, 197, 253, 0.25);
+  color: #93c5fd;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.credit-status-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: creditPulse 2s infinite;
+}
+
+@keyframes creditPulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.credit-command-header h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.credit-command-header p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.credit-command-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 1;
+  flex-wrap: wrap;
+}
+
+.credit-exec-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+}
+
+.credit-exec-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.credit-exec-health-pill.tone-danger {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.credit-exec-health-pill.tone-warning {
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+}
+
+.credit-exec-health-pill.tone-success {
+  background: rgba(34, 197, 94, 0.2);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #86efac;
+}
+
+.credit-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 12px;
+  background: #2563eb;
+  border: 1px solid #3b82f6;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 180ms ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+.credit-refresh-button:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.45);
+}
+
+.credit-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ------------------------------------------
+   Radar Feed Filterbar & Tabs
+   ------------------------------------------ */
+.credit-exec-filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.credit-exec-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.credit-exec-control > span {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.credit-radar-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.credit-radar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.48rem 0.85rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 160ms ease;
+}
+
+.credit-radar-tab:hover {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.credit-radar-tab.active {
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+}
+
+.credit-radar-tab small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.credit-radar-tab.active small {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.credit-radar-tab.tone-critical.active {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+.credit-radar-tab.tone-warning.active {
+  background: #d97706;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.3);
+}
+
+.credit-radar-tab.tone-success.active {
+  background: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+}
+
+.credit-exec-sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credit-exec-sort select {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ------------------------------------------
+   High-Impact Executive KPI Cards (Redesigned)
+   ------------------------------------------ */
+.credit-exec-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.credit-kpi-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1.25rem 1.35rem;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+  text-align: left;
+  cursor: pointer;
+  transition: all 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.credit-kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 28px -4px rgba(15, 23, 42, 0.09);
+  border-color: rgba(37, 99, 235, 0.35);
+}
+
+.credit-kpi-card.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25), 0 8px 24px rgba(37, 99, 235, 0.12);
+}
+
+.credit-kpi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.credit-kpi-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  transition: transform 200ms ease;
+}
+
+.credit-kpi-card:hover .credit-kpi-icon-box {
+  transform: scale(1.08);
+}
+
+.credit-kpi-icon-box.tone-primary {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #dbeafe;
+}
+
+.credit-kpi-icon-box.tone-danger {
+  background: #fef2f2;
+  color: #ef4444;
+  border: 1px solid #fee2e2;
+}
+
+.credit-kpi-icon-box.tone-warning {
+  background: #fffbe6;
+  color: #d97706;
+  border: 1px solid #fef3c7;
+}
+
+.credit-kpi-icon-box.tone-success {
+  background: #ecfdf5;
+  color: #10b981;
+  border: 1px solid #d1fae5;
+}
+
+.credit-kpi-value {
+  color: #0f172a;
+  font-size: clamp(1.45rem, 1.7vw, 1.95rem);
+  font-weight: 850;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+
+.credit-kpi-pill-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 600;
+  width: fit-content;
+}
+
+.credit-kpi-pill-sub.danger {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.credit-kpi-pill-sub.warning {
+  background: #fffbe6;
+  color: #92400e;
+}
+
+.credit-kpi-pill-sub.success {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+/* ------------------------------------------
+   Automatic Insights Strip
+   ------------------------------------------ */
+.credit-exec-insights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.credit-exec-insights article {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(238, 242, 255, 0.7) 0%, rgba(243, 244, 246, 0.4) 100%);
+  border: 1px solid rgba(199, 210, 254, 0.5);
+  color: #1e293b;
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.credit-exec-insights svg {
+  flex-shrink: 0;
+  color: #4f46e5;
+}
+
+.credit-exec-insights strong {
+  color: #312e81;
+  font-weight: 750;
+}
+
+/* ------------------------------------------
+   Aging & Concentration Analysis Panels
+   ------------------------------------------ */
+.credit-exec-analysis {
+  padding: 1.25rem 1.4rem;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.03);
+}
+
+.credit-exec-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.credit-exec-section-head h3 {
+  margin: 0.15rem 0 0.25rem;
+  color: #0f172a;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.credit-exec-section-head p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.credit-exec-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.credit-exec-chart {
+  padding: 1.1rem 1.2rem;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.credit-exec-chart h4 {
+  margin: 0 0 0.25rem;
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 750;
+}
+
+.credit-exec-chart > p {
+  margin: 0 0 1.1rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.credit-exec-aging {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.credit-exec-aging button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.credit-exec-aging button > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+
+.credit-exec-aging span {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.credit-exec-aging strong {
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.credit-exec-aging small {
+  grid-column: 1 / -1;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.credit-exec-aging button::after {
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  content: "";
+}
+
+.credit-exec-aging i {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 8px;
+  margin-top: -8px;
+  border-radius: 999px;
+  background: #2563eb;
+  transition: width 300ms ease;
+}
+
+.credit-exec-aging i.tone-danger {
+  background: #ef4444;
+}
+
+.credit-exec-aging i.tone-warning {
+  background: #f59e0b;
+}
+
+.credit-exec-aging i.tone-success {
+  background: #10b981;
+}
+
+.credit-exec-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.credit-exec-ranking > div {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.credit-exec-ranking > div > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: #e0e7ff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.credit-exec-ranking strong {
+  display: block;
+  overflow: hidden;
+  color: #1e293b;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.credit-exec-ranking i {
+  display: block;
+  height: 6px;
+  margin-top: 0.3rem;
+  border-radius: 999px;
+  background: #3b82f6;
+}
+
+.credit-exec-ranking b {
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Responsividade */
+@media (max-width: 1180px) {
+  .credit-command-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .credit-command-header-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .credit-exec-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .credit-exec-insights {
+    grid-template-columns: 1fr;
+  }
+
+  .credit-exec-analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .credit-exec-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .credit-exec-filterbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -73,6 +73,11 @@ async function main() {
   // 4. Customer Credit Sync (Dropbox/Local)
   if (env.WORKER_CREDIT_SYNC_ENABLED) {
     logger.info("scheduled credit sync enabled", { intervalMinutes: env.WORKER_CREDIT_SYNC_INTERVAL_MINUTES });
+    // Faz uma checagem leve logo na subida. O serviço consulta apenas os
+    // metadados e só baixa a planilha quando ela realmente mudou.
+    void refreshCustomerCreditOverview().catch((error) => {
+      logger.error("failed startup credit sync", { error: String(error) });
+    });
     intervals.push(
       setInterval(
         () => {

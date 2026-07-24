@@ -5,10 +5,12 @@ const {
   getCustomerCreditOverviewMock,
   refreshCustomerCreditOverviewMock,
   getCustomerCreditDetailMock,
+  updateCustomerCreditSettingsMock,
 } = vi.hoisted(() => ({
   getCustomerCreditOverviewMock: vi.fn(),
   refreshCustomerCreditOverviewMock: vi.fn(),
   getCustomerCreditDetailMock: vi.fn(),
+  updateCustomerCreditSettingsMock: vi.fn(),
 }));
 
 vi.mock("./modules/crm/customerCreditService.js", async () => {
@@ -21,6 +23,7 @@ vi.mock("./modules/crm/customerCreditService.js", async () => {
     getCustomerCreditOverview: getCustomerCreditOverviewMock,
     refreshCustomerCreditOverview: refreshCustomerCreditOverviewMock,
     getCustomerCreditDetail: getCustomerCreditDetailMock,
+    updateCustomerCreditSettings: updateCustomerCreditSettingsMock,
   };
 });
 
@@ -30,6 +33,7 @@ vi.mock("./modules/platform/authMiddleware.js", () => ({
     next();
   },
   requireRole: () => (_request: unknown, _response: unknown, next: () => void) => next(),
+  requirePermission: () => (_request: unknown, _response: unknown, next: () => void) => next(),
 }));
 
 import { createApp } from "./app.js";
@@ -39,6 +43,7 @@ describe("customer credit routes", () => {
     getCustomerCreditOverviewMock.mockReset();
     refreshCustomerCreditOverviewMock.mockReset();
     getCustomerCreditDetailMock.mockReset();
+    updateCustomerCreditSettingsMock.mockReset();
   });
 
   it("returns the customer credit overview", async () => {
@@ -170,14 +175,49 @@ describe("customer credit routes", () => {
           observation: "",
         },
       ],
+      totalOrders: 1,
+      totalPayments: 1,
     });
 
-    const response = await request(createApp()).get("/api/customers/customer-1/credit");
+    const response = await request(createApp()).get(
+      "/api/customers/customer-1/credit?ordersOffset=50&paymentsOffset=100&pageSize=150",
+    );
 
     expect(response.status).toBe(200);
     expect(response.body.row.customerCode).toBe("CL001");
     expect(response.body.orders[0].orderNumber).toBe("37732");
     expect(response.body.payments[0].paymentType).toBe("TROCAS");
-    expect(getCustomerCreditDetailMock).toHaveBeenCalledWith("customer-1");
+    expect(getCustomerCreditDetailMock).toHaveBeenCalledWith("customer-1", {
+      ordersOffset: 50,
+      paymentsOffset: 100,
+      pageSize: 150,
+    });
+  });
+
+  it("updates manual credit settings for the customer", async () => {
+    updateCustomerCreditSettingsMock.mockResolvedValue({
+      snapshot: null,
+      row: {
+        customerId: "customer-1",
+        creditLimit: 80000,
+        paymentTerm: 30,
+      },
+      orders: [],
+      payments: [],
+      totalOrders: 0,
+      totalPayments: 0,
+    });
+
+    const response = await request(createApp())
+      .patch("/api/customers/customer-1/credit-settings")
+      .send({ creditLimit: 80000, paymentTerm: 30 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.row.creditLimit).toBe(80000);
+    expect(updateCustomerCreditSettingsMock).toHaveBeenCalledWith(
+      "customer-1",
+      { creditLimit: 80000, paymentTerm: 30 },
+      expect.objectContaining({ id: "user-1", role: "ADMIN" }),
+    );
   });
 });

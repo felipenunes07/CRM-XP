@@ -663,6 +663,15 @@ export interface CustomerCreditRow {
   hasNoOrder: boolean;
   hasNegativeCredit: boolean;
   hasDebtWithoutCredit: boolean;
+  creditLimitSource?: "SPREADSHEET" | "MANUAL";
+  paymentTermSource?: "SPREADSHEET" | "MANUAL";
+  manualOverrideUpdatedAt?: string | null;
+  manualOverrideUpdatedByName?: string | null;
+}
+
+export interface CustomerCreditSettingsUpdate {
+  creditLimit?: number | null;
+  paymentTerm?: number | null;
 }
 
 export interface CustomerCreditOverviewSummary {
@@ -721,6 +730,8 @@ export interface CustomerCreditDetailResponse {
   row: CustomerCreditRow | null;
   orders: CustomerCreditOrderEntry[];
   payments: CustomerCreditPaymentEntry[];
+  totalOrders: number;
+  totalPayments: number;
 }
 
 export interface InventorySnapshotMeta {
@@ -1634,6 +1645,8 @@ export interface WhatsappGroup {
   customerCode: string | null;
   customerDisplayName: string | null;
   customerStatus: CustomerStatus | null;
+  state: string | null;
+  city: string | null;
   lastAttendant: string | null;
   lastContactAt: string | null;
   lastCampaignId: string | null;

@@ -2,7 +2,7 @@ export type CustomersPageView = "portfolio" | "docInsights" | "creditPayment" | 
 export type CustomerPortfolioSortBy = "priority" | "faturamento" | "recencia";
 export type CreditKpiFilter = "owing" | "credit_balance" | "unused_credit" | "over_credit" | "";
 export type CreditSortBy = "urgency" | "debt_desc" | "available_desc" | "name";
-export type CreditQuickFilter = "to_charge" | "overdue" | "opportunity" | "ontrack" | "";
+export type CreditQuickFilter = "to_charge" | "overdue" | "due_soon" | "opportunity" | "ontrack" | "";
 export type CustomerDefectPeriod = "all" | string;
 export type CustomerDefectSortKey =
   | "returnRate"

@@ -11,6 +11,7 @@ import type {
   CustomerCreditPaymentEntry,
   CustomerCreditRiskLevel,
   CustomerCreditRow,
+  CustomerCreditSettingsUpdate,
   CustomerCreditSnapshotMeta,
 } from "@olist-crm/shared";
 import { pool, redis } from "../../db/client.js";
@@ -18,7 +19,12 @@ import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
 import { normalizeCode, normalizeText, safeNumber } from "../../lib/normalize.js";
-import { cleanupTempFile, downloadLatestFileByPrefix } from "../../lib/dropboxClient.js";
+import type { JwtUser } from "../platform/authService.js";
+import {
+  cleanupTempFile,
+  downloadFileByPath,
+  findLatestDropboxFileByPrefix,
+} from "../../lib/dropboxClient.js";
 
 const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
@@ -58,6 +64,15 @@ export interface CustomerCreditWorkbookCandidate {
   fileName: string;
   fileSizeBytes: number;
   fileUpdatedAt: string;
+}
+
+interface CustomerCreditWorkbookSource {
+  sourcePath: string;
+  fileName: string;
+  fileSizeBytes: number;
+  fileUpdatedAt: string;
+  fullPath?: string;
+  dropboxPath?: string;
 }
 
 export interface ParsedCustomerCreditRow {
@@ -178,6 +193,21 @@ function toIsoTimestamp(value: unknown) {
   }
 
   return parsed.toISOString();
+}
+
+export function isCustomerCreditSourceCurrent(
+  snapshot: Pick<
+    SnapshotMetaRecord,
+    "parserVersion" | "sourceFilePath" | "sourceFileSizeBytes" | "sourceFileUpdatedAt"
+  >,
+  source: Pick<CustomerCreditWorkbookSource, "sourcePath" | "fileSizeBytes" | "fileUpdatedAt">,
+) {
+  return (
+    Number(snapshot.parserVersion ?? 0) === CUSTOMER_CREDIT_PARSER_VERSION &&
+    snapshot.sourceFilePath === source.sourcePath &&
+    Number(snapshot.sourceFileSizeBytes) === source.fileSizeBytes &&
+    toIsoTimestamp(snapshot.sourceFileUpdatedAt) === toIsoTimestamp(source.fileUpdatedAt)
+  );
 }
 
 function emptySummary(): CustomerCreditOverviewSummary {
@@ -784,23 +814,33 @@ export async function findLatestCustomerCreditWorkbook(
   directory = env.CUSTOMER_CREDIT_WORKBOOK_DIR,
   prefix = env.CUSTOMER_CREDIT_WORKBOOK_PREFIX,
 ): Promise<(CustomerCreditWorkbookCandidate & { isTemp?: boolean }) | null> {
-  // Try Dropbox first if configured
+  const source = await discoverLatestCustomerCreditWorkbook(directory, prefix);
+  if (!source) {
+    return null;
+  }
+
+  return materializeCustomerCreditWorkbook(source);
+}
+
+async function discoverLatestCustomerCreditWorkbook(
+  directory = env.CUSTOMER_CREDIT_WORKBOOK_DIR,
+  prefix = env.CUSTOMER_CREDIT_WORKBOOK_PREFIX,
+): Promise<CustomerCreditWorkbookSource | null> {
   if (env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY)) {
     logger.info("Searching for latest credit workbook in Dropbox", {
       path: env.DROPBOX_CUSTOMER_CREDIT_PATH,
       prefix,
     });
 
-    const dropboxFile = await downloadLatestFileByPrefix(env.DROPBOX_CUSTOMER_CREDIT_PATH, prefix);
+    const dropboxFile = await findLatestDropboxFileByPrefix(env.DROPBOX_CUSTOMER_CREDIT_PATH, prefix);
 
     if (dropboxFile) {
       return {
-        fullPath: dropboxFile.localPath,
         sourcePath: dropboxFile.sourcePath,
         fileName: dropboxFile.fileName,
         fileSizeBytes: dropboxFile.fileSizeBytes,
         fileUpdatedAt: dropboxFile.fileUpdatedAt,
-        isTemp: true,
+        dropboxPath: dropboxFile.sourcePath,
       };
     }
   }
@@ -837,6 +877,30 @@ export async function findLatestCustomerCreditWorkbook(
   });
 
   return candidates[0] ?? null;
+}
+
+async function materializeCustomerCreditWorkbook(
+  source: CustomerCreditWorkbookSource,
+): Promise<CustomerCreditWorkbookCandidate & { isTemp?: boolean }> {
+  if (source.fullPath) {
+    return {
+      fullPath: source.fullPath,
+      sourcePath: source.sourcePath,
+      fileName: source.fileName,
+      fileSizeBytes: source.fileSizeBytes,
+      fileUpdatedAt: source.fileUpdatedAt,
+    };
+  }
+
+  const downloaded = await downloadFileByPath(source.dropboxPath ?? source.sourcePath);
+  return {
+    fullPath: downloaded.localPath,
+    sourcePath: source.sourcePath,
+    fileName: source.fileName,
+    fileSizeBytes: source.fileSizeBytes,
+    fileUpdatedAt: source.fileUpdatedAt,
+    isTemp: true,
+  };
 }
 
 export async function parseCustomerCreditWorkbook(
@@ -1375,10 +1439,11 @@ async function persistSnapshot(
 
 async function refreshSnapshotInternal(forceRefresh = false) {
   const activeSnapshot = await getActiveSnapshotRecord();
+  let latestSource: CustomerCreditWorkbookSource | null = null;
   let latestWorkbook: (CustomerCreditWorkbookCandidate & { isTemp?: boolean }) | null = null;
 
   try {
-    latestWorkbook = await findLatestCustomerCreditWorkbook();
+    latestSource = await discoverLatestCustomerCreditWorkbook();
   } catch (error) {
     if (activeSnapshot && !forceRefresh) {
       logger.warn("failed to scan customer credit workbook source, using cached snapshot", {
@@ -1389,7 +1454,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     throw error;
   }
 
-  if (!latestWorkbook) {
+  if (!latestSource) {
     if (activeSnapshot && !forceRefresh) {
       logger.warn("customer credit workbook not found, using cached snapshot");
       return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
@@ -1415,19 +1480,13 @@ async function refreshSnapshotInternal(forceRefresh = false) {
   if (
     activeSnapshot &&
     !forceRefresh &&
-    Number(activeSnapshot.parserVersion ?? 0) === CUSTOMER_CREDIT_PARSER_VERSION &&
-    activeSnapshot.sourceFilePath === latestWorkbook.sourcePath &&
-    Number(activeSnapshot.sourceFileSizeBytes) === latestWorkbook.fileSizeBytes &&
-    toIsoTimestamp(activeSnapshot.sourceFileUpdatedAt) === latestWorkbook.fileUpdatedAt
+    isCustomerCreditSourceCurrent(activeSnapshot, latestSource)
   ) {
-    // If it's a temp file from Dropbox and we are using cached snapshot, clean it up
-    if (latestWorkbook.isTemp) {
-      await cleanupTempFile(latestWorkbook.fullPath);
-    }
     return mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>);
   }
 
   try {
+    latestWorkbook = await materializeCustomerCreditWorkbook(latestSource);
     const workbook = await parseCustomerCreditWorkbook(
       latestWorkbook.fullPath,
       latestWorkbook.sourcePath,
@@ -1441,8 +1500,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     const snapshot = await persistSnapshot(workbook, rows, orders, payments);
     return snapshot;
   } finally {
-    // Always cleanup temp files from Dropbox
-    if (latestWorkbook.isTemp) {
+    if (latestWorkbook?.isTemp) {
       await cleanupTempFile(latestWorkbook.fullPath);
     }
   }
@@ -1465,6 +1523,25 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
   const creditLimit = Number(row.credit_limit ?? 0);
   const debtAmount = getDebtAmount(balanceAmount);
   const creditBalanceAmount = getCreditBalanceAmount(balanceAmount);
+  const creditLimitIsManual = Boolean(row.credit_limit_is_manual);
+  const paymentTermIsManual = Boolean(row.payment_term_is_manual);
+  const hasOverCredit = creditLimitIsManual
+    ? debtAmount > 0 && creditLimit > 0 && debtAmount > creditLimit
+    : Boolean(row.has_over_credit);
+  const hasDebtWithoutCredit = creditLimitIsManual
+    ? debtAmount > 0 && creditLimit <= 0
+    : Boolean(row.has_debt_without_credit);
+  const operationalState: CustomerCreditOperationalState = creditLimitIsManual
+    ? balanceAmount > 0
+      ? "HAS_CREDIT_BALANCE"
+      : debtAmount <= 0
+        ? creditLimit > 0
+          ? "UNUSED_CREDIT"
+          : "SETTLED"
+        : hasOverCredit
+          ? "OVER_CREDIT"
+          : "OWES"
+    : String(row.operational_state) as CustomerCreditOperationalState;
 
   return {
     id: String(row.id),
@@ -1479,7 +1556,7 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
     creditLimit,
     availableCreditAmount: getAvailableCreditAmount(balanceAmount, creditLimit),
     withinCreditLimit: debtAmount > 0 && creditLimit > 0 && debtAmount <= creditLimit,
-    operationalState: String(row.operational_state) as CustomerCreditOperationalState,
+    operationalState,
     riskLevel: String(row.risk_level) as CustomerCreditRiskLevel,
     observation: String(row.observation ?? ""),
     lastOrderDate: row.last_order_date ? String(row.last_order_date) : null,
@@ -1498,13 +1575,21 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
         : Number(row.payment_term),
     riskScore: row.risk_score === null || row.risk_score === undefined ? null : Number(row.risk_score),
     flags: Array.isArray(row.flags) ? row.flags.map((entry) => String(entry)) : [],
-    hasOverCredit: Boolean(row.has_over_credit),
+    hasOverCredit,
     hasOverduePayment: Boolean(row.has_overdue_payment),
     hasSeverelyOverduePayment: Boolean(row.has_severely_overdue_payment),
     hasNoPayment: Boolean(row.has_no_payment),
     hasNoOrder: Boolean(row.has_no_order),
     hasNegativeCredit: Boolean(row.has_negative_credit),
-    hasDebtWithoutCredit: Boolean(row.has_debt_without_credit),
+    hasDebtWithoutCredit,
+    creditLimitSource: creditLimitIsManual ? "MANUAL" : "SPREADSHEET",
+    paymentTermSource: paymentTermIsManual ? "MANUAL" : "SPREADSHEET",
+    manualOverrideUpdatedAt: row.manual_override_updated_at
+      ? String(row.manual_override_updated_at)
+      : null,
+    manualOverrideUpdatedByName: row.manual_override_updated_by_name
+      ? String(row.manual_override_updated_by_name)
+      : null,
   };
 }
 
@@ -1619,13 +1704,13 @@ async function loadOverviewRows(snapshotId: string) {
   const result = await pool.query(
     `
       SELECT
-        id,
-        customer_id,
+        snapshot_row.id,
+        snapshot_row.customer_id,
         customer_code,
         customer_display_name,
         source_display_name,
         balance_amount,
-        credit_limit,
+        COALESCE(override.credit_limit, snapshot_row.credit_limit) AS credit_limit,
         operational_state,
         risk_level,
         observation,
@@ -1633,7 +1718,7 @@ async function loadOverviewRows(snapshotId: string) {
         last_payment_date::text AS last_payment_date,
         days_since_last_order,
         days_since_last_payment,
-        payment_term,
+        COALESCE(override.payment_term, snapshot_row.payment_term) AS payment_term,
         risk_score,
         flags,
         has_over_credit,
@@ -1642,9 +1727,15 @@ async function loadOverviewRows(snapshotId: string) {
         has_no_payment,
         has_no_order,
         has_negative_credit,
-        has_debt_without_credit
-      FROM customer_credit_snapshot_rows
-      WHERE snapshot_id = $1
+        has_debt_without_credit,
+        override.credit_limit IS NOT NULL AS credit_limit_is_manual,
+        override.payment_term IS NOT NULL AS payment_term_is_manual,
+        override.updated_at AS manual_override_updated_at,
+        override.updated_by_name AS manual_override_updated_by_name
+      FROM customer_credit_snapshot_rows snapshot_row
+      LEFT JOIN customer_credit_overrides override
+        ON override.customer_id = snapshot_row.customer_id
+      WHERE snapshot_row.snapshot_id = $1
     `,
     [snapshotId],
   );
@@ -1718,6 +1809,7 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
   try {
     const cached = await redis.get(CREDIT_OVERVIEW_CACHE_KEY);
     if (cached) {
+      refreshOverviewInBackground();
       return JSON.parse(cached);
     }
   } catch (error) {
@@ -1737,24 +1829,22 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
     return response;
   }
 
-  // 3. Primeira carga (sem snapshot ainda): precisamos parsear sincronamente.
-  const snapshot = await ensureCustomerCreditSnapshot(false);
-  if (!snapshot) {
-    return {
-      snapshot: null,
-      summary: emptySummary(),
-      linkedRows: [],
-      unmatchedRows: [],
-    };
-  }
-
-  const response = await buildOverviewResponse(snapshot);
-  await cacheOverviewResponse(response);
-  return response;
+  // 3. Primeira carga absoluta: inicia a materialização em background e
+  //    responde imediatamente. A tela consulta novamente até o snapshot ficar
+  //    pronto, sem prender a navegação durante o parse do XLSX.
+  refreshOverviewInBackground();
+  return {
+    snapshot: null,
+    summary: emptySummary(),
+    linkedRows: [],
+    unmatchedRows: [],
+  };
 }
 
 export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
-  const snapshot = await ensureCustomerCreditSnapshot(true);
+  // A atualização manual e a periódica sempre consultam o Dropbox, mas só
+  // baixam/reprocessam quando os metadados ou a versão do parser mudaram.
+  const snapshot = await ensureCustomerCreditSnapshot(false);
   if (!snapshot) {
     return {
       snapshot: null,
@@ -1777,28 +1867,56 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
   return response;
 }
 
-export async function getCustomerCreditDetail(customerId: string): Promise<CustomerCreditDetailResponse> {
-  const snapshot = await ensureCustomerCreditSnapshot(false);
+export interface CustomerCreditDetailOptions {
+  ordersOffset?: number;
+  paymentsOffset?: number;
+  pageSize?: number;
+}
+
+function normalizeDetailPageValue(value: number | undefined, fallback: number, maximum: number) {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(maximum, Math.max(0, Math.trunc(value!)));
+}
+
+export async function getCustomerCreditDetail(
+  customerId: string,
+  options: CustomerCreditDetailOptions = {},
+): Promise<CustomerCreditDetailResponse> {
+  // O detalhe nunca deve aguardar a sincronização pesada que pode estar rodando
+  // em background. Ele lê o snapshot ativo; somente a primeira carga absoluta,
+  // sem snapshot persistido, precisa materializar a planilha.
+  const activeSnapshot = await getActiveSnapshotRecord();
+  const snapshot = activeSnapshot
+    ? mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>)
+    : await ensureCustomerCreditSnapshot(false);
   if (!snapshot) {
     return {
       snapshot: null,
       row: null,
       orders: [],
       payments: [],
+      totalOrders: 0,
+      totalPayments: 0,
     };
   }
 
-  const [result, ordersResult, paymentsResult] = await Promise.all([
+  const pageSize = Math.max(1, normalizeDetailPageValue(options.pageSize, 100, 200));
+  const ordersOffset = normalizeDetailPageValue(options.ordersOffset, 0, 1_000_000);
+  const paymentsOffset = normalizeDetailPageValue(options.paymentsOffset, 0, 1_000_000);
+
+  const [result, ordersResult, paymentsResult, totalsResult] = await Promise.all([
     pool.query(
       `
         SELECT
           id,
-          customer_id,
+          snapshot_row.customer_id,
           customer_code,
           customer_display_name,
           source_display_name,
           balance_amount,
-          credit_limit,
+          COALESCE(override.credit_limit, snapshot_row.credit_limit) AS credit_limit,
           operational_state,
           risk_level,
           observation,
@@ -1806,7 +1924,7 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
           last_payment_date::text AS last_payment_date,
           days_since_last_order,
           days_since_last_payment,
-          payment_term,
+          COALESCE(override.payment_term, snapshot_row.payment_term) AS payment_term,
           risk_score,
           flags,
           has_over_credit,
@@ -1815,10 +1933,16 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
           has_no_payment,
           has_no_order,
           has_negative_credit,
-          has_debt_without_credit
-        FROM customer_credit_snapshot_rows
-        WHERE snapshot_id = $1
-          AND customer_id = $2
+          has_debt_without_credit,
+          override.credit_limit IS NOT NULL AS credit_limit_is_manual,
+          override.payment_term IS NOT NULL AS payment_term_is_manual,
+          override.updated_at AS manual_override_updated_at,
+          override.updated_by_name AS manual_override_updated_by_name
+        FROM customer_credit_snapshot_rows snapshot_row
+        LEFT JOIN customer_credit_overrides override
+          ON override.customer_id = snapshot_row.customer_id
+        WHERE snapshot_row.snapshot_id = $1
+          AND snapshot_row.customer_id = $2
         LIMIT 1
       `,
       [snapshot.id, customerId],
@@ -1843,8 +1967,10 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
         WHERE snapshot_id = $1
           AND customer_id = $2
         ORDER BY order_date DESC NULLS LAST, order_number DESC
+        LIMIT $3
+        OFFSET $4
       `,
-      [snapshot.id, customerId],
+      [snapshot.id, customerId, pageSize, ordersOffset],
     ),
     pool.query(
       `
@@ -1863,6 +1989,26 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
         WHERE snapshot_id = $1
           AND customer_id = $2
         ORDER BY payment_date DESC NULLS LAST, payment_number DESC
+        LIMIT $3
+        OFFSET $4
+      `,
+      [snapshot.id, customerId, pageSize, paymentsOffset],
+    ),
+    pool.query(
+      `
+        SELECT
+          (
+            SELECT COUNT(*)::integer
+            FROM customer_credit_order_entries
+            WHERE snapshot_id = $1
+              AND customer_id = $2
+          ) AS total_orders,
+          (
+            SELECT COUNT(*)::integer
+            FROM customer_credit_payment_entries
+            WHERE snapshot_id = $1
+              AND customer_id = $2
+          ) AS total_payments
       `,
       [snapshot.id, customerId],
     ),
@@ -1876,5 +2022,80 @@ export async function getCustomerCreditDetail(customerId: string): Promise<Custo
     row: mappedRow ? reconcileCustomerCreditRowWithPayments(mappedRow, mappedPayments) : null,
     orders: ordersResult.rows.map((row) => mapCustomerCreditOrderEntry(row)),
     payments: mappedPayments,
+    totalOrders: Number(totalsResult.rows[0]?.total_orders ?? 0),
+    totalPayments: Number(totalsResult.rows[0]?.total_payments ?? 0),
   };
+}
+
+export async function updateCustomerCreditSettings(
+  customerId: string,
+  input: CustomerCreditSettingsUpdate,
+  user: JwtUser,
+): Promise<CustomerCreditDetailResponse> {
+  const existingCustomer = await pool.query(
+    `SELECT id FROM customers WHERE id = $1 LIMIT 1`,
+    [customerId],
+  );
+  if (!existingCustomer.rowCount) {
+    throw new HttpError(404, "Cliente não encontrado");
+  }
+
+  const hasCreditLimit = Object.prototype.hasOwnProperty.call(input, "creditLimit");
+  const hasPaymentTerm = Object.prototype.hasOwnProperty.call(input, "paymentTerm");
+
+  await pool.query(
+    `
+      INSERT INTO customer_credit_overrides (
+        customer_id,
+        credit_limit,
+        payment_term,
+        updated_by_user_id,
+        updated_by_name,
+        updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (customer_id) DO UPDATE SET
+        credit_limit = CASE
+          WHEN $6::boolean THEN EXCLUDED.credit_limit
+          ELSE customer_credit_overrides.credit_limit
+        END,
+        payment_term = CASE
+          WHEN $7::boolean THEN EXCLUDED.payment_term
+          ELSE customer_credit_overrides.payment_term
+        END,
+        updated_by_user_id = EXCLUDED.updated_by_user_id,
+        updated_by_name = EXCLUDED.updated_by_name,
+        updated_at = NOW()
+    `,
+    [
+      customerId,
+      hasCreditLimit ? input.creditLimit ?? null : null,
+      hasPaymentTerm ? input.paymentTerm ?? null : null,
+      user.id,
+      user.name,
+      hasCreditLimit,
+      hasPaymentTerm,
+    ],
+  );
+
+  await pool.query(
+    `
+      DELETE FROM customer_credit_overrides
+      WHERE customer_id = $1
+        AND credit_limit IS NULL
+        AND payment_term IS NULL
+    `,
+    [customerId],
+  );
+
+  try {
+    await redis.del(CREDIT_OVERVIEW_CACHE_KEY);
+  } catch (error) {
+    logger.warn("failed to invalidate credit overview cache after manual override", {
+      error: String(error),
+      customerId,
+    });
+  }
+
+  return getCustomerCreditDetail(customerId);
 }
