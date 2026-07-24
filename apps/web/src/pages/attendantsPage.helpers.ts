@@ -53,7 +53,7 @@ function safeDivide(numerator: number, denominator: number) {
 
 export function chartMetricLabel(metric: AttendantChartMetric) {
   if (metric === "orders") {
-    return "Vendas";
+    return "Número de pedidos";
   }
 
   if (metric === "pieces") {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AttendantListItem } from "@olist-crm/shared";
 import {
   buildTrendChartData,
+  chartMetricLabel,
   getAttendantColor,
   getInitialSelectedAttendants,
   sortAttendantsForBoard,
@@ -175,6 +176,14 @@ describe("attendantsPage helpers", () => {
     expect(series).toHaveLength(1);
     expect(Number(data[0]?.[series[0]!.dataKey])).toBe(1);
     expect(Number(data[2]?.[series[0]!.dataKey])).toBe(3);
+  });
+
+  it("maps monthly order counts with the requested label", () => {
+    const { data, series } = buildTrendChartData(attendants, ["Suelen"], "orders");
+
+    expect(chartMetricLabel("orders")).toBe("Número de pedidos");
+    expect(Number(data[0]?.[series[0]!.dataKey])).toBe(30);
+    expect(Number(data[2]?.[series[0]!.dataKey])).toBe(90);
   });
 
   it("keeps every available month in chronological order", () => {

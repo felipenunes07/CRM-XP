@@ -46,6 +46,7 @@ type AttendantScope = "all" | string;
 const windowOptions: WindowMonths[] = [3, 6, 12, 24];
 const metricOptions: AttendantChartMetric[] = [
   "pieces",
+  "orders",
   "revenue",
   "uniqueCustomers",
   "newCustomers",
@@ -56,6 +57,7 @@ const metricOptions: AttendantChartMetric[] = [
 ];
 const individualMetricOptions: AttendantChartMetric[] = [
   "pieces",
+  "orders",
   "attendedConversations",
   "recoveredCustomers",
   "lostCustomers",
