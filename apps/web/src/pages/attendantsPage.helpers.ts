@@ -56,11 +56,11 @@ export function chartMetricLabel(metric: AttendantChartMetric) {
   }
 
   if (metric === "pieces") {
-    return "Peças";
+    return "Telas vendidas";
   }
 
   if (metric === "uniqueCustomers") {
-    return "Clientes";
+    return "Clientes compradores";
   }
 
   if (metric === "newCustomers") {
@@ -68,15 +68,15 @@ export function chartMetricLabel(metric: AttendantChartMetric) {
   }
 
   if (metric === "recoveredCustomers") {
-    return "Recuperados";
+    return "Clientes recuperados";
   }
 
   if (metric === "sentMessages") {
-    return "Mensagens";
+    return "Mensagens enviadas";
   }
 
   if (metric === "attendedConversations") {
-    return "Atendimentos";
+    return "Clientes atendidos";
   }
 
   return "Faturamento";

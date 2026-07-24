@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AttendantListItem } from "@olist-crm/shared";
+import type { AttendantListItem, CustomerStatus } from "@olist-crm/shared";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -9,11 +9,13 @@ import {
   CircleDot,
   MessageCircleMore,
   RotateCcw,
+  Search,
   Sparkles,
   Target,
   TrendingUp,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import {
   Bar,
@@ -48,6 +50,15 @@ const metricOptions: AttendantChartMetric[] = [
   "sentMessages",
   "attendedConversations",
 ];
+const individualMetricOptions: AttendantChartMetric[] = [
+  "pieces",
+  "attendedConversations",
+  "recoveredCustomers",
+  "newCustomers",
+  "sentMessages",
+  "revenue",
+];
+const portfolioStatuses: Array<"ALL" | CustomerStatus> = ["ALL", "ACTIVE", "ATTENTION", "INACTIVE"];
 const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const businessHours = Array.from({ length: 14 }, (_, index) => index + 7);
 
@@ -220,19 +231,48 @@ function GoalProgress({
 }
 
 function ActivityHeatmap({ item }: { item: AttendantListItem }) {
+  const [messageType, setMessageType] = useState<"total" | "sent" | "received">("total");
+  const [showNumbers, setShowNumbers] = useState(true);
   const cells = useMemo(() => {
     const totals = new Map<string, number>();
     item.activityHeatmap.forEach((cell) => {
       const weekday = new Date(`${cell.date}T12:00:00`).getDay();
       const key = `${weekday}-${cell.hour}`;
-      totals.set(key, (totals.get(key) ?? 0) + cell.sentMessages + cell.receivedMessages);
+      const value =
+        messageType === "sent"
+          ? cell.sentMessages
+          : messageType === "received"
+            ? cell.receivedMessages
+            : cell.sentMessages + cell.receivedMessages;
+      totals.set(key, (totals.get(key) ?? 0) + value);
     });
     const maximum = Math.max(0, ...totals.values());
     return { totals, maximum };
-  }, [item]);
+  }, [item, messageType]);
 
   return (
     <div className="attendant-heatmap">
+      <div className="attendant-heatmap-controls">
+        <div role="group" aria-label="Tipo de mensagem">
+          {(["total", "sent", "received"] as const).map((type) => (
+            <button
+              type="button"
+              key={type}
+              className={messageType === type ? "is-active" : ""}
+              onClick={() => setMessageType(type)}
+            >
+              {type === "total" ? "Total" : type === "sent" ? "Enviadas" : "Recebidas"}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          className={`attendant-number-toggle ${showNumbers ? "is-active" : ""}`}
+          onClick={() => setShowNumbers((current) => !current)}
+        >
+          {showNumbers ? "Números visíveis" : "Mostrar números"}
+        </button>
+      </div>
       <div className="attendant-heatmap-hours">
         <span />
         {businessHours.map((hour) => (
@@ -246,11 +286,15 @@ function ActivityHeatmap({ item }: { item: AttendantListItem }) {
             const value = cells.totals.get(`${weekdayIndex}-${hour}`) ?? 0;
             const level = cells.maximum ? Math.ceil((value / cells.maximum) * 4) : 0;
             return (
-              <i
+              <span
                 key={hour}
                 className={`heat-level-${level}`}
-                title={`${weekday}, ${hour}h: ${formatNumber(value)} mensagens`}
-              />
+                title={`${weekday}, ${hour}h: ${formatNumber(value)} ${
+                  messageType === "sent" ? "enviadas" : messageType === "received" ? "recebidas" : "mensagens"
+                }`}
+              >
+                {showNumbers && value > 0 ? formatNumber(value) : ""}
+              </span>
             );
           })}
         </div>
@@ -271,6 +315,9 @@ export function AttendantsPage() {
   const [windowMonths, setWindowMonths] = useState<WindowMonths>(12);
   const [scope, setScope] = useState<AttendantScope>("all");
   const [chartMetric, setChartMetric] = useState<AttendantChartMetric>("pieces");
+  const [portfolioOpen, setPortfolioOpen] = useState(false);
+  const [portfolioStatus, setPortfolioStatus] = useState<"ALL" | CustomerStatus>("ALL");
+  const [portfolioSearch, setPortfolioSearch] = useState("");
 
   const attendantsQuery = useQuery({
     queryKey: ["attendants", windowMonths],
@@ -281,6 +328,23 @@ export function AttendantsPage() {
   const data = attendantsQuery.data;
   const attendants = data?.attendants ?? [];
   const selectedItem = scope === "all" ? null : attendants.find((item) => item.attendant === scope) ?? null;
+  const portfolioQuery = useQuery({
+    queryKey: ["attendant-portfolio", selectedItem?.attendant, windowMonths],
+    queryFn: () => api.attendantPortfolio(token!, selectedItem!.attendant, windowMonths),
+    enabled: Boolean(token && selectedItem && portfolioOpen),
+  });
+  const portfolioCustomers = portfolioQuery.data?.customers ?? [];
+  const filteredPortfolioCustomers = useMemo(() => {
+    const normalizedSearch = portfolioSearch.trim().toLocaleLowerCase("pt-BR");
+    return portfolioCustomers.filter((customer) => {
+      const matchesStatus = portfolioStatus === "ALL" || customer.status === portfolioStatus;
+      const matchesSearch =
+        !normalizedSearch ||
+        customer.displayName.toLocaleLowerCase("pt-BR").includes(normalizedSearch) ||
+        customer.customerCode.toLocaleLowerCase("pt-BR").includes(normalizedSearch);
+      return matchesStatus && matchesSearch;
+    });
+  }, [portfolioCustomers, portfolioSearch, portfolioStatus]);
   const selectedNames = selectedItem ? [selectedItem.attendant] : attendants.map((item) => item.attendant);
   const { data: trendData, series: trendSeries } = useMemo(
     () => buildTrendChartData(attendants, selectedNames, chartMetric),
@@ -325,6 +389,16 @@ export function AttendantsPage() {
     : 0;
   const maxRankingRevenue = Math.max(...ranking.map((item) => item.currentPeriod.revenue), 1);
   const selectedColor = selectedItem ? getAttendantColor(selectedItem.attendant) : "#315cc8";
+  const openPortfolio = (status: "ALL" | CustomerStatus = "ALL") => {
+    setPortfolioStatus(status);
+    setPortfolioSearch("");
+    setPortfolioOpen(true);
+  };
+  const selectAttendant = (attendant: string) => {
+    setPortfolioOpen(false);
+    setChartMetric("pieces");
+    setScope(attendant);
+  };
 
   if (attendantsQuery.isLoading) {
     return <div className="page-loading">Carregando contribuição das atendentes...</div>;
@@ -369,7 +443,10 @@ export function AttendantsPage() {
       </header>
 
       <nav className="attendant-switcher" aria-label="Selecionar atendente">
-        <button type="button" className={scope === "all" ? "is-active" : ""} onClick={() => setScope("all")}>
+        <button type="button" className={scope === "all" ? "is-active" : ""} onClick={() => {
+          setPortfolioOpen(false);
+          setScope("all");
+        }}>
           <span className="attendant-all-avatar">
             <Users size={19} />
           </span>
@@ -384,7 +461,9 @@ export function AttendantsPage() {
             key={item.attendant}
             type="button"
             className={scope === item.attendant ? "is-active" : ""}
-            onClick={() => setScope(item.attendant)}
+            onClick={() => {
+              selectAttendant(item.attendant);
+            }}
             style={{ "--row-color": getAttendantColor(item.attendant) } as React.CSSProperties}
           >
             <Avatar item={item} />
@@ -516,17 +595,34 @@ export function AttendantsPage() {
                     : `${windowMonths} meses fechados, com barras agrupadas para comparação direta entre as vendedoras.`}
                 </p>
               </div>
-              <label className="attendant-metric-select">
-                <span>Indicador analisado</span>
-                <select
-                  value={chartMetric}
-                  onChange={(event) => setChartMetric(event.target.value as AttendantChartMetric)}
-                >
-                  {metricOptions.map((metric) => (
-                    <option key={metric} value={metric}>{chartMetricLabel(metric)}</option>
+              {selectedItem ? (
+                <div className="attendant-metric-tabs attendant-individual-toggles" role="tablist" aria-label="Indicador mensal">
+                  {individualMetricOptions.map((metric) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={chartMetric === metric}
+                      className={chartMetric === metric ? "is-active" : ""}
+                      key={metric}
+                      onClick={() => setChartMetric(metric)}
+                    >
+                      {chartMetricLabel(metric)}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              ) : (
+                <label className="attendant-metric-select">
+                  <span>Indicador analisado</span>
+                  <select
+                    value={chartMetric}
+                    onChange={(event) => setChartMetric(event.target.value as AttendantChartMetric)}
+                  >
+                    {metricOptions.map((metric) => (
+                      <option key={metric} value={metric}>{chartMetricLabel(metric)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
             <div className="attendant-trend-chart">
               <ResponsiveContainer width="100%" height={360}>
@@ -556,7 +652,7 @@ export function AttendantsPage() {
             {!selectedItem ? (
               <div className="attendant-chart-legend">
                 {trendSeries.map((series) => (
-                  <button type="button" key={series.attendant} onClick={() => setScope(series.attendant)}>
+                  <button type="button" key={series.attendant} onClick={() => selectAttendant(series.attendant)}>
                     <i style={{ background: series.color }} />
                     {series.attendant}
                   </button>
@@ -588,7 +684,7 @@ export function AttendantsPage() {
                         type="button"
                         className="attendants-ranking-row"
                         key={item.attendant}
-                        onClick={() => setScope(item.attendant)}
+                        onClick={() => selectAttendant(item.attendant)}
                         style={{ "--row-color": getAttendantColor(item.attendant) } as React.CSSProperties}
                       >
                         <span className="attendants-ranking-person">
@@ -630,7 +726,7 @@ export function AttendantsPage() {
                   </div>
                   <div className="attendant-revenue-share">
                     {ranking.map((item) => (
-                      <button type="button" key={item.attendant} onClick={() => setScope(item.attendant)}>
+                      <button type="button" key={item.attendant} onClick={() => selectAttendant(item.attendant)}>
                         <span><i style={{ background: getAttendantColor(item.attendant) }} />{item.attendant}</span>
                         <strong>{formatCurrency(item.currentPeriod.revenue)}</strong>
                         <small>{formatPercent(safeDivide(item.currentPeriod.revenue, data.summary.currentPeriodRevenue))}</small>
@@ -679,6 +775,10 @@ export function AttendantsPage() {
                       <span className="attendants-kicker">Carteira atual</span>
                       <h3>{formatNumber(selectedItem.portfolio.totalCustomers)} clientes sob responsabilidade</h3>
                     </div>
+                    <button type="button" className="attendant-portfolio-open" onClick={() => openPortfolio("ALL")}>
+                      Ver carteira completa
+                      <ChevronRight size={16} />
+                    </button>
                   </div>
                   <div className="attendant-portfolio-bar">
                     {(["ACTIVE", "ATTENTION", "INACTIVE"] as const).map((status) => (
@@ -695,9 +795,9 @@ export function AttendantsPage() {
                     ))}
                   </div>
                   <div className="attendant-portfolio-legend">
-                    <span><i className="is-active" />Ativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)}</strong></span>
-                    <span><i className="is-attention" />Atenção <strong>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION)}</strong></span>
-                    <span><i className="is-inactive" />Inativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.INACTIVE)}</strong></span>
+                    <button type="button" onClick={() => openPortfolio("ACTIVE")}><i className="is-active" />Ativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)}</strong></button>
+                    <button type="button" onClick={() => openPortfolio("ATTENTION")}><i className="is-attention" />Atenção <strong>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION)}</strong></button>
+                    <button type="button" onClick={() => openPortfolio("INACTIVE")}><i className="is-inactive" />Inativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.INACTIVE)}</strong></button>
                   </div>
                   <p className="attendant-section-note">
                     {formatNumber(selectedItem.portfolio.statusCounts.ATTENTION + selectedItem.portfolio.statusCounts.INACTIVE)} clientes têm oportunidade de reativação.
@@ -781,6 +881,115 @@ export function AttendantsPage() {
             </>
           )}
         </>
+      ) : null}
+
+      {portfolioOpen && selectedItem ? (
+        <div className="attendant-portfolio-overlay" role="dialog" aria-modal="true" aria-label={`Carteira de ${selectedItem.attendant}`}>
+          <section className="attendant-portfolio-panel">
+            <header className="attendant-portfolio-panel-header">
+              <div>
+                <span className="attendants-kicker">Carteira atribuída</span>
+                <h2>Clientes de {selectedItem.attendant}</h2>
+                <p>
+                  Situação atual da carteira e compras entre{" "}
+                  {portfolioQuery.data ? formatDate(portfolioQuery.data.periodStart) : "—"} e{" "}
+                  {portfolioQuery.data ? formatDate(portfolioQuery.data.periodEnd) : "—"}.
+                </p>
+              </div>
+              <button type="button" aria-label="Fechar carteira" onClick={() => setPortfolioOpen(false)}>
+                <X size={22} />
+              </button>
+            </header>
+
+            <div className="attendant-portfolio-toolbar">
+              <div className="attendant-portfolio-status-tabs" role="tablist" aria-label="Situação dos clientes">
+                {portfolioStatuses.map((status) => {
+                  const count =
+                    status === "ALL"
+                      ? portfolioCustomers.length || selectedItem.portfolio.totalCustomers
+                      : portfolioCustomers.filter((customer) => customer.status === status).length ||
+                        selectedItem.portfolio.statusCounts[status];
+                  return (
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={portfolioStatus === status}
+                      className={portfolioStatus === status ? "is-active" : ""}
+                      key={status}
+                      onClick={() => setPortfolioStatus(status)}
+                    >
+                      {status === "ALL" ? "Todos" : statusLabel(status)}
+                      <strong>{formatNumber(count)}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+              <label className="attendant-portfolio-search">
+                <Search size={17} />
+                <input
+                  value={portfolioSearch}
+                  onChange={(event) => setPortfolioSearch(event.target.value)}
+                  placeholder="Buscar cliente ou código"
+                />
+              </label>
+            </div>
+
+            <div className="attendant-portfolio-table-wrap">
+              {portfolioQuery.isLoading ? (
+                <div className="attendant-portfolio-state">Carregando a carteira real de {selectedItem.attendant}...</div>
+              ) : portfolioQuery.isError ? (
+                <div className="attendant-portfolio-state is-error">Não foi possível carregar esta carteira.</div>
+              ) : filteredPortfolioCustomers.length ? (
+                <table className="attendant-portfolio-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Situação</th>
+                      <th>Telas no período</th>
+                      <th>Pedidos</th>
+                      <th>Faturamento</th>
+                      <th>Última compra</th>
+                      <th>Sem comprar</th>
+                      <th>Histórico</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPortfolioCustomers.map((customer) => (
+                      <tr key={customer.customerId}>
+                        <td>
+                          <Link to={`/clientes/${customer.customerId}`} onClick={() => setPortfolioOpen(false)}>
+                            <strong>{customer.displayName}</strong>
+                            <small>{customer.customerCode || "Sem código"}</small>
+                          </Link>
+                        </td>
+                        <td>
+                          <span className={`attendant-customer-status is-${customer.status.toLocaleLowerCase()}`}>
+                            {statusLabel(customer.status)}
+                          </span>
+                        </td>
+                        <td><strong>{formatNumber(customer.periodPieces)}</strong></td>
+                        <td>{formatNumber(customer.periodOrders)}</td>
+                        <td>{formatCurrency(customer.periodRevenue)}</td>
+                        <td>{customer.lastOrderAt ? formatDate(customer.lastOrderAt) : "Sem compra"}</td>
+                        <td>{customer.daysSinceLastPurchase === null ? "—" : `${formatNumber(customer.daysSinceLastPurchase)} dias`}</td>
+                        <td><strong>{formatNumber(customer.totalOrders)} pedidos</strong><small>{formatCurrency(customer.totalSpent)}</small></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="attendant-portfolio-state">Nenhum cliente encontrado neste filtro.</div>
+              )}
+            </div>
+            <footer className="attendant-portfolio-footer">
+              <strong>{formatNumber(filteredPortfolioCustomers.length)} clientes exibidos</strong>
+              <span>
+                {formatNumber(filteredPortfolioCustomers.reduce((total, customer) => total + customer.periodPieces, 0))} telas ·{" "}
+                {formatCurrency(filteredPortfolioCustomers.reduce((total, customer) => total + customer.periodRevenue, 0))}
+              </span>
+            </footer>
+          </section>
+        </div>
       ) : null}
     </div>
   );

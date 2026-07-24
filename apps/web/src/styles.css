@@ -7488,6 +7488,41 @@ textarea {
   font-size: 0.72rem;
 }
 
+.attendant-portfolio-legend button {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--attendants-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.attendant-portfolio-legend button:hover {
+  border-color: var(--attendants-line);
+  background: #f7f9fd;
+  color: var(--attendants-ink);
+}
+
+.attendant-portfolio-open {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.52rem 0.7rem;
+  border: 1px solid #cfd9ec;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--attendants-blue);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 .attendant-portfolio-legend i {
   width: 8px;
   height: 8px;
@@ -7670,6 +7705,41 @@ button.attendants-ranking-row:hover {
   overflow-x: auto;
 }
 
+.attendant-heatmap-controls {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 520px;
+  margin-bottom: 0.85rem;
+}
+
+.attendant-heatmap-controls > div {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 9px;
+  background: #edf1f7;
+}
+
+.attendant-heatmap-controls button {
+  padding: 0.4rem 0.58rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--attendants-muted);
+  font: inherit;
+  font-size: 0.67rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attendant-heatmap-controls button.is-active {
+  background: #fff;
+  color: var(--attendant-accent);
+  box-shadow: 0 2px 8px rgba(30, 54, 100, 0.1);
+}
+
 .attendant-heatmap-hours,
 .attendant-heatmap-row {
   display: grid;
@@ -7694,17 +7764,25 @@ button.attendants-ranking-row:hover {
   align-items: center;
 }
 
-.attendant-heatmap-row i,
+.attendant-heatmap-row > span:not(:first-child),
 .attendant-heatmap-legend i {
   height: 19px;
   border-radius: 4px;
   background: #edf1f7;
 }
 
-.attendant-heatmap .heat-level-1 { background: #dce6ff; }
-.attendant-heatmap .heat-level-2 { background: #a9c0fa; }
-.attendant-heatmap .heat-level-3 { background: #668fe9; }
-.attendant-heatmap .heat-level-4 { background: #265bdb; }
+.attendant-heatmap-row > span:not(:first-child) {
+  display: grid;
+  align-items: center;
+  color: #33415f;
+  font-size: 0.56rem;
+  font-weight: 750;
+}
+
+.attendant-heatmap .heat-level-1 { background: color-mix(in srgb, var(--attendant-accent) 16%, white); }
+.attendant-heatmap .heat-level-2 { background: color-mix(in srgb, var(--attendant-accent) 38%, white); }
+.attendant-heatmap .heat-level-3 { background: color-mix(in srgb, var(--attendant-accent) 68%, white); color: #fff; }
+.attendant-heatmap .heat-level-4 { background: var(--attendant-accent); color: #fff; }
 
 .attendant-heatmap-legend {
   display: flex;
@@ -7720,6 +7798,263 @@ button.attendants-ranking-row:hover {
 .attendant-heatmap-legend i {
   width: 18px;
   height: 10px;
+}
+
+.attendant-individual-toggles {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 760px;
+}
+
+.attendant-portfolio-overlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  padding: 2rem;
+  background: rgba(16, 27, 51, 0.56);
+  backdrop-filter: blur(5px);
+}
+
+.attendant-portfolio-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: min(1500px, 100%);
+  height: min(900px, 100%);
+  margin: auto;
+  overflow: hidden;
+  border: 1px solid #d9e1ef;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(14, 29, 61, 0.28);
+}
+
+.attendant-portfolio-panel-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.35rem 1.5rem 1.15rem;
+  border-bottom: 1px solid var(--attendants-line);
+}
+
+.attendant-portfolio-panel-header h2 {
+  margin: 0;
+  color: var(--attendants-ink);
+  font-size: 1.55rem;
+  letter-spacing: -0.035em;
+}
+
+.attendant-portfolio-panel-header p {
+  margin: 0.35rem 0 0;
+  color: var(--attendants-muted);
+  font-size: 0.76rem;
+}
+
+.attendant-portfolio-panel-header > button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--attendants-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--attendants-ink);
+  cursor: pointer;
+}
+
+.attendant-portfolio-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.5rem;
+  background: #f7f9fc;
+  border-bottom: 1px solid var(--attendants-line);
+}
+
+.attendant-portfolio-status-tabs {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+}
+
+.attendant-portfolio-status-tabs button {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.72rem;
+  border: 1px solid #d8e0ed;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--attendants-muted);
+  font: inherit;
+  font-size: 0.73rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.attendant-portfolio-status-tabs button strong {
+  color: var(--attendants-ink);
+}
+
+.attendant-portfolio-status-tabs button.is-active {
+  border-color: color-mix(in srgb, var(--attendant-accent) 48%, white);
+  background: color-mix(in srgb, var(--attendant-accent) 8%, white);
+  color: var(--attendant-accent);
+}
+
+.attendant-portfolio-search {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 280px;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid #d8e0ed;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--attendants-muted);
+}
+
+.attendant-portfolio-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--attendants-ink);
+  font: inherit;
+  font-size: 0.77rem;
+}
+
+.attendant-portfolio-table-wrap {
+  min-height: 0;
+  overflow: auto;
+}
+
+.attendant-portfolio-table {
+  width: 100%;
+  min-width: 1100px;
+  border-collapse: collapse;
+}
+
+.attendant-portfolio-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 0.72rem 0.85rem;
+  border-bottom: 1px solid var(--attendants-line);
+  background: #fff;
+  color: var(--attendants-muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.attendant-portfolio-table td {
+  padding: 0.8rem 0.85rem;
+  border-bottom: 1px solid #edf0f5;
+  color: var(--attendants-ink);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.attendant-portfolio-table tbody tr:hover {
+  background: #fafbfe;
+}
+
+.attendant-portfolio-table td:first-child {
+  min-width: 260px;
+  white-space: normal;
+}
+
+.attendant-portfolio-table td a,
+.attendant-portfolio-table td:last-child {
+  display: grid;
+  gap: 0.18rem;
+  color: var(--attendants-ink);
+  text-decoration: none;
+}
+
+.attendant-portfolio-table td a:hover strong {
+  color: var(--attendant-accent);
+}
+
+.attendant-portfolio-table small {
+  color: var(--attendants-muted);
+  font-size: 0.65rem;
+}
+
+.attendant-customer-status {
+  display: inline-flex;
+  padding: 0.32rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--status-color, #8090aa) 12%, white);
+  color: var(--status-color, #63718a);
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.attendant-customer-status.is-new { --status-color: #4879d8; }
+
+.attendant-portfolio-state {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  color: var(--attendants-muted);
+  font-size: 0.85rem;
+}
+
+.attendant-portfolio-state.is-error { color: #c74745; }
+
+.attendant-portfolio-footer {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.5rem;
+  border-top: 1px solid var(--attendants-line);
+  background: #fff;
+  color: var(--attendants-muted);
+  font-size: 0.74rem;
+}
+
+.attendant-portfolio-footer strong {
+  color: var(--attendants-ink);
+}
+
+@media (max-width: 760px) {
+  .attendant-individual-toggles {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .attendant-portfolio-overlay {
+    padding: 0;
+  }
+
+  .attendant-portfolio-panel {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .attendant-portfolio-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .attendant-portfolio-search {
+    min-width: 0;
+  }
+
+  .attendant-portfolio-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .attendant-relationship-summary dl {

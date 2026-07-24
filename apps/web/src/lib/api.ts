@@ -3,6 +3,7 @@ import type {
   AmbassadorResponse,
   AgendaResponse,
   AttendantsResponse,
+  AttendantPortfolioResponse,
   CarouselSlide,
   CustomerDetail,
   CustomerOpportunityDetail,
@@ -502,6 +503,14 @@ export const api = {
       windowMonths: String(windowMonths),
     });
     return request<AttendantsResponse>(`/api/attendants?${search.toString()}`, {}, token);
+  },
+  attendantPortfolio(token: string, attendant: string, windowMonths: 3 | 6 | 12 | 24 = 12) {
+    const search = new URLSearchParams({ windowMonths: String(windowMonths) });
+    return request<AttendantPortfolioResponse>(
+      `/api/attendants/${encodeURIComponent(attendant)}/portfolio?${search.toString()}`,
+      {},
+      token,
+    );
   },
   ambassadors(token: string) {
     return request<AmbassadorResponse>("/api/ambassadors", {}, token);

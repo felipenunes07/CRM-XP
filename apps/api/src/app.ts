@@ -50,7 +50,7 @@ import { getSlowMovingStrategy } from "./modules/crm/strategySlowMovingService.j
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
-import { getAttendantsOverview } from "./modules/crm/attendantService.js";
+import { getAttendantPortfolio, getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import {
   createSavedSegment,
@@ -528,6 +528,10 @@ const whatsappGroupFiltersQuerySchema = z.object({
   customerStatus: z.string().optional(),
   state: z.string().trim().min(1).optional(),
   city: z.string().trim().min(1).optional(),
+});
+
+const attendantParamsSchema = z.object({
+  attendant: z.string().trim().min(1).max(120),
 });
 
 const whatsappMappingSummaryQuerySchema = z.object({
@@ -1238,6 +1242,16 @@ export function createApp() {
     try {
       const query = customerCreditDetailQuerySchema.parse(request.query);
       response.json(await getCustomerCreditDetail(request.params.id, query));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/attendants/:attendant/portfolio", async (request, response, next) => {
+    try {
+      const { attendant } = attendantParamsSchema.parse(request.params);
+      const query = attendantsQuerySchema.parse(request.query);
+      response.json(await getAttendantPortfolio(attendant, query.windowMonths ?? 12));
     } catch (error) {
       next(error);
     }

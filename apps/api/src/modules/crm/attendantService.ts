@@ -5,6 +5,8 @@ import type {
   AttendantGoalSnapshot,
   AttendantListItem,
   AttendantMetricSnapshot,
+  AttendantPortfolioCustomer,
+  AttendantPortfolioResponse,
   AttendantPortfolioSnapshot,
   AttendantSummary,
   AttendantTopCustomer,
@@ -451,6 +453,118 @@ async function getPortfolioRows(attendants: readonly string[]): Promise<Portfoli
     inactiveCount: Number(row.inactive_count ?? 0),
     newCount: Number(row.new_count ?? 0),
   }));
+}
+
+export async function getAttendantPortfolio(
+  attendant: string,
+  windowMonths: AttendantWindowMonths = 12,
+  referenceDate = new Date(),
+): Promise<AttendantPortfolioResponse> {
+  const windows = buildAttendantComparisonWindows(referenceDate, windowMonths);
+  const identities = await listAttendantIdentities();
+  const matchedAttendant = identities.find(
+    (identity) => identity.attendant.toLocaleLowerCase("pt-BR") === attendant.trim().toLocaleLowerCase("pt-BR"),
+  );
+
+  if (!matchedAttendant) {
+    return {
+      attendant: attendant.trim(),
+      windowMonths,
+      periodStart: windows.trendStartMonth,
+      periodEnd: windows.currentPeriodEnd,
+      customers: [],
+    };
+  }
+
+  const result = await pool.query(
+    `
+      WITH portfolio AS (
+        SELECT
+          cs.customer_id,
+          COALESCE(cs.customer_code, '') AS customer_code,
+          cs.display_name,
+          cs.status,
+          cs.last_purchase_at,
+          cs.days_since_last_purchase,
+          cs.total_orders,
+          cs.total_spent,
+          cs.priority_score
+        FROM customer_snapshot cs
+        WHERE LOWER(COALESCE(NULLIF(cs.last_attendant, ''), 'Sem atendente')) = LOWER($1)
+      ),
+      order_item_totals AS (
+        SELECT
+          order_id,
+          COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces
+        FROM order_items
+        GROUP BY order_id
+      ),
+      period_sales AS (
+        SELECT
+          o.customer_id,
+          COUNT(*)::int AS period_orders,
+          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS period_revenue,
+          COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS period_pieces,
+          MAX(o.order_date)::text AS last_order_at
+        FROM orders o
+        LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
+        WHERE o.customer_id IN (SELECT customer_id FROM portfolio)
+          AND o.order_date BETWEEN $2::date AND $3::date
+        GROUP BY o.customer_id
+      )
+      SELECT
+        portfolio.customer_id::text AS customer_id,
+        portfolio.customer_code,
+        portfolio.display_name,
+        portfolio.status,
+        COALESCE(period_sales.period_pieces, 0)::numeric(14,2) AS period_pieces,
+        COALESCE(period_sales.period_orders, 0)::int AS period_orders,
+        COALESCE(period_sales.period_revenue, 0)::numeric(14,2) AS period_revenue,
+        COALESCE(period_sales.last_order_at, portfolio.last_purchase_at::text) AS last_order_at,
+        portfolio.days_since_last_purchase,
+        portfolio.total_orders,
+        portfolio.total_spent,
+        portfolio.priority_score
+      FROM portfolio
+      LEFT JOIN period_sales ON period_sales.customer_id = portfolio.customer_id
+      ORDER BY
+        CASE portfolio.status
+          WHEN 'ATTENTION' THEN 1
+          WHEN 'INACTIVE' THEN 2
+          WHEN 'ACTIVE' THEN 3
+          WHEN 'NEW' THEN 4
+          ELSE 5
+        END,
+        COALESCE(period_sales.period_pieces, 0) DESC,
+        portfolio.priority_score DESC,
+        portfolio.display_name ASC
+    `,
+    [matchedAttendant.attendant, windows.trendStartMonth, windows.currentPeriodEnd],
+  );
+
+  const customers: AttendantPortfolioCustomer[] = result.rows.map((row) => ({
+    customerId: String(row.customer_id),
+    customerCode: String(row.customer_code ?? ""),
+    displayName: String(row.display_name ?? "Cliente sem nome"),
+    status: String(row.status ?? "INACTIVE") as CustomerStatus,
+    periodPieces: Number(row.period_pieces ?? 0),
+    periodOrders: Number(row.period_orders ?? 0),
+    periodRevenue: Number(row.period_revenue ?? 0),
+    lastOrderAt: row.last_order_at ? String(row.last_order_at) : null,
+    daysSinceLastPurchase:
+      row.days_since_last_purchase === null ? null : Number(row.days_since_last_purchase),
+    totalOrders: Number(row.total_orders ?? 0),
+    totalSpent: Number(row.total_spent ?? 0),
+    priorityScore: Number(row.priority_score ?? 0),
+  }));
+
+  return {
+    attendant: matchedAttendant.attendant,
+    windowMonths,
+    periodStart: windows.trendStartMonth,
+    periodEnd: windows.currentPeriodEnd,
+    customers,
+  };
 }
 
 async function getTrendRows(windows: AttendantComparisonWindows, attendants: readonly string[]): Promise<TrendRow[]> {

@@ -147,6 +147,29 @@ export interface AttendantPortfolioSnapshot {
   statusCounts: Record<CustomerStatus, number>;
 }
 
+export interface AttendantPortfolioCustomer {
+  customerId: string;
+  customerCode: string;
+  displayName: string;
+  status: CustomerStatus;
+  periodPieces: number;
+  periodOrders: number;
+  periodRevenue: number;
+  lastOrderAt: string | null;
+  daysSinceLastPurchase: number | null;
+  totalOrders: number;
+  totalSpent: number;
+  priorityScore: number;
+}
+
+export interface AttendantPortfolioResponse {
+  attendant: string;
+  windowMonths: 3 | 6 | 12 | 24;
+  periodStart: string;
+  periodEnd: string;
+  customers: AttendantPortfolioCustomer[];
+}
+
 export interface AttendantTrendPoint {
   month: string;
   revenue: number;
