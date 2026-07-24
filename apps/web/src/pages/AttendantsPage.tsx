@@ -32,6 +32,7 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber, statusLabel } from "../lib/format";
 import {
   type AttendantChartMetric,
+  type AttendantTrendChartRow,
   buildTrendChartData,
   chartMetricLabel,
   getAttendantColor,
@@ -178,25 +179,57 @@ function ChartTooltip({
   payload,
   label,
   metric,
+  data,
+  currentMonth,
 }: {
   active?: boolean;
   payload?: Array<{ dataKey?: string; color?: string; value?: number; name?: string }>;
   label?: string;
   metric: AttendantChartMetric;
+  data: AttendantTrendChartRow[];
+  currentMonth: string;
 }) {
   if (!active || !payload?.length || !label) return null;
+  const currentIndex = data.findIndex((row) => row.month === label);
+  const previousRow = currentIndex > 0 ? data[currentIndex - 1] : null;
+  const formatValue = (value: number) => metric === "revenue" ? formatCurrency(value) : formatNumber(value);
+
   return (
     <div className="attendant-chart-tooltip">
-      <span>{formatMonthLabel(label)}</span>
-      {payload.map((entry) => (
-        <div key={String(entry.dataKey)}>
-          <i style={{ background: entry.color }} />
-          <span>{entry.name}</span>
-          <strong>
-            {metric === "revenue" ? formatCurrency(Number(entry.value ?? 0)) : formatNumber(Number(entry.value ?? 0))}
-          </strong>
-        </div>
-      ))}
+      <span>
+        {formatMonthLabel(label)}
+        <small>{label === currentMonth ? "Mês atual · parcial" : "Mês fechado"}</small>
+      </span>
+      {payload.map((entry) => {
+        const currentValue = Number(entry.value ?? 0);
+        const previousValue = previousRow ? Number(previousRow[String(entry.dataKey)] ?? 0) : 0;
+        const growth = previousRow && previousValue > 0 ? (currentValue - previousValue) / previousValue : null;
+        const growthPercent = growth === null ? null : growth * 100;
+        const gaugeFill = growthPercent === null ? 0 : Math.min(100, Math.abs(growthPercent));
+        const direction = growth === null ? "neutral" : growth > 0 ? "up" : growth < 0 ? "down" : "stable";
+        return (
+          <div className={`attendant-chart-tooltip-row is-${direction}`} key={String(entry.dataKey)}>
+            <i style={{ background: entry.color }} />
+            <div>
+              <strong>{entry.name}</strong>
+              <small>Anterior: {previousRow ? formatValue(previousValue) : "sem base"}</small>
+            </div>
+            <span className="attendant-chart-gauge" aria-label={growth === null ? "Sem base anterior" : formatGrowth(growth)}>
+              <svg viewBox="0 0 52 29" aria-hidden="true">
+                <path d="M 5 25 A 21 21 0 0 1 47 25" pathLength="100" />
+                <path
+                  className="attendant-chart-gauge-fill"
+                  d="M 5 25 A 21 21 0 0 1 47 25"
+                  pathLength="100"
+                  style={{ strokeDasharray: `${gaugeFill} 100` }}
+                />
+              </svg>
+              <b>{growth === null ? "—" : formatGrowth(growth)}</b>
+            </span>
+            <strong>{formatValue(currentValue)}</strong>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -327,6 +360,7 @@ export function AttendantsPage() {
 
   const data = attendantsQuery.data;
   const attendants = data?.attendants ?? [];
+  const currentTrendMonth = data?.summary.currentPeriodStart.slice(0, 7) ?? "";
   const selectedItem = scope === "all" ? null : attendants.find((item) => item.attendant === scope) ?? null;
   const portfolioQuery = useQuery({
     queryKey: ["attendant-portfolio", selectedItem?.attendant, windowMonths],
@@ -591,8 +625,8 @@ export function AttendantsPage() {
                 <h3>{selectedItem ? `Resultado mensal de ${selectedItem.attendant}` : "Quem está puxando o resultado"}</h3>
                 <p>
                   {selectedItem
-                    ? `${windowMonths} meses fechados, com a mesma escala para revelar avanço ou perda de ritmo.`
-                    : `${windowMonths} meses fechados, com barras agrupadas para comparação direta entre as vendedoras.`}
+                    ? `${windowMonths} meses, incluindo o mês atual parcial. Passe sobre uma barra para comparar com o mês anterior.`
+                    : `${windowMonths} meses, incluindo o mês atual parcial, com comparação direta entre as vendedoras.`}
                 </p>
               </div>
               {selectedItem ? (
@@ -633,9 +667,18 @@ export function AttendantsPage() {
                   barCategoryGap={selectedItem ? "34%" : "16%"}
                 >
                   <CartesianGrid stroke="rgba(28, 48, 86, 0.08)" vertical={false} />
-                  <XAxis dataKey="month" tickFormatter={formatMonthLabel} stroke="#77849d" tickLine={false} axisLine={false} />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={(value) => `${formatMonthLabel(String(value))}${value === currentTrendMonth ? "*" : ""}`}
+                    stroke="#77849d"
+                    tickLine={false}
+                    axisLine={false}
+                  />
                   <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#77849d" tickLine={false} axisLine={false} width={72} />
-                  <Tooltip content={<ChartTooltip metric={chartMetric} />} cursor={{ fill: "rgba(24, 38, 68, 0.035)" }} />
+                  <Tooltip
+                    content={<ChartTooltip metric={chartMetric} data={trendData} currentMonth={currentTrendMonth} />}
+                    cursor={{ fill: "rgba(24, 38, 68, 0.035)" }}
+                  />
                   {trendSeries.map((series) => (
                     <Bar
                       key={series.dataKey}
@@ -649,6 +692,7 @@ export function AttendantsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            <p className="attendant-chart-current-note">* mês atual em andamento</p>
             {!selectedItem ? (
               <div className="attendant-chart-legend">
                 {trendSeries.map((series) => (

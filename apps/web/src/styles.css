@@ -7573,6 +7573,14 @@ textarea {
   font-size: 0.72rem;
 }
 
+.attendant-chart-tooltip > span small {
+  display: block;
+  margin-top: 0.15rem;
+  color: #9aa5b8;
+  font-size: 0.59rem;
+  font-weight: 650;
+}
+
 .attendant-chart-tooltip > div {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -8494,6 +8502,78 @@ button.attendants-ranking-row:hover {
   width: 9px;
   height: 9px;
   border-radius: 50%;
+}
+
+.attendant-chart-tooltip-row {
+  grid-template-columns: auto minmax(105px, 1fr) 78px minmax(82px, auto) !important;
+  min-width: 315px;
+  padding-top: 0.5rem;
+  border-top: 1px solid #edf0f5;
+}
+
+.attendant-chart-tooltip-row > div {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.attendant-chart-tooltip-row > div strong {
+  color: var(--attendants-ink);
+  font-size: 0.73rem;
+}
+
+.attendant-chart-tooltip-row > div small {
+  color: var(--attendants-muted);
+  font-size: 0.6rem;
+}
+
+.attendant-chart-tooltip-row > strong:last-child {
+  color: var(--attendants-ink);
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.attendant-chart-gauge {
+  display: grid !important;
+  gap: 0 !important;
+  justify-items: center;
+  margin: 0 !important;
+  color: #8b97aa !important;
+  font-size: 0.58rem !important;
+}
+
+.attendant-chart-gauge svg {
+  width: 52px;
+  height: 25px;
+  overflow: visible;
+}
+
+.attendant-chart-gauge path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 5;
+}
+
+.attendant-chart-gauge path:first-child {
+  stroke: #e6eaf1;
+}
+
+.attendant-chart-gauge-fill {
+  stroke: currentColor;
+}
+
+.attendant-chart-gauge b {
+  margin-top: -0.35rem;
+  font-size: 0.62rem;
+}
+
+.attendant-chart-tooltip-row.is-up .attendant-chart-gauge { color: #168555 !important; }
+.attendant-chart-tooltip-row.is-down .attendant-chart-gauge { color: #c74745 !important; }
+.attendant-chart-tooltip-row.is-stable .attendant-chart-gauge { color: #6e7a90 !important; }
+
+.attendant-chart-current-note {
+  margin: -0.25rem 0 0 4.5rem;
+  color: var(--attendants-muted);
+  font-size: 0.62rem;
 }
 
 .attendant-revenue-share button > strong {

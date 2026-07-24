@@ -158,8 +158,7 @@ export function buildAttendantComparisonWindows(referenceDate = new Date(), wind
   const previousPeriodEnd = new Date(
     Date.UTC(previousPeriodStart.getUTCFullYear(), previousPeriodStart.getUTCMonth(), previousPeriodEndDay),
   );
-  const lastClosedMonth = addUtcMonths(currentPeriodStart, -1);
-  const trendStartMonth = addUtcMonths(currentPeriodStart, -windowMonths);
+  const trendStartMonth = addUtcMonths(currentPeriodStart, -(windowMonths - 1));
 
   return {
     currentPeriodStart: toSqlDate(currentPeriodStart),
@@ -167,7 +166,7 @@ export function buildAttendantComparisonWindows(referenceDate = new Date(), wind
     previousPeriodStart: toSqlDate(previousPeriodStart),
     previousPeriodEnd: toSqlDate(previousPeriodEnd),
     trendStartMonth: toSqlDate(trendStartMonth),
-    trendEndMonth: toSqlDate(lastClosedMonth),
+    trendEndMonth: toSqlDate(currentPeriodStart),
   };
 }
 

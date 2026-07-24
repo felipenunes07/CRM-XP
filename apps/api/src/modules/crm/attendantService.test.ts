@@ -15,8 +15,8 @@ describe("attendantService helpers", () => {
       currentPeriodEnd: "2026-04-10",
       previousPeriodStart: "2026-03-01",
       previousPeriodEnd: "2026-03-10",
-      trendStartMonth: "2025-04-01",
-      trendEndMonth: "2026-03-01",
+      trendStartMonth: "2025-05-01",
+      trendEndMonth: "2026-04-01",
     });
   });
 
