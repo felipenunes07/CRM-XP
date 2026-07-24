@@ -2,10 +2,13 @@ import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { configureInstanceWebhook } from "./evolutionService.js";
+import { isWhatsappMessageIngestionExcludedInstance } from "./whatsappInstancePolicy.js";
 
 interface WatchdogInstance {
   id: string;
   instanceName: string;
+  displayLabel: string | null;
+  assignedUserName: string | null;
   evolutionBaseUrl: string;
   evolutionApiKey: string;
 }
@@ -88,7 +91,8 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
 
   const rows = await pool.query(
     `
-    SELECT id, instance_name, evolution_base_url, evolution_api_key
+    SELECT id, instance_name, display_label, assigned_user_name,
+           evolution_base_url, evolution_api_key
     FROM whatsapp_instances
     WHERE status = 'ACTIVE'
       AND COALESCE(provider, 'EVOLUTION') = 'EVOLUTION'
@@ -101,9 +105,19 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
     const instance: WatchdogInstance = {
       id: String(row.id),
       instanceName: String(row.instance_name),
+      displayLabel: row.display_label == null ? null : String(row.display_label),
+      assignedUserName: row.assigned_user_name == null ? null : String(row.assigned_user_name),
       evolutionBaseUrl: String(row.evolution_base_url),
       evolutionApiKey: String(row.evolution_api_key),
     };
+
+    if (isWhatsappMessageIngestionExcludedInstance(instance)) {
+      logger.info("whatsapp webhook watchdog skipped send-only instance", {
+        instanceName: instance.instanceName,
+      });
+      continue;
+    }
+
     result.checked += 1;
 
     try {

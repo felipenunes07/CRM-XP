@@ -42,6 +42,7 @@ import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
+import { WHATSAPP_MESSAGE_INGESTION_EXCLUDED_INSTANCE_LABELS } from "./whatsappInstancePolicy.js";
 
 interface ConversationFilters {
   instanceId?: string;
@@ -76,7 +77,6 @@ const WHATSAPP_MONITOR_CONVERSATION_MAX_LIMIT = 100;
 const WHATSAPP_MONITOR_MESSAGE_LIMIT = 20;
 const WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT = 100;
 const WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION = "v2";
-const WHATSAPP_MONITOR_HIDDEN_INSTANCE_LABELS = ["lili assistente"];
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
 const whatsappMonitorAgentInFlight = new Map<string, Promise<WhatsappMonitorAgent[]>>();
@@ -728,7 +728,7 @@ function monitorableWhatsappJidSql(expression: string) {
 }
 
 function hiddenWhatsappMonitorInstanceSql(instanceAlias: string) {
-  const hiddenLabels = WHATSAPP_MONITOR_HIDDEN_INSTANCE_LABELS
+  const hiddenLabels = WHATSAPP_MESSAGE_INGESTION_EXCLUDED_INSTANCE_LABELS
     .map((label) => `'${label.replace(/'/g, "''")}'`)
     .join(", ");
 
