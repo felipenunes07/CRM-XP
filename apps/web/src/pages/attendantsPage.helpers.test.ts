@@ -170,6 +170,6 @@ describe("attendantsPage helpers", () => {
     expect(getAttendantColor("Suelen")).toBe("#e83e8c");
     expect(getAttendantColor("Thais")).toBe("#7656d6");
     expect(getAttendantColor("Amanda")).toBe("#d94848");
-    expect(getAttendantColor("Tamires")).toBe("#218a62");
+    expect(getAttendantColor("Tamires")).toBe("#55c98b");
   });
 });

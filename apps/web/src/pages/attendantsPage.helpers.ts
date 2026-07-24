@@ -30,12 +30,12 @@ export type AttendantTrendChartRow = {
   month: string;
 } & Record<string, number | string>;
 
-const trendColors = ["#e83e8c", "#7656d6", "#d94848", "#218a62", "#365fc7"];
+const trendColors = ["#e83e8c", "#7656d6", "#d94848", "#55c98b", "#365fc7"];
 const fixedAttendantColors: Record<string, string> = {
   suelen: "#e83e8c",
   thais: "#7656d6",
   amanda: "#d94848",
-  tamires: "#218a62",
+  tamires: "#55c98b",
 };
 
 function normalizeAttendantName(attendant: string) {
