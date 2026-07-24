@@ -298,6 +298,7 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "  tipo: reclamacao = cliente insatisfeito com a qualidade do produto; defeito = produto com falha/nao funciona/tela ruim.",
     "  NUNCA liste: cotacao, orcamento, lista de preco, pedido normal, pergunta de disponibilidade, duvida simples, troca/devolucao sem reclamar de qualidade, envio errado/logistica, ou dano fisico causado pelo cliente (queda). Vazio se nenhum produto teve problema real.",
     "  Exemplos que DEVEM deixar produtos vazio: \"colocar preco do A15\"; \"adicionar 10 baterias de iPhone XR ao pedido\". Modelo citado em compra/cotacao nao e reclamacao do modelo.",
+    "  Tambem deixe vazio quando houve separacao/logistica: quantidade a mais/a menos, modelo/linha/aro diferente do pedido, LCD no lugar de OLED, item sem estoque ou indisponivel.",
     "- \"reclamacoes_gerais\": reclamacoes do cliente que NAO sao sobre o produto em si: atendimento lento/ruim, vendedora rude ou mal educada, cobranca/preco errado, prazo de entrega, promessa nao cumprida, falta de resposta, comportamento inadequado de algum lado.",
     "  categoria: atendimento | vendedora | entrega | cobranca | outro.",
     "  vendedora: nome de quem atendeu do lado da equipe, se identificavel no transcript (campo EQUIPE); vazio se nao der para saber.",
@@ -376,6 +377,15 @@ const NORMAL_COMMERCIAL_INTENT_PATTERNS = [
   /\b(solicitou|solicita|pediu|pede)\b.{0,120}\b(adicao|adicionar|inclu(?:ir|sao)|colocar|acrescentar)\b/i,
 ];
 
+const DEFINITE_NON_PRODUCT_COMPLAINT_PATTERNS = [
+  /\b(indisponivel|sem estoque|nao havia em estoque|produto indisponivel|disponibilidade de apenas \d+ unidade)\b/i,
+  /\b(?:so|apenas) vieram \d+\b|\bquantidade esperada\b/i,
+  /\b(?:recebeu|recebida|vieram|veio|chegou|enviad[ao]s?|enviaram|mandaram)\b.{0,140}\b(?:em vez de|no lugar|nao corresponde|errad[ao]s?|a mais|a menos|sem aro|incell quando|lcd em vez)\b/i,
+  /\b(?:tela|produto|modelo|unidade)\b.{0,60}\b(?:enviad[ao]|recebid[ao])\b.{0,80}\bnao corresponde\b/i,
+  /\bnao tiveram boa aceitacao\b/i,
+  /\bapos (?:uma )?atualizacao (?:de )?sistema\b/i,
+];
+
 /**
  * A IA ainda pode rotular uma simples citacao comercial como problema do
  * produto. Exige que pedidos/cotacoes tragam tambem evidencia explicita de
@@ -383,6 +393,7 @@ const NORMAL_COMMERCIAL_INTENT_PATTERNS = [
  */
 export function isProductComplaintEvidence(detail: string, quote = "") {
   const evidence = normalizeComplaintEvidence(`${detail} ${quote}`);
+  if (DEFINITE_NON_PRODUCT_COMPLAINT_PATTERNS.some((pattern) => pattern.test(evidence))) return false;
   const isNormalCommercialIntent = NORMAL_COMMERCIAL_INTENT_PATTERNS.some((pattern) => pattern.test(evidence));
   return !isNormalCommercialIntent || PRODUCT_QUALITY_EVIDENCE_PATTERN.test(evidence);
 }

@@ -309,6 +309,36 @@ describe("isProductComplaintEvidence", () => {
       "Cliente solicitou cotação para a linha A15.",
     )).toBe(false);
   });
+
+  it("rejects stock, quantity, wrong-item and wrong-variant occurrences", () => {
+    const nonProductComplaints = [
+      "Produto indisponível no momento.",
+      "Cliente informou que vieram apenas 5 baterias do modelo NOTE 8 em vez da quantidade esperada.",
+      "Cliente recebeu telas InCell quando a nota fiscal indicava OLED.",
+      "Cliente recebeu unidades trocadas de S21 FE LCD em vez de A12 WF PREMIER MAX.",
+      "Cliente reclamou que foram enviadas 2 caixas a mais do que o solicitado.",
+      "Tela enviada não corresponde ao modelo solicitado.",
+      "Enviaram LCD em vez de tela OLED.",
+      "A15 chegou sem aro, cliente insatisfeito.",
+      "Cliente prefere crédito pois as telas VV não tiveram boa aceitação na região.",
+      "iPhone X não responde corretamente após uma atualização de sistema.",
+    ];
+
+    expect(nonProductComplaints.every((detail) => !isProductComplaintEvidence(detail))).toBe(true);
+  });
+
+  it("keeps real display, touch, fit and electrical defects", () => {
+    const realDefects = [
+      "Imagem tremida relatada pelo cliente.",
+      "As telas G34 voltaram com listras.",
+      "Nenhuma das telas está funcionando.",
+      "Tela G52 OLED fica com interferência e chuviscada.",
+      "Nenhuma tela M30 encaixa no aparelho.",
+      "Flex curto, não encaixa na base.",
+    ];
+
+    expect(realDefects.every((detail) => isProductComplaintEvidence(detail))).toBe(true);
+  });
 });
 
 describe("parseConversationAnalyses produtos", () => {

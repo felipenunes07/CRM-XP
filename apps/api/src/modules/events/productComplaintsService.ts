@@ -30,14 +30,29 @@ const COMPLAINT_EVIDENCE_SQL = `
   ))
 `;
 
+const DEFINITE_NON_PRODUCT_COMPLAINT_SQL = `
+  (
+    ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(indisponivel|sem estoque|nao havia em estoque|produto indisponivel|disponibilidade de apenas [0-9]+ unidade)\\M'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(so|apenas)\\M vieram [0-9]+'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\mquantidade esperada\\M'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(recebeu|recebida|vieram|veio|chegou|enviado|enviada|enviados|enviadas|enviaram|mandaram)\\M.{0,140}\\m(em vez de|no lugar|nao corresponde|errado|errada|errados|erradas|a mais|a menos|sem aro|incell quando|lcd em vez)\\M'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(tela|produto|modelo|unidade)\\M.{0,60}\\m(enviado|enviada|recebido|recebida)\\M.{0,80}\\mnao corresponde\\M'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\mnao tiveram boa aceitacao\\M'
+    OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\mapos (uma )?atualizacao (de )?sistema\\M'
+  )
+`;
+
 const EXCLUDE_NORMAL_COMMERCIAL_MENTIONS_SQL = `
   NOT (
-    (
-      ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(cotacao|orcamento|lista de precos?|colocar preco|preco por favor)\\M'
-      OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(solicitou|solicita|pediu|pede)\\M.{0,120}\\m(adicao|adicionar|incluir|inclusao|colocar|acrescentar)\\M'
+    ${DEFINITE_NON_PRODUCT_COMPLAINT_SQL}
+    OR (
+      (
+        ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(cotacao|orcamento|lista de precos?|colocar preco|preco por favor)\\M'
+        OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(solicitou|solicita|pediu|pede)\\M.{0,120}\\m(adicao|adicionar|incluir|inclusao|colocar|acrescentar)\\M'
+      )
+      AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\m(defeit[a-z]*|problema[a-z]*|falha[a-z]*|touch|trava[a-z]*|mancha[a-z]*|qualidade|ruim|quebra[a-z]*|trinca[a-z]*|devolu[a-z]*|garantia|voltando|retorno[a-z]*)\\M'
+      AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\mnao\\M (liga|funciona|acende|da imagem)'
     )
-    AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\m(defeit[a-z]*|problema[a-z]*|falha[a-z]*|touch|trava[a-z]*|mancha[a-z]*|qualidade|ruim|quebra[a-z]*|trinca[a-z]*|devolu[a-z]*|garantia|voltando|retorno[a-z]*)\\M'
-    AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\mnao\\M (liga|funciona|acende|da imagem)'
   )
 `;
 
