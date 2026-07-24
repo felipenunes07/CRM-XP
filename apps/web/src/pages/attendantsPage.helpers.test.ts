@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AttendantListItem } from "@olist-crm/shared";
 import {
   buildTrendChartData,
+  getAttendantColor,
   getInitialSelectedAttendants,
   sortAttendantsForBoard,
   toggleComparedAttendant,
@@ -163,5 +164,12 @@ describe("attendantsPage helpers", () => {
     expect(data[0]?.month).toBe("2026-01");
     expect(Number(data[0]?.[series[0]!.dataKey])).toBe(5000);
     expect(Number(data[2]?.[series[1]!.dataKey])).toBe(7000);
+  });
+
+  it("keeps the visual identity requested for each WhatsApp seller", () => {
+    expect(getAttendantColor("Suelen")).toBe("#e83e8c");
+    expect(getAttendantColor("Thais")).toBe("#7656d6");
+    expect(getAttendantColor("Amanda")).toBe("#d94848");
+    expect(getAttendantColor("Tamires")).toBe("#218a62");
   });
 });

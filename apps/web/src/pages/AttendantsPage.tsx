@@ -19,8 +19,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -295,6 +293,7 @@ export function AttendantsPage() {
         (total, item) => ({
           newCustomers: total.newCustomers + item.currentNewCustomers,
           recoveredCustomers: total.recoveredCustomers + item.currentRecoveredCustomers,
+          recoveredRevenue: total.recoveredRevenue + item.currentRecoveredRevenue,
           sentMessages: total.sentMessages + item.currentActivity.sentMessages,
           attendedConversations: total.attendedConversations + item.currentActivity.attendedConversations,
           targetPieces: total.targetPieces + (item.goal.targetPieces ?? 0),
@@ -305,6 +304,7 @@ export function AttendantsPage() {
         {
           newCustomers: 0,
           recoveredCustomers: 0,
+          recoveredRevenue: 0,
           sentMessages: 0,
           attendedConversations: 0,
           targetPieces: 0,
@@ -320,6 +320,11 @@ export function AttendantsPage() {
     () => [...attendants].sort((left, right) => right.currentPeriod.pieces - left.currentPeriod.pieces),
     [attendants],
   );
+  const selectedRank = selectedItem
+    ? ranking.findIndex((item) => item.attendant === selectedItem.attendant) + 1
+    : 0;
+  const maxRankingRevenue = Math.max(...ranking.map((item) => item.currentPeriod.revenue), 1);
+  const selectedColor = selectedItem ? getAttendantColor(selectedItem.attendant) : "#315cc8";
 
   if (attendantsQuery.isLoading) {
     return <div className="page-loading">Carregando contribuição das atendentes...</div>;
@@ -330,7 +335,10 @@ export function AttendantsPage() {
   }
 
   return (
-    <div className="attendants-workspace">
+    <div
+      className="attendants-workspace"
+      style={{ "--attendant-accent": selectedColor } as React.CSSProperties}
+    >
       <header className="attendants-topbar">
         <div>
           <span className="attendants-kicker">Performance comercial</span>
@@ -377,6 +385,7 @@ export function AttendantsPage() {
             type="button"
             className={scope === item.attendant ? "is-active" : ""}
             onClick={() => setScope(item.attendant)}
+            style={{ "--row-color": getAttendantColor(item.attendant) } as React.CSSProperties}
           >
             <Avatar item={item} />
             <span>
@@ -413,53 +422,76 @@ export function AttendantsPage() {
               </div>
             </div>
             <div className="attendant-profile-outcome">
-              <span>Contribuição em telas no mês</span>
-              <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.pieces, data.summary.currentPeriodPieces))}</strong>
-              <small>{formatNumber(selectedItem.currentPeriod.pieces)} de {formatNumber(data.summary.currentPeriodPieces)} telas do time</small>
+              <div>
+                <span>Participação nas telas</span>
+                <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.pieces, data.summary.currentPeriodPieces))}</strong>
+                <small>{formatNumber(selectedItem.currentPeriod.pieces)} de {formatNumber(data.summary.currentPeriodPieces)}</small>
+              </div>
+              <div>
+                <span>Participação na receita</span>
+                <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.revenue, data.summary.currentPeriodRevenue))}</strong>
+                <small>{formatCurrency(selectedItem.currentPeriod.revenue)}</small>
+              </div>
+              <div>
+                <span>Posição no time</span>
+                <strong>#{selectedRank}</strong>
+                <small>ranking por telas no mês</small>
+              </div>
             </div>
           </section>
 
-          <section className="attendant-metrics-grid">
+          <section className="attendant-metrics-grid attendant-impact-metrics">
             <MetricTile
-              label="Telas vendidas"
-              value={formatNumber(selectedItem.currentPeriod.pieces)}
-              detail={`${formatDecimal(selectedItem.currentPeriod.piecesPerOrder, 1)} por venda`}
-              growth={selectedItem.growth.pieces}
-              icon={<Sparkles size={17} />}
-            />
-            <MetricTile
-              label="Faturamento"
+              label="Receita gerada"
               value={formatCurrency(selectedItem.currentPeriod.revenue)}
-              detail={`Ticket médio ${formatCurrency(selectedItem.currentPeriod.avgTicket)}`}
+              detail={`${formatPercent(safeDivide(selectedItem.currentPeriod.revenue, data.summary.currentPeriodRevenue))} da receita do time`}
               growth={selectedItem.growth.revenue}
               icon={<TrendingUp size={17} />}
             />
             <MetricTile
-              label="Clientes compradores"
-              value={formatNumber(selectedItem.currentPeriod.uniqueCustomers)}
+              label="Telas vendidas"
+              value={formatNumber(selectedItem.currentPeriod.pieces)}
               detail={`${formatNumber(selectedItem.currentPeriod.orders)} vendas fechadas`}
+              growth={selectedItem.growth.pieces}
+              icon={<Sparkles size={17} />}
+            />
+            <MetricTile
+              label="Base compradora"
+              value={formatNumber(selectedItem.currentPeriod.uniqueCustomers)}
+              detail={`${formatNumber(selectedItem.currentNewCustomers)} novos clientes`}
               growth={selectedItem.growth.uniqueCustomers}
               icon={<Users size={17} />}
             />
             <MetricTile
-              label="Clientes novos"
-              value={formatNumber(selectedItem.currentNewCustomers)}
-              detail="Primeira compra com a empresa"
-              icon={<UserPlus size={17} />}
-            />
-            <MetricTile
-              label="Clientes recuperados"
-              value={formatNumber(selectedItem.currentRecoveredCustomers)}
-              detail={formatCurrency(selectedItem.currentRecoveredRevenue)}
+              label="Receita recuperada"
+              value={formatCurrency(selectedItem.currentRecoveredRevenue)}
+              detail={`${formatNumber(selectedItem.currentRecoveredCustomers)} clientes reativados`}
               icon={<RotateCcw size={17} />}
             />
-            <MetricTile
-              label="Mensagens enviadas"
-              value={formatNumber(selectedItem.currentActivity.sentMessages)}
-              detail={`${formatNumber(selectedItem.currentActivity.attendedConversations)} clientes atendidos`}
-              icon={<MessageCircleMore size={17} />}
-            />
           </section>
+
+          <dl className="attendant-efficiency-strip">
+            <div>
+              <dt>Receita por cliente</dt>
+              <dd>{formatCurrency(selectedItem.currentPeriod.revenuePerCustomer)}</dd>
+              <small>valor médio da base compradora</small>
+            </div>
+            <div>
+              <dt>Ticket médio</dt>
+              <dd>{formatCurrency(selectedItem.currentPeriod.avgTicket)}</dd>
+              <small>por venda fechada</small>
+            </div>
+            <div>
+              <dt>Telas por venda</dt>
+              <dd>{formatDecimal(selectedItem.currentPeriod.piecesPerOrder, 1)}</dd>
+              <small>produtividade comercial</small>
+            </div>
+            <div>
+              <dt>Atendimentos</dt>
+              <dd>{formatNumber(selectedItem.currentActivity.attendedConversations)}</dd>
+              <small>{formatNumber(selectedItem.currentActivity.sentMessages)} mensagens enviadas</small>
+            </div>
+          </dl>
 
           <section className="attendants-split attendants-goal-and-portfolio">
             <article className="attendant-section">
@@ -517,12 +549,11 @@ export function AttendantsPage() {
           </section>
         </>
       ) : (
-        <section className="attendant-metrics-grid attendants-team-metrics">
-          <MetricTile label="Telas vendidas" value={formatNumber(data.summary.currentPeriodPieces)} detail={`${formatNumber(data.summary.currentPeriodOrders)} vendas no mês`} growth={null} icon={<Sparkles size={17} />} />
-          <MetricTile label="Faturamento" value={formatCurrency(data.summary.currentPeriodRevenue)} detail={`${formatNumber(data.summary.currentPeriodCustomers)} clientes compradores`} growth={data.summary.revenueGrowthRatio} icon={<TrendingUp size={17} />} />
-          <MetricTile label="Clientes novos" value={formatNumber(teamTotals.newCustomers)} detail="Primeira compra no mês" icon={<UserPlus size={17} />} />
-          <MetricTile label="Recuperados" value={formatNumber(teamTotals.recoveredCustomers)} detail="Voltaram após 90+ dias" icon={<RotateCcw size={17} />} />
-          <MetricTile label="Mensagens enviadas" value={formatNumber(teamTotals.sentMessages)} detail={`${formatNumber(teamTotals.attendedConversations)} atendimentos`} icon={<MessageCircleMore size={17} />} />
+        <section className="attendant-metrics-grid attendants-team-metrics attendant-impact-metrics">
+          <MetricTile label="Receita do time" value={formatCurrency(data.summary.currentPeriodRevenue)} detail={`${formatNumber(data.summary.currentPeriodCustomers)} clientes compradores`} growth={data.summary.revenueGrowthRatio} icon={<TrendingUp size={17} />} />
+          <MetricTile label="Telas vendidas" value={formatNumber(data.summary.currentPeriodPieces)} detail={`${formatNumber(data.summary.currentPeriodOrders)} vendas no mês`} icon={<Sparkles size={17} />} />
+          <MetricTile label="Aquisição" value={formatNumber(teamTotals.newCustomers)} detail="novos clientes no mês" icon={<UserPlus size={17} />} />
+          <MetricTile label="Receita recuperada" value={formatCurrency(teamTotals.recoveredRevenue)} detail={`${formatNumber(teamTotals.recoveredCustomers)} clientes reativados`} icon={<RotateCcw size={17} />} />
         </section>
       )}
 
@@ -532,42 +563,48 @@ export function AttendantsPage() {
             <div className="attendant-section-heading attendants-chart-heading">
               <div>
                 <span className="attendants-kicker">Evolução mensal</span>
-                <h3>{selectedItem ? `Histórico de ${selectedItem.attendant}` : "Comparação entre as atendentes"}</h3>
-                <p>{windowMonths} meses fechados · passe o mouse para ver os valores</p>
+                <h3>{selectedItem ? `Resultado mensal de ${selectedItem.attendant}` : "Quem está puxando o resultado"}</h3>
+                <p>
+                  {selectedItem
+                    ? `${windowMonths} meses fechados, com a mesma escala para revelar avanço ou perda de ritmo.`
+                    : `${windowMonths} meses fechados, com barras agrupadas para comparação direta entre as vendedoras.`}
+                </p>
               </div>
-              <div className="attendant-metric-tabs" role="tablist" aria-label="Métrica do histórico">
-                {metricOptions.map((metric) => (
-                  <button
-                    type="button"
-                    key={metric}
-                    className={chartMetric === metric ? "is-active" : ""}
-                    onClick={() => setChartMetric(metric)}
-                  >
-                    {chartMetricLabel(metric)}
-                  </button>
-                ))}
-              </div>
+              <label className="attendant-metric-select">
+                <span>Indicador analisado</span>
+                <select
+                  value={chartMetric}
+                  onChange={(event) => setChartMetric(event.target.value as AttendantChartMetric)}
+                >
+                  {metricOptions.map((metric) => (
+                    <option key={metric} value={metric}>{chartMetricLabel(metric)}</option>
+                  ))}
+                </select>
+              </label>
             </div>
             <div className="attendant-trend-chart">
               <ResponsiveContainer width="100%" height={360}>
-                <LineChart data={trendData} margin={{ top: 16, right: 18, left: 4, bottom: 0 }}>
+                <BarChart
+                  data={trendData}
+                  margin={{ top: 18, right: 18, left: 4, bottom: 0 }}
+                  barGap={selectedItem ? 0 : 3}
+                  barCategoryGap={selectedItem ? "34%" : "16%"}
+                >
                   <CartesianGrid stroke="rgba(28, 48, 86, 0.08)" vertical={false} />
                   <XAxis dataKey="month" tickFormatter={formatMonthLabel} stroke="#77849d" tickLine={false} axisLine={false} />
                   <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#77849d" tickLine={false} axisLine={false} width={72} />
-                  <Tooltip content={<ChartTooltip metric={chartMetric} />} />
+                  <Tooltip content={<ChartTooltip metric={chartMetric} />} cursor={{ fill: "rgba(24, 38, 68, 0.035)" }} />
                   {trendSeries.map((series) => (
-                    <Line
+                    <Bar
                       key={series.dataKey}
-                      type="monotone"
                       dataKey={series.dataKey}
                       name={series.attendant}
-                      stroke={series.color}
-                      strokeWidth={selectedItem ? 3.5 : 2.5}
-                      dot={false}
-                      activeDot={{ r: 5, strokeWidth: 3, stroke: "#fff" }}
+                      fill={series.color}
+                      radius={[5, 5, 0, 0]}
+                      maxBarSize={selectedItem ? 54 : 24}
                     />
                   ))}
-                </LineChart>
+                </BarChart>
               </ResponsiveContainer>
             </div>
             {!selectedItem ? (
@@ -601,7 +638,13 @@ export function AttendantsPage() {
                       ? item.currentPeriod.pieces / item.goal.targetPieces
                       : null;
                     return (
-                      <button type="button" className="attendants-ranking-row" key={item.attendant} onClick={() => setScope(item.attendant)}>
+                      <button
+                        type="button"
+                        className="attendants-ranking-row"
+                        key={item.attendant}
+                        onClick={() => setScope(item.attendant)}
+                        style={{ "--row-color": getAttendantColor(item.attendant) } as React.CSSProperties}
+                      >
                         <span className="attendants-ranking-person">
                           <b>{index + 1}</b><Avatar item={item} />
                           <span><strong>{item.attendant}</strong><small>{item.whatsapp.displayLabel || item.whatsapp.instanceName}</small></span>
@@ -633,19 +676,29 @@ export function AttendantsPage() {
                 </article>
                 <article className="attendant-section">
                   <div className="attendant-section-heading">
-                    <div><span className="attendants-kicker">Carteira por atendente</span><h3>Clientes sob responsabilidade</h3></div>
+                    <div>
+                      <span className="attendants-kicker">Participação na receita</span>
+                      <h3>Quanto cada vendedora entrega</h3>
+                      <p>Receita individual e participação no resultado total do mês.</p>
+                    </div>
                   </div>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={ranking} layout="vertical" margin={{ left: 4, right: 12, top: 8, bottom: 0 }}>
-                      <CartesianGrid stroke="rgba(28, 48, 86, 0.08)" horizontal={false} />
-                      <XAxis type="number" axisLine={false} tickLine={false} stroke="#77849d" />
-                      <YAxis type="category" dataKey="attendant" width={76} axisLine={false} tickLine={false} stroke="#77849d" />
-                      <Tooltip formatter={(value) => [formatNumber(Number(value)), "Clientes"]} cursor={{ fill: "rgba(38, 91, 219, 0.04)" }} />
-                      <Bar dataKey="portfolio.statusCounts.ACTIVE" stackId="portfolio" fill="#27a36a" />
-                      <Bar dataKey="portfolio.statusCounts.ATTENTION" stackId="portfolio" fill="#e0a82e" />
-                      <Bar dataKey="portfolio.statusCounts.INACTIVE" stackId="portfolio" fill="#dc5b59" radius={[0, 6, 6, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <div className="attendant-revenue-share">
+                    {ranking.map((item) => (
+                      <button type="button" key={item.attendant} onClick={() => setScope(item.attendant)}>
+                        <span><i style={{ background: getAttendantColor(item.attendant) }} />{item.attendant}</span>
+                        <strong>{formatCurrency(item.currentPeriod.revenue)}</strong>
+                        <small>{formatPercent(safeDivide(item.currentPeriod.revenue, data.summary.currentPeriodRevenue))}</small>
+                        <b>
+                          <i
+                            style={{
+                              width: `${safeDivide(item.currentPeriod.revenue, maxRankingRevenue) * 100}%`,
+                              background: getAttendantColor(item.attendant),
+                            }}
+                          />
+                        </b>
+                      </button>
+                    ))}
+                  </div>
                 </article>
               </section>
             </>
@@ -694,17 +747,34 @@ export function AttendantsPage() {
                 </article>
                 <article className="attendant-section">
                   <div className="attendant-section-heading">
-                    <div><span className="attendants-kicker">Mix vendido</span><h3>Produtos com maior saída</h3></div>
+                    <div>
+                      <span className="attendants-kicker">Leitura da carteira</span>
+                      <h3>Onde está o próximo resultado</h3>
+                      <p>Base ativa, aquisição e clientes que ainda podem voltar a comprar.</p>
+                    </div>
                   </div>
-                  <div className="attendant-detail-list">
-                    {selectedItem.topProducts.length ? selectedItem.topProducts.map((product, index) => (
-                      <div key={`${product.sku}-${product.itemDescription}`}>
-                        <b>{index + 1}</b>
-                        <span><strong>{product.itemDescription}</strong><small>{product.sku ? `SKU ${product.sku}` : "SKU não informado"}</small></span>
-                        <span><strong>{formatNumber(product.totalQuantity)} telas</strong><small>{formatNumber(product.orderCount)} vendas</small></span>
-                      </div>
-                    )) : <div className="attendant-list-empty">Nenhum produto vendido neste corte.</div>}
-                  </div>
+                  <dl className="attendant-opportunity-list">
+                    <div>
+                      <dt>Carteira ativa</dt>
+                      <dd>{formatPercent(safeDivide(selectedItem.portfolio.statusCounts.ACTIVE, selectedItem.portfolio.totalCustomers))}</dd>
+                      <small>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)} clientes ativos</small>
+                    </div>
+                    <div>
+                      <dt>Potencial de reativação</dt>
+                      <dd>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION + selectedItem.portfolio.statusCounts.INACTIVE)}</dd>
+                      <small>clientes em atenção ou inativos</small>
+                    </div>
+                    <div>
+                      <dt>Novos clientes</dt>
+                      <dd>{formatNumber(selectedItem.currentNewCustomers)}</dd>
+                      <small>primeira compra no mês</small>
+                    </div>
+                    <div>
+                      <dt>Recuperação realizada</dt>
+                      <dd>{formatCurrency(selectedItem.currentRecoveredRevenue)}</dd>
+                      <small>{formatNumber(selectedItem.currentRecoveredCustomers)} clientes voltaram</small>
+                    </div>
+                  </dl>
                 </article>
               </section>
             </>
