@@ -320,6 +320,8 @@ export function CustomerFinancialPageView({
                   payments={payments}
                   totalOrders={detail?.totalOrders ?? orders.length}
                   totalPayments={detail?.totalPayments ?? payments.length}
+                  debtAmount={creditRow.debtAmount}
+                  paymentTerm={creditRow.paymentTerm}
                 />
               ) : null}
             </>

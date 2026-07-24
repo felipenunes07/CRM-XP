@@ -1669,7 +1669,37 @@ export function DashboardPage() {
           title="Peças de Hoje"
           value={`${formatNumber(metrics.todayItemsSold)} itens`}
           badge={dailyGoal > 0 ? `${Math.round((metrics.todayItemsSold / dailyGoal) * 100)}% da meta` : undefined}
-          helper={dailyGoal > 0 ? `Meta diária: ${formatNumber(dailyGoal)} itens (Meta mensal / ${businessDaysInMonth} dias úteis).` : "Total de itens vendidos hoje."}
+          helper={`Telas ${formatNumber(metrics.todayItemsByCategory.screens)} · Bat. ${formatNumber(metrics.todayItemsByCategory.batteries)} · Docks ${formatNumber(metrics.todayItemsByCategory.chargingDocks)}`}
+          helperTitle={`Vendas de hoje\nTelas: ${formatNumber(metrics.todayItemsByCategory.screens)}\nBaterias: ${formatNumber(metrics.todayItemsByCategory.batteries)}\nDocks de carga: ${formatNumber(metrics.todayItemsByCategory.chargingDocks)}${metrics.todayItemsByCategory.unclassified > 0 ? `\nA revisar: ${formatNumber(metrics.todayItemsByCategory.unclassified)}` : ""}`}
+          hoverDetail={
+            <>
+              <div className="stat-card-hover-detail__header">
+                <div>
+                  <p className="stat-card-hover-detail__eyebrow">Composição das vendas</p>
+                  <p className="stat-card-hover-detail__total">{formatNumber(metrics.todayItemsSold)} itens vendidos</p>
+                </div>
+                <span className="stat-card-hover-detail__period">Hoje</span>
+              </div>
+              <div className="stat-card-hover-detail__section">
+                <div className="stat-card-hover-detail__section-heading">
+                  <span>Telas vendidas</span>
+                  <strong>{formatNumber(metrics.todayItemsByCategory.screens)}</strong>
+                </div>
+                <div className="stat-card-hover-detail__factory-grid">
+                  <div className="stat-card-hover-detail__factory"><span>XP</span><strong>{formatNumber(metrics.todayItemsByCategory.screensByFactory.xp)}</strong></div>
+                  <div className="stat-card-hover-detail__factory"><span>VV</span><strong>{formatNumber(metrics.todayItemsByCategory.screensByFactory.vv)}</strong></div>
+                  <div className="stat-card-hover-detail__factory"><span>DE</span><strong>{formatNumber(metrics.todayItemsByCategory.screensByFactory.de)}</strong></div>
+                </div>
+              </div>
+              <div className="stat-card-hover-detail__section">
+                <div className="stat-card-hover-detail__category-grid">
+                  <div className="stat-card-hover-detail__category"><span>Baterias</span><strong>{formatNumber(metrics.todayItemsByCategory.batteries)}</strong></div>
+                  <div className="stat-card-hover-detail__category"><span>Docks</span><strong>{formatNumber(metrics.todayItemsByCategory.chargingDocks)}</strong></div>
+                </div>
+                {metrics.todayItemsByCategory.unclassified > 0 ? <p className="stat-card-hover-detail__review">{formatNumber(metrics.todayItemsByCategory.unclassified)} itens aguardando classificação.</p> : null}
+              </div>
+            </>
+          }
           tone={rankingPeriod === 'today' ? 'success' : 'primary'}
           onClick={() => setRankingPeriod(prev => prev === 'today' ? 'month' : 'today')}
         />

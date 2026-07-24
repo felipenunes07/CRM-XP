@@ -296,19 +296,14 @@ export function CustomerFinancialDetailPageView({
         </div>
       ) : null}
 
-      <CustomerCreditBalanceChart
-        orders={detail.orders}
-        payments={detail.payments}
-        currentDebt={row.debtAmount}
-        creditLimit={row.creditLimit}
-      />
-
       {/* As duas tabelas são o centro da página */}
       <CustomerCreditLedgerSections
         orders={detail.orders}
         payments={detail.payments}
         totalOrders={detail.totalOrders}
         totalPayments={detail.totalPayments}
+        debtAmount={row.debtAmount}
+        paymentTerm={row.paymentTerm}
       />
 
       {canLoadMore ? (
@@ -319,6 +314,13 @@ export function CustomerFinancialDetailPageView({
           <span>Mostramos primeiro os movimentos mais recentes.</span>
         </div>
       ) : null}
+
+      <CustomerCreditBalanceChart
+        orders={detail.orders}
+        payments={detail.payments}
+        currentDebt={row.debtAmount}
+        creditLimit={row.creditLimit}
+      />
 
       <details className="bankfin-more">
         <summary>

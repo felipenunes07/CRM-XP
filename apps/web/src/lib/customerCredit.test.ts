@@ -1,6 +1,7 @@
 import type { CustomerCreditRow } from "@olist-crm/shared";
 import { describe, expect, it } from "vitest";
 import {
+  computeOrderSettlements,
   customerCreditHeadlineLabel,
   customerCreditPrimaryLabel,
   customerCreditRiskClassName,
@@ -215,5 +216,75 @@ describe("customer credit helpers", () => {
       sampleSize: 2,
       onTimeRate: 0.5,
     });
+  });
+});
+
+
+describe("computeOrderSettlements", () => {
+  // Dados reais do cliente CL115 (Vitinho) no snapshot de 23/07/2026:
+  // divida 196.772,00, prazo 20 dias. A planilha do financeiro marca
+  // "PARCIAL FALTA R$ 1.570,00" no pedido 40243 — o teste trava esse resultado.
+  const vitinho = [
+    { id: "41489", orderDate: "2026-07-21", totalAmount: 26_297 },
+    { id: "41267", orderDate: "2026-07-16", totalAmount: 47_210 },
+    { id: "41191", orderDate: "2026-07-13", totalAmount: 19_340 },
+    { id: "41052", orderDate: "2026-07-07", totalAmount: 1_550 },
+    { id: "40919", orderDate: "2026-07-01", totalAmount: 20_871 },
+    { id: "40883", orderDate: "2026-06-30", totalAmount: 29_792 },
+    { id: "40579", orderDate: "2026-06-12", totalAmount: 14_240 },
+    { id: "40561", orderDate: "2026-06-11", totalAmount: 3_080 },
+    { id: "40436", orderDate: "2026-06-08", totalAmount: 32_822 },
+    { id: "40243", orderDate: "2026-05-29", totalAmount: 23_019 },
+    { id: "40106", orderDate: "2026-05-22", totalAmount: 12_692 },
+    { id: "39942", orderDate: "2026-05-16", totalAmount: 1_200 },
+  ];
+
+  const today = new Date("2026-07-23T12:00:00Z");
+
+  it("reproduz o status da planilha do financeiro", () => {
+    const settlements = computeOrderSettlements(vitinho, 196_772, 20, today);
+
+    expect(settlements.get("40243")?.label).toBe("PARCIAL FALTA R$ 1.570,00");
+    expect(settlements.get("40243")?.kind).toBe("partial");
+
+    // vencidos: data do pedido + 20 dias ja passou de 23/07
+    expect(settlements.get("40436")?.label).toBe("VENCEU EM 28/06");
+    expect(settlements.get("40561")?.label).toBe("VENCEU EM 01/07");
+    expect(settlements.get("40579")?.label).toBe("VENCEU EM 02/07");
+    expect(settlements.get("40883")?.label).toBe("VENCEU EM 20/07");
+    expect(settlements.get("40919")?.label).toBe("VENCEU EM 21/07");
+
+    // ainda dentro do prazo
+    expect(settlements.get("41052")?.label).toBe("A VENCER 27/07");
+    expect(settlements.get("41191")?.label).toBe("A VENCER 02/08");
+    expect(settlements.get("41267")?.label).toBe("A VENCER 05/08");
+    expect(settlements.get("41489")?.label).toBe("A VENCER 10/08");
+
+    // tudo antes do parcial ja foi pago
+    expect(settlements.get("40106")?.kind).toBe("paid");
+    expect(settlements.get("39942")?.kind).toBe("paid");
+  });
+
+  it("a soma dos pedidos em aberto fecha com a divida", () => {
+    const settlements = computeOrderSettlements(vitinho, 196_772, 20, today);
+    const emAberto = vitinho.reduce((sum, order) => {
+      const settlement = settlements.get(order.id)!;
+      return settlement.kind === "paid" ? sum : sum + settlement.missingAmount;
+    }, 0);
+
+    expect(emAberto).toBeCloseTo(196_772, 2);
+  });
+
+  it("marca tudo como pago quando nao ha divida", () => {
+    const settlements = computeOrderSettlements(vitinho, 0, 20, today);
+    expect([...settlements.values()].every((item) => item.kind === "paid")).toBe(true);
+  });
+
+  it("cai em EM ABERTO quando o cliente nao tem prazo cadastrado", () => {
+    const settlements = computeOrderSettlements(vitinho, 196_772, null, today);
+    expect(settlements.get("40436")?.kind).toBe("unknown");
+    expect(settlements.get("40436")?.label).toBe("EM ABERTO");
+    // o parcial continua sendo calculado normalmente
+    expect(settlements.get("40243")?.label).toBe("PARCIAL FALTA R$ 1.570,00");
   });
 });

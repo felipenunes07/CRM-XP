@@ -66,6 +66,17 @@ export interface DashboardMetrics {
   todaySalesAmount: number;
   todayItemsSold: number;
   todayOrdersCount: number;
+  todayItemsByCategory: {
+    screens: number;
+    batteries: number;
+    chargingDocks: number;
+    unclassified: number;
+    screensByFactory: {
+      xp: number;
+      vv: number;
+      de: number;
+    };
+  };
   todaySalesPerformance: SalesPerformanceEntry[];
 }
 

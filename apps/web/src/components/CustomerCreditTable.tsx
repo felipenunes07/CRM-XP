@@ -19,11 +19,6 @@ interface CustomerCreditTableProps {
   onToggleAll?: (checked: boolean) => void;
 }
 
-function creditUsagePercent(row: CustomerCreditRow) {
-  if (row.creditLimit <= 0) return row.debtAmount > 0 ? 100 : 0;
-  return (row.debtAmount / row.creditLimit) * 100;
-}
-
 /** Rotulo, tom e barra de progresso do prazo (quanto do prazo ja foi consumido). */
 function deadlineInfo(row: CustomerCreditRow) {
   const deadline = getCustomerCreditDeadline(row);

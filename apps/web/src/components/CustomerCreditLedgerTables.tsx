@@ -1,5 +1,6 @@
 import type { CustomerCreditOrderEntry, CustomerCreditPaymentEntry } from "@olist-crm/shared";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { useMemo } from "react";
+import { computeOrderSettlements, type OrderSettlement } from "../lib/customerCredit";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import "./customerCreditBank.css";
 import "./customerCreditDossie.css";
@@ -14,7 +15,13 @@ export function paymentTypeLabel(value: string) {
   return value || "-";
 }
 
-export function CustomerCreditOrdersTable({ orders }: { orders: CustomerCreditOrderEntry[] }) {
+export function CustomerCreditOrdersTable({
+  orders,
+  settlements,
+}: {
+  orders: CustomerCreditOrderEntry[];
+  settlements?: Map<string, OrderSettlement>;
+}) {
   if (!orders.length) {
     return <div className="bankfin-ledger-empty">Nenhum pedido detalhado nesse snapshot.</div>;
   }
@@ -23,26 +30,37 @@ export function CustomerCreditOrdersTable({ orders }: { orders: CustomerCreditOr
     <table className="bankfin-ledger-table">
       <thead>
         <tr>
-          <th>Data</th>
           <th>Pedido</th>
           <th className="is-right">Valor</th>
           <th className="is-right">Und.</th>
-          <th>Status</th>
+          <th>Data</th>
+          <th>Situação</th>
         </tr>
       </thead>
       <tbody>
-        {orders.map((order) => (
-          <tr key={order.id}>
-            <td className="is-date">{formatDate(order.orderDate)}</td>
-            <td className="is-doc">
-              <strong>{order.orderNumber || "-"}</strong>
-              {order.seller ? <span>{order.seller}</span> : null}
-            </td>
-            <td className="is-right is-money">{formatCurrency(order.totalAmount)}</td>
-            <td className="is-right">{formatNumber(order.units)}</td>
-            <td>{order.status ? <span className="bankfin-tag">{order.status}</span> : "—"}</td>
-          </tr>
-        ))}
+        {orders.map((order) => {
+          const settlement = settlements?.get(order.id);
+          return (
+            <tr key={order.id} className={settlement ? `is-${settlement.kind}` : ""}>
+              <td className="is-doc">
+                <strong>{order.orderNumber || "-"}</strong>
+                {order.seller ? <span>{order.seller}</span> : null}
+              </td>
+              <td className="is-right is-money">{formatCurrency(order.totalAmount)}</td>
+              <td className="is-right is-units">{formatNumber(order.units)}</td>
+              <td className="is-date">{formatDate(order.orderDate)}</td>
+              <td className="is-status">
+                {settlement ? (
+                  <span className={`bankfin-status-cell ${settlement.kind}`}>{settlement.label}</span>
+                ) : (
+                  <span className="bankfin-status-cell none">—</span>
+                )}
+                {/* Marca de conferência que vem da planilha, quando existe. */}
+                {order.status === "VERIFICAR" ? <span className="bankfin-status-note">verificar</span> : null}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -58,25 +76,18 @@ export function CustomerCreditPaymentsTable({ payments }: { payments: CustomerCr
       <thead>
         <tr>
           <th>Data</th>
-          <th>Pagamento</th>
-          <th className="is-right">Valor</th>
+          <th className="is-right">Pagamento</th>
           <th>Tipo</th>
-          <th>Obs.</th>
         </tr>
       </thead>
       <tbody>
         {payments.map((payment) => (
-          <tr key={payment.id}>
+          // A observacao vira tooltip: quase sempre vazia, nao merece uma coluna.
+          <tr key={payment.id} title={payment.observation || undefined}>
             <td className="is-date">{formatDate(payment.paymentDate)}</td>
-            <td className="is-doc">
-              <strong>{payment.paymentNumber || "-"}</strong>
-            </td>
             <td className="is-right is-money in">{formatCurrency(payment.amount)}</td>
             <td>
               <span className="bankfin-tag">{paymentTypeLabel(payment.paymentType)}</span>
-            </td>
-            <td className="is-note" title={payment.observation || undefined}>
-              {payment.observation || "—"}
             </td>
           </tr>
         ))}
@@ -90,23 +101,52 @@ export function CustomerCreditLedgerSections({
   payments,
   totalOrders = orders.length,
   totalPayments = payments.length,
+  debtAmount,
+  paymentTerm,
 }: {
   orders: CustomerCreditOrderEntry[];
   payments: CustomerCreditPaymentEntry[];
   totalOrders?: number;
   totalPayments?: number;
+  /** Saldo devedor atual: sem ele não dá para saber quais pedidos estão em aberto. */
+  debtAmount?: number;
+  paymentTerm?: number | null;
 }) {
   const ordersTotal = orders.reduce((sum, order) => sum + order.totalAmount, 0);
   const paymentsTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
+  const settlements = useMemo(
+    () =>
+      debtAmount === undefined
+        ? undefined
+        : computeOrderSettlements(orders, debtAmount, paymentTerm ?? null),
+    [orders, debtAmount, paymentTerm],
+  );
+
+  const counts = useMemo(() => {
+    if (!settlements) return null;
+    let overdue = 0;
+    let due = 0;
+    let overdueAmount = 0;
+    for (const settlement of settlements.values()) {
+      if (settlement.kind === "overdue") {
+        overdue += 1;
+        overdueAmount += settlement.missingAmount;
+      }
+      if (settlement.kind === "partial") {
+        overdue += 1;
+        overdueAmount += settlement.missingAmount;
+      }
+      if (settlement.kind === "due") due += 1;
+    }
+    return { overdue, due, overdueAmount };
+  }, [settlements]);
+
   return (
     <div className="bankfin-ledger-grid">
-      <section className="bankfin-ledger" aria-label="Pedidos do cliente">
+      <section className="bankfin-ledger is-orders" aria-label="Pedidos do cliente">
         <div className="bankfin-ledger-head">
-          <h4>
-            <ArrowUpRight size={17} />
-            Pedidos
-          </h4>
+          <h4>Pedidos</h4>
           <div className="bankfin-ledger-total">
             <strong>{formatCurrency(ordersTotal)}</strong>
             <span>
@@ -114,17 +154,26 @@ export function CustomerCreditLedgerSections({
             </span>
           </div>
         </div>
+        {counts && (counts.overdue > 0 || counts.due > 0) ? (
+          <div className="bankfin-ledger-flags">
+            {counts.overdue > 0 ? (
+              <span className="bankfin-status-cell overdue">
+                {formatNumber(counts.overdue)} vencidos · {formatCurrency(counts.overdueAmount)}
+              </span>
+            ) : null}
+            {counts.due > 0 ? (
+              <span className="bankfin-status-cell due">{formatNumber(counts.due)} a vencer</span>
+            ) : null}
+          </div>
+        ) : null}
         <div className="bankfin-ledger-scroll">
-          <CustomerCreditOrdersTable orders={orders} />
+          <CustomerCreditOrdersTable orders={orders} settlements={settlements} />
         </div>
       </section>
 
-      <section className="bankfin-ledger" aria-label="Pagamentos do cliente">
+      <section className="bankfin-ledger is-payments" aria-label="Pagamentos do cliente">
         <div className="bankfin-ledger-head">
-          <h4>
-            <ArrowDownLeft size={17} />
-            Pagamentos
-          </h4>
+          <h4>Pagamentos</h4>
           <div className="bankfin-ledger-total">
             <strong>{formatCurrency(paymentsTotal)}</strong>
             <span>

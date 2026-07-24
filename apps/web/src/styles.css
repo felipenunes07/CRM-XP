@@ -782,6 +782,197 @@ a {
   z-index: 0;
 }
 
+.stat-card-hover-detail {
+  position: fixed;
+  z-index: 10000;
+  width: min(320px, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 24px 56px -24px rgba(15, 23, 42, 0.45),
+    0 8px 20px -12px rgba(37, 99, 235, 0.22);
+  color: #0f172a;
+  backdrop-filter: blur(16px);
+  pointer-events: none;
+  animation: stat-card-popover-in 0.18s ease-out both;
+}
+
+.stat-card-hover-detail.is-above {
+  transform: translateY(-100%);
+}
+
+.stat-card-hover-detail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.98);
+  border-right: 1px solid rgba(148, 163, 184, 0.28);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.stat-card-hover-detail.is-above::after {
+  bottom: -7px;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.stat-card-hover-detail.is-below::after {
+  top: -7px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+@keyframes stat-card-popover-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.stat-card-hover-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.stat-card-hover-detail__eyebrow {
+  margin: 0 0 0.25rem;
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.stat-card-hover-detail__total {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.12rem;
+  font-weight: 750;
+  letter-spacing: -0.025em;
+}
+
+.stat-card-hover-detail__period {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.stat-card-hover-detail__section {
+  padding-top: 0.8rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.stat-card-hover-detail__section + .stat-card-hover-detail__section {
+  margin-top: 0.8rem;
+}
+
+.stat-card-hover-detail__section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.stat-card-hover-detail__section-heading span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.stat-card-hover-detail__section-heading strong {
+  color: #0f172a;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.stat-card-hover-detail__factory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.stat-card-hover-detail__factory {
+  display: grid;
+  gap: 0.12rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.stat-card-hover-detail__factory span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #64748b;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.stat-card-hover-detail__factory span::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+
+.stat-card-hover-detail__factory:nth-child(2) span::before {
+  background: #8b5cf6;
+}
+
+.stat-card-hover-detail__factory:nth-child(3) span::before {
+  background: #14b8a6;
+}
+
+.stat-card-hover-detail__factory strong {
+  color: #0f172a;
+  font-size: 0.94rem;
+  letter-spacing: -0.02em;
+}
+
+.stat-card-hover-detail__category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.stat-card-hover-detail__category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 11px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.stat-card-hover-detail__category strong {
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
+.stat-card-hover-detail__review {
+  margin: 0.6rem 0 0;
+  color: #94a3b8;
+  font-size: 0.65rem;
+}
+
 /* Magic UI Animated Border Beam */
 .stat-card::before {
   content: "";

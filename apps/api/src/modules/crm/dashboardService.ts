@@ -1321,7 +1321,7 @@ export async function deleteChartAnnotation(id: string) {
 }
 
 export async function getDashboardMetrics(trendDays?: number, customerPrefix?: string): Promise<DashboardMetrics> {
-  const cacheKey = `dashboard_metrics:${trendDays ?? "default"}:${customerPrefix ?? "all"}`;
+  const cacheKey = `dashboard_metrics:v2:${trendDays ?? "default"}:${customerPrefix ?? "all"}`;
   
   try {
     const cached = await redis.get(cacheKey);
@@ -1412,13 +1412,47 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       `),
       getTodaySalesPerformance(),
       pool.query(`
-        SELECT 
-          COALESCE(SUM(o.total_amount), 0)::numeric(14,2) as total_amount,
-          COALESCE(SUM(oi.quantity), 0)::int as total_items,
-          COUNT(DISTINCT o.id)::int as total_orders
-        FROM orders o
-        LEFT JOIN order_items oi ON oi.order_id = o.id
-        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+        WITH active_catalog AS (
+          SELECT DISTINCT isi.sku
+          FROM inventory_snapshot_items isi
+          JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
+          WHERE inventory.is_active = TRUE
+        ),
+        today_items AS (
+          SELECT
+            oi.quantity,
+            o.total_amount AS order_total,
+            o.id AS order_id,
+            CASE
+              WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) LIKE '%DOC DE CARGA%' THEN 'DOCK'
+              WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)' THEN 'BATTERY'
+              WHEN active_catalog.sku IS NOT NULL
+                OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+                THEN 'SCREEN'
+              ELSE 'UNCLASSIFIED'
+            END AS category,
+            CASE
+              WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+              WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+              ELSE 'XP'
+            END AS factory
+          FROM orders o
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+          WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+        )
+        SELECT
+          COALESCE(SUM(order_total), 0)::numeric(14,2) AS total_amount,
+          COALESCE(SUM(quantity), 0)::int AS total_items,
+          COUNT(DISTINCT order_id)::int AS total_orders,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN'), 0)::int AS screen_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'BATTERY'), 0)::int AS battery_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'DOCK'), 0)::int AS dock_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'UNCLASSIFIED'), 0)::int AS unclassified_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'XP'), 0)::int AS screen_xp_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'VV'), 0)::int AS screen_vv_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'DE'), 0)::int AS screen_de_items
+        FROM today_items
       `),
     ]);
 
@@ -1473,6 +1507,17 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
     todaySalesAmount: Number(todaySalesData.rows[0]?.total_amount ?? 0),
     todayItemsSold: Number(todaySalesData.rows[0]?.total_items ?? 0),
     todayOrdersCount: Number(todaySalesData.rows[0]?.total_orders ?? 0),
+    todayItemsByCategory: {
+      screens: Number(todaySalesData.rows[0]?.screen_items ?? 0),
+      batteries: Number(todaySalesData.rows[0]?.battery_items ?? 0),
+      chargingDocks: Number(todaySalesData.rows[0]?.dock_items ?? 0),
+      unclassified: Number(todaySalesData.rows[0]?.unclassified_items ?? 0),
+      screensByFactory: {
+        xp: Number(todaySalesData.rows[0]?.screen_xp_items ?? 0),
+        vv: Number(todaySalesData.rows[0]?.screen_vv_items ?? 0),
+        de: Number(todaySalesData.rows[0]?.screen_de_items ?? 0),
+      },
+    },
     todaySalesPerformance,
   };
 

@@ -309,3 +309,105 @@ export function customerCreditVisibleFlags(row: CustomerCreditRow) {
     return true;
   });
 }
+
+
+export type OrderSettlementKind = "paid" | "partial" | "overdue" | "due" | "unknown";
+
+export interface OrderSettlement {
+  kind: OrderSettlementKind;
+  /** Texto no mesmo formato da planilha que o financeiro envia. */
+  label: string;
+  /** Quanto ainda falta pagar deste pedido (so no parcial). */
+  missingAmount: number;
+  dueDate: string | null;
+}
+
+interface SettleableOrder {
+  id: string;
+  orderDate: string | null;
+  totalAmount: number;
+}
+
+function formatShortDay(date: Date) {
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+}
+
+/**
+ * Reproduz a coluna de status da planilha financeira.
+ *
+ * A planilha nao guarda esse texto: ela calcula. Os pagamentos liquidam os
+ * pedidos do mais antigo para o mais novo, entao a divida atual corresponde
+ * sempre aos pedidos mais recentes. Percorrendo de tras para frente:
+ *   - enquanto a divida nao acabou, o pedido esta em aberto;
+ *   - o pedido em que a divida acaba fica "PARCIAL FALTA R$ x";
+ *   - todos os anteriores ja foram pagos.
+ * Um pedido em aberto vence em (data do pedido + prazo do cliente).
+ *
+ * Validado contra o cliente CL115: divida 196.772,00, prazo 20 dias,
+ * resultando em "PARCIAL FALTA R$ 1.570,00" no pedido 40243 — igual a planilha.
+ */
+export function computeOrderSettlements(
+  orders: SettleableOrder[],
+  debtAmount: number,
+  paymentTerm: number | null,
+  today = new Date(),
+): Map<string, OrderSettlement> {
+  const result = new Map<string, OrderSettlement>();
+  const sorted = [...orders].sort((left, right) => {
+    const leftTime = left.orderDate ? Date.parse(left.orderDate) : 0;
+    const rightTime = right.orderDate ? Date.parse(right.orderDate) : 0;
+    return rightTime - leftTime;
+  });
+
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  let remaining = Math.max(debtAmount, 0);
+
+  for (const order of sorted) {
+    const orderDate = parseCreditDate(order.orderDate);
+    const dueDate =
+      orderDate && paymentTerm && paymentTerm > 0
+        ? new Date(orderDate.getTime() + paymentTerm * DAY_MS)
+        : null;
+    const dueLabel = dueDate ? formatShortDay(dueDate) : null;
+    const isOverdue = dueDate ? dueDate.getTime() < todayUtc : false;
+
+    if (remaining <= 0.005) {
+      result.set(order.id, { kind: "paid", label: "PAGO", missingAmount: 0, dueDate: dueLabel });
+      continue;
+    }
+
+    const missing = Math.min(order.totalAmount, remaining);
+    const isPartial = order.totalAmount - remaining > 0.005;
+    remaining -= order.totalAmount;
+
+    if (isPartial) {
+      result.set(order.id, {
+        kind: "partial",
+        label: `PARCIAL FALTA ${formatCreditAmount(missing)}`,
+        missingAmount: missing,
+        dueDate: dueLabel,
+      });
+      continue;
+    }
+
+    if (!dueLabel) {
+      result.set(order.id, { kind: "unknown", label: "EM ABERTO", missingAmount: missing, dueDate: null });
+      continue;
+    }
+
+    result.set(order.id, {
+      kind: isOverdue ? "overdue" : "due",
+      label: isOverdue ? `VENCEU EM ${dueLabel}` : `A VENCER ${dueLabel}`,
+      missingAmount: missing,
+      dueDate: dueLabel,
+    });
+  }
+
+  return result;
+}
+
+function formatCreditAmount(value: number) {
+  return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
