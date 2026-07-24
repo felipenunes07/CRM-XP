@@ -8034,6 +8034,25 @@ button.attendants-ranking-row:hover {
 }
 
 @media (max-width: 760px) {
+  .attendant-month-filter {
+    margin-left: 0;
+  }
+
+  .attendant-month-filter-heading,
+  .attendant-month-filter-heading > div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .attendant-month-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .attendant-month-comparison > div:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+
   .attendant-individual-toggles {
     justify-content: flex-start;
     width: 100%;
@@ -8574,6 +8593,123 @@ button.attendants-ranking-row:hover {
   margin: -0.25rem 0 0 4.5rem;
   color: var(--attendants-muted);
   font-size: 0.62rem;
+}
+
+.attendant-clickable-bar {
+  cursor: pointer;
+}
+
+.attendant-clickable-bar .recharts-rectangle {
+  transition: fill-opacity 0.2s ease, filter 0.2s ease;
+}
+
+.attendant-clickable-bar:hover .recharts-rectangle {
+  filter: brightness(1.04);
+}
+
+.attendant-month-filter {
+  margin: 0.9rem 0 0 4.5rem;
+  padding: 0.9rem 1rem;
+  border-top: 1px solid var(--attendants-line);
+  border-bottom: 1px solid var(--attendants-line);
+  background: color-mix(in srgb, var(--attendant-accent, #315cc8) 3%, white);
+  animation: attendants-enter 0.22s ease both;
+}
+
+.attendant-month-filter-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.attendant-month-filter-heading > div {
+  display: flex;
+  gap: 0.55rem;
+  align-items: baseline;
+}
+
+.attendant-month-filter-heading .attendants-kicker {
+  margin: 0;
+}
+
+.attendant-month-filter-heading strong {
+  color: var(--attendants-ink);
+  font-size: 1rem;
+}
+
+.attendant-month-filter-heading small {
+  color: var(--attendants-muted);
+  font-size: 0.68rem;
+}
+
+.attendant-month-filter-heading button {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.4rem 0.55rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--attendants-muted);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attendant-month-filter-heading button:hover {
+  background: #fff;
+  color: var(--attendants-ink);
+}
+
+.attendant-month-comparison {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--attendants-line);
+}
+
+.attendant-month-comparison > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.16rem 0.5rem;
+  padding: 0.7rem 0.85rem 0 0;
+}
+
+.attendant-month-comparison > div + div {
+  padding-left: 0.85rem;
+  border-left: 1px solid var(--attendants-line);
+}
+
+.attendant-month-comparison span:first-child {
+  display: flex;
+  gap: 0.38rem;
+  align-items: center;
+  color: var(--attendants-ink);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.attendant-month-comparison span:first-child i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.attendant-month-comparison > div > strong {
+  color: var(--attendants-ink);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.attendant-month-comparison > div > small {
+  color: var(--attendants-muted);
+  font-size: 0.62rem;
+}
+
+.attendant-month-comparison .attendant-growth {
+  justify-self: end;
 }
 
 .attendant-revenue-share button > strong {

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { AttendantListItem, CustomerStatus } from "@olist-crm/shared";
+import type { AttendantListItem, AttendantTrendPoint, CustomerStatus } from "@olist-crm/shared";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -21,6 +21,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -348,6 +349,7 @@ export function AttendantsPage() {
   const [windowMonths, setWindowMonths] = useState<WindowMonths>(12);
   const [scope, setScope] = useState<AttendantScope>("all");
   const [chartMetric, setChartMetric] = useState<AttendantChartMetric>("pieces");
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [portfolioStatus, setPortfolioStatus] = useState<"ALL" | CustomerStatus>("ALL");
   const [portfolioSearch, setPortfolioSearch] = useState("");
@@ -384,6 +386,12 @@ export function AttendantsPage() {
     () => buildTrendChartData(attendants, selectedNames, chartMetric),
     [attendants, chartMetric, selectedNames.join("\u0000")],
   );
+  const selectedMonthIndex = selectedMonth
+    ? trendData.findIndex((row) => row.month === selectedMonth)
+    : -1;
+  const previousSelectedMonth = selectedMonthIndex > 0
+    ? trendData[selectedMonthIndex - 1]?.month ?? null
+    : null;
 
   const teamTotals = useMemo(
     () =>
@@ -418,10 +426,61 @@ export function AttendantsPage() {
     () => [...attendants].sort((left, right) => right.currentPeriod.pieces - left.currentPeriod.pieces),
     [attendants],
   );
+  const periodRows = useMemo(() => {
+    const rows = attendants.map((item) => {
+      const point = selectedMonth
+        ? item.monthlyTrend.find((entry) => entry.month === selectedMonth) ?? null
+        : null;
+      const pointIndex = selectedMonth
+        ? item.monthlyTrend.findIndex((entry) => entry.month === selectedMonth)
+        : -1;
+      const previousPoint = pointIndex > 0 ? item.monthlyTrend[pointIndex - 1] ?? null : null;
+      return { item, point, previousPoint };
+    });
+    return rows.sort(
+      (left, right) =>
+        (selectedMonth ? right.point?.pieces ?? 0 : right.item.currentPeriod.pieces) -
+        (selectedMonth ? left.point?.pieces ?? 0 : left.item.currentPeriod.pieces),
+    );
+  }, [attendants, selectedMonth]);
+  const selectedComparisonRows = useMemo(
+    () =>
+      periodRows.filter(({ item }) =>
+        selectedItem ? item.attendant === selectedItem.attendant : true,
+      ),
+    [periodRows, selectedItem],
+  );
+  const selectedPeriodRow = selectedItem
+    ? periodRows.find((row) => row.item.attendant === selectedItem.attendant) ?? null
+    : null;
+  const periodRevenueTotal = periodRows.reduce(
+    (total, row) => total + (selectedMonth ? row.point?.revenue ?? 0 : row.item.currentPeriod.revenue),
+    0,
+  );
+  const maxPeriodRevenue = Math.max(
+    ...periodRows.map((row) => selectedMonth ? row.point?.revenue ?? 0 : row.item.currentPeriod.revenue),
+    1,
+  );
+  const filteredTeamTotals = periodRows.reduce(
+    (total, row) => {
+      const pieces = selectedMonth ? row.point?.pieces ?? 0 : row.item.currentPeriod.pieces;
+      const revenue = selectedMonth ? row.point?.revenue ?? 0 : row.item.currentPeriod.revenue;
+      const targetPieces = selectedMonth ? row.point?.targetPieces ?? null : row.item.goal.targetPieces;
+      const targetRevenue = selectedMonth ? row.point?.targetRevenue ?? null : row.item.goal.targetRevenue;
+      return {
+        pieces: total.pieces + pieces,
+        revenue: total.revenue + revenue,
+        targetPieces: total.targetPieces + (targetPieces ?? 0),
+        targetRevenue: total.targetRevenue + (targetRevenue ?? 0),
+        hasPiecesTarget: total.hasPiecesTarget || targetPieces !== null,
+        hasRevenueTarget: total.hasRevenueTarget || targetRevenue !== null,
+      };
+    },
+    { pieces: 0, revenue: 0, targetPieces: 0, targetRevenue: 0, hasPiecesTarget: false, hasRevenueTarget: false },
+  );
   const selectedRank = selectedItem
     ? ranking.findIndex((item) => item.attendant === selectedItem.attendant) + 1
     : 0;
-  const maxRankingRevenue = Math.max(...ranking.map((item) => item.currentPeriod.revenue), 1);
   const selectedColor = selectedItem ? getAttendantColor(selectedItem.attendant) : "#315cc8";
   const openPortfolio = (status: "ALL" | CustomerStatus = "ALL") => {
     setPortfolioStatus(status);
@@ -432,6 +491,26 @@ export function AttendantsPage() {
     setPortfolioOpen(false);
     setChartMetric("pieces");
     setScope(attendant);
+  };
+  const trendMetricValue = (point: AttendantTrendPoint | null, item: AttendantListItem) => {
+    if (!point) {
+      if (chartMetric === "pieces") return item.currentPeriod.pieces;
+      if (chartMetric === "revenue") return item.currentPeriod.revenue;
+      if (chartMetric === "uniqueCustomers") return item.currentPeriod.uniqueCustomers;
+      if (chartMetric === "newCustomers") return item.currentNewCustomers;
+      if (chartMetric === "recoveredCustomers") return item.currentRecoveredCustomers;
+      if (chartMetric === "sentMessages") return item.currentActivity.sentMessages;
+      if (chartMetric === "attendedConversations") return item.currentActivity.attendedConversations;
+      return item.currentPeriod.orders;
+    }
+    if (chartMetric === "pieces") return point.pieces;
+    if (chartMetric === "revenue") return point.revenue;
+    if (chartMetric === "uniqueCustomers") return point.uniqueCustomers;
+    if (chartMetric === "newCustomers") return point.newCustomers;
+    if (chartMetric === "recoveredCustomers") return point.recoveredCustomers;
+    if (chartMetric === "sentMessages") return point.sentMessages;
+    if (chartMetric === "attendedConversations") return point.attendedConversations;
+    return point.orders;
   };
 
   if (attendantsQuery.isLoading) {
@@ -467,7 +546,10 @@ export function AttendantsPage() {
                 key={option}
                 type="button"
                 className={windowMonths === option ? "is-active" : ""}
-                onClick={() => setWindowMonths(option)}
+                onClick={() => {
+                  setSelectedMonth(null);
+                  setWindowMonths(option);
+                }}
               >
                 {option}m
               </button>
@@ -625,8 +707,8 @@ export function AttendantsPage() {
                 <h3>{selectedItem ? `Resultado mensal de ${selectedItem.attendant}` : "Quem está puxando o resultado"}</h3>
                 <p>
                   {selectedItem
-                    ? `${windowMonths} meses, incluindo o mês atual parcial. Passe sobre uma barra para comparar com o mês anterior.`
-                    : `${windowMonths} meses, incluindo o mês atual parcial, com comparação direta entre as vendedoras.`}
+                    ? `${windowMonths} meses, incluindo o mês atual parcial. Passe sobre uma barra para comparar ou clique para filtrar o mês.`
+                    : `${windowMonths} meses, incluindo o mês atual parcial. Clique em um grupo de barras para filtrar a análise abaixo.`}
                 </p>
               </div>
               {selectedItem ? (
@@ -687,12 +769,61 @@ export function AttendantsPage() {
                       fill={series.color}
                       radius={[5, 5, 0, 0]}
                       maxBarSize={selectedItem ? 54 : 24}
-                    />
+                      className="attendant-clickable-bar"
+                      onClick={(entry) => {
+                        const clicked = entry as { month?: string; payload?: { month?: string } };
+                        const month = clicked.payload?.month ?? clicked.month;
+                        if (month) setSelectedMonth((current) => current === month ? null : month);
+                      }}
+                    >
+                      {trendData.map((row) => (
+                        <Cell
+                          key={`${series.dataKey}-${row.month}`}
+                          fill={series.color}
+                          fillOpacity={!selectedMonth || row.month === selectedMonth ? 1 : 0.28}
+                        />
+                      ))}
+                    </Bar>
                   ))}
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <p className="attendant-chart-current-note">* mês atual em andamento</p>
+            {selectedMonth ? (
+              <div className="attendant-month-filter">
+                <div className="attendant-month-filter-heading">
+                  <div>
+                    <span className="attendants-kicker">Mês filtrado</span>
+                    <strong>{formatMonthLabel(selectedMonth)}</strong>
+                    <small>
+                      comparado a{" "}
+                      {previousSelectedMonth ? formatMonthLabel(previousSelectedMonth) : "sem base anterior"}
+                    </small>
+                  </div>
+                  <button type="button" onClick={() => setSelectedMonth(null)}>
+                    <X size={15} />
+                    Limpar filtro
+                  </button>
+                </div>
+                <div className="attendant-month-comparison">
+                  {selectedComparisonRows.map(({ item, point, previousPoint }) => {
+                    const currentValue = trendMetricValue(point, item);
+                    const previousValue = previousPoint ? trendMetricValue(previousPoint, item) : 0;
+                    const growth = previousPoint && previousValue > 0
+                      ? (currentValue - previousValue) / previousValue
+                      : null;
+                    return (
+                      <div key={item.attendant}>
+                        <span><i style={{ background: getAttendantColor(item.attendant) }} />{item.attendant}</span>
+                        <strong>{chartMetric === "revenue" ? formatCurrency(currentValue) : formatNumber(currentValue)}</strong>
+                        <small>{chartMetricLabel(chartMetric)}</small>
+                        <GrowthBadge value={growth} />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {!selectedItem ? (
               <div className="attendant-chart-legend">
                 {trendSeries.map((series) => (
@@ -710,18 +841,35 @@ export function AttendantsPage() {
               <section className="attendant-section attendants-ranking-section">
                 <div className="attendant-section-heading">
                   <div>
-                    <span className="attendants-kicker">Contribuição no mês</span>
+                    <span className="attendants-kicker">
+                      {selectedMonth ? `Contribuição em ${formatMonthLabel(selectedMonth)}` : "Contribuição no mês"}
+                    </span>
                     <h3>Leitura lado a lado</h3>
-                    <p>Ranking por telas vendidas com meta, aquisição, recuperação e relacionamento.</p>
+                    <p>
+                      {selectedMonth
+                        ? `Ranking e indicadores filtrados para ${formatMonthLabel(selectedMonth)}.`
+                        : "Ranking por telas vendidas com meta, aquisição, recuperação e relacionamento."}
+                    </p>
                   </div>
                 </div>
                 <div className="attendants-ranking-table">
                   <div className="attendants-ranking-row is-header">
                     <span>Atendente</span><span>Telas</span><span>Meta</span><span>Clientes</span><span>Novos</span><span>Recuperados</span><span>Mensagens</span><span />
                   </div>
-                  {ranking.map((item, index) => {
-                    const progress = item.goal.targetPieces
-                      ? item.currentPeriod.pieces / item.goal.targetPieces
+                  {periodRows.map(({ item, point, previousPoint }, index) => {
+                    const pieces = selectedMonth ? point?.pieces ?? 0 : item.currentPeriod.pieces;
+                    const customers = selectedMonth ? point?.uniqueCustomers ?? 0 : item.currentPeriod.uniqueCustomers;
+                    const newCustomers = selectedMonth ? point?.newCustomers ?? 0 : item.currentNewCustomers;
+                    const recoveredCustomers = selectedMonth ? point?.recoveredCustomers ?? 0 : item.currentRecoveredCustomers;
+                    const sentMessages = selectedMonth ? point?.sentMessages ?? 0 : item.currentActivity.sentMessages;
+                    const targetPieces = selectedMonth ? point?.targetPieces ?? null : item.goal.targetPieces;
+                    const piecesGrowth = selectedMonth
+                      ? previousPoint && previousPoint.pieces > 0
+                        ? (pieces - previousPoint.pieces) / previousPoint.pieces
+                        : null
+                      : item.growth.pieces;
+                    const progress = targetPieces
+                      ? pieces / targetPieces
                       : null;
                     return (
                       <button
@@ -735,15 +883,15 @@ export function AttendantsPage() {
                           <b>{index + 1}</b><Avatar item={item} />
                           <span><strong>{item.attendant}</strong><small>{item.whatsapp.displayLabel || item.whatsapp.instanceName}</small></span>
                         </span>
-                        <span><strong>{formatNumber(item.currentPeriod.pieces)}</strong><GrowthBadge value={item.growth.pieces} /></span>
+                        <span><strong>{formatNumber(pieces)}</strong><GrowthBadge value={piecesGrowth} /></span>
                         <span className="attendants-ranking-goal">
                           <strong>{progress === null ? "Sem meta" : formatPercent(progress)}</strong>
                           <i><b style={{ width: `${Math.min(100, (progress ?? 0) * 100)}%` }} /></i>
                         </span>
-                        <span><strong>{formatNumber(item.currentPeriod.uniqueCustomers)}</strong><small>compradores</small></span>
-                        <span><strong>{formatNumber(item.currentNewCustomers)}</strong><small>adquiridos</small></span>
-                        <span><strong>{formatNumber(item.currentRecoveredCustomers)}</strong><small>reativados</small></span>
-                        <span><strong>{formatNumber(item.currentActivity.sentMessages)}</strong><small>enviadas</small></span>
+                        <span><strong>{formatNumber(customers)}</strong><small>compradores</small></span>
+                        <span><strong>{formatNumber(newCustomers)}</strong><small>adquiridos</small></span>
+                        <span><strong>{formatNumber(recoveredCustomers)}</strong><small>reativados</small></span>
+                        <span><strong>{formatNumber(sentMessages)}</strong><small>enviadas</small></span>
                         <span><ChevronRight size={18} /></span>
                       </button>
                     );
@@ -754,36 +902,44 @@ export function AttendantsPage() {
               <section className="attendants-split attendants-team-bottom">
                 <article className="attendant-section">
                   <div className="attendant-section-heading">
-                    <div><span className="attendants-kicker">Meta consolidada</span><h3>Time versus objetivo</h3></div>
+                    <div>
+                      <span className="attendants-kicker">Meta consolidada</span>
+                      <h3>{selectedMonth ? `${formatMonthLabel(selectedMonth)} versus objetivo` : "Time versus objetivo"}</h3>
+                    </div>
                     <Target size={22} />
                   </div>
-                  <GoalProgress label="Telas" current={data.summary.currentPeriodPieces} target={teamTotals.hasPiecesTarget ? teamTotals.targetPieces : null} formatter={formatNumber} />
-                  <GoalProgress label="Faturamento" current={data.summary.currentPeriodRevenue} target={teamTotals.hasRevenueTarget ? teamTotals.targetRevenue : null} formatter={formatCurrency} />
+                  <GoalProgress label="Telas" current={filteredTeamTotals.pieces} target={filteredTeamTotals.hasPiecesTarget ? filteredTeamTotals.targetPieces : null} formatter={formatNumber} />
+                  <GoalProgress label="Faturamento" current={filteredTeamTotals.revenue} target={filteredTeamTotals.hasRevenueTarget ? filteredTeamTotals.targetRevenue : null} formatter={formatCurrency} />
                 </article>
                 <article className="attendant-section">
                   <div className="attendant-section-heading">
                     <div>
                       <span className="attendants-kicker">Participação na receita</span>
                       <h3>Quanto cada vendedora entrega</h3>
-                      <p>Receita individual e participação no resultado total do mês.</p>
+                      <p>
+                        Receita individual e participação no resultado de{" "}
+                        {selectedMonth ? formatMonthLabel(selectedMonth) : "mês atual"}.
+                      </p>
                     </div>
                   </div>
                   <div className="attendant-revenue-share">
-                    {ranking.map((item) => (
+                    {periodRows.map(({ item, point }) => {
+                      const revenue = selectedMonth ? point?.revenue ?? 0 : item.currentPeriod.revenue;
+                      return (
                       <button type="button" key={item.attendant} onClick={() => selectAttendant(item.attendant)}>
                         <span><i style={{ background: getAttendantColor(item.attendant) }} />{item.attendant}</span>
-                        <strong>{formatCurrency(item.currentPeriod.revenue)}</strong>
-                        <small>{formatPercent(safeDivide(item.currentPeriod.revenue, data.summary.currentPeriodRevenue))}</small>
+                        <strong>{formatCurrency(revenue)}</strong>
+                        <small>{formatPercent(safeDivide(revenue, periodRevenueTotal))}</small>
                         <b>
                           <i
                             style={{
-                              width: `${safeDivide(item.currentPeriod.revenue, maxRankingRevenue) * 100}%`,
+                              width: `${safeDivide(revenue, maxPeriodRevenue) * 100}%`,
                               background: getAttendantColor(item.attendant),
                             }}
                           />
                         </b>
                       </button>
-                    ))}
+                    )})}
                   </div>
                 </article>
               </section>
@@ -795,20 +951,22 @@ export function AttendantsPage() {
                   <div className="attendant-section-heading">
                     <div>
                       <span className="attendants-kicker">Meta do mês</span>
-                      <h3>Ritmo para alcançar o alvo</h3>
+                      <h3>
+                        {selectedMonth ? `${formatMonthLabel(selectedMonth)} versus objetivo` : "Ritmo para alcançar o alvo"}
+                      </h3>
                     </div>
                     <Target size={22} />
                   </div>
                   <GoalProgress
                     label="Telas"
-                    current={selectedItem.currentPeriod.pieces}
-                    target={selectedItem.goal.targetPieces}
+                    current={selectedMonth ? selectedPeriodRow?.point?.pieces ?? 0 : selectedItem.currentPeriod.pieces}
+                    target={selectedMonth ? selectedPeriodRow?.point?.targetPieces ?? null : selectedItem.goal.targetPieces}
                     formatter={formatNumber}
                   />
                   <GoalProgress
                     label="Faturamento"
-                    current={selectedItem.currentPeriod.revenue}
-                    target={selectedItem.goal.targetRevenue}
+                    current={selectedMonth ? selectedPeriodRow?.point?.revenue ?? 0 : selectedItem.currentPeriod.revenue}
+                    target={selectedMonth ? selectedPeriodRow?.point?.targetRevenue ?? null : selectedItem.goal.targetRevenue}
                     formatter={formatCurrency}
                   />
                 </article>
