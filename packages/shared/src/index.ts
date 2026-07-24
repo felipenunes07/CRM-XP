@@ -2080,6 +2080,7 @@ export interface WhatsappInstanceItem {
   provider: WhatsappInstanceProvider;
   status: "ACTIVE" | "PAUSED" | "DISCONNECTED";
   isDefault: boolean;
+  messagesEnabled: boolean;
   assignedUserId: string | null;
   assignedUserName: string | null;
   lastHealthStatus: string | null;

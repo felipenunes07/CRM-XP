@@ -185,6 +185,42 @@ export async function configureUazapiWebhook(config: UazapiInstanceConfig, webho
   return { configured: false, error: lastError instanceof Error ? lastError.message : String(lastError) };
 }
 
+export async function disableUazapiWebhook(config: UazapiInstanceConfig, webhookUrl: string) {
+  const attempts: Array<{ path: string; method: string; body: Record<string, unknown> }> = [
+    {
+      path: "/webhook",
+      method: "POST",
+      body: { enabled: false, url: webhookUrl, events: [], excludeMessages: ["messages"] },
+    },
+    {
+      path: "/webhook",
+      method: "PUT",
+      body: { enabled: false, url: webhookUrl, events: [] },
+    },
+    {
+      path: "/instance/updateWebhook",
+      method: "POST",
+      body: { enabled: false, url: webhookUrl, events: [] },
+    },
+  ];
+
+  let lastError: unknown = null;
+  for (const attempt of attempts) {
+    try {
+      const result = await requestUazapi(config, attempt.path, attempt.method, attempt.body);
+      logger.info("uazapi webhook disabled", { path: attempt.path });
+      return { configured: true, via: attempt.path, result };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  logger.warn("uazapi webhook disable failed on all known endpoints", {
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+  return { configured: false, error: lastError instanceof Error ? lastError.message : String(lastError) };
+}
+
 export async function requestUazapi(
   config: UazapiInstanceConfig,
   path: string,

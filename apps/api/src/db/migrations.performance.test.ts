@@ -29,10 +29,18 @@ describe("performance migrations", () => {
   });
 
   it("keeps manual credit overrides independent from spreadsheet snapshots", () => {
-    const latestMigration = migrations[migrations.length - 1] ?? "";
+    const migrationSql = migrations.join("\n");
 
-    expect(latestMigration).toContain("customer_credit_overrides");
-    expect(latestMigration).toContain("credit_limit");
-    expect(latestMigration).toContain("payment_term");
+    expect(migrationSql).toContain("customer_credit_overrides");
+    expect(migrationSql).toContain("credit_limit");
+    expect(migrationSql).toContain("payment_term");
+  });
+
+  it("persists whether each WhatsApp instance feeds the Messages module", () => {
+    const migrationSql = migrations.join("\n");
+
+    expect(migrationSql).toContain("messages_enabled BOOLEAN NOT NULL DEFAULT TRUE");
+    expect(migrationSql).toContain("SET messages_enabled = FALSE");
+    expect(migrationSql).toContain("lili assistente");
   });
 });

@@ -45,7 +45,8 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
 
   const result = await pool.query(
     `
-    SELECT id, display_label, phone_number, assigned_user_id, assigned_user_name
+    SELECT id, display_label, phone_number, assigned_user_id, assigned_user_name,
+           messages_enabled
     FROM whatsapp_instances
     WHERE LOWER(instance_name) = LOWER($1)
     LIMIT 1
@@ -81,6 +82,7 @@ async function getWhatsappInstanceDetails(instanceName: string | null) {
     id: String(row.id),
     displayLabel: row.display_label ? String(row.display_label) : null,
     phoneNumber: row.phone_number ? String(row.phone_number) : null,
+    messagesEnabled: row.messages_enabled !== false,
     assignedUserId,
     assignedUserName,
   };
@@ -568,6 +570,13 @@ export async function handleEvolutionWebhook(
       const senderProfilePictureUrl = enriched.senderProfilePictureUrl ?? context.senderProfilePictureUrl;
       const instanceName = context.instanceName ?? "";
       const instanceDetails = await getWhatsappInstanceDetails(instanceName);
+      if (instanceDetails?.messagesEnabled === false) {
+        logger.info("evolution webhook skipped send-only instance", {
+          instance: instanceName,
+          messageId,
+        });
+        continue;
+      }
       const instanceOwnerJid = formatWhatsappPhoneJid(instanceDetails?.phoneNumber);
       const explicitFromMe = extractEvolutionFromMeFlag(msg);
 

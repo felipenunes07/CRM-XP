@@ -40,8 +40,7 @@ describe("WhatsApp webhook watchdog", () => {
         {
           id: "lili-id",
           instance_name: "Lili",
-          display_label: "Lili Assistente",
-          assigned_user_name: null,
+          messages_enabled: false,
           evolution_base_url: "https://evolution.example",
           evolution_api_key: "secret",
         },
@@ -67,10 +66,9 @@ describe("WhatsApp webhook watchdog", () => {
       .mockResolvedValueOnce({
         rows: [
           {
-            id: "amanda-id",
-            instance_name: "Amanda",
-            display_label: "Amanda",
-            assigned_user_name: "Amanda",
+          id: "amanda-id",
+          instance_name: "Amanda",
+          messages_enabled: true,
             evolution_base_url: "https://evolution.example",
             evolution_api_key: "secret",
           },

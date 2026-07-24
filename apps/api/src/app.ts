@@ -197,6 +197,7 @@ import {
   getWhatsappMonitorMetrics,
   getWhatsappAgentActivityReport,
   getWhatsappDailySummaryReport,
+  invalidateWhatsappMonitorInstanceCaches,
   listWhatsappMonitorAgents,
   listWhatsappMonitorConversations,
   sendWhatsappMonitorReply,
@@ -213,6 +214,7 @@ import {
   listWhatsappInstances,
   createWhatsappInstance,
   deleteWhatsappInstance,
+  updateWhatsappInstanceMessagesSetting,
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
 import { handleUazapiWebhook } from "./modules/whatsapp/uazapiWebhook.js";
@@ -2382,11 +2384,17 @@ export function createApp() {
       if (env.UAZAPI_AUTO_CONFIGURE_WEBHOOK && payload.whatsappInstanceId) {
         void (async () => {
           const instanceResult = await pool.query(
-            `SELECT provider, uazapi_base_url, uazapi_token FROM whatsapp_instances WHERE id = $1`,
+            `SELECT provider, uazapi_base_url, uazapi_token, messages_enabled
+             FROM whatsapp_instances WHERE id = $1`,
             [payload.whatsappInstanceId],
           );
           const instance = instanceResult.rows[0];
-          if (instance?.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
+          if (
+            instance?.provider === "UAZAPI"
+            && instance.messages_enabled !== false
+            && instance.uazapi_base_url
+            && instance.uazapi_token
+          ) {
             const { configureUazapiWebhook } = await import("./modules/whatsapp/uazapiService.js");
             const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
             await configureUazapiWebhook(
@@ -2734,8 +2742,13 @@ export function createApp() {
     uazapiBaseUrl: z.string().optional(),
     uazapiToken: z.string().optional(),
     isDefault: z.boolean().optional(),
+    messagesEnabled: z.boolean().optional(),
     assignedUserId: z.string().uuid().nullable().optional(),
     assignedUserName: z.string().nullable().optional(),
+  });
+
+  const instanceMessagesSettingSchema = z.object({
+    messagesEnabled: z.boolean(),
   });
 
   const whatsappMonitorAgentsQuerySchema = z.object({
@@ -3275,6 +3288,20 @@ export function createApp() {
       const { configureWhatsappInstance } = await import("./modules/pipeline/pipelineService.js");
       await configureWhatsappInstance(String(request.params.id));
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/whatsapp-instances/:id/messages-setting", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const payload = instanceMessagesSettingSchema.parse(request.body);
+      const instance = await updateWhatsappInstanceMessagesSetting(
+        String(request.params.id),
+        payload.messagesEnabled,
+      );
+      invalidateWhatsappMonitorInstanceCaches();
+      response.json(instance);
     } catch (error) {
       next(error);
     }

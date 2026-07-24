@@ -42,7 +42,6 @@ import { refreshWhatsappActivityRollups } from "./whatsappActivityRollupService.
 import { getWhatsappConversationAliases } from "./whatsappIdentityService.js";
 import { createEventFromMessage } from "../events/eventsService.js";
 import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
-import { WHATSAPP_MESSAGE_INGESTION_EXCLUDED_INSTANCE_LABELS } from "./whatsappInstancePolicy.js";
 
 interface ConversationFilters {
   instanceId?: string;
@@ -83,6 +82,10 @@ const whatsappMonitorAgentInFlight = new Map<string, Promise<WhatsappMonitorAgen
 const whatsappMonitorConversationInFlight = new Map<string, Promise<WhatsappMonitorConversationsResponse>>();
 const whatsappActivityReportCache = new Map<string, { expiresAt: number; report: WhatsappAgentActivityReport }>();
 let whatsappActivityReportRefreshPromise: Promise<void> | null = null;
+
+export function invalidateWhatsappMonitorInstanceCaches() {
+  whatsappMonitorAgentCache.clear();
+}
 
 type WhatsappConversationCursor = {
   lastActivityAt: string;
@@ -728,17 +731,7 @@ function monitorableWhatsappJidSql(expression: string) {
 }
 
 function hiddenWhatsappMonitorInstanceSql(instanceAlias: string) {
-  const hiddenLabels = WHATSAPP_MESSAGE_INGESTION_EXCLUDED_INSTANCE_LABELS
-    .map((label) => `'${label.replace(/'/g, "''")}'`)
-    .join(", ");
-
-  return `
-    (
-      LOWER(TRIM(COALESCE(${instanceAlias}.display_label, ''))) IN (${hiddenLabels})
-      OR LOWER(TRIM(COALESCE(${instanceAlias}.assigned_user_name, ''))) IN (${hiddenLabels})
-      OR LOWER(TRIM(COALESCE(${instanceAlias}.instance_name, ''))) IN (${hiddenLabels})
-    )
-  `;
+  return `COALESCE(${instanceAlias}.messages_enabled, TRUE) = FALSE`;
 }
 
 function hiddenWhatsappMonitorConversationSql() {
@@ -893,6 +886,7 @@ function mapAgentRow(row: Record<string, unknown>): WhatsappMonitorAgent {
     phoneNumber: row.phone_number ? String(row.phone_number) : null,
     status: String(row.status ?? "ACTIVE") as WhatsappMonitorAgent["status"],
     isDefault: Boolean(row.is_default),
+    messagesEnabled: row.messages_enabled !== false,
     provider: String(row.provider ?? "EVOLUTION") as WhatsappMonitorAgent["provider"],
     assignedUserId: row.assigned_user_id ? String(row.assigned_user_id) : null,
     assignedUserName: row.assigned_user_name ? String(row.assigned_user_name) : null,

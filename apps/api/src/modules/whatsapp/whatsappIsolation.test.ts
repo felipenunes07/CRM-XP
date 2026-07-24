@@ -195,7 +195,7 @@ describe("whatsapp conversation isolation", () => {
     expect(sql).not.toContain("FROM whatsapp_monitor_messages");
     expect(sql).toContain("FROM message_events me");
     expect(sql).toContain("0::int AS conversation_count");
-    expect(sql).toContain("lili assistente");
+    expect(sql).toContain("messages_enabled");
     expect(sql).toContain("NOT");
     expect(agents[0]).toEqual(expect.objectContaining({
       id: "instance-amanda",
@@ -931,6 +931,55 @@ describe("whatsapp conversation isolation", () => {
     expect(dealMatchQuery).toContain("LOWER(COALESCE(d.assigned_to_name, '')) = LOWER($5)");
   });
 
+  it("ignores incoming webhook messages when the instance is configured for send only", async () => {
+    mocks.query.mockImplementation(async (sqlStr) => {
+      const sql = String(sqlStr);
+      if (sql.includes("webhook_events")) {
+        return { rowCount: 1, rows: [{ id: "mock-event-id" }] };
+      }
+      if (sql.includes("FROM whatsapp_instances")) {
+        return {
+          rows: [
+            {
+              id: "instance-lili",
+              display_label: "Lili Assistente",
+              phone_number: "+55 11 90000-0000",
+              assigned_user_id: null,
+              assigned_user_name: "Lili Assistente",
+              messages_enabled: false,
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    await handleEvolutionWebhook({
+      event: "MESSAGES_UPSERT",
+      instance: "lili",
+      data: {
+        key: {
+          remoteJid: "5511999998888@s.whatsapp.net",
+          id: "msg-send-only-1",
+          fromMe: false,
+        },
+        pushName: "Cliente",
+        message: {
+          conversation: "Mensagem que nao deve entrar no CRM",
+        },
+        messageTimestamp: 1779364800,
+      },
+    });
+
+    const storedMessageCall = mocks.query.mock.calls.find(call => (
+      String(call[0]).includes("INSERT INTO whatsapp_incoming_messages")
+      || String(call[0]).includes("INSERT INTO whatsapp_monitor_messages")
+      || String(call[0]).includes("INSERT INTO deal_activities")
+    ));
+    expect(storedMessageCall).toBeUndefined();
+    expect(mocks.createEventFromMessage).not.toHaveBeenCalled();
+  });
+
   it("keeps private inbound messages from the customer on the inbound side when Evolution sender is the connection", async () => {
     mocks.query.mockImplementation(async (sqlStr) => {
       const sql = String(sqlStr);
@@ -1233,7 +1282,7 @@ describe("whatsapp conversation isolation", () => {
     expect(listSql).toContain("WITH candidate_deals");
     expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
     expect(listSql).toContain("hidden_monitor_instance");
-    expect(listSql).toContain("lili assistente");
+    expect(listSql).toContain("messages_enabled");
     // Ordering is by the effective last-message time (deal field OR newest flat
     // message), so the list order matches the timestamp shown on each row.
     expect(listSql).toContain("GREATEST(COALESCE(d.last_activity_at, d.created_at), COALESCE(last_monitor_ts.ts, to_timestamp(0)))");

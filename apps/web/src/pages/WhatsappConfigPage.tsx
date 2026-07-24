@@ -96,15 +96,19 @@ function UserCard({
   onDelete,
   onConfigure,
   onReconnect,
+  onMessagesEnabledChange,
   deleting,
   configuring,
+  updatingMessagesSetting,
 }: {
   instance: WhatsappInstanceItem;
   onDelete: () => void;
   onConfigure: () => void;
   onReconnect: () => void;
+  onMessagesEnabledChange: (enabled: boolean) => void;
   deleting: boolean;
   configuring: boolean;
+  updatingMessagesSetting: boolean;
 }) {
   const email =
     instance.assignedUserName?.trim()
@@ -162,6 +166,34 @@ function UserCard({
           <span className={`wa-user-status ${statusClass(instance.status)}`}>{statusLabel(instance.status)}</span>
         )}
       </div>
+
+      <label
+        className="wa-checkbox-label"
+        style={{
+          width: "100%",
+          display: "grid",
+          gap: "0.55rem",
+          padding: "0.65rem 0.75rem",
+          borderRadius: "10px",
+          background: instance.messagesEnabled ? "#f0fdf4" : "#fff7ed",
+          color: instance.messagesEnabled ? "#166534" : "#9a3412",
+          fontSize: "0.78rem",
+          cursor: updatingMessagesSetting ? "wait" : "pointer",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={instance.messagesEnabled}
+          disabled={updatingMessagesSetting}
+          onChange={(event) => onMessagesEnabledChange(event.target.checked)}
+        />
+        <span>
+          <strong>{instance.messagesEnabled ? "Receber no módulo Mensagens" : "Somente envio"}</strong>
+          <small style={{ display: "block", marginTop: "0.2rem", fontWeight: 400 }}>
+            {instance.messagesEnabled ? "Webhook ativo e conversas visíveis." : "Webhook desligado e oculto em Mensagens."}
+          </small>
+        </span>
+      </label>
 
       <div className="wa-user-foot">
         {isEvolution ? (
@@ -243,6 +275,24 @@ export function WhatsappConfigPage() {
     },
     onError: (error) => {
       alert(`Erro ao configurar instancia: ${error.message}`);
+    },
+  });
+
+  const messagesSettingMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      api.updateWhatsappInstanceMessagesSetting(token!, id, enabled),
+    onSuccess: (instance) => {
+      alert(
+        instance.messagesEnabled
+          ? `${instance.displayLabel} voltou a receber no módulo Mensagens.`
+          : `${instance.displayLabel} agora está somente para envio.`,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+      void queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-agents"] });
+      void queryClient.invalidateQueries({ queryKey: ["whatsapp-monitor-conversations"] });
+    },
+    onError: (error) => {
+      alert(`Erro ao alterar o recebimento em Mensagens: ${error.message}`);
     },
   });
 
@@ -381,6 +431,10 @@ export function WhatsappConfigPage() {
               instance={instance}
               deleting={deleteMutation.isPending}
               configuring={configureMutation.isPending && configureMutation.variables === instance.id}
+              updatingMessagesSetting={
+                messagesSettingMutation.isPending
+                && messagesSettingMutation.variables?.id === instance.id
+              }
               onDelete={() => {
                 if (confirm("Tem certeza que deseja remover este usuário monitorado?")) {
                   deleteMutation.mutate(instance.id);
@@ -390,6 +444,17 @@ export function WhatsappConfigPage() {
                 configureMutation.mutate(instance.id);
               }}
               onReconnect={() => setReconnectInstance(instance)}
+              onMessagesEnabledChange={(enabled) => {
+                if (
+                  !enabled
+                  && !confirm(
+                    `Deixar ${instance.displayLabel} somente para envio? O webhook será desligado e ela sairá da aba Mensagens.`,
+                  )
+                ) {
+                  return;
+                }
+                messagesSettingMutation.mutate({ id: instance.id, enabled });
+              }}
             />
           ))}
         </section>
@@ -584,6 +649,7 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
   const [uazapiBaseUrl, setUazapiBaseUrl] = useState("");
   const [uazapiToken, setUazapiToken] = useState("");
   const [isDefault, setIsDefault] = useState(false);
+  const [messagesEnabled, setMessagesEnabled] = useState(true);
 
   const defaultsQuery = useQuery({
     queryKey: ["whatsapp-defaults"],
@@ -610,6 +676,7 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
         uazapiBaseUrl: provider === "UAZAPI" ? uazapiBaseUrl : undefined,
         uazapiToken: provider === "UAZAPI" ? uazapiToken : undefined,
         isDefault,
+        messagesEnabled,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
@@ -699,6 +766,15 @@ function AddInstanceModal({ onClose }: { onClose: () => void }) {
           <label className="wa-checkbox-label">
             <input type="checkbox" checked={isDefault} onChange={(event) => setIsDefault(event.target.checked)} />
             Definir como instância padrão
+          </label>
+
+          <label className="wa-checkbox-label">
+            <input
+              type="checkbox"
+              checked={messagesEnabled}
+              onChange={(event) => setMessagesEnabled(event.target.checked)}
+            />
+            Receber mensagens no CRM e exibir na aba Mensagens
           </label>
 
           {createMutation.isError ? <div className="page-error">{(createMutation.error as Error).message}</div> : null}

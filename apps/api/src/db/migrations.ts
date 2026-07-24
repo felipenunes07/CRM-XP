@@ -4374,5 +4374,18 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS idx_customer_credit_overrides_updated_at
     ON customer_credit_overrides(updated_at DESC);
+  `,
+  `
+  -- Cada instancia pode permanecer conectada apenas para envios, sem alimentar
+  -- o modulo Mensagens e sem o watchdog reativar seu webhook.
+  ALTER TABLE whatsapp_instances
+    ADD COLUMN IF NOT EXISTS messages_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+  -- Preserva a decisao operacional ja aplicada para a Lili Assistente.
+  UPDATE whatsapp_instances
+  SET messages_enabled = FALSE
+  WHERE LOWER(TRIM(COALESCE(instance_name, ''))) = 'lili'
+     OR LOWER(TRIM(COALESCE(display_label, ''))) = 'lili assistente'
+     OR LOWER(TRIM(COALESCE(assigned_user_name, ''))) = 'lili assistente';
   `
 ];

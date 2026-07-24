@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
+import { disableInstanceWebhook, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
 
 const instance = {
   instanceName: "xp",
@@ -11,6 +11,27 @@ describe("sendWhatsappInstanceMediaMessage", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("disables message webhook events without disconnecting the instance", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ enabled: false, events: [] }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await disableInstanceWebhook(instance);
+
+    const [url, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://evolution.example/webhook/set/xp");
+    expect(requestInit.method).toBe("POST");
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      webhook: {
+        enabled: false,
+        events: [],
+      },
+    });
   });
 
   it("rejects non-MP4 video data URLs before calling Evolution", async () => {
@@ -52,7 +73,7 @@ describe("sendWhatsappInstanceMediaMessage", () => {
       number: "5511999999999",
       mediatype: "video",
       mimetype: "video/mp4",
-      media: "data:video/mp4;base64,AAAA",
+      media: "AAAA",
       fileName: "video.mp4",
       caption: "Legenda",
     });
@@ -154,7 +175,7 @@ describe("sendWhatsappInstanceMediaMessage", () => {
         mimetype: "video/mp4",
         fileName: "video.mp4",
         caption: "Legenda",
-        media: "data:video/mp4;base64,AAAA",
+        media: "AAAA",
       },
       options: {
         delay: 0,

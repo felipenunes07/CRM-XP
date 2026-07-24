@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendUazapiVideoMessage } from "./uazapiService.js";
+import { disableUazapiWebhook, sendUazapiVideoMessage } from "./uazapiService.js";
 
 const config = {
   baseUrl: "https://uazapi.example",
@@ -21,6 +21,28 @@ describe("sendUazapiVideoMessage", () => {
     ).rejects.toThrow("MP4");
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("disables the webhook without disconnecting the UazAPI instance", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ enabled: false }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      disableUazapiWebhook(config, "https://crm.example/api/webhooks/uazapi"),
+    ).resolves.toMatchObject({ configured: true });
+
+    const [url, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://uazapi.example/webhook");
+    expect(requestInit.method).toBe("POST");
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      enabled: false,
+      url: "https://crm.example/api/webhooks/uazapi",
+      events: [],
+    });
   });
 
   it("sends MP4 video data URLs with explicit video metadata", async () => {

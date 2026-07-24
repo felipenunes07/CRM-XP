@@ -7,8 +7,7 @@ import { isWhatsappMessageIngestionExcludedInstance } from "./whatsappInstancePo
 interface WatchdogInstance {
   id: string;
   instanceName: string;
-  displayLabel: string | null;
-  assignedUserName: string | null;
+  messagesEnabled: boolean;
   evolutionBaseUrl: string;
   evolutionApiKey: string;
 }
@@ -91,7 +90,7 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
 
   const rows = await pool.query(
     `
-    SELECT id, instance_name, display_label, assigned_user_name,
+    SELECT id, instance_name, messages_enabled,
            evolution_base_url, evolution_api_key
     FROM whatsapp_instances
     WHERE status = 'ACTIVE'
@@ -105,8 +104,7 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
     const instance: WatchdogInstance = {
       id: String(row.id),
       instanceName: String(row.instance_name),
-      displayLabel: row.display_label == null ? null : String(row.display_label),
-      assignedUserName: row.assigned_user_name == null ? null : String(row.assigned_user_name),
+      messagesEnabled: row.messages_enabled !== false,
       evolutionBaseUrl: String(row.evolution_base_url),
       evolutionApiKey: String(row.evolution_api_key),
     };

@@ -16,9 +16,11 @@ import {
   configureInstanceWebhook,
   connectEvolutionInstance,
   deleteEvolutionInstance,
+  disableInstanceWebhook,
   fetchEvolutionConnectionState,
   type EvolutionConnectResult,
 } from "../whatsapp/evolutionService.js";
+import { configureUazapiWebhook, disableUazapiWebhook } from "../whatsapp/uazapiService.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 
@@ -387,6 +389,7 @@ function mapInstanceRow(row: Record<string, unknown>): WhatsappInstanceItem {
     provider: (String(row.provider ?? "EVOLUTION")) as WhatsappInstanceItem["provider"],
     status: String(row.status ?? "ACTIVE") as WhatsappInstanceItem["status"],
     isDefault: Boolean(row.is_default),
+    messagesEnabled: row.messages_enabled !== false,
     assignedUserId: row.assigned_user_id ? String(row.assigned_user_id) : null,
     assignedUserName: row.assigned_user_name ? String(row.assigned_user_name) : null,
     lastHealthStatus: row.last_health_status ? String(row.last_health_status) : null,
@@ -633,6 +636,7 @@ export interface CreateInstanceInput {
   uazapiBaseUrl?: string;
   uazapiToken?: string;
   isDefault?: boolean;
+  messagesEnabled?: boolean;
   assignedUserId?: string | null;
   assignedUserName?: string | null;
 }
@@ -649,9 +653,9 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
     INSERT INTO whatsapp_instances (
       instance_name, display_label, phone_number, evolution_base_url, evolution_api_key,
       provider, uazapi_base_url, uazapi_token,
-      is_default, assigned_user_id, assigned_user_name
+      is_default, messages_enabled, assigned_user_id, assigned_user_name
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING *
     `,
     [
@@ -664,6 +668,7 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
       input.uazapiBaseUrl ?? null,
       input.uazapiToken ?? null,
       input.isDefault ?? false,
+      input.messagesEnabled ?? true,
       input.assignedUserId ?? null,
       input.assignedUserName ?? null,
     ],
@@ -675,11 +680,16 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
   if (provider === "EVOLUTION" && input.evolutionBaseUrl && input.evolutionApiKey) {
     try {
       logger.info("Automating Evolution API configuration for new instance", { instanceName: instance.instanceName });
-      await configureInstanceWebhook({
+      const evolutionInstance = {
         instanceName: instance.instanceName,
         evolutionBaseUrl: input.evolutionBaseUrl,
         evolutionApiKey: input.evolutionApiKey,
-      });
+      };
+      if (instance.messagesEnabled) {
+        await configureInstanceWebhook(evolutionInstance);
+      } else {
+        await disableInstanceWebhook(evolutionInstance);
+      }
       await configureInstanceSettings({
         instanceName: instance.instanceName,
         evolutionBaseUrl: input.evolutionBaseUrl,
@@ -688,6 +698,29 @@ export async function createWhatsappInstance(input: CreateInstanceInput): Promis
       logger.info("Evolution API configuration completed", { instanceName: instance.instanceName });
     } catch (error) {
       logger.error("Failed to automate Evolution API configuration", {
+        instanceName: instance.instanceName,
+        error: String(error),
+      });
+    }
+  } else if (provider === "UAZAPI" && input.uazapiBaseUrl && input.uazapiToken) {
+    try {
+      const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+      const uazapi = {
+        baseUrl: input.uazapiBaseUrl,
+        token: input.uazapiToken,
+      };
+      const outcome = instance.messagesEnabled
+        ? await configureUazapiWebhook(uazapi, `${base}/api/webhooks/uazapi`)
+        : await disableUazapiWebhook(uazapi, `${base}/api/webhooks/uazapi`);
+      if (!outcome.configured) {
+        logger.warn("Failed to synchronize UazAPI webhook for new instance", {
+          instanceName: instance.instanceName,
+          messagesEnabled: instance.messagesEnabled,
+          error: outcome.error,
+        });
+      }
+    } catch (error) {
+      logger.error("Failed to automate UazAPI webhook configuration", {
         instanceName: instance.instanceName,
         error: String(error),
       });
@@ -707,17 +740,83 @@ export async function configureWhatsappInstance(id: string): Promise<void> {
   const instance = mapInstanceRow(row);
 
   logger.info("Manually triggering Evolution API configuration", { instanceName: instance.instanceName });
-  await configureInstanceWebhook({
+  const evolutionInstance = {
     instanceName: instance.instanceName,
     evolutionBaseUrl: String(row.evolution_base_url),
     evolutionApiKey: String(row.evolution_api_key),
-  });
+  };
+  if (instance.messagesEnabled) {
+    await configureInstanceWebhook(evolutionInstance);
+  } else {
+    await disableInstanceWebhook(evolutionInstance);
+  }
   await configureInstanceSettings({
     instanceName: instance.instanceName,
     evolutionBaseUrl: String(row.evolution_base_url),
     evolutionApiKey: String(row.evolution_api_key),
   });
   logger.info("Manual Evolution API configuration completed", { instanceName: instance.instanceName });
+}
+
+export async function updateWhatsappInstanceMessagesSetting(
+  id: string,
+  messagesEnabled: boolean,
+): Promise<WhatsappInstanceItem> {
+  const result = await pool.query("SELECT * FROM whatsapp_instances WHERE id = $1", [id]);
+  const row = result.rows[0];
+  if (!row) {
+    throw new HttpError(404, "Instancia nao encontrada.");
+  }
+
+  const provider = String(row.provider ?? "EVOLUTION");
+  const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+
+  if (provider === "EVOLUTION") {
+    const evolutionInstance = {
+      instanceName: String(row.instance_name),
+      evolutionBaseUrl: String(row.evolution_base_url),
+      evolutionApiKey: String(row.evolution_api_key),
+    };
+    if (messagesEnabled) {
+      await configureInstanceWebhook(evolutionInstance);
+    } else {
+      await disableInstanceWebhook(evolutionInstance);
+    }
+  } else if (provider === "UAZAPI") {
+    if (!row.uazapi_base_url || !row.uazapi_token) {
+      throw new HttpError(400, "A instancia UazAPI nao possui URL e token configurados.");
+    }
+    const uazapi = {
+      baseUrl: String(row.uazapi_base_url),
+      token: String(row.uazapi_token),
+    };
+    const outcome = messagesEnabled
+      ? await configureUazapiWebhook(uazapi, `${base}/api/webhooks/uazapi`)
+      : await disableUazapiWebhook(uazapi, `${base}/api/webhooks/uazapi`);
+    if (!outcome.configured) {
+      throw new HttpError(
+        502,
+        messagesEnabled
+          ? "Nao foi possivel ativar o webhook da UazAPI."
+          : "Nao foi possivel desativar o webhook da UazAPI.",
+      );
+    }
+  }
+
+  const updated = await pool.query(
+    `UPDATE whatsapp_instances
+     SET messages_enabled = $2, updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, messagesEnabled],
+  );
+
+  logger.info("whatsapp instance Messages setting updated", {
+    id,
+    instanceName: String(row.instance_name),
+    messagesEnabled,
+  });
+  return mapInstanceRow(updated.rows[0]);
 }
 
 export interface WhatsappInstanceConnection {
@@ -788,9 +887,11 @@ export async function connectWhatsappInstance(id: string): Promise<EvolutionConn
   const connection = await connectEvolutionInstance(instance);
 
   if (connection.state === "open") {
-    // Já estava conectada: garante webhook reaplicado e saúde verde.
-    await configureInstanceWebhook(instance).catch((error) => {
-      logger.warn("Falha ao reaplicar webhook apos reconexao", { id, error: String(error) });
+    const syncWebhook = row.messages_enabled === false
+      ? disableInstanceWebhook(instance)
+      : configureInstanceWebhook(instance);
+    await syncWebhook.catch((error) => {
+      logger.warn("Falha ao sincronizar webhook apos reconexao", { id, error: String(error) });
     });
     await pool.query(
       `UPDATE whatsapp_instances

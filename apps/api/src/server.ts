@@ -30,6 +30,7 @@ function configureUazapiWebhooksAtStartup() {
       `SELECT instance_name, uazapi_base_url, uazapi_token
        FROM whatsapp_instances
        WHERE provider = 'UAZAPI' AND status = 'ACTIVE'
+         AND COALESCE(messages_enabled, TRUE) = TRUE
          AND uazapi_base_url IS NOT NULL AND uazapi_token IS NOT NULL`,
     )
     .then(async (result) => {

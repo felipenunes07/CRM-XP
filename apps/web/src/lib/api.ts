@@ -1531,6 +1531,7 @@ export const api = {
     uazapiBaseUrl?: string;
     uazapiToken?: string;
     isDefault?: boolean;
+    messagesEnabled?: boolean;
   }) {
     return request<WhatsappInstanceItem>("/api/whatsapp-instances", {
       method: "POST",
@@ -1545,6 +1546,12 @@ export const api = {
   configureWhatsappInstance(token: string, id: string) {
     return request<void>(`/api/whatsapp-instances/${id}/configure`, {
       method: "POST",
+    }, token);
+  },
+  updateWhatsappInstanceMessagesSetting(token: string, id: string, messagesEnabled: boolean) {
+    return request<WhatsappInstanceItem>(`/api/whatsapp-instances/${id}/messages-setting`, {
+      method: "PATCH",
+      body: JSON.stringify({ messagesEnabled }),
     }, token);
   },
   whatsappInstanceConnection(token: string, id: string) {

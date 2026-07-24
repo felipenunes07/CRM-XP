@@ -155,6 +155,25 @@ export async function configureInstanceWebhook(instance: {
   });
 }
 
+export async function disableInstanceWebhook(instance: {
+  instanceName: string;
+  evolutionBaseUrl: string;
+  evolutionApiKey: string;
+}) {
+  const baseUrl = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+  const webhookUrl = `${baseUrl}/api/webhooks/evolution`;
+
+  return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/webhook/set/${encodeURIComponent(instance.instanceName)}`, "POST", {
+    webhook: {
+      enabled: false,
+      url: webhookUrl,
+      byEvents: false,
+      base64: true,
+      events: [],
+    },
+  });
+}
+
 export async function configureInstanceSettings(instance: {
   instanceName: string;
   evolutionBaseUrl: string;
