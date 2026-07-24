@@ -34,7 +34,11 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { api, API_BASE_URL } from "../lib/api";
 import { healthInfo } from "../lib/whatsappHealth";
-import { buildMessageTimelineItems, isNearChatTop } from "./messagesPage.helpers";
+import {
+  buildMessageTimelineItems,
+  isNearChatTop,
+  selectedConversationInstanceId,
+} from "./messagesPage.helpers";
 import { PhoneLoadingScreen } from "../components/PhoneLoadingScreen";
 
 const brokenWhatsappAvatarUrls = new Set<string>();
@@ -976,13 +980,10 @@ export function MessagesPage() {
     return () => observer.disconnect();
   }, [conversations.length, fetchMoreConversations, hasMoreConversations, isFetchingMoreConversations]);
   const activeAgent = activeAgentId === "all" ? null : agents.find((agent) => agent.id === activeAgentId) ?? null;
-  // The agent selection only narrows which conversations appear in the LIST.
-  // When a conversation is opened we always show the FULL customer thread, not
-  // just the selected agent's slice — otherwise a customer who talked to several
-  // agents would show only a fragment under each one (the rest looks "missing").
-  // The backend still supports instance-scoped detail reads; we just don't ask
-  // for them here.
-  const detailInstanceId: string | undefined = undefined;
+  // Private contacts can have one distinct deal per WhatsApp instance. Keep the
+  // detail tied to the selected agent so another private number never leaks in.
+  // The "all" view remains intentionally unscoped.
+  const detailInstanceId = selectedConversationInstanceId(activeAgentId);
 
 
   // Hover-prefetch: warm the chat detail when the pointer rests on a row.

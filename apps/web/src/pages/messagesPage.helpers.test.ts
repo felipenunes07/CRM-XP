@@ -4,6 +4,7 @@ import {
   buildMessageTimelineItems,
   formatMessageDayLabel,
   isNearChatTop,
+  selectedConversationInstanceId,
 } from "./messagesPage.helpers";
 
 function message(id: string, createdAt: string): WhatsappMonitorMessage {
@@ -24,6 +25,11 @@ function message(id: string, createdAt: string): WhatsappMonitorMessage {
 }
 
 describe("messagesPage helpers", () => {
+  it("keeps private conversation details scoped to the selected WhatsApp instance", () => {
+    expect(selectedConversationInstanceId("instance-amanda")).toBe("instance-amanda");
+    expect(selectedConversationInstanceId("all")).toBeUndefined();
+  });
+
   it("starts loading older messages shortly before the chat reaches the top", () => {
     expect(isNearChatTop(900)).toBe(false);
     expect(isNearChatTop(480)).toBe(true);

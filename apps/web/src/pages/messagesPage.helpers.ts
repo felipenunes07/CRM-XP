@@ -3,6 +3,10 @@ import type { WhatsappMonitorMessage } from "@olist-crm/shared";
 const CHAT_TIMEZONE = "America/Sao_Paulo";
 export const CHAT_OLDER_MESSAGES_THRESHOLD_PX = 480;
 
+export function selectedConversationInstanceId(agentId: string) {
+  return agentId === "all" ? undefined : agentId;
+}
+
 export function isNearChatTop(
   scrollTop: number,
   threshold = CHAT_OLDER_MESSAGES_THRESHOLD_PX,
