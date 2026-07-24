@@ -14,11 +14,19 @@ function useInlineCreditEdit(row: CustomerCreditRow, field: Field) {
   const canEdit = Boolean(row.customerId) && (user?.role === "ADMIN" || user?.role === "MANAGER");
 
   const [isEditing, setIsEditing] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (isEditing) inputRef.current?.select();
   }, [isEditing]);
+
+  // Confirmação de 2s: ela precisa ver que o valor foi gravado, não só sumir o campo.
+  useEffect(() => {
+    if (!justSaved) return undefined;
+    const timer = setTimeout(() => setJustSaved(false), 2000);
+    return () => clearTimeout(timer);
+  }, [justSaved]);
 
   const mutation = useMutation({
     mutationFn: (value: number) =>
@@ -27,10 +35,11 @@ function useInlineCreditEdit(row: CustomerCreditRow, field: Field) {
       void queryClient.invalidateQueries({ queryKey: ["customer-credit-overview"] });
       void queryClient.invalidateQueries({ queryKey: ["customer-credit-detail"] });
       setIsEditing(false);
+      setJustSaved(true);
     },
   });
 
-  return { canEdit, isEditing, setIsEditing, inputRef, mutation };
+  return { canEdit, isEditing, setIsEditing, inputRef, mutation, justSaved };
 }
 
 /** Campo editável na linha: clique, digite, Enter salva. Esc cancela. */
@@ -86,7 +95,10 @@ function InlineEditor({
 }
 
 export function CustomerCreditLimitCell({ row }: { row: CustomerCreditRow }) {
-  const { canEdit, isEditing, setIsEditing, inputRef, mutation } = useInlineCreditEdit(row, "creditLimit");
+  const { canEdit, isEditing, setIsEditing, inputRef, mutation, justSaved } = useInlineCreditEdit(
+    row,
+    "creditLimit",
+  );
   const [draft, setDraft] = useState(String(row.creditLimit || ""));
 
   const usage = row.creditLimit > 0 ? (row.debtAmount / row.creditLimit) * 100 : null;
@@ -142,8 +154,18 @@ export function CustomerCreditLimitCell({ row }: { row: CustomerCreditRow }) {
         <strong className="bankfin-cell-main">
           {row.creditLimit > 0 ? formatCurrency(row.creditLimit) : "Sem limite"}
         </strong>
+        {row.creditLimitSource === "MANUAL" ? (
+          <span className="bankfin-manual-dot" title="Limite definido pela gestão (não vem da planilha)" />
+        ) : null}
         {canEdit ? <Pencil size={12} className="bankfin-cell-pencil" /> : null}
-        {usage !== null ? <b className={`bankfin-usage tone-${tone}`}>{usage.toFixed(0)}%</b> : null}
+        {justSaved ? (
+          <span className="bankfin-saved">
+            <Check size={12} />
+            salvo
+          </span>
+        ) : usage !== null ? (
+          <b className={`bankfin-usage tone-${tone}`}>{usage.toFixed(0)}%</b>
+        ) : null}
       </div>
 
       {row.creditLimit > 0 ? (
@@ -170,7 +192,10 @@ export function CustomerCreditTermCell({
   row: CustomerCreditRow;
   status: { label: string; helper: string; tone: string; progress: number | null };
 }) {
-  const { canEdit, isEditing, setIsEditing, inputRef, mutation } = useInlineCreditEdit(row, "paymentTerm");
+  const { canEdit, isEditing, setIsEditing, inputRef, mutation, justSaved } = useInlineCreditEdit(
+    row,
+    "paymentTerm",
+  );
   const [draft, setDraft] = useState(row.paymentTerm ? String(row.paymentTerm) : "");
 
   function commit() {
@@ -216,8 +241,18 @@ export function CustomerCreditTermCell({
         <strong className="bankfin-cell-main">
           {row.paymentTerm ? `${row.paymentTerm} dias` : "Sem prazo"}
         </strong>
+        {row.paymentTermSource === "MANUAL" ? (
+          <span className="bankfin-manual-dot" title="Prazo definido pela gestão (não vem da planilha)" />
+        ) : null}
         {canEdit ? <Pencil size={12} className="bankfin-cell-pencil" /> : null}
-        <span className={`bankfin-cell-tag tone-${status.tone}`}>{status.label}</span>
+        {justSaved ? (
+          <span className="bankfin-saved">
+            <Check size={12} />
+            salvo
+          </span>
+        ) : (
+          <span className={`bankfin-cell-tag tone-${status.tone}`}>{status.label}</span>
+        )}
       </div>
 
       {status.progress !== null ? (

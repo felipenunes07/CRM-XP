@@ -1818,3 +1818,40 @@
   color: var(--bf-navy);
   box-shadow: 0 1px 2px rgba(11, 36, 71, 0.08);
 }
+
+/* --------------------------------------------------------------------------
+   13. Confirmação de gravação e marca de valor manual
+   -------------------------------------------------------------------------- */
+
+/* Flash de "salvo" após gravar no banco. */
+.bankfin-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-left: auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--bf-success-soft);
+  color: var(--bf-success);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  animation: bankfin-pop 0.18s ease;
+}
+
+@keyframes bankfin-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
+/* Ponto azul = valor definido pela gestão, não veio da planilha. */
+.bankfin-manual-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--bf-accent);
+  flex-shrink: 0;
+  align-self: center;
+}
