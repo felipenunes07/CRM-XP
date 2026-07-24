@@ -1781,6 +1781,8 @@
   border: 1px solid var(--bf-line);
   background: var(--bf-surface-soft);
   box-shadow: none;
+  align-self: flex-start;
+  height: fit-content;
 }
 
 .bankfin-tab {
