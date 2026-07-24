@@ -528,36 +528,63 @@ async function getActivityRows(
         SELECT *
         FROM UNNEST($3::text[], $4::text[]) AS identity(attendant, instance_name)
       ),
-      conversation_months AS (
+      scoped_activity AS (
         SELECT
           identity.attendant,
           TO_CHAR(DATE_TRUNC('month', war.period_date), 'YYYY-MM') AS month,
+          war.period_date,
           war.remote_jid,
-          SUM(war.sent_messages)::int AS sent_messages,
-          SUM(war.received_messages)::int AS received_messages,
-          COUNT(DISTINCT war.period_date) FILTER (
-            WHERE war.sent_messages > 0 OR war.received_messages > 0
-          )::int AS active_days,
-          SUM(war.response_count)::int AS response_count,
-          SUM(war.response_seconds_total)::numeric AS response_seconds_total
+          war.sent_messages,
+          war.received_messages,
+          war.response_count,
+          war.response_seconds_total
         FROM identities identity
         JOIN whatsapp_activity_rollups war
           ON LOWER(war.instance_name) = LOWER(identity.instance_name)
         WHERE war.period_date BETWEEN $1::date AND $2::date
-        GROUP BY identity.attendant, DATE_TRUNC('month', war.period_date), war.remote_jid
+      ),
+      conversation_months AS (
+        SELECT
+          attendant,
+          month,
+          remote_jid,
+          SUM(sent_messages)::int AS sent_messages,
+          SUM(received_messages)::int AS received_messages
+        FROM scoped_activity
+        GROUP BY attendant, month, remote_jid
+      ),
+      activity_months AS (
+        SELECT
+          attendant,
+          month,
+          COUNT(DISTINCT period_date) FILTER (
+            WHERE sent_messages > 0 OR received_messages > 0
+          )::int AS active_days,
+          SUM(response_count)::int AS response_count,
+          SUM(response_seconds_total)::numeric AS response_seconds_total
+        FROM scoped_activity
+        GROUP BY attendant, month
       )
       SELECT
-        attendant,
-        month,
-        COALESCE(SUM(sent_messages), 0)::int AS sent_messages,
-        COALESCE(SUM(received_messages), 0)::int AS received_messages,
-        COUNT(*) FILTER (WHERE sent_messages > 0 AND received_messages > 0)::int AS attended_conversations,
-        COALESCE(MAX(active_days), 0)::int AS active_days,
-        COALESCE(SUM(response_count), 0)::int AS response_count,
-        COALESCE(SUM(response_seconds_total), 0)::numeric AS response_seconds_total
+        conversation_months.attendant,
+        conversation_months.month,
+        COALESCE(SUM(conversation_months.sent_messages), 0)::int AS sent_messages,
+        COALESCE(SUM(conversation_months.received_messages), 0)::int AS received_messages,
+        COUNT(*) FILTER (
+          WHERE conversation_months.sent_messages > 0 AND conversation_months.received_messages > 0
+        )::int AS attended_conversations,
+        activity_months.active_days,
+        activity_months.response_count,
+        activity_months.response_seconds_total
       FROM conversation_months
-      GROUP BY attendant, month
-      ORDER BY attendant, month
+      JOIN activity_months USING (attendant, month)
+      GROUP BY
+        conversation_months.attendant,
+        conversation_months.month,
+        activity_months.active_days,
+        activity_months.response_count,
+        activity_months.response_seconds_total
+      ORDER BY conversation_months.attendant, conversation_months.month
     `,
     [
       windows.trendStartMonth,
