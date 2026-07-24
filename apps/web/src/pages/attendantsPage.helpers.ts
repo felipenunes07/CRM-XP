@@ -7,6 +7,7 @@ export type AttendantChartMetric =
   | "uniqueCustomers"
   | "newCustomers"
   | "recoveredCustomers"
+  | "lostCustomers"
   | "sentMessages"
   | "attendedConversations";
 export type AttendantSortKey =
@@ -71,6 +72,10 @@ export function chartMetricLabel(metric: AttendantChartMetric) {
     return "Clientes recuperados";
   }
 
+  if (metric === "lostCustomers") {
+    return "Clientes perdidos";
+  }
+
   if (metric === "sentMessages") {
     return "Mensagens enviadas";
   }
@@ -101,6 +106,10 @@ export function getCurrentMetricValue(item: AttendantListItem, metric: Attendant
 
   if (metric === "recoveredCustomers") {
     return item.currentRecoveredCustomers;
+  }
+
+  if (metric === "lostCustomers") {
+    return item.currentLostCustomers;
   }
 
   if (metric === "sentMessages") {
@@ -241,11 +250,13 @@ export function buildTrendChartData(items: AttendantListItem[], selectedAttendan
                 ? point.newCustomers
                 : metric === "recoveredCustomers"
                   ? point.recoveredCustomers
-                  : metric === "sentMessages"
-                    ? point.sentMessages
-                    : metric === "attendedConversations"
-                      ? point.attendedConversations
-                      : point.revenue;
+                  : metric === "lostCustomers"
+                    ? point.lostCustomers
+                    : metric === "sentMessages"
+                      ? point.sentMessages
+                      : metric === "attendedConversations"
+                        ? point.attendedConversations
+                        : point.revenue;
     });
 
     data.forEach((row) => {

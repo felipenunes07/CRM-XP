@@ -7809,9 +7809,44 @@ button.attendants-ranking-row:hover {
 }
 
 .attendant-individual-toggles {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 760px;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.attendants-chart-heading.is-individual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.attendant-individual-toggles button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.attendants-communication {
+  width: 100%;
+}
+
+.attendants-communication .attendant-heatmap-controls,
+.attendants-communication .attendant-heatmap-hours,
+.attendants-communication .attendant-heatmap-row,
+.attendants-communication .attendant-heatmap-legend {
+  min-width: 900px;
+}
+
+.attendants-communication .attendant-heatmap-hours,
+.attendants-communication .attendant-heatmap-row {
+  grid-template-columns: 42px repeat(14, minmax(42px, 1fr));
+  gap: 6px;
+}
+
+.attendants-communication .attendant-heatmap-row > span:not(:first-child) {
+  height: 30px;
+  font-size: 0.64rem;
 }
 
 .attendant-portfolio-overlay {
@@ -8086,7 +8121,7 @@ button.attendants-ranking-row:hover {
 
 .attendant-relationship-summary dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin: 0;
   border-top: 1px solid var(--attendants-line);
 }
@@ -8094,13 +8129,14 @@ button.attendants-ranking-row:hover {
 .attendant-relationship-summary dl > div {
   display: grid;
   gap: 0.25rem;
-  padding: 1rem 0;
+  padding: 1rem;
+  border-left: 1px solid var(--attendants-line);
   border-bottom: 1px solid var(--attendants-line);
 }
 
-.attendant-relationship-summary dl > div:nth-child(even) {
-  padding-left: 1rem;
-  border-left: 1px solid var(--attendants-line);
+.attendant-relationship-summary dl > div:first-child {
+  padding-left: 0;
+  border-left: 0;
 }
 
 .attendant-relationship-summary dt {
@@ -8243,7 +8279,7 @@ button.attendants-ranking-row:hover {
     grid-template-columns: 1fr;
   }
 
-  .attendant-relationship-summary dl > div:nth-child(even) {
+  .attendant-relationship-summary dl > div {
     padding-left: 0;
     border-left: 0;
   }

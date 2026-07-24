@@ -49,6 +49,7 @@ const metricOptions: AttendantChartMetric[] = [
   "uniqueCustomers",
   "newCustomers",
   "recoveredCustomers",
+  "lostCustomers",
   "sentMessages",
   "attendedConversations",
 ];
@@ -56,6 +57,7 @@ const individualMetricOptions: AttendantChartMetric[] = [
   "pieces",
   "attendedConversations",
   "recoveredCustomers",
+  "lostCustomers",
   "newCustomers",
   "sentMessages",
   "revenue",
@@ -499,6 +501,7 @@ export function AttendantsPage() {
       if (chartMetric === "uniqueCustomers") return item.currentPeriod.uniqueCustomers;
       if (chartMetric === "newCustomers") return item.currentNewCustomers;
       if (chartMetric === "recoveredCustomers") return item.currentRecoveredCustomers;
+      if (chartMetric === "lostCustomers") return item.currentLostCustomers;
       if (chartMetric === "sentMessages") return item.currentActivity.sentMessages;
       if (chartMetric === "attendedConversations") return item.currentActivity.attendedConversations;
       return item.currentPeriod.orders;
@@ -508,6 +511,7 @@ export function AttendantsPage() {
     if (chartMetric === "uniqueCustomers") return point.uniqueCustomers;
     if (chartMetric === "newCustomers") return point.newCustomers;
     if (chartMetric === "recoveredCustomers") return point.recoveredCustomers;
+    if (chartMetric === "lostCustomers") return point.lostCustomers;
     if (chartMetric === "sentMessages") return point.sentMessages;
     if (chartMetric === "attendedConversations") return point.attendedConversations;
     return point.orders;
@@ -701,7 +705,7 @@ export function AttendantsPage() {
       {attendants.length ? (
         <>
           <section className="attendant-section attendants-trend-section">
-            <div className="attendant-section-heading attendants-chart-heading">
+            <div className={`attendant-section-heading attendants-chart-heading${selectedItem ? " is-individual" : ""}`}>
               <div>
                 <span className="attendants-kicker">Evolução mensal</span>
                 <h3>{selectedItem ? `Resultado mensal de ${selectedItem.attendant}` : "Quem está puxando o resultado"}</h3>
@@ -1007,29 +1011,27 @@ export function AttendantsPage() {
                 </article>
               </section>
 
-              <section className="attendants-split attendants-communication">
-                <article className="attendant-section">
-                  <div className="attendant-section-heading">
-                    <div>
-                      <span className="attendants-kicker">Atividade no WhatsApp</span>
-                      <h3>Quando {selectedItem.attendant} mais conversa</h3>
-                      <p>Mensagens enviadas e recebidas, agrupadas por dia da semana e hora.</p>
-                    </div>
+              <section className="attendant-section attendants-communication">
+                <div className="attendant-section-heading">
+                  <div>
+                    <span className="attendants-kicker">Atividade no WhatsApp</span>
+                    <h3>Quando {selectedItem.attendant} mais conversa</h3>
+                    <p>Mensagens enviadas e recebidas, agrupadas por dia da semana e hora.</p>
                   </div>
-                  <ActivityHeatmap item={selectedItem} />
-                </article>
-                <article className="attendant-section attendant-relationship-summary">
-                  <div className="attendant-section-heading">
-                    <div><span className="attendants-kicker">Ritmo de atendimento</span><h3>Relacionamento no mês</h3></div>
-                  </div>
-                  <dl>
-                    <div><dt>Mensagens enviadas</dt><dd>{formatNumber(selectedItem.currentActivity.sentMessages)}</dd></div>
-                    <div><dt>Mensagens recebidas</dt><dd>{formatNumber(selectedItem.currentActivity.receivedMessages)}</dd></div>
-                    <div><dt>Conversas atendidas</dt><dd>{formatNumber(selectedItem.currentActivity.attendedConversations)}</dd></div>
-                    <div><dt>Dias com atividade</dt><dd>{formatNumber(selectedItem.currentActivity.activeDays)}</dd></div>
-                    <div><dt>Primeira resposta média</dt><dd>{formatResponseTime(selectedItem.currentActivity.averageFirstResponseSeconds)}</dd></div>
-                  </dl>
-                </article>
+                </div>
+                <ActivityHeatmap item={selectedItem} />
+              </section>
+              <section className="attendant-section attendant-relationship-summary">
+                <div className="attendant-section-heading">
+                  <div><span className="attendants-kicker">Ritmo de atendimento</span><h3>Relacionamento no mês</h3></div>
+                </div>
+                <dl>
+                  <div><dt>Mensagens enviadas</dt><dd>{formatNumber(selectedItem.currentActivity.sentMessages)}</dd></div>
+                  <div><dt>Mensagens recebidas</dt><dd>{formatNumber(selectedItem.currentActivity.receivedMessages)}</dd></div>
+                  <div><dt>Conversas atendidas</dt><dd>{formatNumber(selectedItem.currentActivity.attendedConversations)}</dd></div>
+                  <div><dt>Dias com atividade</dt><dd>{formatNumber(selectedItem.currentActivity.activeDays)}</dd></div>
+                  <div><dt>Primeira resposta média</dt><dd>{formatResponseTime(selectedItem.currentActivity.averageFirstResponseSeconds)}</dd></div>
+                </dl>
               </section>
 
               <section className="attendants-split attendants-commercial-detail">

@@ -64,6 +64,7 @@ function createAttendant(attendant: string, revenue: number, trendRevenue: numbe
     },
     currentNewCustomers: 0,
     currentRecoveredCustomers: 0,
+    currentLostCustomers: 2,
     currentRecoveredRevenue: 0,
     goal: {
       targetPieces: null,
@@ -80,6 +81,7 @@ function createAttendant(attendant: string, revenue: number, trendRevenue: numbe
       uniqueCustomers: Math.round(value / 200),
       newCustomers: 0,
       recoveredCustomers: 0,
+      lostCustomers: index + 1,
       sentMessages: 0,
       receivedMessages: 0,
       attendedConversations: 0,
@@ -164,6 +166,14 @@ describe("attendantsPage helpers", () => {
     expect(data[0]?.month).toBe("2026-01");
     expect(Number(data[0]?.[series[0]!.dataKey])).toBe(5000);
     expect(Number(data[2]?.[series[1]!.dataKey])).toBe(7000);
+  });
+
+  it("maps monthly lost customers into the comparison chart", () => {
+    const { data, series } = buildTrendChartData(attendants, ["Suelen"], "lostCustomers");
+
+    expect(series).toHaveLength(1);
+    expect(Number(data[0]?.[series[0]!.dataKey])).toBe(1);
+    expect(Number(data[2]?.[series[0]!.dataKey])).toBe(3);
   });
 
   it("keeps the visual identity requested for each WhatsApp seller", () => {

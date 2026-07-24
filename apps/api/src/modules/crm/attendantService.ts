@@ -101,6 +101,7 @@ interface CustomerMovementRow {
   month: string;
   newCustomers: number;
   recoveredCustomers: number;
+  lostCustomers: number;
   recoveredRevenue: number;
 }
 
@@ -740,6 +741,27 @@ async function getCustomerMovementRows(
         FROM orders o
         WHERE COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') = ANY($3::text[])
       ),
+      lifetime_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          o.order_date::date AS order_date,
+          LEAD(o.order_date::date) OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+          ) AS next_order_date
+        FROM orders o
+      ),
+      monthly_losses AS (
+        SELECT
+          attendant,
+          customer_id,
+          (order_date + 90) AS lost_at
+        FROM lifetime_orders
+        WHERE attendant = ANY($3::text[])
+          AND (next_order_date IS NULL OR next_order_date >= (order_date + 90))
+      ),
       monthly_reactivations AS (
         SELECT
           *,
@@ -757,6 +779,7 @@ async function getCustomerMovementRows(
           TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
           COUNT(*) FILTER (WHERE lifetime_rank = 1)::int AS new_customers,
           0::int AS recovered_customers,
+          0::int AS lost_customers,
           0::numeric(14,2) AS recovered_revenue
         FROM scoped_orders
         WHERE order_date BETWEEN $1::date AND $2::date
@@ -769,17 +792,32 @@ async function getCustomerMovementRows(
           TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
           0::int AS new_customers,
           COUNT(*)::int AS recovered_customers,
+          0::int AS lost_customers,
           COALESCE(SUM(total_amount), 0)::numeric(14,2) AS recovered_revenue
         FROM monthly_reactivations
         WHERE month_rank = 1
           AND order_date BETWEEN $1::date AND $2::date
         GROUP BY attendant, DATE_TRUNC('month', order_date)
+
+        UNION ALL
+
+        SELECT
+          attendant,
+          TO_CHAR(DATE_TRUNC('month', lost_at), 'YYYY-MM') AS month,
+          0::int AS new_customers,
+          0::int AS recovered_customers,
+          COUNT(DISTINCT customer_id)::int AS lost_customers,
+          0::numeric(14,2) AS recovered_revenue
+        FROM monthly_losses
+        WHERE lost_at BETWEEN $1::date AND $2::date
+        GROUP BY attendant, DATE_TRUNC('month', lost_at)
       )
       SELECT
         attendant,
         month,
         SUM(new_customers)::int AS new_customers,
         SUM(recovered_customers)::int AS recovered_customers,
+        SUM(lost_customers)::int AS lost_customers,
         SUM(recovered_revenue)::numeric(14,2) AS recovered_revenue
       FROM movements
       GROUP BY attendant, month
@@ -793,6 +831,7 @@ async function getCustomerMovementRows(
     month: String(row.month),
     newCustomers: Number(row.new_customers ?? 0),
     recoveredCustomers: Number(row.recovered_customers ?? 0),
+    lostCustomers: Number(row.lost_customers ?? 0),
     recoveredRevenue: Number(row.recovered_revenue ?? 0),
   }));
 }
@@ -1068,6 +1107,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       uniqueCustomers: row.uniqueCustomers,
       newCustomers: movement?.newCustomers ?? 0,
       recoveredCustomers: movement?.recoveredCustomers ?? 0,
+      lostCustomers: movement?.lostCustomers ?? 0,
       sentMessages: activity?.sentMessages ?? 0,
       receivedMessages: activity?.receivedMessages ?? 0,
       attendedConversations: activity?.attendedConversations ?? 0,
@@ -1143,6 +1183,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
         currentActivity,
         currentNewCustomers: currentMovement?.newCustomers ?? 0,
         currentRecoveredCustomers: currentMovement?.recoveredCustomers ?? 0,
+        currentLostCustomers: currentMovement?.lostCustomers ?? 0,
         currentRecoveredRevenue: currentMovement?.recoveredRevenue ?? 0,
         goal,
         activityHeatmap: activityHeatmapByAttendant.get(attendant) ?? [],

@@ -178,6 +178,7 @@ export interface AttendantTrendPoint {
   uniqueCustomers: number;
   newCustomers: number;
   recoveredCustomers: number;
+  lostCustomers: number;
   sentMessages: number;
   receivedMessages: number;
   attendedConversations: number;
@@ -251,6 +252,7 @@ export interface AttendantListItem {
   currentActivity: AttendantActivitySnapshot;
   currentNewCustomers: number;
   currentRecoveredCustomers: number;
+  currentLostCustomers: number;
   currentRecoveredRevenue: number;
   goal: AttendantGoalSnapshot;
   activityHeatmap: AttendantActivityHeatmapCell[];

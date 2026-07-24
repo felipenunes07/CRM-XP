@@ -124,6 +124,7 @@ describe("attendantService helpers", () => {
       },
       currentNewCustomers: 0,
       currentRecoveredCustomers: 0,
+      currentLostCustomers: 0,
       currentRecoveredRevenue: 0,
       goal: {
         targetPieces: null,
