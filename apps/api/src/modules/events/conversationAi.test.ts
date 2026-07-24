@@ -11,6 +11,7 @@ import {
   parseConversationAnalyses,
   parseGeneralComplaints,
   parseProductMentions,
+  isProductComplaintEvidence,
   sentimentLabelFromScore,
   type TranscriptMessage,
 } from "./conversationAi.js";
@@ -268,6 +269,45 @@ describe("parseProductMentions", () => {
   it("returns empty list for missing or non-array input", () => {
     expect(parseProductMentions(undefined)).toEqual([]);
     expect(parseProductMentions("nada")).toEqual([]);
+  });
+
+  it("drops normal quotes and order additions mislabeled by the AI as product complaints", () => {
+    const mentions = parseProductMentions([
+      {
+        modelo: "A15",
+        tipo: "reclamacao",
+        detalhe: "Cliente solicitou cotação para diversos modelos, incluindo A15, mas a resposta da equipe foi incompleta.",
+      },
+      {
+        modelo: "IPHONE XR",
+        tipo: "defeito",
+        detalhe: "Cliente solicitou a adição de 10 baterias para iPhone XR.",
+      },
+    ]);
+
+    expect(mentions).toEqual([]);
+  });
+});
+
+describe("isProductComplaintEvidence", () => {
+  it("keeps a commercial follow-up when the same evidence contains a real quality problem", () => {
+    expect(isProductComplaintEvidence(
+      "Cliente pediu para adicionar outra tela A15 porque a anterior apresentou problema no touch.",
+    )).toBe(true);
+  });
+
+  it("rejects the exact non-complaint examples reported in the product model dashboard", () => {
+    expect(isProductComplaintEvidence(
+      "Cliente solicitou cotação para diversos modelos, incluindo A15, mas a resposta da equipe foi incompleta.",
+      "Boa tarde colocar PREÇO por favor",
+    )).toBe(false);
+    expect(isProductComplaintEvidence(
+      "Cliente solicitou a adição de 10 baterias para iPhone XR.",
+      "Asim que terminar voce feira a caixa",
+    )).toBe(false);
+    expect(isProductComplaintEvidence(
+      "Cliente solicitou cotação para a linha A15.",
+    )).toBe(false);
   });
 });
 

@@ -19,8 +19,30 @@ interface BuiltFilters {
   params: unknown[];
 }
 
+// Mesmo guard rail de parseProductMentions, aplicado na leitura para que
+// falsos positivos historicos deixem de contar sem apagar linhas da base.
+// translate evita depender da extensao unaccent no PostgreSQL.
+const COMPLAINT_EVIDENCE_SQL = `
+  LOWER(TRANSLATE(
+    CONCAT_WS(' ', COALESCE(pc.detail, ''), COALESCE(pc.quote, '')),
+    'áàâãéêíóôõúç',
+    'aaaaeeiooouc'
+  ))
+`;
+
+const EXCLUDE_NORMAL_COMMERCIAL_MENTIONS_SQL = `
+  NOT (
+    (
+      ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(cotacao|orcamento|lista de precos?|colocar preco|preco por favor)\\M'
+      OR ${COMPLAINT_EVIDENCE_SQL} ~ '\\m(solicitou|solicita|pediu|pede)\\M.{0,120}\\m(adicao|adicionar|incluir|inclusao|colocar|acrescentar)\\M'
+    )
+    AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\m(defeit[a-z]*|problema[a-z]*|falha[a-z]*|touch|trava[a-z]*|mancha[a-z]*|qualidade|ruim|quebra[a-z]*|trinca[a-z]*|devolu[a-z]*|garantia|voltando|retorno[a-z]*)\\M'
+    AND ${COMPLAINT_EVIDENCE_SQL} !~ '\\mnao\\M (liga|funciona|acende|da imagem)'
+  )
+`;
+
 function buildFilters(filters: ProductComplaintsFilters): BuiltFilters {
-  const conditions: string[] = [];
+  const conditions: string[] = [EXCLUDE_NORMAL_COMMERCIAL_MENTIONS_SQL];
   const params: unknown[] = [];
 
   const model = filters.model ? normalizeProductModel(filters.model) : "";

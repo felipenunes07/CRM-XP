@@ -297,6 +297,7 @@ export function buildConversationsPrompt(conversations: ConversationForAi[]) {
     "  Use o nome CURTO do modelo em maiusculas, como o cliente fala (ex: \"A15\", \"IPHONE 11\", \"MOTO G54\", \"REDMI NOTE 12\").",
     "  tipo: reclamacao = cliente insatisfeito com a qualidade do produto; defeito = produto com falha/nao funciona/tela ruim.",
     "  NUNCA liste: cotacao, orcamento, lista de preco, pedido normal, pergunta de disponibilidade, duvida simples, troca/devolucao sem reclamar de qualidade, envio errado/logistica, ou dano fisico causado pelo cliente (queda). Vazio se nenhum produto teve problema real.",
+    "  Exemplos que DEVEM deixar produtos vazio: \"colocar preco do A15\"; \"adicionar 10 baterias de iPhone XR ao pedido\". Modelo citado em compra/cotacao nao e reclamacao do modelo.",
     "- \"reclamacoes_gerais\": reclamacoes do cliente que NAO sao sobre o produto em si: atendimento lento/ruim, vendedora rude ou mal educada, cobranca/preco errado, prazo de entrega, promessa nao cumprida, falta de resposta, comportamento inadequado de algum lado.",
     "  categoria: atendimento | vendedora | entrega | cobranca | outro.",
     "  vendedora: nome de quem atendeu do lado da equipe, se identificavel no transcript (campo EQUIPE); vazio se nao der para saber.",
@@ -358,6 +359,34 @@ export function normalizeProductModel(value: string) {
     .trim();
 }
 
+function normalizeComplaintEvidence(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const PRODUCT_QUALITY_EVIDENCE_PATTERN =
+  /\b(defeit\w*|problema\w*|falha\w*|nao (?:liga|funciona|acende|da imagem)|touch|trava\w*|mancha\w*|qualidade|ruim|quebra\w*|trinca\w*|devolu\w*|garantia|voltando|retorno\w*)\b/i;
+
+const NORMAL_COMMERCIAL_INTENT_PATTERNS = [
+  /\b(cotacao|orcamento|lista de precos?|colocar preco|preco por favor)\b/i,
+  /\b(solicitou|solicita|pediu|pede)\b.{0,120}\b(adicao|adicionar|inclu(?:ir|sao)|colocar|acrescentar)\b/i,
+];
+
+/**
+ * A IA ainda pode rotular uma simples citacao comercial como problema do
+ * produto. Exige que pedidos/cotacoes tragam tambem evidencia explicita de
+ * qualidade antes de deixa-los entrar no historico permanente.
+ */
+export function isProductComplaintEvidence(detail: string, quote = "") {
+  const evidence = normalizeComplaintEvidence(`${detail} ${quote}`);
+  const isNormalCommercialIntent = NORMAL_COMMERCIAL_INTENT_PATTERNS.some((pattern) => pattern.test(evidence));
+  return !isNormalCommercialIntent || PRODUCT_QUALITY_EVIDENCE_PATTERN.test(evidence);
+}
+
 export function parseProductMentions(value: unknown): ParsedProductMention[] {
   return (Array.isArray(value) ? value : [])
     .map((entry) => {
@@ -373,11 +402,13 @@ export function parseProductMentions(value: unknown): ParsedProductMention[] {
         .toLowerCase();
       // Fora reclamacao/defeito/troca (ex.: duvida) nao vira reclamacao de produto.
       if (!PRODUCT_MENTION_TYPES.has(rawTipo)) return null;
+      const detalhe = readString(record.detalhe, 300);
+      if (!isProductComplaintEvidence(detalhe)) return null;
       return {
         modelo,
         modeloNormalizado,
         tipo: rawTipo as ParsedProductMention["tipo"],
-        detalhe: readString(record.detalhe, 300),
+        detalhe,
       };
     })
     .filter((mention): mention is ParsedProductMention => mention !== null)
