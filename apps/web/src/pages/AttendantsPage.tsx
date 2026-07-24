@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { AttendantListItem, AttendantTrendPoint, CustomerStatus } from "@olist-crm/shared";
 import {
@@ -184,7 +185,6 @@ function ChartTooltip({
   metric,
   data,
   currentMonth,
-  items,
 }: {
   active?: boolean;
   payload?: Array<{ dataKey?: string; color?: string; value?: number; name?: string }>;
@@ -192,7 +192,6 @@ function ChartTooltip({
   metric: AttendantChartMetric;
   data: AttendantTrendChartRow[];
   currentMonth: string;
-  items: AttendantListItem[];
 }) {
   if (!active || !payload?.length || !label) return null;
   const currentIndex = data.findIndex((row) => row.month === label);
@@ -212,13 +211,6 @@ function ChartTooltip({
         const growthPercent = growth === null ? null : growth * 100;
         const gaugeFill = growthPercent === null ? 0 : Math.min(100, Math.abs(growthPercent));
         const direction = growth === null ? "neutral" : growth > 0 ? "up" : growth < 0 ? "down" : "stable";
-        const lostCustomerDetails =
-          metric === "lostCustomers"
-            ? items
-                .find((item) => item.attendant === entry.name)
-                ?.monthlyTrend.find((point) => point.month === label)
-                ?.lostCustomerDetails ?? []
-            : [];
         return (
           <div className={`attendant-chart-tooltip-row is-${direction}`} key={String(entry.dataKey)}>
             <div className="attendant-chart-tooltip-person">
@@ -248,29 +240,6 @@ function ChartTooltip({
                 <strong>{formatValue(currentValue)}</strong>
               </div>
             </div>
-            {metric === "lostCustomers" ? (
-              <div className="attendant-lost-customer-list">
-                <header>
-                  <strong>Clientes que ficaram inativos</strong>
-                  <small>Telas no último mês de compra antes da inatividade</small>
-                </header>
-                {lostCustomerDetails.length ? (
-                  <div>
-                    {lostCustomerDetails.map((customer) => (
-                      <div key={customer.customerId}>
-                        <span>
-                          <strong>{customer.displayName}</strong>
-                          <small>Última compra em {formatMonthLabel(customer.lastPurchaseMonth)}</small>
-                        </span>
-                        <b>{formatNumber(customer.piecesInLastPurchaseMonth)} telas</b>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p>Nenhum cliente perdido neste mês.</p>
-                )}
-              </div>
-            ) : null}
           </div>
         );
       })}
@@ -409,6 +378,7 @@ export function AttendantsPage() {
   const [scope, setScope] = useState<AttendantScope>("all");
   const [chartMetric, setChartMetric] = useState<AttendantChartMetric>("pieces");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [lostCustomersDialog, setLostCustomersDialog] = useState<{ attendant: string; month: string } | null>(null);
   const [portfolioOpen, setPortfolioOpen] = useState(false);
   const [portfolioStatus, setPortfolioStatus] = useState<"ALL" | CustomerStatus>("ALL");
   const [portfolioSearch, setPortfolioSearch] = useState("");
@@ -423,6 +393,13 @@ export function AttendantsPage() {
   const attendants = data?.attendants ?? [];
   const currentTrendMonth = data?.summary.currentPeriodStart.slice(0, 7) ?? "";
   const selectedItem = scope === "all" ? null : attendants.find((item) => item.attendant === scope) ?? null;
+  const lostCustomersDialogItem = lostCustomersDialog
+    ? attendants.find((item) => item.attendant === lostCustomersDialog.attendant) ?? null
+    : null;
+  const lostCustomersDialogPoint = lostCustomersDialogItem && lostCustomersDialog
+    ? lostCustomersDialogItem.monthlyTrend.find((point) => point.month === lostCustomersDialog.month) ?? null
+    : null;
+  const lostCustomersDialogRows = lostCustomersDialogPoint?.lostCustomerDetails ?? [];
   const portfolioQuery = useQuery({
     queryKey: ["attendant-portfolio", selectedItem?.attendant, windowMonths],
     queryFn: () => api.attendantPortfolio(token!, selectedItem!.attendant, windowMonths),
@@ -813,13 +790,14 @@ export function AttendantsPage() {
                   <XAxis
                     dataKey="month"
                     tickFormatter={(value) => `${formatMonthLabel(String(value))}${value === currentTrendMonth ? "*" : ""}`}
+                    interval={0}
                     stroke="#77849d"
                     tickLine={false}
                     axisLine={false}
                   />
                   <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#77849d" tickLine={false} axisLine={false} width={72} />
                   <Tooltip
-                    content={<ChartTooltip metric={chartMetric} data={trendData} currentMonth={currentTrendMonth} items={attendants} />}
+                    content={<ChartTooltip metric={chartMetric} data={trendData} currentMonth={currentTrendMonth} />}
                     cursor={{ fill: "rgba(24, 38, 68, 0.035)" }}
                   />
                   {trendSeries.map((series) => (
@@ -834,7 +812,12 @@ export function AttendantsPage() {
                       onClick={(entry) => {
                         const clicked = entry as { month?: string; payload?: { month?: string } };
                         const month = clicked.payload?.month ?? clicked.month;
-                        if (month) setSelectedMonth((current) => current === month ? null : month);
+                        if (!month) return;
+                        if (chartMetric === "lostCustomers") {
+                          setLostCustomersDialog({ attendant: series.attendant, month });
+                          return;
+                        }
+                        setSelectedMonth((current) => current === month ? null : month);
                       }}
                     >
                       {trendData.map((row) => (
@@ -849,6 +832,11 @@ export function AttendantsPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
+            {chartMetric === "lostCustomers" ? (
+              <p className="attendant-chart-action-note">
+                Clique em uma barra para abrir os clientes perdidos pela atendente naquele mês.
+              </p>
+            ) : null}
             <p className="attendant-chart-current-note">* mês atual em andamento</p>
             {selectedMonth ? (
               <div className="attendant-month-filter">
@@ -1251,6 +1239,91 @@ export function AttendantsPage() {
             </footer>
           </section>
         </div>
+      ) : null}
+
+      {lostCustomersDialog && lostCustomersDialogItem ? createPortal((
+        <div
+          className="attendant-loss-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Clientes perdidos por ${lostCustomersDialogItem.attendant} em ${formatMonthLabel(lostCustomersDialog.month)}`}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setLostCustomersDialog(null);
+          }}
+        >
+          <section
+            className="attendant-loss-panel"
+            style={{ "--attendant-accent": getAttendantColor(lostCustomersDialogItem.attendant) } as React.CSSProperties}
+          >
+            <header className="attendant-loss-panel-header">
+              <div>
+                <span className="attendants-kicker">Clientes perdidos no mês</span>
+                <h2>{lostCustomersDialogItem.attendant} · {formatMonthLabel(lostCustomersDialog.month)}</h2>
+                <p>
+                  Clientes que completaram o período de inatividade neste mês e as telas compradas no último mês ativo.
+                </p>
+              </div>
+              <button type="button" aria-label="Fechar clientes perdidos" onClick={() => setLostCustomersDialog(null)}>
+                <X size={22} />
+              </button>
+            </header>
+
+            <div className="attendant-loss-summary">
+              <div>
+                <span>Clientes perdidos</span>
+                <strong>{formatNumber(lostCustomersDialogRows.length)}</strong>
+              </div>
+              <div>
+                <span>Telas no último mês ativo</span>
+                <strong>
+                  {formatNumber(lostCustomersDialogRows.reduce(
+                    (total, customer) => total + customer.piecesInLastPurchaseMonth,
+                    0,
+                  ))}
+                </strong>
+              </div>
+              <div>
+                <span>Mês da perda</span>
+                <strong>{formatMonthLabel(lostCustomersDialog.month)}</strong>
+              </div>
+            </div>
+
+            <div className="attendant-loss-table-wrap">
+              {lostCustomersDialogRows.length ? (
+                <table className="attendant-loss-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Último mês de compra</th>
+                      <th>Telas que comprava</th>
+                      <th>Cadastro</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lostCustomersDialogRows.map((customer) => (
+                      <tr key={customer.customerId}>
+                        <td><strong>{customer.displayName}</strong></td>
+                        <td>{formatMonthLabel(customer.lastPurchaseMonth)}</td>
+                        <td><strong>{formatNumber(customer.piecesInLastPurchaseMonth)} telas</strong></td>
+                        <td>
+                          <Link to={`/clientes/${customer.customerId}`} onClick={() => setLostCustomersDialog(null)}>
+                            Abrir cliente
+                            <ChevronRight size={15} />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="attendant-loss-empty">
+                  Nenhum cliente perdido por {lostCustomersDialogItem.attendant} em {formatMonthLabel(lostCustomersDialog.month)}.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ), document.body
       ) : null}
     </div>
   );

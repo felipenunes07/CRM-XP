@@ -177,6 +177,17 @@ describe("attendantsPage helpers", () => {
     expect(Number(data[2]?.[series[0]!.dataKey])).toBe(3);
   });
 
+  it("keeps every available month in chronological order", () => {
+    const reversed = attendants.map((item) => ({
+      ...item,
+      monthlyTrend: [...item.monthlyTrend].reverse(),
+    }));
+
+    const { data } = buildTrendChartData(reversed, ["Suelen"], "lostCustomers");
+
+    expect(data.map((point) => point.month)).toEqual(["2026-01", "2026-02", "2026-03"]);
+  });
+
   it("keeps the visual identity requested for each WhatsApp seller", () => {
     expect(getAttendantColor("Suelen")).toBe("#e83e8c");
     expect(getAttendantColor("Thais")).toBe("#7656d6");

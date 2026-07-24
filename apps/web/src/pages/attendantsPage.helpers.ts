@@ -228,7 +228,9 @@ export function buildTrendChartData(items: AttendantListItem[], selectedAttendan
     });
   });
 
-  const data = Array.from(monthOrder).map((month) => ({ month } as AttendantTrendChartRow));
+  const data = Array.from(monthOrder)
+    .sort((left, right) => left.localeCompare(right))
+    .map((month) => ({ month } as AttendantTrendChartRow));
   const rowByMonth = new Map<string, AttendantTrendChartRow>(data.map((row) => [row.month, row]));
 
   const series = selectedItems.map((item, index) => {

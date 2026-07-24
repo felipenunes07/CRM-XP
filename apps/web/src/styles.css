@@ -26201,3 +26201,236 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* Atendentes: contenção responsiva e detalhamento de clientes perdidos */
+.attendants-workspace {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+.attendants-workspace > *,
+.attendants-trend-section,
+.attendant-trend-chart {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.attendant-trend-chart {
+  width: 100%;
+  overflow: hidden;
+}
+
+.attendant-heatmap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+.attendant-chart-action-note {
+  margin: 0.45rem 0 0 4.5rem;
+  color: var(--attendant-accent, #315cc8);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.attendant-loss-overlay {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background: rgba(15, 24, 42, 0.56);
+  backdrop-filter: blur(5px);
+  animation: attendant-loss-overlay-in 0.18s ease both;
+}
+
+.attendant-loss-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  width: min(1080px, 100%);
+  max-height: min(780px, calc(100vh - 3rem));
+  overflow: hidden;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 24, 42, 0.28);
+  animation: attendant-loss-panel-in 0.22s ease both;
+}
+
+.attendant-loss-panel-header {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.7rem 1.8rem 1.35rem;
+  border-bottom: 1px solid var(--attendants-line);
+}
+
+.attendant-loss-panel-header h2 {
+  margin: 0;
+  color: var(--attendants-ink);
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.attendant-loss-panel-header p {
+  max-width: 680px;
+  margin: 0.45rem 0 0;
+  color: var(--attendants-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.attendant-loss-panel-header > button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--attendants-line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--attendants-ink);
+  cursor: pointer;
+}
+
+.attendant-loss-panel-header > button:hover {
+  border-color: color-mix(in srgb, var(--attendant-accent, #315cc8) 28%, white);
+  background: color-mix(in srgb, var(--attendant-accent, #315cc8) 6%, white);
+  color: var(--attendant-accent, #315cc8);
+}
+
+.attendant-loss-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--attendants-line);
+}
+
+.attendant-loss-summary > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1.1rem 1.8rem;
+  border-right: 1px solid var(--attendants-line);
+}
+
+.attendant-loss-summary > div:last-child {
+  border-right: 0;
+}
+
+.attendant-loss-summary span {
+  color: var(--attendants-muted);
+  font-size: 0.7rem;
+}
+
+.attendant-loss-summary strong {
+  color: var(--attendant-accent, #315cc8);
+  font-size: 1.35rem;
+}
+
+.attendant-loss-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 1.8rem 1.5rem;
+}
+
+.attendant-loss-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.attendant-loss-table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  padding: 1rem 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--attendants-line);
+  background: #fff;
+  color: var(--attendants-muted);
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.attendant-loss-table td {
+  padding: 0.95rem 0.75rem;
+  border-bottom: 1px solid var(--attendants-line);
+  color: var(--attendants-ink);
+  font-size: 0.8rem;
+}
+
+.attendant-loss-table tbody tr:hover {
+  background: color-mix(in srgb, var(--attendant-accent, #315cc8) 4%, white);
+}
+
+.attendant-loss-table td a {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  color: var(--attendant-accent, #315cc8);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.attendant-loss-empty {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: var(--attendants-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+@keyframes attendant-loss-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes attendant-loss-panel-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 1080px) {
+  .attendant-chart-action-note {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .attendant-loss-overlay {
+    padding: 0;
+  }
+
+  .attendant-loss-panel {
+    width: 100%;
+    min-height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .attendant-loss-panel-header {
+    padding: 1.2rem;
+  }
+
+  .attendant-loss-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .attendant-loss-summary > div {
+    padding: 0.75rem 1.2rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--attendants-line);
+  }
+
+  .attendant-loss-table-wrap {
+    padding: 0 1.2rem 1rem;
+  }
+
+  .attendant-loss-table {
+    min-width: 680px;
+  }
+}
