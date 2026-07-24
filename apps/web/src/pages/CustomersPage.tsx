@@ -1497,8 +1497,16 @@ export function CustomersPage() {
                 canRefresh={canRefreshCredit}
                 isRefreshing={refreshCreditMutation.isPending}
                 refreshError={refreshCreditMutation.isError}
-                onQuickFilter={(value) => dispatch({ type: "setCreditQuickFilter", value })}
-                onKpiFilter={(value) => dispatch({ type: "setCreditKpiFilter", value })}
+                // Card e atalho recortam a mesma carteira: manter os dois ligados
+                // ao mesmo tempo produzia listas vazias sem explicação.
+                onQuickFilter={(value) => {
+                  dispatch({ type: "setCreditKpiFilter", value: "" });
+                  dispatch({ type: "setCreditQuickFilter", value });
+                }}
+                onKpiFilter={(value) => {
+                  dispatch({ type: "setCreditQuickFilter", value: "" });
+                  dispatch({ type: "setCreditKpiFilter", value });
+                }}
                 onSort={(value) => dispatch({ type: "setCreditSort", value })}
                 onClearFilters={() => dispatch({ type: "clearCreditFilters" })}
                 onRefresh={() => refreshCreditMutation.mutate()}
@@ -1575,7 +1583,8 @@ export function CustomersPage() {
               {/* Table */}
               <CustomerCreditTable
                 rows={visibleCreditRows}
-                emptyMessage="Nenhum cliente vinculado ao CRM bate com esse filtro."
+                emptyMessage="Nenhum cliente bate com esse filtro."
+                onClearFilters={() => dispatch({ type: "clearCreditFilters" })}
                 selectable
                 selectedCodes={selectedCreditCodes}
                 onToggleRow={toggleCreditCode}

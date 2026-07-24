@@ -17,6 +17,7 @@ interface CustomerCreditTableProps {
   selectedCodes?: ReadonlySet<string>;
   onToggleRow?: (customerCode: string) => void;
   onToggleAll?: (checked: boolean) => void;
+  onClearFilters?: () => void;
 }
 
 /** Rotulo, tom e barra de progresso do prazo (quanto do prazo ja foi consumido). */
@@ -86,6 +87,7 @@ export function CustomerCreditTable({
   selectedCodes,
   onToggleRow,
   onToggleAll,
+  onClearFilters,
 }: CustomerCreditTableProps) {
   const navigate = useNavigate();
   const [editingRow, setEditingRow] = useState<CustomerCreditRow | null>(null);
@@ -105,7 +107,14 @@ export function CustomerCreditTable({
   if (!rows.length) {
     return (
       <div className="bankfin-table-wrap">
-        <p className="bankfin-empty">{emptyMessage}</p>
+        <div className="bankfin-empty">
+          <p>{emptyMessage}</p>
+          {onClearFilters ? (
+            <button type="button" className="bankfin-btn-ghost" onClick={onClearFilters}>
+              Limpar filtros
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }

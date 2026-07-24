@@ -970,10 +970,18 @@
 }
 
 .bankfin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
   padding: 2.5rem 1rem;
   text-align: center;
   color: var(--bf-muted);
   font-size: 0.86rem;
+}
+
+.bankfin-empty p {
+  margin: 0;
 }
 
 /* --------------------------------------------------------------------------
