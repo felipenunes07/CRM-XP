@@ -1426,11 +1426,21 @@ describe("whatsapp conversation isolation", () => {
     const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
+    const listParams = listCall![1] as unknown[];
+
     expect(listSql).toContain("d.whatsapp_jid NOT LIKE '%@g.us'");
-    expect(listSql).toContain("d.whatsapp_instance_id = $3::uuid");
+    expect(listSql).toContain("d.whatsapp_instance_id = $2::uuid");
     expect(listSql).toContain("d.whatsapp_instance_id IS NULL");
     expect(listSql).toContain("FROM whatsapp_monitor_messages wmm_inst");
-    expect(listSql).toContain("LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER($4)");
+    expect(listSql).toContain("LOWER(COALESCE(wmm_inst.instance_name, '')) = LOWER($3)");
+    expect(listParams.filter(value => value === "00000000-0000-0000-0000-000000000001")).toHaveLength(1);
+
+    const placeholderIndexes = Array.from(
+      new Set(Array.from(listSql.matchAll(/\$(\d+)/g), match => Number(match[1]))),
+    ).sort((a, b) => a - b);
+    expect(placeholderIndexes).toEqual(
+      Array.from({ length: listParams.length }, (_, index) => index + 1),
+    );
   });
 
   it("passes the selected instance into conversation detail and scopes monitor reads", async () => {

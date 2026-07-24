@@ -1617,8 +1617,12 @@ async function queryWhatsappMonitorConversations(
     if (!filterInstance) {
       where.push("FALSE");
     } else {
-      params.push(filters.instanceId);
-      const instanceIdParamIndex = params.length;
+      // buildConversationMatchesInstanceSql always pushes the instance id
+      // first. Reuse that parameter for the other instance-scoped predicates.
+      // Pushing filters.instanceId separately left an unused bind slot for the
+      // common "selected agent" request, so PostgreSQL could not infer the
+      // parameter type (`could not determine data type of parameter $2`).
+      const instanceIdParamIndex = params.length + 1;
       scopedInstanceIdParamIndex = instanceIdParamIndex;
 
       where.push(buildConversationMatchesInstanceSql(filterInstance, params));
