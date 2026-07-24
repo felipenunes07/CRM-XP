@@ -394,6 +394,10 @@ export function AttendantsPage() {
   const data = attendantsQuery.data;
   const attendants = data?.attendants ?? [];
   const currentTrendMonth = data?.summary.currentPeriodStart.slice(0, 7) ?? "";
+  const teamGoalMonth = selectedMonth ?? currentTrendMonth;
+  const selectedTeamGoal = data?.teamGoals?.find((goal) => goal.month === teamGoalMonth) ?? null;
+  const selectedTeamPiecesTarget = (selectedTeamGoal?.targetPieces ?? 0) > 0 ? selectedTeamGoal?.targetPieces ?? null : null;
+  const selectedTeamRevenueTarget = (selectedTeamGoal?.targetRevenue ?? 0) > 0 ? selectedTeamGoal?.targetRevenue ?? null : null;
   const selectedItem = scope === "all" ? null : attendants.find((item) => item.attendant === scope) ?? null;
   const lostCustomersDialogItem = lostCustomersDialog
     ? attendants.find((item) => item.attendant === lostCustomersDialog.attendant) ?? null
@@ -491,6 +495,11 @@ export function AttendantsPage() {
   const selectedPeriodRow = selectedItem
     ? periodRows.find((row) => row.item.attendant === selectedItem.attendant) ?? null
     : null;
+  const selectedIndividualRevenueTarget = selectedItem
+    ? selectedMonth
+      ? selectedPeriodRow?.point?.targetRevenue ?? null
+      : selectedItem.goal.targetRevenue
+    : null;
   const periodRevenueTotal = periodRows.reduce(
     (total, row) => total + (selectedMonth ? row.point?.revenue ?? 0 : row.item.currentPeriod.revenue),
     0,
@@ -503,18 +512,12 @@ export function AttendantsPage() {
     (total, row) => {
       const pieces = selectedMonth ? row.point?.pieces ?? 0 : row.item.currentPeriod.pieces;
       const revenue = selectedMonth ? row.point?.revenue ?? 0 : row.item.currentPeriod.revenue;
-      const targetPieces = selectedMonth ? row.point?.targetPieces ?? null : row.item.goal.targetPieces;
-      const targetRevenue = selectedMonth ? row.point?.targetRevenue ?? null : row.item.goal.targetRevenue;
       return {
         pieces: total.pieces + pieces,
         revenue: total.revenue + revenue,
-        targetPieces: total.targetPieces + (targetPieces ?? 0),
-        targetRevenue: total.targetRevenue + (targetRevenue ?? 0),
-        hasPiecesTarget: total.hasPiecesTarget || targetPieces !== null,
-        hasRevenueTarget: total.hasRevenueTarget || targetRevenue !== null,
       };
     },
-    { pieces: 0, revenue: 0, targetPieces: 0, targetRevenue: 0, hasPiecesTarget: false, hasRevenueTarget: false },
+    { pieces: 0, revenue: 0 },
   );
   const selectedRank = selectedItem
     ? ranking.findIndex((item) => item.attendant === selectedItem.attendant) + 1
@@ -959,8 +962,20 @@ export function AttendantsPage() {
                     </div>
                     <Target size={22} />
                   </div>
-                  <GoalProgress label="Telas" current={filteredTeamTotals.pieces} target={filteredTeamTotals.hasPiecesTarget ? filteredTeamTotals.targetPieces : null} formatter={formatNumber} />
-                  <GoalProgress label="Faturamento" current={filteredTeamTotals.revenue} target={filteredTeamTotals.hasRevenueTarget ? filteredTeamTotals.targetRevenue : null} formatter={formatCurrency} />
+                  <GoalProgress
+                    label="Telas"
+                    current={filteredTeamTotals.pieces}
+                    target={selectedTeamPiecesTarget}
+                    formatter={formatNumber}
+                  />
+                  {selectedTeamRevenueTarget !== null ? (
+                    <GoalProgress
+                      label="Faturamento"
+                      current={filteredTeamTotals.revenue}
+                      target={selectedTeamRevenueTarget}
+                      formatter={formatCurrency}
+                    />
+                  ) : null}
                 </article>
                 <article className="attendant-section">
                   <div className="attendant-section-heading">
@@ -1014,12 +1029,14 @@ export function AttendantsPage() {
                     target={selectedMonth ? selectedPeriodRow?.point?.targetPieces ?? null : selectedItem.goal.targetPieces}
                     formatter={formatNumber}
                   />
-                  <GoalProgress
-                    label="Faturamento"
-                    current={selectedMonth ? selectedPeriodRow?.point?.revenue ?? 0 : selectedItem.currentPeriod.revenue}
-                    target={selectedMonth ? selectedPeriodRow?.point?.targetRevenue ?? null : selectedItem.goal.targetRevenue}
-                    formatter={formatCurrency}
-                  />
+                  {(selectedIndividualRevenueTarget ?? 0) > 0 ? (
+                    <GoalProgress
+                      label="Faturamento"
+                      current={selectedMonth ? selectedPeriodRow?.point?.revenue ?? 0 : selectedItem.currentPeriod.revenue}
+                      target={selectedIndividualRevenueTarget}
+                      formatter={formatCurrency}
+                    />
+                  ) : null}
                 </article>
 
                 <article className="attendant-section">

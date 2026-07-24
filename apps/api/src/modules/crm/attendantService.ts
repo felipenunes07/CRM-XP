@@ -1110,7 +1110,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       getActivityRows(windows, attendantIdentities),
       getCustomerMovementRows(windows, attendantNames),
       getCustomerLossRows(windows, attendantNames),
-      getTargetRows(windows, attendantNames),
+      getTargetRows(windows, [...attendantNames, "TOTAL"]),
       getActivityHeatmap(windows, attendantIdentities),
       getTopCustomersByAttendant(windows, attendantNames),
       getTopProductsByAttendant(windows, attendantNames),
@@ -1147,6 +1147,13 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
   const targetByAttendantMonth = new Map(
     targetRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
   );
+  const teamGoals = targetRows
+    .filter((row) => row.attendant.toLocaleLowerCase("pt-BR") === "total")
+    .map((row) => ({
+      month: row.month,
+      targetPieces: row.targetPieces,
+      targetRevenue: row.targetRevenue,
+    }));
 
   trendRows.forEach((row) => {
     const current = trendByAttendant.get(row.attendant) ?? [];
@@ -1269,6 +1276,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
   return {
     windowMonths,
     summary,
+    teamGoals,
     attendants,
   };
 }

@@ -223,6 +223,12 @@ export interface AttendantGoalSnapshot {
   revenueProgressRatio: number | null;
 }
 
+export interface AttendantTeamGoal {
+  month: string;
+  targetPieces: number | null;
+  targetRevenue: number | null;
+}
+
 export interface AttendantTopCustomer {
   customerId: string;
   customerCode: string;
@@ -272,6 +278,7 @@ export interface AttendantListItem {
 export interface AttendantsResponse {
   windowMonths: 3 | 6 | 12 | 24;
   summary: AttendantSummary;
+  teamGoals: AttendantTeamGoal[];
   attendants: AttendantListItem[];
 }
 
