@@ -4,13 +4,21 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  MessageSquare,
   MessageSquareWarning,
   PackageSearch,
   Users,
   Wrench,
 } from "lucide-react";
+import type { WhatsappMonitorConversationDetail } from "@olist-crm/shared";
 import { useAuth } from "../hooks/useAuth";
-import { api, type ProductComplaintModelRow } from "../lib/api";
+import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDrawer";
+import {
+  api,
+  type GeneralComplaintItem,
+  type ProductComplaintModelRow,
+} from "../lib/api";
+import { buildEventChatMessages, type EventConversationSeed } from "../lib/eventsChat";
 import "../components/inventorySales.css";
 
 type PeriodDays = 30 | 90 | 365 | 0;
@@ -501,6 +509,68 @@ function GeneralCategoryPill({ category }: { category: string }) {
   );
 }
 
+interface ComplaintChatState {
+  open: boolean;
+  loading: boolean;
+  recipientId: string;
+  customerName: string;
+  customerPhone: string;
+  jid: string;
+  messages: MiniChatMessage[];
+}
+
+const EMPTY_COMPLAINT_CHAT: ComplaintChatState = {
+  open: false,
+  loading: false,
+  recipientId: "",
+  customerName: "",
+  customerPhone: "",
+  jid: "",
+  messages: [],
+};
+
+function complaintSeverity(severity: string): EventConversationSeed["severity"] {
+  if (severity === "critical") return "CRITICAL";
+  if (severity === "high") return "HIGH";
+  if (severity === "medium") return "MODERATE";
+  return "LOW";
+}
+
+function seedFromGeneralComplaint(item: GeneralComplaintItem): EventConversationSeed {
+  const category = GENERAL_CATEGORY_META[item.category]?.label ?? "Reclamação geral";
+  return {
+    dealId: item.dealId ?? item.conversationKey,
+    eventId: item.id,
+    content: item.quote || item.detail,
+    detectedAt: item.occurredAt || `${item.windowDate}T12:00:00.000Z`,
+    contactName: item.customerName || item.chatName || "Conversa",
+    agentName: item.agentName,
+    isGroup: item.isGroup,
+    severity: complaintSeverity(item.severity),
+    label: category,
+    reason: item.detail,
+  };
+}
+
+function complaintChatState(
+  seed: EventConversationSeed,
+  detail: WhatsappMonitorConversationDetail | null,
+  loading: boolean,
+): ComplaintChatState {
+  return {
+    open: true,
+    loading,
+    recipientId: detail?.id || seed.dealId,
+    customerName: detail?.contactName || detail?.title || seed.contactName,
+    customerPhone: detail?.contactPhone || "",
+    jid: detail?.remoteJid || (seed.isGroup ? "Grupo" : ""),
+    messages: buildEventChatMessages({
+      seed,
+      monitorMessages: detail?.messages ?? [],
+    }),
+  };
+}
+
 function GeneralComplaintsTab() {
   const { token } = useAuth();
   const [periodDays, setPeriodDays] = useState<PeriodDays>(90);
@@ -508,6 +578,7 @@ function GeneralComplaintsTab() {
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [sortKey, setSortKey] = useState<GeneralSortKey>("total");
   const [page, setPage] = useState(1);
+  const [chatState, setChatState] = useState<ComplaintChatState>(EMPTY_COMPLAINT_CHAT);
   const pageSize = 25;
 
   const dateFrom = periodDays > 0 ? isoDaysAgo(periodDays) : undefined;
@@ -545,6 +616,22 @@ function GeneralComplaintsTab() {
     }
     return sorted;
   }, [overview?.agentRanking, sortKey]);
+
+  const openComplaintConversation = async (item: GeneralComplaintItem) => {
+    const seed = seedFromGeneralComplaint(item);
+    setChatState(complaintChatState(seed, null, true));
+    if (!token || !seed.dealId) {
+      setChatState(complaintChatState(seed, null, false));
+      return;
+    }
+
+    try {
+      const detail = await api.whatsappMonitorConversation(token, seed.dealId, { limit: 100 });
+      setChatState(complaintChatState(seed, detail, false));
+    } catch {
+      setChatState(complaintChatState(seed, null, false));
+    }
+  };
 
   return (
     <div className="page-stack invsales-stack" style={{ paddingTop: 0 }}>
@@ -701,6 +788,9 @@ function GeneralComplaintsTab() {
           <div>
             <p className="eyebrow">Histórico</p>
             <h3>Ocorrências{agentFilter ? ` — ${agentFilter}` : ""}{list ? ` (${list.total})` : ""}</h3>
+            <p className="invsales-click-hint">
+              <MessageSquare size={13} /> Clique em uma ocorrência para ver as mensagens e entender o contexto.
+            </p>
           </div>
           {totalPages > 1 ? (
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -737,7 +827,20 @@ function GeneralComplaintsTab() {
               </thead>
               <tbody>
                 {list!.items.map((item) => (
-                  <tr key={item.id} className="sku-row">
+                  <tr
+                    key={item.id}
+                    className="sku-row invsales-conversation-row"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir conversa de ${item.customerName ?? item.chatName ?? "cliente"}`}
+                    onClick={() => openComplaintConversation(item)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openComplaintConversation(item);
+                      }
+                    }}
+                  >
                     <td style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{formatBrDate(item.windowDate)}</td>
                     <td><GeneralCategoryPill category={item.category} /></td>
                     <td>{item.agentName ?? "—"}</td>
@@ -752,6 +855,9 @@ function GeneralComplaintsTab() {
                         {item.quote ? (
                           <span style={{ fontStyle: "italic", color: "#64748b", fontSize: "0.8rem" }}>“{item.quote}”</span>
                         ) : null}
+                        <span className="invsales-view-conversation">
+                          <MessageSquare size={12} /> Ver conversa
+                        </span>
                       </div>
                     </td>
                   </tr>
@@ -761,6 +867,17 @@ function GeneralComplaintsTab() {
           </div>
         )}
       </section>
+
+      <MiniChatDrawer
+        open={chatState.open}
+        onClose={() => setChatState((current) => ({ ...current, open: false }))}
+        recipientId={chatState.recipientId}
+        customerName={chatState.customerName}
+        customerPhone={chatState.customerPhone}
+        jid={chatState.jid}
+        messages={chatState.messages}
+        loading={chatState.loading}
+      />
     </div>
   );
 }

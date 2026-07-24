@@ -56,6 +56,7 @@ export async function listGeneralComplaints(
     SELECT
       gc.id,
       gc.window_date,
+      gc.conversation_key,
       gc.deal_id,
       gc.is_group,
       gc.chat_name,
@@ -80,6 +81,7 @@ export async function listGeneralComplaints(
     items: listResult.rows.map((row) => ({
       id: String(row.id),
       windowDate: String(row.window_date instanceof Date ? row.window_date.toISOString().slice(0, 10) : row.window_date),
+      conversationKey: String(row.conversation_key),
       dealId: row.deal_id ? String(row.deal_id) : null,
       isGroup: Boolean(row.is_group),
       chatName: row.chat_name ? String(row.chat_name) : null,

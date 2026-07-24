@@ -478,6 +478,46 @@
   color: #334155;
 }
 
+.invsales-click-hint {
+  margin: 0.35rem 0 0;
+  color: #64748b;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.invsales-table tr.invsales-conversation-row {
+  cursor: pointer;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.invsales-table tr.invsales-conversation-row:hover td,
+.invsales-table tr.invsales-conversation-row:focus-visible td {
+  background: #eef3ff;
+}
+
+.invsales-table tr.invsales-conversation-row:focus-visible {
+  outline: 2px solid rgba(41, 86, 215, 0.55);
+  outline-offset: -2px;
+}
+
+.invsales-view-conversation {
+  margin-top: 0.18rem;
+  color: #2956d7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  opacity: 0.76;
+}
+
+.invsales-conversation-row:hover .invsales-view-conversation,
+.invsales-conversation-row:focus-visible .invsales-view-conversation {
+  opacity: 1;
+}
+
 .invsales-table tr.sku-row code {
   background: rgba(41, 86, 215, 0.08);
   border-radius: 6px;

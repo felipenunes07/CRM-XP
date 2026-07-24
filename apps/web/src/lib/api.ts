@@ -324,6 +324,7 @@ export interface GeneralComplaintsFilters {
 export interface GeneralComplaintItem {
   id: string;
   windowDate: string;
+  conversationKey: string;
   dealId: string | null;
   isGroup: boolean;
   chatName: string | null;
