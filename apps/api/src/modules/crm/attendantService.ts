@@ -4,6 +4,7 @@ import type {
   AttendantActivitySnapshot,
   AttendantGoalSnapshot,
   AttendantListItem,
+  AttendantLostCustomer,
   AttendantMetricSnapshot,
   AttendantPortfolioCustomer,
   AttendantPortfolioResponse,
@@ -101,8 +102,14 @@ interface CustomerMovementRow {
   month: string;
   newCustomers: number;
   recoveredCustomers: number;
-  lostCustomers: number;
   recoveredRevenue: number;
+}
+
+interface CustomerLossRow {
+  attendant: string;
+  month: string;
+  lostCustomers: number;
+  customerDetails: AttendantLostCustomer[];
 }
 
 interface TargetRow {
@@ -741,27 +748,6 @@ async function getCustomerMovementRows(
         FROM orders o
         WHERE COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') = ANY($3::text[])
       ),
-      lifetime_orders AS (
-        SELECT
-          o.id,
-          o.customer_id,
-          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-          o.order_date::date AS order_date,
-          LEAD(o.order_date::date) OVER (
-            PARTITION BY o.customer_id
-            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
-          ) AS next_order_date
-        FROM orders o
-      ),
-      monthly_losses AS (
-        SELECT
-          attendant,
-          customer_id,
-          (order_date + 90) AS lost_at
-        FROM lifetime_orders
-        WHERE attendant = ANY($3::text[])
-          AND (next_order_date IS NULL OR next_order_date >= (order_date + 90))
-      ),
       monthly_reactivations AS (
         SELECT
           *,
@@ -779,7 +765,6 @@ async function getCustomerMovementRows(
           TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
           COUNT(*) FILTER (WHERE lifetime_rank = 1)::int AS new_customers,
           0::int AS recovered_customers,
-          0::int AS lost_customers,
           0::numeric(14,2) AS recovered_revenue
         FROM scoped_orders
         WHERE order_date BETWEEN $1::date AND $2::date
@@ -792,32 +777,17 @@ async function getCustomerMovementRows(
           TO_CHAR(DATE_TRUNC('month', order_date), 'YYYY-MM') AS month,
           0::int AS new_customers,
           COUNT(*)::int AS recovered_customers,
-          0::int AS lost_customers,
           COALESCE(SUM(total_amount), 0)::numeric(14,2) AS recovered_revenue
         FROM monthly_reactivations
         WHERE month_rank = 1
           AND order_date BETWEEN $1::date AND $2::date
         GROUP BY attendant, DATE_TRUNC('month', order_date)
-
-        UNION ALL
-
-        SELECT
-          attendant,
-          TO_CHAR(DATE_TRUNC('month', lost_at), 'YYYY-MM') AS month,
-          0::int AS new_customers,
-          0::int AS recovered_customers,
-          COUNT(DISTINCT customer_id)::int AS lost_customers,
-          0::numeric(14,2) AS recovered_revenue
-        FROM monthly_losses
-        WHERE lost_at BETWEEN $1::date AND $2::date
-        GROUP BY attendant, DATE_TRUNC('month', lost_at)
       )
       SELECT
         attendant,
         month,
         SUM(new_customers)::int AS new_customers,
         SUM(recovered_customers)::int AS recovered_customers,
-        SUM(lost_customers)::int AS lost_customers,
         SUM(recovered_revenue)::numeric(14,2) AS recovered_revenue
       FROM movements
       GROUP BY attendant, month
@@ -831,8 +801,87 @@ async function getCustomerMovementRows(
     month: String(row.month),
     newCustomers: Number(row.new_customers ?? 0),
     recoveredCustomers: Number(row.recovered_customers ?? 0),
-    lostCustomers: Number(row.lost_customers ?? 0),
     recoveredRevenue: Number(row.recovered_revenue ?? 0),
+  }));
+}
+
+async function getCustomerLossRows(
+  windows: AttendantComparisonWindows,
+  attendants: readonly string[],
+): Promise<CustomerLossRow[]> {
+  const result = await pool.query(
+    `
+      WITH lifetime_orders AS (
+        SELECT
+          o.id,
+          o.customer_id,
+          COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
+          o.order_date::date AS order_date,
+          LEAD(o.order_date::date) OVER (
+            PARTITION BY o.customer_id
+            ORDER BY o.order_date ASC, o.created_at ASC, o.id ASC
+          ) AS next_order_date
+        FROM orders o
+        WHERE o.order_date BETWEEN ($1::date - 90) AND $2::date
+      ),
+      loss_events AS (
+        SELECT
+          attendant,
+          customer_id,
+          order_date,
+          (order_date + 90) AS lost_at
+        FROM lifetime_orders
+        WHERE attendant = ANY($3::text[])
+          AND (next_order_date IS NULL OR next_order_date >= (order_date + 90))
+          AND (order_date + 90) BETWEEN $1::date AND $2::date
+      ),
+      loss_details AS (
+        SELECT
+          loss.attendant,
+          loss.customer_id,
+          loss.lost_at,
+          DATE_TRUNC('month', loss.order_date)::date AS last_purchase_month,
+          COALESCE(MAX(cs.display_name), MAX(c.display_name), 'Cliente sem nome') AS display_name,
+          COALESCE(SUM(COALESCE(oi.quantity, 0)), 0)::numeric(14,2) AS pieces
+        FROM loss_events loss
+        JOIN orders purchase_order
+          ON purchase_order.customer_id = loss.customer_id
+         AND DATE_TRUNC('month', purchase_order.order_date) = DATE_TRUNC('month', loss.order_date)
+        LEFT JOIN order_items oi ON oi.order_id = purchase_order.id
+        LEFT JOIN customer_snapshot cs ON cs.customer_id = loss.customer_id
+        LEFT JOIN customers c ON c.id = loss.customer_id
+        GROUP BY loss.attendant, loss.customer_id, loss.lost_at, DATE_TRUNC('month', loss.order_date)
+      )
+      SELECT
+        attendant,
+        TO_CHAR(DATE_TRUNC('month', lost_at), 'YYYY-MM') AS month,
+        COUNT(DISTINCT customer_id)::int AS lost_customers,
+        jsonb_agg(
+          jsonb_build_object(
+            'customerId', customer_id::text,
+            'displayName', display_name,
+            'lastPurchaseMonth', TO_CHAR(last_purchase_month, 'YYYY-MM'),
+            'piecesInLastPurchaseMonth', pieces
+          )
+          ORDER BY pieces DESC, display_name ASC
+        ) AS customer_details
+      FROM loss_details
+      GROUP BY attendant, DATE_TRUNC('month', lost_at)
+      ORDER BY attendant, month
+    `,
+    [windows.trendStartMonth, windows.currentPeriodEnd, attendants],
+  );
+
+  return result.rows.map((row) => ({
+    attendant: String(row.attendant),
+    month: String(row.month),
+    lostCustomers: Number(row.lost_customers ?? 0),
+    customerDetails: (Array.isArray(row.customer_details) ? row.customer_details : []).map((customer: Record<string, unknown>) => ({
+      customerId: String(customer.customerId ?? ""),
+      displayName: String(customer.displayName ?? "Cliente sem nome"),
+      lastPurchaseMonth: String(customer.lastPurchaseMonth ?? ""),
+      piecesInLastPurchaseMonth: Number(customer.piecesInLastPurchaseMonth ?? 0),
+    })),
   }));
 }
 
@@ -1047,6 +1096,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
     trendRows,
     activityRows,
     customerMovementRows,
+    customerLossRows,
     targetRows,
     activityHeatmapByAttendant,
     topCustomersByAttendant,
@@ -1059,6 +1109,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       getTrendRows(windows, attendantNames),
       getActivityRows(windows, attendantIdentities),
       getCustomerMovementRows(windows, attendantNames),
+      getCustomerLossRows(windows, attendantNames),
       getTargetRows(windows, attendantNames),
       getActivityHeatmap(windows, attendantIdentities),
       getTopCustomersByAttendant(windows, attendantNames),
@@ -1090,6 +1141,9 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
   const movementByAttendantMonth = new Map(
     customerMovementRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
   );
+  const lossByAttendantMonth = new Map(
+    customerLossRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
+  );
   const targetByAttendantMonth = new Map(
     targetRows.map((row) => [`${row.attendant}\u0000${row.month}`, row] as const),
   );
@@ -1098,6 +1152,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
     const current = trendByAttendant.get(row.attendant) ?? [];
     const activity = activityByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
     const movement = movementByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
+    const loss = lossByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
     const target = targetByAttendantMonth.get(`${row.attendant}\u0000${row.month}`);
     current.push({
       month: row.month,
@@ -1107,7 +1162,8 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       uniqueCustomers: row.uniqueCustomers,
       newCustomers: movement?.newCustomers ?? 0,
       recoveredCustomers: movement?.recoveredCustomers ?? 0,
-      lostCustomers: movement?.lostCustomers ?? 0,
+      lostCustomers: loss?.lostCustomers ?? 0,
+      lostCustomerDetails: loss?.customerDetails ?? [],
       sentMessages: activity?.sentMessages ?? 0,
       receivedMessages: activity?.receivedMessages ?? 0,
       attendedConversations: activity?.attendedConversations ?? 0,
@@ -1124,6 +1180,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       const performance = performanceByAttendant.get(attendant);
       const currentActivityRow = activityByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
       const currentMovement = movementByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
+      const currentLoss = lossByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
       const currentTarget = targetByAttendantMonth.get(`${attendant}\u0000${currentMonth}`);
       const currentRaw: RawMetricSnapshot = performance
         ? {
@@ -1183,7 +1240,7 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
         currentActivity,
         currentNewCustomers: currentMovement?.newCustomers ?? 0,
         currentRecoveredCustomers: currentMovement?.recoveredCustomers ?? 0,
-        currentLostCustomers: currentMovement?.lostCustomers ?? 0,
+        currentLostCustomers: currentLoss?.lostCustomers ?? 0,
         currentRecoveredRevenue: currentMovement?.recoveredRevenue ?? 0,
         goal,
         activityHeatmap: activityHeatmapByAttendant.get(attendant) ?? [],

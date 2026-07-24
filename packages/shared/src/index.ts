@@ -179,11 +179,19 @@ export interface AttendantTrendPoint {
   newCustomers: number;
   recoveredCustomers: number;
   lostCustomers: number;
+  lostCustomerDetails: AttendantLostCustomer[];
   sentMessages: number;
   receivedMessages: number;
   attendedConversations: number;
   targetPieces: number | null;
   targetRevenue: number | null;
+}
+
+export interface AttendantLostCustomer {
+  customerId: string;
+  displayName: string;
+  lastPurchaseMonth: string;
+  piecesInLastPurchaseMonth: number;
 }
 
 export interface AttendantWhatsappIdentity {

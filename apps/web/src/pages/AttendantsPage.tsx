@@ -64,7 +64,7 @@ const individualMetricOptions: AttendantChartMetric[] = [
 ];
 const portfolioStatuses: Array<"ALL" | CustomerStatus> = ["ALL", "ACTIVE", "ATTENTION", "INACTIVE"];
 const weekdayLabels = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-const businessHours = Array.from({ length: 14 }, (_, index) => index + 7);
+const allHours = Array.from({ length: 24 }, (_, index) => index);
 
 function safeDivide(numerator: number, denominator: number) {
   return denominator > 0 ? numerator / denominator : 0;
@@ -184,6 +184,7 @@ function ChartTooltip({
   metric,
   data,
   currentMonth,
+  items,
 }: {
   active?: boolean;
   payload?: Array<{ dataKey?: string; color?: string; value?: number; name?: string }>;
@@ -191,6 +192,7 @@ function ChartTooltip({
   metric: AttendantChartMetric;
   data: AttendantTrendChartRow[];
   currentMonth: string;
+  items: AttendantListItem[];
 }) {
   if (!active || !payload?.length || !label) return null;
   const currentIndex = data.findIndex((row) => row.month === label);
@@ -198,7 +200,7 @@ function ChartTooltip({
   const formatValue = (value: number) => metric === "revenue" ? formatCurrency(value) : formatNumber(value);
 
   return (
-    <div className="attendant-chart-tooltip">
+    <div className={`attendant-chart-tooltip${payload.length === 1 ? " is-single" : ""}`}>
       <span>
         {formatMonthLabel(label)}
         <small>{label === currentMonth ? "Mês atual · parcial" : "Mês fechado"}</small>
@@ -210,26 +212,65 @@ function ChartTooltip({
         const growthPercent = growth === null ? null : growth * 100;
         const gaugeFill = growthPercent === null ? 0 : Math.min(100, Math.abs(growthPercent));
         const direction = growth === null ? "neutral" : growth > 0 ? "up" : growth < 0 ? "down" : "stable";
+        const lostCustomerDetails =
+          metric === "lostCustomers"
+            ? items
+                .find((item) => item.attendant === entry.name)
+                ?.monthlyTrend.find((point) => point.month === label)
+                ?.lostCustomerDetails ?? []
+            : [];
         return (
           <div className={`attendant-chart-tooltip-row is-${direction}`} key={String(entry.dataKey)}>
-            <i style={{ background: entry.color }} />
-            <div>
+            <div className="attendant-chart-tooltip-person">
+              <i style={{ background: entry.color }} />
               <strong>{entry.name}</strong>
-              <small>Anterior: {previousRow ? formatValue(previousValue) : "sem base"}</small>
             </div>
-            <span className="attendant-chart-gauge" aria-label={growth === null ? "Sem base anterior" : formatGrowth(growth)}>
-              <svg viewBox="0 0 52 29" aria-hidden="true">
-                <path d="M 5 25 A 21 21 0 0 1 47 25" pathLength="100" />
-                <path
-                  className="attendant-chart-gauge-fill"
-                  d="M 5 25 A 21 21 0 0 1 47 25"
-                  pathLength="100"
-                  style={{ strokeDasharray: `${gaugeFill} 100` }}
-                />
-              </svg>
-              <b>{growth === null ? "—" : formatGrowth(growth)}</b>
-            </span>
-            <strong>{formatValue(currentValue)}</strong>
+            <div className="attendant-chart-comparison">
+              <div>
+                <small>Mês anterior</small>
+                <strong>{previousRow ? formatValue(previousValue) : "Sem base"}</strong>
+              </div>
+              <span className="attendant-chart-gauge" aria-label={growth === null ? "Sem base anterior" : formatGrowth(growth)}>
+                <svg viewBox="0 0 120 66" aria-hidden="true">
+                  <path d="M 10 58 A 50 50 0 0 1 110 58" pathLength="100" />
+                  <path
+                    className="attendant-chart-gauge-fill"
+                    d="M 10 58 A 50 50 0 0 1 110 58"
+                    pathLength="100"
+                    style={{ strokeDasharray: `${gaugeFill} 100` }}
+                  />
+                </svg>
+                <b>{growth === null ? "—" : formatGrowth(growth)}</b>
+                <small>vs. mês anterior</small>
+              </span>
+              <div>
+                <small>Mês analisado</small>
+                <strong>{formatValue(currentValue)}</strong>
+              </div>
+            </div>
+            {metric === "lostCustomers" ? (
+              <div className="attendant-lost-customer-list">
+                <header>
+                  <strong>Clientes que ficaram inativos</strong>
+                  <small>Telas no último mês de compra antes da inatividade</small>
+                </header>
+                {lostCustomerDetails.length ? (
+                  <div>
+                    {lostCustomerDetails.map((customer) => (
+                      <div key={customer.customerId}>
+                        <span>
+                          <strong>{customer.displayName}</strong>
+                          <small>Última compra em {formatMonthLabel(customer.lastPurchaseMonth)}</small>
+                        </span>
+                        <b>{formatNumber(customer.piecesInLastPurchaseMonth)} telas</b>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>Nenhum cliente perdido neste mês.</p>
+                )}
+              </div>
+            ) : null}
           </div>
         );
       })}
@@ -266,21 +307,33 @@ function GoalProgress({
   );
 }
 
-function ActivityHeatmap({ item }: { item: AttendantListItem }) {
+function ActivityHeatmap({ item, periodEnd }: { item: AttendantListItem; periodEnd: string }) {
   const [messageType, setMessageType] = useState<"total" | "sent" | "received">("total");
   const [showNumbers, setShowNumbers] = useState(true);
+  const dates = useMemo(() => {
+    const end = new Date(`${periodEnd}T12:00:00Z`);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(end);
+      date.setUTCDate(end.getUTCDate() - (6 - index));
+      const value = date.toISOString().slice(0, 10);
+      return {
+        value,
+        weekday: weekdayLabels[date.getUTCDay()] ?? "",
+        label: `${String(date.getUTCDate()).padStart(2, "0")}/${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
+      };
+    });
+  }, [periodEnd]);
   const cells = useMemo(() => {
     const totals = new Map<string, number>();
     item.activityHeatmap.forEach((cell) => {
-      const weekday = new Date(`${cell.date}T12:00:00`).getDay();
-      const key = `${weekday}-${cell.hour}`;
+      const key = `${cell.date}-${cell.hour}`;
       const value =
         messageType === "sent"
           ? cell.sentMessages
           : messageType === "received"
             ? cell.receivedMessages
             : cell.sentMessages + cell.receivedMessages;
-      totals.set(key, (totals.get(key) ?? 0) + value);
+      totals.set(key, value);
     });
     const maximum = Math.max(0, ...totals.values());
     return { totals, maximum };
@@ -289,55 +342,59 @@ function ActivityHeatmap({ item }: { item: AttendantListItem }) {
   return (
     <div className="attendant-heatmap">
       <div className="attendant-heatmap-controls">
-        <div role="group" aria-label="Tipo de mensagem">
-          {(["total", "sent", "received"] as const).map((type) => (
+        <div role="group" aria-label="Exibição do mapa">
+          {([false, true] as const).map((numbers) => (
             <button
               type="button"
-              key={type}
-              className={messageType === type ? "is-active" : ""}
-              onClick={() => setMessageType(type)}
+              key={String(numbers)}
+              className={showNumbers === numbers ? "is-active" : ""}
+              onClick={() => setShowNumbers(numbers)}
             >
-              {type === "total" ? "Total" : type === "sent" ? "Enviadas" : "Recebidas"}
+              {numbers ? "Número" : "Cor"}
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className={`attendant-number-toggle ${showNumbers ? "is-active" : ""}`}
-          onClick={() => setShowNumbers((current) => !current)}
-        >
-          {showNumbers ? "Números visíveis" : "Mostrar números"}
-        </button>
+        <div role="group" aria-label="Tipo de mensagem">
+          {(["sent", "received"] as const).map((type) => (
+            <button type="button" key={type} className={messageType === type ? "is-active" : ""} onClick={() => setMessageType(type)}>
+              {type === "sent" ? "Enviadas" : "Recebidas"}
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="Total de mensagens">
+          <button type="button" className={messageType === "total" ? "is-active" : ""} onClick={() => setMessageType("total")}>
+            Total
+          </button>
+        </div>
+        <span>Últimos 7 dias</span>
       </div>
-      <div className="attendant-heatmap-hours">
+      <div className="attendant-daily-heatmap">
         <span />
-        {businessHours.map((hour) => (
-          <span key={hour}>{hour}h</span>
+        {allHours.map((hour) => <strong key={hour}>{hour}</strong>)}
+        {dates.map((date) => (
+          <div className="attendant-daily-heatmap-row" key={date.value}>
+            <span><strong>{date.weekday}</strong><small>{date.label}</small></span>
+            {allHours.map((hour) => {
+              const value = cells.totals.get(`${date.value}-${hour}`) ?? 0;
+              const level = cells.maximum ? Math.ceil((value / cells.maximum) * 5) : 0;
+              return (
+                <i
+                  key={hour}
+                  className={`heat-level-${level}`}
+                  title={`${date.weekday} ${date.label}, ${hour}h: ${formatNumber(value)} ${
+                    messageType === "sent" ? "enviadas" : messageType === "received" ? "recebidas" : "mensagens"
+                  }`}
+                >
+                  {showNumbers && value > 0 ? formatNumber(value) : ""}
+                </i>
+              );
+            })}
+          </div>
         ))}
       </div>
-      {weekdayLabels.map((weekday, weekdayIndex) => (
-        <div className="attendant-heatmap-row" key={weekday}>
-          <span>{weekday}</span>
-          {businessHours.map((hour) => {
-            const value = cells.totals.get(`${weekdayIndex}-${hour}`) ?? 0;
-            const level = cells.maximum ? Math.ceil((value / cells.maximum) * 4) : 0;
-            return (
-              <span
-                key={hour}
-                className={`heat-level-${level}`}
-                title={`${weekday}, ${hour}h: ${formatNumber(value)} ${
-                  messageType === "sent" ? "enviadas" : messageType === "received" ? "recebidas" : "mensagens"
-                }`}
-              >
-                {showNumbers && value > 0 ? formatNumber(value) : ""}
-              </span>
-            );
-          })}
-        </div>
-      ))}
       <div className="attendant-heatmap-legend">
         <span>Menos atividade</span>
-        {[0, 1, 2, 3, 4].map((level) => (
+        {[0, 1, 2, 3, 4, 5].map((level) => (
           <i key={level} className={`heat-level-${level}`} />
         ))}
         <span>Mais atividade</span>
@@ -762,7 +819,7 @@ export function AttendantsPage() {
                   />
                   <YAxis tickFormatter={(value) => formatMetricAxis(Number(value), chartMetric)} stroke="#77849d" tickLine={false} axisLine={false} width={72} />
                   <Tooltip
-                    content={<ChartTooltip metric={chartMetric} data={trendData} currentMonth={currentTrendMonth} />}
+                    content={<ChartTooltip metric={chartMetric} data={trendData} currentMonth={currentTrendMonth} items={attendants} />}
                     cursor={{ fill: "rgba(24, 38, 68, 0.035)" }}
                   />
                   {trendSeries.map((series) => (
@@ -1019,7 +1076,7 @@ export function AttendantsPage() {
                     <p>Mensagens enviadas e recebidas, agrupadas por dia da semana e hora.</p>
                   </div>
                 </div>
-                <ActivityHeatmap item={selectedItem} />
+                <ActivityHeatmap item={selectedItem} periodEnd={data.summary.currentPeriodEnd} />
               </section>
               <section className="attendant-section attendant-relationship-summary">
                 <div className="attendant-section-heading">

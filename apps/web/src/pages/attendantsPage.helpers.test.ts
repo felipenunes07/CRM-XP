@@ -82,6 +82,7 @@ function createAttendant(attendant: string, revenue: number, trendRevenue: numbe
       newCustomers: 0,
       recoveredCustomers: 0,
       lostCustomers: index + 1,
+      lostCustomerDetails: [],
       sentMessages: 0,
       receivedMessages: 0,
       attendedConversations: 0,
