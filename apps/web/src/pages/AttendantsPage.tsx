@@ -493,60 +493,6 @@ export function AttendantsPage() {
             </div>
           </dl>
 
-          <section className="attendants-split attendants-goal-and-portfolio">
-            <article className="attendant-section">
-              <div className="attendant-section-heading">
-                <div>
-                  <span className="attendants-kicker">Meta do mês</span>
-                  <h3>Ritmo para alcançar o alvo</h3>
-                </div>
-                <Target size={22} />
-              </div>
-              <GoalProgress
-                label="Telas"
-                current={selectedItem.currentPeriod.pieces}
-                target={selectedItem.goal.targetPieces}
-                formatter={formatNumber}
-              />
-              <GoalProgress
-                label="Faturamento"
-                current={selectedItem.currentPeriod.revenue}
-                target={selectedItem.goal.targetRevenue}
-                formatter={formatCurrency}
-              />
-            </article>
-
-            <article className="attendant-section">
-              <div className="attendant-section-heading">
-                <div>
-                  <span className="attendants-kicker">Carteira atual</span>
-                  <h3>{formatNumber(selectedItem.portfolio.totalCustomers)} clientes sob responsabilidade</h3>
-                </div>
-              </div>
-              <div className="attendant-portfolio-bar">
-                {(["ACTIVE", "ATTENTION", "INACTIVE"] as const).map((status) => (
-                  <i
-                    key={status}
-                    className={`is-${status.toLocaleLowerCase()}`}
-                    style={{
-                      width: `${safeDivide(
-                        selectedItem.portfolio.statusCounts[status],
-                        selectedItem.portfolio.totalCustomers,
-                      ) * 100}%`,
-                    }}
-                  />
-                ))}
-              </div>
-              <div className="attendant-portfolio-legend">
-                <span><i className="is-active" />Ativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)}</strong></span>
-                <span><i className="is-attention" />Atenção <strong>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION)}</strong></span>
-                <span><i className="is-inactive" />Inativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.INACTIVE)}</strong></span>
-              </div>
-              <p className="attendant-section-note">
-                {formatNumber(selectedItem.portfolio.statusCounts.ATTENTION + selectedItem.portfolio.statusCounts.INACTIVE)} clientes têm oportunidade de reativação.
-              </p>
-            </article>
-          </section>
         </>
       ) : (
         <section className="attendant-metrics-grid attendants-team-metrics attendant-impact-metrics">
@@ -704,6 +650,61 @@ export function AttendantsPage() {
             </>
           ) : (
             <>
+              <section className="attendants-split attendants-goal-and-portfolio">
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div>
+                      <span className="attendants-kicker">Meta do mês</span>
+                      <h3>Ritmo para alcançar o alvo</h3>
+                    </div>
+                    <Target size={22} />
+                  </div>
+                  <GoalProgress
+                    label="Telas"
+                    current={selectedItem.currentPeriod.pieces}
+                    target={selectedItem.goal.targetPieces}
+                    formatter={formatNumber}
+                  />
+                  <GoalProgress
+                    label="Faturamento"
+                    current={selectedItem.currentPeriod.revenue}
+                    target={selectedItem.goal.targetRevenue}
+                    formatter={formatCurrency}
+                  />
+                </article>
+
+                <article className="attendant-section">
+                  <div className="attendant-section-heading">
+                    <div>
+                      <span className="attendants-kicker">Carteira atual</span>
+                      <h3>{formatNumber(selectedItem.portfolio.totalCustomers)} clientes sob responsabilidade</h3>
+                    </div>
+                  </div>
+                  <div className="attendant-portfolio-bar">
+                    {(["ACTIVE", "ATTENTION", "INACTIVE"] as const).map((status) => (
+                      <i
+                        key={status}
+                        className={`is-${status.toLocaleLowerCase()}`}
+                        style={{
+                          width: `${safeDivide(
+                            selectedItem.portfolio.statusCounts[status],
+                            selectedItem.portfolio.totalCustomers,
+                          ) * 100}%`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="attendant-portfolio-legend">
+                    <span><i className="is-active" />Ativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.ACTIVE)}</strong></span>
+                    <span><i className="is-attention" />Atenção <strong>{formatNumber(selectedItem.portfolio.statusCounts.ATTENTION)}</strong></span>
+                    <span><i className="is-inactive" />Inativos <strong>{formatNumber(selectedItem.portfolio.statusCounts.INACTIVE)}</strong></span>
+                  </div>
+                  <p className="attendant-section-note">
+                    {formatNumber(selectedItem.portfolio.statusCounts.ATTENTION + selectedItem.portfolio.statusCounts.INACTIVE)} clientes têm oportunidade de reativação.
+                  </p>
+                </article>
+              </section>
+
               <section className="attendants-split attendants-communication">
                 <article className="attendant-section">
                   <div className="attendant-section-heading">

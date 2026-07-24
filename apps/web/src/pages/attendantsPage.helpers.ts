@@ -56,7 +56,7 @@ export function chartMetricLabel(metric: AttendantChartMetric) {
   }
 
   if (metric === "pieces") {
-    return "Pecas";
+    return "Peças";
   }
 
   if (metric === "uniqueCustomers") {
