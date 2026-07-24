@@ -195,6 +195,8 @@ describe("whatsapp conversation isolation", () => {
     expect(sql).not.toContain("FROM whatsapp_monitor_messages");
     expect(sql).toContain("FROM message_events me");
     expect(sql).toContain("0::int AS conversation_count");
+    expect(sql).toContain("lili assistente");
+    expect(sql).toContain("NOT");
     expect(agents[0]).toEqual(expect.objectContaining({
       id: "instance-amanda",
       conversationCount: 0,
@@ -1196,7 +1198,25 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("paginates conversation list by deal activity before hydrating rows", async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [] });
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "deal-1",
+          sort_last_activity_at: "2026-07-24T12:00:00.000Z",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "deal-1",
+          title: "Cliente",
+          whatsapp_jid: "5511999999999@s.whatsapp.net",
+          last_message_at: "2026-07-24T12:00:00.000Z",
+          event_count: 1,
+          inbound_count: 1,
+          unread_after_read: 0,
+          marked_unread: false,
+        }],
+      });
 
     const result = await listWhatsappMonitorConversations({
       id: "admin-1",
@@ -1212,16 +1232,25 @@ describe("whatsapp conversation isolation", () => {
 
     expect(listSql).toContain("WITH candidate_deals");
     expect(listSql).toContain("COALESCE(d.last_activity_at, d.created_at) >= NOW() - (90 * INTERVAL '1 day')");
+    expect(listSql).toContain("hidden_monitor_instance");
+    expect(listSql).toContain("lili assistente");
     // Ordering is by the effective last-message time (deal field OR newest flat
     // message), so the list order matches the timestamp shown on each row.
     expect(listSql).toContain("GREATEST(COALESCE(d.last_activity_at, d.created_at), COALESCE(last_monitor_ts.ts, to_timestamp(0)))");
     expect(listSql).toContain("ORDER BY sort_last_activity_at DESC, id DESC");
-    expect(listSql).toContain("WHERE d.id IN (SELECT id FROM candidate_deals)");
-    expect(listSql).toContain("latest_whatsapp.direction = 'INBOUND'");
-    expect(listSql).not.toContain("incoming_profile.sender_profile_picture_url");
-    expect(listSql).not.toContain("incoming_profile.sender_name");
+    expect(listSql).toContain("SELECT id, sort_last_activity_at");
+    expect(listSql).not.toContain("latest_whatsapp.direction = 'INBOUND'");
     expect(listSql).not.toContain("DISTINCT ON");
     expect(listParams).toEqual(["admin-1", 26]);
+    const hydrateCall = mocks.query.mock.calls.find(call => String(call[0]).includes("d.id = ANY"));
+    expect(hydrateCall).toBeDefined();
+    const hydrateSql = String(hydrateCall![0]);
+    expect(hydrateSql).toContain("d.id = ANY($2::uuid[])");
+    expect(hydrateSql).toContain("latest_whatsapp.direction = 'INBOUND'");
+    expect(hydrateSql).not.toContain("incoming_profile.sender_profile_picture_url");
+    expect(hydrateSql).not.toContain("incoming_profile.sender_name");
+    expect(hydrateCall![1]).toEqual(["admin-1", ["deal-1"]]);
+    expect(result.conversations).toHaveLength(1);
     expect(result.pageInfo).toEqual({
       hasNextPage: false,
       nextCursor: null,
@@ -1519,7 +1548,14 @@ describe("whatsapp conversation isolation", () => {
   });
 
   it("hydrates group display names from incoming messages before stale numeric chat profiles", async () => {
-    mocks.query.mockResolvedValueOnce({ rows: [] });
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "deal-group",
+          sort_last_activity_at: "2026-07-24T12:00:00.000Z",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
 
     await listWhatsappMonitorConversations({
       id: "admin-1",
@@ -1528,7 +1564,7 @@ describe("whatsapp conversation isolation", () => {
       role: "ADMIN",
     } as any);
 
-    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("WITH candidate_deals"));
+    const listCall = mocks.query.mock.calls.find(call => String(call[0]).includes("d.id = ANY"));
     expect(listCall).toBeDefined();
     const listSql = String(listCall![0]);
     const sourceNameIndex = listSql.indexOf("NULLIF(wg.source_name, '')");
@@ -1608,8 +1644,15 @@ describe("whatsapp conversation isolation", () => {
     // preview from the canonical incoming message by remote_jid (instance
     // agnostic) and (b) every seller row for that group surfaces the same
     // last message after mapping.
-    mocks.query.mockResolvedValueOnce({
-      rows: [
+    mocks.query
+      .mockResolvedValueOnce({
+        rows: [
+          { id: "deal-amanda", sort_last_activity_at: "2026-05-21T12:00:00.000Z" },
+          { id: "deal-pedro", sort_last_activity_at: "2026-05-21T12:00:00.000Z" },
+        ],
+      })
+      .mockResolvedValueOnce({
+        rows: [
         {
           id: "deal-amanda",
           title: "Grupo XP Cliente",
@@ -1644,8 +1687,8 @@ describe("whatsapp conversation isolation", () => {
           unread_after_read: 0,
           marked_unread: false,
         },
-      ],
-    });
+        ],
+      });
 
     const result = await listWhatsappMonitorConversations({
       id: "admin-1",

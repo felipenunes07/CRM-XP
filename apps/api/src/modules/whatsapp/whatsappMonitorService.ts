@@ -76,6 +76,7 @@ const WHATSAPP_MONITOR_CONVERSATION_MAX_LIMIT = 100;
 const WHATSAPP_MONITOR_MESSAGE_LIMIT = 20;
 const WHATSAPP_MONITOR_MESSAGE_MAX_LIMIT = 100;
 const WHATSAPP_ACTIVITY_REPORT_CACHE_VERSION = "v2";
+const WHATSAPP_MONITOR_HIDDEN_INSTANCE_LABELS = ["lili assistente"];
 
 const whatsappMonitorAgentCache = new Map<string, { expiresAt: number; agents: WhatsappMonitorAgent[] }>();
 const whatsappMonitorAgentInFlight = new Map<string, Promise<WhatsappMonitorAgent[]>>();
@@ -726,6 +727,46 @@ function monitorableWhatsappJidSql(expression: string) {
   `;
 }
 
+function hiddenWhatsappMonitorInstanceSql(instanceAlias: string) {
+  const hiddenLabels = WHATSAPP_MONITOR_HIDDEN_INSTANCE_LABELS
+    .map((label) => `'${label.replace(/'/g, "''")}'`)
+    .join(", ");
+
+  return `
+    (
+      LOWER(TRIM(COALESCE(${instanceAlias}.display_label, ''))) IN (${hiddenLabels})
+      OR LOWER(TRIM(COALESCE(${instanceAlias}.assigned_user_name, ''))) IN (${hiddenLabels})
+      OR LOWER(TRIM(COALESCE(${instanceAlias}.instance_name, ''))) IN (${hiddenLabels})
+    )
+  `;
+}
+
+function hiddenWhatsappMonitorConversationSql() {
+  return `
+    NOT (
+      d.whatsapp_jid NOT LIKE '%@g.us'
+      AND EXISTS (
+        SELECT 1
+        FROM whatsapp_instances hidden_monitor_instance
+        WHERE ${hiddenWhatsappMonitorInstanceSql("hidden_monitor_instance")}
+          AND (
+            d.whatsapp_instance_id = hidden_monitor_instance.id
+            OR (
+              d.whatsapp_instance_id IS NULL
+              AND EXISTS (
+                SELECT 1
+                FROM whatsapp_monitor_messages hidden_monitor_message
+                WHERE hidden_monitor_message.deal_id = d.id
+                  AND LOWER(COALESCE(hidden_monitor_message.instance_name, '')) =
+                      LOWER(COALESCE(hidden_monitor_instance.instance_name, ''))
+              )
+            )
+          )
+      )
+    )
+  `;
+}
+
 function isoDate(value: unknown, fallback = new Date()) {
   return new Date(String(value ?? fallback.toISOString())).toISOString();
 }
@@ -1037,34 +1078,55 @@ export function classifyWhatsappReportConversation(input: {
 function conversationProfileJoinSql() {
   const conversationInstance = "COALESCE(selected_filter_instance.instance_name, wi.instance_name, latest_whatsapp.instance_name, latest_whatsapp.media_json ->> 'instance', '')";
   const canonicalJid = "COALESCE(conversation_alias.canonical_jid, d.whatsapp_jid)";
-  const profileJidMatch = (alias: string) => `
+  const instanceScope = (alias: string) => `
     (
-      ${alias}.remote_jid = d.whatsapp_jid
-      OR ${alias}.remote_jid = ${canonicalJid}
-      OR EXISTS (
-        SELECT 1
-        FROM whatsapp_jid_aliases wja_profile
-        WHERE LOWER(wja_profile.instance_name) = LOWER(${conversationInstance})
-          AND wja_profile.canonical_jid = ${canonicalJid}
-          AND wja_profile.alias_jid = ${alias}.remote_jid
-      )
+      ${alias}.instance_name = ${conversationInstance}
+      OR ${alias}.instance_name = ''
+      OR d.whatsapp_jid LIKE '%@g.us'
     )
   `;
 
   return `
     LEFT JOIN LATERAL (
-      SELECT wcp.display_name, wcp.profile_picture_url, wcp.cached_picture_url, wcp.cached_source_url
-      FROM whatsapp_chat_profiles wcp
-      WHERE ${profileJidMatch("wcp")}
-        AND (
-          wcp.instance_name = ${conversationInstance}
-          OR wcp.instance_name = ''
-          OR d.whatsapp_jid LIKE '%@g.us'
-        )
+      SELECT
+        profile_candidate.display_name,
+        profile_candidate.profile_picture_url,
+        profile_candidate.cached_picture_url,
+        profile_candidate.cached_source_url
+      FROM (
+        -- Each branch is an indexed remote_jid lookup. The previous OR +
+        -- correlated EXISTS forced a full whatsapp_chat_profiles scan for every
+        -- conversation row and inflated the plan cost enough to trigger ~1s of
+        -- PostgreSQL JIT compilation on a 25-row page.
+        SELECT wcp.*, 0 AS jid_priority
+        FROM whatsapp_chat_profiles wcp
+        WHERE wcp.remote_jid = ${canonicalJid}
+          AND ${instanceScope("wcp")}
+
+        UNION ALL
+
+        SELECT wcp.*, 1 AS jid_priority
+        FROM whatsapp_chat_profiles wcp
+        WHERE wcp.remote_jid = d.whatsapp_jid
+          AND d.whatsapp_jid IS DISTINCT FROM ${canonicalJid}
+          AND ${instanceScope("wcp")}
+
+        UNION ALL
+
+        SELECT wcp.*, 2 AS jid_priority
+        FROM whatsapp_jid_aliases wja_profile
+        JOIN whatsapp_chat_profiles wcp
+          ON wcp.remote_jid = wja_profile.alias_jid
+        WHERE LOWER(wja_profile.instance_name) = LOWER(${conversationInstance})
+          AND wja_profile.canonical_jid = ${canonicalJid}
+          AND wja_profile.alias_jid IS DISTINCT FROM ${canonicalJid}
+          AND wja_profile.alias_jid IS DISTINCT FROM d.whatsapp_jid
+          AND ${instanceScope("wcp")}
+      ) profile_candidate
       ORDER BY
-        CASE WHEN wcp.remote_jid = ${canonicalJid} THEN 0 ELSE 1 END,
-        CASE WHEN wcp.instance_name = ${conversationInstance} THEN 0 ELSE 1 END,
-        wcp.updated_at DESC
+        profile_candidate.jid_priority,
+        CASE WHEN profile_candidate.instance_name = ${conversationInstance} THEN 0 ELSE 1 END,
+        profile_candidate.updated_at DESC
       LIMIT 1
     ) chat_profile ON true
     -- PERF: these two profile LATERALs used to scan the 153k-row
@@ -1296,7 +1358,7 @@ async function queryWhatsappMonitorAgents(
   includeStats: boolean,
 ): Promise<WhatsappMonitorAgent[]> {
   const params: unknown[] = [];
-  const where: string[] = [];
+  const where: string[] = [`NOT ${hiddenWhatsappMonitorInstanceSql("wi")}`];
 
   if (user?.role === "SELLER") {
     params.push(user.id, user.name);
@@ -1485,6 +1547,7 @@ async function queryWhatsappMonitorConversations(
   const params: unknown[] = [];
   const where: string[] = [
     monitorableWhatsappJidSql("d.whatsapp_jid"),
+    hiddenWhatsappMonitorConversationSql(),
     `
       COALESCE(d.last_activity_at, d.created_at) >= NOW() - (${WHATSAPP_MONITOR_HISTORY_DAYS} * INTERVAL '1 day')
     `,
@@ -1691,7 +1754,7 @@ async function queryWhatsappMonitorConversations(
   params.push(queryLimit);
   const queryLimitParamIndex = params.length;
 
-  const conversationsResult = await pool.query(
+  const candidateDealsResult = await pool.query(
     `
     WITH candidate_deals AS (
       SELECT id, sort_last_activity_at
@@ -1740,18 +1803,59 @@ async function queryWhatsappMonitorConversations(
       ORDER BY sort_last_activity_at DESC, id DESC
       LIMIT $${queryLimitParamIndex}
     )
-    SELECT conversation_rows.*, candidate_deals.sort_last_activity_at AS effective_sort_at
-    FROM (
-      ${conversationBaseSelectSql(userIdParamIndex, scopedInstanceIdParamIndex)}
-      WHERE d.id IN (SELECT id FROM candidate_deals)
-    ) conversation_rows
-    JOIN candidate_deals ON candidate_deals.id = conversation_rows.id
-    ORDER BY candidate_deals.sort_last_activity_at DESC, conversation_rows.id DESC
+    SELECT id, sort_last_activity_at
+    FROM candidate_deals
+    ORDER BY sort_last_activity_at DESC, id DESC
     `,
     params,
   );
 
-  const rows = conversationsResult.rows;
+  const candidateRows = candidateDealsResult.rows;
+  const candidateIds = candidateRows.map((row) => String(row.id));
+  if (!candidateIds.length) {
+    return {
+      conversations: [],
+      pageInfo: {
+        hasNextPage: false,
+        nextCursor: null,
+        limit,
+      },
+    };
+  }
+
+  // Hydrate only the selected page. Keeping this separate from candidate_deals
+  // is intentional: when both lived in one query, PostgreSQL estimated the CTE
+  // as one row and chose a nested-loop plan that hydrated all ~2.5k deals once
+  // per candidate (62k+ executions for a 25-row page). Passing the IDs as an
+  // array makes the primary-key restriction explicit and stable even on a cold
+  // database cache.
+  const hydrationParams: unknown[] = [user.id];
+  const hydrationUserIdParamIndex = hydrationParams.length;
+  let hydrationInstanceIdParamIndex: number | undefined;
+  if (scopedInstanceIdParamIndex && filters.instanceId) {
+    hydrationParams.push(filters.instanceId);
+    hydrationInstanceIdParamIndex = hydrationParams.length;
+  }
+  hydrationParams.push(candidateIds);
+  const candidateIdsParamIndex = hydrationParams.length;
+
+  const conversationsResult = await pool.query(
+    `
+    ${conversationBaseSelectSql(hydrationUserIdParamIndex, hydrationInstanceIdParamIndex)}
+    WHERE d.id = ANY($${candidateIdsParamIndex}::uuid[])
+    `,
+    hydrationParams,
+  );
+
+  const hydratedRowsById = new Map(
+    conversationsResult.rows.map((row) => [String(row.id), row]),
+  );
+  const rows = candidateRows.flatMap((candidate) => {
+    const row = hydratedRowsById.get(String(candidate.id));
+    return row
+      ? [{ ...row, effective_sort_at: candidate.sort_last_activity_at }]
+      : [];
+  });
   const pageRows = rows.slice(0, limit);
   const lastRow = pageRows.at(-1);
   const nextCursor = lastRow

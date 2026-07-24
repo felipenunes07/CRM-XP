@@ -1404,7 +1404,10 @@ export function MessagesPage() {
   }
 
   if (showInitialLoader) {
-    const isFetching = agentsQuery.isLoading || conversationsQuery.isLoading;
+    // The conversation list is the only data needed to reveal the page shell.
+    // Agent health can finish independently without holding the whole screen at
+    // 98% when that secondary request is slower or being refreshed.
+    const isFetching = conversationsQuery.isLoading;
     return (
       <PhoneLoadingScreen
         isLoading={isFetching}
