@@ -8673,6 +8673,54 @@ button.attendants-ranking-row:hover {
 .attendant-chart-tooltip-row.is-down .attendant-chart-gauge { color: #c74745 !important; }
 .attendant-chart-tooltip-row.is-stable .attendant-chart-gauge { color: #6e7a90 !important; }
 
+.attendant-chart-tooltip:not(.is-single) {
+  width: min(540px, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-tooltip-row {
+  grid-template-columns: 90px minmax(0, 1fr) !important;
+  gap: 0.65rem !important;
+  align-items: center;
+  min-width: 0;
+  margin-top: 0;
+  padding: 0.55rem 0;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-comparison {
+  grid-template-columns: minmax(82px, 1fr) 92px minmax(82px, 1fr);
+  gap: 0.55rem !important;
+  margin-top: 0;
+  padding: 0.55rem 0.7rem;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-comparison small {
+  font-size: 0.56rem;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-comparison strong {
+  font-size: 0.82rem;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-gauge svg {
+  width: 76px;
+  height: 42px;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-gauge path {
+  stroke-width: 9;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-gauge b {
+  margin-top: -0.8rem;
+  font-size: 0.78rem;
+}
+
+.attendant-chart-tooltip:not(.is-single) .attendant-chart-gauge small {
+  margin-top: 0.05rem;
+  font-size: 0.48rem;
+}
+
 .attendant-lost-customer-list {
   display: grid !important;
   gap: 0.65rem !important;
@@ -26218,7 +26266,7 @@ input[type="number"] {
 
 .attendant-trend-chart {
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .attendant-heatmap {
