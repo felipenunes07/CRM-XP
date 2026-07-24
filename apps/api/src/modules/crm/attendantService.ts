@@ -283,7 +283,7 @@ async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
       ),
       candidates AS (
         SELECT
-          COALESCE(focused.name, NULLIF(BTRIM(wi.assigned_user_name), '')) AS attendant,
+          focused.name AS attendant,
           wi.instance_name,
           wi.display_label,
           wi.phone_number,
@@ -300,10 +300,7 @@ async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
           LIMIT 1
         ) focused ON true
         WHERE UPPER(COALESCE(wi.status, 'ACTIVE')) = 'ACTIVE'
-          AND (
-            NULLIF(BTRIM(wi.assigned_user_name), '') IS NOT NULL
-            OR focused.name IS NOT NULL
-          )
+          AND focused.name IS NOT NULL
       )
       SELECT DISTINCT ON (LOWER(attendant))
         attendant,
