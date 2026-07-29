@@ -1942,9 +1942,22 @@ export function buildInventorySeriesByModel(
   >();
 
   for (const [modelKey, pointMap] of rawSeriesByModel.entries()) {
+    let estimatedStockUnits: number | null = null;
+    let estimatedActiveSkuCount: number | null = null;
     const normalizedPoints = [...pointMap.values()]
       .sort((left, right) => left.date.localeCompare(right.date))
       .map((point) => {
+        const stockIsEstimated = !point.hasSnapshot && estimatedStockUnits !== null;
+        if (point.hasSnapshot) {
+          estimatedStockUnits = point.stockUnits;
+          estimatedActiveSkuCount = point.activeSkuCount;
+        } else if (estimatedStockUnits !== null) {
+          // Between spreadsheet readings, keep the curve continuous by reconciling
+          // known sales against the last measured balance. The next snapshot resets
+          // this estimate to the actual spreadsheet value.
+          estimatedStockUnits = Math.max(0, estimatedStockUnits - point.salesUnits);
+        }
+
         const overviewPoint = overviewSeriesMap.get(point.date) ?? {
           date: point.date,
           totalStockUnits: 0,
@@ -2003,8 +2016,9 @@ export function buildInventorySeriesByModel(
           activeModelCount: 0,
           salesUnits: point.salesUnits,
           restockUnits: point.restockUnits,
-          stockUnits: point.hasSnapshot ? point.stockUnits : null,
-          activeSkuCount: point.hasSnapshot ? point.activeSkuCount : null,
+          stockUnits: estimatedStockUnits,
+          ...(stockIsEstimated ? { stockIsEstimated: true } : {}),
+          activeSkuCount: estimatedActiveSkuCount,
         } satisfies InventoryDailySeriesPoint;
       });
 

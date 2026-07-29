@@ -1050,6 +1050,7 @@ export interface InventoryDailySeriesPoint {
   restockUnitsDoc?: number;
   restockUnitsBattery?: number;
   stockUnits: number | null;
+  stockIsEstimated?: boolean;
   activeSkuCount: number | null;
   activeSkuCountTela?: number | null;
   activeSkuCountDoc?: number | null;

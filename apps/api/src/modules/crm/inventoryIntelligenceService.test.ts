@@ -141,6 +141,27 @@ describe("buildInventorySeriesByModel", () => {
     });
   });
 
+  it("keeps the stock curve continuous between spreadsheet snapshots", () => {
+    const { seriesByModel } = buildInventorySeriesByModel(
+      new Map([["SKU-1", "TELA::SKU-1"]]),
+      [
+        { date: "2026-04-21", sku: "SKU-1", stockQuantity: 100 },
+        { date: "2026-04-24", sku: "SKU-1", stockQuantity: 91 },
+      ],
+      [
+        { date: "2026-04-22", sku: "SKU-1", salesUnits: 4 },
+        { date: "2026-04-23", sku: "SKU-1", salesUnits: 5 },
+      ],
+    );
+
+    expect(seriesByModel.get("TELA::SKU-1")).toEqual([
+      expect.objectContaining({ date: "2026-04-21", stockUnits: 100 }),
+      expect.objectContaining({ date: "2026-04-22", stockUnits: 96, stockIsEstimated: true }),
+      expect.objectContaining({ date: "2026-04-23", stockUnits: 91, stockIsEstimated: true }),
+      expect.objectContaining({ date: "2026-04-24", stockUnits: 91 }),
+    ]);
+  });
+
   it("counts a sku first seen after the historical baseline as a stock entry", () => {
     const { overviewSeries, seriesByModel } = buildInventorySeriesByModel(
       new Map([

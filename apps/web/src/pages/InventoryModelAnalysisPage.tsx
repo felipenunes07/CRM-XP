@@ -8,12 +8,18 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowUpRight,
+  Boxes,
+  Gauge,
   MessageCircle,
+  PackagePlus,
   Phone,
   Search,
+  ShoppingBag,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
-import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -150,47 +156,313 @@ function formatCompactNumber(value: number) {
   }).format(value);
 }
 
-function ModelSalesHistoryChart({ series }: { series: InventoryDailySeriesPoint[] }) {
+type HistoryRange = 30 | 90 | "all";
+
+interface ModelHistoryChartPoint extends InventoryDailySeriesPoint {
+  measuredStockUnits: number | null;
+  sales7Average: number;
+}
+
+interface ModelHistoryAnalysis {
+  points: ModelHistoryChartPoint[];
+  averageDailySales: number;
+  currentStock: number | null;
+  estimatedPointCount: number;
+  measuredPointCount: number;
+  previous7Sales: number;
+  last7Sales: number;
+  salesTrendPercent: number | null;
+  stockChange: number | null;
+  totalRestock: number;
+  totalSales: number;
+}
+
+export function buildModelHistoryAnalysis(
+  series: InventoryDailySeriesPoint[],
+  range: HistoryRange,
+): ModelHistoryAnalysis {
+  const startIndex = range === "all" ? 0 : Math.max(0, series.length - range);
+  const visibleSeries = series.slice(startIndex);
+  const points = visibleSeries.map((point, visibleIndex) => {
+    const globalIndex = startIndex + visibleIndex;
+    const rollingWindow = series.slice(Math.max(0, globalIndex - 6), globalIndex + 1);
+    const rollingSales = rollingWindow.reduce((total, item) => total + item.salesUnits, 0);
+
+    return {
+      ...point,
+      measuredStockUnits: point.stockIsEstimated ? null : point.stockUnits,
+      sales7Average: rollingWindow.length ? rollingSales / rollingWindow.length : 0,
+    };
+  });
+  const stockPoints = points.filter(
+    (point): point is ModelHistoryChartPoint & { stockUnits: number } => point.stockUnits !== null,
+  );
+  const totalSales = points.reduce((total, point) => total + point.salesUnits, 0);
+  const totalRestock = points.reduce((total, point) => total + point.restockUnits, 0);
+  const last7Sales = points.slice(-7).reduce((total, point) => total + point.salesUnits, 0);
+  const previous7Sales = points.slice(-14, -7).reduce((total, point) => total + point.salesUnits, 0);
+  const firstStockPoint = stockPoints[0];
+  const lastStockPoint = stockPoints.at(-1);
+  const salesTrendPercent = previous7Sales > 0
+    ? ((last7Sales - previous7Sales) / previous7Sales) * 100
+    : last7Sales > 0
+      ? 100
+      : null;
+
+  return {
+    points,
+    averageDailySales: points.length ? totalSales / points.length : 0,
+    currentStock: lastStockPoint?.stockUnits ?? null,
+    estimatedPointCount: points.filter((point) => point.stockIsEstimated).length,
+    measuredPointCount: points.filter((point) => point.stockUnits !== null && !point.stockIsEstimated).length,
+    previous7Sales,
+    last7Sales,
+    salesTrendPercent,
+    stockChange: firstStockPoint && lastStockPoint && firstStockPoint !== lastStockPoint
+      ? lastStockPoint.stockUnits - firstStockPoint.stockUnits
+      : null,
+    totalRestock,
+    totalSales,
+  };
+}
+
+function ModelHistoryTooltip({
+  active,
+  label,
+  payload,
+}: {
+  active?: boolean;
+  label?: string;
+  payload?: Array<{
+    dataKey?: string;
+    payload?: ModelHistoryChartPoint;
+    value?: number | null;
+  }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+
   return (
-    <div className="model-history-chart" aria-label="Histórico diário de estoque e vendas">
-      <ResponsiveContainer width="100%" height={300}>
-        <ComposedChart data={series}>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.11)" />
-          <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 11 }} />
-          <YAxis
-            yAxisId="stock"
-            tickFormatter={(value) => formatCompactNumber(Number(value))}
-            tick={{ fontSize: 11 }}
-          />
-          <YAxis
-            yAxisId="sales"
-            orientation="right"
-            tickFormatter={(value) => formatCompactNumber(Number(value))}
-            tick={{ fontSize: 11 }}
-          />
-          <Tooltip
-            labelFormatter={(value) => formatDate(String(value))}
-            formatter={(value, name) => [formatNumber(Number(value ?? 0)), String(name)]}
-          />
-          <Line
-            dataKey="stockUnits"
-            dot={false}
-            name="Estoque"
-            stroke="#2956d7"
-            strokeWidth={2.5}
-            type="monotone"
-            yAxisId="stock"
-          />
-          <Bar
-            dataKey="salesUnits"
-            fill="#d09a29"
-            maxBarSize={15}
-            name="Vendas"
-            radius={[6, 6, 0, 0]}
-            yAxisId="sales"
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div className="model-history-tooltip">
+      <strong>{formatDate(label ?? point.date)}</strong>
+      <div><span>Saldo</span><b>{point.stockUnits === null ? "Sem leitura" : `${formatNumber(point.stockUnits)} peças`}</b></div>
+      <div><span>Vendas</span><b>{formatNumber(point.salesUnits)} peças</b></div>
+      <div><span>Entradas</span><b>{formatNumber(point.restockUnits)} peças</b></div>
+      <div><span>Média móvel 7d</span><b>{formatMonthlyAverage(point.sales7Average)} peças/dia</b></div>
+      <small>
+        {point.stockIsEstimated
+          ? "Saldo estimado pelas movimentações desde a última leitura da planilha."
+          : "Saldo confirmado pela leitura da planilha."}
+      </small>
+    </div>
+  );
+}
+
+function ModelSalesHistoryChart({
+  coverageDays,
+  series,
+}: {
+  coverageDays: number | null;
+  series: InventoryDailySeriesPoint[];
+}) {
+  const [range, setRange] = useState<HistoryRange>(90);
+  const analysis = useMemo(() => buildModelHistoryAnalysis(series, range), [range, series]);
+  const confidenceBase = analysis.measuredPointCount + analysis.estimatedPointCount;
+  const measuredShare = confidenceBase ? (analysis.measuredPointCount / confidenceBase) * 100 : 0;
+  const trendIsUp = (analysis.salesTrendPercent ?? 0) >= 0;
+  const TrendIcon = trendIsUp ? TrendingUp : TrendingDown;
+  const coverageTone = coverageDays === null
+    ? "neutral"
+    : coverageDays < 15
+      ? "danger"
+      : coverageDays > 90
+        ? "warning"
+        : "success";
+  const coverageMessage = coverageDays === null
+    ? "Ainda não há ritmo de venda suficiente para calcular a cobertura."
+    : coverageDays < 15
+      ? "Risco de ruptura: priorize reposição para não perder vendas."
+      : coverageDays > 90
+        ? "Estoque alto para o ritmo atual: acelere ofertas antes de comprar mais."
+        : "Cobertura equilibrada para o ritmo de venda observado.";
+
+  return (
+    <div className="model-history-visual">
+      <div className="model-history-range" aria-label="Período do histórico">
+        {([
+          [30, "30 dias"],
+          [90, "90 dias"],
+          ["all", "Todo histórico"],
+        ] as const).map(([value, label]) => (
+          <button
+            className={range === value ? "active" : ""}
+            key={value}
+            onClick={() => setRange(value)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="model-history-chart-kpis" aria-label="Resumo do período selecionado">
+        <div>
+          <span className="model-history-kpi-icon blue"><Boxes size={17} /></span>
+          <span>Saldo atual<strong>{analysis.currentStock === null ? "Sem leitura" : formatNumber(analysis.currentStock)}</strong></span>
+        </div>
+        <div>
+          <span className="model-history-kpi-icon gold"><ShoppingBag size={17} /></span>
+          <span>Vendidos no período<strong>{formatNumber(analysis.totalSales)}</strong></span>
+        </div>
+        <div>
+          <span className="model-history-kpi-icon green"><PackagePlus size={17} /></span>
+          <span>Entradas identificadas<strong>{formatNumber(analysis.totalRestock)}</strong></span>
+        </div>
+        <div>
+          <span className="model-history-kpi-icon violet"><Gauge size={17} /></span>
+          <span>Média por dia<strong>{formatMonthlyAverage(analysis.averageDailySales)}</strong></span>
+        </div>
+        <div>
+          <span className={`model-history-kpi-icon ${analysis.stockChange !== null && analysis.stockChange < 0 ? "red" : "blue"}`}>
+            {analysis.stockChange !== null && analysis.stockChange < 0 ? <TrendingDown size={17} /> : <TrendingUp size={17} />}
+          </span>
+          <span>Variação do saldo<strong>{analysis.stockChange === null ? "Sem base" : `${analysis.stockChange > 0 ? "+" : ""}${formatNumber(analysis.stockChange)}`}</strong></span>
+        </div>
+      </div>
+
+      <div className="model-history-chart" aria-label="Histórico diário de saldo, entradas e vendas">
+        <ResponsiveContainer width="100%" height={360}>
+          <ComposedChart data={analysis.points} margin={{ bottom: 4, left: 4, right: 8, top: 12 }}>
+            <defs>
+              <linearGradient id="modelStockArea" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#2956d7" stopOpacity={0.2} />
+                <stop offset="100%" stopColor="#2956d7" stopOpacity={0.015} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.11)" />
+            <XAxis
+              dataKey="date"
+              minTickGap={28}
+              tickFormatter={formatShortDate}
+              tick={{ fill: "#64748b", fontSize: 10 }}
+              tickLine={false}
+            />
+            <YAxis
+              yAxisId="stock"
+              tickFormatter={(value) => formatCompactNumber(Number(value))}
+              tick={{ fill: "#64748b", fontSize: 10 }}
+              tickLine={false}
+              width={48}
+            />
+            <YAxis
+              yAxisId="activity"
+              orientation="right"
+              tickFormatter={(value) => formatCompactNumber(Number(value))}
+              tick={{ fill: "#64748b", fontSize: 10 }}
+              tickLine={false}
+              width={48}
+            />
+            <Tooltip content={<ModelHistoryTooltip />} />
+            <Area
+              connectNulls
+              dataKey="stockUnits"
+              fill="url(#modelStockArea)"
+              name="Saldo"
+              stroke="#2956d7"
+              strokeWidth={2.5}
+              type="stepAfter"
+              yAxisId="stock"
+            />
+            <Bar
+              dataKey="salesUnits"
+              fill="#d99a22"
+              maxBarSize={12}
+              name="Vendas"
+              radius={[4, 4, 0, 0]}
+              yAxisId="activity"
+            />
+            <Bar
+              dataKey="restockUnits"
+              fill="#28a06a"
+              maxBarSize={12}
+              name="Entradas"
+              radius={[4, 4, 0, 0]}
+              yAxisId="activity"
+            />
+            <Line
+              dataKey="sales7Average"
+              dot={false}
+              name="Média móvel 7d"
+              stroke="#7c5ce7"
+              strokeDasharray="5 4"
+              strokeWidth={2}
+              type="monotone"
+              yAxisId="activity"
+            />
+            <Scatter
+              dataKey="measuredStockUnits"
+              fill="#ffffff"
+              line={false}
+              name="Saldo confirmado"
+              shape="circle"
+              stroke="#2956d7"
+              strokeWidth={2}
+              yAxisId="stock"
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="model-history-chart-legend" aria-label="Legenda do gráfico">
+        <span><i className="area" /> Saldo contínuo</span>
+        <span><i className="dot" /> Saldo confirmado</span>
+        <span><i className="sales" /> Vendas</span>
+        <span><i className="restock" /> Entradas</span>
+        <span><i className="average" /> Média móvel 7d</span>
+      </div>
+
+      <div className="model-history-insight-grid">
+        <article>
+          <span className={`model-history-insight-icon ${trendIsUp ? "success" : "danger"}`}><TrendIcon size={18} /></span>
+          <div>
+            <span>Velocidade de venda</span>
+            <strong>
+              {analysis.salesTrendPercent === null
+                ? "Sem comparação"
+                : `${trendIsUp ? "+" : ""}${formatMonthlyAverage(analysis.salesTrendPercent)}%`}
+            </strong>
+            <p>
+              {formatNumber(analysis.last7Sales)} peças nos últimos 7 dias contra{" "}
+              {formatNumber(analysis.previous7Sales)} nos 7 dias anteriores.
+            </p>
+          </div>
+        </article>
+        <article>
+          <span className={`model-history-insight-icon ${coverageTone}`}><Gauge size={18} /></span>
+          <div>
+            <span>Decisão de estoque</span>
+            <strong>{coverageDays === null ? "Cobertura sem base" : `${formatNumber(coverageDays)} dias de cobertura`}</strong>
+            <p>{coverageMessage}</p>
+          </div>
+        </article>
+        <article>
+          <span className="model-history-insight-icon neutral"><Boxes size={18} /></span>
+          <div>
+            <span>Confiabilidade da curva</span>
+            <strong>{formatMonthlyAverage(measuredShare)}% confirmado</strong>
+            <p>
+              {formatNumber(analysis.measuredPointCount)} leituras da planilha e{" "}
+              {formatNumber(analysis.estimatedPointCount)} saldos estimados entre leituras.
+            </p>
+          </div>
+        </article>
+      </div>
+
+      <p className="model-history-method-note">
+        O saldo azul permanece contínuo porque, entre duas leituras da planilha, o sistema desconta as vendas conhecidas.
+        Os pontos azuis são saldos confirmados; os demais trechos são estimados e uma nova leitura sempre substitui a estimativa.
+      </p>
     </div>
   );
 }
@@ -475,11 +747,11 @@ export function InventoryModelAnalysisContent({
 
         <div className="model-history-chart-section">
           <div>
-            <h3>Estoque x vendas</h3>
-            <p>A linha mostra o saldo disponível; as barras mostram as vendas de cada dia.</p>
+            <h3>Movimento, saldo e velocidade de venda</h3>
+            <p>Compare o saldo, as vendas, as entradas e a tendência para decidir quando repor ou acelerar a saída.</p>
           </div>
           {detail.dailySeries.length ? (
-            <ModelSalesHistoryChart series={detail.dailySeries} />
+            <ModelSalesHistoryChart coverageDays={model.coverageDays} series={detail.dailySeries} />
           ) : (
             <div className="invsales-empty">Ainda não há histórico diário suficiente para este modelo.</div>
           )}

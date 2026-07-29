@@ -2,7 +2,7 @@ import type { InventoryModelDetailResponse } from "@olist-crm/shared";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { InventoryModelAnalysisContent } from "./InventoryModelAnalysisPage";
+import { buildModelHistoryAnalysis, InventoryModelAnalysisContent } from "./InventoryModelAnalysisPage";
 
 const detail: InventoryModelDetailResponse = {
   snapshot: null,
@@ -35,7 +35,36 @@ const detail: InventoryModelDetailResponse = {
     qualityLabels: ["OLED"],
     sampleSkus: ["IP13-OLED"],
   },
-  dailySeries: [],
+  dailySeries: [
+    {
+      date: "2026-07-20",
+      totalStockUnits: 100,
+      activeModelCount: 1,
+      salesUnits: 0,
+      restockUnits: 0,
+      stockUnits: 100,
+      activeSkuCount: 1,
+    },
+    {
+      date: "2026-07-21",
+      totalStockUnits: 96,
+      activeModelCount: 1,
+      salesUnits: 4,
+      restockUnits: 0,
+      stockUnits: 96,
+      stockIsEstimated: true,
+      activeSkuCount: 1,
+    },
+    {
+      date: "2026-07-22",
+      totalStockUnits: 110,
+      activeModelCount: 1,
+      salesUnits: 2,
+      restockUnits: 16,
+      stockUnits: 110,
+      activeSkuCount: 1,
+    },
+  ],
   benchmarks: {
     lowStockAvgSales: null,
     highStockAvgSales: null,
@@ -152,11 +181,28 @@ describe("InventoryModelAnalysisContent", () => {
       </MemoryRouter>,
     );
 
-    expect(markup).toContain("Estoque x vendas");
+    expect(markup).toContain("Movimento, saldo e velocidade de venda");
     expect(markup).toContain("Receita em 12 meses");
+    expect(markup).toContain("Entradas identificadas");
+    expect(markup).toContain("Média móvel 7d");
+    expect(markup).toContain("Saldo confirmado");
+    expect(markup).toContain("saldos estimados entre leituras");
     expect(markup).toContain("O que o histórico mostra");
     expect(markup).toContain("Comparações históricas");
     expect(markup).toContain("Com estoque baixo");
     expect(markup).toContain("Com mais variações");
+  });
+
+  it("keeps estimated stock continuous while preserving confirmed spreadsheet readings", () => {
+    const analysis = buildModelHistoryAnalysis(detail.dailySeries, "all");
+
+    expect(analysis.points).toHaveLength(3);
+    expect(analysis.points[0]?.measuredStockUnits).toBe(100);
+    expect(analysis.points[1]?.stockUnits).toBe(96);
+    expect(analysis.points[1]?.measuredStockUnits).toBeNull();
+    expect(analysis.points[2]?.measuredStockUnits).toBe(110);
+    expect(analysis.totalSales).toBe(6);
+    expect(analysis.totalRestock).toBe(16);
+    expect(analysis.currentStock).toBe(110);
   });
 });
