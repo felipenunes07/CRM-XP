@@ -208,8 +208,18 @@ function cleanInventoryModelLabel(model: string) {
     .trim();
 }
 
-function deriveInventoryProductKind(model: string): InventoryProductKind {
-  return removeDiacritics(normalizeText(model)).toUpperCase().includes("DOC DE CARGA") ? "DOC_DE_CARGA" : "TELA";
+export function deriveInventoryProductKind(model: string): InventoryProductKind {
+  const normalized = removeDiacritics(normalizeText(model)).toUpperCase();
+
+  if (/\b(?:DOC|DOCK)\s+DE\s+CARGA\b/.test(normalized)) {
+    return "DOC_DE_CARGA";
+  }
+
+  if (/\bBATERIA(?:S)?\b/.test(normalized) || /\bBAT(?:TERY|ERIA)?\b/.test(normalized)) {
+    return "BATERIA";
+  }
+
+  return "TELA";
 }
 
 function tokenizeInventoryValue(value: string) {
@@ -1616,7 +1626,7 @@ interface InventoryModelAggregate {
   modelLabel: string;
   brand: string;
   family: string;
-  productKind: "DOC_DE_CARGA" | "TELA";
+  productKind: InventoryProductKind;
   stockUnits: number;
   activeSkuCount: number;
   totalSkuCount: number;
@@ -1759,6 +1769,8 @@ export function buildInventorySeriesByModel(
   historyRows: Pick<InventorySnapshotHistoryRow, "date" | "sku" | "stockQuantity">[],
   salesDailyRows: Pick<InventorySalesDailyRow, "date" | "sku" | "salesUnits">[],
 ) {
+  const firstInventorySnapshotDate =
+    historyRows.map((row) => row.date).sort((left, right) => left.localeCompare(right))[0] ?? null;
   const skuSeriesBySku = new Map<
     string,
     {
@@ -1834,17 +1846,28 @@ export function buildInventorySeriesByModel(
 
   for (const { modelKey, pointMap } of skuSeriesBySku.values()) {
     let previousStockUnits: number | null = null;
+    let salesSincePreviousSnapshot = 0;
     const sortedPoints = [...pointMap.values()].sort((left, right) => left.date.localeCompare(right.date));
 
     for (const point of sortedPoints) {
-      // Restock = snapshot stock increased vs previous snapshot (ignores CRM sales to avoid false positives)
-      const restockUnits =
-        point.hasSnapshot && previousStockUnits !== null
-          ? Math.max(0, point.stockUnits - previousStockUnits)
-          : 0;
+      if (previousStockUnits !== null) {
+        salesSincePreviousSnapshot += point.salesUnits;
+      }
+
+      let restockUnits = 0;
 
       if (point.hasSnapshot) {
+        if (previousStockUnits !== null) {
+          // Inventory reconciliation: ending stock = opening stock + entries - sales.
+          // This detects entries that were partially or fully consumed before the next snapshot.
+          restockUnits = Math.max(0, point.stockUnits - previousStockUnits + salesSincePreviousSnapshot);
+        } else if (firstInventorySnapshotDate && point.date > firstInventorySnapshotDate) {
+          // A SKU first seen after the historical baseline is a new catalog/stock arrival.
+          restockUnits = Math.max(0, point.stockUnits);
+        }
+
         previousStockUnits = point.stockUnits;
+        salesSincePreviousSnapshot = 0;
       }
 
       const modelSeries = rawSeriesByModel.get(modelKey) ?? new Map<string, InventoryModelSeriesValue>();
@@ -1879,12 +1902,20 @@ export function buildInventorySeriesByModel(
       totalStockUnits: number;
       totalStockUnitsTela: number;
       totalStockUnitsDoc: number;
+      totalStockUnitsBattery: number;
       activeModelCount: number;
       activeSkuCount: number;
       activeSkuCountTela: number;
       activeSkuCountDoc: number;
+      activeSkuCountBattery: number;
       salesUnits: number;
+      salesUnitsTela: number;
+      salesUnitsDoc: number;
+      salesUnitsBattery: number;
       restockUnits: number;
+      restockUnitsTela: number;
+      restockUnitsDoc: number;
+      restockUnitsBattery: number;
     }
   >();
 
@@ -1897,15 +1928,33 @@ export function buildInventorySeriesByModel(
           totalStockUnits: 0,
           totalStockUnitsTela: 0,
           totalStockUnitsDoc: 0,
+          totalStockUnitsBattery: 0,
           activeModelCount: 0,
           activeSkuCount: 0,
           activeSkuCountTela: 0,
           activeSkuCountDoc: 0,
+          activeSkuCountBattery: 0,
           salesUnits: 0,
+          salesUnitsTela: 0,
+          salesUnitsDoc: 0,
+          salesUnitsBattery: 0,
           restockUnits: 0,
+          restockUnitsTela: 0,
+          restockUnitsDoc: 0,
+          restockUnitsBattery: 0,
         };
 
         overviewPoint.salesUnits += point.salesUnits;
+        if (modelKey.startsWith("DOC_DE_CARGA::")) {
+          overviewPoint.salesUnitsDoc += point.salesUnits;
+          overviewPoint.restockUnitsDoc += point.restockUnits;
+        } else if (modelKey.startsWith("BATERIA::")) {
+          overviewPoint.salesUnitsBattery += point.salesUnits;
+          overviewPoint.restockUnitsBattery += point.restockUnits;
+        } else {
+          overviewPoint.salesUnitsTela += point.salesUnits;
+          overviewPoint.restockUnitsTela += point.restockUnits;
+        }
 
         if (point.hasSnapshot) {
           overviewPoint.totalStockUnits += point.stockUnits;
@@ -1914,6 +1963,9 @@ export function buildInventorySeriesByModel(
           if (modelKey.startsWith("DOC_DE_CARGA::")) {
             overviewPoint.activeSkuCountDoc += point.activeSkuCount;
             overviewPoint.totalStockUnitsDoc += point.stockUnits;
+          } else if (modelKey.startsWith("BATERIA::")) {
+            overviewPoint.activeSkuCountBattery += point.activeSkuCount;
+            overviewPoint.totalStockUnitsBattery += point.stockUnits;
           } else {
             overviewPoint.activeSkuCountTela += point.activeSkuCount;
             overviewPoint.totalStockUnitsTela += point.stockUnits;
@@ -1947,12 +1999,20 @@ export function buildInventorySeriesByModel(
           totalStockUnits: point.totalStockUnits,
           totalStockUnitsTela: point.totalStockUnitsTela,
           totalStockUnitsDoc: point.totalStockUnitsDoc,
+          totalStockUnitsBattery: point.totalStockUnitsBattery,
           activeModelCount: point.activeModelCount,
           activeSkuCount: point.activeSkuCount,
           activeSkuCountTela: point.activeSkuCountTela,
           activeSkuCountDoc: point.activeSkuCountDoc,
+          activeSkuCountBattery: point.activeSkuCountBattery,
           salesUnits: point.salesUnits,
+          salesUnitsTela: point.salesUnitsTela,
+          salesUnitsDoc: point.salesUnitsDoc,
+          salesUnitsBattery: point.salesUnitsBattery,
           restockUnits: point.restockUnits,
+          restockUnitsTela: point.restockUnitsTela,
+          restockUnitsDoc: point.restockUnitsDoc,
+          restockUnitsBattery: point.restockUnitsBattery,
           stockUnits: null,
         }) satisfies InventoryDailySeriesPoint,
     );
@@ -2719,10 +2779,12 @@ export async function getInventoryOverview(): Promise<InventoryOverviewResponse>
       totalStockUnits: dataset.models.reduce((sum, model) => sum + model.stockUnits, 0),
       totalStockUnitsTela: dataset.models.filter(m => m.productKind === "TELA").reduce((sum, model) => sum + model.stockUnits, 0),
       totalStockUnitsDoc: dataset.models.filter(m => m.productKind === "DOC_DE_CARGA").reduce((sum, model) => sum + model.stockUnits, 0),
+      totalStockUnitsBattery: dataset.models.filter(m => m.productKind === "BATERIA").reduce((sum, model) => sum + model.stockUnits, 0),
       activeModelCount: dataset.models.filter((model) => model.stockUnits > 0).length,
       activeSkuCount: dataset.models.reduce((sum, model) => sum + model.activeSkuCount, 0),
       activeSkuCountTela: dataset.models.filter(m => m.productKind === "TELA").reduce((sum, model) => sum + model.activeSkuCount, 0),
       activeSkuCountDoc: dataset.models.filter(m => m.productKind === "DOC_DE_CARGA").reduce((sum, model) => sum + model.activeSkuCount, 0),
+      activeSkuCountBattery: dataset.models.filter(m => m.productKind === "BATERIA").reduce((sum, model) => sum + model.activeSkuCount, 0),
       sales30: dataset.models.reduce((sum, model) => sum + model.sales30, 0),
       sales90: dataset.models.reduce((sum, model) => sum + model.sales90, 0),
       trappedValue: Number(dataset.models.reduce((sum, model) => sum + model.trappedValue, 0).toFixed(2)),

@@ -26,6 +26,7 @@ import {
 import type {
   ConversationAttentionLevel,
   ConversationInsight,
+  ConversationInsightsListResponse,
   DailyBriefing,
   EventsIntelligenceProgress,
   MessageEvent,
@@ -48,6 +49,11 @@ interface ChatState {
   customerPhone: string;
   jid: string;
   messages: MiniChatMessage[];
+}
+
+interface AckFeedback {
+  kind: "success" | "error";
+  message: string;
 }
 
 const emptyChatState: ChatState = {
@@ -294,6 +300,7 @@ export function EventsPage() {
   const [radarWhatsappOpen, setRadarWhatsappOpen] = useState(false);
   const [radarDetailLevel, setRadarDetailLevel] = useState<RadarWhatsappDetailLevel>("standard");
   const [radarAlertLimit, setRadarAlertLimit] = useState<RadarWhatsappAlertLimit>(5);
+  const [ackFeedback, setAckFeedback] = useState<AckFeedback | null>(null);
   const wasActiveRef = useRef(false);
 
   const period = useMemo(() => ({ dateFrom: dateRange.from, dateTo: dateRange.to }), [dateRange]);
@@ -333,6 +340,12 @@ export function EventsPage() {
     queryClient.invalidateQueries({ queryKey: ["events-conversations"] });
   };
 
+  useEffect(() => {
+    if (!ackFeedback) return;
+    const timeout = window.setTimeout(() => setAckFeedback(null), ackFeedback.kind === "success" ? 6500 : 9000);
+    return () => window.clearTimeout(timeout);
+  }, [ackFeedback]);
+
   // Quando o run termina (ativo → inativo), recarrega os dados na hora.
   useEffect(() => {
     if (progress?.active) {
@@ -360,8 +373,35 @@ export function EventsPage() {
   });
 
   const ackMutation = useMutation({
-    mutationFn: ({ id }: { id: string }) => api.ackConversationInsight(token!, id),
-    onSuccess: invalidateIntelligence,
+    mutationFn: ({ id }: { id: string; chatName: string }) => api.ackConversationInsight(token!, id),
+    onMutate: () => {
+      setAckFeedback(null);
+    },
+    onSuccess: (acknowledged, variables) => {
+      queryClient.setQueriesData<ConversationInsightsListResponse>(
+        { queryKey: ["events-conversations"] },
+        (current) => current
+          ? {
+              ...current,
+              insights: current.insights.map((insight) =>
+                insight.id === acknowledged.id ? acknowledged : insight),
+            }
+          : current,
+      );
+      setAckFeedback({
+        kind: "success",
+        message: `${variables.chatName} foi marcada como vista e saiu do Radar. Se o caso piorar, ela volta automaticamente.`,
+      });
+      invalidateIntelligence();
+    },
+    onError: (error) => {
+      setAckFeedback({
+        kind: "error",
+        message: error instanceof Error
+          ? `Não foi possível marcar como visto: ${error.message}`
+          : "Não foi possível marcar como visto. Tente novamente.",
+      });
+    },
   });
 
   const radarWhatsappPreviewMutation = useMutation({
@@ -507,6 +547,25 @@ export function EventsPage() {
 
   return (
     <div className="wtl-page">
+      {ackFeedback && (
+        <div
+          className={`wtl-ack-toast ${ackFeedback.kind}`}
+          role={ackFeedback.kind === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className="wtl-ack-toast-icon">
+            {ackFeedback.kind === "success" ? <CheckCheck size={18} /> : <AlertTriangle size={18} />}
+          </span>
+          <div>
+            <strong>{ackFeedback.kind === "success" ? "Problema marcado como visto" : "Ação não concluída"}</strong>
+            <span>{ackFeedback.message}</span>
+          </div>
+          <button type="button" aria-label="Fechar aviso" onClick={() => setAckFeedback(null)}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* ── Faixa superior ── */}
       <header className="wtl-band">
         <div className="wtl-band-left">
@@ -913,7 +972,11 @@ export function EventsPage() {
                         )}
                         {insight.topics[0] && <em className="wtl-topic-chip">{insight.topics[0]}</em>}
                         <em className={`wtl-sent ${sentiment.tone}`}>{sentiment.icon}</em>
-                        {insight.acknowledgedAt && <em className="wtl-seen"><CheckCheck size={12} /></em>}
+                        {insight.acknowledgedAt && (
+                          <em className="wtl-seen" title={`Visto em ${formatDateTime(insight.acknowledgedAt)}`}>
+                            <CheckCheck size={12} /> Visto
+                          </em>
+                        )}
                       </span>
                     </span>
                   </button>
@@ -1021,15 +1084,31 @@ export function EventsPage() {
                 <button type="button" className="wtl-btn-whats" onClick={() => openConversation(seedFromInsight(selected))}>
                   <Smartphone size={15} /> Abrir a conversa
                 </button>
-                {!selected.acknowledgedAt && (selected.attentionLevel === "high" || selected.attentionLevel === "critical") && (
+                {selected.acknowledgedAt ? (
+                  <div className="wtl-acknowledged-state" role="status">
+                    <span><CheckCheck size={16} /></span>
+                    <div>
+                      <strong>Problema já visto</strong>
+                      <small>Marcado em {formatDateTime(selected.acknowledgedAt)}. Volta ao Radar somente se piorar.</small>
+                    </div>
+                  </div>
+                ) : (selected.attentionLevel === "high" || selected.attentionLevel === "critical") && (
                   <button
                     type="button"
                     className="wtl-btn-plain"
                     disabled={ackMutation.isPending}
                     title="Tira do radar (volta se a conversa piorar)"
-                    onClick={() => ackMutation.mutate({ id: selected.id })}
+                    onClick={() => ackMutation.mutate({
+                      id: selected.id,
+                      chatName: selected.chatName || "A conversa",
+                    })}
                   >
-                    <CheckCheck size={15} /> Marcar como visto
+                    {ackMutation.isPending && ackMutation.variables?.id === selected.id
+                      ? <Loader2 size={15} className="spin" />
+                      : <CheckCheck size={15} />}
+                    {ackMutation.isPending && ackMutation.variables?.id === selected.id
+                      ? "Marcando..."
+                      : "Marcar como visto"}
                   </button>
                 )}
               </footer>

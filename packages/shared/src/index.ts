@@ -856,7 +856,7 @@ export type InventoryDemandStatus = "NO_SALES" | "COLD" | "WARM" | "HOT";
 export type InventoryQuadrant = "DRIVE_NOW" | "REPLENISH_URGENT" | "MONITOR" | "STALLED";
 export type InventorySellerActionType = "PUSH_STAGNANT" | "ANNOUNCE_ARRIVAL" | "HOLD_BACK";
 export type InventoryCustomerMatchType = "SKU" | "FAMILY";
-export type InventoryProductKind = "DOC_DE_CARGA" | "TELA";
+export type InventoryProductKind = "DOC_DE_CARGA" | "BATERIA" | "TELA";
 
 export interface InventoryDepositInfo {
   id: string | null;
@@ -1039,13 +1039,21 @@ export interface InventoryDailySeriesPoint {
   totalStockUnits: number;
   totalStockUnitsTela?: number;
   totalStockUnitsDoc?: number;
+  totalStockUnitsBattery?: number;
   activeModelCount: number;
   salesUnits: number;
+  salesUnitsTela?: number;
+  salesUnitsDoc?: number;
+  salesUnitsBattery?: number;
   restockUnits: number;
+  restockUnitsTela?: number;
+  restockUnitsDoc?: number;
+  restockUnitsBattery?: number;
   stockUnits: number | null;
   activeSkuCount: number | null;
   activeSkuCountTela?: number | null;
   activeSkuCountDoc?: number | null;
+  activeSkuCountBattery?: number | null;
 }
 
 export interface InventoryOverviewCard {
@@ -1068,10 +1076,12 @@ export interface InventoryOverviewResponse {
     totalStockUnits: number;
     totalStockUnitsTela?: number;
     totalStockUnitsDoc?: number;
+    totalStockUnitsBattery?: number;
     activeModelCount: number;
     activeSkuCount: number;
     activeSkuCountTela?: number;
     activeSkuCountDoc?: number;
+    activeSkuCountBattery?: number;
     sales30: number;
     sales90: number;
     trappedValue: number;

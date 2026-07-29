@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildInventorySeriesByModel,
+  deriveInventoryProductKind,
   mapRestockItem,
   resolveInventoryBuyRecommendation,
   resolveInventoryDemandStatus,
@@ -120,6 +121,61 @@ describe("buildInventorySeriesByModel", () => {
       },
     ]);
     expect(seriesByModel.has("MT E6I")).toBe(false);
+  });
+
+  it("reconciles sales between snapshots so consumed entries are not hidden", () => {
+    const { seriesByModel } = buildInventorySeriesByModel(
+      new Map([["SKU-1", "TELA::SKU-1"]]),
+      [
+        { date: "2026-04-21", sku: "SKU-1", stockQuantity: 10 },
+        { date: "2026-04-22", sku: "SKU-1", stockQuantity: 12 },
+      ],
+      [{ date: "2026-04-22", sku: "SKU-1", salesUnits: 5 }],
+    );
+
+    expect(seriesByModel.get("TELA::SKU-1")?.[1]).toMatchObject({
+      date: "2026-04-22",
+      stockUnits: 12,
+      salesUnits: 5,
+      restockUnits: 7,
+    });
+  });
+
+  it("counts a sku first seen after the historical baseline as a stock entry", () => {
+    const { overviewSeries, seriesByModel } = buildInventorySeriesByModel(
+      new Map([
+        ["SKU-BASE", "TELA::SKU-BASE"],
+        ["BAT-NEW", "BATERIA::BAT-NEW"],
+      ]),
+      [
+        { date: "2026-04-21", sku: "SKU-BASE", stockQuantity: 10 },
+        { date: "2026-04-22", sku: "SKU-BASE", stockQuantity: 10 },
+        { date: "2026-04-22", sku: "BAT-NEW", stockQuantity: 6 },
+      ],
+      [],
+    );
+
+    expect(seriesByModel.get("BATERIA::BAT-NEW")?.[0]).toMatchObject({
+      date: "2026-04-22",
+      stockUnits: 6,
+      restockUnits: 6,
+    });
+    expect(overviewSeries[1]).toMatchObject({
+      totalStockUnitsBattery: 6,
+      activeSkuCountBattery: 1,
+      restockUnitsBattery: 6,
+      restockUnits: 6,
+    });
+  });
+});
+
+describe("deriveInventoryProductKind", () => {
+  it("separates batteries, charging docks and screens", () => {
+    expect(deriveInventoryProductKind("BATERIA IPHONE 13 PREMIUM")).toBe("BATERIA");
+    expect(deriveInventoryProductKind("BAT SAMSUNG A15")).toBe("BATERIA");
+    expect(deriveInventoryProductKind("DOCK DE CARGA IPHONE 12")).toBe("DOC_DE_CARGA");
+    expect(deriveInventoryProductKind("DOC DE CARGA A05")).toBe("DOC_DE_CARGA");
+    expect(deriveInventoryProductKind("TELA IPHONE 15 OLED")).toBe("TELA");
   });
 });
 

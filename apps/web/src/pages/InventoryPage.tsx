@@ -3,6 +3,7 @@ import type {
   InventoryDailySeriesPoint,
   InventoryModelDetailResponse,
   InventoryOverviewCard,
+  InventoryProductKind,
   InventoryRestockListItem,
   InventoryStaleListItem,
 } from "@olist-crm/shared";
@@ -28,13 +29,15 @@ import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Too
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { InventorySalesTab } from "../components/InventorySalesTab";
+import { InventoryScreensTab } from "../components/InventoryScreensTab";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, formatNumber, formatShortDate } from "../lib/format";
 
-type InventoryView = "overview" | "sales" | "buying" | "restock" | "stale" | "models";
+type InventoryView = "overview" | "screens" | "sales" | "buying" | "restock" | "stale" | "models";
 type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" | "hold_sales";
 type RestockWindow = "all" | "today" | "7d" | "30d";
 type StaleFilter = "30_60" | "60_90" | "90_120" | "120plus";
+type InventoryKindFilter = "all" | InventoryProductKind;
 
 const viewTabs = [
   {
@@ -42,6 +45,12 @@ const viewTabs = [
     label: "Resumo",
     helper: "Visao rapida para a chefe bater o olho e entender o que fazer primeiro.",
     title: "Resumo do estoque",
+  },
+  {
+    value: "screens" as const,
+    label: "Telas",
+    helper: "Veja a quantidade disponível de cada tela e filtre rapidamente por marca, modelo ou qualidade.",
+    title: "Estoque de telas",
   },
   {
     value: "sales" as const,
@@ -201,11 +210,27 @@ function staleActionTone(value: InventoryStaleListItem["suggestedAction"]) {
 }
 
 function productKindLabel(value: InventoryStaleListItem["productKind"] | InventoryBuyingListItem["productKind"]) {
-  return value === "DOC_DE_CARGA" ? "DOC de Carga" : "Tela";
+  if (value === "DOC_DE_CARGA") {
+    return "DOC de Carga";
+  }
+
+  if (value === "BATERIA") {
+    return "Bateria";
+  }
+
+  return "Tela";
 }
 
 function productKindTone(value: InventoryStaleListItem["productKind"] | InventoryBuyingListItem["productKind"]) {
-  return value === "DOC_DE_CARGA" ? "warning" : "success";
+  if (value === "DOC_DE_CARGA") {
+    return "warning";
+  }
+
+  if (value === "BATERIA") {
+    return "neutral";
+  }
+
+  return "success";
 }
 
 function matchesBuyingFilter(item: InventoryBuyingListItem, filter: BuyingFilter) {
@@ -288,8 +313,57 @@ function formatSeriesValue(dataKey: string, value: number) {
   return formatNumber(value);
 }
 
-function hasOverviewSnapshotPoint(point: InventoryDailySeriesPoint) {
-  return point.totalStockUnits > 0 || point.activeModelCount > 0;
+const inventoryKindChartConfig = [
+  {
+    value: "TELA" as const,
+    label: "Telas",
+    stockKey: "totalStockUnitsTela" as const,
+    activeSkuKey: "activeSkuCountTela" as const,
+    salesKey: "salesUnitsTela" as const,
+    restockKey: "restockUnitsTela" as const,
+    color: "#2956d7",
+    fill: "rgba(95, 140, 255, 0.18)",
+  },
+  {
+    value: "BATERIA" as const,
+    label: "Baterias",
+    stockKey: "totalStockUnitsBattery" as const,
+    activeSkuKey: "activeSkuCountBattery" as const,
+    salesKey: "salesUnitsBattery" as const,
+    restockKey: "restockUnitsBattery" as const,
+    color: "#2f9d67",
+    fill: "rgba(47, 157, 103, 0.16)",
+  },
+  {
+    value: "DOC_DE_CARGA" as const,
+    label: "DOCs de Carga",
+    stockKey: "totalStockUnitsDoc" as const,
+    activeSkuKey: "activeSkuCountDoc" as const,
+    salesKey: "salesUnitsDoc" as const,
+    restockKey: "restockUnitsDoc" as const,
+    color: "#d09a29",
+    fill: "rgba(208, 154, 41, 0.18)",
+  },
+] as const;
+
+function overviewSeriesValue(
+  point: InventoryDailySeriesPoint,
+  filter: InventoryKindFilter,
+  metric: "stock" | "activeSku" | "sales" | "restock",
+) {
+  if (filter === "all") {
+    if (metric === "stock") return point.totalStockUnits;
+    if (metric === "activeSku") return point.activeSkuCount ?? 0;
+    if (metric === "sales") return point.salesUnits;
+    return point.restockUnits;
+  }
+
+  const config = inventoryKindChartConfig.find((item) => item.value === filter);
+  if (!config) return 0;
+  if (metric === "stock") return Number(point[config.stockKey] ?? 0);
+  if (metric === "activeSku") return Number(point[config.activeSkuKey] ?? 0);
+  if (metric === "sales") return Number(point[config.salesKey] ?? 0);
+  return Number(point[config.restockKey] ?? 0);
 }
 
 function InventoryChartEmptyState({
@@ -337,9 +411,35 @@ function InventoryFocusCard({
   );
 }
 
-function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }) {
-  const stockSeries = series.filter(hasOverviewSnapshotPoint).slice(-60);
-  const salesSeries = series.filter((point) => point.salesUnits > 0 || point.restockUnits > 0).slice(-60);
+function InventoryTrendChart({
+  series,
+  kindFilter,
+}: {
+  series: InventoryDailySeriesPoint[];
+  kindFilter: InventoryKindFilter;
+}) {
+  const visibleKindConfigs =
+    kindFilter === "all"
+      ? inventoryKindChartConfig
+      : inventoryKindChartConfig.filter((config) => config.value === kindFilter);
+  const selectedKindConfig =
+    kindFilter === "all" ? null : inventoryKindChartConfig.find((config) => config.value === kindFilter) ?? null;
+  const salesDataKey = selectedKindConfig?.salesKey ?? "salesUnits";
+  const restockDataKey = selectedKindConfig?.restockKey ?? "restockUnits";
+  const stockSeries = series
+    .filter(
+      (point) =>
+        overviewSeriesValue(point, kindFilter, "stock") > 0 ||
+        overviewSeriesValue(point, kindFilter, "activeSku") > 0,
+    )
+    .slice(-60);
+  const salesSeries = series
+    .filter(
+      (point) =>
+        overviewSeriesValue(point, kindFilter, "sales") > 0 ||
+        overviewSeriesValue(point, kindFilter, "restock") > 0,
+    )
+    .slice(-60);
   const firstSnapshotDate = stockSeries[0]?.date ?? null;
 
   return (
@@ -364,35 +464,27 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
                   labelFormatter={(value) => formatDate(String(value))}
                   formatter={(value, name) => [formatSeriesValue(String(name), Number(value ?? 0)), String(name)]}
                 />
-                <Area
-                  type="monotone"
-                  dataKey="totalStockUnitsTela"
-                  name="Pecas Telas"
-                  stroke="#2956d7"
-                  fill="rgba(95, 140, 255, 0.18)"
-                  strokeWidth={2.4}
-                  dot={stockSeries.length === 1 ? { r: 4, fill: "#2956d7" } : false}
-                  activeDot={{ r: 6 }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="totalStockUnitsDoc"
-                  name="Pecas DOCs"
-                  stroke="#d09a29"
-                  fill="rgba(208, 154, 41, 0.18)"
-                  strokeWidth={2.4}
-                  dot={stockSeries.length === 1 ? { r: 4, fill: "#d09a29" } : false}
-                  activeDot={{ r: 6 }}
-                />
+                {visibleKindConfigs.map((config) => (
+                  <Area
+                    key={config.value}
+                    type="monotone"
+                    dataKey={config.stockKey}
+                    name={`Pecas ${config.label}`}
+                    stroke={config.color}
+                    fill={config.fill}
+                    strokeWidth={2.4}
+                    dot={stockSeries.length === 1 ? { r: 4, fill: config.color } : false}
+                    activeDot={{ r: 6 }}
+                  />
+                ))}
               </ComposedChart>
             </ResponsiveContainer>
             <div className="inventory-chart-legend">
-              <span>
-                <i className="tone-neutral" style={{ backgroundColor: "#2956d7" }} /> Telas
-              </span>
-              <span>
-                <i className="tone-warning" style={{ backgroundColor: "#d09a29" }} /> DOCs de Carga
-              </span>
+              {visibleKindConfigs.map((config) => (
+                <span key={config.value}>
+                  <i style={{ backgroundColor: config.color }} /> {config.label}
+                </span>
+              ))}
             </div>
           </div>
         ) : (
@@ -413,7 +505,7 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
             <span>Grafico 2</span>
             <h4>SKUs ativos</h4>
           </div>
-          <p>Mostra quantos SKUs de Telas e de DOCs estavam com saldo maior que zero.</p>
+          <p>Mostra quantos SKUs de Telas, Baterias e DOCs estavam com saldo maior que zero.</p>
         </div>
 
         {stockSeries.length > 0 ? (
@@ -427,31 +519,25 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
                   labelFormatter={(value) => formatDate(String(value))}
                   formatter={(value, name) => [formatSeriesValue(String(name), Number(value ?? 0)), String(name)]}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="activeSkuCountTela"
-                  name="SKUs Tela"
-                  stroke="#173260"
-                  strokeWidth={2.5}
-                  dot={{ r: 3 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="activeSkuCountDoc"
-                  name="SKUs DOC"
-                  stroke="#d09a29"
-                  strokeWidth={2.5}
-                  dot={{ r: 3 }}
-                />
+                {visibleKindConfigs.map((config) => (
+                  <Line
+                    key={config.value}
+                    type="monotone"
+                    dataKey={config.activeSkuKey}
+                    name={`SKUs ${config.label}`}
+                    stroke={config.color}
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                  />
+                ))}
               </ComposedChart>
             </ResponsiveContainer>
             <div className="inventory-chart-legend">
-              <span>
-                <i className="tone-neutral" style={{ backgroundColor: "#173260" }} /> Telas
-              </span>
-              <span>
-                <i className="tone-warning" style={{ backgroundColor: "#d09a29" }} /> DOCs de Carga
-              </span>
+              {visibleKindConfigs.map((config) => (
+                <span key={config.value}>
+                  <i style={{ backgroundColor: config.color }} /> {config.label}
+                </span>
+              ))}
             </div>
           </div>
         ) : (
@@ -466,9 +552,9 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
         <div className="inventory-overview-chart-header">
           <div>
             <span>Grafico 3</span>
-            <h4>Vendas por dia</h4>
+            <h4>Vendas e entradas por dia</h4>
           </div>
-          <p>Mostra so as vendas do CRM. A reposicao aparece separada em verde quando existir.</p>
+          <p>A entrada e estimada pela diferença de saldo somada às vendas ocorridas entre as leituras.</p>
         </div>
 
         {salesSeries.length ? (
@@ -492,12 +578,19 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
                   labelFormatter={(value) => formatDate(String(value))}
                   formatter={(value, name) => [formatSeriesValue(String(name), Number(value ?? 0)), String(name)]}
                 />
-                <Bar yAxisId="sales" dataKey="salesUnits" name="Pecas vendidas" fill="#d09a29" radius={[8, 8, 0, 0]} maxBarSize={20} />
+                <Bar
+                  yAxisId="sales"
+                  dataKey={salesDataKey}
+                  name={selectedKindConfig ? `Vendas ${selectedKindConfig.label}` : "Pecas vendidas"}
+                  fill="#d09a29"
+                  radius={[8, 8, 0, 0]}
+                  maxBarSize={20}
+                />
                 <Line
                   yAxisId="restock"
                   type="monotone"
-                  dataKey="restockUnits"
-                  name="Reposicao"
+                  dataKey={restockDataKey}
+                  name={selectedKindConfig ? `Entradas ${selectedKindConfig.label}` : "Entrada estimada"}
                   stroke="#2f9d67"
                   strokeWidth={2.2}
                   dot={{ r: 3 }}
@@ -518,7 +611,7 @@ function InventoryTrendChart({ series }: { series: InventoryDailySeriesPoint[] }
             <i className="tone-sales" /> Pecas vendidas
           </span>
           <span>
-            <i className="tone-restock" /> Reposicao
+            <i className="tone-restock" /> Entrada de estoque estimada
           </span>
         </div>
       </article>
@@ -825,11 +918,13 @@ export function InventoryPage() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
   const [activeView, setActiveView] = useState<InventoryView>("overview");
+  const [overviewKindFilter, setOverviewKindFilter] = useState<InventoryKindFilter>("all");
   const [buyingFilter, setBuyingFilter] = useState<BuyingFilter>("all");
   const [restockWindow, setRestockWindow] = useState<RestockWindow>("all");
   const [staleFilter, setStaleFilter] = useState<StaleFilter>("30_60");
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
+  const [modelKindFilter, setModelKindFilter] = useState<InventoryKindFilter>("all");
   const [brandFilter, setBrandFilter] = useState("");
   const [familyFilter, setFamilyFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
@@ -870,7 +965,7 @@ export function InventoryPage() {
   const modelsQuery = useQuery({
     queryKey: ["inventory-models"],
     queryFn: () => api.inventoryModels(token!),
-    enabled: Boolean(token && activeView === "models"),
+    enabled: Boolean(token && (activeView === "models" || activeView === "screens")),
   });
 
   const detailQuery = useQuery({
@@ -949,6 +1044,10 @@ export function InventoryPage() {
         }
       }
 
+      if (modelKindFilter !== "all" && item.productKind !== modelKindFilter) {
+        return false;
+      }
+
       if (brandFilter && item.brand !== brandFilter) {
         return false;
       }
@@ -963,7 +1062,7 @@ export function InventoryPage() {
 
       return true;
     });
-  }, [brandFilter, deferredSearch, familyFilter, modelsQuery.data?.items, qualityFilter]);
+  }, [brandFilter, deferredSearch, familyFilter, modelKindFilter, modelsQuery.data?.items, qualityFilter]);
 
   function openModel(modelKey: string) {
     setSelectedModelKey(modelKey);
@@ -1063,10 +1162,14 @@ export function InventoryPage() {
                 <h3>Cada grafico mostra uma coisa</h3>
                 <p className="panel-subcopy">Separei estoque, variedade e vendas para a leitura ficar mais clara.</p>
               </div>
-              <div style={{ display: "flex", gap: "32px", textAlign: "right" }}>
+              <div className="inventory-overview-totals">
                 <div className="inventory-row-numbers">
                   <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnitsTela ?? 0)}</strong>
                   <span>Telas em estoque</span>
+                </div>
+                <div className="inventory-row-numbers">
+                  <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnitsBattery ?? 0)}</strong>
+                  <span>Baterias em estoque</span>
                 </div>
                 <div className="inventory-row-numbers">
                   <strong>{formatNumber(overviewQuery.data?.totals.totalStockUnitsDoc ?? 0)}</strong>
@@ -1079,7 +1182,29 @@ export function InventoryPage() {
               </div>
             </div>
 
-            <InventoryTrendChart series={overviewQuery.data?.dailySeries ?? []} />
+            <div className="inventory-overview-kind-filter" aria-label="Filtrar gráficos por tipo de produto">
+              <span>Exibir nos gráficos</span>
+              <div className="inventory-chip-row">
+                {[
+                  { value: "all" as const, label: "Todos" },
+                  { value: "TELA" as const, label: "Telas" },
+                  { value: "BATERIA" as const, label: "Baterias" },
+                  { value: "DOC_DE_CARGA" as const, label: "DOCs de carga" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`inventory-filter-chip ${overviewKindFilter === option.value ? "active" : ""}`}
+                    aria-pressed={overviewKindFilter === option.value}
+                    onClick={() => setOverviewKindFilter(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <InventoryTrendChart series={overviewQuery.data?.dailySeries ?? []} kindFilter={overviewKindFilter} />
 
             <div className="inventory-story-grid">
               {(overviewQuery.data?.highlights ?? []).map((line) => (
@@ -1104,6 +1229,10 @@ export function InventoryPage() {
                 <div>
                   <span>SKUs Telas</span>
                   <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCountTela ?? 0)}</strong>
+                </div>
+                <div>
+                  <span>SKUs Baterias</span>
+                  <strong>{formatNumber(overviewQuery.data?.totals.activeSkuCountBattery ?? 0)}</strong>
                 </div>
                 <div>
                   <span>SKUs DOCs</span>
@@ -1141,6 +1270,15 @@ export function InventoryPage() {
       ) : null}
 
       {activeView === "sales" ? <InventorySalesTab onOpenModel={openModel} /> : null}
+
+      {activeView === "screens" ? (
+        <InventoryScreensTab
+          data={modelsQuery.data}
+          isError={modelsQuery.isError}
+          isLoading={modelsQuery.isLoading}
+          onOpenDetails={openModel}
+        />
+      ) : null}
 
       {activeView === "buying" ? (
         <>
@@ -1533,6 +1671,16 @@ export function InventoryPage() {
               <label>
                 Buscar SKU, modelo, marca ou familia
                 <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Ex.: 1308-1, A05, Xiaomi" />
+              </label>
+
+              <label>
+                Tipo
+                <select value={modelKindFilter} onChange={(event) => setModelKindFilter(event.target.value as InventoryKindFilter)}>
+                  <option value="all">Todos</option>
+                  <option value="TELA">Telas</option>
+                  <option value="BATERIA">Baterias</option>
+                  <option value="DOC_DE_CARGA">DOCs de carga</option>
+                </select>
               </label>
 
               <label>
