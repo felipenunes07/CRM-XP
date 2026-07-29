@@ -147,8 +147,10 @@ describe("WhatsApp webhook watchdog", () => {
     expect(result).toEqual({ processed: true, alertSent: true });
     expect(mocks.sendUazapiTextMessage).toHaveBeenCalledTimes(1);
     expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[1]).toBe("120363000000000@g.us");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("WHATSAPP DESCONECTADO");
+    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("WhatsApp desconectado");
     expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("Amanda");
+    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("+55 (11) 99999-9999");
+    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).not.toContain("Usuários");
   });
 
   it("does not repeat an alert while the same disconnect incident is active", async () => {

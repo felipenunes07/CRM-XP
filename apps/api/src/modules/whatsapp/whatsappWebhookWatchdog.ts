@@ -87,24 +87,17 @@ function disconnectAlertCursorKey(instanceId: string) {
   return `${DISCONNECT_ALERT_CURSOR_PREFIX}${instanceId}`;
 }
 
-function formatAlertDetectedAt() {
-  try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "medium",
-      timeZone: env.WHATSAPP_DISCONNECT_ALERT_TIMEZONE || "America/Sao_Paulo",
-    }).format(new Date());
-  } catch {
-    return new Intl.DateTimeFormat("pt-BR", {
-      dateStyle: "short",
-      timeStyle: "medium",
-      timeZone: "America/Sao_Paulo",
-    }).format(new Date());
+function formatAlertPhone(value: string | null) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 13 && digits.startsWith("55")) {
+    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
   }
+  return value?.trim() ?? "";
 }
 
-function buildDisconnectAlertMessage(instance: ConnectionStateInstance, state: string) {
-  const phone = instance.phoneNumber?.trim() ? ` — ${instance.phoneNumber.trim()}` : "";
+function buildDisconnectAlertMessage(instance: ConnectionStateInstance) {
+  const formattedPhone = formatAlertPhone(instance.phoneNumber);
+  const phone = formattedPhone ? ` — ${formattedPhone}` : "";
   return [
     "🚨 *WhatsApp desconectado*",
     `*${instance.displayLabel || instance.instanceName}${phone}*`,
@@ -153,7 +146,6 @@ async function clearDisconnectAlert(instanceId: string) {
 
 async function sendDisconnectAlert(
   disconnectedInstance: ConnectionStateInstance,
-  state: string,
 ): Promise<boolean> {
   if (!env.WHATSAPP_DISCONNECT_ALERT_ENABLED) {
     return false;
@@ -206,7 +198,7 @@ async function sendDisconnectAlert(
       [disconnectedInstance.id, preferredSenderId],
     );
 
-    const message = buildDisconnectAlertMessage(disconnectedInstance, state);
+    const message = buildDisconnectAlertMessage(disconnectedInstance);
     let lastError: unknown = null;
 
     for (const candidate of candidates.rows) {
@@ -330,7 +322,7 @@ export async function handleEvolutionConnectionUpdate(
   }
 
   await recordHealthStatus(instance, `DOWN:${normalizedState}`);
-  const alertSent = await sendDisconnectAlert(instance, normalizedState);
+  const alertSent = await sendDisconnectAlert(instance);
   return { processed: true, alertSent };
 }
 
@@ -399,7 +391,7 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
           action: "Reconecte a instancia escaneando o QR code no Evolution Manager.",
         });
         await recordHealthStatus(instance, `DOWN:${state}`);
-        if (await sendDisconnectAlert(instance, state)) {
+        if (await sendDisconnectAlert(instance)) {
           result.alertsSent.push(instance.instanceName);
         }
         continue;
