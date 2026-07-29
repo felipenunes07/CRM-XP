@@ -10,6 +10,7 @@ interface WatchdogInstance {
   instanceName: string;
   displayLabel: string;
   phoneNumber: string | null;
+  lastHealthStatus: string | null;
   messagesEnabled: boolean;
   evolutionBaseUrl: string;
   evolutionApiKey: string;
@@ -32,6 +33,14 @@ interface ConnectionStateInstance {
 
 const DISCONNECT_ALERT_CURSOR_PREFIX = "whatsapp_disconnect_alert:";
 const STALE_ALERT_CLAIM_MINUTES = 5;
+const DISCONNECT_CONFIRMATION_DELAY_MS = 20_000;
+const TERMINAL_DISCONNECTED_STATES = new Set([
+  "close",
+  "closed",
+  "disconnected",
+  "logout",
+  "logged_out",
+]);
 
 function expectedWebhookUrl() {
   const baseUrl = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
@@ -63,7 +72,15 @@ function readConnectionState(payload: Record<string, unknown> | null): string {
     return "unknown";
   }
   const instance = payload.instance as Record<string, unknown> | undefined;
-  return String(instance?.state ?? payload.state ?? "unknown");
+  return String(instance?.state ?? payload.state ?? "unknown").trim().toLowerCase();
+}
+
+function isTerminalDisconnectedState(state: string) {
+  return TERMINAL_DISCONNECTED_STATES.has(state.trim().toLowerCase());
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function webhookConfigIsHealthy(payload: Record<string, unknown> | null): boolean {
@@ -309,10 +326,8 @@ export async function handleEvolutionConnectionUpdate(
     return { processed: true, alertSent: false };
   }
 
-  // "connecting" is emitted during normal QR reconnection and startup. Alerting
-  // here would create a false alarm exactly while someone is repairing a line.
-  const disconnectedStates = new Set(["close", "closed", "disconnected", "logout", "logged_out"]);
-  if (!disconnectedStates.has(normalizedState)) {
+  // Estados intermediários são comuns durante oscilações curtas e reconexões.
+  if (!isTerminalDisconnectedState(normalizedState)) {
     logger.info("whatsapp connection update has no terminal state; watchdog will confirm", {
       instanceName,
       state: normalizedState,
@@ -320,9 +335,11 @@ export async function handleEvolutionConnectionUpdate(
     return { processed: true, alertSent: false };
   }
 
-  await recordHealthStatus(instance, `DOWN:${normalizedState}`);
-  const alertSent = await sendDisconnectAlert(instance);
-  return { processed: true, alertSent };
+  // O evento close isolado não basta para alertar: a Evolution pode emitir close
+  // e voltar para open em poucos segundos. O watchdog fará uma segunda leitura
+  // ao vivo antes de enviar qualquer mensagem ao grupo.
+  await recordHealthStatus(instance, `DOWN_PENDING:${normalizedState}`);
+  return { processed: true, alertSent: false };
 }
 
 /**
@@ -343,7 +360,7 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
 
   const rows = await pool.query(
     `
-    SELECT id, instance_name, display_label, phone_number, messages_enabled,
+    SELECT id, instance_name, display_label, phone_number, last_health_status, messages_enabled,
            evolution_base_url, evolution_api_key
     FROM whatsapp_instances
     WHERE status = 'ACTIVE'
@@ -359,6 +376,7 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
       instanceName: String(row.instance_name),
       displayLabel: String(row.display_label ?? row.instance_name),
       phoneNumber: row.phone_number ? String(row.phone_number) : null,
+      lastHealthStatus: row.last_health_status ? String(row.last_health_status) : null,
       messagesEnabled: row.messages_enabled !== false,
       evolutionBaseUrl: String(row.evolution_base_url),
       evolutionApiKey: String(row.evolution_api_key),
@@ -381,15 +399,56 @@ export async function runWhatsappWebhookWatchdog(): Promise<WatchdogResult> {
       const state = readConnectionState(statePayload);
 
       if (state !== "open") {
-        // Disconnected from WhatsApp (logged out / QR expired). Cannot be fixed
-        // automatically — requires re-scanning the QR code in Evolution Manager.
+        if (!isTerminalDisconnectedState(state)) {
+          logger.warn("whatsapp instance reported a temporary connection state", {
+            instanceName: instance.instanceName,
+            state,
+          });
+          await recordHealthStatus(instance, `CHECKING:${state}`);
+          continue;
+        }
+
+        let confirmedState = state;
+        if (!instance.lastHealthStatus?.startsWith("DOWN_PENDING:")) {
+          await recordHealthStatus(instance, `DOWN_PENDING:${state}`);
+          await sleep(DISCONNECT_CONFIRMATION_DELAY_MS);
+
+          const confirmationPayload = await requestEvolutionJson(
+            instance,
+            `/instance/connectionState/${encodeURIComponent(instance.instanceName)}`,
+          );
+          confirmedState = readConnectionState(confirmationPayload);
+
+          if (confirmedState === "open") {
+            logger.info("whatsapp disconnect recovered before confirmation; alert suppressed", {
+              instanceName: instance.instanceName,
+              firstState: state,
+              confirmedState,
+            });
+            await recordHealthStatus(instance, "OK");
+            continue;
+          }
+
+          if (!isTerminalDisconnectedState(confirmedState)) {
+            logger.warn("whatsapp disconnect was not confirmed as terminal; alert suppressed", {
+              instanceName: instance.instanceName,
+              firstState: state,
+              confirmedState,
+            });
+            await recordHealthStatus(instance, `CHECKING:${confirmedState}`);
+            continue;
+          }
+        }
+
+        // A queda foi confirmada por duas observações separadas, ou por um
+        // evento terminal seguido da leitura ao vivo do watchdog.
         result.disconnected.push(instance.instanceName);
         logger.error("whatsapp instance disconnected — message ingestion stopped", {
           instanceName: instance.instanceName,
-          state,
+          state: confirmedState,
           action: "Reconecte a instancia escaneando o QR code no Evolution Manager.",
         });
-        await recordHealthStatus(instance, `DOWN:${state}`);
+        await recordHealthStatus(instance, `DOWN:${confirmedState}`);
         if (await sendDisconnectAlert(instance)) {
           result.alertsSent.push(instance.instanceName);
         }

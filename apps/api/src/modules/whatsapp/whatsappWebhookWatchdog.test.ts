@@ -46,6 +46,7 @@ import {
 
 describe("WhatsApp webhook watchdog", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     mocks.poolQuery.mockReset();
     mocks.configureInstanceWebhook.mockReset();
     mocks.sendWhatsappInstanceTextMessage.mockReset();
@@ -118,7 +119,7 @@ describe("WhatsApp webhook watchdog", () => {
     expect(mocks.configureInstanceWebhook).not.toHaveBeenCalled();
   });
 
-  it("sends one group alert when a connection changes to close", async () => {
+  it("marks a close event as pending without sending an immediate alert", async () => {
     mocks.poolQuery
       .mockResolvedValueOnce({
         rows: [{
@@ -128,30 +129,14 @@ describe("WhatsApp webhook watchdog", () => {
           phone_number: "5511999999999",
         }],
       })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // grava DOWN
-      .mockResolvedValueOnce({ rows: [{ key: "claimed" }], rowCount: 1 })
-      .mockResolvedValueOnce({
-        rows: [{
-          id: "sender-id",
-          provider: "UAZAPI",
-          instance_name: "Lili",
-          uazapi_base_url: "https://uazapi.example",
-          uazapi_token: "token",
-        }],
-      })
-      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // marca SENT
-    mocks.sendUazapiTextMessage.mockResolvedValueOnce({ id: "message-1" });
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 });
 
     const result = await handleEvolutionConnectionUpdate("Amanda", "close");
 
-    expect(result).toEqual({ processed: true, alertSent: true });
-    expect(mocks.sendUazapiTextMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[1]).toBe("120363000000000@g.us");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("WhatsApp desconectado");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("Amanda");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("+55 (11) 99999-9999");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).not.toContain("Usuários");
-    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).not.toContain("Reconectar agora");
+    expect(result).toEqual({ processed: true, alertSent: false });
+    expect(mocks.poolQuery.mock.calls[1]?.[1]).toEqual(["amanda-id", "DOWN_PENDING:close"]);
+    expect(mocks.sendUazapiTextMessage).not.toHaveBeenCalled();
+    expect(mocks.sendWhatsappInstanceTextMessage).not.toHaveBeenCalled();
   });
 
   it("does not repeat an alert while the same disconnect incident is active", async () => {
@@ -208,5 +193,98 @@ describe("WhatsApp webhook watchdog", () => {
     expect(result).toEqual({ processed: true, alertSent: false });
     expect(mocks.poolQuery).toHaveBeenCalledTimes(1);
     expect(mocks.sendUazapiTextMessage).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the alert when a watchdog close recovers on confirmation", async () => {
+    vi.useFakeTimers();
+    mocks.poolQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "tamires-id",
+          instance_name: "tamires",
+          display_label: "Tamires",
+          phone_number: "5511951392256",
+          last_health_status: "OK",
+          messages_enabled: true,
+          evolution_base_url: "https://evolution.example",
+          evolution_api_key: "secret",
+        }],
+      })
+      .mockResolvedValue({ rows: [], rowCount: 1 });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ instance: { state: "close" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ instance: { state: "open" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const run = runWhatsappWebhookWatchdog();
+    await vi.advanceTimersByTimeAsync(20_000);
+    const result = await run;
+
+    expect(result.disconnected).toEqual([]);
+    expect(result.alertsSent).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mocks.sendUazapiTextMessage).not.toHaveBeenCalled();
+    expect(
+      mocks.poolQuery.mock.calls.some((call) => Array.isArray(call[1]) && call[1][1] === "OK"),
+    ).toBe(true);
+  });
+
+  it("sends the alert only after the watchdog confirms close twice", async () => {
+    vi.useFakeTimers();
+    mocks.poolQuery
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "thais-id",
+          instance_name: "Thais",
+          display_label: "Thais",
+          phone_number: "5511944705416",
+          last_health_status: "OK",
+          messages_enabled: true,
+          evolution_base_url: "https://evolution.example",
+          evolution_api_key: "secret",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // DOWN_PENDING
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }) // DOWN
+      .mockResolvedValueOnce({ rows: [{ key: "claimed" }], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: "sender-id",
+          provider: "UAZAPI",
+          instance_name: "Ragnar",
+          uazapi_base_url: "https://uazapi.example",
+          uazapi_token: "token",
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 1 }); // SENT
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ instance: { state: "close" } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ instance: { state: "close" } }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    mocks.sendUazapiTextMessage.mockResolvedValueOnce({ id: "message-1" });
+
+    const run = runWhatsappWebhookWatchdog();
+    await vi.advanceTimersByTimeAsync(20_000);
+    const result = await run;
+
+    expect(result.disconnected).toEqual(["Thais"]);
+    expect(result.alertsSent).toEqual(["Thais"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mocks.sendUazapiTextMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("Thais");
   });
 });
