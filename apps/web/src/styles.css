@@ -11471,201 +11471,6 @@ button.attendants-ranking-row:hover {
   color: var(--text);
 }
 
-.inventory-screen-summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.inventory-screen-summary-card {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.inventory-screen-summary-card > div {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.inventory-screen-summary-card > div > span,
-.inventory-screen-summary-card small {
-  color: var(--muted);
-}
-
-.inventory-screen-summary-card > div > span {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.inventory-screen-summary-card strong {
-  font-size: 1.45rem;
-  line-height: 1.1;
-}
-
-.inventory-screen-summary-card small {
-  font-size: 0.76rem;
-}
-
-.inventory-screen-summary-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  border-radius: 15px;
-}
-
-.inventory-screen-summary-icon.tone-primary {
-  background: rgba(41, 86, 215, 0.1);
-  color: #2956d7;
-}
-
-.inventory-screen-summary-icon.tone-success {
-  background: rgba(20, 138, 83, 0.11);
-  color: #148a53;
-}
-
-.inventory-screen-summary-icon.tone-neutral {
-  background: rgba(89, 99, 121, 0.1);
-  color: #596379;
-}
-
-.inventory-screen-filter-panel {
-  display: grid;
-  gap: 0.9rem;
-}
-
-.inventory-screen-filter-grid {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.8fr) repeat(3, minmax(160px, 1fr));
-  gap: 0.85rem;
-}
-
-.inventory-screen-filter-grid label {
-  display: grid;
-  gap: 0.38rem;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.inventory-screen-filter-grid input,
-.inventory-screen-filter-grid select {
-  width: 100%;
-  border: 1px solid rgba(41, 86, 215, 0.14);
-  border-radius: 16px;
-  padding: 0.78rem 0.9rem;
-  background: #f9fbff;
-  color: var(--text);
-}
-
-.inventory-screen-filter-footer,
-.inventory-screen-filter-result,
-.inventory-screen-checkbox {
-  display: flex;
-  align-items: center;
-}
-
-.inventory-screen-filter-footer {
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.inventory-screen-checkbox {
-  gap: 0.55rem;
-  color: var(--text);
-  font-size: 0.84rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.inventory-screen-checkbox input {
-  width: 17px;
-  height: 17px;
-  accent-color: #2956d7;
-}
-
-.inventory-screen-filter-result {
-  justify-content: flex-end;
-  gap: 0.75rem;
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
-.inventory-screen-table-panel {
-  display: grid;
-  gap: 1rem;
-}
-
-.inventory-screen-table-wrap {
-  overflow: auto;
-  max-height: 760px;
-  border: 1px solid rgba(41, 86, 215, 0.09);
-  border-radius: 18px;
-}
-
-.inventory-screen-table {
-  min-width: 1040px;
-}
-
-.inventory-screen-table thead {
-  position: sticky;
-  z-index: 1;
-  top: 0;
-  background: #f6f8fc;
-}
-
-.inventory-screen-table th:nth-child(6),
-.inventory-screen-table td:nth-child(6) {
-  text-align: right;
-}
-
-.inventory-screen-table th:last-child,
-.inventory-screen-table td:last-child {
-  text-align: right;
-}
-
-.inventory-screen-name,
-.inventory-screen-stock {
-  display: grid;
-  gap: 0.12rem;
-}
-
-.inventory-screen-name strong {
-  color: var(--text);
-}
-
-.inventory-screen-name span,
-.inventory-screen-stock span {
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.inventory-screen-brand {
-  display: inline-flex;
-  padding: 0.28rem 0.55rem;
-  border-radius: 999px;
-  background: rgba(41, 86, 215, 0.09);
-  color: #2956d7;
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.inventory-screen-stock {
-  justify-items: end;
-}
-
-.inventory-screen-stock strong {
-  color: #148a53;
-  font-size: 1rem;
-}
-
-.inventory-screen-stock.is-empty strong {
-  color: var(--muted);
-}
-
 .inventory-models-layout,
 .inventory-detail-grid {
   display: grid;
@@ -11800,11 +11605,9 @@ button.attendants-ranking-row:hover {
   .inventory-models-layout,
   .inventory-focus-grid,
   .inventory-story-grid,
-  .inventory-screen-summary,
   .inventory-mini-stats,
   .inventory-benchmark-grid,
-  .inventory-search-grid,
-  .inventory-screen-filter-grid {
+  .inventory-search-grid {
     grid-template-columns: 1fr;
   }
 
@@ -11850,15 +11653,6 @@ button.attendants-ranking-row:hover {
   .inventory-overview-kind-filter {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .inventory-screen-filter-footer,
-  .inventory-screen-filter-result {
-    align-items: flex-start;
-  }
-
-  .inventory-screen-filter-result {
-    justify-content: flex-start;
   }
 
   .inventory-shell-meta {

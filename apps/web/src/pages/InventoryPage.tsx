@@ -29,7 +29,7 @@ import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Too
 import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { InventorySalesTab } from "../components/InventorySalesTab";
-import { InventoryScreensTab } from "../components/InventoryScreensTab";
+import { InventoryStockTab } from "../components/InventoryStockTab";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, formatNumber, formatShortDate } from "../lib/format";
 
@@ -48,9 +48,9 @@ const viewTabs = [
   },
   {
     value: "screens" as const,
-    label: "Telas",
-    helper: "Veja a quantidade disponível de cada tela e filtre rapidamente por marca, modelo ou qualidade.",
-    title: "Estoque de telas",
+    label: "Estoque",
+    helper: "Consulte a quantidade disponível por modelo e filtre por tipo de produto, marca ou qualidade.",
+    title: "Estoque",
   },
   {
     value: "sales" as const,
@@ -1272,7 +1272,7 @@ export function InventoryPage() {
       {activeView === "sales" ? <InventorySalesTab onOpenModel={openModel} /> : null}
 
       {activeView === "screens" ? (
-        <InventoryScreensTab
+        <InventoryStockTab
           data={modelsQuery.data}
           isError={modelsQuery.isError}
           isLoading={modelsQuery.isLoading}

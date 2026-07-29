@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { InventoryModelsResponse } from "@olist-crm/shared";
-import { InventoryScreensTab } from "./InventoryScreensTab";
+import { InventoryStockTab } from "./InventoryStockTab";
 
 const inventoryData: InventoryModelsResponse = {
   snapshot: null,
@@ -65,21 +65,43 @@ const inventoryData: InventoryModelsResponse = {
       sampleSkus: ["DOC-IP13"],
       buyRecommendation: "DO_NOT_BUY",
     },
+    {
+      sku: "BAT-IP13",
+      modelKey: "BATERIA::BAT-IP13",
+      modelLabel: "Bateria iPhone 13",
+      brand: "IPHONE",
+      family: "13",
+      productKind: "BATERIA",
+      stockUnits: 18,
+      activeSkuCount: 1,
+      totalSkuCount: 1,
+      sales30: 3,
+      sales90: 9,
+      lastSaleAt: null,
+      daysSinceLastSale: null,
+      qualityLabels: [],
+      sampleSkus: ["BAT-IP13"],
+      buyRecommendation: "WATCH",
+    },
   ],
 };
 
-describe("InventoryScreensTab", () => {
-  it("shows only screen items with stock by default and exposes brand filters", () => {
+describe("InventoryStockTab", () => {
+  it("shows the general stock using the same filter and table language as sales by model", () => {
     const markup = renderToStaticMarkup(
-      <InventoryScreensTab data={inventoryData} isError={false} isLoading={false} onOpenDetails={vi.fn()} />,
+      <InventoryStockTab data={inventoryData} isError={false} isLoading={false} onOpenDetails={vi.fn()} />,
     );
 
+    expect(markup).toContain("Quantidade por modelo");
+    expect(markup).toContain("Tipo de produto");
+    expect(markup).toContain("Telas");
+    expect(markup).toContain("DOCs");
+    expect(markup).toContain("Baterias");
     expect(markup).toContain("iPhone 13 OLED");
-    expect(markup).toContain("42");
-    expect(markup).toContain("IPHONE");
-    expect(markup).toContain("SAMSUNG");
+    expect(markup).toContain("DOC de Carga iPhone 13");
+    expect(markup).toContain("Bateria iPhone 13");
     expect(markup).not.toContain("Samsung A15 Incell");
-    expect(markup).not.toContain("DOC de Carga iPhone 13");
-    expect(markup).toContain("Mostrar somente telas com estoque");
+    expect(markup).not.toContain(">Família<");
+    expect(markup).not.toContain("SKUs com saldo");
   });
 });
