@@ -70,37 +70,37 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
             <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
-            <Route path="/pipeline" element={<PermissionElement permission="commercial.view"><PipelinePage /></PermissionElement>} />
-            <Route path="/atendentes" element={<PermissionElement permission="reports.view"><AttendantsPage /></PermissionElement>} />
-            <Route path="/clientes" element={<PermissionElement permission="commercial.view"><CustomersPage /></PermissionElement>} />
-            <Route path="/clientes/financeiro" element={<PermissionElement permission="finance.view"><CustomerFinancialPage /></PermissionElement>} />
-            <Route path="/clientes/financeiro/:id" element={<PermissionElement permission="finance.view"><CustomerFinancialDetailPage /></PermissionElement>} />
-            <Route path="/estoque" element={<PermissionElement permission="reports.view"><InventoryPage /></PermissionElement>} />
-            <Route path="/embaixadores" element={<PermissionElement permission="commercial.view"><AmbassadorsPage /></PermissionElement>} />
-            <Route path="/clientes/:id" element={<PermissionElement permission="commercial.view"><CustomerDetailPage /></PermissionElement>} />
+            <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
+            <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />
+            <Route path="/clientes" element={<PermissionElement permission="commercial.customers.view"><CustomersPage /></PermissionElement>} />
+            <Route path="/clientes/financeiro" element={<PermissionElement permission="finance.customers.view"><CustomerFinancialPage /></PermissionElement>} />
+            <Route path="/clientes/financeiro/:id" element={<PermissionElement permission="finance.customers.view"><CustomerFinancialDetailPage /></PermissionElement>} />
+            <Route path="/estoque" element={<PermissionElement permission="reports.inventory.view"><InventoryPage /></PermissionElement>} />
+            <Route path="/embaixadores" element={<PermissionElement permission="commercial.ambassadors.view"><AmbassadorsPage /></PermissionElement>} />
+            <Route path="/clientes/:id" element={<PermissionElement permission="commercial.customers.view"><CustomerDetailPage /></PermissionElement>} />
             <Route path="/automacoes" element={<PermissionElement permission="automations.view"><AutomationsPage /></PermissionElement>} />
-            <Route path="/segmentos" element={<PermissionElement permission="reports.view"><SegmentsPage /></PermissionElement>} />
-            <Route path="/agenda" element={<PermissionElement permission="commercial.view"><AgendaPage /></PermissionElement>} />
-            <Route path="/clientes-novos" element={<PermissionElement permission="commercial.view"><NewCustomersPage /></PermissionElement>} />
-            <Route path="/reativacao" element={<PermissionElement permission="commercial.view"><ReactivationPage /></PermissionElement>} />
-            <Route path="/ideias-votacao" element={<PermissionElement permission="commercial.view"><IdeaBoardPage /></PermissionElement>} />
-            <Route path="/mensagens" element={<PermissionElement permission="messages.view"><MessagesPage /></PermissionElement>} />
-            <Route path="/atividade-whatsapp" element={<PermissionElement permission="reports.view"><WhatsappActivityPage /></PermissionElement>} />
-            <Route path="/movimentacao" element={<PermissionElement permission="reports.view"><MovementsPage /></PermissionElement>} />
-            <Route path="/disparador" element={<PermissionElement permission="messages.manage"><DisparadorPage /></PermissionElement>} />
-            <Route path="/templates" element={<PermissionElement permission="messages.manage"><TemplatesPage /></PermissionElement>} />
-            <Route path="/saida-base" element={<PermissionElement permission="messages.manage"><OffboardingPage /></PermissionElement>} />
-            <Route path="/automacao-carteira" element={<PermissionElement permission="messages.manage"><LifecyclePage /></PermissionElement>} />
-            <Route path="/rotulos" element={<PermissionElement permission="commercial.manage"><LabelsPage /></PermissionElement>} />
-            <Route path="/prospeccao" element={<PermissionElement permission="commercial.view"><ProspectingPage /></PermissionElement>} />
-            <Route path="/metas" element={<PermissionElement permission="finance.manage"><MetasPage /></PermissionElement>} />
-            <Route path="/eventos" element={<PermissionElement permission="messages.view"><EventsPage /></PermissionElement>} />
-            <Route path="/reclamacoes-produto" element={<PermissionElement permission="messages.view"><ProductComplaintsPage /></PermissionElement>} />
-            <Route path="/usuarios" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
+            <Route path="/segmentos" element={<PermissionElement permission="reports.segments.view"><SegmentsPage /></PermissionElement>} />
+            <Route path="/agenda" element={<PermissionElement permission="commercial.agenda.view"><AgendaPage /></PermissionElement>} />
+            <Route path="/clientes-novos" element={<PermissionElement permission="commercial.new_customers.view"><NewCustomersPage /></PermissionElement>} />
+            <Route path="/reativacao" element={<PermissionElement permission="commercial.reactivation.view"><ReactivationPage /></PermissionElement>} />
+            <Route path="/ideias-votacao" element={<PermissionElement permission="commercial.ideas.view"><IdeaBoardPage /></PermissionElement>} />
+            <Route path="/mensagens" element={<PermissionElement permission="messages.inbox.view"><MessagesPage /></PermissionElement>} />
+            <Route path="/atividade-whatsapp" element={<PermissionElement permission="reports.whatsapp.view"><WhatsappActivityPage /></PermissionElement>} />
+            <Route path="/movimentacao" element={<PermissionElement permission="reports.movement.view"><MovementsPage /></PermissionElement>} />
+            <Route path="/disparador" element={<PermissionElement permission="messages.broadcast.view"><DisparadorPage /></PermissionElement>} />
+            <Route path="/templates" element={<PermissionElement permission="messages.templates.view"><TemplatesPage /></PermissionElement>} />
+            <Route path="/saida-base" element={<PermissionElement permission="messages.offboarding.view"><OffboardingPage /></PermissionElement>} />
+            <Route path="/automacao-carteira" element={<PermissionElement permission="messages.lifecycle.view"><LifecyclePage /></PermissionElement>} />
+            <Route path="/rotulos" element={<PermissionElement permission="commercial.labels.view"><LabelsPage /></PermissionElement>} />
+            <Route path="/prospeccao" element={<PermissionElement permission="commercial.prospecting.view"><ProspectingPage /></PermissionElement>} />
+            <Route path="/metas" element={<PermissionElement permission="finance.goals.view"><MetasPage /></PermissionElement>} />
+            <Route path="/eventos" element={<PermissionElement permission="messages.events.view"><EventsPage /></PermissionElement>} />
+            <Route path="/reclamacoes-produto" element={<PermissionElement permission="messages.complaints.view"><ProductComplaintsPage /></PermissionElement>} />
+            <Route path="/usuarios" element={<PermissionElement permission="integrations.whatsapp.view"><WhatsappConfigPage /></PermissionElement>} />
             <Route path="/admin/usuarios" element={<PermissionElement permission="admin.users.manage"><AdminUsersPage /></PermissionElement>} />
-            <Route path="/config/whatsapp" element={<PermissionElement permission="integrations.manage"><WhatsappConfigPage /></PermissionElement>} />
-            <Route path="/novidades" element={<NovidadesPage />} />
-            <Route path="/estrategias" element={<PermissionElement permission="reports.view"><StrategiesPage /></PermissionElement>} />
+            <Route path="/config/whatsapp" element={<PermissionElement permission="integrations.whatsapp.view"><WhatsappConfigPage /></PermissionElement>} />
+            <Route path="/novidades" element={<PermissionElement permission="changelog.view"><NovidadesPage /></PermissionElement>} />
+            <Route path="/estrategias" element={<PermissionElement permission="reports.strategies.view"><StrategiesPage /></PermissionElement>} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/login" replace />} />

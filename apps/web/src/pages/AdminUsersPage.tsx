@@ -20,10 +20,11 @@ import {
 } from "lucide-react";
 import { useAuth, type AppRole } from "../hooks/useAuth";
 import { api, type AdminUser, type AdminUserInput, type PermissionDefinition, type UserPermissionOverride } from "../lib/api";
+import { navigationAccessFolders, navigationPermissionKeys } from "../lib/navigationPermissions";
 
 const roleOptions: Array<{ value: AppRole; label: string; description: string }> = [
-  { value: "admin", label: "Admin", description: "Acesso total, painel admin e configuracoes." },
-  { value: "vendas", label: "Vendas", description: "Ferramentas comerciais, mensagens e relatorios." },
+  { value: "admin", label: "Admin", description: "Modelo com acesso total. Bloqueios individuais continuam valendo." },
+  { value: "vendas", label: "Vendas", description: "Modelo para vendedoras, com ferramentas comerciais, mensagens e relatorios." },
   { value: "financeiro", label: "Financeiro", description: "Financeiro, comprovantes, metas e relatorios." },
   { value: "operacional", label: "Operacional", description: "Rotina operacional, mensagens e integracoes." },
   { value: "viewer", label: "Viewer", description: "Apenas leitura em areas permitidas." },
@@ -81,6 +82,21 @@ function setOverride(
   return [...next, { permissionKey, allowed: value === "allow" }];
 }
 
+type OverrideChoice = "inherit" | "allow" | "deny";
+
+function folderOverrideValue(overrides: UserPermissionOverride[], permissionKeys: string[]): OverrideChoice | "mixed" {
+  const values = new Set(permissionKeys.map((permissionKey) => overrideValue(overrides, permissionKey)));
+  return values.size === 1 ? (Array.from(values)[0] as OverrideChoice) : "mixed";
+}
+
+function setFolderOverrides(
+  overrides: UserPermissionOverride[],
+  permissionKeys: string[],
+  value: OverrideChoice,
+) {
+  return permissionKeys.reduce((next, permissionKey) => setOverride(next, permissionKey, value), overrides);
+}
+
 function permissionGroups(permissions: PermissionDefinition[]) {
   return permissions.reduce<Record<string, PermissionDefinition[]>>((groups, permission) => {
     const group = permission.key.split(".")[0] ?? "geral";
@@ -114,7 +130,7 @@ function roleLabel(role: AppRole) {
 }
 
 export function AdminUsersPage() {
-  const { token, refreshUser } = useAuth();
+  const { token, user: currentUser, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | "new">("new");
   const [draft, setDraft] = useState<AdminUserInput>(emptyDraft);
@@ -150,7 +166,15 @@ export function AdminUsersPage() {
   const users = usersQuery.data ?? [];
   const selectedUser = selectedId === "new" ? null : users.find((user) => user.id === selectedId) ?? null;
   const permissions = permissionsQuery.data ?? [];
-  const groupedPermissions = useMemo(() => permissionGroups(permissions), [permissions]);
+  const isEditingOwnAccess = Boolean(selectedUser && selectedUser.id === currentUser?.id);
+  const permissionDefinitions = useMemo(
+    () => new Map(permissions.map((permission) => [permission.key, permission])),
+    [permissions],
+  );
+  const groupedPermissions = useMemo(
+    () => permissionGroups(permissions.filter((permission) => !navigationPermissionKeys.has(permission.key))),
+    [permissions],
+  );
   const selectedRole = roleOptions.find((role) => role.value === draft.role) ?? fallbackRole;
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
@@ -498,15 +522,115 @@ export function AdminUsersPage() {
           <section className="admin-editor-panel">
             <div className="admin-permission-heading">
               <div className="admin-section-title">
-                <KeyRound size={18} />
+                <SlidersHorizontal size={18} />
                 <div>
-                  <h3>Permissoes individuais</h3>
-                  <p>Automatico usa o acesso do cargo escolhido. Use Liberar ou Bloquear apenas para excecoes.</p>
+                  <h3>Acessos do menu</h3>
+                  <p>Controle uma pasta inteira ou cada tela separadamente. Automatico segue a role base.</p>
                 </div>
               </div>
               <div className="admin-override-summary">
                 <span>{allowedOverrides} extras</span>
                 <span>{deniedOverrides} bloqueios</span>
+              </div>
+            </div>
+
+            <div className="admin-menu-access-grid">
+              {navigationAccessFolders.map((folder) => {
+                const folderPermissionKeys = folder.items.map((item) => item.permissionKey);
+                const folderValue = folderOverrideValue(draft.permissionOverrides, folderPermissionKeys);
+                return (
+                  <div key={folder.key} className="admin-menu-folder">
+                    <div className="admin-menu-folder-header">
+                      <div>
+                        <h4>{folder.label}</h4>
+                        <p>{folder.description}</p>
+                      </div>
+                      <div className="admin-permission-toggle" role="group" aria-label={`Pasta ${folder.label}`}>
+                        {(["inherit", "allow", "deny"] as const).map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={folderValue === value ? "active" : ""}
+                            onClick={() =>
+                              setDraft({
+                                ...draft,
+                                permissionOverrides: setFolderOverrides(
+                                  draft.permissionOverrides,
+                                  value === "deny" && isEditingOwnAccess
+                                    ? folderPermissionKeys.filter((key) => key !== "admin.users.manage")
+                                    : folderPermissionKeys,
+                                  value,
+                                ),
+                              })
+                            }
+                          >
+                            {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar pasta" : "Bloquear pasta"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {folderValue === "mixed" ? (
+                      <span className="admin-menu-folder-summary">Acessos personalizados por tela</span>
+                    ) : null}
+                    <div className="admin-menu-folder-items">
+                      {folder.items.map((item) => {
+                        const permission = permissionDefinitions.get(item.permissionKey);
+                        const currentValue = overrideValue(draft.permissionOverrides, item.permissionKey);
+                        return (
+                          <div key={item.permissionKey} className="admin-permission-row">
+                            <span>
+                              <strong>{item.label}</strong>
+                              <small>{permission?.description || item.path}</small>
+                            </span>
+                            <div className="admin-permission-toggle" role="group" aria-label={`Tela ${item.label}`}>
+                              {(["inherit", "allow", "deny"] as const).map((value) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  className={currentValue === value ? "active" : ""}
+                                  disabled={
+                                    value === "deny"
+                                    && isEditingOwnAccess
+                                    && item.permissionKey === "admin.users.manage"
+                                  }
+                                  title={
+                                    value === "deny"
+                                    && isEditingOwnAccess
+                                    && item.permissionKey === "admin.users.manage"
+                                      ? "Outro administrador precisa remover este acesso."
+                                      : undefined
+                                  }
+                                  onClick={() =>
+                                    setDraft({
+                                      ...draft,
+                                      permissionOverrides: setOverride(
+                                        draft.permissionOverrides,
+                                        item.permissionKey,
+                                        value,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar" : "Bloquear"}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="admin-editor-panel">
+            <div className="admin-section-title">
+              <KeyRound size={18} />
+              <div>
+                <h3>Permissoes avancadas</h3>
+                <p>Ajuste acoes de gestao e configuracoes que nao correspondem a uma tela do menu.</p>
               </div>
             </div>
 

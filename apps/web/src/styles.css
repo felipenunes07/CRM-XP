@@ -23512,6 +23512,63 @@ body:has(.whatsapp-monitor-page) .main-content {
   font-weight: 700;
 }
 
+.admin-menu-access-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-menu-folder {
+  overflow: hidden;
+  border: 1px solid #dce6f1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.admin-menu-folder-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.9rem;
+  border-bottom: 1px solid #e9eff6;
+  background: #f8fafc;
+}
+
+.admin-menu-folder-header h4 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.95rem;
+}
+
+.admin-menu-folder-header p {
+  margin: 0.2rem 0 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.admin-menu-folder-summary {
+  display: block;
+  padding: 0.45rem 0.85rem;
+  border-bottom: 1px solid #e9eff6;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.admin-menu-folder-items {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-menu-folder-items .admin-permission-row:nth-child(even) {
+  border-left: 1px solid #f1f5f9;
+}
+
+.admin-menu-folder-items .admin-permission-row:nth-child(2) {
+  border-top: 0;
+}
+
 .admin-permissions-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -23579,6 +23636,11 @@ body:has(.whatsapp-monitor-page) .main-content {
   color: #fff;
 }
 
+.admin-permission-toggle button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
 .admin-editor-actions {
   display: flex;
   align-items: center;
@@ -23622,6 +23684,18 @@ body:has(.whatsapp-monitor-page) .main-content {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-menu-folder-items {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-menu-folder-items .admin-permission-row:nth-child(even) {
+    border-left: 0;
+  }
+
+  .admin-menu-folder-items .admin-permission-row:nth-child(2) {
+    border-top: 1px solid #f1f5f9;
+  }
+
   .admin-permission-row {
     grid-template-columns: 1fr;
   }
@@ -23648,9 +23722,14 @@ body:has(.whatsapp-monitor-page) .main-content {
   .admin-access-header,
   .admin-editor-hero,
   .admin-editor-actions,
-  .admin-permission-heading {
+  .admin-permission-heading,
+  .admin-menu-folder-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .admin-menu-folder-header {
+    grid-template-columns: 1fr;
   }
 
   .admin-editor-badges,

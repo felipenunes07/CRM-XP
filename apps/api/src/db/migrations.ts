@@ -1303,17 +1303,43 @@ export const migrations = [
     ('dashboard.view', 'Dashboard geral', 'Visualizar os indicadores principais do CRM.'),
     ('commercial.view', 'Ferramentas comerciais', 'Acessar clientes, agenda, pipeline e prospeccao.'),
     ('commercial.manage', 'Gestao comercial', 'Criar e alterar registros comerciais.'),
+    ('commercial.pipeline.view', 'Pipeline', 'Exibir o Pipeline no menu lateral.'),
+    ('commercial.customers.view', 'Todos os Clientes', 'Exibir a lista e os detalhes de clientes.'),
+    ('commercial.new_customers.view', 'Clientes Novos', 'Exibir o acompanhamento de clientes novos.'),
+    ('commercial.reactivation.view', 'Reativacao', 'Exibir a area de reativacao de clientes.'),
+    ('commercial.ambassadors.view', 'Embaixadores', 'Exibir a area de embaixadores.'),
+    ('commercial.agenda.view', 'Agenda', 'Exibir a agenda comercial.'),
+    ('commercial.ideas.view', 'Ideias e Votacao', 'Exibir o mural de ideias.'),
+    ('commercial.prospecting.view', 'Prospeccao', 'Exibir a area de prospeccao.'),
+    ('commercial.labels.view', 'Rotulos', 'Exibir a gestao de rotulos.'),
     ('messages.view', 'Mensagens', 'Visualizar mensagens, disparos e conversas.'),
     ('messages.manage', 'Gestao de mensagens', 'Criar modelos, campanhas e responder conversas.'),
+    ('messages.inbox.view', 'Mensagens', 'Exibir a caixa de mensagens.'),
+    ('messages.events.view', 'Inteligencia e Eventos', 'Exibir inteligencia e eventos de conversas.'),
+    ('messages.complaints.view', 'Reclamacoes', 'Exibir reclamacoes de produtos.'),
+    ('messages.templates.view', 'Templates', 'Exibir os templates de mensagens.'),
+    ('messages.offboarding.view', 'Offboarding', 'Exibir os fluxos de saida da base.'),
+    ('messages.lifecycle.view', 'Automacao de Carteira', 'Exibir a automacao de carteira.'),
+    ('messages.broadcast.view', 'Disparador', 'Exibir campanhas e disparos.'),
     ('finance.view', 'Financeiro', 'Visualizar credito, comprovantes e informacoes financeiras.'),
     ('finance.manage', 'Gestao financeira', 'Atualizar metas e dados financeiros.'),
+    ('finance.customers.view', 'Financeiro de Clientes', 'Exibir saldos e detalhes financeiros de clientes.'),
+    ('finance.goals.view', 'Metas', 'Exibir a pagina de metas.'),
     ('reports.view', 'Relatorios', 'Visualizar relatorios e analises.'),
+    ('reports.attendants.view', 'Atendentes', 'Exibir o desempenho de atendentes.'),
+    ('reports.whatsapp.view', 'Relatorios WhatsApp', 'Exibir os relatorios de atividade do WhatsApp.'),
+    ('reports.movement.view', 'Movimentacao da Base', 'Exibir entradas e saidas da base.'),
+    ('reports.inventory.view', 'Estoque', 'Exibir estoque, compras e reposicoes.'),
+    ('reports.segments.view', 'Segmentos', 'Exibir analises de segmentos.'),
+    ('reports.strategies.view', 'Cruzamento de Dados', 'Exibir estrategias e cruzamentos de dados.'),
+    ('changelog.view', 'Changelog', 'Exibir as novidades do CRM.'),
     ('settings.manage', 'Configuracoes', 'Alterar configuracoes internas do CRM.'),
     ('admin.panel.view', 'Painel administrativo', 'Acessar area administrativa.'),
     ('admin.users.manage', 'Gestao de usuarios', 'Criar, editar, desativar usuarios e redefinir acessos.'),
     ('automations.view', 'Automacoes', 'Visualizar automacoes.'),
     ('automations.manage', 'Gestao de automacoes', 'Criar, editar, executar e aprovar automacoes.'),
-    ('integrations.manage', 'Integracoes', 'Gerenciar integracoes e instancias externas.')
+    ('integrations.manage', 'Integracoes', 'Gerenciar integracoes e instancias externas.'),
+    ('integrations.whatsapp.view', 'Usuarios WhatsApp', 'Exibir e gerenciar usuarios e instancias do WhatsApp.')
   ON CONFLICT (key) DO UPDATE
   SET name = EXCLUDED.name,
       description = EXCLUDED.description;
@@ -4387,5 +4413,41 @@ export const migrations = [
   WHERE LOWER(TRIM(COALESCE(instance_name, ''))) = 'lili'
      OR LOWER(TRIM(COALESCE(display_label, ''))) = 'lili assistente'
      OR LOWER(TRIM(COALESCE(assigned_user_name, ''))) = 'lili assistente';
+  `,
+  `
+  -- Permissoes granulares do menu para controle por pasta e por tela.
+  -- Esta migracao separada atualiza tambem ambientes onde a estrutura de
+  -- autorizacao original ja havia sido aplicada.
+  INSERT INTO permissions (key, name, description)
+  VALUES
+    ('commercial.pipeline.view', 'Pipeline', 'Exibir o Pipeline no menu lateral.'),
+    ('commercial.customers.view', 'Todos os Clientes', 'Exibir a lista e os detalhes de clientes.'),
+    ('commercial.new_customers.view', 'Clientes Novos', 'Exibir o acompanhamento de clientes novos.'),
+    ('commercial.reactivation.view', 'Reativacao', 'Exibir a area de reativacao de clientes.'),
+    ('commercial.ambassadors.view', 'Embaixadores', 'Exibir a area de embaixadores.'),
+    ('commercial.agenda.view', 'Agenda', 'Exibir a agenda comercial.'),
+    ('commercial.ideas.view', 'Ideias e Votacao', 'Exibir o mural de ideias.'),
+    ('commercial.prospecting.view', 'Prospeccao', 'Exibir a area de prospeccao.'),
+    ('commercial.labels.view', 'Rotulos', 'Exibir a gestao de rotulos.'),
+    ('messages.inbox.view', 'Mensagens', 'Exibir a caixa de mensagens.'),
+    ('messages.events.view', 'Inteligencia e Eventos', 'Exibir inteligencia e eventos de conversas.'),
+    ('messages.complaints.view', 'Reclamacoes', 'Exibir reclamacoes de produtos.'),
+    ('messages.templates.view', 'Templates', 'Exibir os templates de mensagens.'),
+    ('messages.offboarding.view', 'Offboarding', 'Exibir os fluxos de saida da base.'),
+    ('messages.lifecycle.view', 'Automacao de Carteira', 'Exibir a automacao de carteira.'),
+    ('messages.broadcast.view', 'Disparador', 'Exibir campanhas e disparos.'),
+    ('finance.customers.view', 'Financeiro de Clientes', 'Exibir saldos e detalhes financeiros de clientes.'),
+    ('finance.goals.view', 'Metas', 'Exibir a pagina de metas.'),
+    ('reports.attendants.view', 'Atendentes', 'Exibir o desempenho de atendentes.'),
+    ('reports.whatsapp.view', 'Relatorios WhatsApp', 'Exibir os relatorios de atividade do WhatsApp.'),
+    ('reports.movement.view', 'Movimentacao da Base', 'Exibir entradas e saidas da base.'),
+    ('reports.inventory.view', 'Estoque', 'Exibir estoque, compras e reposicoes.'),
+    ('reports.segments.view', 'Segmentos', 'Exibir analises de segmentos.'),
+    ('reports.strategies.view', 'Cruzamento de Dados', 'Exibir estrategias e cruzamentos de dados.'),
+    ('changelog.view', 'Changelog', 'Exibir as novidades do CRM.'),
+    ('integrations.whatsapp.view', 'Usuarios WhatsApp', 'Exibir e gerenciar usuarios e instancias do WhatsApp.')
+  ON CONFLICT (key) DO UPDATE
+  SET name = EXCLUDED.name,
+      description = EXCLUDED.description;
   `
 ];

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, isApiAuthError } from "../lib/api";
+import { navigationAccessFolders } from "../lib/navigationPermissions";
 import { supabase } from "../lib/supabase";
 
 const delay = (ms: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
@@ -28,6 +29,21 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 type LoadUserOutcome = "ok" | "auth-error" | "transient";
+
+const localAdminPermissions = [
+  ...navigationAccessFolders.flatMap((folder) => folder.items.map((item) => item.permissionKey)),
+  "commercial.view",
+  "commercial.manage",
+  "messages.view",
+  "messages.manage",
+  "finance.view",
+  "finance.manage",
+  "reports.view",
+  "settings.manage",
+  "admin.panel.view",
+  "automations.manage",
+  "integrations.manage",
+];
 
 const isLocalAddress = () => {
   return (
@@ -113,22 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           appRole: "admin",
           name: "Administrador Local",
           isActive: true,
-          permissions: [
-            "dashboard.view",
-            "commercial.view",
-            "commercial.manage",
-            "messages.view",
-            "messages.manage",
-            "finance.view",
-            "finance.manage",
-            "reports.view",
-            "settings.manage",
-            "admin.panel.view",
-            "admin.users.manage",
-            "automations.view",
-            "automations.manage",
-            "integrations.manage"
-          ],
+          permissions: localAdminPermissions,
         });
         setLoading(false);
       }
@@ -213,22 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               appRole: "admin",
               name: "Administrador Local",
               isActive: true,
-              permissions: [
-                "dashboard.view",
-                "commercial.view",
-                "commercial.manage",
-                "messages.view",
-                "messages.manage",
-                "finance.view",
-                "finance.manage",
-                "reports.view",
-                "settings.manage",
-                "admin.panel.view",
-                "admin.users.manage",
-                "automations.view",
-                "automations.manage",
-                "integrations.manage"
-              ],
+              permissions: localAdminPermissions,
             });
             return;
           }

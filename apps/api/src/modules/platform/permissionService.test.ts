@@ -28,6 +28,24 @@ describe("permissionService", () => {
     expect(effective.sort()).toEqual(APP_PERMISSIONS.map((permission) => permission.key).sort());
   });
 
+  it("allows an individual screen to be blocked even for an admin", () => {
+    const effective = computeEffectivePermissions({
+      role: "admin",
+      overrides: [{ permissionKey: "messages.inbox.view", allowed: false }],
+    });
+
+    expect(effective).not.toContain("messages.inbox.view");
+    expect(effective).toContain("messages.events.view");
+    expect(effective).toContain("admin.users.manage");
+  });
+
+  it("uses the seller role as a practical access template", () => {
+    expect(ROLE_PERMISSIONS.vendas).toContain("commercial.pipeline.view");
+    expect(ROLE_PERMISSIONS.vendas).toContain("messages.inbox.view");
+    expect(ROLE_PERMISSIONS.vendas).not.toContain("finance.customers.view");
+    expect(ROLE_PERMISSIONS.vendas).not.toContain("admin.users.manage");
+  });
+
   it("normalizes legacy roles without leaking manager as admin", () => {
     expect(normalizeAppRole("ADMIN")).toBe("admin");
     expect(normalizeAppRole("SELLER")).toBe("vendas");

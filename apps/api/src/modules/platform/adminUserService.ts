@@ -1,6 +1,6 @@
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
-import { listUsers, createUserAccount } from "./authService.js";
+import { createUserAccount, invalidateAuthCacheForUser, listUsers } from "./authService.js";
 import { APP_PERMISSIONS, normalizeAppRole, toLegacyRole, type PermissionOverride } from "./permissionService.js";
 import { createSupabaseAdminClient, isSupabaseAdminConfigured } from "./supabaseAdmin.js";
 
@@ -119,11 +119,13 @@ export async function updateAdminUser(userId: string, input: AdminUserInput) {
   );
 
   await replacePermissionOverrides(userId, input.permissionOverrides);
+  invalidateAuthCacheForUser(userId);
   return listAdminUsers();
 }
 
 export async function setAdminUserActive(userId: string, isActive: boolean) {
   await pool.query("UPDATE profiles SET is_active = $2, updated_at = NOW() WHERE id = $1", [userId, isActive]);
+  invalidateAuthCacheForUser(userId);
   return listAdminUsers();
 }
 

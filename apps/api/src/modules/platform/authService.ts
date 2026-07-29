@@ -5,6 +5,7 @@ import { logger } from "../../lib/logger.js";
 import {
   type AppRole,
   type LegacyRole,
+  APP_PERMISSIONS,
   computeEffectivePermissions,
   normalizeAppRole,
   toLegacyRole,
@@ -308,6 +309,14 @@ const AUTH_CACHE_TTL_MS = 60_000;
 const AUTH_CACHE_NEG_TTL_MS = 15_000;
 const AUTH_CACHE_MAX = 5_000;
 
+export function invalidateAuthCacheForUser(userId: string) {
+  for (const [token, cached] of authTokenCache.entries()) {
+    if (cached.user?.id === userId) {
+      authTokenCache.delete(token);
+    }
+  }
+}
+
 function rememberAuth(token: string, user: JwtUser | null) {
   if (authTokenCache.size >= AUTH_CACHE_MAX) {
     authTokenCache.clear();
@@ -327,22 +336,7 @@ export async function verifyToken(token: string) {
       appRole: "admin" as AppRole,
       name: "Administrador Local",
       isActive: true,
-      permissions: [
-        "dashboard.view",
-        "commercial.view",
-        "commercial.manage",
-        "messages.view",
-        "messages.manage",
-        "finance.view",
-        "finance.manage",
-        "reports.view",
-        "settings.manage",
-        "admin.panel.view",
-        "admin.users.manage",
-        "automations.view",
-        "automations.manage",
-        "integrations.manage"
-      ],
+      permissions: APP_PERMISSIONS.map((permission) => permission.key),
     };
   }
 

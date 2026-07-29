@@ -800,6 +800,10 @@ export function createApp() {
       response.status(401).end();
       return;
     }
+    if (!user.permissions?.includes("messages.inbox.view")) {
+      response.status(403).end();
+      return;
+    }
 
     response.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -843,6 +847,18 @@ export function createApp() {
   });
 
   app.use("/api", requireAuth);
+  app.use("/api/whatsapp-monitor/agents", requirePermission("messages.inbox.view"));
+  app.use("/api/whatsapp-monitor/conversations", requirePermission("messages.inbox.view"));
+  app.use("/api/whatsapp-monitor/metrics", requirePermission("messages.inbox.view"));
+  app.use("/api/whatsapp-monitor/daily-summary", requirePermission("messages.inbox.view"));
+  app.use("/api/events", requirePermission("messages.events.view"));
+  app.use("/api/customer-defects", requirePermission("messages.complaints.view"));
+  app.use("/api/messages/templates", requirePermission("messages.templates.view"));
+  app.use("/api/offboarding-alert", requirePermission("messages.offboarding.view"));
+  app.use("/api/lifecycle", requirePermission("messages.lifecycle.view"));
+  app.use("/api/automations", requirePermission("automations.view"));
+  app.use("/api/whatsapp-campaigns", requirePermission("messages.broadcast.view"));
+  app.use("/api/whatsapp-groups", requirePermission("messages.broadcast.view"));
 
   app.get("/api/auth/me", (request, response) => {
     response.json({ user: request.user });

@@ -6,10 +6,7 @@ export function usePermissions() {
   const { user } = useAuth();
 
   return useMemo(() => {
-    const isAdmin = user?.role === "ADMIN" || user?.appRole === "admin";
-    const canAccess = user?.permissions?.length
-      ? buildPermissionChecker(user.permissions)
-      : (permissionKey: string) => isAdmin && Boolean(permissionKey);
+    const canAccess = buildPermissionChecker(user?.permissions ?? []);
     return {
       permissions: user?.permissions ?? [],
       canAccess,
@@ -19,5 +16,5 @@ export function usePermissions() {
         }
       },
     };
-  }, [user?.permissions, user?.role, user?.appRole]);
+  }, [user?.permissions]);
 }

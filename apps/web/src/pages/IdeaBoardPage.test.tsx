@@ -17,6 +17,12 @@ vi.mock("../hooks/useAuth", () => ({
     user: {
       name: "Administrador Local",
       role: "ADMIN",
+      appRole: "admin",
+      permissions: [
+        "commercial.ideas.view",
+        "commercial.customers.view",
+        "finance.customers.view",
+      ],
     },
   }),
 }));

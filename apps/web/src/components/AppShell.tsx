@@ -29,6 +29,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { usePermissions } from "../hooks/usePermissions";
 import { useUiLanguage } from "../i18n";
+import { permissionForPath } from "../lib/navigationPermissions";
 
 /* ── link structure for external tests ── */
 export const appShellLinks = [
@@ -76,32 +77,6 @@ type SidebarEntry = SidebarItem | SidebarGroup;
 
 function isGroup(entry: SidebarEntry): entry is SidebarGroup {
   return "children" in entry;
-}
-
-function permissionForPath(path: string) {
-  if (path === "/") return "dashboard.view";
-  if (path === "/usuarios") return "integrations.manage";
-  if (path === "/admin/usuarios") return "admin.users.manage";
-  if (path === "/config/whatsapp") return "integrations.manage";
-  if (path === "/clientes/financeiro") return "finance.view";
-  if (path === "/automacoes") return "automations.view";
-  if (path === "/mensagens" || path === "/eventos" || path === "/reclamacoes-produto") return "messages.view";
-  if (path === "/disparador" || path === "/templates" || path === "/saida-base" || path === "/automacao-carteira")
-    return "messages.manage";
-  if (path === "/metas") return "finance.manage";
-  if (
-    path === "/atividade-whatsapp" ||
-    path === "/movimentacao" ||
-    path === "/estoque" ||
-    path === "/segmentos" ||
-    path === "/estrategias" ||
-    path === "/atendentes"
-  ) {
-    return "reports.view";
-  }
-  if (path === "/rotulos") return "commercial.manage";
-  if (path === "/novidades") return null;
-  return "commercial.view";
 }
 
 /* ── Sidebar menu structure ── */
@@ -177,18 +152,16 @@ const sidebarMenu: SidebarEntry[] = [
 function SidebarGroupItem({
   group,
   tx,
-  isAdminLike,
   canAccess,
 }: {
   group: SidebarGroup;
   tx: (pt: string, fallback: string) => string;
-  isAdminLike: boolean;
   canAccess: (permissionKey: string) => boolean;
 }) {
   const location = useLocation();
   const visibleChildren = group.children.filter((child) => {
     const permission = permissionForPath(child.to);
-    return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+    return !permission || canAccess(permission);
   });
   const childPaths = visibleChildren.map((c) => c.to);
   const isChildActive = childPaths.some(
@@ -250,8 +223,6 @@ export function AppShell() {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
-  const isAdminLike = user?.role === "ADMIN" || user?.role === "MANAGER";
-
   return (
     <div className={`app-shell ${isLifecycleCockpit ? "is-lifecycle-cockpit" : ""}`}>
       <aside className="cw-sidebar">
@@ -298,12 +269,12 @@ export function AppShell() {
                 if (isGroup(entry)) {
                   const visibleChildren = entry.children.filter((child) => {
                     const permission = permissionForPath(child.to);
-                    return (!child.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+                    return !permission || canAccess(permission);
                   });
-                  return (!entry.adminOnly || isAdminLike) && visibleChildren.length > 0;
+                  return visibleChildren.length > 0;
                 }
                 const permission = permissionForPath(entry.to);
-                return (!entry.adminOnly || isAdminLike) && (!permission || canAccess(permission));
+                return !permission || canAccess(permission);
               })
               .map((entry) => {
                 if (isGroup(entry)) {
@@ -312,7 +283,6 @@ export function AppShell() {
               key={entry.labelPt}
               group={entry}
               tx={tx}
-              isAdminLike={isAdminLike}
               canAccess={canAccess}
             />
           );
