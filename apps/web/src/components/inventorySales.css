@@ -1200,6 +1200,246 @@
   color: #64748b;
 }
 
+.model-analysis-hero-simple {
+  gap: 0.9rem;
+  padding: 1.15rem 1.25rem 0;
+}
+
+.model-analysis-summary-simple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-radius: 12px;
+}
+
+.model-analysis-summary-simple > div {
+  padding: 0.72rem 0.9rem;
+}
+
+.model-analysis-summary-simple strong {
+  font-size: 1.25rem;
+}
+
+.model-analysis-tabs {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 0.1rem;
+  border-top: 1px solid rgba(41, 86, 215, 0.09);
+}
+
+.model-analysis-tabs button {
+  position: relative;
+  padding: 0.9rem 0 0.78rem;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.model-analysis-tabs button::after {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: transparent;
+  content: "";
+}
+
+.model-analysis-tabs button.active {
+  color: #2956d7;
+}
+
+.model-analysis-tabs button.active::after {
+  background: #2956d7;
+}
+
+.model-analysis-tab-panel {
+  display: none;
+}
+
+.model-analysis-tab-panel.active {
+  display: grid;
+}
+
+.model-analysis-client-head {
+  align-items: center;
+}
+
+.model-analysis-client-head h2,
+.model-history-head h2 {
+  margin: 0;
+  color: #173260;
+  font-size: 1.08rem;
+}
+
+.model-analysis-table {
+  min-width: 960px;
+}
+
+.model-analysis-table th:last-child,
+.model-analysis-table td:last-child {
+  min-width: 210px;
+}
+
+.model-analysis-row-actions {
+  justify-content: flex-end;
+}
+
+.model-history-panel {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.model-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem 1.25rem;
+}
+
+.model-history-head > div:first-child {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.model-history-head p,
+.model-history-chart-section p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.model-history-dates {
+  display: flex;
+  gap: 1.25rem;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.model-history-dates span {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.model-history-dates strong {
+  color: #173260;
+  font-size: 0.8rem;
+}
+
+.model-history-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid rgba(41, 86, 215, 0.09);
+  border-bottom: 1px solid rgba(41, 86, 215, 0.09);
+  background: #fbfcff;
+}
+
+.model-history-facts > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem 1.25rem;
+  border-right: 1px solid rgba(41, 86, 215, 0.09);
+}
+
+.model-history-facts > div:last-child {
+  border-right: 0;
+}
+
+.model-history-facts span,
+.model-history-comparisons span {
+  color: #64748b;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.model-history-facts strong {
+  color: #12213f;
+  font-size: 1.03rem;
+}
+
+.model-history-chart-section {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.2rem 1.25rem;
+}
+
+.model-history-chart-section > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.model-history-chart-section h3,
+.model-history-bottom h3 {
+  margin: 0;
+  color: #173260;
+  font-size: 0.9rem;
+}
+
+.model-history-chart {
+  width: 100%;
+  min-height: 300px;
+}
+
+.model-history-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  border-top: 1px solid rgba(41, 86, 215, 0.09);
+}
+
+.model-history-bottom > section {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  padding: 1.2rem 1.25rem;
+}
+
+.model-history-bottom > section + section {
+  border-left: 1px solid rgba(41, 86, 215, 0.09);
+}
+
+.model-history-bottom ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding-left: 1.05rem;
+  color: #475569;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.model-history-comparisons {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.model-history-comparisons > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid rgba(41, 86, 215, 0.08);
+}
+
+.model-history-comparisons > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.model-history-comparisons strong {
+  color: #173260;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 /* ── Estoque › Analise por SKU ── */
 
 .sku-analysis-search {
@@ -1659,5 +1899,89 @@
 
   .model-analysis-sales-readout > div:last-child {
     border-bottom: 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .model-analysis-summary-simple {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .model-analysis-summary-simple > div,
+  .model-analysis-summary-simple > div:nth-child(2) {
+    border-right: 1px solid rgba(41, 86, 215, 0.09);
+    border-bottom: 0;
+  }
+
+  .model-analysis-summary-simple > div:last-child {
+    border-right: 0;
+  }
+
+  .model-history-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-history-facts > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .model-history-facts > div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(41, 86, 215, 0.09);
+  }
+
+  .model-history-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-history-bottom > section + section {
+    border-top: 1px solid rgba(41, 86, 215, 0.09);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .model-analysis-hero-simple {
+    padding-inline: 1rem;
+  }
+
+  .model-analysis-summary-simple,
+  .model-history-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-analysis-summary-simple > div,
+  .model-analysis-summary-simple > div:nth-child(2),
+  .model-history-facts > div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(41, 86, 215, 0.09);
+  }
+
+  .model-analysis-summary-simple > div:last-child,
+  .model-history-facts > div:last-child {
+    border-bottom: 0;
+  }
+
+  .model-analysis-tabs {
+    gap: 1rem;
+  }
+
+  .model-analysis-tabs button {
+    flex: 1;
+    font-size: 0.76rem;
+  }
+
+  .model-history-head,
+  .model-history-dates {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .model-history-dates {
+    gap: 0.55rem;
+  }
+
+  .model-history-chart-section,
+  .model-history-bottom > section {
+    padding-inline: 1rem;
   }
 }

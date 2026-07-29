@@ -118,7 +118,7 @@ const detail: InventoryModelDetailResponse = {
 describe("InventoryModelAnalysisContent", () => {
   afterEach(() => vi.useRealTimers());
 
-  it("shows a separate, action-oriented customer analysis for the selected model", () => {
+  it("shows a practical sales view with only the essential customer columns", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-29T12:00:00.000Z"));
 
@@ -128,17 +128,35 @@ describe("InventoryModelAnalysisContent", () => {
       </MemoryRouter>,
     );
 
-    expect(markup).toContain("Análise comercial do modelo");
-    expect(markup).toContain("Top 2 clientes para vender iPhone 13 OLED");
+    expect(markup).toContain("Modelo selecionado");
+    expect(markup).toContain("Clientes para vender");
+    expect(markup).toContain("Histórico do modelo");
+    expect(markup).toContain("Quem pode comprar agora");
     expect(markup).toContain("Loja Central");
     expect(markup).toContain("Celular Express");
-    expect(markup).toContain("Ritmo de compra");
     expect(markup).toContain("Recompra atrasada");
-    expect(markup).toContain("Pipeline estimado");
-    expect(markup).toContain("Pedido potencial");
-    expect(markup).toContain("Vender agora");
-    expect(markup).toContain("Queda de consumo");
+    expect(markup).toContain("Pedido estimado");
+    expect(markup).toContain("WhatsApp");
     expect(markup).toContain("/clientes/customer-1");
+    expect(markup).not.toContain("Ritmo de compra");
+    expect(markup).not.toContain("30d / 90d");
+    expect(markup).not.toContain("Pipeline estimado");
+    expect(markup).not.toContain("Queda de consumo");
     expect(markup).not.toContain("Fechar");
+  });
+
+  it("keeps model sales history and comparisons in a separate tab", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <InventoryModelAnalysisContent detail={detail} initialTab="history" />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Estoque x vendas");
+    expect(markup).toContain("Receita em 12 meses");
+    expect(markup).toContain("O que o histórico mostra");
+    expect(markup).toContain("Comparações históricas");
+    expect(markup).toContain("Com estoque baixo");
+    expect(markup).toContain("Com mais variações");
   });
 });

@@ -1,4 +1,5 @@
 import type {
+  InventoryDailySeriesPoint,
   InventoryModelDetailResponse,
   InventoryModelTopCustomer,
   InventoryProductKind,
@@ -7,28 +8,20 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowUpRight,
-  CircleAlert,
-  DollarSign,
   MessageCircle,
-  PackageCheck,
   Phone,
   Search,
-  ShoppingBag,
-  Target,
-  TrendingDown,
-  TrendingUp,
-  Users,
-  Zap,
 } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
+import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDaysSince, formatNumber } from "../lib/format";
+import { formatCurrency, formatDate, formatDaysSince, formatNumber, formatShortDate } from "../lib/format";
 import "../components/inventorySales.css";
 
-type CustomerSort = "opportunity" | "potential" | "revenue" | "volume" | "monthly" | "recent";
-type CustomerFilter = "all" | "overdue" | "next_15" | "active" | "cold";
+type AnalysisTab = "sales" | "history";
+type CustomerFilter = "all" | "overdue" | "next_15" | "active";
 
 function productKindLabel(kind: InventoryProductKind) {
   if (kind === "DOC_DE_CARGA") return "DOC de carga";
@@ -129,19 +122,6 @@ function opportunityForCustomer(customer: InventoryModelTopCustomer) {
   };
 }
 
-function formatCadence(value: number | null) {
-  if (value === null) return "Sem padrão";
-  return `A cada ${Math.max(1, Math.round(value))} dias`;
-}
-
-function trendLabel(customer: InventoryModelTopCustomer) {
-  if (customer.trend90dPercent === null) {
-    return customer.quantity90Days > 0 ? "Nova demanda" : "Sem movimento";
-  }
-  if (customer.trend90dPercent > 0) return `+${formatNumber(customer.trend90dPercent)}%`;
-  return `${formatNumber(customer.trend90dPercent)}%`;
-}
-
 function whatsappLink(customer: InventoryModelTopCustomer, modelLabel: string) {
   const phone = customer.phone?.replace(/\D/g, "");
   if (!phone) return null;
@@ -163,9 +143,67 @@ function customerSearchText(customer: InventoryModelTopCustomer) {
   ].join(" ").toLocaleLowerCase("pt-BR");
 }
 
-export function InventoryModelAnalysisContent({ detail }: { detail: InventoryModelDetailResponse }) {
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: 1,
+    notation: Math.abs(value) >= 1000 ? "compact" : "standard",
+  }).format(value);
+}
+
+function ModelSalesHistoryChart({ series }: { series: InventoryDailySeriesPoint[] }) {
+  return (
+    <div className="model-history-chart" aria-label="Histórico diário de estoque e vendas">
+      <ResponsiveContainer width="100%" height={300}>
+        <ComposedChart data={series}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="rgba(41, 86, 215, 0.11)" />
+          <XAxis dataKey="date" tickFormatter={formatShortDate} tick={{ fontSize: 11 }} />
+          <YAxis
+            yAxisId="stock"
+            tickFormatter={(value) => formatCompactNumber(Number(value))}
+            tick={{ fontSize: 11 }}
+          />
+          <YAxis
+            yAxisId="sales"
+            orientation="right"
+            tickFormatter={(value) => formatCompactNumber(Number(value))}
+            tick={{ fontSize: 11 }}
+          />
+          <Tooltip
+            labelFormatter={(value) => formatDate(String(value))}
+            formatter={(value, name) => [formatNumber(Number(value ?? 0)), String(name)]}
+          />
+          <Line
+            dataKey="stockUnits"
+            dot={false}
+            name="Estoque"
+            stroke="#2956d7"
+            strokeWidth={2.5}
+            type="monotone"
+            yAxisId="stock"
+          />
+          <Bar
+            dataKey="salesUnits"
+            fill="#d09a29"
+            maxBarSize={15}
+            name="Vendas"
+            radius={[6, 6, 0, 0]}
+            yAxisId="sales"
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function InventoryModelAnalysisContent({
+  detail,
+  initialTab = "sales",
+}: {
+  detail: InventoryModelDetailResponse;
+  initialTab?: AnalysisTab;
+}) {
+  const [activeTab, setActiveTab] = useState<AnalysisTab>(initialTab);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<CustomerSort>("opportunity");
   const [filter, setFilter] = useState<CustomerFilter>("all");
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase("pt-BR"));
   const model = detail.model;
@@ -187,31 +225,15 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
       if (filter === "overdue" && !opportunity.isOverdue) return false;
       if (filter === "next_15" && !opportunity.isNext15) return false;
       if (filter === "active" && customer.quantity30Days <= 0) return false;
-      if (filter === "cold" && !opportunity.isCold) return false;
       return true;
     });
 
-    return [...filtered].sort((left, right) => {
-      if (sort === "potential") {
-        return right.opportunity.potentialRevenue - left.opportunity.potentialRevenue;
-      }
-      if (sort === "revenue") {
-        return right.customer.revenue12Months - left.customer.revenue12Months;
-      }
-      if (sort === "volume") {
-        return right.customer.totalQuantity - left.customer.totalQuantity;
-      }
-      if (sort === "monthly") {
-        return right.customer.averageMonthlyQuantity - left.customer.averageMonthlyQuantity;
-      }
-      if (sort === "recent") {
-        return (left.opportunity.daysSincePurchase ?? Number.MAX_SAFE_INTEGER)
-          - (right.opportunity.daysSincePurchase ?? Number.MAX_SAFE_INTEGER);
-      }
-      return right.opportunity.opportunityScore - left.opportunity.opportunityScore
-        || left.opportunity.priority - right.opportunity.priority;
-    });
-  }, [customerRows, deferredSearch, filter, sort]);
+    return [...filtered].sort(
+      (left, right) =>
+        right.opportunity.opportunityScore - left.opportunity.opportunityScore
+        || left.opportunity.priority - right.opportunity.priority,
+    );
+  }, [customerRows, deferredSearch, filter]);
 
   if (!model) {
     return (
@@ -235,17 +257,21 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
     .filter((row) => row.opportunity.isOverdue || row.opportunity.isNext15)
     .reduce((total, row) => total + row.opportunity.potentialRevenue, 0);
   const revenue12Months = customerRows.reduce((total, row) => total + row.customer.revenue12Months, 0);
-  const topCustomer = [...customerRows].sort(
-    (left, right) => right.customer.totalQuantity - left.customer.totalQuantity,
-  )[0]?.customer ?? null;
-  const topCustomerShare = topCustomer && totalCustomerVolume
-    ? Math.round((topCustomer.totalQuantity / totalCustomerVolume) * 100)
-    : 0;
   const topFiveVolume = [...customerRows]
     .sort((left, right) => right.customer.totalQuantity - left.customer.totalQuantity)
     .slice(0, 5)
     .reduce((total, row) => total + row.customer.totalQuantity, 0);
   const topFiveShare = totalCustomerVolume ? Math.round((topFiveVolume / totalCustomerVolume) * 100) : 0;
+  const priorityCount = customersToReactivate.length + customersNext15.length;
+  const historyInsights = detail.highlights.length
+    ? detail.highlights
+    : [
+        `A carteira compra em média ${formatMonthlyAverage(monthlyCustomerVolume)} peças deste modelo por mês.`,
+        `Os 5 maiores clientes representam ${formatNumber(topFiveShare)}% do volume histórico do ranking.`,
+        customersDeclining.length
+          ? `${formatNumber(customersDeclining.length)} clientes reduziram o consumo nos últimos 90 dias.`
+          : "Nenhum cliente relevante apresenta queda forte de consumo nos últimos 90 dias.",
+      ];
 
   return (
     <div className="model-analysis-page">
@@ -255,14 +281,12 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
         </Link>
       </div>
 
-      <section className="panel model-analysis-hero">
+      <section className="panel model-analysis-hero model-analysis-hero-simple">
         <div className="model-analysis-heading">
           <div>
-            <p className="eyebrow">Análise comercial do modelo</p>
+            <p className="eyebrow">Modelo selecionado</p>
             <h1>{model.modelLabel}</h1>
-            <p>
-              Painel de venda com até 50 compradores, previsão de recompra, potencial em reais e fila de contato.
-            </p>
+            <p>Veja quem pode comprar agora ou consulte o histórico do modelo.</p>
           </div>
           <div className="model-analysis-tags" aria-label="Características do modelo">
             <span>{productKindLabel(model.productKind)}</span>
@@ -271,116 +295,54 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
           </div>
         </div>
 
-        <div className="model-analysis-summary" aria-label="Resumo do modelo">
+        <div className="model-analysis-summary model-analysis-summary-simple" aria-label="Resumo do modelo">
           <div>
-            <span><PackageCheck size={15} /> Estoque atual</span>
+            <span>Estoque atual</span>
             <strong>{formatNumber(model.stockUnits)}</strong>
-            <small>peças disponíveis</small>
+            <small>peças</small>
           </div>
           <div>
-            <span><ShoppingBag size={15} /> Vendas em 30 dias</span>
+            <span>Vendas em 30 dias</span>
             <strong>{formatNumber(model.sales30)}</strong>
             <small>{formatNumber(model.orders30)} pedidos</small>
           </div>
           <div>
-            <span><Users size={15} /> Clientes no ranking</span>
-            <strong>{formatNumber(customerRows.length)}</strong>
-            <small>até 50 compradores do modelo</small>
+            <span>Contatos prioritários</span>
+            <strong>{formatNumber(priorityCount)}</strong>
+            <small>{formatCurrency(potentialPipeline)} em pedidos estimados</small>
           </div>
-          <div>
-            <span><DollarSign size={15} /> Receita em 12 meses</span>
-            <strong>{formatCurrency(revenue12Months)}</strong>
-            <small>somente deste modelo</small>
-          </div>
-          <div className="highlight">
-            <span><Target size={15} /> Pipeline estimado</span>
-            <strong>{formatCurrency(potentialPipeline)}</strong>
-            <small>recompras vencidas ou próximas</small>
-          </div>
+        </div>
+
+        <div className="model-analysis-tabs" role="tablist" aria-label="Visões do modelo">
+          <button
+            aria-selected={activeTab === "sales"}
+            className={activeTab === "sales" ? "active" : ""}
+            onClick={() => setActiveTab("sales")}
+            role="tab"
+            type="button"
+          >
+            Clientes para vender
+          </button>
+          <button
+            aria-selected={activeTab === "history"}
+            className={activeTab === "history" ? "active" : ""}
+            onClick={() => setActiveTab("history")}
+            role="tab"
+            type="button"
+          >
+            Histórico do modelo
+          </button>
         </div>
       </section>
 
-      <section className="model-analysis-opportunities" aria-label="Prioridades comerciais">
-        <article className={customersToReactivate.length ? "danger" : "success"}>
-          <span className="model-analysis-opportunity-icon"><CircleAlert size={20} /></span>
-          <div>
-            <small>Prioridade de contato</small>
-            <strong>
-              {customersToReactivate.length
-                ? `${customersToReactivate.length} ${customersToReactivate.length === 1 ? "recompra atrasada" : "recompras atrasadas"}`
-                : "Nenhuma recompra atrasada"}
-            </strong>
-            <p>
-              {customersToReactivate.length
-                ? "A fila já considera ritmo de compra, potencial do pedido e prioridade do cliente."
-                : "Os compradores recorrentes ainda estão dentro do ritmo esperado."}
-            </p>
-          </div>
-        </article>
-
-        <article>
-          <span className="model-analysis-opportunity-icon"><Zap size={20} /></span>
-          <div>
-            <small>Próximos 15 dias</small>
-            <strong>{formatNumber(customersNext15.length)} recompras previstas</strong>
-            <p>Aborde antes do concorrente e tente reservar o próximo lote.</p>
-          </div>
-        </article>
-
-        <article>
-          <span className="model-analysis-opportunity-icon"><TrendingUp size={20} /></span>
-          <div>
-            <small>Maior comprador</small>
-            <strong>{topCustomer?.customerDisplayName ?? "Sem histórico"}</strong>
-            <p>
-              {topCustomer
-                ? `${formatNumber(topCustomer.totalQuantity)} peças compradas · ${topCustomerShare}% do volume do ranking.`
-                : "Ainda não há compras relacionadas a este modelo."}
-            </p>
-          </div>
-        </article>
-
-        <article>
-          <span className="model-analysis-opportunity-icon"><TrendingDown size={20} /></span>
-          <div>
-            <small>Queda de consumo</small>
-            <strong>
-              {formatNumber(customersDeclining.length)} {customersDeclining.length === 1 ? "cliente em queda" : "clientes em queda"}
-            </strong>
-            <p>Compare os últimos 90 dias com o período anterior e recupere volume perdido.</p>
-          </div>
-        </article>
-      </section>
-
-      <section className="panel model-analysis-sales-readout">
-        <div>
-          <span>Clientes ativos em 30 dias</span>
-          <strong>{formatNumber(customersActive30.length)}</strong>
-          <small>compraram este modelo recentemente</small>
-        </div>
-        <div>
-          <span>Demanda mensal da carteira</span>
-          <strong>{formatMonthlyAverage(monthlyCustomerVolume)} peças</strong>
-          <small>soma da média dos clientes exibidos</small>
-        </div>
-        <div>
-          <span>Concentração nos 5 maiores</span>
-          <strong>{formatNumber(topFiveShare)}%</strong>
-          <small>{topFiveShare > 60 ? "dependência alta: proteja essas contas" : "carteira relativamente distribuída"}</small>
-        </div>
-        <div>
-          <span>Ritmo do estoque</span>
-          <strong>{model.coverageDays === null ? "Sem base" : `${formatNumber(model.coverageDays)} dias`}</strong>
-          <small>{formatNumber(model.sales90)} peças vendidas em 90 dias</small>
-        </div>
-      </section>
-
-      <section className="panel model-analysis-clients">
+      <section
+        aria-labelledby="model-sales-tab-title"
+        className={`panel model-analysis-clients model-analysis-tab-panel ${activeTab === "sales" ? "active" : ""}`}
+      >
         <div className="model-analysis-client-head">
           <div>
-            <p className="eyebrow">Carteira deste produto</p>
-            <h2>Top {formatNumber(customerRows.length)} clientes para vender {model.modelLabel}</h2>
-            <p>Ordene pelo dinheiro na mesa, identifique a próxima recompra e abra o WhatsApp com uma abordagem pronta.</p>
+            <h2 id="model-sales-tab-title">Quem pode comprar agora</h2>
+            <p>{formatNumber(customerRows.length)} clientes com histórico deste modelo, ordenados por prioridade.</p>
           </div>
           <div className="model-analysis-client-tools">
             <label className="model-analysis-search">
@@ -392,27 +354,15 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
                 value={search}
               />
             </label>
-            <label>
-              <span>Ordenar por</span>
-              <select value={sort} onChange={(event) => setSort(event.target.value as CustomerSort)}>
-                <option value="opportunity">Prioridade de venda</option>
-                <option value="potential">Maior pedido potencial</option>
-                <option value="revenue">Maior receita em 12 meses</option>
-                <option value="volume">Maior volume total</option>
-                <option value="monthly">Maior média mensal</option>
-                <option value="recent">Compra mais recente</option>
-              </select>
-            </label>
           </div>
         </div>
 
         <div className="model-analysis-filter-row" role="group" aria-label="Filtrar oportunidades">
           {([
             { value: "all", label: `Todos (${customerRows.length})` },
-            { value: "overdue", label: `Recompra atrasada (${customersToReactivate.length})` },
+            { value: "overdue", label: `Atrasados (${customersToReactivate.length})` },
             { value: "next_15", label: `Próximos 15 dias (${customersNext15.length})` },
-            { value: "active", label: `Ativos 30d (${customersActive30.length})` },
-            { value: "cold", label: `Esfriando (${customerRows.filter((row) => row.opportunity.isCold).length})` },
+            { value: "active", label: `Comprando agora (${customersActive30.length})` },
           ] satisfies Array<{ value: CustomerFilter; label: string }>).map((option) => (
             <button
               className={filter === option.value ? "active" : ""}
@@ -430,80 +380,36 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
             <table className="invsales-table model-analysis-table">
               <thead>
                 <tr>
-                  <th>#</th>
                   <th>Cliente</th>
-                  <th>Próxima ação</th>
-                  <th className="num">Pedido potencial</th>
-                  <th>Recompra prevista</th>
-                  <th className="num">30d / 90d</th>
-                  <th>Tendência 90d</th>
-                  <th className="num">Ritmo de compra</th>
-                  <th className="num">Histórico do modelo</th>
+                  <th>Situação</th>
+                  <th className="num">Pedido estimado</th>
                   <th>Última compra</th>
                   <th>Vendedora</th>
-                  <th />
+                  <th>Ação</th>
                 </tr>
               </thead>
               <tbody>
-                {visibleCustomers.map(({ customer, opportunity }, index) => {
+                {visibleCustomers.map(({ customer, opportunity }) => {
                   const contactLink = whatsappLink(customer, model.modelLabel);
-                  const trendTone = customer.trend90dPercent === null
-                    ? "neutral"
-                    : customer.trend90dPercent > 10
-                      ? "success"
-                      : customer.trend90dPercent < -10
-                        ? "danger"
-                        : "neutral";
 
                   return (
                     <tr key={customer.customerId}>
-                      <td className="invsales-rank">{index + 1}</td>
                       <td>
                         <div className="model-analysis-customer">
                           <strong>{customer.customerDisplayName}</strong>
-                          <span>{customer.customerCode || "Sem código"} · prioridade {formatNumber(customer.customerPriorityScore)}</span>
+                          <span>{customer.customerCode || "Sem código"}</span>
                         </div>
                       </td>
                       <td>
                         <div className="model-analysis-action">
                           <span className={`model-analysis-status ${opportunity.tone}`}>{opportunity.label}</span>
-                          <small>{opportunity.action}</small>
+                          <small>Recompra prevista: {formatDate(customer.predictedNextPurchaseAt)}</small>
                         </div>
                       </td>
                       <td className="num">
                         <div className="model-analysis-money">
                           <strong>{formatCurrency(opportunity.potentialRevenue)}</strong>
                           <span>≈ {formatMonthlyAverage(opportunity.potentialQuantity)} peças</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div className="model-analysis-date">
-                          <strong>{formatDate(customer.predictedNextPurchaseAt)}</strong>
-                          <span>{formatCadence(customer.averageDaysBetweenPurchases)}</span>
-                        </div>
-                      </td>
-                      <td className="num">
-                        <div className="model-analysis-monthly">
-                          <strong>{formatNumber(customer.quantity30Days)} / {formatNumber(customer.quantity90Days)}</strong>
-                          <span>{formatNumber(customer.orders30Days)} / {formatNumber(customer.orders90Days)} pedidos</span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`model-analysis-trend ${trendTone}`}>
-                          {trendTone === "danger" ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
-                          {trendLabel(customer)}
-                        </span>
-                      </td>
-                      <td className="num">
-                        <div className="model-analysis-monthly">
-                          <strong>{formatMonthlyAverage(customer.averageMonthlyQuantity)} peças/mês</strong>
-                          <span>{formatMonthlyAverage(customer.averageOrderQuantity)} por pedido</span>
-                        </div>
-                      </td>
-                      <td className="num">
-                        <div className="model-analysis-money">
-                          <strong>{formatCurrency(customer.totalRevenue)}</strong>
-                          <span>{formatNumber(customer.totalQuantity)} peças · {formatNumber(customer.totalOrders)} pedidos</span>
                         </div>
                       </td>
                       <td>
@@ -517,7 +423,7 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
                         <div className="model-analysis-row-actions">
                           {contactLink ? (
                             <a className="primary-button small-button" href={contactLink} rel="noreferrer" target="_blank">
-                              <MessageCircle size={14} /> Vender agora
+                              <MessageCircle size={14} /> WhatsApp
                             </a>
                           ) : (
                             <span className="model-analysis-no-phone"><Phone size={13} /> Sem telefone</span>
@@ -540,6 +446,91 @@ export function InventoryModelAnalysisContent({ detail }: { detail: InventoryMod
               : "Ainda não há clientes com compras registradas para este modelo."}
           </div>
         )}
+      </section>
+
+      <section
+        aria-labelledby="model-history-tab-title"
+        className={`panel model-history-panel model-analysis-tab-panel ${activeTab === "history" ? "active" : ""}`}
+      >
+        <div className="model-history-head">
+          <div>
+            <h2 id="model-history-tab-title">Histórico do modelo</h2>
+            <p>Vendas, estoque e sinais que ajudam a entender o desempenho deste produto.</p>
+          </div>
+          <div className="model-history-dates">
+            <span>Última venda <strong>{formatDate(model.lastSaleAt)}</strong></span>
+            <span>Última reposição <strong>{formatDate(model.lastRestockAt)}</strong></span>
+          </div>
+        </div>
+
+        <div className="model-history-facts" aria-label="Indicadores históricos">
+          <div><span>Vendas 30 dias</span><strong>{formatNumber(model.sales30)}</strong></div>
+          <div><span>Vendas 90 dias</span><strong>{formatNumber(model.sales90)}</strong></div>
+          <div><span>Receita em 12 meses</span><strong>{formatCurrency(revenue12Months)}</strong></div>
+          <div>
+            <span>Cobertura do estoque</span>
+            <strong>{model.coverageDays === null ? "Sem base" : `${formatNumber(model.coverageDays)} dias`}</strong>
+          </div>
+        </div>
+
+        <div className="model-history-chart-section">
+          <div>
+            <h3>Estoque x vendas</h3>
+            <p>A linha mostra o saldo disponível; as barras mostram as vendas de cada dia.</p>
+          </div>
+          {detail.dailySeries.length ? (
+            <ModelSalesHistoryChart series={detail.dailySeries} />
+          ) : (
+            <div className="invsales-empty">Ainda não há histórico diário suficiente para este modelo.</div>
+          )}
+        </div>
+
+        <div className="model-history-bottom">
+          <section>
+            <h3>O que o histórico mostra</h3>
+            <ul>
+              {historyInsights.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+          </section>
+
+          <section>
+            <h3>Comparações históricas</h3>
+            <div className="model-history-comparisons">
+              <div>
+                <span>Com estoque baixo</span>
+                <strong>
+                  {detail.benchmarks.lowStockAvgSales === null
+                    ? "Sem base"
+                    : `${formatMonthlyAverage(detail.benchmarks.lowStockAvgSales)} peças/dia`}
+                </strong>
+              </div>
+              <div>
+                <span>Com estoque alto</span>
+                <strong>
+                  {detail.benchmarks.highStockAvgSales === null
+                    ? "Sem base"
+                    : `${formatMonthlyAverage(detail.benchmarks.highStockAvgSales)} peças/dia`}
+                </strong>
+              </div>
+              <div>
+                <span>Com poucas variações</span>
+                <strong>
+                  {detail.benchmarks.shortMixAvgSales === null
+                    ? "Sem base"
+                    : `${formatMonthlyAverage(detail.benchmarks.shortMixAvgSales)} peças/dia`}
+                </strong>
+              </div>
+              <div>
+                <span>Com mais variações</span>
+                <strong>
+                  {detail.benchmarks.wideMixAvgSales === null
+                    ? "Sem base"
+                    : `${formatMonthlyAverage(detail.benchmarks.wideMixAvgSales)} peças/dia`}
+                </strong>
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
     </div>
   );
