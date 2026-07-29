@@ -1,5 +1,5 @@
 // Deriva a "bolinha" de saúde da conexão WhatsApp a partir do health check
-// periódico (watchdog grava last_health_status a cada ~10 min). Compartilhado
+// periódico (watchdog grava last_health_status a cada ~1 min). Compartilhado
 // entre a página de Usuários e a aba de Mensagens para o sinal ser idêntico.
 
 export type HealthTone = "green" | "red" | "yellow" | "gray";

@@ -126,6 +126,7 @@ export const migrations = [
   );
 
   CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+  CREATE INDEX IF NOT EXISTS idx_order_items_sku ON order_items(sku);
 
   CREATE TABLE IF NOT EXISTS customer_snapshot (
     customer_id UUID PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE,

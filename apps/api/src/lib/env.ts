@@ -130,7 +130,15 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
-  WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES: z.coerce.number().int().positive().default(10),
+  // A conexão também é acompanhada por CONNECTION_UPDATE, mas este polling de
+  // 1 minuto é a rede de segurança caso a Evolution não entregue o evento.
+  WORKER_WHATSAPP_WEBHOOK_WATCHDOG_INTERVAL_MINUTES: z.coerce.number().int().positive().default(1),
+  WHATSAPP_DISCONNECT_ALERT_ENABLED: flexibleBoolean(true),
+  // Grupo "XP - Mídias e posts". Pode ser sobrescrito no ambiente.
+  WHATSAPP_DISCONNECT_ALERT_GROUP_JID: z.string().default("120363025402961504@g.us"),
+  // Vazio = tenta outro número ativo, priorizando UAZAPI e a instância padrão.
+  WHATSAPP_DISCONNECT_ALERT_INSTANCE_ID: z.string().default(""),
+  WHATSAPP_DISCONNECT_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
   WHATSAPP_ACTIVITY_ROLLUP_REFRESH_DAYS: z.coerce.number().int().min(2).max(120).default(3),
   // Quão "velho" o rollup de hoje pode estar antes de uma visita ao dashboard
   // disparar um refresh em background. Era fixo em 5min (refazia a query pesada

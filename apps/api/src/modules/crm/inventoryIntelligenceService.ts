@@ -1588,7 +1588,7 @@ export async function getInventoryIntelligenceDetail(sku: string): Promise<Inven
 const INVENTORY_ANALYTICS_CACHE_TTL_MS = 60_000;
 const INVENTORY_HISTORY_SNAPSHOT_LIMIT = 180;
 const INVENTORY_DAILY_SALES_LIMIT_DAYS = 180;
-const INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT = 8;
+const INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT = 50;
 
 interface InventorySnapshotHistoryRow {
   snapshotId: string;
@@ -1614,14 +1614,32 @@ interface InventoryTopCustomerRow {
   customerId: string;
   customerCode: string;
   customerDisplayName: string;
+  phone: string | null;
   totalQuantity: number;
   totalOrders: number;
+  totalRevenue: number;
   quantity12Months: number;
   orders12Months: number;
+  revenue12Months: number;
+  quantity90Days: number;
+  orders90Days: number;
+  revenue90Days: number;
+  previous90DaysQuantity: number;
+  quantity30Days: number;
+  orders30Days: number;
+  revenue30Days: number;
   observedMonths: number;
+  averageOrderQuantity: number;
+  averageUnitPrice: number;
+  averageDaysBetweenPurchases: number | null;
+  predictedNextPurchaseAt: string | null;
   firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
   lastAttendant: string | null;
+  customerTotalSpent: number;
+  customerAverageTicket: number;
+  customerStatus: string;
+  customerPriorityScore: number;
 }
 
 interface InventoryModelAggregate {
@@ -2230,46 +2248,149 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
 
   const result = await pool.query<InventoryTopCustomerRow>(
     `
+      WITH matched_orders AS (
+        SELECT
+          o.id AS "orderId",
+          o.customer_id AS "customerId",
+          o.order_date::date AS "orderDate",
+          COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS quantity,
+          COALESCE(SUM(oi.line_total), 0)::numeric(14,2) AS revenue,
+          MAX(COALESCE(NULLIF(oi.attendant_name, ''), NULLIF(o.last_attendant, ''))) AS attendant
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE oi.sku = ANY($1::text[])
+        GROUP BY o.id, o.customer_id, o.order_date
+      ),
+      sequenced_orders AS (
+        SELECT
+          *,
+          LAG("orderDate") OVER (
+            PARTITION BY "customerId"
+            ORDER BY "orderDate", "orderId"
+          ) AS "previousOrderDate"
+        FROM matched_orders
+      ),
+      customer_model AS (
+        SELECT
+          "customerId",
+          COALESCE(SUM(quantity), 0)::numeric(14,2) AS "totalQuantity",
+          COUNT(*)::int AS "totalOrders",
+          COALESCE(SUM(revenue), 0)::numeric(14,2) AS "totalRevenue",
+          COALESCE(
+            SUM(quantity) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '12 months'),
+            0
+          )::numeric(14,2) AS "quantity12Months",
+          COUNT(*) FILTER (
+            WHERE "orderDate" >= CURRENT_DATE - INTERVAL '12 months'
+          )::int AS "orders12Months",
+          COALESCE(
+            SUM(revenue) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '12 months'),
+            0
+          )::numeric(14,2) AS "revenue12Months",
+          COALESCE(
+            SUM(quantity) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '90 days'),
+            0
+          )::numeric(14,2) AS "quantity90Days",
+          COUNT(*) FILTER (
+            WHERE "orderDate" >= CURRENT_DATE - INTERVAL '90 days'
+          )::int AS "orders90Days",
+          COALESCE(
+            SUM(revenue) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '90 days'),
+            0
+          )::numeric(14,2) AS "revenue90Days",
+          COALESCE(
+            SUM(quantity) FILTER (
+              WHERE "orderDate" >= CURRENT_DATE - INTERVAL '180 days'
+                AND "orderDate" < CURRENT_DATE - INTERVAL '90 days'
+            ),
+            0
+          )::numeric(14,2) AS "previous90DaysQuantity",
+          COALESCE(
+            SUM(quantity) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '30 days'),
+            0
+          )::numeric(14,2) AS "quantity30Days",
+          COUNT(*) FILTER (
+            WHERE "orderDate" >= CURRENT_DATE - INTERVAL '30 days'
+          )::int AS "orders30Days",
+          COALESCE(
+            SUM(revenue) FILTER (WHERE "orderDate" >= CURRENT_DATE - INTERVAL '30 days'),
+            0
+          )::numeric(14,2) AS "revenue30Days",
+          GREATEST(
+            1,
+            LEAST(
+              12,
+              (
+                DATE_PART('year', AGE(CURRENT_DATE, MIN("orderDate"))) * 12
+                + DATE_PART('month', AGE(CURRENT_DATE, MIN("orderDate")))
+              )::int + 1
+            )
+          )::int AS "observedMonths",
+          COALESCE(AVG(quantity), 0)::numeric(14,2) AS "averageOrderQuantity",
+          CASE
+            WHEN COALESCE(SUM(quantity), 0) > 0
+              THEN (COALESCE(SUM(revenue), 0) / SUM(quantity))::numeric(14,2)
+            ELSE 0
+          END AS "averageUnitPrice",
+          AVG("orderDate" - "previousOrderDate") FILTER (
+            WHERE "previousOrderDate" IS NOT NULL
+          )::numeric(14,2) AS "averageDaysBetweenPurchases",
+          CASE
+            WHEN COUNT(*) > 1 THEN (
+              MAX("orderDate")
+              + ROUND(
+                AVG("orderDate" - "previousOrderDate") FILTER (
+                  WHERE "previousOrderDate" IS NOT NULL
+                )
+              )::int
+            )::date::text
+            ELSE NULL
+          END AS "predictedNextPurchaseAt",
+          MIN("orderDate")::date::text AS "firstPurchaseAt",
+          MAX("orderDate")::date::text AS "lastPurchaseAt",
+          (
+            ARRAY_AGG(attendant ORDER BY "orderDate" DESC, "orderId" DESC)
+              FILTER (WHERE attendant IS NOT NULL)
+          )[1] AS "lastAttendant"
+        FROM sequenced_orders
+        GROUP BY "customerId"
+      )
       SELECT
-        cs.customer_id AS "customerId",
+        cm."customerId",
         cs.customer_code AS "customerCode",
         cs.display_name AS "customerDisplayName",
-        COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS "totalQuantity",
-        COUNT(DISTINCT o.id)::int AS "totalOrders",
-        COALESCE(
-          SUM(oi.quantity) FILTER (
-            WHERE o.order_date >= CURRENT_DATE - INTERVAL '12 months'
-          ),
-          0
-        )::numeric(14,2) AS "quantity12Months",
-        COUNT(DISTINCT o.id) FILTER (
-          WHERE o.order_date >= CURRENT_DATE - INTERVAL '12 months'
-        )::int AS "orders12Months",
-        GREATEST(
-          1,
-          LEAST(
-            12,
-            (
-              DATE_PART('year', AGE(CURRENT_DATE, MIN(o.order_date))) * 12
-              + DATE_PART('month', AGE(CURRENT_DATE, MIN(o.order_date)))
-            )::int + 1
-          )
-        )::int AS "observedMonths",
-        MIN(o.order_date)::date::text AS "firstPurchaseAt",
-        MAX(o.order_date)::date::text AS "lastPurchaseAt",
-        cs.last_attendant AS "lastAttendant"
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
-      JOIN customer_snapshot cs ON cs.customer_id = o.customer_id
-      WHERE oi.sku = ANY($1::text[])
-      GROUP BY
-        cs.customer_id,
-        cs.customer_code,
-        cs.display_name,
-        cs.last_attendant
+        c.phone,
+        cm."totalQuantity",
+        cm."totalOrders",
+        cm."totalRevenue",
+        cm."quantity12Months",
+        cm."orders12Months",
+        cm."revenue12Months",
+        cm."quantity90Days",
+        cm."orders90Days",
+        cm."revenue90Days",
+        cm."previous90DaysQuantity",
+        cm."quantity30Days",
+        cm."orders30Days",
+        cm."revenue30Days",
+        cm."observedMonths",
+        cm."averageOrderQuantity",
+        cm."averageUnitPrice",
+        cm."averageDaysBetweenPurchases",
+        cm."predictedNextPurchaseAt",
+        cm."firstPurchaseAt",
+        cm."lastPurchaseAt",
+        COALESCE(cm."lastAttendant", cs.last_attendant) AS "lastAttendant",
+        COALESCE(cs.total_spent, 0)::numeric(14,2) AS "customerTotalSpent",
+        COALESCE(cs.avg_ticket, 0)::numeric(14,2) AS "customerAverageTicket",
+        COALESCE(cs.status, 'INACTIVE') AS "customerStatus",
+        COALESCE(cs.priority_score, 0)::numeric(14,2) AS "customerPriorityScore"
+      FROM customer_model cm
+      JOIN customer_snapshot cs ON cs.customer_id = cm."customerId"
+      JOIN customers c ON c.id = cm."customerId"
       ORDER BY
-        COALESCE(SUM(oi.quantity), 0) DESC,
-        MAX(o.order_date) DESC,
+        cm."totalQuantity" DESC,
+        cm."lastPurchaseAt" DESC,
         cs.display_name ASC
       LIMIT $2
     `,
@@ -2282,16 +2403,43 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
         customerId: row.customerId,
         customerCode: row.customerCode,
         customerDisplayName: row.customerDisplayName,
+        phone: row.phone,
         totalQuantity: toNumber(row.totalQuantity),
         totalOrders: Number(row.totalOrders ?? 0),
+        totalRevenue: toNumber(row.totalRevenue),
         quantity12Months: toNumber(row.quantity12Months),
         orders12Months: Number(row.orders12Months ?? 0),
+        revenue12Months: toNumber(row.revenue12Months),
+        quantity90Days: toNumber(row.quantity90Days),
+        orders90Days: Number(row.orders90Days ?? 0),
+        revenue90Days: toNumber(row.revenue90Days),
+        previous90DaysQuantity: toNumber(row.previous90DaysQuantity),
+        quantity30Days: toNumber(row.quantity30Days),
+        orders30Days: Number(row.orders30Days ?? 0),
+        revenue30Days: toNumber(row.revenue30Days),
         observedMonths: Math.max(1, Number(row.observedMonths ?? 1)),
         averageMonthlyQuantity:
           Math.round((toNumber(row.quantity12Months) / Math.max(1, Number(row.observedMonths ?? 1))) * 10) / 10,
+        averageOrderQuantity: toNumber(row.averageOrderQuantity),
+        averageUnitPrice: toNumber(row.averageUnitPrice),
+        averageDaysBetweenPurchases:
+          row.averageDaysBetweenPurchases === null ? null : toNumber(row.averageDaysBetweenPurchases),
+        predictedNextPurchaseAt: row.predictedNextPurchaseAt,
+        trend90dPercent:
+          toNumber(row.previous90DaysQuantity) > 0
+            ? Math.round(
+              ((toNumber(row.quantity90Days) - toNumber(row.previous90DaysQuantity))
+                / toNumber(row.previous90DaysQuantity))
+              * 1000,
+            ) / 10
+            : null,
         firstPurchaseAt: row.firstPurchaseAt,
         lastPurchaseAt: row.lastPurchaseAt,
         lastAttendant: row.lastAttendant,
+        customerTotalSpent: toNumber(row.customerTotalSpent),
+        customerAverageTicket: toNumber(row.customerAverageTicket),
+        customerStatus: row.customerStatus,
+        customerPriorityScore: toNumber(row.customerPriorityScore),
       }) satisfies InventoryModelTopCustomer,
   );
 }

@@ -1049,7 +1049,7 @@ export function InventoryPage() {
   const detailQuery = useQuery({
     queryKey: ["inventory-model-detail", selectedModelKey],
     queryFn: () => api.inventoryModelDetail(token!, selectedModelKey!),
-    enabled: Boolean(token && activeView === "models" && selectedModelKey),
+    enabled: Boolean(token && (activeView === "models" || activeView === "screens") && selectedModelKey),
   });
 
   const refreshMutation = useMutation({
@@ -1416,8 +1416,13 @@ export function InventoryPage() {
       {activeView === "screens" ? (
         <InventoryStockTab
           data={modelsQuery.data}
+          detail={detailQuery.data}
+          isDetailError={detailQuery.isError}
+          isDetailLoading={detailQuery.isLoading}
           isError={modelsQuery.isError}
           isLoading={modelsQuery.isLoading}
+          onSelectModel={setSelectedModelKey}
+          selectedModelKey={selectedModelKey}
         />
       ) : null}
 

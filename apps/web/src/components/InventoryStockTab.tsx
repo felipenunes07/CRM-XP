@@ -1,12 +1,13 @@
 import type {
+  InventoryModelDetailResponse,
   InventoryModelListItem,
   InventoryModelsResponse,
   InventoryProductKind,
 } from "@olist-crm/shared";
-import { useDeferredValue, useMemo, useState } from "react";
-import { BarChart3, Boxes, Download, PackageCheck, Tags, Warehouse, X } from "lucide-react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
+import { BarChart3, Boxes, ChevronRight, Download, PackageCheck, Tags, Warehouse, X } from "lucide-react";
 import { Link } from "react-router-dom";
-import { formatNumber } from "../lib/format";
+import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import "./inventorySales.css";
 
 type StockKindFilter = "all" | InventoryProductKind;
@@ -16,6 +17,11 @@ interface InventoryStockTabProps {
   data: InventoryModelsResponse | undefined;
   isError: boolean;
   isLoading: boolean;
+  detail: InventoryModelDetailResponse | undefined;
+  isDetailError: boolean;
+  isDetailLoading: boolean;
+  selectedModelKey: string | null;
+  onSelectModel: (modelKey: string | null) => void;
 }
 
 function uniqueSorted(values: string[]) {
@@ -63,10 +69,105 @@ function exportStockCsv(items: InventoryModelListItem[]) {
   URL.revokeObjectURL(url);
 }
 
-export function InventoryStockTab({
-  data,
+function StockCustomerPreview({
+  detail,
   isError,
   isLoading,
+  model,
+}: {
+  detail: InventoryModelDetailResponse | undefined;
+  isError: boolean;
+  isLoading: boolean;
+  model: InventoryModelListItem;
+}) {
+  const customers = detail?.topCustomers.slice(0, 10) ?? [];
+
+  return (
+    <div className="invstock-preview">
+      <div className="invstock-preview-head">
+        <div>
+          <p className="eyebrow">Atalho comercial</p>
+          <h4>Top 10 clientes de {model.modelLabel}</h4>
+          <p>Prévia rápida dos compradores. Abra a análise completa para ver até 50 clientes e oportunidades.</p>
+        </div>
+        <Link
+          className="primary-button small-button"
+          onClick={(event) => event.stopPropagation()}
+          to={`/estoque/modelos/${encodeURIComponent(model.modelKey)}`}
+        >
+          <BarChart3 size={14} /> Análise completa
+        </Link>
+      </div>
+
+      {isLoading ? <div className="invsales-empty">Carregando os principais clientes...</div> : null}
+      {isError ? <div className="invsales-empty">Não foi possível carregar os clientes agora.</div> : null}
+      {!isLoading && !isError && detail ? (
+        customers.length ? (
+          <div className="invsales-table-wrap invstock-preview-table-wrap">
+            <table className="invsales-table invstock-preview-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Cliente</th>
+                  <th className="num">Total do modelo</th>
+                  <th className="num">Últimos 30d</th>
+                  <th className="num">Média mensal</th>
+                  <th>Última compra</th>
+                  <th>Próxima recompra</th>
+                  <th>Vendedora</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {customers.map((customer, index) => (
+                  <tr key={customer.customerId}>
+                    <td className="invsales-rank">{index + 1}</td>
+                    <td>
+                      <div className="invstock-preview-customer">
+                        <strong>{customer.customerDisplayName}</strong>
+                        <span>{customer.customerCode || "Sem código"}</span>
+                      </div>
+                    </td>
+                    <td className="num">
+                      <strong>{formatNumber(customer.totalQuantity)} peças</strong>
+                      <small>{formatCurrency(customer.totalRevenue)}</small>
+                    </td>
+                    <td className="num">{formatNumber(customer.quantity30Days)} peças</td>
+                    <td className="num">{customer.averageMonthlyQuantity.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>
+                    <td>{formatDate(customer.lastPurchaseAt)}</td>
+                    <td>{formatDate(customer.predictedNextPurchaseAt)}</td>
+                    <td>{customer.lastAttendant || "Sem vendedora"}</td>
+                    <td>
+                      <Link
+                        className="ghost-button small-button"
+                        onClick={(event) => event.stopPropagation()}
+                        to={`/clientes/${customer.customerId}`}
+                      >
+                        Ver cliente
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="invsales-empty">Ainda não há compradores registrados para este modelo.</div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+export function InventoryStockTab({
+  data,
+  detail,
+  isDetailError,
+  isDetailLoading,
+  isError,
+  isLoading,
+  onSelectModel,
+  selectedModelKey,
 }: InventoryStockTabProps) {
   const [kind, setKind] = useState<StockKindFilter>("all");
   const [brand, setBrand] = useState("");
@@ -261,7 +362,7 @@ export function InventoryStockTab({
             <p className="eyebrow">Estoque atual</p>
             <h3>Quantidade por modelo</h3>
             <p className="invsales-section-sub">
-              Use Analisar para abrir a visão comercial do modelo. Clique em Modelo ou Quantidade para reordenar.
+              Clique na linha para ver o top 10 de clientes ou use Analisar para abrir a visão comercial completa.
             </p>
           </div>
           <button type="button" className="ghost-button" onClick={() => exportStockCsv(visibleItems)}>
@@ -299,36 +400,66 @@ export function InventoryStockTab({
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((item, index) => (
-                <tr className="group-row invstock-model-row" key={item.modelKey}>
-                  <td className="invsales-rank">{index + 1}</td>
-                  <td>
-                    <div className="invsales-cell-main">
-                      <strong>{item.modelLabel}</strong>
-                    </div>
-                  </td>
-                  <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
-                  <td><span className="invstock-brand">{item.brand || "Sem marca"}</span></td>
-                  <td>{item.qualityLabels.join(", ") || "Sem qualidade"}</td>
-                  <td className="num">
-                    <div className="invstock-quantity">
-                      <span className="invstock-quantity-track">
-                        <i style={{ width: `${Math.max((item.stockUnits / maxVisibleStock) * 100, item.stockUnits > 0 ? 4 : 0)}%` }} />
-                      </span>
-                      <strong>{formatNumber(item.stockUnits)}</strong>
-                      <small>peças</small>
-                    </div>
-                  </td>
-                  <td className="num">
-                    <Link
-                      className="ghost-button small-button invstock-analysis-button"
-                      to={`/estoque/modelos/${encodeURIComponent(item.modelKey)}`}
+              {visibleItems.map((item, index) => {
+                const isSelected = selectedModelKey === item.modelKey;
+
+                return (
+                  <Fragment key={item.modelKey}>
+                    <tr
+                      aria-expanded={isSelected}
+                      className={`group-row invstock-model-row ${isSelected ? "open" : ""}`}
+                      onClick={() => onSelectModel(isSelected ? null : item.modelKey)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectModel(isSelected ? null : item.modelKey);
+                        }
+                      }}
+                      tabIndex={0}
                     >
-                      <BarChart3 size={14} /> Analisar
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+                      <td className="invsales-rank">{index + 1}</td>
+                      <td>
+                        <div className="invsales-cell-main">
+                          <strong><ChevronRight className={isSelected ? "expanded" : ""} size={14} /> {item.modelLabel}</strong>
+                        </div>
+                      </td>
+                      <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
+                      <td><span className="invstock-brand">{item.brand || "Sem marca"}</span></td>
+                      <td>{item.qualityLabels.join(", ") || "Sem qualidade"}</td>
+                      <td className="num">
+                        <div className="invstock-quantity">
+                          <span className="invstock-quantity-track">
+                            <i style={{ width: `${Math.max((item.stockUnits / maxVisibleStock) * 100, item.stockUnits > 0 ? 4 : 0)}%` }} />
+                          </span>
+                          <strong>{formatNumber(item.stockUnits)}</strong>
+                          <small>peças</small>
+                        </div>
+                      </td>
+                      <td className="num">
+                        <Link
+                          className="ghost-button small-button invstock-analysis-button"
+                          onClick={(event) => event.stopPropagation()}
+                          to={`/estoque/modelos/${encodeURIComponent(item.modelKey)}`}
+                        >
+                          <BarChart3 size={14} /> Analisar
+                        </Link>
+                      </td>
+                    </tr>
+                    {isSelected ? (
+                      <tr className="invstock-preview-row">
+                        <td colSpan={7}>
+                          <StockCustomerPreview
+                            detail={detail}
+                            isError={isDetailError}
+                            isLoading={isDetailLoading}
+                            model={item}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

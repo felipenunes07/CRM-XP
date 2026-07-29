@@ -150,7 +150,7 @@ export async function configureInstanceWebhook(instance: {
       url: webhookUrl,
       byEvents: false,
       base64: true,
-      events: ["MESSAGES_UPSERT", "SEND_MESSAGE"],
+      events: ["MESSAGES_UPSERT", "SEND_MESSAGE", "CONNECTION_UPDATE"],
     },
   });
 }

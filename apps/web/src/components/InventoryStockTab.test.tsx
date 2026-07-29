@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import type { InventoryModelsResponse } from "@olist-crm/shared";
+import { describe, expect, it, vi } from "vitest";
+import type { InventoryModelDetailResponse, InventoryModelsResponse } from "@olist-crm/shared";
 import { MemoryRouter } from "react-router-dom";
 import { InventoryStockTab } from "./InventoryStockTab";
 
@@ -87,14 +87,57 @@ const inventoryData: InventoryModelsResponse = {
   ],
 };
 
+const selectedDetail = {
+  topCustomers: [
+    {
+      customerId: "customer-1",
+      customerCode: "C-001",
+      customerDisplayName: "Loja Central",
+      phone: "5511999999999",
+      totalQuantity: 120,
+      totalOrders: 8,
+      totalRevenue: 9600,
+      quantity12Months: 72,
+      orders12Months: 6,
+      revenue12Months: 5760,
+      quantity90Days: 24,
+      orders90Days: 2,
+      revenue90Days: 1920,
+      previous90DaysQuantity: 18,
+      quantity30Days: 8,
+      orders30Days: 1,
+      revenue30Days: 640,
+      observedMonths: 12,
+      averageMonthlyQuantity: 6,
+      averageOrderQuantity: 15,
+      averageUnitPrice: 80,
+      averageDaysBetweenPurchases: 30,
+      predictedNextPurchaseAt: "2026-08-19",
+      trend90dPercent: 33.3,
+      firstPurchaseAt: "2025-02-10",
+      lastPurchaseAt: "2026-07-20",
+      lastAttendant: "Amanda",
+      customerTotalSpent: 68000,
+      customerAverageTicket: 2100,
+      customerStatus: "ACTIVE",
+      customerPriorityScore: 82,
+    },
+  ],
+} as InventoryModelDetailResponse;
+
 describe("InventoryStockTab", () => {
   it("shows the general stock using the same filter and table language as sales by model", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <InventoryStockTab
           data={inventoryData}
+          detail={undefined}
+          isDetailError={false}
+          isDetailLoading={false}
           isError={false}
           isLoading={false}
+          onSelectModel={vi.fn()}
+          selectedModelKey={null}
         />
       </MemoryRouter>,
     );
@@ -112,20 +155,27 @@ describe("InventoryStockTab", () => {
     expect(markup).not.toContain("SKUs com saldo");
   });
 
-  it("opens model analysis on a separate route instead of expanding the stock table", () => {
+  it("shows a compact top-10 dropdown and keeps the full analysis on a separate route", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>
         <InventoryStockTab
           data={inventoryData}
+          detail={selectedDetail}
+          isDetailError={false}
+          isDetailLoading={false}
           isError={false}
           isLoading={false}
+          onSelectModel={vi.fn()}
+          selectedModelKey="TELA::IP13-OLED"
         />
       </MemoryRouter>,
     );
 
     expect(markup).toContain("Analisar");
     expect(markup).toContain("/estoque/modelos/TELA%3A%3AIP13-OLED");
-    expect(markup).not.toContain("Clientes que mais compram");
-    expect(markup).not.toContain("Loja Central");
+    expect(markup).toContain("Top 10 clientes de iPhone 13 OLED");
+    expect(markup).toContain("Loja Central");
+    expect(markup).toContain("Análise completa");
+    expect(markup).not.toContain("Pipeline estimado");
   });
 });

@@ -26,6 +26,7 @@ import { createEventFromMessage } from "../events/eventsService.js";
 import { WhatsappMonitorMessage } from "@olist-crm/shared";
 import { recordMonitorMessage } from "./whatsappMonitorMessages.js";
 import { processCampaignAutoReply } from "./whatsappAutoReply.js";
+import { handleEvolutionConnectionUpdate } from "./whatsappWebhookWatchdog.js";
 
 /**
  * Handles MESSAGES_UPSERT events from Evolution API webhook.
@@ -35,6 +36,7 @@ import { processCampaignAutoReply } from "./whatsappAutoReply.js";
 interface EvolutionWebhookPayload {
   event?: string;
   instance?: string;
+  state?: string;
   data?: EvolutionMessageLike | EvolutionMessageLike[] | Record<string, unknown>;
 }
 
@@ -373,6 +375,18 @@ export async function handleEvolutionWebhook(
     payloadSize: rawPayloadStr.length,
     payloadPreview: rawPayloadStr.slice(0, 500),
   });
+
+  if (event === "connection.update" || event === "CONNECTION_UPDATE") {
+    const data = payload.data && !Array.isArray(payload.data)
+      ? (payload.data as Record<string, unknown>)
+      : {};
+    const nestedInstance = data.instance && typeof data.instance === "object"
+      ? (data.instance as Record<string, unknown>)
+      : {};
+    const state = String(data.state ?? data.status ?? nestedInstance.state ?? payload.state ?? "");
+    const connectionResult = await handleEvolutionConnectionUpdate(instance, state);
+    return { processed: connectionResult.processed, event, alertSent: connectionResult.alertSent };
+  }
 
   if (!ACCEPTED_EVENTS.has(event)) {
     logger.info("evolution webhook ignored event", { event, instance });

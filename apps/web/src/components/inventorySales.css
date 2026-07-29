@@ -650,6 +650,95 @@
   white-space: nowrap;
 }
 
+.invstock-model-row {
+  cursor: pointer;
+}
+
+.invstock-model-row.open {
+  background: rgba(41, 86, 215, 0.065);
+  box-shadow: inset 4px 0 0 #2956d7;
+}
+
+.invstock-model-row .invsales-cell-main svg {
+  transition: transform 0.18s ease;
+}
+
+.invstock-model-row .invsales-cell-main svg.expanded {
+  transform: rotate(90deg);
+}
+
+.invsales-table tr.invstock-preview-row > td {
+  padding: 0;
+  background: #f7faff;
+}
+
+.invstock-preview {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1.15rem 1.1rem;
+  border-left: 4px solid #2956d7;
+}
+
+.invstock-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.invstock-preview-head > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.invstock-preview-head h4 {
+  margin: 0;
+  color: #173260;
+  font-size: 1rem;
+}
+
+.invstock-preview-head p:last-child {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.invstock-preview-table-wrap {
+  border: 1px solid rgba(41, 86, 215, 0.1);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.invstock-preview-table {
+  min-width: 1080px;
+}
+
+.invstock-preview-table td {
+  background: #fff;
+}
+
+.invstock-preview-table td.num small {
+  display: block;
+  margin-top: 0.12rem;
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
+.invstock-preview-customer {
+  display: grid;
+  gap: 0.13rem;
+}
+
+.invstock-preview-customer strong {
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.invstock-preview-customer span {
+  color: #94a3b8;
+  font-size: 0.68rem;
+}
+
 /* ── Estoque › Análise comercial do modelo ── */
 
 .model-analysis-page {
@@ -719,7 +808,7 @@
 
 .model-analysis-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   border: 1px solid rgba(41, 86, 215, 0.1);
   border-radius: 16px;
   background: rgba(249, 251, 255, 0.86);
@@ -758,9 +847,13 @@
   font-size: 0.72rem;
 }
 
+.model-analysis-summary > div.highlight {
+  background: linear-gradient(145deg, rgba(41, 86, 215, 0.08), rgba(41, 86, 215, 0.02));
+}
+
 .model-analysis-opportunities {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.85rem;
 }
 
@@ -829,6 +922,42 @@
   line-height: 1.45;
 }
 
+.model-analysis-sales-readout {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 0;
+  overflow: hidden;
+}
+
+.model-analysis-sales-readout > div {
+  display: grid;
+  gap: 0.22rem;
+  padding: 1rem;
+  border-right: 1px solid rgba(41, 86, 215, 0.09);
+}
+
+.model-analysis-sales-readout > div:last-child {
+  border-right: 0;
+}
+
+.model-analysis-sales-readout span {
+  color: #64748b;
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.model-analysis-sales-readout strong {
+  color: #12213f;
+  font-size: 1.12rem;
+}
+
+.model-analysis-sales-readout small {
+  color: #94a3b8;
+  font-size: 0.7rem;
+}
+
 .model-analysis-clients {
   display: grid;
   gap: 1rem;
@@ -886,6 +1015,30 @@
   color: #173260;
 }
 
+.model-analysis-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0 1.25rem;
+}
+
+.model-analysis-filter-row button {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid rgba(41, 86, 215, 0.12);
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.model-analysis-filter-row button.active {
+  border-color: #2956d7;
+  background: #2956d7;
+  color: #fff;
+}
+
 .model-analysis-client-tools select {
   min-width: 205px;
   padding: 0 0.75rem;
@@ -912,7 +1065,7 @@
 }
 
 .model-analysis-table {
-  min-width: 1240px;
+  min-width: 1850px;
 }
 
 .model-analysis-table td {
@@ -924,22 +1077,77 @@
 }
 
 .model-analysis-customer,
-.model-analysis-monthly {
+.model-analysis-monthly,
+.model-analysis-money,
+.model-analysis-date {
   display: grid;
   gap: 0.15rem;
 }
 
 .model-analysis-customer strong,
-.model-analysis-monthly strong {
+.model-analysis-monthly strong,
+.model-analysis-money strong,
+.model-analysis-date strong {
   color: #0f172a;
   font-size: 0.83rem;
 }
 
 .model-analysis-customer span,
-.model-analysis-monthly span {
+.model-analysis-monthly span,
+.model-analysis-money span,
+.model-analysis-date span {
   color: #94a3b8;
   font-size: 0.69rem;
   white-space: nowrap;
+}
+
+.model-analysis-action {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 210px;
+}
+
+.model-analysis-action small {
+  max-width: 30ch;
+  color: #64748b;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.model-analysis-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.model-analysis-trend.success {
+  color: #16774a;
+}
+
+.model-analysis-trend.danger {
+  color: #b42318;
+}
+
+.model-analysis-trend.neutral {
+  color: #64748b;
+}
+
+.model-analysis-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.model-analysis-no-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #94a3b8;
+  font-size: 0.68rem;
 }
 
 .model-analysis-status {
@@ -1323,12 +1531,32 @@
     border-right: 0;
   }
 
-  .model-analysis-summary > div:nth-child(-n + 2) {
+  .model-analysis-summary > div {
     border-bottom: 1px solid rgba(41, 86, 215, 0.09);
   }
 
+  .model-analysis-summary > div:nth-child(even) {
+    border-right: 0;
+  }
+
+  .model-analysis-summary > div:last-child {
+    border-bottom: 0;
+  }
+
   .model-analysis-opportunities {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-analysis-sales-readout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .model-analysis-sales-readout > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .model-analysis-sales-readout > div:nth-child(-n + 2) {
+    border-bottom: 1px solid rgba(41, 86, 215, 0.09);
   }
 
   .model-analysis-client-head {
@@ -1387,6 +1615,10 @@
     flex-direction: column;
   }
 
+  .invstock-preview-head {
+    flex-direction: column;
+  }
+
   .model-analysis-tags {
     justify-content: flex-start;
   }
@@ -1413,5 +1645,19 @@
   .model-analysis-search input,
   .model-analysis-client-tools select {
     width: 100%;
+  }
+
+  .model-analysis-opportunities,
+  .model-analysis-sales-readout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .model-analysis-sales-readout > div {
+    border-right: 0;
+    border-bottom: 1px solid rgba(41, 86, 215, 0.09);
+  }
+
+  .model-analysis-sales-readout > div:last-child {
+    border-bottom: 0;
   }
 }

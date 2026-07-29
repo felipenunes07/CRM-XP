@@ -1257,15 +1257,34 @@ export interface InventoryModelTopCustomer {
   customerId: string;
   customerCode: string;
   customerDisplayName: string;
+  phone: string | null;
   totalQuantity: number;
   totalOrders: number;
+  totalRevenue: number;
   quantity12Months: number;
   orders12Months: number;
+  revenue12Months: number;
+  quantity90Days: number;
+  orders90Days: number;
+  revenue90Days: number;
+  previous90DaysQuantity: number;
+  quantity30Days: number;
+  orders30Days: number;
+  revenue30Days: number;
   observedMonths: number;
   averageMonthlyQuantity: number;
+  averageOrderQuantity: number;
+  averageUnitPrice: number;
+  averageDaysBetweenPurchases: number | null;
+  predictedNextPurchaseAt: string | null;
+  trend90dPercent: number | null;
   firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
   lastAttendant: string | null;
+  customerTotalSpent: number;
+  customerAverageTicket: number;
+  customerStatus: string;
+  customerPriorityScore: number;
 }
 
 export interface InventoryModelDepositBalance {
