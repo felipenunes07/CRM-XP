@@ -1259,6 +1259,11 @@ export interface InventoryModelTopCustomer {
   customerDisplayName: string;
   totalQuantity: number;
   totalOrders: number;
+  quantity12Months: number;
+  orders12Months: number;
+  observedMonths: number;
+  averageMonthlyQuantity: number;
+  firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
   lastAttendant: string | null;
 }

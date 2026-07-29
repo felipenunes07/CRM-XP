@@ -1,11 +1,13 @@
 import type {
+  InventoryModelDetailResponse,
   InventoryModelListItem,
   InventoryModelsResponse,
   InventoryProductKind,
 } from "@olist-crm/shared";
-import { useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
 import { Boxes, ChevronRight, Download, PackageCheck, Tags, Warehouse, X } from "lucide-react";
-import { formatNumber } from "../lib/format";
+import { Link } from "react-router-dom";
+import { formatDate, formatDaysSince, formatNumber } from "../lib/format";
 import "./inventorySales.css";
 
 type StockKindFilter = "all" | InventoryProductKind;
@@ -15,7 +17,11 @@ interface InventoryStockTabProps {
   data: InventoryModelsResponse | undefined;
   isError: boolean;
   isLoading: boolean;
-  onOpenDetails: (modelKey: string) => void;
+  detail: InventoryModelDetailResponse | undefined;
+  isDetailError: boolean;
+  isDetailLoading: boolean;
+  selectedModelKey: string | null;
+  onSelectModel: (modelKey: string | null) => void;
 }
 
 function uniqueSorted(values: string[]) {
@@ -26,6 +32,25 @@ function productKindLabel(kind: InventoryProductKind) {
   if (kind === "DOC_DE_CARGA") return "DOC de carga";
   if (kind === "BATERIA") return "Bateria";
   return "Tela";
+}
+
+function daysSinceDate(value: string | null) {
+  if (!value) return null;
+  const parts = value.slice(0, 10).split("-").map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) return null;
+
+  const [year, month, day] = parts as [number, number, number];
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = Date.UTC(year, month - 1, day);
+  return Math.max(0, Math.floor((today - target) / 86_400_000));
+}
+
+function formatMonthlyAverage(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 1,
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 function matchesSearch(item: InventoryModelListItem, search: string) {
@@ -63,7 +88,144 @@ function exportStockCsv(items: InventoryModelListItem[]) {
   URL.revokeObjectURL(url);
 }
 
-export function InventoryStockTab({ data, isError, isLoading, onOpenDetails }: InventoryStockTabProps) {
+function StockCustomerDrilldown({
+  detail,
+  isError,
+  isLoading,
+  model,
+  onClose,
+}: {
+  detail: InventoryModelDetailResponse | undefined;
+  isError: boolean;
+  isLoading: boolean;
+  model: InventoryModelListItem;
+  onClose: () => void;
+}) {
+  const customers = detail?.topCustomers ?? [];
+  const customerSummary = {
+    totalQuantity: customers.reduce((total, customer) => total + customer.totalQuantity, 0),
+    averageMonthly: customers.reduce((total, customer) => total + customer.averageMonthlyQuantity, 0),
+    mostRecentPurchaseAt: customers.reduce<string | null>(
+      (latest, customer) => !latest || (customer.lastPurchaseAt && customer.lastPurchaseAt > latest)
+        ? customer.lastPurchaseAt
+        : latest,
+      null,
+    ),
+  };
+
+  return (
+    <div className="invstock-customer-drill" aria-live="polite">
+      <div className="invstock-customer-head">
+        <div>
+          <p className="eyebrow">Quem compra este modelo</p>
+          <h4>Clientes que mais compram {model.modelLabel}</h4>
+          <p>
+            Ranking pelo volume total. A média mensal considera até os últimos 12 meses de histórico de cada cliente.
+          </p>
+        </div>
+        <button type="button" className="ghost-button small-button" onClick={onClose}>
+          <X size={14} /> Fechar
+        </button>
+      </div>
+
+      {isLoading ? <div className="invsales-empty">Carregando histórico dos clientes...</div> : null}
+      {isError ? <div className="invsales-empty">Não foi possível carregar os clientes deste modelo agora.</div> : null}
+
+      {!isLoading && !isError && detail ? (
+        customers.length ? (
+          <>
+            <div className="invstock-customer-kpis">
+              <article>
+                <span>Principais clientes</span>
+                <strong>{formatNumber(customers.length)}</strong>
+                <small>Até 8 clientes no ranking</small>
+              </article>
+              <article>
+                <span>Volume comprado</span>
+                <strong>{formatNumber(customerSummary.totalQuantity)}</strong>
+                <small>Peças compradas pelos clientes exibidos</small>
+              </article>
+              <article>
+                <span>Média mensal conjunta</span>
+                <strong>{formatMonthlyAverage(customerSummary.averageMonthly)}</strong>
+                <small>Peças por mês no histórico recente</small>
+              </article>
+              <article>
+                <span>Compra mais recente</span>
+                <strong>{formatDaysSince(daysSinceDate(customerSummary.mostRecentPurchaseAt))}</strong>
+                <small>{formatDate(customerSummary.mostRecentPurchaseAt)}</small>
+              </article>
+            </div>
+
+            <div className="invsales-table-wrap invstock-customer-table-wrap">
+              <table className="invsales-table invstock-customer-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Cliente</th>
+                    <th className="num">Total comprado</th>
+                    <th className="num">Pedidos</th>
+                    <th className="num">Média mensal</th>
+                    <th>Última compra</th>
+                    <th>Tempo sem comprar</th>
+                    <th>Vendedora</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map((customer, index) => (
+                    <tr key={customer.customerId}>
+                      <td className="invsales-rank">{index + 1}</td>
+                      <td>
+                        <div className="invstock-customer-name">
+                          <strong>{customer.customerDisplayName}</strong>
+                          <span>{customer.customerCode}</span>
+                        </div>
+                      </td>
+                      <td className="num"><strong>{formatNumber(customer.totalQuantity)}</strong></td>
+                      <td className="num">{formatNumber(customer.totalOrders)}</td>
+                      <td className="num">
+                        <div className="invstock-monthly-average">
+                          <strong>{formatMonthlyAverage(customer.averageMonthlyQuantity)}</strong>
+                          <span>peças/mês · base {customer.observedMonths}m</span>
+                        </div>
+                      </td>
+                      <td>{formatDate(customer.lastPurchaseAt)}</td>
+                      <td>
+                        <span className="invstock-recency-pill">
+                          {formatDaysSince(daysSinceDate(customer.lastPurchaseAt))}
+                        </span>
+                      </td>
+                      <td>{customer.lastAttendant || "Sem vendedora"}</td>
+                      <td>
+                        <Link className="ghost-button small-button" to={`/clientes/${customer.customerId}`}>
+                          Ver cliente
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="invsales-empty">Ainda não há clientes com compras registradas para este modelo.</div>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+export function InventoryStockTab({
+  data,
+  detail,
+  isDetailError,
+  isDetailLoading,
+  isError,
+  isLoading,
+  onSelectModel,
+  selectedModelKey,
+}: InventoryStockTabProps) {
   const [kind, setKind] = useState<StockKindFilter>("all");
   const [brand, setBrand] = useState("");
   const [quality, setQuality] = useState("");
@@ -294,39 +456,61 @@ export function InventoryStockTab({ data, isError, isLoading, onOpenDetails }: I
               </tr>
             </thead>
             <tbody>
-              {visibleItems.map((item, index) => (
-                <tr
-                  key={item.modelKey}
-                  className="group-row"
-                  tabIndex={0}
-                  onClick={() => onOpenDetails(item.modelKey)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onOpenDetails(item.modelKey);
-                    }
-                  }}
-                >
-                  <td className="invsales-rank">{index + 1}</td>
-                  <td>
-                    <div className="invsales-cell-main">
-                      <strong><ChevronRight size={14} /> {item.modelLabel}</strong>
-                    </div>
-                  </td>
-                  <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
-                  <td><span className="invstock-brand">{item.brand || "Sem marca"}</span></td>
-                  <td>{item.qualityLabels.join(", ") || "Sem qualidade"}</td>
-                  <td className="num">
-                    <div className="invstock-quantity">
-                      <span className="invstock-quantity-track">
-                        <i style={{ width: `${Math.max((item.stockUnits / maxVisibleStock) * 100, item.stockUnits > 0 ? 4 : 0)}%` }} />
-                      </span>
-                      <strong>{formatNumber(item.stockUnits)}</strong>
-                      <small>peças</small>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {visibleItems.map((item, index) => {
+                const isSelected = selectedModelKey === item.modelKey;
+
+                return (
+                  <Fragment key={item.modelKey}>
+                    <tr
+                      className={`group-row invstock-model-row ${isSelected ? "open" : ""}`}
+                      tabIndex={0}
+                      aria-expanded={isSelected}
+                      onClick={() => onSelectModel(isSelected ? null : item.modelKey)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelectModel(isSelected ? null : item.modelKey);
+                        }
+                      }}
+                    >
+                      <td className="invsales-rank">{index + 1}</td>
+                      <td>
+                        <div className="invsales-cell-main">
+                          <strong>
+                            <ChevronRight className={isSelected ? "expanded" : ""} size={14} />
+                            {item.modelLabel}
+                          </strong>
+                        </div>
+                      </td>
+                      <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
+                      <td><span className="invstock-brand">{item.brand || "Sem marca"}</span></td>
+                      <td>{item.qualityLabels.join(", ") || "Sem qualidade"}</td>
+                      <td className="num">
+                        <div className="invstock-quantity">
+                          <span className="invstock-quantity-track">
+                            <i style={{ width: `${Math.max((item.stockUnits / maxVisibleStock) * 100, item.stockUnits > 0 ? 4 : 0)}%` }} />
+                          </span>
+                          <strong>{formatNumber(item.stockUnits)}</strong>
+                          <small>peças</small>
+                        </div>
+                      </td>
+                    </tr>
+                    {isSelected ? (
+                      <tr className="invstock-customer-drill-row">
+                        <td colSpan={6}>
+                          <StockCustomerDrilldown
+                            detail={detail}
+                            isError={isDetailError}
+                            isLoading={isDetailLoading}
+                            model={item}
+                            onClose={() => onSelectModel(null)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

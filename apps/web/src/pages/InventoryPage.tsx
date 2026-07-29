@@ -7,7 +7,7 @@ import type {
   InventoryRestockListItem,
   InventoryStaleListItem,
 } from "@olist-crm/shared";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -15,6 +15,7 @@ import {
   Boxes,
   CalendarClock,
   CheckCircle2,
+  ChevronRight,
   CircleDashed,
   Download,
   Package,
@@ -24,6 +25,7 @@ import {
   TrendingDown,
   TrendingUp,
   Warehouse,
+  X,
 } from "lucide-react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Link } from "react-router-dom";
@@ -38,6 +40,8 @@ type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" |
 type RestockWindow = "all" | "today" | "7d" | "30d";
 type StaleFilter = "30_60" | "60_90" | "90_120" | "120plus";
 type InventoryKindFilter = "all" | InventoryProductKind;
+type ModelRecommendationFilter = "all" | InventoryBuyingListItem["buyRecommendation"];
+type ModelSort = "priority" | "stock" | "sales30" | "sales90" | "lastSale";
 
 const viewTabs = [
   {
@@ -78,9 +82,9 @@ const viewTabs = [
   },
   {
     value: "models" as const,
-    label: "SKUs",
-    helper: "Abra cada SKU com calma e acompanhe estoque, vendas, reposicoes e clientes.",
-    title: "Analise por SKU",
+    label: "Análise",
+    helper: "Compare estoque, giro e necessidade de compra de cada SKU em uma única visão.",
+    title: "Análise por SKU",
   },
 ] as const;
 
@@ -678,27 +682,33 @@ function ModelDetailPanel({
   isLoading: boolean;
 }) {
   if (isLoading) {
-    return <section className="panel inventory-detail-panel">Carregando analise do SKU...</section>;
+    return <section className="panel sku-detail-panel">Carregando diagnóstico do SKU...</section>;
   }
 
   if (!detail?.model) {
     return (
-      <section className="panel inventory-detail-panel inventory-detail-empty">
-        <div className="empty-state">Escolha um SKU da lista para abrir a analise completa.</div>
+      <section className="panel sku-detail-panel inventory-detail-empty">
+        <div className="empty-state">Selecione um SKU na tabela para abrir o diagnóstico completo.</div>
       </section>
     );
   }
 
   const model = detail.model;
+  const decisionCopy =
+    model.buyRecommendation === "BUY_NOW"
+      ? "Reposição recomendada: a demanda recente está pressionando o estoque disponível."
+      : model.buyRecommendation === "WATCH"
+        ? "Acompanhe este SKU: estoque e ritmo de venda pedem revisão antes da próxima compra."
+        : "Evite uma nova compra agora: priorize vender o saldo atual antes de repor.";
 
   return (
-    <section className="panel inventory-detail-panel">
-      <div className="inventory-detail-header">
-        <div>
-          <p className="eyebrow">Detalhe do SKU</p>
-          <h3>{model.sku}</h3>
+    <section className="panel sku-detail-panel">
+      <div className="sku-detail-hero">
+        <div className="sku-detail-identity">
+          <p className="eyebrow">Diagnóstico selecionado</p>
+          <h3>{model.modelLabel}</h3>
           <p className="panel-subcopy">
-            {model.modelLabel} · {buyRecommendationLabel(model.buyRecommendation)}
+            {model.sku} · {model.brand} · {model.qualityLabels.join(", ") || "Sem qualidade informada"}
           </p>
         </div>
         <div className="inventory-note-pills">
@@ -711,67 +721,152 @@ function ModelDetailPanel({
         </div>
       </div>
 
-      <div className="inventory-mini-stats">
-        <article className="inventory-mini-stat">
-          <span>Pecas em estoque</span>
+      <div className={`sku-decision-banner tone-${buyRecommendationTone(model.buyRecommendation)}`}>
+        <div>
+          <span>Orientação de compra</span>
+          <strong>{decisionCopy}</strong>
+        </div>
+        <div className="sku-detail-meta">
+          <span>Última venda: {model.lastSaleAt ? formatDate(model.lastSaleAt) : "sem registro"}</span>
+          <span>Última reposição: {model.lastRestockAt ? formatDate(model.lastRestockAt) : "sem registro"}</span>
+        </div>
+      </div>
+
+      <div className="invsales-kpi-grid">
+        <article className="invsales-kpi">
+          <span>Estoque atual</span>
           <strong>{formatNumber(model.stockUnits)}</strong>
+          <small>{formatNumber(model.activeSkuCount)} variações com saldo</small>
         </article>
-        <article className="inventory-mini-stat">
-          <span>SKU ativo</span>
-          <strong>{formatNumber(model.activeSkuCount)}</strong>
-        </article>
-        <article className="inventory-mini-stat">
-          <span>Venda 30 dias</span>
+        <article className="invsales-kpi">
+          <span>Vendas em 30 dias</span>
           <strong>{formatNumber(model.sales30)}</strong>
+          <small>{formatNumber(model.orders30)} pedidos no período</small>
         </article>
-        <article className="inventory-mini-stat">
-          <span>Cobertura</span>
+        <article className="invsales-kpi">
+          <span>Vendas em 90 dias</span>
+          <strong>{formatNumber(model.sales90)}</strong>
+          <small>{formatNumber(model.orders90)} pedidos no período</small>
+        </article>
+        <article className="invsales-kpi">
+          <span>Cobertura estimada</span>
           <strong>{formatCoverage(model.coverageDays)}</strong>
+          <small>{formatDaysSince(model.daysSinceLastSale)}</small>
         </article>
       </div>
 
-      <InventoryModelChart series={detail.dailySeries} />
-
-      <div className="inventory-detail-story">
-        {detail.highlights.map((line) => (
-          <div key={line} className="inventory-story-card">
-            <CircleDashed size={16} />
-            <span>{line}</span>
+      <div className="inventory-overview-chart-card sku-detail-chart-card">
+        <div className="inventory-section-heading">
+          <div>
+            <p className="eyebrow">Movimentação</p>
+            <h4>Estoque, vendas e reposições</h4>
+            <p className="panel-subcopy">Veja se a entrada de peças realmente virou venda depois da reposição.</p>
           </div>
-        ))}
+        </div>
+        {detail.dailySeries.length ? (
+          <InventoryModelChart series={detail.dailySeries} />
+        ) : (
+          <div className="empty-state">Ainda não há histórico diário suficiente para este SKU.</div>
+        )}
       </div>
 
-      <div className="inventory-benchmark-grid">
-        <article className="inventory-benchmark-card">
-          <span>Estoque baixo</span>
-          <strong>
-            {detail.benchmarks.lowStockAvgSales === null ? "Sem base" : `${detail.benchmarks.lowStockAvgSales} pecas/dia`}
-          </strong>
+      {detail.highlights.length ? (
+        <section className="sku-detail-section">
+          <div className="sku-detail-section-heading">
+            <div>
+              <p className="eyebrow">Leitura recomendada</p>
+              <h4>O que merece atenção neste SKU</h4>
+            </div>
+          </div>
+          <div className="inventory-detail-story">
+            {detail.highlights.map((line) => (
+              <div key={line} className="inventory-story-card">
+                <CircleDashed size={16} />
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="sku-comparison-grid">
+        <article className="sku-comparison-card">
+          <div>
+            <span>Comparação histórica</span>
+            <strong>Efeito do nível de estoque</strong>
+          </div>
+          <div className="sku-comparison-values">
+            <div>
+              <span>Estoque baixo</span>
+              <strong>
+                {detail.benchmarks.lowStockAvgSales === null ? "Sem base" : `${detail.benchmarks.lowStockAvgSales} peças/dia`}
+              </strong>
+            </div>
+            <div>
+              <span>Estoque alto</span>
+              <strong>
+                {detail.benchmarks.highStockAvgSales === null ? "Sem base" : `${detail.benchmarks.highStockAvgSales} peças/dia`}
+              </strong>
+            </div>
+          </div>
         </article>
-        <article className="inventory-benchmark-card">
-          <span>Estoque alto</span>
-          <strong>
-            {detail.benchmarks.highStockAvgSales === null ? "Sem base" : `${detail.benchmarks.highStockAvgSales} pecas/dia`}
-          </strong>
-        </article>
-        <article className="inventory-benchmark-card">
-          <span>Mix curto</span>
-          <strong>
-            {detail.benchmarks.shortMixAvgSales === null ? "Sem base" : `${detail.benchmarks.shortMixAvgSales} pecas/dia`}
-          </strong>
-        </article>
-        <article className="inventory-benchmark-card">
-          <span>Mix amplo</span>
-          <strong>
-            {detail.benchmarks.wideMixAvgSales === null ? "Sem base" : `${detail.benchmarks.wideMixAvgSales} pecas/dia`}
-          </strong>
+        <article className="sku-comparison-card">
+          <div>
+            <span>Comparação histórica</span>
+            <strong>Efeito da variedade disponível</strong>
+          </div>
+          <div className="sku-comparison-values">
+            <div>
+              <span>Mix curto</span>
+              <strong>
+                {detail.benchmarks.shortMixAvgSales === null ? "Sem base" : `${detail.benchmarks.shortMixAvgSales} peças/dia`}
+              </strong>
+            </div>
+            <div>
+              <span>Mix amplo</span>
+              <strong>
+                {detail.benchmarks.wideMixAvgSales === null ? "Sem base" : `${detail.benchmarks.wideMixAvgSales} peças/dia`}
+              </strong>
+            </div>
+          </div>
         </article>
       </div>
 
-      <div className="inventory-detail-grid">
-        <section className="inventory-detail-column">
+      <div className="sku-detail-grid">
+        <section className="sku-detail-card">
           <div className="inventory-section-heading">
-            <h4>Clientes que mais compram</h4>
+            <div>
+              <p className="eyebrow">Disponibilidade</p>
+              <h4>Depósitos e saldo</h4>
+            </div>
+            <span>{formatNumber(detail.deposits.length)}</span>
+          </div>
+          {detail.deposits.length ? (
+            <div className="inventory-detail-list">
+              {detail.deposits.map((deposit) => (
+                <article key={`${deposit.name}-${deposit.companyName ?? ""}`} className="inventory-detail-list-row">
+                  <div>
+                    <strong>{deposit.name}</strong>
+                    <span>{deposit.companyName ?? "Sem empresa informada"}</span>
+                  </div>
+                  <div className="inventory-row-numbers">
+                    <strong>{formatNumber(deposit.balance)}</strong>
+                    <span>{formatNumber(deposit.reservedBalance)} reservadas</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="empty-state">Sem leitura de depósito no cache agora.</div>
+          )}
+        </section>
+
+        <section className="sku-detail-card">
+          <div className="inventory-section-heading">
+            <div>
+              <p className="eyebrow">Demanda</p>
+              <h4>Clientes que mais compram</h4>
+            </div>
             <span>{formatNumber(detail.topCustomers.length)}</span>
           </div>
           {detail.topCustomers.length ? (
@@ -781,7 +876,7 @@ function ModelDetailPanel({
                   <div>
                     <strong>{customer.customerDisplayName}</strong>
                     <span>
-                      {customer.customerCode} · {formatNumber(customer.totalQuantity)} pecas · {formatDaysSince(daysBetween(customer.lastPurchaseAt, toDateOnly(new Date().toISOString())))}
+                      {customer.customerCode} · {formatNumber(customer.totalQuantity)} peças em {formatNumber(customer.totalOrders)} pedidos
                     </span>
                   </div>
                   <Link className="ghost-button small-button" to={`/clientes/${customer.customerId}`}>
@@ -791,56 +886,38 @@ function ModelDetailPanel({
               ))}
             </div>
           ) : (
-            <div className="empty-state">Sem clientes com historico deste SKU.</div>
+            <div className="empty-state">Sem clientes com histórico deste SKU.</div>
           )}
         </section>
 
-        <section className="inventory-detail-column">
+        <section className="sku-detail-card">
           <div className="inventory-section-heading">
-            <h4>Depositos e saldo</h4>
-            <span>{formatNumber(detail.deposits.length)}</span>
+            <div>
+              <p className="eyebrow">Composição</p>
+              <h4>Variações do SKU</h4>
+            </div>
+            <span>{formatNumber(detail.skus.length)}</span>
           </div>
-          {detail.deposits.length ? (
+          {detail.skus.length ? (
             <div className="inventory-detail-list">
-              {detail.deposits.map((deposit) => (
-                <article key={`${deposit.name}-${deposit.companyName ?? ""}`} className="inventory-detail-list-row">
+              {detail.skus.map((sku) => (
+                <article key={sku.sku} className="inventory-detail-list-row">
                   <div>
-                    <strong>{deposit.name}</strong>
-                    <span>{deposit.companyName ?? "Sem empresa"} </span>
+                    <strong>{sku.sku}</strong>
+                    <span>
+                      {sku.quality ?? "Sem qualidade"} · {sku.color ?? "Sem cor"}
+                    </span>
                   </div>
                   <div className="inventory-row-numbers">
-                    <strong>{formatNumber(deposit.balance)}</strong>
-                    <span>Reservado {formatNumber(deposit.reservedBalance)}</span>
+                    <strong>{formatNumber(sku.stockCurrent)} em estoque</strong>
+                    <span>{formatNumber(sku.sales90)} vendas em 90d</span>
                   </div>
                 </article>
               ))}
             </div>
           ) : (
-            <div className="empty-state">Sem leitura de deposito no cache agora.</div>
+            <div className="empty-state">Sem variações vinculadas a este SKU.</div>
           )}
-        </section>
-
-        <section className="inventory-detail-column">
-          <div className="inventory-section-heading">
-            <h4>SKU selecionado</h4>
-            <span>{formatNumber(detail.skus.length)}</span>
-          </div>
-          <div className="inventory-detail-list">
-            {detail.skus.map((sku) => (
-              <article key={sku.sku} className="inventory-detail-list-row">
-                <div>
-                  <strong>{sku.sku}</strong>
-                  <span>
-                    {sku.quality ?? "Sem qualidade"} · {sku.color ?? "Sem cor"}
-                  </span>
-                </div>
-                <div className="inventory-row-numbers">
-                  <strong>{formatNumber(sku.stockCurrent)}</strong>
-                  <span>Venda 90d {formatNumber(sku.sales90)}</span>
-                </div>
-              </article>
-            ))}
-          </div>
         </section>
       </div>
     </section>
@@ -925,8 +1002,9 @@ export function InventoryPage() {
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
   const [modelKindFilter, setModelKindFilter] = useState<InventoryKindFilter>("all");
+  const [modelRecommendationFilter, setModelRecommendationFilter] = useState<ModelRecommendationFilter>("all");
+  const [modelSort, setModelSort] = useState<ModelSort>("priority");
   const [brandFilter, setBrandFilter] = useState("");
-  const [familyFilter, setFamilyFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
   const deferredSearch = useDeferredValue(modelSearch.trim().toLowerCase());
   const activeTab = viewTabs.find((tab) => tab.value === activeView) ?? viewTabs[0];
@@ -971,7 +1049,7 @@ export function InventoryPage() {
   const detailQuery = useQuery({
     queryKey: ["inventory-model-detail", selectedModelKey],
     queryFn: () => api.inventoryModelDetail(token!, selectedModelKey!),
-    enabled: Boolean(token && activeView === "models" && selectedModelKey),
+    enabled: Boolean(token && (activeView === "models" || activeView === "screens") && selectedModelKey),
   });
 
   const refreshMutation = useMutation({
@@ -1033,9 +1111,9 @@ export function InventoryPage() {
   }, [staleQuery.data?.items]);
 
   const visibleModels = useMemo(() => {
-    return (modelsQuery.data?.items ?? []).filter((item) => {
+    const filtered = (modelsQuery.data?.items ?? []).filter((item) => {
       if (deferredSearch) {
-        const haystack = [item.sku, item.modelLabel, item.brand, item.family, item.qualityLabels.join(" ")]
+        const haystack = [item.sku, item.modelLabel, item.brand, item.qualityLabels.join(" ")]
           .join(" ")
           .toLowerCase();
 
@@ -1048,11 +1126,11 @@ export function InventoryPage() {
         return false;
       }
 
-      if (brandFilter && item.brand !== brandFilter) {
+      if (modelRecommendationFilter !== "all" && item.buyRecommendation !== modelRecommendationFilter) {
         return false;
       }
 
-      if (familyFilter && item.family !== familyFilter) {
+      if (brandFilter && item.brand !== brandFilter) {
         return false;
       }
 
@@ -1062,9 +1140,73 @@ export function InventoryPage() {
 
       return true;
     });
-  }, [brandFilter, deferredSearch, familyFilter, modelKindFilter, modelsQuery.data?.items, qualityFilter]);
+
+    return [...filtered].sort((left, right) => {
+      if (modelSort === "stock") return right.stockUnits - left.stockUnits || right.sales30 - left.sales30;
+      if (modelSort === "sales30") return right.sales30 - left.sales30 || right.stockUnits - left.stockUnits;
+      if (modelSort === "sales90") return right.sales90 - left.sales90 || right.stockUnits - left.stockUnits;
+      if (modelSort === "lastSale") return (right.lastSaleAt ?? "").localeCompare(left.lastSaleAt ?? "");
+
+      const priority = { BUY_NOW: 0, WATCH: 1, DO_NOT_BUY: 2 };
+      return (
+        priority[left.buyRecommendation] - priority[right.buyRecommendation]
+        || right.sales30 - left.sales30
+        || left.modelLabel.localeCompare(right.modelLabel, "pt-BR")
+      );
+    });
+  }, [
+    brandFilter,
+    deferredSearch,
+    modelKindFilter,
+    modelRecommendationFilter,
+    modelSort,
+    modelsQuery.data?.items,
+    qualityFilter,
+  ]);
+
+  const modelSummary = useMemo(
+    () => ({
+      stockUnits: visibleModels.reduce((total, item) => total + Math.max(0, item.stockUnits), 0),
+      sales30: visibleModels.reduce((total, item) => total + Math.max(0, item.sales30), 0),
+      buyNow: visibleModels.filter((item) => item.buyRecommendation === "BUY_NOW").length,
+      stale: visibleModels.filter((item) => item.daysSinceLastSale === null || item.daysSinceLastSale >= 60).length,
+    }),
+    [visibleModels],
+  );
+
+  const modelFilterCrumbs = [
+    modelKindFilter !== "all"
+      ? { label: `Tipo: ${productKindLabel(modelKindFilter)}`, clear: () => setModelKindFilter("all") }
+      : null,
+    modelRecommendationFilter !== "all"
+      ? {
+          label: `Decisão: ${buyRecommendationLabel(modelRecommendationFilter)}`,
+          clear: () => setModelRecommendationFilter("all"),
+        }
+      : null,
+    brandFilter ? { label: `Marca: ${brandFilter}`, clear: () => setBrandFilter("") } : null,
+    qualityFilter ? { label: `Qualidade: ${qualityFilter}`, clear: () => setQualityFilter("") } : null,
+    modelSearch ? { label: `Busca: ${modelSearch}`, clear: () => setModelSearch("") } : null,
+  ].filter((crumb): crumb is { label: string; clear: () => void } => Boolean(crumb));
+
+  function clearModelFilters() {
+    setModelSearch("");
+    setModelKindFilter("all");
+    setModelRecommendationFilter("all");
+    setBrandFilter("");
+    setQualityFilter("");
+    setModelSort("priority");
+  }
+
+  useEffect(() => {
+    if (activeView !== "models" || !visibleModels.length) return;
+    if (!selectedModelKey || !visibleModels.some((item) => item.modelKey === selectedModelKey)) {
+      setSelectedModelKey(visibleModels[0]!.modelKey);
+    }
+  }, [activeView, selectedModelKey, visibleModels]);
 
   function openModel(modelKey: string) {
+    clearModelFilters();
     setSelectedModelKey(modelKey);
     setActiveView("models");
   }
@@ -1274,9 +1416,13 @@ export function InventoryPage() {
       {activeView === "screens" ? (
         <InventoryStockTab
           data={modelsQuery.data}
+          detail={detailQuery.data}
+          isDetailError={detailQuery.isError}
+          isDetailLoading={detailQuery.isLoading}
           isError={modelsQuery.isError}
           isLoading={modelsQuery.isLoading}
-          onOpenDetails={openModel}
+          selectedModelKey={selectedModelKey}
+          onSelectModel={(modelKey) => setSelectedModelKey(modelKey)}
         />
       ) : null}
 
@@ -1665,26 +1811,47 @@ export function InventoryPage() {
       ) : null}
 
       {activeView === "models" ? (
-        <>
-          <section className="panel inventory-search-panel">
-            <div className="inventory-search-grid">
-              <label>
-                Buscar SKU, modelo, marca ou familia
-                <input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} placeholder="Ex.: 1308-1, A05, Xiaomi" />
-              </label>
+        <div className="invsales-stack sku-analysis-stack">
+          <section className="panel invsales-filterbar">
+            <div className="invsales-filterbar-row">
+              <div className="invsales-control">
+                <span className="invsales-control-label">Tipo de produto</span>
+                <div className="invsales-seg" role="group" aria-label="Tipo de produto">
+                  {(
+                    [
+                      { value: "all", label: "Todos" },
+                      { value: "TELA", label: "Telas" },
+                      { value: "BATERIA", label: "Baterias" },
+                      { value: "DOC_DE_CARGA", label: "DOCs" },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={modelKindFilter === option.value ? "active" : ""}
+                      onClick={() => setModelKindFilter(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-              <label>
-                Tipo
-                <select value={modelKindFilter} onChange={(event) => setModelKindFilter(event.target.value as InventoryKindFilter)}>
-                  <option value="all">Todos</option>
-                  <option value="TELA">Telas</option>
-                  <option value="BATERIA">Baterias</option>
-                  <option value="DOC_DE_CARGA">DOCs de carga</option>
+              <div className="invsales-control">
+                <span className="invsales-control-label">Decisão</span>
+                <select
+                  value={modelRecommendationFilter}
+                  onChange={(event) => setModelRecommendationFilter(event.target.value as ModelRecommendationFilter)}
+                >
+                  <option value="all">Todas</option>
+                  <option value="BUY_NOW">Comprar agora</option>
+                  <option value="WATCH">Acompanhar</option>
+                  <option value="DO_NOT_BUY">Não comprar</option>
                 </select>
-              </label>
+              </div>
 
-              <label>
-                Marca
+              <div className="invsales-control">
+                <span className="invsales-control-label">Marca</span>
                 <select value={brandFilter} onChange={(event) => setBrandFilter(event.target.value)}>
                   <option value="">Todas</option>
                   {(modelsQuery.data?.filters.brands ?? []).map((brand) => (
@@ -1693,22 +1860,10 @@ export function InventoryPage() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
 
-              <label>
-                Familia
-                <select value={familyFilter} onChange={(event) => setFamilyFilter(event.target.value)}>
-                  <option value="">Todas</option>
-                  {(modelsQuery.data?.filters.families ?? []).map((family) => (
-                    <option key={family} value={family}>
-                      {family}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Qualidade
+              <div className="invsales-control">
+                <span className="invsales-control-label">Qualidade</span>
                 <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)}>
                   <option value="">Todas</option>
                   {(modelsQuery.data?.filters.qualities ?? []).map((quality) => (
@@ -1717,48 +1872,172 @@ export function InventoryPage() {
                     </option>
                   ))}
                 </select>
-              </label>
-            </div>
-          </section>
-
-          <section className="inventory-models-layout">
-            <section className="panel inventory-model-list-panel">
-              <div className="inventory-section-heading">
-                <div>
-                  <p className="eyebrow">Catalogo</p>
-                  <h3>SKUs para analisar</h3>
-                </div>
-                <span>{formatNumber(visibleModels.length)}</span>
               </div>
 
-              <div className="inventory-model-list">
-                {visibleModels.map((item) => (
-                  <button
-                    key={item.modelKey}
-                    type="button"
-                    className={`inventory-model-button ${selectedModelKey === item.modelKey ? "active" : ""}`}
-                    onClick={() => setSelectedModelKey(item.modelKey)}
-                  >
-                    <div>
-                      <strong>{item.sku}</strong>
-                      <span>
-                        {item.modelLabel} · {productKindLabel(item.productKind)} · {item.qualityLabels.slice(0, 2).join(", ") || "Sem qualidade"}
-                      </span>
-                    </div>
-                    <div className="inventory-row-numbers">
-                      <strong>{formatNumber(item.stockUnits)}</strong>
-                      <span>{buyRecommendationLabel(item.buyRecommendation)}</span>
-                    </div>
+              <div className="invsales-control sku-analysis-search">
+                <span className="invsales-control-label">Buscar</span>
+                <input
+                  value={modelSearch}
+                  onChange={(event) => setModelSearch(event.target.value)}
+                  placeholder="SKU, modelo, marca ou qualidade"
+                />
+              </div>
+            </div>
+
+            {modelFilterCrumbs.length ? (
+              <div className="invsales-crumbs">
+                <span className="invsales-crumbs-label">Filtrando por:</span>
+                {modelFilterCrumbs.map((crumb) => (
+                  <button key={crumb.label} type="button" className="invsales-crumb" onClick={crumb.clear}>
+                    {crumb.label} <X size={12} />
                   </button>
                 ))}
-
-                {!visibleModels.length ? <div className="empty-state">Nenhum SKU bateu com essa busca.</div> : null}
+                <button type="button" className="invsales-crumb-clear" onClick={clearModelFilters}>
+                  limpar tudo
+                </button>
               </div>
-            </section>
-
-            <ModelDetailPanel detail={detailQuery.data} isLoading={detailQuery.isLoading} />
+            ) : null}
           </section>
-        </>
+
+          <section className="invsales-kpi-grid">
+            <article className="invsales-kpi">
+              <span className="invsales-kpi-label">
+                <Boxes size={14} /> Peças nos filtros
+              </span>
+              <strong className="invsales-kpi-value">{formatNumber(modelSummary.stockUnits)}</strong>
+              <div className="invsales-kpi-foot">
+                <span className="invsales-kpi-hint">{formatNumber(visibleModels.length)} SKUs encontrados</span>
+              </div>
+            </article>
+            <article className="invsales-kpi">
+              <span className="invsales-kpi-label">
+                <ShoppingCart size={14} /> Vendas em 30 dias
+              </span>
+              <strong className="invsales-kpi-value">{formatNumber(modelSummary.sales30)}</strong>
+              <div className="invsales-kpi-foot">
+                <span className="invsales-kpi-hint">Somente os SKUs exibidos</span>
+              </div>
+            </article>
+            <article className="invsales-kpi">
+              <span className="invsales-kpi-label">
+                <TrendingUp size={14} /> Comprar agora
+              </span>
+              <strong className="invsales-kpi-value">{formatNumber(modelSummary.buyNow)}</strong>
+              <div className="invsales-kpi-foot">
+                <span className="invsales-kpi-hint">Prioridade de reposição</span>
+              </div>
+            </article>
+            <article className="invsales-kpi">
+              <span className="invsales-kpi-label">
+                <CalendarClock size={14} /> Sem venda há 60+ dias
+              </span>
+              <strong className="invsales-kpi-value">{formatNumber(modelSummary.stale)}</strong>
+              <div className="invsales-kpi-foot">
+                <span className="invsales-kpi-hint">Inclui SKUs sem venda registrada</span>
+              </div>
+            </article>
+          </section>
+
+          <section className="panel sku-analysis-catalog">
+            <div className="invsales-section-head">
+              <div>
+                <p className="eyebrow">Visão para decisão</p>
+                <h3>SKUs para analisar</h3>
+                <p className="panel-subcopy">Compare estoque, giro e última venda; clique em uma linha para ver o diagnóstico.</p>
+              </div>
+              <div className="sku-analysis-sort">
+                <label htmlFor="sku-analysis-sort">Ordenar por</label>
+                <select
+                  id="sku-analysis-sort"
+                  value={modelSort}
+                  onChange={(event) => setModelSort(event.target.value as ModelSort)}
+                >
+                  <option value="priority">Prioridade de compra</option>
+                  <option value="stock">Maior estoque</option>
+                  <option value="sales30">Mais vendidos em 30 dias</option>
+                  <option value="sales90">Mais vendidos em 90 dias</option>
+                  <option value="lastSale">Venda mais recente</option>
+                </select>
+              </div>
+            </div>
+
+            {modelsQuery.isLoading ? (
+              <div className="empty-state">Carregando análise dos SKUs...</div>
+            ) : visibleModels.length ? (
+              <div className="invsales-table-wrap">
+                <table className="invsales-table sku-analysis-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>SKU / modelo</th>
+                      <th>Tipo</th>
+                      <th className="num">Estoque</th>
+                      <th className="num">Venda 30d</th>
+                      <th className="num">Venda 90d</th>
+                      <th>Última venda</th>
+                      <th>Decisão</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleModels.map((item, index) => (
+                      <tr
+                        key={item.modelKey}
+                        className={`group-row sku-analysis-row ${selectedModelKey === item.modelKey ? "active" : ""}`}
+                        tabIndex={0}
+                        aria-label={`Abrir análise de ${item.sku}`}
+                        onClick={() => setSelectedModelKey(item.modelKey)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedModelKey(item.modelKey);
+                          }
+                        }}
+                      >
+                        <td className="sku-analysis-rank">{index + 1}</td>
+                        <td>
+                          <div className="sku-analysis-identity">
+                            <div>
+                              <strong>{item.modelLabel}</strong>
+                              <span>
+                                {item.sku} · {item.brand} · {item.qualityLabels.slice(0, 2).join(", ") || "Sem qualidade"}
+                              </span>
+                            </div>
+                            <ChevronRight size={16} aria-hidden="true" />
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`inventory-status-pill tone-${productKindTone(item.productKind)}`}>
+                            {productKindLabel(item.productKind)}
+                          </span>
+                        </td>
+                        <td className="num">
+                          <strong>{formatNumber(item.stockUnits)}</strong>
+                        </td>
+                        <td className="num">{formatNumber(item.sales30)}</td>
+                        <td className="num">{formatNumber(item.sales90)}</td>
+                        <td>
+                          <div className="sku-analysis-last-sale">
+                            <strong>{item.lastSaleAt ? formatDate(item.lastSaleAt) : "Sem venda"}</strong>
+                            <span>{formatDaysSince(item.daysSinceLastSale)}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`inventory-status-pill tone-${buyRecommendationTone(item.buyRecommendation)}`}>
+                            {buyRecommendationLabel(item.buyRecommendation)}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state">Nenhum SKU corresponde aos filtros selecionados.</div>
+            )}
+          </section>
+
+          <ModelDetailPanel detail={detailQuery.data} isLoading={detailQuery.isLoading} />
+        </div>
       ) : null}
     </div>
   );

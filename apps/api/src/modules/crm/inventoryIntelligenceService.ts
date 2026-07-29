@@ -1616,6 +1616,10 @@ interface InventoryTopCustomerRow {
   customerDisplayName: string;
   totalQuantity: number;
   totalOrders: number;
+  quantity12Months: number;
+  orders12Months: number;
+  observedMonths: number;
+  firstPurchaseAt: string | null;
   lastPurchaseAt: string | null;
   lastAttendant: string | null;
 }
@@ -2232,6 +2236,26 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
         cs.display_name AS "customerDisplayName",
         COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS "totalQuantity",
         COUNT(DISTINCT o.id)::int AS "totalOrders",
+        COALESCE(
+          SUM(oi.quantity) FILTER (
+            WHERE o.order_date >= CURRENT_DATE - INTERVAL '12 months'
+          ),
+          0
+        )::numeric(14,2) AS "quantity12Months",
+        COUNT(DISTINCT o.id) FILTER (
+          WHERE o.order_date >= CURRENT_DATE - INTERVAL '12 months'
+        )::int AS "orders12Months",
+        GREATEST(
+          1,
+          LEAST(
+            12,
+            (
+              DATE_PART('year', AGE(CURRENT_DATE, MIN(o.order_date))) * 12
+              + DATE_PART('month', AGE(CURRENT_DATE, MIN(o.order_date)))
+            )::int + 1
+          )
+        )::int AS "observedMonths",
+        MIN(o.order_date)::date::text AS "firstPurchaseAt",
         MAX(o.order_date)::date::text AS "lastPurchaseAt",
         cs.last_attendant AS "lastAttendant"
       FROM order_items oi
@@ -2260,6 +2284,12 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
         customerDisplayName: row.customerDisplayName,
         totalQuantity: toNumber(row.totalQuantity),
         totalOrders: Number(row.totalOrders ?? 0),
+        quantity12Months: toNumber(row.quantity12Months),
+        orders12Months: Number(row.orders12Months ?? 0),
+        observedMonths: Math.max(1, Number(row.observedMonths ?? 1)),
+        averageMonthlyQuantity:
+          Math.round((toNumber(row.quantity12Months) / Math.max(1, Number(row.observedMonths ?? 1))) * 10) / 10,
+        firstPurchaseAt: row.firstPurchaseAt,
         lastPurchaseAt: row.lastPurchaseAt,
         lastAttendant: row.lastAttendant,
       }) satisfies InventoryModelTopCustomer,
