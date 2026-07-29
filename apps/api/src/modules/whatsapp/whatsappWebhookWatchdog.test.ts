@@ -151,6 +151,7 @@ describe("WhatsApp webhook watchdog", () => {
     expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("Amanda");
     expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).toContain("+55 (11) 99999-9999");
     expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).not.toContain("Usuários");
+    expect(mocks.sendUazapiTextMessage.mock.calls[0]?.[2]).not.toContain("Reconectar agora");
   });
 
   it("does not repeat an alert while the same disconnect incident is active", async () => {

@@ -101,7 +101,6 @@ function buildDisconnectAlertMessage(instance: ConnectionStateInstance) {
   return [
     "🚨 *WhatsApp desconectado*",
     `*${instance.displayLabel || instance.instanceName}${phone}*`,
-    "Acesse *WhatsApp* e clique em *Reconectar agora*.",
   ].join("\n");
 }
 
