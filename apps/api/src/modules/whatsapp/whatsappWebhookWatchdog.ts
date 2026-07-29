@@ -104,18 +104,11 @@ function formatAlertDetectedAt() {
 }
 
 function buildDisconnectAlertMessage(instance: ConnectionStateInstance, state: string) {
-  const phone = instance.phoneNumber?.trim() ? `\n📱 Número: ${instance.phoneNumber.trim()}` : "";
+  const phone = instance.phoneNumber?.trim() ? ` — ${instance.phoneNumber.trim()}` : "";
   return [
-    "🚨 *WHATSAPP DESCONECTADO*",
-    "",
-    `👤 Conta: *${instance.displayLabel || instance.instanceName}*${phone}`,
-    `🕐 Detectado: ${formatAlertDetectedAt()}`,
-    `⚠️ Estado da conexão: ${state}`,
-    "",
-    "O número parou de receber e enviar mensagens pelo CRM.",
-    '👉 Acesse *WhatsApp > Usuários*, abra essa conta e clique em *"Reconectar agora"* para ler o QR Code.',
-    "",
-    "Este aviso é enviado uma única vez por queda.",
+    "🚨 *WhatsApp desconectado*",
+    `*${instance.displayLabel || instance.instanceName}${phone}*`,
+    "Acesse *WhatsApp* e clique em *Reconectar agora*.",
   ].join("\n");
 }
 
@@ -167,7 +160,7 @@ async function sendDisconnectAlert(
   }
 
   const groupJid = (
-    env.WHATSAPP_DISCONNECT_ALERT_GROUP_JID || env.OFFBOARDING_ALERT_GROUP_JID || ""
+    env.WHATSAPP_DISCONNECT_ALERT_GROUP_JID || "120363025402961504@g.us"
   ).trim();
   if (!groupJid) {
     logger.warn("whatsapp disconnect alert has no destination group configured", {
