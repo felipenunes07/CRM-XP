@@ -1588,7 +1588,7 @@ export async function getInventoryIntelligenceDetail(sku: string): Promise<Inven
 const INVENTORY_ANALYTICS_CACHE_TTL_MS = 60_000;
 const INVENTORY_HISTORY_SNAPSHOT_LIMIT = 180;
 const INVENTORY_DAILY_SALES_LIMIT_DAYS = 180;
-const INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT = 50;
+const INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT = 100;
 
 interface InventorySnapshotHistoryRow {
   snapshotId: string;
@@ -1640,6 +1640,12 @@ interface InventoryTopCustomerRow {
   customerAverageTicket: number;
   customerStatus: string;
   customerPriorityScore: number;
+  monthlyHistory: Array<{
+    month: string;
+    quantity: number | string;
+    orders: number | string;
+    revenue: number | string;
+  }>;
 }
 
 interface InventoryModelAggregate {
@@ -2255,7 +2261,11 @@ async function loadLastSaleRows(skus: string[]) {
   return result.rows;
 }
 
-async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT) {
+async function loadTopCustomersForModelSkus(
+  skus: string[],
+  limit = INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT,
+  inactiveOnly = false,
+) {
   if (!skus.length) {
     return [] as InventoryModelTopCustomer[];
   }
@@ -2368,11 +2378,37 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
           )[1] AS "lastAttendant"
         FROM sequenced_orders
         GROUP BY "customerId"
+      ),
+      customer_monthly AS (
+        SELECT
+          "customerId",
+          TO_CHAR(DATE_TRUNC('month', "orderDate"), 'YYYY-MM') AS month,
+          COALESCE(SUM(quantity), 0)::numeric(14,2) AS quantity,
+          COUNT(*)::int AS orders,
+          COALESCE(SUM(revenue), 0)::numeric(14,2) AS revenue
+        FROM matched_orders
+        WHERE "orderDate" >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'
+        GROUP BY "customerId", DATE_TRUNC('month', "orderDate")
+      ),
+      customer_monthly_history AS (
+        SELECT
+          "customerId",
+          JSONB_AGG(
+            JSONB_BUILD_OBJECT(
+              'month', month,
+              'quantity', quantity,
+              'orders', orders,
+              'revenue', revenue
+            )
+            ORDER BY month
+          ) AS "monthlyHistory"
+        FROM customer_monthly
+        GROUP BY "customerId"
       )
       SELECT
         cm."customerId",
-        cs.customer_code AS "customerCode",
-        cs.display_name AS "customerDisplayName",
+        COALESCE(NULLIF(cs.customer_code, ''), c.customer_code, '') AS "customerCode",
+        COALESCE(NULLIF(cs.display_name, ''), c.display_name) AS "customerDisplayName",
         c.phone,
         cm."totalQuantity",
         cm."totalOrders",
@@ -2398,17 +2434,21 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
         COALESCE(cs.total_spent, 0)::numeric(14,2) AS "customerTotalSpent",
         COALESCE(cs.avg_ticket, 0)::numeric(14,2) AS "customerAverageTicket",
         COALESCE(cs.status, 'INACTIVE') AS "customerStatus",
-        COALESCE(cs.priority_score, 0)::numeric(14,2) AS "customerPriorityScore"
+        COALESCE(cs.priority_score, 0)::numeric(14,2) AS "customerPriorityScore",
+        COALESCE(cmh."monthlyHistory", '[]'::jsonb) AS "monthlyHistory"
       FROM customer_model cm
-      JOIN customer_snapshot cs ON cs.customer_id = cm."customerId"
       JOIN customers c ON c.id = cm."customerId"
+      LEFT JOIN customer_snapshot cs ON cs.customer_id = cm."customerId"
+      LEFT JOIN customer_monthly_history cmh ON cmh."customerId" = cm."customerId"
+      WHERE $3::boolean = FALSE
+        OR COALESCE(cs.status, 'INACTIVE') = 'INACTIVE'
       ORDER BY
         cm."totalQuantity" DESC,
         cm."lastPurchaseAt" DESC,
-        cs.display_name ASC
+        COALESCE(NULLIF(cs.display_name, ''), c.display_name) ASC
       LIMIT $2
     `,
-    [skus, limit],
+    [skus, limit, inactiveOnly],
   );
 
   return result.rows.map(
@@ -2454,6 +2494,12 @@ async function loadTopCustomersForModelSkus(skus: string[], limit = INVENTORY_MO
         customerAverageTicket: toNumber(row.customerAverageTicket),
         customerStatus: row.customerStatus,
         customerPriorityScore: toNumber(row.customerPriorityScore),
+        monthlyHistory: (row.monthlyHistory ?? []).map((point) => ({
+          month: String(point.month),
+          quantity: toNumber(point.quantity),
+          orders: Number(point.orders ?? 0),
+          revenue: toNumber(point.revenue),
+        })),
       }) satisfies InventoryModelTopCustomer,
   );
 }
@@ -3326,6 +3372,7 @@ export async function getInventoryModelDetail(modelKey: string): Promise<Invento
       highlights: [],
       skus: [],
       topCustomers: [],
+      topInactiveCustomers: [],
       deposits: [],
     };
   }
@@ -3335,6 +3382,12 @@ export async function getInventoryModelDetail(modelKey: string): Promise<Invento
   const series = dataset.seriesByModel.get(target.modelKey) ?? [];
   const benchmarks = buildModelBenchmarks(series);
 
+  const modelSkus = target.currentItems.map((item) => item.sku);
+  const [topCustomers, topInactiveCustomers] = await Promise.all([
+    loadTopCustomersForModelSkus(modelSkus),
+    loadTopCustomersForModelSkus(modelSkus, INVENTORY_MODEL_TOP_CUSTOMERS_LIMIT, true),
+  ]);
+
   return {
     snapshot: dataset.snapshot,
     model: buildBuyingListItem(target),
@@ -3342,7 +3395,8 @@ export async function getInventoryModelDetail(modelKey: string): Promise<Invento
     benchmarks,
     highlights: buildModelHighlights(target, benchmarks, series),
     skus: [...target.currentItems],
-    topCustomers: await loadTopCustomersForModelSkus(target.currentItems.map((item) => item.sku)),
+    topCustomers,
+    topInactiveCustomers,
     deposits: aggregateDeposits(target.currentItems),
   };
 }

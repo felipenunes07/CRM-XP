@@ -121,9 +121,10 @@ const selectedDetail = {
       customerAverageTicket: 2100,
       customerStatus: "ACTIVE",
       customerPriorityScore: 82,
+      monthlyHistory: [],
     },
   ],
-} as InventoryModelDetailResponse;
+} as unknown as InventoryModelDetailResponse;
 
 describe("InventoryStockTab", () => {
   it("shows the general stock using the same filter and table language as sales by model", () => {

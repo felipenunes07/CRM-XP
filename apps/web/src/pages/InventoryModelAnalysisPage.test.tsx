@@ -2,7 +2,11 @@ import type { InventoryModelDetailResponse } from "@olist-crm/shared";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildModelHistoryAnalysis, InventoryModelAnalysisContent } from "./InventoryModelAnalysisPage";
+import {
+  buildCustomerBehaviorSeries,
+  buildModelHistoryAnalysis,
+  InventoryModelAnalysisContent,
+} from "./InventoryModelAnalysisPage";
 
 const detail: InventoryModelDetailResponse = {
   snapshot: null,
@@ -107,6 +111,10 @@ const detail: InventoryModelDetailResponse = {
       customerAverageTicket: 2100,
       customerStatus: "ACTIVE",
       customerPriorityScore: 82,
+      monthlyHistory: [
+        { month: "2026-06", quantity: 16, orders: 1, revenue: 1280 },
+        { month: "2026-07", quantity: 8, orders: 1, revenue: 640 },
+      ],
     },
     {
       customerId: "customer-2",
@@ -140,9 +148,22 @@ const detail: InventoryModelDetailResponse = {
       customerAverageTicket: 1800,
       customerStatus: "ATTENTION",
       customerPriorityScore: 91,
+      monthlyHistory: [
+        { month: "2026-05", quantity: 18, orders: 1, revenue: 1440 },
+        { month: "2026-06", quantity: 6, orders: 1, revenue: 480 },
+      ],
     },
   ],
 };
+
+detail.topInactiveCustomers = [
+  {
+    ...detail.topCustomers[1]!,
+    customerId: "customer-inactive",
+    customerDisplayName: "Cliente Inativo Histórico",
+    customerStatus: "INACTIVE",
+  },
+];
 
 describe("InventoryModelAnalysisContent", () => {
   afterEach(() => vi.useRealTimers());
@@ -160,11 +181,16 @@ describe("InventoryModelAnalysisContent", () => {
     expect(markup).toContain("Modelo selecionado");
     expect(markup).toContain("Clientes para vender");
     expect(markup).toContain("Histórico do modelo");
-    expect(markup).toContain("Quem pode comprar agora");
+    expect(markup).toContain("Quem mais compra este modelo");
+    expect(markup).toContain("Maior volume histórico");
+    expect(markup).toContain("Total comprado");
+    expect(markup).toContain("Média mensal");
+    expect(markup).toContain("Analisar");
+    expect(markup).toContain("Inativos (1)");
     expect(markup).toContain("Loja Central");
     expect(markup).toContain("Celular Express");
     expect(markup).toContain("Recompra atrasada");
-    expect(markup).toContain("Pedido estimado");
+    expect(markup).toContain("Próximo pedido");
     expect(markup).toContain("WhatsApp");
     expect(markup).toContain("/clientes/customer-1");
     expect(markup).not.toContain("Ritmo de compra");
@@ -204,5 +230,20 @@ describe("InventoryModelAnalysisContent", () => {
     expect(analysis.totalSales).toBe(6);
     expect(analysis.totalRestock).toBe(16);
     expect(analysis.currentStock).toBe(110);
+  });
+
+  it("builds a complete 12-month customer behavior series with a moving average", () => {
+    const series = buildCustomerBehaviorSeries(
+      [
+        { month: "2026-06", quantity: 12, orders: 2, revenue: 960 },
+        { month: "2026-07", quantity: 18, orders: 3, revenue: 1440 },
+      ],
+      new Date("2026-07-29T12:00:00.000Z"),
+    );
+
+    expect(series).toHaveLength(12);
+    expect(series.at(-2)?.quantity).toBe(12);
+    expect(series.at(-1)?.quantity).toBe(18);
+    expect(series.at(-1)?.average3Months).toBe(10);
   });
 });

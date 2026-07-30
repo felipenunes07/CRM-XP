@@ -1286,6 +1286,14 @@ export interface InventoryModelTopCustomer {
   customerAverageTicket: number;
   customerStatus: string;
   customerPriorityScore: number;
+  monthlyHistory: InventoryModelCustomerMonthlyPoint[];
+}
+
+export interface InventoryModelCustomerMonthlyPoint {
+  month: string;
+  quantity: number;
+  orders: number;
+  revenue: number;
 }
 
 export interface InventoryModelDepositBalance {
@@ -1310,6 +1318,7 @@ export interface InventoryModelDetailResponse {
   highlights: string[];
   skus: InventoryIntelligenceItem[];
   topCustomers: InventoryModelTopCustomer[];
+  topInactiveCustomers?: InventoryModelTopCustomer[];
   deposits: InventoryModelDepositBalance[];
 }
 

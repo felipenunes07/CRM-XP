@@ -1,14 +1,18 @@
 import type {
   InventoryDailySeriesPoint,
+  InventoryModelCustomerMonthlyPoint,
   InventoryModelDetailResponse,
   InventoryModelTopCustomer,
   InventoryProductKind,
 } from "@olist-crm/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Activity,
   ArrowLeft,
   ArrowUpRight,
   Boxes,
+  CalendarClock,
+  CircleDollarSign,
   Gauge,
   MessageCircle,
   PackagePlus,
@@ -17,6 +21,7 @@ import {
   ShoppingBag,
   TrendingDown,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { useDeferredValue, useMemo, useState } from "react";
 import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Scatter, Tooltip, XAxis, YAxis } from "recharts";
@@ -27,7 +32,8 @@ import { formatCurrency, formatDate, formatDaysSince, formatNumber, formatShortD
 import "../components/inventorySales.css";
 
 type AnalysisTab = "sales" | "history";
-type CustomerFilter = "all" | "overdue" | "next_15" | "active";
+type CustomerFilter = "all" | "overdue" | "next_15" | "active" | "inactive";
+type CustomerSort = "volume" | "opportunity" | "monthly" | "recent";
 
 function productKindLabel(kind: InventoryProductKind) {
   if (kind === "DOC_DE_CARGA") return "DOC de carga";
@@ -467,6 +473,214 @@ function ModelSalesHistoryChart({
   );
 }
 
+interface CustomerBehaviorPoint {
+  month: string;
+  label: string;
+  quantity: number;
+  orders: number;
+  revenue: number;
+  average3Months: number;
+}
+
+export function buildCustomerBehaviorSeries(
+  history: InventoryModelCustomerMonthlyPoint[],
+  referenceDate = new Date(),
+): CustomerBehaviorPoint[] {
+  const byMonth = new Map(history.map((point) => [point.month, point]));
+  const points = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(Date.UTC(referenceDate.getFullYear(), referenceDate.getMonth() - 11 + index, 1));
+    const month = date.toISOString().slice(0, 7);
+    const source = byMonth.get(month);
+    return {
+      month,
+      label: new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" })
+        .format(date)
+        .replace(".", ""),
+      quantity: source?.quantity ?? 0,
+      orders: source?.orders ?? 0,
+      revenue: source?.revenue ?? 0,
+      average3Months: 0,
+    };
+  });
+
+  return points.map((point, index) => {
+    const rolling = points.slice(Math.max(0, index - 2), index + 1);
+    return {
+      ...point,
+      average3Months: rolling.reduce((total, item) => total + item.quantity, 0) / rolling.length,
+    };
+  });
+}
+
+function customerStatusLabel(status: string) {
+  const normalized = status.toUpperCase();
+  if (normalized === "ACTIVE") return "Ativo";
+  if (normalized === "ATTENTION") return "Atenção";
+  if (normalized === "INACTIVE") return "Inativo";
+  return status || "Sem status";
+}
+
+function CustomerBehaviorTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: CustomerBehaviorPoint }>;
+}) {
+  const point = payload?.[0]?.payload;
+  if (!active || !point) return null;
+  return (
+    <div className="model-customer-tooltip">
+      <strong>{point.label.toUpperCase()} / {point.month.slice(0, 4)}</strong>
+      <div><span>Peças</span><b>{formatNumber(point.quantity)}</b></div>
+      <div><span>Pedidos</span><b>{formatNumber(point.orders)}</b></div>
+      <div><span>Receita</span><b>{formatCurrency(point.revenue)}</b></div>
+      <div><span>Média móvel 3m</span><b>{formatMonthlyAverage(point.average3Months)}</b></div>
+    </div>
+  );
+}
+
+function CustomerBehaviorDialog({
+  customer,
+  modelLabel,
+  onClose,
+}: {
+  customer: InventoryModelTopCustomer;
+  modelLabel: string;
+  onClose: () => void;
+}) {
+  const points = useMemo(
+    () => buildCustomerBehaviorSeries(customer.monthlyHistory ?? []),
+    [customer.monthlyHistory],
+  );
+  const opportunity = opportunityForCustomer(customer);
+  const contactLink = whatsappLink(customer, modelLabel);
+  const activeMonths = points.filter((point) => point.quantity > 0);
+  const bestMonth = [...points].sort((left, right) => right.quantity - left.quantity)[0];
+  const last3Quantity = points.slice(-3).reduce((total, point) => total + point.quantity, 0);
+  const previous3Quantity = points.slice(-6, -3).reduce((total, point) => total + point.quantity, 0);
+  const recentTrend = previous3Quantity > 0
+    ? ((last3Quantity - previous3Quantity) / previous3Quantity) * 100
+    : last3Quantity > 0
+      ? 100
+      : null;
+  const consistency = Math.round((activeMonths.length / 12) * 100);
+  const trendTone = recentTrend === null ? "neutral" : recentTrend >= 0 ? "success" : "danger";
+  const TrendIcon = recentTrend !== null && recentTrend < 0 ? TrendingDown : TrendingUp;
+
+  return (
+    <div
+      className="model-customer-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      role="presentation"
+    >
+      <section
+        aria-labelledby="model-customer-dialog-title"
+        aria-modal="true"
+        className="model-customer-dialog"
+        role="dialog"
+      >
+        <header>
+          <div>
+            <p className="eyebrow">Comportamento neste modelo</p>
+            <h2 id="model-customer-dialog-title">{customer.customerDisplayName}</h2>
+            <p>{modelLabel} · {customer.customerCode || "Sem código"}</p>
+          </div>
+          <button aria-label="Fechar análise do cliente" onClick={onClose} type="button"><X size={19} /></button>
+        </header>
+
+        <div className="model-customer-kpis">
+          <div><span>Total comprado</span><strong>{formatNumber(customer.totalQuantity)}</strong><small>{formatNumber(customer.totalOrders)} pedidos</small></div>
+          <div><span>Receita no modelo</span><strong>{formatCurrency(customer.totalRevenue)}</strong><small>{formatCurrency(customer.averageUnitPrice)} por peça</small></div>
+          <div><span>Média mensal</span><strong>{formatMonthlyAverage(customer.averageMonthlyQuantity)}</strong><small>peças por mês</small></div>
+          <div><span>Pedido médio</span><strong>{formatMonthlyAverage(customer.averageOrderQuantity)}</strong><small>peças por pedido</small></div>
+          <div><span>Última compra</span><strong>{formatDate(customer.lastPurchaseAt)}</strong><small>{formatDaysSince(opportunity.daysSincePurchase)}</small></div>
+        </div>
+
+        <div className="model-customer-chart-head">
+          <div>
+            <h3>Compras nos últimos 12 meses</h3>
+            <p>Barras mostram peças compradas; a linha mostra a média móvel de três meses.</p>
+          </div>
+          <span className={`model-customer-trend ${trendTone}`}>
+            <TrendIcon size={15} />
+            {recentTrend === null
+              ? "Sem base para tendência"
+              : `${recentTrend >= 0 ? "+" : ""}${formatMonthlyAverage(recentTrend)}% nos últimos 3 meses`}
+          </span>
+        </div>
+
+        <div className="model-customer-chart" aria-label={`Compras de ${customer.customerDisplayName} para ${modelLabel}`}>
+          <ResponsiveContainer height={260} width="100%">
+            <ComposedChart data={points} margin={{ bottom: 0, left: 0, right: 8, top: 8 }}>
+              <CartesianGrid vertical={false} stroke="rgba(41, 86, 215, 0.1)" strokeDasharray="3 3" />
+              <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 10 }} tickLine={false} />
+              <YAxis tick={{ fill: "#64748b", fontSize: 10 }} tickFormatter={(value) => formatCompactNumber(Number(value))} tickLine={false} width={44} />
+              <Tooltip content={<CustomerBehaviorTooltip />} />
+              <Bar dataKey="quantity" fill="#2956d7" maxBarSize={28} name="Peças" radius={[6, 6, 0, 0]} />
+              <Line dataKey="average3Months" dot={false} name="Média móvel 3m" stroke="#7c5ce7" strokeWidth={2.5} type="monotone" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="model-customer-intelligence">
+          <article>
+            <span className="model-customer-intelligence-icon blue"><Activity size={18} /></span>
+            <div>
+              <span>Frequência</span>
+              <strong>{activeMonths.length} de 12 meses com compra</strong>
+              <p>{consistency}% de constância. Intervalo médio de {customer.averageDaysBetweenPurchases === null ? "sem base" : `${formatNumber(customer.averageDaysBetweenPurchases)} dias`}.</p>
+            </div>
+          </article>
+          <article>
+            <span className={`model-customer-intelligence-icon ${opportunity.tone}`}><CalendarClock size={18} /></span>
+            <div>
+              <span>Próxima oportunidade</span>
+              <strong>{opportunity.label}</strong>
+              <p>{opportunity.action} Previsão: {formatDate(customer.predictedNextPurchaseAt)}.</p>
+            </div>
+          </article>
+          <article>
+            <span className="model-customer-intelligence-icon violet"><TrendingUp size={18} /></span>
+            <div>
+              <span>Melhor mês</span>
+              <strong>{bestMonth?.quantity ? `${bestMonth.label.toUpperCase()} · ${formatNumber(bestMonth.quantity)} peças` : "Sem compra no período"}</strong>
+              <p>{formatNumber(customer.quantity90Days)} peças nos últimos 90 dias contra {formatNumber(customer.previous90DaysQuantity)} nos 90 dias anteriores.</p>
+            </div>
+          </article>
+          <article>
+            <span className="model-customer-intelligence-icon green"><CircleDollarSign size={18} /></span>
+            <div>
+              <span>Próximo pedido provável</span>
+              <strong>{formatCurrency(opportunity.potentialRevenue)}</strong>
+              <p>Potencial estimado de {formatMonthlyAverage(opportunity.potentialQuantity)} peças com base no histórico deste modelo.</p>
+            </div>
+          </article>
+        </div>
+
+        <footer>
+          <span>
+            Status da carteira: <strong>{customerStatusLabel(customer.customerStatus)}</strong>
+            {" · "}Última vendedora: <strong>{customer.lastAttendant || "Sem registro"}</strong>
+          </span>
+          <div>
+            {contactLink ? (
+              <a className="primary-button" href={contactLink} rel="noreferrer" target="_blank">
+                <MessageCircle size={15} /> Abordar no WhatsApp
+              </a>
+            ) : null}
+            <Link className="ghost-button" to={`/clientes/${customer.customerId}`}>
+              Ver cadastro completo <ArrowUpRight size={15} />
+            </Link>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 export function InventoryModelAnalysisContent({
   detail,
   initialTab = "sales",
@@ -477,6 +691,8 @@ export function InventoryModelAnalysisContent({
   const [activeTab, setActiveTab] = useState<AnalysisTab>(initialTab);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<CustomerFilter>("all");
+  const [customerSort, setCustomerSort] = useState<CustomerSort>("volume");
+  const [selectedCustomer, setSelectedCustomer] = useState<InventoryModelTopCustomer | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase("pt-BR"));
   const model = detail.model;
 
@@ -490,9 +706,20 @@ export function InventoryModelAnalysisContent({
       }),
     [detail.topCustomers],
   );
+  const inactiveCustomerRows = useMemo(
+    () =>
+      (detail.topInactiveCustomers
+        ?? detail.topCustomers.filter((customer) => customer.customerStatus.toUpperCase() === "INACTIVE"))
+        .map((customer) => ({
+          customer,
+          opportunity: opportunityForCustomer(customer),
+        })),
+    [detail.topCustomers, detail.topInactiveCustomers],
+  );
 
   const visibleCustomers = useMemo(() => {
-    const filtered = customerRows.filter(({ customer, opportunity }) => {
+    const sourceRows = filter === "inactive" ? inactiveCustomerRows : customerRows;
+    const filtered = sourceRows.filter(({ customer, opportunity }) => {
       if (deferredSearch && !customerSearchText(customer).includes(deferredSearch)) return false;
       if (filter === "overdue" && !opportunity.isOverdue) return false;
       if (filter === "next_15" && !opportunity.isNext15) return false;
@@ -500,12 +727,23 @@ export function InventoryModelAnalysisContent({
       return true;
     });
 
-    return [...filtered].sort(
-      (left, right) =>
-        right.opportunity.opportunityScore - left.opportunity.opportunityScore
-        || left.opportunity.priority - right.opportunity.priority,
-    );
-  }, [customerRows, deferredSearch, filter]);
+    return [...filtered].sort((left, right) => {
+      if (customerSort === "opportunity") {
+        return right.opportunity.opportunityScore - left.opportunity.opportunityScore
+          || left.opportunity.priority - right.opportunity.priority;
+      }
+      if (customerSort === "monthly") {
+        return right.customer.averageMonthlyQuantity - left.customer.averageMonthlyQuantity
+          || right.customer.totalQuantity - left.customer.totalQuantity;
+      }
+      if (customerSort === "recent") {
+        return (right.customer.lastPurchaseAt ?? "").localeCompare(left.customer.lastPurchaseAt ?? "")
+          || right.customer.totalQuantity - left.customer.totalQuantity;
+      }
+      return right.customer.totalQuantity - left.customer.totalQuantity
+        || (right.customer.lastPurchaseAt ?? "").localeCompare(left.customer.lastPurchaseAt ?? "");
+    });
+  }, [customerRows, customerSort, deferredSearch, filter, inactiveCustomerRows]);
 
   if (!model) {
     return (
@@ -522,6 +760,12 @@ export function InventoryModelAnalysisContent({
   const customersToReactivate = customerRows.filter((row) => row.opportunity.isOverdue);
   const customersNext15 = customerRows.filter((row) => row.opportunity.isNext15);
   const customersActive30 = customerRows.filter((row) => row.customer.quantity30Days > 0);
+  const customersInactive = inactiveCustomerRows;
+  const volumeRankByCustomer = new Map(
+    [...(filter === "inactive" ? inactiveCustomerRows : customerRows)]
+      .sort((left, right) => right.customer.totalQuantity - left.customer.totalQuantity)
+      .map((row, index) => [row.customer.customerId, index + 1]),
+  );
   const customersDeclining = customerRows.filter(
     (row) => row.customer.trend90dPercent !== null && row.customer.trend90dPercent < -10,
   );
@@ -613,10 +857,31 @@ export function InventoryModelAnalysisContent({
       >
         <div className="model-analysis-client-head">
           <div>
-            <h2 id="model-sales-tab-title">Quem pode comprar agora</h2>
-            <p>{formatNumber(customerRows.length)} clientes com histórico deste modelo, ordenados por prioridade.</p>
+            <h2 id="model-sales-tab-title">Quem mais compra este modelo</h2>
+            <p>
+              {filter === "inactive" && inactiveCustomerRows.length >= 100
+                ? "Top 100 compradores inativos deste modelo, ordenados pelo volume histórico."
+                : filter === "inactive"
+                  ? `${formatNumber(inactiveCustomerRows.length)} compradores inativos encontrados para este modelo.`
+                  : customerRows.length >= 100
+                ? "Top 100 compradores históricos, incluindo clientes inativos."
+                : `${formatNumber(customerRows.length)} compradores históricos encontrados. O ranking inclui inativos e não é preenchido com clientes sem compra.`}
+            </p>
           </div>
           <div className="model-analysis-client-tools">
+            <label>
+              Ordenar por
+              <select
+                aria-label="Ordenar clientes"
+                onChange={(event) => setCustomerSort(event.target.value as CustomerSort)}
+                value={customerSort}
+              >
+                <option value="volume">Maior volume histórico</option>
+                <option value="monthly">Maior média mensal</option>
+                <option value="opportunity">Oportunidade de venda</option>
+                <option value="recent">Compra mais recente</option>
+              </select>
+            </label>
             <label className="model-analysis-search">
               <Search size={15} />
               <input
@@ -635,6 +900,12 @@ export function InventoryModelAnalysisContent({
             { value: "overdue", label: `Atrasados (${customersToReactivate.length})` },
             { value: "next_15", label: `Próximos 15 dias (${customersNext15.length})` },
             { value: "active", label: `Comprando agora (${customersActive30.length})` },
+            {
+              value: "inactive",
+              label: customersInactive.length >= 100
+                ? "Inativos (Top 100)"
+                : `Inativos (${customersInactive.length})`,
+            },
           ] satisfies Array<{ value: CustomerFilter; label: string }>).map((option) => (
             <button
               className={filter === option.value ? "active" : ""}
@@ -652,12 +923,16 @@ export function InventoryModelAnalysisContent({
             <table className="invsales-table model-analysis-table">
               <thead>
                 <tr>
+                  <th className="num">#</th>
                   <th>Cliente</th>
+                  <th className="num">Total comprado</th>
+                  <th className="num">Média mensal</th>
                   <th>Situação</th>
-                  <th className="num">Pedido estimado</th>
+                  <th className="num">Próximo pedido</th>
                   <th>Última compra</th>
+                  <th>Status</th>
                   <th>Vendedora</th>
-                  <th>Ação</th>
+                  <th>Análise e ação</th>
                 </tr>
               </thead>
               <tbody>
@@ -666,10 +941,27 @@ export function InventoryModelAnalysisContent({
 
                   return (
                     <tr key={customer.customerId}>
+                      <td className="num model-analysis-rank">{volumeRankByCustomer.get(customer.customerId) ?? "—"}</td>
                       <td>
-                        <div className="model-analysis-customer">
+                        <button
+                          className="model-analysis-customer model-analysis-customer-button"
+                          onClick={() => setSelectedCustomer(customer)}
+                          type="button"
+                        >
                           <strong>{customer.customerDisplayName}</strong>
-                          <span>{customer.customerCode || "Sem código"}</span>
+                          <span>{customer.customerCode || "Sem código"} · Ver comportamento</span>
+                        </button>
+                      </td>
+                      <td className="num">
+                        <div className="model-analysis-money">
+                          <strong>{formatNumber(customer.totalQuantity)} peças</strong>
+                          <span>{formatNumber(customer.totalOrders)} pedidos · {formatCurrency(customer.totalRevenue)}</span>
+                        </div>
+                      </td>
+                      <td className="num">
+                        <div className="model-analysis-monthly">
+                          <strong>{formatMonthlyAverage(customer.averageMonthlyQuantity)} peças/mês</strong>
+                          <span>{formatMonthlyAverage(customer.averageOrderQuantity)} por pedido</span>
                         </div>
                       </td>
                       <td>
@@ -690,9 +982,17 @@ export function InventoryModelAnalysisContent({
                           <span>{formatDaysSince(opportunity.daysSincePurchase)}</span>
                         </div>
                       </td>
+                      <td><span className={`model-analysis-customer-status ${customer.customerStatus.toLowerCase()}`}>{customerStatusLabel(customer.customerStatus)}</span></td>
                       <td>{customer.lastAttendant || "Sem vendedora"}</td>
                       <td>
                         <div className="model-analysis-row-actions">
+                          <button
+                            className="ghost-button small-button model-analysis-open-customer"
+                            onClick={() => setSelectedCustomer(customer)}
+                            type="button"
+                          >
+                            <Activity size={14} /> Analisar
+                          </button>
                           {contactLink ? (
                             <a className="primary-button small-button" href={contactLink} rel="noreferrer" target="_blank">
                               <MessageCircle size={14} /> WhatsApp
@@ -713,12 +1013,22 @@ export function InventoryModelAnalysisContent({
           </div>
         ) : (
           <div className="invsales-empty">
-            {detail.topCustomers.length
+            {(filter === "inactive" ? inactiveCustomerRows.length : detail.topCustomers.length)
               ? "Nenhum cliente corresponde à busca."
-              : "Ainda não há clientes com compras registradas para este modelo."}
+              : filter === "inactive"
+                ? "Ainda não há compradores inativos registrados para este modelo."
+                : "Ainda não há clientes com compras registradas para este modelo."}
           </div>
         )}
       </section>
+
+      {selectedCustomer ? (
+        <CustomerBehaviorDialog
+          customer={selectedCustomer}
+          modelLabel={model.modelLabel}
+          onClose={() => setSelectedCustomer(null)}
+        />
+      ) : null}
 
       <section
         aria-labelledby="model-history-tab-title"
