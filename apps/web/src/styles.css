@@ -25425,8 +25425,8 @@ body:has(.whatsapp-monitor-page) .main-content {
 .wtl-topic-filter-chip:hover { background: #bbf7d0; }
 
 .wtl-feed-list {
-  display: flex;
-  flex-direction: column;
+  /* Fluxo normal evita que os cards com overflow da animação sejam comprimidos para caber no max-height. */
+  display: block;
   max-height: 640px;
   overflow-y: auto;
 }
@@ -25448,8 +25448,9 @@ body:has(.whatsapp-monitor-page) .main-content {
 
 .wtl-feed-item {
   display: flex;
-  flex: 0 0 auto;
   align-items: flex-start;
+  width: 100%;
+  min-height: 96px;
   gap: 0.65rem;
   padding: 0.7rem 0.8rem;
   border: 0;
