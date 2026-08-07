@@ -2764,6 +2764,7 @@ export interface EventsOverviewStats {
   privates: number;
   averageSentiment: number | null;
   openRadar: number;
+  completed: number;
 }
 
 export interface EventsCaptureHourPoint {

@@ -1612,6 +1612,7 @@ export const api = {
       isGroup?: boolean;
       agentName?: string;
       onlyOpen?: boolean;
+      acknowledged?: boolean;
     },
     pagination: { page: number; pageSize: number },
   ) {

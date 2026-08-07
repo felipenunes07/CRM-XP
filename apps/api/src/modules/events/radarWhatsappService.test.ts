@@ -53,6 +53,7 @@ function overview(radar: ConversationInsight[]): EventsOverviewResponse {
       privates: 6,
       averageSentiment: -0.2,
       openRadar: radar.length,
+      completed: 0,
     },
     capture: {} as EventsOverviewResponse["capture"],
     runs: [],

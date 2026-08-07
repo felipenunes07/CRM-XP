@@ -3064,6 +3064,7 @@ export function createApp() {
     isGroup: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
     agentName: z.string().optional(),
     onlyOpen: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
+    acknowledged: z.enum(["true", "false"]).optional().transform((value) => (value ? value === "true" : undefined)),
     page: z.coerce.number().int().min(1).optional(),
     pageSize: z.coerce.number().int().min(1).max(100).optional(),
   });
