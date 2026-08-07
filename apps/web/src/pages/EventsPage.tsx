@@ -316,10 +316,18 @@ export function EventsPage() {
     refetchInterval: 120_000,
   });
 
+  const completedPeriod = useMemo(() => {
+    const retentionDays = overviewQuery.data?.status.retentionDays ?? 30;
+    return {
+      dateFrom: toDateInput(new Date(Date.now() - Math.max(0, retentionDays - 1) * 24 * 60 * 60 * 1000)),
+      dateTo: toDateInput(new Date()),
+    };
+  }, [overviewQuery.data?.status.retentionDays]);
+
   const insightsQuery = useQuery({
-    queryKey: ["events-conversations", period, feedTab, feedSearch, feedTopic, feedPage],
+    queryKey: ["events-conversations", feedTab === "completed" ? completedPeriod : period, feedTab, feedSearch, feedTopic, feedPage],
     queryFn: () => api.listConversationInsights(token!, {
-      ...period,
+      ...(feedTab === "completed" ? completedPeriod : period),
       flag: activeTab.flag,
       attention: feedTab === "radar" ? "high,critical" : undefined,
       onlyOpen: feedTab === "radar" ? true : undefined,
@@ -327,6 +335,15 @@ export function EventsPage() {
       topic: feedTopic || undefined,
       search: feedSearch || undefined,
     }, { page: feedPage, pageSize: 25 }),
+    enabled: Boolean(token),
+  });
+
+  const completedCountQuery = useQuery({
+    queryKey: ["events-conversations", "completed-count", completedPeriod],
+    queryFn: () => api.listConversationInsights(token!, {
+      ...completedPeriod,
+      acknowledged: true,
+    }, { page: 1, pageSize: 1 }),
     enabled: Boolean(token),
   });
 
@@ -522,7 +539,7 @@ export function EventsPage() {
     return bars;
   }, [capture]);
   const radarCount = stats?.openRadar ?? 0;
-  const completedCount = stats?.completed ?? 0;
+  const completedCount = completedCountQuery.data?.total ?? stats?.completed ?? 0;
   const topics = overview?.topics ?? [];
   const insights = insightsQuery.data?.insights ?? [];
   const insightsTotal = insightsQuery.data?.total ?? 0;
@@ -964,7 +981,7 @@ export function EventsPage() {
                 {feedTab === "radar"
                   ? <><ShieldCheck size={18} /> Nada no radar. Tudo sob controle.</>
                   : feedTab === "completed"
-                    ? <><CheckCheck size={18} /> Nenhuma conversa concluída neste período.</>
+                    ? <><CheckCheck size={18} /> Nenhuma conversa concluída nos últimos {status?.retentionDays ?? 30} dias.</>
                   : <><MessageSquare size={18} /> Nenhuma conversa aqui {status?.enabled ? "— a IA preenche conforme lê o dia." : "— a IA está desligada."}</>}
               </div>
             ) : (
