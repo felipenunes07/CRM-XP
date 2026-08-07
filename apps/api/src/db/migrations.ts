@@ -4450,5 +4450,10 @@ export const migrations = [
   ON CONFLICT (key) DO UPDATE
   SET name = EXCLUDED.name,
       description = EXCLUDED.description;
+  `,
+  `
+  -- Meta mensal de baterias, tanto global quanto por vendedora.
+  ALTER TABLE monthly_targets
+    ADD COLUMN IF NOT EXISTS target_batteries INTEGER NOT NULL DEFAULT 0;
   `
 ];

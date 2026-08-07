@@ -25,6 +25,8 @@ export interface ItemsSoldTrendPoint {
   totalItems: number;
   totalOrders: number;
   totalRevenue: number;
+  screenItems?: number;
+  batteryItems?: number;
   targetAmount?: number | null;
   clItems?: number;
   khItems?: number;
@@ -37,6 +39,7 @@ export interface MonthlyTarget {
   month: number;
   attendant: string; // 'TOTAL' for global, otherwise attendant name
   targetAmount: number;
+  targetBatteries: number;
   targetRevenue: number;
 }
 
@@ -175,6 +178,8 @@ export interface AttendantTrendPoint {
   revenue: number;
   orders: number;
   pieces: number;
+  screenPieces?: number;
+  batteryPieces?: number;
   uniqueCustomers: number;
   newCustomers: number;
   recoveredCustomers: number;

@@ -1199,16 +1199,38 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
 
   const result = await pool.query(
     `
-      WITH order_item_totals AS (
-        SELECT order_id, COALESCE(SUM(quantity), 0)::int AS quantity
-        FROM order_items
-        GROUP BY order_id
+      WITH active_catalog AS (
+        SELECT DISTINCT isi.sku
+        FROM inventory_snapshot_items isi
+        JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
+        WHERE inventory.is_active = TRUE
+      ),
+      order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS quantity,
+          COALESCE(SUM(oi.quantity) FILTER (WHERE
+            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) NOT LIKE '%DOC DE CARGA%'
+            AND UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) !~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
+            AND (
+              active_catalog.sku IS NOT NULL
+              OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+            )
+          ), 0)::int AS screen_quantity,
+          COALESCE(SUM(oi.quantity) FILTER (WHERE
+            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
+          ), 0)::int AS battery_quantity
+        FROM order_items oi
+        LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+        GROUP BY oi.order_id
       ),
       sales AS (
         SELECT
           EXTRACT(YEAR FROM o.order_date)::int AS year,
           EXTRACT(MONTH FROM o.order_date)::int AS month,
           COALESCE(SUM(oi.quantity), 0)::int AS total_items,
+          COALESCE(SUM(oi.screen_quantity), 0)::int AS screen_items,
+          COALESCE(SUM(oi.battery_quantity), 0)::int AS battery_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^CL[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS cl_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^KH[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS kh_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^LJ[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS lj_items,
@@ -1226,7 +1248,7 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
         s.*,
         mt.target_amount
       FROM sales s
-      LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month
+      LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month AND mt.attendant = 'TOTAL'
       ORDER BY s.year ASC, s.month ASC
     `,
     params
@@ -1236,6 +1258,8 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     year: Number(row.year ?? 0),
     month: Number(row.month ?? 0),
     totalItems: Number(row.total_items ?? 0),
+    screenItems: Number(row.screen_items ?? 0),
+    batteryItems: Number(row.battery_items ?? 0),
     clItems: row.cl_items !== undefined ? Number(row.cl_items) : undefined,
     khItems: row.kh_items !== undefined ? Number(row.kh_items) : undefined,
     ljItems: row.lj_items !== undefined ? Number(row.lj_items) : undefined,
@@ -1246,17 +1270,18 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
   }));
 }
 
-export async function saveMonthlyTarget(year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0): Promise<void> {
+export async function saveMonthlyTarget(year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0, targetBatteries = 0): Promise<void> {
   await pool.query(
     `
-      INSERT INTO monthly_targets (year, month, attendant, target_amount, target_revenue, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      INSERT INTO monthly_targets (year, month, attendant, target_amount, target_revenue, target_batteries, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW())
       ON CONFLICT (year, month, attendant) DO UPDATE
       SET target_amount = EXCLUDED.target_amount, 
-          target_revenue = EXCLUDED.target_revenue, 
+          target_revenue = EXCLUDED.target_revenue,
+          target_batteries = EXCLUDED.target_batteries,
           updated_at = NOW()
     `,
-    [year, month, attendant, targetAmount, targetRevenue]
+    [year, month, attendant, targetAmount, targetRevenue, targetBatteries]
   );
 }
 
@@ -1278,6 +1303,7 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
     month: row.month,
     attendant: row.attendant,
     targetAmount: Number(row.target_amount ?? 0),
+    targetBatteries: Number(row.target_batteries ?? 0),
     targetRevenue: Number(row.target_revenue ?? 0),
   }));
 }

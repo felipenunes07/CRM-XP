@@ -484,10 +484,10 @@ export const api = {
     if (year) search.set("year", String(year));
     return request<MonthlyTarget[]>(`/api/dashboard/targets${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
-  saveMonthlyTarget(token: string, year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0) {
+  saveMonthlyTarget(token: string, year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0, targetBatteries = 0) {
     return request<void>("/api/dashboard/targets", {
       method: "POST",
-      body: JSON.stringify({ year, month, targetAmount, attendant, targetRevenue }),
+      body: JSON.stringify({ year, month, targetAmount, targetBatteries, attendant, targetRevenue }),
     }, token);
   },
   deleteMonthlyTarget(token: string, year: number, month: number, attendant: string) {
