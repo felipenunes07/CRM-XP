@@ -1557,6 +1557,7 @@ export interface ConversationInsightsFilters {
   isGroup?: boolean;
   agentName?: string;
   onlyOpen?: boolean;
+  acknowledged?: boolean;
 }
 
 export async function listConversationInsights(
@@ -1603,6 +1604,12 @@ export async function listConversationInsights(
     conditions.push(`ci.acknowledged_at IS NULL AND ci.attention_level IN ('medium', 'high', 'critical')`);
   }
 
+  if (filters.acknowledged !== undefined) {
+    conditions.push(filters.acknowledged
+      ? `ci.acknowledged_at IS NOT NULL`
+      : `ci.acknowledged_at IS NULL`);
+  }
+
   if (filters.search) {
     params.push(`%${filters.search}%`);
     conditions.push(`(
@@ -1621,13 +1628,16 @@ export async function listConversationInsights(
   );
 
   params.push(pagination.pageSize, (pagination.page - 1) * pagination.pageSize);
+  const orderBy = filters.acknowledged
+    ? `ci.acknowledged_at DESC NULLS LAST, ci.last_message_at DESC NULLS LAST`
+    : `ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], ci.attention_level) DESC,
+      ci.last_message_at DESC NULLS LAST`;
+
   const listResult = await pool.query(`
     SELECT ci.*
     FROM conversation_insights ci
     ${whereClause}
-    ORDER BY
-      ARRAY_POSITION(ARRAY['none','low','medium','high','critical'], ci.attention_level) DESC,
-      ci.last_message_at DESC NULLS LAST
+    ORDER BY ${orderBy}
     LIMIT $${params.length - 1} OFFSET $${params.length}
   `, params);
 
@@ -1761,6 +1771,7 @@ export async function getEventsOverview(
       COUNT(*) FILTER (
         WHERE attention_level IN ('high', 'critical') AND acknowledged_at IS NULL
       )::int AS open_radar,
+      COUNT(*) FILTER (WHERE acknowledged_at IS NOT NULL)::int AS completed,
       AVG(sentiment_score)::float AS average_sentiment
     FROM conversation_insights ci
     WHERE ci.window_date >= $1::date AND ci.window_date <= $2::date${scope}
@@ -1938,6 +1949,7 @@ export async function getEventsOverview(
         ? null
         : Number(statsRow.average_sentiment),
       openRadar: Number(statsRow.open_radar ?? 0),
+      completed: Number(statsRow.completed ?? 0),
     },
     radar: radarResult.rows.map(mapInsightRow),
     topics: topicsResult.rows.map((row): ConversationTopicStat => ({

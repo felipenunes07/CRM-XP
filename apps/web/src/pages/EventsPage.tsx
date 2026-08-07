@@ -96,10 +96,11 @@ const BRIEFING_SECTIONS: Array<{ key: string; title: string }> = [
   { key: "vendedoras", title: "Vendedoras" },
 ];
 
-type FeedTabId = "radar" | "all" | "reclamacao" | "oportunidade" | "elogio" | "sem_resposta";
+type FeedTabId = "radar" | "completed" | "all" | "reclamacao" | "oportunidade" | "elogio" | "sem_resposta";
 
 const FEED_TABS: Array<{ id: FeedTabId; label: string; flag?: string }> = [
   { id: "radar", label: "Radar" },
+  { id: "completed", label: "Concluídos" },
   { id: "all", label: "Todas" },
   { id: "reclamacao", label: "Reclamações", flag: "reclamacao" },
   { id: "oportunidade", label: "Oportunidades", flag: "oportunidade" },
@@ -301,7 +302,9 @@ export function EventsPage() {
   const [radarDetailLevel, setRadarDetailLevel] = useState<RadarWhatsappDetailLevel>("standard");
   const [radarAlertLimit, setRadarAlertLimit] = useState<RadarWhatsappAlertLimit>(5);
   const [ackFeedback, setAckFeedback] = useState<AckFeedback | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const wasActiveRef = useRef(false);
+  const completionTimerRef = useRef<number | null>(null);
 
   const period = useMemo(() => ({ dateFrom: dateRange.from, dateTo: dateRange.to }), [dateRange]);
   const activeTab = FEED_TABS.find((tab) => tab.id === feedTab) ?? FEED_TABS[0]!;
@@ -320,6 +323,7 @@ export function EventsPage() {
       flag: activeTab.flag,
       attention: feedTab === "radar" ? "high,critical" : undefined,
       onlyOpen: feedTab === "radar" ? true : undefined,
+      acknowledged: feedTab === "completed" ? true : undefined,
       topic: feedTopic || undefined,
       search: feedSearch || undefined,
     }, { page: feedPage, pageSize: 25 }),
@@ -345,6 +349,10 @@ export function EventsPage() {
     const timeout = window.setTimeout(() => setAckFeedback(null), ackFeedback.kind === "success" ? 6500 : 9000);
     return () => window.clearTimeout(timeout);
   }, [ackFeedback]);
+
+  useEffect(() => () => {
+    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
+  }, []);
 
   // Quando o run termina (ativo → inativo), recarrega os dados na hora.
   useEffect(() => {
@@ -376,6 +384,7 @@ export function EventsPage() {
     mutationFn: ({ id }: { id: string; chatName: string }) => api.ackConversationInsight(token!, id),
     onMutate: () => {
       setAckFeedback(null);
+      setCompletingId(null);
     },
     onSuccess: (acknowledged, variables) => {
       queryClient.setQueriesData<ConversationInsightsListResponse>(
@@ -388,11 +397,16 @@ export function EventsPage() {
             }
           : current,
       );
+      setCompletingId(acknowledged.id);
       setAckFeedback({
         kind: "success",
-        message: `${variables.chatName} foi marcada como vista e saiu do Radar. Se o caso piorar, ela volta automaticamente.`,
+        message: `${variables.chatName} foi concluída e guardada na aba Concluídos. Se o caso piorar, ela volta automaticamente ao Radar.`,
       });
-      invalidateIntelligence();
+      if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = window.setTimeout(() => {
+        setCompletingId(null);
+        invalidateIntelligence();
+      }, 900);
     },
     onError: (error) => {
       setAckFeedback({
@@ -508,6 +522,7 @@ export function EventsPage() {
     return bars;
   }, [capture]);
   const radarCount = stats?.openRadar ?? 0;
+  const completedCount = stats?.completed ?? 0;
   const topics = overview?.topics ?? [];
   const insights = insightsQuery.data?.insights ?? [];
   const insightsTotal = insightsQuery.data?.total ?? 0;
@@ -515,6 +530,7 @@ export function EventsPage() {
   const briefingSections = BRIEFING_SECTIONS
     .map((section) => ({ ...section, items: readBriefingSection(briefing, section.key) }))
     .filter((section) => section.items.length > 0);
+  const briefingComplete = Boolean(briefing?.narrative) && (stats?.conversations ?? 0) > 0 && radarCount === 0;
 
   const selected = useMemo(() => {
     if (!insights.length) return null;
@@ -525,6 +541,8 @@ export function EventsPage() {
   const highCount = stats?.byAttention.high ?? 0;
   const mood = !stats || stats.conversations === 0
     ? { tone: "waiting", icon: <Bot size={19} />, title: "Aguardando leituras", detail: "A IA ainda não leu conversas neste período." }
+    : radarCount === 0
+      ? { tone: "calm", icon: <CheckCheck size={19} />, title: "Tudo concluído", detail: "Todas as conversas que exigiam atenção foram revisadas." }
     : criticalCount > 0
       ? { tone: "critical", icon: <Flame size={19} />, title: "Dia com pontos críticos", detail: criticalCount === 1 ? "1 conversa crítica em aberto" : `${criticalCount} conversas críticas em aberto` }
       : highCount > 0 || (stats.complaints ?? 0) > 0
@@ -557,7 +575,7 @@ export function EventsPage() {
             {ackFeedback.kind === "success" ? <CheckCheck size={18} /> : <AlertTriangle size={18} />}
           </span>
           <div>
-            <strong>{ackFeedback.kind === "success" ? "Problema marcado como visto" : "Ação não concluída"}</strong>
+            <strong>{ackFeedback.kind === "success" ? "Conversa concluída" : "Ação não concluída"}</strong>
             <span>{ackFeedback.message}</span>
           </div>
           <button type="button" aria-label="Fechar aviso" onClick={() => setAckFeedback(null)}>
@@ -854,12 +872,17 @@ export function EventsPage() {
 
       {/* ── Briefing: mensagem do assistente ── */}
       {isManager && (
-        <section className="wtl-assistant">
+        <section className={`wtl-assistant ${briefingComplete ? "completed" : ""}`}>
           <span className="wtl-assistant-avatar"><Bot size={19} /></span>
           <div className="wtl-assistant-bubble">
             <div className="wtl-assistant-head">
               <strong>Assistente XP · Briefing do dia</strong>
-              <small>{briefing ? formatDateTime(briefing.generatedAt) : ""}</small>
+              <div className="wtl-assistant-head-status">
+                {briefingComplete && (
+                  <span className="wtl-briefing-complete"><CheckCheck size={13} /> Tudo concluído</span>
+                )}
+                <small>{briefing ? formatDateTime(briefing.generatedAt) : ""}</small>
+              </div>
             </div>
             {briefing?.narrative ? (
               <>
@@ -903,6 +926,7 @@ export function EventsPage() {
               >
                 {tab.label}
                 {tab.id === "radar" && radarCount > 0 && <em>{radarCount}</em>}
+                {tab.id === "completed" && completedCount > 0 && <em className="completed">{completedCount}</em>}
               </button>
             ))}
           </div>
@@ -939,6 +963,8 @@ export function EventsPage() {
               <div className="wtl-feed-empty">
                 {feedTab === "radar"
                   ? <><ShieldCheck size={18} /> Nada no radar. Tudo sob controle.</>
+                  : feedTab === "completed"
+                    ? <><CheckCheck size={18} /> Nenhuma conversa concluída neste período.</>
                   : <><MessageSquare size={18} /> Nenhuma conversa aqui {status?.enabled ? "— a IA preenche conforme lê o dia." : "— a IA está desligada."}</>}
               </div>
             ) : (
@@ -950,7 +976,7 @@ export function EventsPage() {
                   <button
                     key={insight.id}
                     type="button"
-                    className={`wtl-feed-item ${isSelected ? "selected" : ""} sev-${insight.attentionLevel}`}
+                    className={`wtl-feed-item ${isSelected ? "selected" : ""} ${insight.acknowledgedAt ? "completed" : ""} ${completingId === insight.id ? "completing" : ""} sev-${insight.attentionLevel}`}
                     onClick={() => setSelectedId(insight.id)}
                   >
                     <span className="wtl-avatar" style={{ background: avatarColor(insight.chatName || "?") }}>
@@ -974,7 +1000,7 @@ export function EventsPage() {
                         <em className={`wtl-sent ${sentiment.tone}`}>{sentiment.icon}</em>
                         {insight.acknowledgedAt && (
                           <em className="wtl-seen" title={`Visto em ${formatDateTime(insight.acknowledgedAt)}`}>
-                            <CheckCheck size={12} /> Visto
+                            <CheckCheck size={12} /> Concluído
                           </em>
                         )}
                       </span>
@@ -1088,16 +1114,16 @@ export function EventsPage() {
                   <div className="wtl-acknowledged-state" role="status">
                     <span><CheckCheck size={16} /></span>
                     <div>
-                      <strong>Problema já visto</strong>
-                      <small>Marcado em {formatDateTime(selected.acknowledgedAt)}. Volta ao Radar somente se piorar.</small>
+                      <strong>Conversa concluída</strong>
+                      <small>Concluída em {formatDateTime(selected.acknowledgedAt)}. O histórico fica na aba Concluídos e volta ao Radar somente se piorar.</small>
                     </div>
                   </div>
                 ) : (selected.attentionLevel === "high" || selected.attentionLevel === "critical") && (
                   <button
                     type="button"
-                    className="wtl-btn-plain"
+                    className="wtl-btn-plain wtl-btn-complete"
                     disabled={ackMutation.isPending}
-                    title="Tira do radar (volta se a conversa piorar)"
+                    title="Conclui e guarda na aba Concluídos"
                     onClick={() => ackMutation.mutate({
                       id: selected.id,
                       chatName: selected.chatName || "A conversa",
@@ -1108,7 +1134,7 @@ export function EventsPage() {
                       : <CheckCheck size={15} />}
                     {ackMutation.isPending && ackMutation.variables?.id === selected.id
                       ? "Marcando..."
-                      : "Marcar como visto"}
+                      : "Marcar como concluído"}
                   </button>
                 )}
               </footer>
