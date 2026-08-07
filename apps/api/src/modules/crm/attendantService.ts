@@ -75,6 +75,8 @@ interface TrendRow {
   revenue: number;
   orders: number;
   pieces: number;
+  screenPieces: number;
+  batteryPieces: number;
   uniqueCustomers: number;
 }
 
@@ -587,12 +589,30 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
       attendants AS (
         SELECT UNNEST($3::text[]) AS attendant
       ),
+      active_catalog AS (
+        SELECT DISTINCT isi.sku
+        FROM inventory_snapshot_items isi
+        JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
+        WHERE inventory.is_active = TRUE
+      ),
       order_item_totals AS (
         SELECT
-          order_id,
-          COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces
-        FROM order_items
-        GROUP BY order_id
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS pieces,
+          COALESCE(SUM(oi.quantity) FILTER (WHERE
+            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) NOT LIKE '%DOC DE CARGA%'
+            AND UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) !~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
+            AND (
+              active_catalog.sku IS NOT NULL
+              OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+            )
+          ), 0)::numeric(14,2) AS screen_pieces,
+          COALESCE(SUM(oi.quantity) FILTER (WHERE
+            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
+          ), 0)::numeric(14,2) AS battery_pieces
+        FROM order_items oi
+        LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+        GROUP BY oi.order_id
       ),
       monthly_totals AS (
         SELECT
@@ -601,6 +621,8 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS revenue,
           COUNT(*)::int AS orders,
           COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.screen_pieces, 0)), 0)::numeric(14,2) AS screen_pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.battery_pieces, 0)), 0)::numeric(14,2) AS battery_pieces,
           COUNT(DISTINCT o.customer_id)::int AS unique_customers
         FROM orders o
         LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
@@ -615,6 +637,8 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
         COALESCE(monthly_totals.revenue, 0)::numeric(14,2) AS revenue,
         COALESCE(monthly_totals.orders, 0)::int AS orders,
         COALESCE(monthly_totals.pieces, 0)::numeric(14,2) AS pieces,
+        COALESCE(monthly_totals.screen_pieces, 0)::numeric(14,2) AS screen_pieces,
+        COALESCE(monthly_totals.battery_pieces, 0)::numeric(14,2) AS battery_pieces,
         COALESCE(monthly_totals.unique_customers, 0)::int AS unique_customers
       FROM attendants
       CROSS JOIN months
@@ -632,6 +656,8 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
     revenue: Number(row.revenue ?? 0),
     orders: Number(row.orders ?? 0),
     pieces: Number(row.pieces ?? 0),
+    screenPieces: Number(row.screen_pieces ?? 0),
+    batteryPieces: Number(row.battery_pieces ?? 0),
     uniqueCustomers: Number(row.unique_customers ?? 0),
   }));
 }
@@ -1166,6 +1192,8 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       revenue: row.revenue,
       orders: row.orders,
       pieces: row.pieces,
+      screenPieces: row.screenPieces,
+      batteryPieces: row.batteryPieces,
       uniqueCustomers: row.uniqueCustomers,
       newCustomers: movement?.newCustomers ?? 0,
       recoveredCustomers: movement?.recoveredCustomers ?? 0,

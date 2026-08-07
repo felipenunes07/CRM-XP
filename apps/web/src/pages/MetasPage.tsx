@@ -29,6 +29,7 @@ export function MetasPage() {
     year: new Date().getFullYear(),
     attendant: 'TOTAL',
     targetAmount: "" as number | string,
+    targetBatteries: "" as number | string,
     targetRevenue: "" as number | string
   });
 
@@ -51,13 +52,13 @@ export function MetasPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (target: { year: number; month: number; attendant: string; targetAmount: number; targetRevenue: number }) => 
-      api.saveMonthlyTarget(token!, target.year, target.month, target.targetAmount, target.attendant, target.targetRevenue),
+    mutationFn: (target: { year: number; month: number; attendant: string; targetAmount: number; targetBatteries: number; targetRevenue: number }) =>
+      api.saveMonthlyTarget(token!, target.year, target.month, target.targetAmount, target.attendant, target.targetRevenue, target.targetBatteries),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setIsAdding(false);
-      setNewTarget(prev => ({ ...prev, targetAmount: "", targetRevenue: "" }));
+      setNewTarget(prev => ({ ...prev, targetAmount: "", targetBatteries: "", targetRevenue: "" }));
     },
     onError: (err) => {
       alert("Falha ao salvar meta. Verifique se os dados estão corretos: " + String(err));
@@ -88,10 +89,11 @@ export function MetasPage() {
 
   const handleSave = () => {
     const amount = Number(newTarget.targetAmount) || 0;
+    const batteries = Number(newTarget.targetBatteries) || 0;
     const revenue = Number(newTarget.targetRevenue) || 0;
 
-    if (amount <= 0 && revenue <= 0) {
-      alert("Defina pelo menos um valor de meta (telas ou faturamento).");
+    if (amount <= 0 && batteries <= 0 && revenue <= 0) {
+      alert("Defina pelo menos um valor de meta (telas, baterias ou faturamento).");
       return;
     }
 
@@ -105,11 +107,17 @@ export function MetasPage() {
 
       const others = sellerTargets.filter(t => t.month === newTarget.month && t.year === newTarget.year && t.attendant !== newTarget.attendant);
       const allocatedAmount = others.reduce((acc, t) => acc + t.targetAmount, 0);
+      const allocatedBatteries = others.reduce((acc, t) => acc + Number(t.targetBatteries || 0), 0);
       const allocatedRevenue = others.reduce((acc, t) => acc + Number(t.targetRevenue || 0), 0);
       const globalRevenue = Number(global.targetRevenue || 0);
 
       if (amount + allocatedAmount > global.targetAmount) {
         alert(`A soma de telas das vendedoras (${amount + allocatedAmount}) ultrapassa a Meta Global da Empresa (${global.targetAmount}). Restam ${global.targetAmount - allocatedAmount} telas para distribuir.`);
+        return;
+      }
+
+      if (batteries + allocatedBatteries > global.targetBatteries) {
+        alert(`A soma de baterias das vendedoras (${batteries + allocatedBatteries}) ultrapassa a Meta Global da Empresa (${global.targetBatteries}). Restam ${global.targetBatteries - allocatedBatteries} baterias para distribuir.`);
         return;
       }
 
@@ -124,6 +132,7 @@ export function MetasPage() {
       month: newTarget.month,
       attendant: newTarget.attendant,
       targetAmount: amount,
+      targetBatteries: batteries,
       targetRevenue: revenue
     });
   };
@@ -132,7 +141,8 @@ export function MetasPage() {
     if (attendant === 'TOTAL') {
       const point = dashboardData?.itemsSoldTrend.find(p => p.year === year && p.month === month);
       return {
-        amount: point?.totalItems || 0,
+        amount: point?.screenItems || 0,
+        batteries: point?.batteryItems || 0,
         revenue: point?.totalRevenue || 0
       };
     } else {
@@ -142,7 +152,8 @@ export function MetasPage() {
         return pYear === year && pMonth === month;
       });
       return {
-        amount: point?.pieces || 0,
+        amount: point?.screenPieces || 0,
+        batteries: point?.batteryPieces || 0,
         revenue: point?.revenue || 0
       };
     }
@@ -151,6 +162,7 @@ export function MetasPage() {
   const renderTargetRow = (target: MonthlyTarget) => {
     const actuals = getActualsFor(target.year, target.month, target.attendant);
     const progress = target.targetAmount > 0 ? Math.round((actuals.amount / target.targetAmount) * 100) : 0;
+    const batteryProgress = target.targetBatteries > 0 ? Math.round((actuals.batteries / target.targetBatteries) * 100) : 0;
     const revenueProgress = target.targetRevenue > 0 ? Math.round((actuals.revenue / target.targetRevenue) * 100) : 0;
     
     return (
@@ -176,6 +188,18 @@ export function MetasPage() {
               <div style={{ width: `${Math.min(100, progress)}%`, height: '100%', background: progress >= 100 ? '#10b981' : '#3b82f6' }}></div>
             </div>
             <small>{progress}%</small>
+          </div>
+        </td>
+        <td>{formatNumber(target.targetBatteries)}</td>
+        <td style={{ color: batteryProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: batteryProgress >= 100 ? 600 : 400 }}>
+          {formatNumber(actuals.batteries)}
+        </td>
+        <td>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="progress-bar-small" style={{ width: '60px', height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ width: `${Math.min(100, batteryProgress)}%`, height: '100%', background: batteryProgress >= 100 ? '#10b981' : '#f59e0b' }}></div>
+            </div>
+            <small>{batteryProgress}%</small>
           </div>
         </td>
         <td style={{ color: revenueProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: revenueProgress >= 100 ? 600 : 400 }}>
@@ -210,6 +234,9 @@ export function MetasPage() {
         <th>Meta Telas (un)</th>
         <th>Realizado Telas</th>
         <th>Progresso</th>
+        <th>Meta Baterias (un)</th>
+        <th>Realizado Baterias</th>
+        <th>Progresso Baterias</th>
         <th>Faturamento (Realizado)</th>
         <th>Ações</th>
       </tr>
@@ -388,6 +415,18 @@ export function MetasPage() {
                 placeholder="Ex: 500"
               />
             </div>
+
+            <div className="form-group">
+              <label>Meta de Baterias (un)</label>
+              <input
+                type="number"
+                min="0"
+                value={newTarget.targetBatteries}
+                onChange={e => setNewTarget({...newTarget, targetBatteries: e.target.value})}
+                className="form-input"
+                placeholder="Ex: 100"
+              />
+            </div>
           </div>
           <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
             <button className="premium-button ghost" onClick={() => setIsAdding(false)}>
@@ -418,9 +457,9 @@ export function MetasPage() {
               {tableHeader}
               <tbody>
                 {loadingTargets ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Carregando metas globais...</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem' }}>Carregando metas globais...</td></tr>
                 ) : globalTargets.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Nenhuma meta global registrada para a empresa em {selectedYear}.</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem' }}>Nenhuma meta global registrada para a empresa em {selectedYear}.</td></tr>
                 ) : (
                   globalTargets.map(renderTargetRow)
                 )}
@@ -445,9 +484,9 @@ export function MetasPage() {
               {tableHeader}
               <tbody>
                 {loadingTargets ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Carregando metas das vendedoras...</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem' }}>Carregando metas das vendedoras...</td></tr>
                 ) : sellerTargets.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>Nenhuma meta individual registrada para a equipe em {selectedYear}.</td></tr>
+                  <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem' }}>Nenhuma meta individual registrada para a equipe em {selectedYear}.</td></tr>
                 ) : (
                   sellerTargets.map(renderTargetRow)
                 )}
