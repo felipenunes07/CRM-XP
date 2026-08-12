@@ -77,6 +77,10 @@ interface TrendRow {
   pieces: number;
   screenPieces: number;
   batteryPieces: number;
+  screenXpPieces: number;
+  screenVvPieces: number;
+  screenDePieces: number;
+  chargingDockPieces: number;
   uniqueCustomers: number;
 }
 
@@ -595,24 +599,38 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
         JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
         WHERE inventory.is_active = TRUE
       ),
-      order_item_totals AS (
+      classified_order_items AS (
         SELECT
           oi.order_id,
-          COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS pieces,
-          COALESCE(SUM(oi.quantity) FILTER (WHERE
-            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) NOT LIKE '%DOC DE CARGA%'
-            AND UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) !~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
-            AND (
-              active_catalog.sku IS NOT NULL
+          COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
+            WHEN active_catalog.sku IS NOT NULL
               OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
-            )
-          ), 0)::numeric(14,2) AS screen_pieces,
-          COALESCE(SUM(oi.quantity) FILTER (WHERE
-            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
-          ), 0)::numeric(14,2) AS battery_pieces
+              THEN 'SCREEN'
+            ELSE 'OTHER'
+          END AS category,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+            ELSE 'XP'
+          END AS factory
         FROM order_items oi
         LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
-        GROUP BY oi.order_id
+      ),
+      order_item_totals AS (
+        SELECT
+          order_id,
+          COALESCE(SUM(quantity), 0)::numeric(14,2) AS pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN'), 0)::numeric(14,2) AS screen_pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'XP'), 0)::numeric(14,2) AS screen_xp_pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'VV'), 0)::numeric(14,2) AS screen_vv_pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'DE'), 0)::numeric(14,2) AS screen_de_pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'BATTERY'), 0)::numeric(14,2) AS battery_pieces,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'DOCK'), 0)::numeric(14,2) AS charging_dock_pieces
+        FROM classified_order_items
+        GROUP BY order_id
       ),
       monthly_totals AS (
         SELECT
@@ -622,7 +640,11 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
           COUNT(*)::int AS orders,
           COALESCE(SUM(COALESCE(order_item_totals.pieces, 0)), 0)::numeric(14,2) AS pieces,
           COALESCE(SUM(COALESCE(order_item_totals.screen_pieces, 0)), 0)::numeric(14,2) AS screen_pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.screen_xp_pieces, 0)), 0)::numeric(14,2) AS screen_xp_pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.screen_vv_pieces, 0)), 0)::numeric(14,2) AS screen_vv_pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.screen_de_pieces, 0)), 0)::numeric(14,2) AS screen_de_pieces,
           COALESCE(SUM(COALESCE(order_item_totals.battery_pieces, 0)), 0)::numeric(14,2) AS battery_pieces,
+          COALESCE(SUM(COALESCE(order_item_totals.charging_dock_pieces, 0)), 0)::numeric(14,2) AS charging_dock_pieces,
           COUNT(DISTINCT o.customer_id)::int AS unique_customers
         FROM orders o
         LEFT JOIN order_item_totals ON order_item_totals.order_id = o.id
@@ -638,7 +660,11 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
         COALESCE(monthly_totals.orders, 0)::int AS orders,
         COALESCE(monthly_totals.pieces, 0)::numeric(14,2) AS pieces,
         COALESCE(monthly_totals.screen_pieces, 0)::numeric(14,2) AS screen_pieces,
+        COALESCE(monthly_totals.screen_xp_pieces, 0)::numeric(14,2) AS screen_xp_pieces,
+        COALESCE(monthly_totals.screen_vv_pieces, 0)::numeric(14,2) AS screen_vv_pieces,
+        COALESCE(monthly_totals.screen_de_pieces, 0)::numeric(14,2) AS screen_de_pieces,
         COALESCE(monthly_totals.battery_pieces, 0)::numeric(14,2) AS battery_pieces,
+        COALESCE(monthly_totals.charging_dock_pieces, 0)::numeric(14,2) AS charging_dock_pieces,
         COALESCE(monthly_totals.unique_customers, 0)::int AS unique_customers
       FROM attendants
       CROSS JOIN months
@@ -658,6 +684,10 @@ async function getTrendRows(windows: AttendantComparisonWindows, attendants: rea
     pieces: Number(row.pieces ?? 0),
     screenPieces: Number(row.screen_pieces ?? 0),
     batteryPieces: Number(row.battery_pieces ?? 0),
+    screenXpPieces: Number(row.screen_xp_pieces ?? 0),
+    screenVvPieces: Number(row.screen_vv_pieces ?? 0),
+    screenDePieces: Number(row.screen_de_pieces ?? 0),
+    chargingDockPieces: Number(row.charging_dock_pieces ?? 0),
     uniqueCustomers: Number(row.unique_customers ?? 0),
   }));
 }
@@ -1194,6 +1224,10 @@ export async function getAttendantsOverview(windowMonths: AttendantWindowMonths 
       pieces: row.pieces,
       screenPieces: row.screenPieces,
       batteryPieces: row.batteryPieces,
+      screenXpPieces: row.screenXpPieces,
+      screenVvPieces: row.screenVvPieces,
+      screenDePieces: row.screenDePieces,
+      chargingDockPieces: row.chargingDockPieces,
       uniqueCustomers: row.uniqueCustomers,
       newCustomers: movement?.newCustomers ?? 0,
       recoveredCustomers: movement?.recoveredCustomers ?? 0,

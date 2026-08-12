@@ -10,6 +10,7 @@ const inventoryData: InventoryModelsResponse = {
     brands: ["IPHONE", "SAMSUNG"],
     families: ["A15", "IP 13"],
     qualities: ["INCELL", "OLED"],
+    factories: ["XP", "VV"],
   },
   items: [
     {
@@ -19,6 +20,7 @@ const inventoryData: InventoryModelsResponse = {
       brand: "IPHONE",
       family: "13",
       productKind: "TELA",
+      factory: "VV",
       stockUnits: 42,
       activeSkuCount: 1,
       totalSkuCount: 1,
@@ -37,6 +39,7 @@ const inventoryData: InventoryModelsResponse = {
       brand: "SAMSUNG",
       family: "A15",
       productKind: "TELA",
+      factory: "XP",
       stockUnits: 0,
       activeSkuCount: 0,
       totalSkuCount: 1,
@@ -55,6 +58,7 @@ const inventoryData: InventoryModelsResponse = {
       brand: "IPHONE",
       family: "13",
       productKind: "DOC_DE_CARGA",
+      factory: "XP",
       stockUnits: 90,
       activeSkuCount: 1,
       totalSkuCount: 1,
@@ -73,6 +77,7 @@ const inventoryData: InventoryModelsResponse = {
       brand: "IPHONE",
       family: "13",
       productKind: "BATERIA",
+      factory: "BATERIA",
       stockUnits: 18,
       activeSkuCount: 1,
       totalSkuCount: 1,
@@ -145,6 +150,8 @@ describe("InventoryStockTab", () => {
 
     expect(markup).toContain("Quantidade por modelo");
     expect(markup).toContain("Tipo de produto");
+    expect(markup).toContain("Fábrica");
+    expect(markup).toContain(">VV<");
     expect(markup).toContain("Telas");
     expect(markup).toContain("DOCs");
     expect(markup).toContain("Baterias");

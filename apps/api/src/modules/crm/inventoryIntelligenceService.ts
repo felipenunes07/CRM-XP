@@ -1655,6 +1655,7 @@ interface InventoryModelAggregate {
   brand: string;
   family: string;
   productKind: InventoryProductKind;
+  factory: "XP" | "VV" | "DE" | "BATERIA";
   stockUnits: number;
   activeSkuCount: number;
   totalSkuCount: number;
@@ -2701,6 +2702,7 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       brand: item.brand,
       family: item.family,
       productKind: item.productKind,
+      factory: deriveInventoryFactory(item.model, item.productKind),
       stockUnits: 0,
       activeSkuCount: 0,
       totalSkuCount: 0,
@@ -3157,6 +3159,7 @@ export async function getInventoryModels(): Promise<InventoryModelsResponse> {
           brand: model.brand,
           family: model.family,
           productKind: model.productKind,
+          factory: model.factory,
           stockUnits: model.stockUnits,
           activeSkuCount: model.activeSkuCount,
           totalSkuCount: model.totalSkuCount,
@@ -3176,6 +3179,7 @@ export async function getInventoryModels(): Promise<InventoryModelsResponse> {
       brands: sortUnique(dataset.models.map((model) => model.brand)),
       families: sortUnique(dataset.models.map((model) => model.family)),
       qualities: sortUnique(dataset.models.flatMap((model) => model.qualityLabels)),
+      factories: sortUnique(dataset.models.map((model) => model.factory)) as Array<"XP" | "VV" | "DE" | "BATERIA">,
     },
     items,
   };

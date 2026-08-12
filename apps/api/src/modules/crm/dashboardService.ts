@@ -1205,24 +1205,38 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
         JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
         WHERE inventory.is_active = TRUE
       ),
-      order_item_totals AS (
+      classified_order_items AS (
         SELECT
           oi.order_id,
-          COALESCE(SUM(oi.quantity), 0)::int AS quantity,
-          COALESCE(SUM(oi.quantity) FILTER (WHERE
-            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) NOT LIKE '%DOC DE CARGA%'
-            AND UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) !~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
-            AND (
-              active_catalog.sku IS NOT NULL
+          COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
+            WHEN active_catalog.sku IS NOT NULL
               OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
-            )
-          ), 0)::int AS screen_quantity,
-          COALESCE(SUM(oi.quantity) FILTER (WHERE
-            UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])BATERIAS?([^A-Z]|$)'
-          ), 0)::int AS battery_quantity
+              THEN 'SCREEN'
+            ELSE 'OTHER'
+          END AS category,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+            ELSE 'XP'
+          END AS factory
         FROM order_items oi
         LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
-        GROUP BY oi.order_id
+      ),
+      order_item_totals AS (
+        SELECT
+          order_id,
+          COALESCE(SUM(quantity), 0)::int AS quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN'), 0)::int AS screen_quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'XP'), 0)::int AS screen_xp_quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'VV'), 0)::int AS screen_vv_quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'DE'), 0)::int AS screen_de_quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'BATTERY'), 0)::int AS battery_quantity,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'DOCK'), 0)::int AS charging_dock_quantity
+        FROM classified_order_items
+        GROUP BY order_id
       ),
       sales AS (
         SELECT
@@ -1230,7 +1244,11 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
           EXTRACT(MONTH FROM o.order_date)::int AS month,
           COALESCE(SUM(oi.quantity), 0)::int AS total_items,
           COALESCE(SUM(oi.screen_quantity), 0)::int AS screen_items,
+          COALESCE(SUM(oi.screen_xp_quantity), 0)::int AS screen_xp_items,
+          COALESCE(SUM(oi.screen_vv_quantity), 0)::int AS screen_vv_items,
+          COALESCE(SUM(oi.screen_de_quantity), 0)::int AS screen_de_items,
           COALESCE(SUM(oi.battery_quantity), 0)::int AS battery_items,
+          COALESCE(SUM(oi.charging_dock_quantity), 0)::int AS charging_dock_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^CL[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS cl_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^KH[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS kh_items,
           COALESCE(SUM(CASE WHEN c.customer_code ~ '^LJ[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS lj_items,
@@ -1260,6 +1278,10 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     totalItems: Number(row.total_items ?? 0),
     screenItems: Number(row.screen_items ?? 0),
     batteryItems: Number(row.battery_items ?? 0),
+    screenXpItems: Number(row.screen_xp_items ?? 0),
+    screenVvItems: Number(row.screen_vv_items ?? 0),
+    screenDeItems: Number(row.screen_de_items ?? 0),
+    chargingDockItems: Number(row.charging_dock_items ?? 0),
     clItems: row.cl_items !== undefined ? Number(row.cl_items) : undefined,
     khItems: row.kh_items !== undefined ? Number(row.kh_items) : undefined,
     ljItems: row.lj_items !== undefined ? Number(row.lj_items) : undefined,
@@ -1270,18 +1292,47 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
   }));
 }
 
-export async function saveMonthlyTarget(year: number, month: number, targetAmount: number, attendant = 'TOTAL', targetRevenue = 0, targetBatteries = 0): Promise<void> {
+export async function saveMonthlyTarget(
+  year: number,
+  month: number,
+  targetAmount: number,
+  attendant = 'TOTAL',
+  targetRevenue = 0,
+  targetBatteries = 0,
+  targetScreenXp = 0,
+  targetScreenVv = 0,
+  targetScreenDe = 0,
+  targetChargingDocks = 0,
+): Promise<void> {
   await pool.query(
     `
-      INSERT INTO monthly_targets (year, month, attendant, target_amount, target_revenue, target_batteries, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      INSERT INTO monthly_targets (
+        year, month, attendant, target_amount, target_revenue, target_batteries,
+        target_screen_xp, target_screen_vv, target_screen_de, target_charging_docks, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       ON CONFLICT (year, month, attendant) DO UPDATE
       SET target_amount = EXCLUDED.target_amount, 
           target_revenue = EXCLUDED.target_revenue,
           target_batteries = EXCLUDED.target_batteries,
+          target_screen_xp = EXCLUDED.target_screen_xp,
+          target_screen_vv = EXCLUDED.target_screen_vv,
+          target_screen_de = EXCLUDED.target_screen_de,
+          target_charging_docks = EXCLUDED.target_charging_docks,
           updated_at = NOW()
     `,
-    [year, month, attendant, targetAmount, targetRevenue, targetBatteries]
+    [
+      year,
+      month,
+      attendant,
+      targetAmount,
+      targetRevenue,
+      targetBatteries,
+      targetScreenXp,
+      targetScreenVv,
+      targetScreenDe,
+      targetChargingDocks,
+    ]
   );
 }
 
@@ -1304,6 +1355,10 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
     attendant: row.attendant,
     targetAmount: Number(row.target_amount ?? 0),
     targetBatteries: Number(row.target_batteries ?? 0),
+    targetScreenXp: Number(row.target_screen_xp ?? 0),
+    targetScreenVv: Number(row.target_screen_vv ?? 0),
+    targetScreenDe: Number(row.target_screen_de ?? 0),
+    targetChargingDocks: Number(row.target_charging_docks ?? 0),
     targetRevenue: Number(row.target_revenue ?? 0),
   }));
 }

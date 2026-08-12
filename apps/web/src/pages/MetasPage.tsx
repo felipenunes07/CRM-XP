@@ -28,8 +28,11 @@ export function MetasPage() {
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
     attendant: 'TOTAL',
-    targetAmount: "" as number | string,
+    targetScreenXp: "" as number | string,
+    targetScreenVv: "" as number | string,
+    targetScreenDe: "" as number | string,
     targetBatteries: "" as number | string,
+    targetChargingDocks: "" as number | string,
     targetRevenue: "" as number | string
   });
 
@@ -52,13 +55,44 @@ export function MetasPage() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (target: { year: number; month: number; attendant: string; targetAmount: number; targetBatteries: number; targetRevenue: number }) =>
-      api.saveMonthlyTarget(token!, target.year, target.month, target.targetAmount, target.attendant, target.targetRevenue, target.targetBatteries),
+    mutationFn: (target: {
+      year: number;
+      month: number;
+      attendant: string;
+      targetAmount: number;
+      targetBatteries: number;
+      targetRevenue: number;
+      targetScreenXp: number;
+      targetScreenVv: number;
+      targetScreenDe: number;
+      targetChargingDocks: number;
+    }) =>
+      api.saveMonthlyTarget(
+        token!,
+        target.year,
+        target.month,
+        target.targetAmount,
+        target.attendant,
+        target.targetRevenue,
+        target.targetBatteries,
+        target.targetScreenXp,
+        target.targetScreenVv,
+        target.targetScreenDe,
+        target.targetChargingDocks,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setIsAdding(false);
-      setNewTarget(prev => ({ ...prev, targetAmount: "", targetBatteries: "", targetRevenue: "" }));
+      setNewTarget(prev => ({
+        ...prev,
+        targetScreenXp: "",
+        targetScreenVv: "",
+        targetScreenDe: "",
+        targetBatteries: "",
+        targetChargingDocks: "",
+        targetRevenue: "",
+      }));
     },
     onError: (err) => {
       alert("Falha ao salvar meta. Verifique se os dados estão corretos: " + String(err));
@@ -88,12 +122,16 @@ export function MetasPage() {
   const sellerTargets = targets.filter(t => t.attendant !== 'TOTAL');
 
   const handleSave = () => {
-    const amount = Number(newTarget.targetAmount) || 0;
+    const screenXp = Number(newTarget.targetScreenXp) || 0;
+    const screenVv = Number(newTarget.targetScreenVv) || 0;
+    const screenDe = Number(newTarget.targetScreenDe) || 0;
     const batteries = Number(newTarget.targetBatteries) || 0;
+    const chargingDocks = Number(newTarget.targetChargingDocks) || 0;
     const revenue = Number(newTarget.targetRevenue) || 0;
+    const amount = screenXp + screenVv + screenDe;
 
-    if (amount <= 0 && batteries <= 0 && revenue <= 0) {
-      alert("Defina pelo menos um valor de meta (telas, baterias ou faturamento).");
+    if (amount <= 0 && batteries <= 0 && chargingDocks <= 0 && revenue <= 0) {
+      alert("Defina pelo menos uma meta: XP, VV, DE, baterias, docks de carga ou faturamento.");
       return;
     }
 
@@ -108,6 +146,10 @@ export function MetasPage() {
       const others = sellerTargets.filter(t => t.month === newTarget.month && t.year === newTarget.year && t.attendant !== newTarget.attendant);
       const allocatedAmount = others.reduce((acc, t) => acc + t.targetAmount, 0);
       const allocatedBatteries = others.reduce((acc, t) => acc + Number(t.targetBatteries || 0), 0);
+      const allocatedXp = others.reduce((acc, t) => acc + Number(t.targetScreenXp || 0), 0);
+      const allocatedVv = others.reduce((acc, t) => acc + Number(t.targetScreenVv || 0), 0);
+      const allocatedDe = others.reduce((acc, t) => acc + Number(t.targetScreenDe || 0), 0);
+      const allocatedDocks = others.reduce((acc, t) => acc + Number(t.targetChargingDocks || 0), 0);
       const allocatedRevenue = others.reduce((acc, t) => acc + Number(t.targetRevenue || 0), 0);
       const globalRevenue = Number(global.targetRevenue || 0);
 
@@ -118,6 +160,18 @@ export function MetasPage() {
 
       if (batteries + allocatedBatteries > global.targetBatteries) {
         alert(`A soma de baterias das vendedoras (${batteries + allocatedBatteries}) ultrapassa a Meta Global da Empresa (${global.targetBatteries}). Restam ${global.targetBatteries - allocatedBatteries} baterias para distribuir.`);
+        return;
+      }
+
+      const factoryLimits = [
+        { label: "XP", value: screenXp, allocated: allocatedXp, global: global.targetScreenXp },
+        { label: "VV", value: screenVv, allocated: allocatedVv, global: global.targetScreenVv },
+        { label: "DE", value: screenDe, allocated: allocatedDe, global: global.targetScreenDe },
+        { label: "docks de carga", value: chargingDocks, allocated: allocatedDocks, global: global.targetChargingDocks },
+      ];
+      const exceeded = factoryLimits.find((item) => item.value + item.allocated > item.global);
+      if (exceeded) {
+        alert(`A soma de ${exceeded.label} das vendedoras (${exceeded.value + exceeded.allocated}) ultrapassa a meta global (${exceeded.global}). Restam ${Math.max(0, exceeded.global - exceeded.allocated)} para distribuir.`);
         return;
       }
 
@@ -133,7 +187,11 @@ export function MetasPage() {
       attendant: newTarget.attendant,
       targetAmount: amount,
       targetBatteries: batteries,
-      targetRevenue: revenue
+      targetRevenue: revenue,
+      targetScreenXp: screenXp,
+      targetScreenVv: screenVv,
+      targetScreenDe: screenDe,
+      targetChargingDocks: chargingDocks,
     });
   };
 
@@ -142,7 +200,11 @@ export function MetasPage() {
       const point = dashboardData?.itemsSoldTrend.find(p => p.year === year && p.month === month);
       return {
         amount: point?.screenItems || 0,
+        screenXp: point?.screenXpItems || 0,
+        screenVv: point?.screenVvItems || 0,
+        screenDe: point?.screenDeItems || 0,
         batteries: point?.batteryItems || 0,
+        chargingDocks: point?.chargingDockItems || 0,
         revenue: point?.totalRevenue || 0
       };
     } else {
@@ -153,7 +215,11 @@ export function MetasPage() {
       });
       return {
         amount: point?.screenPieces || 0,
+        screenXp: point?.screenXpPieces || 0,
+        screenVv: point?.screenVvPieces || 0,
+        screenDe: point?.screenDePieces || 0,
         batteries: point?.batteryPieces || 0,
+        chargingDocks: point?.chargingDockPieces || 0,
         revenue: point?.revenue || 0
       };
     }
@@ -161,8 +227,25 @@ export function MetasPage() {
 
   const renderTargetRow = (target: MonthlyTarget) => {
     const actuals = getActualsFor(target.year, target.month, target.attendant);
-    const progress = target.targetAmount > 0 ? Math.round((actuals.amount / target.targetAmount) * 100) : 0;
-    const batteryProgress = target.targetBatteries > 0 ? Math.round((actuals.batteries / target.targetBatteries) * 100) : 0;
+    const metricCell = (goal: number, actual: number, color: string) => {
+      const progress = goal > 0 ? Math.round((actual / goal) * 100) : 0;
+      return (
+        <div style={{ minWidth: 92 }}>
+          <strong>{formatNumber(goal)}</strong>
+          <small className="muted" style={{ display: "block", marginTop: 2 }}>
+            {formatNumber(actual)} realizado
+          </small>
+          {goal > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+              <div className="progress-bar-small" style={{ width: 54, height: 5, background: "rgba(0,0,0,0.06)", borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ width: `${Math.min(100, progress)}%`, height: "100%", background: progress >= 100 ? "#10b981" : color }} />
+              </div>
+              <small>{progress}%</small>
+            </div>
+          ) : null}
+        </div>
+      );
+    };
     const revenueProgress = target.targetRevenue > 0 ? Math.round((actuals.revenue / target.targetRevenue) * 100) : 0;
     
     return (
@@ -178,32 +261,16 @@ export function MetasPage() {
             {target.attendant === 'TOTAL' ? 'EMPRESA' : target.attendant}
           </span>
         </td>
-        <td>{formatNumber(target.targetAmount)}</td>
-        <td style={{ color: progress >= 100 ? 'var(--success)' : 'inherit', fontWeight: progress >= 100 ? 600 : 400 }}>
-          {formatNumber(actuals.amount)}
-        </td>
-        <td>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div className="progress-bar-small" style={{ width: '60px', height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(100, progress)}%`, height: '100%', background: progress >= 100 ? '#10b981' : '#3b82f6' }}></div>
-            </div>
-            <small>{progress}%</small>
-          </div>
-        </td>
-        <td>{formatNumber(target.targetBatteries)}</td>
-        <td style={{ color: batteryProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: batteryProgress >= 100 ? 600 : 400 }}>
-          {formatNumber(actuals.batteries)}
-        </td>
-        <td>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div className="progress-bar-small" style={{ width: '60px', height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-              <div style={{ width: `${Math.min(100, batteryProgress)}%`, height: '100%', background: batteryProgress >= 100 ? '#10b981' : '#f59e0b' }}></div>
-            </div>
-            <small>{batteryProgress}%</small>
-          </div>
-        </td>
-        <td style={{ color: revenueProgress >= 100 ? 'var(--success)' : 'inherit', fontWeight: revenueProgress >= 100 ? 600 : 400 }}>
-          {formatCurrency(actuals.revenue)}
+        <td>{metricCell(target.targetAmount, actuals.amount, "#3b82f6")}</td>
+        <td>{metricCell(target.targetScreenXp, actuals.screenXp, "#2956d7")}</td>
+        <td>{metricCell(target.targetScreenVv, actuals.screenVv, "#7c3aed")}</td>
+        <td>{metricCell(target.targetScreenDe, actuals.screenDe, "#0891b2")}</td>
+        <td>{metricCell(target.targetBatteries, actuals.batteries, "#f59e0b")}</td>
+        <td>{metricCell(target.targetChargingDocks, actuals.chargingDocks, "#64748b")}</td>
+        <td style={{ color: revenueProgress >= 100 ? 'var(--success)' : 'inherit' }}>
+          <strong>{formatCurrency(target.targetRevenue)}</strong>
+          <small className="muted" style={{ display: "block", marginTop: 2 }}>{formatCurrency(actuals.revenue)} realizado</small>
+          {target.targetRevenue > 0 ? <small style={{ display: "block", marginTop: 4 }}>{revenueProgress}%</small> : null}
         </td>
         <td>
           <button 
@@ -231,13 +298,13 @@ export function MetasPage() {
       <tr>
         <th>Mês / Ano</th>
         <th>Vendedora</th>
-        <th>Meta Telas (un)</th>
-        <th>Realizado Telas</th>
-        <th>Progresso</th>
-        <th>Meta Baterias (un)</th>
-        <th>Realizado Baterias</th>
-        <th>Progresso Baterias</th>
-        <th>Faturamento (Realizado)</th>
+        <th>Telas total</th>
+        <th>XP</th>
+        <th>VV</th>
+        <th>DE</th>
+        <th>Baterias</th>
+        <th>Dock de carga</th>
+        <th>Faturamento</th>
         <th>Ações</th>
       </tr>
     </thead>
@@ -406,13 +473,38 @@ export function MetasPage() {
             )}
 
             <div className="form-group">
-              <label>Meta de Telas (un)</label>
-              <input 
-                type="number" 
-                value={newTarget.targetAmount} 
-                onChange={e => setNewTarget({...newTarget, targetAmount: e.target.value})}
+              <label>Meta de Telas XP (un)</label>
+              <input
+                type="number"
+                min="0"
+                value={newTarget.targetScreenXp}
+                onChange={e => setNewTarget({...newTarget, targetScreenXp: e.target.value})}
                 className="form-input"
-                placeholder="Ex: 500"
+                placeholder="Ex: 300"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Meta de Telas VV (un)</label>
+              <input
+                type="number"
+                min="0"
+                value={newTarget.targetScreenVv}
+                onChange={e => setNewTarget({...newTarget, targetScreenVv: e.target.value})}
+                className="form-input"
+                placeholder="Ex: 120"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Meta de Telas DE (un)</label>
+              <input
+                type="number"
+                min="0"
+                value={newTarget.targetScreenDe}
+                onChange={e => setNewTarget({...newTarget, targetScreenDe: e.target.value})}
+                className="form-input"
+                placeholder="Ex: 80"
               />
             </div>
 
@@ -425,6 +517,31 @@ export function MetasPage() {
                 onChange={e => setNewTarget({...newTarget, targetBatteries: e.target.value})}
                 className="form-input"
                 placeholder="Ex: 100"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Meta de Docks de Carga (un)</label>
+              <input
+                type="number"
+                min="0"
+                value={newTarget.targetChargingDocks}
+                onChange={e => setNewTarget({...newTarget, targetChargingDocks: e.target.value})}
+                className="form-input"
+                placeholder="Ex: 60"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Meta de Faturamento (R$)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={newTarget.targetRevenue}
+                onChange={e => setNewTarget({...newTarget, targetRevenue: e.target.value})}
+                className="form-input"
+                placeholder="Ex: 250000"
               />
             </div>
           </div>

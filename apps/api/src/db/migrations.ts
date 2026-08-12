@@ -4455,5 +4455,13 @@ export const migrations = [
   -- Meta mensal de baterias, tanto global quanto por vendedora.
   ALTER TABLE monthly_targets
     ADD COLUMN IF NOT EXISTS target_batteries INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+  -- Metas mensais detalhadas por fábrica e por linha de produto.
+  ALTER TABLE monthly_targets
+    ADD COLUMN IF NOT EXISTS target_screen_xp INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS target_screen_vv INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS target_screen_de INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS target_charging_docks INTEGER NOT NULL DEFAULT 0;
   `
 ];

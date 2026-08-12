@@ -11,6 +11,7 @@ import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import "./inventorySales.css";
 
 type StockKindFilter = "all" | InventoryProductKind;
+type StockFactoryFilter = "" | InventoryModelListItem["factory"];
 type StockSort = "stock_desc" | "stock_asc" | "name_asc";
 
 interface InventoryStockTabProps {
@@ -34,6 +35,10 @@ function productKindLabel(kind: InventoryProductKind) {
   return "Tela";
 }
 
+function factoryLabel(factory: InventoryModelListItem["factory"]) {
+  return factory === "BATERIA" ? "Baterias" : factory;
+}
+
 function matchesSearch(item: InventoryModelListItem, search: string) {
   if (!search) return true;
 
@@ -44,10 +49,11 @@ function matchesSearch(item: InventoryModelListItem, search: string) {
 }
 
 function exportStockCsv(items: InventoryModelListItem[]) {
-  const headers = ["Modelo", "Tipo", "Marca", "Qualidade", "Quantidade"];
+  const headers = ["Modelo", "Tipo", "Fábrica", "Marca", "Qualidade", "Quantidade"];
   const rows = items.map((item) => [
     item.modelLabel,
     productKindLabel(item.productKind),
+    factoryLabel(item.factory),
     item.brand,
     item.qualityLabels.join(", ") || "Sem qualidade",
     item.stockUnits,
@@ -171,6 +177,7 @@ export function InventoryStockTab({
 }: InventoryStockTabProps) {
   const [kind, setKind] = useState<StockKindFilter>("all");
   const [brand, setBrand] = useState("");
+  const [factory, setFactory] = useState<StockFactoryFilter>("");
   const [quality, setQuality] = useState("");
   const [search, setSearch] = useState("");
   const [onlyInStock, setOnlyInStock] = useState(true);
@@ -180,6 +187,10 @@ export function InventoryStockTab({
   const items = useMemo(() => data?.items ?? [], [data?.items]);
   const brands = useMemo(() => uniqueSorted(items.map((item) => item.brand)), [items]);
   const qualities = useMemo(() => uniqueSorted(items.flatMap((item) => item.qualityLabels)), [items]);
+  const factories = useMemo(
+    () => uniqueSorted(items.map((item) => item.factory)) as InventoryModelListItem["factory"][],
+    [items],
+  );
   const kindCounts = useMemo(() => {
     const counts = new Map<InventoryProductKind, number>();
     for (const item of items) {
@@ -192,11 +203,12 @@ export function InventoryStockTab({
     () =>
       items.filter((item) => {
         if (kind !== "all" && item.productKind !== kind) return false;
+        if (factory && item.factory !== factory) return false;
         if (brand && item.brand !== brand) return false;
         if (quality && !item.qualityLabels.includes(quality)) return false;
         return matchesSearch(item, deferredSearch);
       }),
-    [brand, deferredSearch, items, kind, quality],
+    [brand, deferredSearch, factory, items, kind, quality],
   );
 
   const visibleItems = useMemo(() => {
@@ -228,6 +240,7 @@ export function InventoryStockTab({
   const maxVisibleStock = Math.max(...visibleItems.map((item) => item.stockUnits), 1);
   const activeCrumbs = [
     kind !== "all" ? { label: `Tipo: ${productKindLabel(kind)}`, clear: () => setKind("all") } : null,
+    factory ? { label: `Fábrica: ${factoryLabel(factory)}`, clear: () => setFactory("") } : null,
     brand ? { label: `Marca: ${brand}`, clear: () => setBrand("") } : null,
     quality ? { label: `Qualidade: ${quality}`, clear: () => setQuality("") } : null,
     search ? { label: `Busca: ${search}`, clear: () => setSearch("") } : null,
@@ -237,6 +250,7 @@ export function InventoryStockTab({
   function clearAllFilters() {
     setKind("all");
     setBrand("");
+    setFactory("");
     setQuality("");
     setSearch("");
     setOnlyInStock(true);
@@ -290,6 +304,16 @@ export function InventoryStockTab({
                 Todos
               </button>
             </div>
+          </div>
+
+          <div className="invsales-control">
+            <span className="invsales-control-label">Fábrica</span>
+            <select value={factory} onChange={(event) => setFactory(event.target.value as StockFactoryFilter)}>
+              <option value="">Todas</option>
+              {factories.map((item) => (
+                <option key={item} value={item}>{factoryLabel(item)}</option>
+              ))}
+            </select>
           </div>
 
           <div className="invsales-control">
@@ -385,6 +409,7 @@ export function InventoryStockTab({
                   </button>
                 </th>
                 <th>Tipo</th>
+                <th>Fábrica</th>
                 <th>Marca</th>
                 <th>Qualidade</th>
                 <th className="num">
@@ -424,6 +449,7 @@ export function InventoryStockTab({
                         </div>
                       </td>
                       <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
+                      <td><span className="invstock-brand">{factoryLabel(item.factory)}</span></td>
                       <td><span className="invstock-brand">{item.brand || "Sem marca"}</span></td>
                       <td>{item.qualityLabels.join(", ") || "Sem qualidade"}</td>
                       <td className="num">
@@ -447,7 +473,7 @@ export function InventoryStockTab({
                     </tr>
                     {isSelected ? (
                       <tr className="invstock-preview-row">
-                        <td colSpan={7}>
+                        <td colSpan={8}>
                           <StockCustomerPreview
                             detail={detail}
                             isError={isDetailError}

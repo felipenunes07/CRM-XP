@@ -305,6 +305,10 @@ const monthlyTargetSchema = z.object({
   month: z.number().int().min(1).max(12),
   targetAmount: z.number().int().min(0),
   targetBatteries: z.number().int().min(0).optional().default(0),
+  targetScreenXp: z.number().int().min(0).optional().default(0),
+  targetScreenVv: z.number().int().min(0).optional().default(0),
+  targetScreenDe: z.number().int().min(0).optional().default(0),
+  targetChargingDocks: z.number().int().min(0).optional().default(0),
   attendant: z.string().default('TOTAL'),
   targetRevenue: z.number().min(0).optional().default(0),
 });
@@ -1000,7 +1004,18 @@ export function createApp() {
   app.post("/api/dashboard/targets", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
     try {
       const payload = monthlyTargetSchema.parse(request.body);
-      await saveMonthlyTarget(payload.year, payload.month, payload.targetAmount, payload.attendant, payload.targetRevenue, payload.targetBatteries);
+      await saveMonthlyTarget(
+        payload.year,
+        payload.month,
+        payload.targetAmount,
+        payload.attendant,
+        payload.targetRevenue,
+        payload.targetBatteries,
+        payload.targetScreenXp,
+        payload.targetScreenVv,
+        payload.targetScreenDe,
+        payload.targetChargingDocks,
+      );
       response.status(204).send();
     } catch (error) {
       next(error);

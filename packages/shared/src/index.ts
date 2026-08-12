@@ -27,6 +27,10 @@ export interface ItemsSoldTrendPoint {
   totalRevenue: number;
   screenItems?: number;
   batteryItems?: number;
+  screenXpItems?: number;
+  screenVvItems?: number;
+  screenDeItems?: number;
+  chargingDockItems?: number;
   targetAmount?: number | null;
   clItems?: number;
   khItems?: number;
@@ -40,6 +44,10 @@ export interface MonthlyTarget {
   attendant: string; // 'TOTAL' for global, otherwise attendant name
   targetAmount: number;
   targetBatteries: number;
+  targetScreenXp: number;
+  targetScreenVv: number;
+  targetScreenDe: number;
+  targetChargingDocks: number;
   targetRevenue: number;
 }
 
@@ -180,6 +188,10 @@ export interface AttendantTrendPoint {
   pieces: number;
   screenPieces?: number;
   batteryPieces?: number;
+  screenXpPieces?: number;
+  screenVvPieces?: number;
+  screenDePieces?: number;
+  chargingDockPieces?: number;
   uniqueCustomers: number;
   newCustomers: number;
   recoveredCustomers: number;
@@ -689,6 +701,7 @@ export interface GeographicCustomerStat {
   displayName: string;
   state: string;
   city: string;
+  sellerName: string | null;
   status: CustomerStatus;
   daysSinceLastPurchase: number | null;
   orderCount: number;
@@ -1203,6 +1216,7 @@ export interface InventoryModelListItem {
   brand: string;
   family: string;
   productKind: InventoryProductKind;
+  factory: "XP" | "VV" | "DE" | "BATERIA";
   stockUnits: number;
   activeSkuCount: number;
   totalSkuCount: number;
@@ -1221,6 +1235,7 @@ export interface InventoryModelsResponse {
     brands: string[];
     families: string[];
     qualities: string[];
+    factories: Array<"XP" | "VV" | "DE" | "BATERIA">;
   };
   items: InventoryModelListItem[];
 }

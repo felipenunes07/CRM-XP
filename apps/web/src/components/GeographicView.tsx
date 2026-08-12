@@ -26,6 +26,80 @@ const EMPTY_GEOGRAPHIC_RESPONSE: GeographicSalesResponse = {
   customerStats: [],
 };
 
+const UNASSIGNED_SELLER = "__SEM_VENDEDORA__";
+
+export function filterGeographicDataBySeller(
+  source: GeographicSalesResponse,
+  seller: string,
+): GeographicSalesResponse {
+  if (!seller) return source;
+
+  const customers = source.customerStats.filter((customer) =>
+    seller === UNASSIGNED_SELLER
+      ? !customer.sellerName?.trim()
+      : customer.sellerName?.trim().toLocaleLowerCase("pt-BR") === seller.toLocaleLowerCase("pt-BR"),
+  );
+  const stateMap = new Map<string, GeographicStateStat>();
+  const cityMap = new Map<string, GeographicCityStat>();
+
+  for (const customer of customers) {
+    const state = stateMap.get(customer.state) ?? createEmptyStateStat(customer.state);
+    state.customerCount += 1;
+    state.orderCount += customer.orderCount;
+    state.totalPieces += customer.totalPieces;
+    state.totalRevenue += customer.totalRevenue;
+    state.activeCustomerCount += customer.status === "ACTIVE" ? 1 : 0;
+    state.attentionCustomerCount += customer.status === "ATTENTION" ? 1 : 0;
+    state.inactiveCustomerCount += customer.status === "INACTIVE" ? 1 : 0;
+    stateMap.set(customer.state, state);
+
+    const key = `${customer.state}::${customer.city}`;
+    const city = cityMap.get(key) ?? {
+      state: customer.state,
+      city: customer.city,
+      customerCount: 0,
+      orderCount: 0,
+      totalPieces: 0,
+      totalRevenue: 0,
+      activeCustomerCount: 0,
+      attentionCustomerCount: 0,
+      inactiveCustomerCount: 0,
+    };
+    city.customerCount += 1;
+    city.orderCount += customer.orderCount;
+    city.totalPieces += customer.totalPieces;
+    city.totalRevenue += customer.totalRevenue;
+    city.activeCustomerCount += customer.status === "ACTIVE" ? 1 : 0;
+    city.attentionCustomerCount += customer.status === "ATTENTION" ? 1 : 0;
+    city.inactiveCustomerCount += customer.status === "INACTIVE" ? 1 : 0;
+    cityMap.set(key, city);
+  }
+
+  const cityStats = [...cityMap.values()].sort(
+    (left, right) => right.totalPieces - left.totalPieces || left.city.localeCompare(right.city, "pt-BR"),
+  );
+  for (const state of stateMap.values()) {
+    state.cityCount = cityStats.filter((city) => city.state === state.state).length;
+  }
+  const stateStats = [...stateMap.values()].sort(
+    (left, right) => right.totalPieces - left.totalPieces || left.state.localeCompare(right.state, "pt-BR"),
+  );
+
+  return {
+    summary: {
+      totalStates: stateStats.length,
+      totalCities: cityStats.length,
+      totalCustomers: customers.length,
+      totalOrders: customers.reduce((sum, customer) => sum + customer.orderCount, 0),
+      totalPieces: customers.reduce((sum, customer) => sum + customer.totalPieces, 0),
+      totalRevenue: customers.reduce((sum, customer) => sum + customer.totalRevenue, 0),
+    },
+    stateStats,
+    cityStats,
+    customerStats: customers,
+  };
+}
+
 function createEmptyStateStat(state: string): GeographicStateStat {
   return {
     state,
@@ -158,6 +232,7 @@ export function GeographicView() {
   const [selectedState, setSelectedState] = useState("");
   const [selectedCityKey, setSelectedCityKey] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedSeller, setSelectedSeller] = useState("");
   const [hoveredState, setHoveredState] = useState("");
   const [mapMode, setMapMode] = useState<"volume" | "health">("volume");
   const [detailView, setDetailView] = useState<"customers" | "cities" | "models">("cities");
@@ -168,7 +243,17 @@ export function GeographicView() {
     enabled: Boolean(token),
   });
 
-  const geographicData = geographicQuery.data ?? EMPTY_GEOGRAPHIC_RESPONSE;
+  const sourceGeographicData = geographicQuery.data ?? EMPTY_GEOGRAPHIC_RESPONSE;
+  const sellerOptions = useMemo(
+    () => [...new Set(sourceGeographicData.customerStats.map((item) => item.sellerName?.trim()).filter(Boolean) as string[])]
+      .sort((left, right) => left.localeCompare(right, "pt-BR")),
+    [sourceGeographicData.customerStats],
+  );
+  const hasUnassignedCustomers = sourceGeographicData.customerStats.some((item) => !item.sellerName?.trim());
+  const geographicData = useMemo(
+    () => filterGeographicDataBySeller(sourceGeographicData, selectedSeller),
+    [selectedSeller, sourceGeographicData],
+  );
   const normalizedSearch = normalizeText(search.trim());
 
   const stateStatsByUf = useMemo(
@@ -314,7 +399,7 @@ export function GeographicView() {
         .join(" ")
     : "";
   const maxStatePieces = Math.max(...geographicData.stateStats.map((item) => item.totalPieces), 1);
-  const hasFilters = Boolean(selectedState || selectedCityKey || search.trim());
+  const hasFilters = Boolean(selectedState || selectedCityKey || selectedSeller || search.trim());
 
   function handleStateToggle(state: string) {
     setSelectedCityKey("");
@@ -339,6 +424,7 @@ export function GeographicView() {
     setSelectedState("");
     setSelectedCityKey("");
     setSearch("");
+    setSelectedSeller("");
     setDetailView("cities");
   }
 
@@ -422,7 +508,7 @@ export function GeographicView() {
     return <div className="page-error">{tx("Falha ao carregar os dados geograficos.", "Failed to load geographic data.")}</div>;
   }
 
-  if (!geographicData.stateStats.length) {
+  if (!sourceGeographicData.stateStats.length) {
     return (
       <section className="panel empty-panel">
         <div className="empty-state">
@@ -437,6 +523,30 @@ export function GeographicView() {
 
   return (
     <div className="region-view">
+      <section className="panel" style={{ display: "flex", alignItems: "end", gap: 16, flexWrap: "wrap" }}>
+        <label className="region-search" style={{ margin: 0, minWidth: 260, flex: "0 1 360px" }}>
+          <span>{tx("Filtrar por vendedora", "Filter by seller")}</span>
+          <select
+            value={selectedSeller}
+            onChange={(event) => {
+              setSelectedSeller(event.target.value);
+              setSelectedState("");
+              setSelectedCityKey("");
+              setDetailView("customers");
+            }}
+          >
+            <option value="">{tx("Todas as vendedoras", "All sellers")}</option>
+            {sellerOptions.map((seller) => <option key={seller} value={seller}>{seller}</option>)}
+            {hasUnassignedCustomers ? <option value={UNASSIGNED_SELLER}>{tx("Sem vendedora", "Unassigned")}</option> : null}
+          </select>
+        </label>
+        <div className="muted" style={{ paddingBottom: 10 }}>
+          {selectedSeller
+            ? `${formatNumber(geographicData.summary.totalCustomers)} ${tx("clientes desta vendedora", "customers for this seller")}`
+            : tx("Selecione uma vendedora para ver a carteira dela distribuída por estado.", "Select a seller to see their portfolio by state.")}
+        </div>
+      </section>
+
       <section className="region-summary-strip">
         <div className="region-summary-card">
           <span>{tx("Clientes mapeados", "Mapped customers")}</span>
@@ -1095,6 +1205,7 @@ export function GeographicView() {
                       <th>{tx("Cliente", "Customer")}</th>
                       <th>{tx("Dias sem compra", "Days since purchase")}</th>
                       <th>{tx("Cidade", "City")}</th>
+                      <th>{tx("Vendedora", "Seller")}</th>
                       <th>{tx("Pecas", "Pieces")}</th>
                     </tr>
                   </thead>
@@ -1125,6 +1236,7 @@ export function GeographicView() {
                               <span>{`${row.state} - ${formatCurrency(row.totalRevenue)}`}</span>
                             </div>
                           </td>
+                          <td>{row.sellerName || tx("Sem vendedora", "Unassigned")}</td>
                           <td>
                             <div className="region-table-number">
                               <strong>{formatNumber(row.totalPieces)}</strong>
@@ -1135,7 +1247,7 @@ export function GeographicView() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={4} className="region-table-empty">
+                        <td colSpan={5} className="region-table-empty">
                           {tx("Nenhum cliente bateu com esse filtro.", "No customer matched this filter.")}
                         </td>
                       </tr>

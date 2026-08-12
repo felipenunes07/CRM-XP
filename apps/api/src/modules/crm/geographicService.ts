@@ -75,6 +75,7 @@ function mapCustomerStat(row: Record<string, unknown>): GeographicCustomerStat {
     displayName: String(row.display_name ?? "Cliente sem nome"),
     state: String(row.state ?? ""),
     city: String(row.city ?? "Sem cidade"),
+    sellerName: row.seller_name ? String(row.seller_name) : null,
     status: String(row.status ?? "INACTIVE") as GeographicCustomerStat["status"],
     daysSinceLastPurchase:
       row.days_since_last_purchase === null || row.days_since_last_purchase === undefined
@@ -221,6 +222,7 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
           COALESCE(NULLIF(MAX(cs.display_name), ''), MAX(c.display_name), 'Cliente sem nome') AS display_name,
           location_sales.state,
           COALESCE(location_sales.city, 'Sem cidade') AS city,
+          COALESCE(NULLIF(MAX(cs.last_attendant), ''), NULLIF(MAX(c.last_attendant), '')) AS seller_name,
           COALESCE(MAX(cs.status), 'INACTIVE') AS status,
           MAX(cs.days_since_last_purchase)::int AS days_since_last_purchase,
           COUNT(DISTINCT location_sales.order_id)::int AS order_count,
