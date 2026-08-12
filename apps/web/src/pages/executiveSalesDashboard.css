@@ -11,7 +11,7 @@
   --executive-blue: #2250db;
   --executive-navy: #001446;
   --executive-light-blue: #89aaf2;
-  width: min(calc(100vw - clamp(24px, 3vw, 56px)), 1800px);
+  width: min(calc(100vw - clamp(24px, 3vw, 56px)), 1900px);
   min-width: 1080px;
   height: 100dvh;
   aspect-ratio: auto;
