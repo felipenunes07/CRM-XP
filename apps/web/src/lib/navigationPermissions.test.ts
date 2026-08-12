@@ -17,6 +17,10 @@ describe("navigation permissions", () => {
     expect(permissionForPath("/clientes/financeiro/123")).toBe("finance.customers.view");
   });
 
+  it("uses the dashboard permission for the executive report shortcut", () => {
+    expect(permissionForPath("/relatorio-executivo")).toBe("dashboard.view");
+  });
+
   it("keeps one unique permission for every configurable menu item", () => {
     const items = navigationAccessFolders.flatMap((folder) => folder.items);
     expect(navigationPermissionKeys.size).toBe(items.length);

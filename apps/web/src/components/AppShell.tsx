@@ -11,6 +11,7 @@ import {
   Lightbulb,
   LogOut,
   MessageSquareText,
+  MonitorUp,
   Activity,
   RadioTower,
   Search,
@@ -34,6 +35,7 @@ import { permissionForPath } from "../lib/navigationPermissions";
 /* ── link structure for external tests ── */
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
@@ -82,6 +84,7 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
 /* ── Sidebar menu structure ── */
 const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },

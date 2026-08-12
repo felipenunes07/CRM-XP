@@ -52,6 +52,7 @@ import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantPortfolio, getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
+import { getExecutiveDashboardMetrics } from "./modules/crm/executiveDashboardService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -289,6 +290,12 @@ const customerCreditSettingsSchema = z
 const dashboardQuerySchema = z.object({
   trendDays: z.coerce.number().int().min(1).max(3650).optional(),
   customerPrefix: z.string().optional(),
+});
+
+const executiveDashboardQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  day: z.coerce.number().int().min(1).max(31).optional(),
 });
 
 const movementsQuerySchema = z.object({
@@ -945,6 +952,15 @@ export function createApp() {
       response.json(await getDashboardMetrics(query.trendDays, query.customerPrefix));
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.get("/api/dashboard/executive", async (request, response, next) => {
+    try {
+      const query = executiveDashboardQuerySchema.parse(request.query);
+      response.json(await getExecutiveDashboardMetrics(query));
+    } catch (error) {
+      next(error instanceof RangeError ? new HttpError(400, error.message) : error);
     }
   });
 

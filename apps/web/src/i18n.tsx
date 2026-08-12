@@ -440,6 +440,7 @@ const STORAGE_KEY = "xp-crm-ui-language";
 const exactTranslations: Record<string, string> = {
   ...extraExactTranslations,
   Dashboard: "仪表盘",
+  "Relatório Executivo": "管理层销售报表",
   Metas: "目标",
   Atendentes: "销售团队",
   Clientes: "客户",

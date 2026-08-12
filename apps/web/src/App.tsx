@@ -6,6 +6,9 @@ import { useUiLanguage } from "./i18n";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
+const ExecutiveSalesDashboardPage = lazy(async () => ({
+  default: (await import("./pages/ExecutiveSalesDashboardPage")).ExecutiveSalesDashboardPage,
+}));
 const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
 const CustomerFinancialPage = lazy(async () => ({
@@ -70,6 +73,10 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
         <Route element={<ProtectedRoute />}>
+          <Route
+            path="/relatorio-executivo"
+            element={<PermissionElement permission="dashboard.view"><ExecutiveSalesDashboardPage /></PermissionElement>}
+          />
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
             <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />

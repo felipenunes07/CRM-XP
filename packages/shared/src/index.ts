@@ -51,6 +51,90 @@ export interface MonthlyTarget {
   targetRevenue: number;
 }
 
+export interface ExecutiveDashboardPeriodOption {
+  year: number;
+  month: number;
+  days: number[];
+}
+
+export interface ExecutiveDashboardSeller {
+  attendant: string;
+  profilePictureUrl: string | null;
+  totalOrders: number;
+  uniqueCustomers: number;
+  totalRevenue: number;
+  totalItems: number;
+  screenItems: number;
+  batteryItems: number;
+  chargingDockItems: number;
+}
+
+export interface ExecutiveDashboardDailyPoint {
+  date: string;
+  day: number;
+  totalItems: number;
+  screenItems: number;
+  totalOrders: number;
+  uniqueCustomers: number;
+}
+
+export interface ExecutiveDashboardMonthlyCustomerPoint {
+  month: number;
+  uniqueCustomers: number;
+}
+
+export interface ExecutiveDashboardMetrics {
+  selection: {
+    year: number;
+    month: number;
+    day: number | null;
+    dailyDate: string;
+    startDate: string;
+    endDate: string;
+  };
+  availablePeriods: ExecutiveDashboardPeriodOption[];
+  summary: {
+    totalItems: number;
+    totalOrders: number;
+    uniqueCustomers: number;
+    totalRevenue: number;
+    previousMonthItems: number;
+    previousYearItems: number;
+    previousMonthScreenItems: number;
+    previousYearScreenItems: number;
+    monthItems: number;
+    monthScreenItems: number;
+    monthBatteryItems: number;
+    monthOrders: number;
+    monthUniqueCustomers: number;
+    monthlyTarget: number;
+    monthlyBatteryTarget: number;
+    dailyTarget: number;
+    targetProgress: number;
+    targetRemaining: number;
+  };
+  productBreakdown: {
+    screenItems: number;
+    screenXpItems: number;
+    screenVvItems: number;
+    screenDeItems: number;
+    batteryItems: number;
+    chargingDockItems: number;
+    otherItems: number;
+  };
+  inventory: {
+    productCount: number;
+    stockPieces: number;
+    updatedAt: string | null;
+  };
+  sellers: ExecutiveDashboardSeller[];
+  dailySeries: ExecutiveDashboardDailyPoint[];
+  monthlyCustomers: ExecutiveDashboardMonthlyCustomerPoint[];
+  generatedAt: string;
+  lastSyncAt: string | null;
+  lastSaleDate: string | null;
+}
+
 export interface DashboardMetrics {
   totalCustomers: number;
   statusCounts: Record<CustomerStatus, number>;

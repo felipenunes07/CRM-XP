@@ -18,6 +18,7 @@ import type {
   CustomerLabel,
   CustomerListItem,
   DashboardMetrics,
+  ExecutiveDashboardMetrics,
   DealActivity,
   DealDetail,
   DealPriority,
@@ -465,6 +466,19 @@ export const api = {
       search.set("customerPrefix", customerPrefix);
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  executiveDashboard(
+    token: string,
+    filters: { year: number; month: number; day: number | null },
+  ) {
+    const search = new URLSearchParams({
+      year: String(filters.year),
+      month: String(filters.month),
+    });
+    if (filters.day !== null) {
+      search.set("day", String(filters.day));
+    }
+    return request<ExecutiveDashboardMetrics>(`/api/dashboard/executive?${search.toString()}`, {}, token);
   },
   dashboardTrendRangeAnalysis(token: string, startDate: string, endDate: string) {
     const search = new URLSearchParams({

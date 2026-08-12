@@ -99,6 +99,7 @@ const permissionByPath = new Map(
 export function permissionForPath(path: string) {
   const exactPermission = permissionByPath.get(path);
   if (exactPermission) return exactPermission;
+  if (path === "/relatorio-executivo") return "dashboard.view";
   if (path.startsWith("/clientes/financeiro/")) return "finance.customers.view";
   if (path.startsWith("/clientes/")) return "commercial.customers.view";
   if (path === "/config/whatsapp") return "integrations.whatsapp.view";
