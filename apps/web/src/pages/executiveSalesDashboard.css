@@ -2,7 +2,7 @@
   width: 100%;
   min-height: 100dvh;
   display: grid;
-  place-items: center;
+  place-items: stretch;
   overflow: auto;
   background: #fff;
 }
@@ -11,9 +11,10 @@
   --executive-blue: #2250db;
   --executive-navy: #001446;
   --executive-light-blue: #89aaf2;
-  width: min(100vw, calc(100dvh * 16 / 9));
+  width: 100vw;
   min-width: 1080px;
-  aspect-ratio: 16 / 9;
+  height: 100dvh;
+  aspect-ratio: auto;
   display: grid;
   grid-template-columns: 16.55% minmax(0, 1fr);
   overflow: hidden;
@@ -986,22 +987,22 @@
 
 /* Composição para TV: navegação mínima, filtros no cabeçalho e leitura a distância. */
 .executive-dashboard-canvas {
-  grid-template-columns: 5.25% minmax(0, 1fr);
+  grid-template-columns: 5.5% minmax(0, 1fr);
 }
 
 .executive-sidebar {
   align-items: center;
-  padding: 1.25em 0.65em 1.35em;
+  padding: 0.95em 0.45em 1em;
 }
 
 .executive-brand {
   width: 100%;
-  height: 3.45em;
+  height: 3.85em;
 }
 
 .executive-brand img {
-  width: 4.7em;
-  height: 2.8em;
+  width: 6em;
+  height: 3.45em;
 }
 
 .executive-sidebar-divider {
@@ -1015,19 +1016,19 @@
 }
 
 .executive-nav-item.is-active {
-  min-height: 4.1em;
+  min-height: 4.35em;
   flex-direction: column;
   justify-content: center;
   gap: 0.32em;
-  padding: 0.45em 0.2em;
+  padding: 0.55em 0.2em;
   border-radius: 0.65em;
-  font-size: 0.67em;
+  font-size: 0.74em;
   line-height: 1;
 }
 
 .executive-nav-item svg {
-  width: 1.75em;
-  height: 1.75em;
+  width: 1.9em;
+  height: 1.9em;
 }
 
 .executive-tv-mode {
@@ -1036,8 +1037,8 @@
   justify-items: center;
   align-items: center;
   gap: 0.25em;
-  margin-top: 1.2em;
-  padding: 0.7em 0.2em;
+  margin-top: 1em;
+  padding: 0.8em 0.2em;
   border: 1px solid #dce5f7;
   border-radius: 0.65em;
   color: #183262;
@@ -1051,13 +1052,13 @@
 }
 
 .executive-tv-mode strong {
-  font-size: 0.62em;
+  font-size: 0.7em;
 }
 
 .executive-tv-mode small {
   overflow: hidden;
   color: #71809a;
-  font-size: 0.52em;
+  font-size: 0.58em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1068,12 +1069,13 @@
 }
 
 .executive-olist-wordmark {
-  font-size: 1.25em;
+  font-size: 1.55em;
 }
 
 .executive-dashboard-content {
-  padding-left: 0.9em;
-  padding-right: 1.55em;
+  grid-template-rows: 4.65em minmax(0, 1fr);
+  gap: 0.65em;
+  padding: 1.05em 0.85em 0.85em 0.75em;
 }
 
 .executive-title-wrap {
@@ -1081,15 +1083,15 @@
 }
 
 .executive-title-wrap h1 {
-  font-size: 1.75em;
+  font-size: 1.9em;
 }
 
 .executive-filter-bar {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.45em;
-  padding: 0.36em 0.5em;
+  gap: 0.55em;
+  padding: 0.46em 0.65em;
   border: 1px solid #dce3f1;
   border-radius: 0.65em;
   background: #f8faff;
@@ -1097,23 +1099,23 @@
 
 .executive-filter-bar > svg {
   flex: 0 0 auto;
-  width: 1.1em;
-  height: 1.1em;
+  width: 1.25em;
+  height: 1.25em;
   color: var(--executive-blue);
 }
 
 .executive-filter-bar label {
   display: flex;
   align-items: center;
-  gap: 0.28em;
+  gap: 0.35em;
   color: #6f7889;
-  font-size: 0.64em;
+  font-size: 0.75em;
   font-weight: 600;
 }
 
 .executive-filter-bar select {
-  min-width: 4.4em;
-  height: 2.1em;
+  min-width: 4.8em;
+  height: 2.45em;
   padding: 0 1.45em 0 0.5em;
   border: 1px solid #d6deec;
   border-radius: 0.38em;
@@ -1124,7 +1126,7 @@
 }
 
 .executive-filter-bar label:last-of-type select {
-  min-width: 9.5em;
+  min-width: 10.4em;
 }
 
 .executive-filter-bar select:focus-visible {
@@ -1133,16 +1135,16 @@
 }
 
 .executive-filter-bar button {
-  height: 2.1em;
+  height: 2.45em;
   display: flex;
   align-items: center;
   gap: 0.3em;
-  padding: 0 0.6em;
+  padding: 0 0.78em;
   border: 0;
   border-radius: 0.38em;
   color: #fff;
   background: var(--executive-blue);
-  font-size: 0.64em;
+  font-size: 0.75em;
   font-weight: 700;
   cursor: pointer;
 }
@@ -1171,7 +1173,7 @@
 .executive-refresh-copy > span {
   display: grid;
   gap: 0.08em;
-  font-size: 0.66em;
+  font-size: 0.72em;
   line-height: 1.05;
 }
 
@@ -1193,7 +1195,7 @@
 
 .executive-dashboard-grid {
   grid-template-columns: minmax(0, 2.18fr) minmax(21em, 1fr);
-  column-gap: 1.25em;
+  gap: 1.05em 0.95em;
 }
 
 .executive-indicator-columns {
