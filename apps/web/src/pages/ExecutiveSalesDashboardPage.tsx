@@ -32,7 +32,6 @@ import type {
   ExecutiveDashboardMetrics,
   ExecutiveDashboardSeller,
 } from "@olist-crm/shared";
-import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import "./executiveSalesDashboard.css";
 
@@ -556,7 +555,6 @@ function DashboardError({ message, onRetry }: { message: string; onRetry: () => 
 }
 
 export function ExecutiveSalesDashboardPage() {
-  const { token } = useAuth();
   const [filters, setFilters] = useState<DashboardFilters>(getTodayFilters);
   const [followsCurrentPeriod, setFollowsCurrentPeriod] = useState(true);
 
@@ -595,8 +593,7 @@ export function ExecutiveSalesDashboardPage() {
 
   const query = useQuery({
     queryKey: ["executive-sales-dashboard", filters.year, filters.month, filters.day],
-    queryFn: () => api.executiveDashboard(token!, filters),
-    enabled: Boolean(token),
+    queryFn: () => api.executiveDashboard(filters),
     refetchInterval: AUTO_REFRESH_INTERVAL_MS,
     refetchIntervalInBackground: true,
     refetchOnReconnect: true,

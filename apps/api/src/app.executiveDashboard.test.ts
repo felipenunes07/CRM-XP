@@ -1,12 +1,15 @@
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { getExecutiveDashboardMetricsMock } = vi.hoisted(() => ({
+const { getExecutiveDashboardMetricsMock, requireAuthMock } = vi.hoisted(() => ({
   getExecutiveDashboardMetricsMock: vi.fn(),
+  requireAuthMock: vi.fn((_request: unknown, response: { status: (code: number) => { json: (body: unknown) => void } }) => {
+    response.status(401).json({ message: "Autenticacao obrigatoria" });
+  }),
 }));
 
 vi.mock("./modules/platform/authMiddleware.js", () => ({
-  requireAuth: (_request: unknown, _response: unknown, next: () => void) => next(),
+  requireAuth: requireAuthMock,
   requirePermission:
     () =>
     (_request: unknown, _response: unknown, next: () => void) =>
@@ -38,6 +41,8 @@ describe("GET /api/dashboard/executive", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.summary.totalItems).toBe(2450);
+    expect(response.headers["cache-control"]).toContain("public");
+    expect(requireAuthMock).not.toHaveBeenCalled();
     expect(getExecutiveDashboardMetricsMock).toHaveBeenCalledWith({ year: 2026, month: 8, day: 12 });
   });
 

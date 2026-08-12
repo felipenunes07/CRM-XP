@@ -467,10 +467,7 @@ export const api = {
     }
     return request<DashboardMetrics>(`/api/dashboard/metrics${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
   },
-  executiveDashboard(
-    token: string,
-    filters: { year: number; month: number; day: number | null },
-  ) {
+  executiveDashboard(filters: { year: number; month: number; day: number | null }) {
     const search = new URLSearchParams({
       year: String(filters.year),
       month: String(filters.month),
@@ -478,7 +475,7 @@ export const api = {
     if (filters.day !== null) {
       search.set("day", String(filters.day));
     }
-    return request<ExecutiveDashboardMetrics>(`/api/dashboard/executive?${search.toString()}`, {}, token);
+    return request<ExecutiveDashboardMetrics>(`/api/dashboard/executive?${search.toString()}`);
   },
   dashboardTrendRangeAnalysis(token: string, startDate: string, endDate: string) {
     const search = new URLSearchParams({

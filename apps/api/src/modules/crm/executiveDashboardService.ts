@@ -2,6 +2,7 @@ import type { ExecutiveDashboardMetrics } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 
 const DAILY_TARGET_DIVISOR = 20;
+const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
 const SAO_PAULO_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
   year: "numeric",
@@ -171,10 +172,19 @@ interface SummaryRow {
   last_sale_date: string | null;
 }
 
-export async function getExecutiveDashboardMetrics(
-  input: ExecutiveDashboardSelectionInput = {},
+const executiveDashboardCache = new Map<
+  string,
+  { value: ExecutiveDashboardMetrics; expiresAt: number }
+>();
+const executiveDashboardRequests = new Map<string, Promise<ExecutiveDashboardMetrics>>();
+
+function executiveDashboardCacheKey(period: ExecutiveDashboardResolvedPeriod) {
+  return `${period.year}-${period.month}-${period.day ?? "latest"}`;
+}
+
+async function loadExecutiveDashboardMetrics(
+  period: ExecutiveDashboardResolvedPeriod,
 ): Promise<ExecutiveDashboardMetrics> {
-  const period = resolveExecutiveDashboardPeriod(input);
   const yearStart = toDateOnly(period.year, 1, 1);
   const latestSaleDate = period.day === null
     ? (
@@ -230,6 +240,13 @@ export async function getExecutiveDashboardMetrics(
             WHERE inventory.is_active = TRUE
               AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
           ),
+          selected_orders AS MATERIALIZED (
+            SELECT id, customer_id, order_date::date AS order_date, total_amount
+            FROM orders
+            WHERE (order_date >= $3::date AND order_date < $4::date)
+               OR (order_date >= $5::date AND order_date < $6::date)
+               OR (order_date >= $7::date AND order_date < $8::date)
+          ),
           raw_order_items AS (
             SELECT
               oi.order_id,
@@ -237,6 +254,7 @@ export async function getExecutiveDashboardMetrics(
               UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) AS product_text,
               active_catalog.sku IS NOT NULL AS in_catalog
             FROM order_items oi
+            JOIN selected_orders selected ON selected.id = oi.order_id
             LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           classified_order_items AS (
@@ -286,7 +304,7 @@ export async function getExecutiveDashboardMetrics(
               COALESCE(oit.battery_items, 0)::numeric(14,2) AS battery_items,
               COALESCE(oit.charging_dock_items, 0)::numeric(14,2) AS charging_dock_items,
               COALESCE(oit.other_items, 0)::numeric(14,2) AS other_items
-            FROM orders o
+            FROM selected_orders o
             LEFT JOIN order_item_totals oit ON oit.order_id = o.id
           )
           SELECT
@@ -310,7 +328,7 @@ export async function getExecutiveDashboardMetrics(
             COALESCE(SUM(battery_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_battery_items,
             COUNT(*) FILTER (WHERE order_date >= $7::date AND order_date < $8::date)::int AS month_orders,
             COUNT(DISTINCT customer_id) FILTER (WHERE order_date >= $7::date AND order_date < $8::date)::int AS month_unique_customers,
-            MAX(order_date)::text AS last_sale_date
+            (MAX(order_date) FILTER (WHERE order_date >= $7::date AND order_date < $8::date))::text AS last_sale_date
           FROM order_metrics
         `,
         rangeParams,
@@ -355,6 +373,12 @@ export async function getExecutiveDashboardMetrics(
             WHERE inventory.is_active = TRUE
               AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
           ),
+          selected_orders AS MATERIALIZED (
+            SELECT id, customer_id, last_attendant, total_amount
+            FROM orders
+            WHERE order_date >= $1::date AND order_date < $2::date
+              AND NULLIF(BTRIM(last_attendant), '') IS NOT NULL
+          ),
           classified_order_items AS (
             SELECT
               oi.order_id,
@@ -368,6 +392,7 @@ export async function getExecutiveDashboardMetrics(
                 ELSE 'OTHER'
               END AS category
             FROM order_items oi
+            JOIN selected_orders selected ON selected.id = oi.order_id
             LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           order_item_totals AS (
@@ -390,10 +415,8 @@ export async function getExecutiveDashboardMetrics(
               COALESCE(SUM(oit.screen_items), 0)::numeric(14,2) AS screen_items,
               COALESCE(SUM(oit.battery_items), 0)::numeric(14,2) AS battery_items,
               COALESCE(SUM(oit.charging_dock_items), 0)::numeric(14,2) AS charging_dock_items
-            FROM orders o
+            FROM selected_orders o
             LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-            WHERE o.order_date >= $1::date AND o.order_date < $2::date
-              AND NULLIF(BTRIM(o.last_attendant), '') IS NOT NULL
             GROUP BY BTRIM(o.last_attendant)
           )
           SELECT
@@ -438,6 +461,11 @@ export async function getExecutiveDashboardMetrics(
             WHERE inventory.is_active = TRUE
               AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
           ),
+          selected_orders AS MATERIALIZED (
+            SELECT id, customer_id, order_date::date AS order_date
+            FROM orders
+            WHERE order_date >= $1::date AND order_date < $2::date
+          ),
           classified_order_items AS (
             SELECT
               oi.order_id,
@@ -451,6 +479,7 @@ export async function getExecutiveDashboardMetrics(
                 ELSE 'OTHER'
               END AS category
             FROM order_items oi
+            JOIN selected_orders selected ON selected.id = oi.order_id
             LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           order_item_totals AS (
@@ -468,9 +497,8 @@ export async function getExecutiveDashboardMetrics(
             COALESCE(SUM(oit.screen_items), 0)::numeric(14,2) AS screen_items,
             COUNT(*)::int AS total_orders,
             COUNT(DISTINCT o.customer_id)::int AS unique_customers
-          FROM orders o
+          FROM selected_orders o
           LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-          WHERE o.order_date >= $1::date AND o.order_date < $2::date
           GROUP BY o.order_date
           ORDER BY o.order_date
         `,
@@ -602,6 +630,42 @@ export async function getExecutiveDashboardMetrics(
     monthlyCustomers: fillExecutiveMonthlyCustomers(period.month, monthlyCustomersResult.rows),
     generatedAt: new Date().toISOString(),
     lastSyncAt: syncResult.rows[0]?.last_sync_at ? String(syncResult.rows[0].last_sync_at) : null,
-    lastSaleDate: summaryRow?.last_sale_date ? String(summaryRow.last_sale_date) : null,
+    lastSaleDate: latestSaleDate ? String(latestSaleDate) : null,
   };
+}
+
+export async function getExecutiveDashboardMetrics(
+  input: ExecutiveDashboardSelectionInput = {},
+): Promise<ExecutiveDashboardMetrics> {
+  const period = resolveExecutiveDashboardPeriod(input);
+  const cacheKey = executiveDashboardCacheKey(period);
+  const cached = executiveDashboardCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const activeRequest = executiveDashboardRequests.get(cacheKey);
+  if (activeRequest) {
+    return activeRequest;
+  }
+
+  const request = loadExecutiveDashboardMetrics(period)
+    .then((value) => {
+      executiveDashboardCache.set(cacheKey, {
+        value,
+        expiresAt: Date.now() + EXECUTIVE_DASHBOARD_CACHE_TTL_MS,
+      });
+      return value;
+    })
+    .catch((error) => {
+      if (cached) return cached.value;
+      throw error;
+    })
+    .finally(() => {
+      executiveDashboardRequests.delete(cacheKey);
+    });
+
+  executiveDashboardRequests.set(cacheKey, request);
+  return request;
 }

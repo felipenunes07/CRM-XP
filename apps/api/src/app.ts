@@ -858,6 +858,18 @@ export function createApp() {
     }
   });
 
+  // Public, read-only endpoint used by the TV dashboard. It exposes only the
+  // already-aggregated report payload and never forwards database credentials.
+  app.get("/api/dashboard/executive", async (request, response, next) => {
+    try {
+      const query = executiveDashboardQuerySchema.parse(request.query);
+      response.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+      response.json(await getExecutiveDashboardMetrics(query));
+    } catch (error) {
+      next(error instanceof RangeError ? new HttpError(400, error.message) : error);
+    }
+  });
+
   app.use("/api", requireAuth);
   app.use("/api/whatsapp-monitor/agents", requirePermission("messages.inbox.view"));
   app.use("/api/whatsapp-monitor/conversations", requirePermission("messages.inbox.view"));
@@ -952,15 +964,6 @@ export function createApp() {
       response.json(await getDashboardMetrics(query.trendDays, query.customerPrefix));
     } catch (error) {
       next(error);
-    }
-  });
-
-  app.get("/api/dashboard/executive", async (request, response, next) => {
-    try {
-      const query = executiveDashboardQuerySchema.parse(request.query);
-      response.json(await getExecutiveDashboardMetrics(query));
-    } catch (error) {
-      next(error instanceof RangeError ? new HttpError(400, error.message) : error);
     }
   });
 
