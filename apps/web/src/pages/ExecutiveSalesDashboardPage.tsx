@@ -36,6 +36,7 @@ import { api } from "../lib/api";
 import "./executiveSalesDashboard.css";
 
 const AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
@@ -594,7 +595,11 @@ export function ExecutiveSalesDashboardPage() {
   const query = useQuery({
     queryKey: ["executive-sales-dashboard", filters.year, filters.month, filters.day],
     queryFn: () => api.executiveDashboard(filters),
-    refetchInterval: AUTO_REFRESH_INTERVAL_MS,
+    refetchInterval: (activeQuery) => (
+      activeQuery.state.status === "error"
+        ? AUTO_REFRESH_RETRY_INTERVAL_MS
+        : AUTO_REFRESH_INTERVAL_MS
+    ),
     refetchIntervalInBackground: true,
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
