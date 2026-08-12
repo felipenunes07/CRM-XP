@@ -590,8 +590,7 @@
   place-items: center;
   margin: 1.85em auto 0;
   border-radius: 50%;
-  background: conic-gradient(#8ca9ea var(--executive-progress), #eff0f2 0);
-  transform: rotate(135deg);
+  background: conic-gradient(from 0deg at 50% 50%, #8ca9ea var(--executive-progress), #eff0f2 0);
 }
 
 .executive-gauge::before {
@@ -608,7 +607,6 @@
   z-index: 1;
   display: grid;
   justify-items: center;
-  transform: rotate(-135deg);
 }
 
 .executive-gauge strong {
