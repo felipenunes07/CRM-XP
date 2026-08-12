@@ -267,12 +267,12 @@ function XpDotMark() {
 function InventorySummary({ data }: { data: ExecutiveDashboardMetrics["inventory"] }) {
   return (
     <div className="executive-inventory-summary" title={data.updatedAt ? `Estoque atualizado em ${data.updatedAt}` : undefined}>
-      <div>
+      <div title="Produtos diferentes com quantidade em estoque maior que zero">
         <span>PRODUTOS</span>
         <strong>{formatNumber(data.productCount)}</strong>
       </div>
       <Boxes aria-hidden="true" />
-      <div>
+      <div title="Total de peças, somando somente quantidades em estoque maiores que zero">
         <span>ESTOQUE</span>
         <strong>{formatCompact(data.stockPieces)}</strong>
       </div>

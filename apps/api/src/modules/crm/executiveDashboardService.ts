@@ -535,8 +535,14 @@ async function loadExecutiveDashboardMetrics(
         updated_at: string | null;
       }>(`
         SELECT
-          COUNT(*)::int AS product_count,
-          COALESCE(SUM(items.stock_quantity), 0)::int AS stock_pieces,
+          COUNT(DISTINCT UPPER(BTRIM(items.sku))) FILTER (
+            WHERE items.stock_quantity > 0
+              AND NULLIF(BTRIM(items.sku), '') IS NOT NULL
+          )::int AS product_count,
+          COALESCE(
+            SUM(items.stock_quantity) FILTER (WHERE items.stock_quantity > 0),
+            0
+          )::int AS stock_pieces,
           MAX(snapshots.imported_at)::text AS updated_at
         FROM inventory_snapshot_items items
         JOIN inventory_snapshots snapshots ON snapshots.id = items.snapshot_id
