@@ -1349,18 +1349,28 @@ export async function getMonthlyTargets(year?: number): Promise<MonthlyTarget[]>
     : { sql: `SELECT * FROM monthly_targets ORDER BY year DESC, month DESC, attendant ASC`, params: [] };
     
   const result = await pool.query(query.sql, query.params);
-  return result.rows.map(row => ({
-    year: row.year,
-    month: row.month,
-    attendant: row.attendant,
-    targetAmount: Number(row.target_amount ?? 0),
+  return result.rows.map(mapMonthlyTargetRow);
+}
+
+export function mapMonthlyTargetRow(row: Record<string, unknown>): MonthlyTarget {
+  const targetAmount = Number(row.target_amount ?? 0);
+  const storedXp = Number(row.target_screen_xp ?? 0);
+  const storedVv = Number(row.target_screen_vv ?? 0);
+  const storedDe = Number(row.target_screen_de ?? 0);
+  const isLegacyScreenTarget = targetAmount > 0 && storedXp === 0 && storedVv === 0 && storedDe === 0;
+
+  return {
+    year: Number(row.year ?? 0),
+    month: Number(row.month ?? 0),
+    attendant: String(row.attendant ?? "TOTAL"),
+    targetAmount,
     targetBatteries: Number(row.target_batteries ?? 0),
-    targetScreenXp: Number(row.target_screen_xp ?? 0),
-    targetScreenVv: Number(row.target_screen_vv ?? 0),
-    targetScreenDe: Number(row.target_screen_de ?? 0),
+    targetScreenXp: isLegacyScreenTarget ? targetAmount : storedXp,
+    targetScreenVv: storedVv,
+    targetScreenDe: storedDe,
     targetChargingDocks: Number(row.target_charging_docks ?? 0),
     targetRevenue: Number(row.target_revenue ?? 0),
-  }));
+  };
 }
 
 

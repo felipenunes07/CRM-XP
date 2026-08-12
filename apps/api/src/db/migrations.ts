@@ -4463,5 +4463,17 @@ export const migrations = [
     ADD COLUMN IF NOT EXISTS target_screen_vv INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS target_screen_de INTEGER NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS target_charging_docks INTEGER NOT NULL DEFAULT 0;
+  `,
+  `
+  -- Metas anteriores ao detalhamento por fábrica eram metas de telas XP.
+  -- Só preenche registros ainda sem qualquer divisão XP/VV/DE, preservando
+  -- metas novas que já tenham sido cadastradas por fábrica.
+  UPDATE monthly_targets
+  SET target_screen_xp = target_amount,
+      updated_at = NOW()
+  WHERE target_amount > 0
+    AND COALESCE(target_screen_xp, 0) = 0
+    AND COALESCE(target_screen_vv, 0) = 0
+    AND COALESCE(target_screen_de, 0) = 0;
   `
 ];
