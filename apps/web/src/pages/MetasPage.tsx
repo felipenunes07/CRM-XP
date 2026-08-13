@@ -44,7 +44,11 @@ export function MetasPage() {
     enabled: !!token
   });
 
-  const { data: targetActuals = [], isError: targetActualsError } = useQuery({
+  const {
+    data: targetActuals = [],
+    isLoading: loadingTargetActuals,
+    isError: targetActualsError,
+  } = useQuery({
     queryKey: ["monthly-target-actuals", selectedYear],
     queryFn: () => api.getMonthlyTargetActuals(token!, selectedYear),
     enabled: !!token
@@ -250,6 +254,7 @@ export function MetasPage() {
     if (attendant === 'TOTAL') {
       const point = targetActuals.find(p => p.year === year && p.month === month && p.attendant === 'TOTAL');
       return {
+        loading: loadingTargetActuals,
         amount: point?.screenItems ?? 0,
         screenXp: point?.screenXpItems ?? 0,
         screenVv: point?.screenVvItems ?? 0,
@@ -265,6 +270,7 @@ export function MetasPage() {
         return pYear === year && pMonth === month;
       });
       return {
+        loading: !attendantsData,
         amount: point?.screenPieces || 0,
         screenXp: point?.screenXpPieces || 0,
         screenVv: point?.screenVvPieces || 0,
@@ -278,15 +284,15 @@ export function MetasPage() {
 
   const renderTargetRow = (target: MonthlyTarget) => {
     const actuals = getActualsFor(target.year, target.month, target.attendant);
-    const metricCell = (goal: number, actual: number, color: string) => {
+    const metricCell = (goal: number, actual: number, color: string, loading: boolean) => {
       const progress = goal > 0 ? Math.round((actual / goal) * 100) : 0;
       return (
         <div style={{ minWidth: 92 }}>
           <strong>{formatNumber(goal)}</strong>
           <small className="muted" style={{ display: "block", marginTop: 2 }}>
-            {formatNumber(actual)} realizado
+            {loading ? "Carregando realizado..." : `${formatNumber(actual)} realizado`}
           </small>
-          {goal > 0 ? (
+          {goal > 0 && !loading ? (
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
               <div className="progress-bar-small" style={{ width: 54, height: 5, background: "rgba(0,0,0,0.06)", borderRadius: 3, overflow: "hidden" }}>
                 <div style={{ width: `${Math.min(100, progress)}%`, height: "100%", background: progress >= 100 ? "#10b981" : color }} />
@@ -312,16 +318,18 @@ export function MetasPage() {
             {target.attendant === 'TOTAL' ? 'EMPRESA' : target.attendant}
           </span>
         </td>
-        <td>{metricCell(target.targetAmount, actuals.amount, "#3b82f6")}</td>
-        <td>{metricCell(target.targetScreenXp, actuals.screenXp, "#2956d7")}</td>
-        <td>{metricCell(target.targetScreenVv, actuals.screenVv, "#7c3aed")}</td>
-        <td>{metricCell(target.targetScreenDe, actuals.screenDe, "#0891b2")}</td>
-        <td>{metricCell(target.targetBatteries, actuals.batteries, "#f59e0b")}</td>
-        <td>{metricCell(target.targetChargingDocks, actuals.chargingDocks, "#64748b")}</td>
+        <td>{metricCell(target.targetAmount, actuals.amount, "#3b82f6", actuals.loading)}</td>
+        <td>{metricCell(target.targetScreenXp, actuals.screenXp, "#2956d7", actuals.loading)}</td>
+        <td>{metricCell(target.targetScreenVv, actuals.screenVv, "#7c3aed", actuals.loading)}</td>
+        <td>{metricCell(target.targetScreenDe, actuals.screenDe, "#0891b2", actuals.loading)}</td>
+        <td>{metricCell(target.targetBatteries, actuals.batteries, "#f59e0b", actuals.loading)}</td>
+        <td>{metricCell(target.targetChargingDocks, actuals.chargingDocks, "#64748b", actuals.loading)}</td>
         <td style={{ color: revenueProgress >= 100 ? 'var(--success)' : 'inherit' }}>
           <strong>{formatCurrency(target.targetRevenue)}</strong>
-          <small className="muted" style={{ display: "block", marginTop: 2 }}>{formatCurrency(actuals.revenue)} realizado</small>
-          {target.targetRevenue > 0 ? <small style={{ display: "block", marginTop: 4 }}>{revenueProgress}%</small> : null}
+          <small className="muted" style={{ display: "block", marginTop: 2 }}>
+            {actuals.loading ? "Carregando realizado..." : `${formatCurrency(actuals.revenue)} realizado`}
+          </small>
+          {target.targetRevenue > 0 && !actuals.loading ? <small style={{ display: "block", marginTop: 4 }}>{revenueProgress}%</small> : null}
         </td>
         <td>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
