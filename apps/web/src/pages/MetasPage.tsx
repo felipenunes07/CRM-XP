@@ -8,6 +8,7 @@ import {
   ChevronRight, 
   Plus, 
   Save,
+  Pencil,
   Trash2,
   Users,
   Briefcase
@@ -22,6 +23,7 @@ export function MetasPage() {
   const queryClient = useQueryClient();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [isAdding, setIsAdding] = useState(false);
+  const [editingTarget, setEditingTarget] = useState<MonthlyTarget | null>(null);
   
   // Form State
   const [newTarget, setNewTarget] = useState({
@@ -84,6 +86,7 @@ export function MetasPage() {
       queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setIsAdding(false);
+      setEditingTarget(null);
       setNewTarget(prev => ({
         ...prev,
         targetScreenXp: "",
@@ -120,6 +123,52 @@ export function MetasPage() {
 
   const globalTargets = targets.filter(t => t.attendant === 'TOTAL');
   const sellerTargets = targets.filter(t => t.attendant !== 'TOTAL');
+
+  const closeTargetForm = () => {
+    setIsAdding(false);
+    setEditingTarget(null);
+  };
+
+  const startNewTarget = () => {
+    if (isAdding) {
+      closeTargetForm();
+      return;
+    }
+
+    setEditingTarget(null);
+    setNewTarget({
+      month: new Date().getMonth() + 1,
+      year: selectedYear,
+      attendant: 'TOTAL',
+      targetScreenXp: "",
+      targetScreenVv: "",
+      targetScreenDe: "",
+      targetBatteries: "",
+      targetChargingDocks: "",
+      targetRevenue: "",
+    });
+    setIsAdding(true);
+  };
+
+  const startEditingTarget = (target: MonthlyTarget) => {
+    setSelectedYear(target.year);
+    setEditingTarget(target);
+    setNewTarget({
+      month: target.month,
+      year: target.year,
+      attendant: target.attendant,
+      targetScreenXp: target.targetScreenXp,
+      targetScreenVv: target.targetScreenVv,
+      targetScreenDe: target.targetScreenDe,
+      targetBatteries: target.targetBatteries,
+      targetChargingDocks: target.targetChargingDocks,
+      targetRevenue: target.targetRevenue,
+    });
+    setIsAdding(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById("monthly-target-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const handleSave = () => {
     const screenXp = Number(newTarget.targetScreenXp) || 0;
@@ -273,21 +322,34 @@ export function MetasPage() {
           {target.targetRevenue > 0 ? <small style={{ display: "block", marginTop: 4 }}>{revenueProgress}%</small> : null}
         </td>
         <td>
-          <button 
-            className="premium-button-danger-icon"
-            title="Remover Meta"
-            onClick={() => {
-              if (window.confirm("Remover esta meta?")) {
-                deleteMutation.mutate({
-                  year: target.year,
-                  month: target.month,
-                  attendant: target.attendant
-                });
-              }
-            }}
-          >
-            <Trash2 size={18} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              className="admin-icon-button"
+              style={{ color: "#2956d7", borderColor: "rgba(41, 86, 215, 0.2)", background: "rgba(41, 86, 215, 0.05)" }}
+              title="Editar meta"
+              aria-label={`Editar meta de ${target.attendant === 'TOTAL' ? 'empresa' : target.attendant} para ${monthNames[target.month - 1]} de ${target.year}`}
+              onClick={() => startEditingTarget(target)}
+            >
+              <Pencil size={16} />
+            </button>
+            <button
+              type="button"
+              className="premium-button-danger-icon"
+              title="Remover Meta"
+              onClick={() => {
+                if (window.confirm("Remover esta meta?")) {
+                  deleteMutation.mutate({
+                    year: target.year,
+                    month: target.month,
+                    attendant: target.attendant
+                  });
+                }
+              }}
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </td>
       </tr>
     );
@@ -324,10 +386,10 @@ export function MetasPage() {
             <div className="premium-actions" style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
               <button 
                 className="premium-button primary" 
-                onClick={() => setIsAdding(!isAdding)}
+                onClick={startNewTarget}
               >
                 <Plus size={18} />
-                {isAdding ? "Cancelar" : "Nova Meta"}
+                {isAdding ? (editingTarget ? "Cancelar edição" : "Cancelar") : "Nova Meta"}
               </button>
               <div 
                 className="year-selector" 
@@ -374,21 +436,32 @@ export function MetasPage() {
       </section>
 
       {isAdding && (
-        <section className="panel animate-in">
+        <section id="monthly-target-form" className="panel animate-in">
           <div className="panel-header">
-            <h3>Registrar Nova Meta</h3>
+            <div>
+              <h3>{editingTarget ? "Editar Meta" : "Registrar Nova Meta"}</h3>
+              {editingTarget ? (
+                <p className="muted" style={{ margin: "0.35rem 0 0" }}>
+                  Alterando {editingTarget.attendant === 'TOTAL' ? "a meta da empresa" : `a meta de ${editingTarget.attendant}`} para {monthNames[editingTarget.month - 1]} de {editingTarget.year}.
+                </p>
+              ) : null}
+            </div>
           </div>
           
           <div style={{ marginBottom: '2rem' }}>
             <label style={{ display: 'block', fontWeight: 600, marginBottom: '1rem', fontSize: '1.1rem' }}>Que tipo de meta deseja cadastrar?</label>
             <div className="grid-responsive" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
               <div 
-                onClick={() => setNewTarget({ ...newTarget, attendant: 'TOTAL' })}
+                onClick={() => {
+                  if (!editingTarget) setNewTarget({ ...newTarget, attendant: 'TOTAL' });
+                }}
+                aria-disabled={Boolean(editingTarget)}
                 style={{ 
                   border: `2px solid ${newTarget.attendant === 'TOTAL' ? 'var(--primary)' : 'rgba(0,0,0,0.1)'}`, 
                   borderRadius: '12px', 
                   padding: '1.25rem', 
-                  cursor: 'pointer',
+                  cursor: editingTarget ? 'not-allowed' : 'pointer',
+                  opacity: editingTarget ? 0.72 : 1,
                   background: newTarget.attendant === 'TOTAL' ? 'rgba(59, 130, 246, 0.05)' : '#fff',
                   transition: 'all 0.2s ease-in-out'
                 }}
@@ -404,14 +477,17 @@ export function MetasPage() {
 
               <div 
                 onClick={() => {
+                   if (editingTarget) return;
                    const firstSeller = attendants.find(a => a !== 'TOTAL') || 'TOTAL';
                    setNewTarget({ ...newTarget, attendant: firstSeller });
                 }}
+                aria-disabled={Boolean(editingTarget)}
                 style={{ 
                   border: `2px solid ${newTarget.attendant !== 'TOTAL' ? 'var(--primary)' : 'rgba(0,0,0,0.1)'}`, 
                   borderRadius: '12px', 
                   padding: '1.25rem', 
-                  cursor: 'pointer',
+                  cursor: editingTarget ? 'not-allowed' : 'pointer',
+                  opacity: editingTarget ? 0.72 : 1,
                   background: newTarget.attendant !== 'TOTAL' ? 'rgba(59, 130, 246, 0.05)' : '#fff',
                   transition: 'all 0.2s ease-in-out'
                 }}
@@ -436,6 +512,7 @@ export function MetasPage() {
                 value={newTarget.month} 
                 onChange={e => setNewTarget({...newTarget, month: parseInt(e.target.value)})}
                 className="form-input"
+                disabled={Boolean(editingTarget)}
               >
                 {monthNames.map((name, i) => <option key={i} value={i+1}>{name}</option>)}
               </select>
@@ -448,6 +525,7 @@ export function MetasPage() {
                 value={newTarget.year} 
                 onChange={e => setNewTarget({...newTarget, year: parseInt(e.target.value)})}
                 className="form-input"
+                disabled={Boolean(editingTarget)}
               />
             </div>
 
@@ -459,6 +537,7 @@ export function MetasPage() {
                   onChange={e => setNewTarget({...newTarget, attendant: e.target.value})}
                   className="form-input"
                   style={{ borderColor: 'var(--primary)' }}
+                  disabled={Boolean(editingTarget)}
                 >
                   {attendants.filter(a => a !== 'TOTAL').map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
@@ -546,12 +625,12 @@ export function MetasPage() {
             </div>
           </div>
           <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
-            <button className="premium-button ghost" onClick={() => setIsAdding(false)}>
+            <button className="premium-button ghost" onClick={closeTargetForm}>
               Cancelar
             </button>
             <button className="premium-button primary" onClick={handleSave} disabled={saveMutation.isPending}>
               <Save size={18} />
-              {saveMutation.isPending ? "Salvando..." : "Salvar Meta"}
+              {saveMutation.isPending ? "Salvando..." : editingTarget ? "Atualizar Meta" : "Salvar Meta"}
             </button>
           </div>
         </section>
