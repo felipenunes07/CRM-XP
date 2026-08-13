@@ -546,12 +546,25 @@
   display: grid;
   gap: 0.3em;
   margin-top: 0.55em;
-  max-width: 12.8em;
+  max-width: 15.8em;
 }
 
 .executive-client-bars > div {
   height: 1.45em;
+  display: grid;
+  grid-template-columns: 4.5em minmax(0, 1fr);
+  align-items: center;
+  gap: 0.4em;
+}
+
+.executive-client-bars small {
   overflow: hidden;
+  color: #33405a;
+  font-size: 0.68em;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .executive-client-bars span {

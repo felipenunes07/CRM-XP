@@ -40,7 +40,13 @@ const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
-const CLIENT_BAR_COLORS = ["#df68d8", "#db4c62", "#8b70e8", "#62e0dc", "#80edc5"];
+const CLIENT_BAR_COLORS: Record<string, string> = {
+  suelen: "#df68d8",
+  amanda: "#db4c62",
+  thais: "#8b70e8",
+  tamires: "#80edc5",
+};
+const CLIENT_BAR_FALLBACK_COLORS = ["#62e0dc", "#557be1", "#89aaf2"];
 
 interface DashboardFilters {
   year: number;
@@ -124,6 +130,15 @@ function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+}
+
+function getSellerColorKey(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)[0]
+    ?.normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase() ?? "";
 }
 
 function ExecutiveSidebar() {
@@ -290,7 +305,14 @@ function IndicatorPanel({ data }: { data: ExecutiveDashboardMetrics }) {
   const gaugeStyle = {
     "--executive-progress": `${Math.max(0, Math.min(100, progressPercent)) * 3.6}deg`,
   } as CSSProperties;
-  const maxSellerCustomers = Math.max(...data.sellers.map((seller) => seller.uniqueCustomers), 1);
+  const sellerCustomerRows = [...data.sellers]
+    .sort((left, right) => (
+      right.uniqueCustomers - left.uniqueCustomers
+      || right.totalOrders - left.totalOrders
+      || left.attendant.localeCompare(right.attendant, "pt-BR")
+    ))
+    .slice(0, 5);
+  const maxSellerCustomers = Math.max(...sellerCustomerRows.map((seller) => seller.uniqueCustomers), 1);
 
   return (
     <section className="executive-indicators-card">
@@ -337,12 +359,14 @@ function IndicatorPanel({ data }: { data: ExecutiveDashboardMetrics }) {
             <strong>{formatNumber(data.summary.uniqueCustomers)}</strong>
           </div>
           <div className="executive-client-bars" aria-label="Clientes atendidos por vendedor">
-            {data.sellers.slice(0, 5).map((seller, index) => (
-              <div key={seller.attendant}>
+            {sellerCustomerRows.map((seller, index) => (
+              <div key={seller.attendant} title={`${seller.attendant}: ${formatNumber(seller.uniqueCustomers)} clientes únicos em ${formatNumber(seller.totalOrders)} pedidos`}>
+                <small>{seller.attendant}</small>
                 <span
                   style={{
                     width: `${Math.max((seller.uniqueCustomers / maxSellerCustomers) * 100, 12)}%`,
-                    backgroundColor: CLIENT_BAR_COLORS[index],
+                    backgroundColor: CLIENT_BAR_COLORS[getSellerColorKey(seller.attendant)]
+                      ?? CLIENT_BAR_FALLBACK_COLORS[index % CLIENT_BAR_FALLBACK_COLORS.length],
                   }}
                 >
                   <strong>{formatNumber(seller.uniqueCustomers)}</strong>
