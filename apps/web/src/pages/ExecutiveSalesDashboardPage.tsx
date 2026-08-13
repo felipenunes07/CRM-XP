@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -18,13 +17,10 @@ import {
   Boxes,
   CalendarDays,
   LayoutDashboard,
-  PackageCheck,
   PlugZap,
   RefreshCw,
   Search,
   SlidersHorizontal,
-  Target,
-  UsersRound,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import type {
@@ -40,13 +36,6 @@ const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
-const CLIENT_BAR_COLORS: Record<string, string> = {
-  suelen: "#df68d8",
-  amanda: "#db4c62",
-  thais: "#8b70e8",
-  tamires: "#80edc5",
-};
-const CLIENT_BAR_FALLBACK_COLORS = ["#62e0dc", "#557be1", "#89aaf2"];
 
 interface DashboardFilters {
   year: number;
@@ -130,15 +119,6 @@ function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
-}
-
-function getSellerColorKey(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)[0]
-    ?.normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase() ?? "";
 }
 
 function ExecutiveSidebar() {
@@ -297,22 +277,72 @@ function InventorySummary({ data }: { data: ExecutiveDashboardMetrics["inventory
 }
 
 function IndicatorPanel({ data }: { data: ExecutiveDashboardMetrics }) {
-  const progressPercent = Math.round(data.summary.targetProgress * 100);
-  const dailyProgress = data.summary.dailyTarget > 0
-    ? data.productBreakdown.screenItems / data.summary.dailyTarget
+  const monthlyProducts = data.monthlyProductBreakdown ?? {
+    screenXpItems: data.summary.monthScreenItems,
+    screenVvItems: 0,
+    screenDeItems: 0,
+    batteryItems: data.summary.monthBatteryItems,
+    chargingDockItems: 0,
+  };
+  const productTargets = data.productTargets ?? {
+    screenXpItems: data.summary.monthlyTarget,
+    screenVvItems: 0,
+    screenDeItems: 0,
+    batteryItems: data.summary.monthlyBatteryTarget,
+    chargingDockItems: 0,
+  };
+  const productRows = [
+    {
+      key: "xp",
+      label: "Telas XP",
+      shortLabel: "XP",
+      today: data.productBreakdown.screenXpItems,
+      month: monthlyProducts.screenXpItems,
+      target: productTargets.screenXpItems,
+      color: "#2455db",
+    },
+    {
+      key: "vv",
+      label: "Telas VV",
+      shortLabel: "VV",
+      today: data.productBreakdown.screenVvItems,
+      month: monthlyProducts.screenVvItems,
+      target: productTargets.screenVvItems,
+      color: "#7758dc",
+    },
+    {
+      key: "de",
+      label: "Telas DE",
+      shortLabel: "DE",
+      today: data.productBreakdown.screenDeItems,
+      month: monthlyProducts.screenDeItems,
+      target: productTargets.screenDeItems,
+      color: "#e45b4b",
+    },
+    {
+      key: "battery",
+      label: "Baterias",
+      shortLabel: "BAT",
+      today: data.productBreakdown.batteryItems,
+      month: monthlyProducts.batteryItems,
+      target: productTargets.batteryItems,
+      color: "#18a68b",
+      icon: <BatteryCharging aria-hidden="true" />,
+    },
+    {
+      key: "dock",
+      label: "Dock de carga",
+      shortLabel: "DOCK",
+      today: data.productBreakdown.chargingDockItems,
+      month: monthlyProducts.chargingDockItems,
+      target: productTargets.chargingDockItems,
+      color: "#e69a00",
+      icon: <PlugZap aria-hidden="true" />,
+    },
+  ];
+  const totalScreenProgress = data.summary.monthlyTarget > 0
+    ? (data.summary.monthScreenItems / data.summary.monthlyTarget) * 100
     : 0;
-  const dailyProgressPercent = dailyProgress * 100;
-  const gaugeStyle = {
-    "--executive-progress": `${Math.max(0, Math.min(100, progressPercent)) * 3.6}deg`,
-  } as CSSProperties;
-  const sellerCustomerRows = [...data.sellers]
-    .sort((left, right) => (
-      right.uniqueCustomers - left.uniqueCustomers
-      || right.totalOrders - left.totalOrders
-      || left.attendant.localeCompare(right.attendant, "pt-BR")
-    ))
-    .slice(0, 5);
-  const maxSellerCustomers = Math.max(...sellerCustomerRows.map((seller) => seller.uniqueCustomers), 1);
 
   return (
     <section className="executive-indicators-card">
@@ -324,71 +354,54 @@ function IndicatorPanel({ data }: { data: ExecutiveDashboardMetrics }) {
         <InventorySummary data={data.inventory} />
       </div>
 
-      <div className="executive-indicator-columns">
-        <article className="executive-metric-column metric-primary">
-          <h3>TELAS DO DIA <span>XP</span></h3>
-          <strong className="executive-hero-value">{formatNumber(data.productBreakdown.screenItems)}</strong>
-          <div className="executive-product-breakdown" aria-label="Telas vendidas por fábrica e acessórios">
-            <div className="executive-factory-breakdown">
-              <div><span>XP</span><strong>{formatNumber(data.productBreakdown.screenXpItems)}</strong></div>
-              <div><span>VV</span><strong>{formatNumber(data.productBreakdown.screenVvItems)}</strong></div>
-              <div><span>DE</span><strong>{formatNumber(data.productBreakdown.screenDeItems)}</strong></div>
-            </div>
-            <div className="executive-accessory-breakdown">
-              <div><BatteryCharging aria-hidden="true" /><span>Baterias</span><strong>{formatNumber(data.productBreakdown.batteryItems)}</strong></div>
-              <div><PlugZap aria-hidden="true" /><span>Doc. de carga</span><strong>{formatNumber(data.productBreakdown.chargingDockItems)}</strong></div>
-            </div>
-          </div>
-          <div className="executive-daily-target">
-            <span>META DIÁRIA</span>
-            <strong>{formatNumber(data.summary.dailyTarget)}</strong>
-          </div>
-          <div className="executive-daily-progress" aria-label={`${dailyProgressPercent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% da meta diária`}>
-            <span style={{ width: `${Math.max(Math.min(dailyProgressPercent, 100), dailyProgress > 0 ? 12 : 0)}%` }}>
-              <strong>{dailyProgressPercent.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</strong>
-            </span>
-          </div>
-        </article>
-
-        <article className="executive-metric-column metric-orders">
-          <h3>PEDIDOS DO DIA <PackageCheck aria-hidden="true" /></h3>
-          <strong className="executive-hero-value">{formatNumber(data.summary.totalOrders)}</strong>
-          <div className="executive-clients-heading">
-              <span>CLIENTES NO DIA</span>
-            <UsersRound aria-hidden="true" />
-            <strong>{formatNumber(data.summary.uniqueCustomers)}</strong>
-          </div>
-          <div className="executive-client-bars" aria-label="Clientes atendidos por vendedor">
-            {sellerCustomerRows.map((seller, index) => (
-              <div key={seller.attendant} title={`${seller.attendant}: ${formatNumber(seller.uniqueCustomers)} clientes únicos em ${formatNumber(seller.totalOrders)} pedidos`}>
-                <small>{seller.attendant}</small>
-                <span
-                  style={{
-                    width: `${Math.max((seller.uniqueCustomers / maxSellerCustomers) * 100, 12)}%`,
-                    backgroundColor: CLIENT_BAR_COLORS[getSellerColorKey(seller.attendant)]
-                      ?? CLIENT_BAR_FALLBACK_COLORS[index % CLIENT_BAR_FALLBACK_COLORS.length],
-                  }}
-                >
-                  <strong>{formatNumber(seller.uniqueCustomers)}</strong>
-                </span>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="executive-metric-column metric-target">
-          <div className="executive-target-heading">
-            <h3>META MÊS <Target aria-hidden="true" /></h3>
-            <strong>{formatNumber(data.summary.monthlyTarget)}</strong>
-          </div>
-          <div className="executive-gauge" style={gaugeStyle}>
+      <div className="executive-product-performance">
+        <article className="executive-performance-summary">
+          <span className="executive-performance-eyebrow">TELAS DO DIA</span>
+          <strong className="executive-performance-total">{formatNumber(data.productBreakdown.screenItems)}</strong>
+          <div className="executive-performance-summary-grid">
             <div>
-              <strong>{progressPercent}%</strong>
-              <span>{formatNumber(data.summary.monthScreenItems)}</span>
-              <small>ACUMULADO NO MÊS</small>
+              <span>NO MÊS</span>
+              <strong>{formatNumber(data.summary.monthScreenItems)}</strong>
+            </div>
+            <div>
+              <span>META TELAS</span>
+              <strong>{formatNumber(data.summary.monthlyTarget)}</strong>
             </div>
           </div>
+          <div className="executive-performance-overall-progress">
+            <span><i style={{ width: `${Math.min(totalScreenProgress, 100)}%` }} /></span>
+            <strong>{totalScreenProgress.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong>
+          </div>
+          <small>XP + VV + DE no mês</small>
         </article>
+
+        <div className="executive-performance-table" role="table" aria-label="Vendas de hoje, acumulado do mês e metas por produto">
+          <div className="executive-performance-table-header" role="row">
+            <span role="columnheader">PRODUTO</span>
+            <span role="columnheader">HOJE</span>
+            <span role="columnheader">NO MÊS</span>
+            <span role="columnheader">META</span>
+            <span role="columnheader">ATINGIDO</span>
+          </div>
+          {productRows.map((row) => {
+            const progress = row.target > 0 ? (row.month / row.target) * 100 : 0;
+            return (
+              <div className="executive-performance-row" role="row" key={row.key}>
+                <div className="executive-performance-product" role="cell">
+                  <span style={{ backgroundColor: row.color }}>{row.icon ?? row.shortLabel}</span>
+                  <strong>{row.label}</strong>
+                </div>
+                <strong className="executive-performance-number is-today" role="cell">{formatNumber(row.today)}</strong>
+                <strong className="executive-performance-number" role="cell">{formatNumber(row.month)}</strong>
+                <strong className="executive-performance-number is-target" role="cell">{formatNumber(row.target)}</strong>
+                <div className="executive-performance-progress" role="cell" aria-label={`${progress.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% da meta`}>
+                  <span><i style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: row.color }} /></span>
+                  <strong>{progress.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</strong>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

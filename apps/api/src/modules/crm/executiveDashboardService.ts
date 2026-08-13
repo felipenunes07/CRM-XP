@@ -166,7 +166,11 @@ interface SummaryRow {
   previous_year_screen_items: string | number | null;
   month_items: string | number | null;
   month_screen_items: string | number | null;
+  month_screen_xp_items: string | number | null;
+  month_screen_vv_items: string | number | null;
+  month_screen_de_items: string | number | null;
   month_battery_items: string | number | null;
+  month_charging_dock_items: string | number | null;
   month_orders: string | number | null;
   month_unique_customers: string | number | null;
   last_sale_date: string | null;
@@ -325,7 +329,11 @@ async function loadExecutiveDashboardMetrics(
             COALESCE(SUM(screen_items) FILTER (WHERE order_date >= $5::date AND order_date < $6::date), 0) AS previous_year_screen_items,
             COALESCE(SUM(total_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_items,
             COALESCE(SUM(screen_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_screen_items,
+            COALESCE(SUM(screen_xp_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_screen_xp_items,
+            COALESCE(SUM(screen_vv_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_screen_vv_items,
+            COALESCE(SUM(screen_de_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_screen_de_items,
             COALESCE(SUM(battery_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_battery_items,
+            COALESCE(SUM(charging_dock_items) FILTER (WHERE order_date >= $7::date AND order_date < $8::date), 0) AS month_charging_dock_items,
             COUNT(*) FILTER (WHERE order_date >= $7::date AND order_date < $8::date)::int AS month_orders,
             COUNT(DISTINCT customer_id) FILTER (WHERE order_date >= $7::date AND order_date < $8::date)::int AS month_unique_customers,
             (MAX(order_date) FILTER (WHERE order_date >= $7::date AND order_date < $8::date))::text AS last_sale_date
@@ -336,6 +344,10 @@ async function loadExecutiveDashboardMetrics(
       pool.query<{
         target_amount: string | number | null;
         target_batteries: string | number | null;
+        target_screen_xp: string | number | null;
+        target_screen_vv: string | number | null;
+        target_screen_de: string | number | null;
+        target_charging_docks: string | number | null;
       }>(
         `
           SELECT
@@ -348,7 +360,27 @@ async function loadExecutiveDashboardMetrics(
               MAX(target_batteries) FILTER (WHERE attendant = 'TOTAL'),
               SUM(target_batteries) FILTER (WHERE attendant <> 'TOTAL'),
               0
-            ) AS target_batteries
+            ) AS target_batteries,
+            COALESCE(
+              MAX(target_screen_xp) FILTER (WHERE attendant = 'TOTAL'),
+              SUM(target_screen_xp) FILTER (WHERE attendant <> 'TOTAL'),
+              0
+            ) AS target_screen_xp,
+            COALESCE(
+              MAX(target_screen_vv) FILTER (WHERE attendant = 'TOTAL'),
+              SUM(target_screen_vv) FILTER (WHERE attendant <> 'TOTAL'),
+              0
+            ) AS target_screen_vv,
+            COALESCE(
+              MAX(target_screen_de) FILTER (WHERE attendant = 'TOTAL'),
+              SUM(target_screen_de) FILTER (WHERE attendant <> 'TOTAL'),
+              0
+            ) AS target_screen_de,
+            COALESCE(
+              MAX(target_charging_docks) FILTER (WHERE attendant = 'TOTAL'),
+              SUM(target_charging_docks) FILTER (WHERE attendant <> 'TOTAL'),
+              0
+            ) AS target_charging_docks
           FROM monthly_targets
           WHERE year = $1 AND month = $2
         `,
@@ -560,8 +592,17 @@ async function loadExecutiveDashboardMetrics(
 
   const summaryRow = summaryResult.rows[0];
   const inventoryRow = inventoryResult.rows[0];
-  const monthlyTarget = Number(targetResult.rows[0]?.target_amount ?? 0);
-  const monthlyBatteryTarget = Number(targetResult.rows[0]?.target_batteries ?? 0);
+  const targetRow = targetResult.rows[0];
+  const legacyScreenTarget = Number(targetRow?.target_amount ?? 0);
+  const storedScreenXpTarget = Number(targetRow?.target_screen_xp ?? 0);
+  const screenVvTarget = Number(targetRow?.target_screen_vv ?? 0);
+  const screenDeTarget = Number(targetRow?.target_screen_de ?? 0);
+  const screenXpTarget = storedScreenXpTarget === 0 && screenVvTarget === 0 && screenDeTarget === 0
+    ? legacyScreenTarget
+    : storedScreenXpTarget;
+  const monthlyTarget = screenXpTarget + screenVvTarget + screenDeTarget;
+  const monthlyBatteryTarget = Number(targetRow?.target_batteries ?? 0);
+  const chargingDockTarget = Number(targetRow?.target_charging_docks ?? 0);
   const monthItems = Number(summaryRow?.month_items ?? 0);
   const monthScreenItems = Number(summaryRow?.month_screen_items ?? 0);
   const dailyTarget = monthlyTarget > 0 ? monthlyTarget / DAILY_TARGET_DIVISOR : 0;
@@ -608,6 +649,20 @@ async function loadExecutiveDashboardMetrics(
       batteryItems: Number(summaryRow?.battery_items ?? 0),
       chargingDockItems: Number(summaryRow?.charging_dock_items ?? 0),
       otherItems: Number(summaryRow?.other_items ?? 0),
+    },
+    monthlyProductBreakdown: {
+      screenXpItems: Number(summaryRow?.month_screen_xp_items ?? 0),
+      screenVvItems: Number(summaryRow?.month_screen_vv_items ?? 0),
+      screenDeItems: Number(summaryRow?.month_screen_de_items ?? 0),
+      batteryItems: Number(summaryRow?.month_battery_items ?? 0),
+      chargingDockItems: Number(summaryRow?.month_charging_dock_items ?? 0),
+    },
+    productTargets: {
+      screenXpItems: screenXpTarget,
+      screenVvItems: screenVvTarget,
+      screenDeItems: screenDeTarget,
+      batteryItems: monthlyBatteryTarget,
+      chargingDockItems: chargingDockTarget,
     },
     inventory: {
       productCount: Number(inventoryRow?.product_count ?? 0),

@@ -1370,3 +1370,197 @@
 .executive-month-bars.is-very-dense .executive-month-row {
   font-size: 0.72em;
 }
+
+/* Comparativo principal por produto: hoje, acumulado mensal e meta. */
+.executive-product-performance {
+  height: calc(100% - 4.35em);
+  display: grid;
+  grid-template-columns: minmax(12.8em, 0.72fr) minmax(0, 2.28fr);
+}
+
+.executive-performance-summary {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 1.25em 1.25em 1em 1.5em;
+  border-right: 1px solid #dfe5ef;
+  border-left: 0.42em solid var(--executive-blue);
+}
+
+.executive-performance-eyebrow {
+  color: #3b404a;
+  font-size: 0.82em;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.executive-performance-total {
+  margin-top: 0.14em;
+  color: #0759c8;
+  font-size: 3.55em;
+  font-weight: 550;
+  line-height: 1;
+}
+
+.executive-performance-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55em;
+  margin-top: 1.2em;
+}
+
+.executive-performance-summary-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.2em;
+  padding: 0.65em 0.7em;
+  border: 1px solid #dfe6f2;
+  border-radius: 0.55em;
+  background: #f7f9fd;
+}
+
+.executive-performance-summary-grid span {
+  color: #71809a;
+  font-size: 0.56em;
+  font-weight: 750;
+  letter-spacing: 0.035em;
+  white-space: nowrap;
+}
+
+.executive-performance-summary-grid strong {
+  color: #102a5c;
+  font-size: 1.15em;
+  line-height: 1;
+}
+
+.executive-performance-overall-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55em;
+  margin-top: 1em;
+}
+
+.executive-performance-overall-progress > span,
+.executive-performance-progress > span {
+  height: 0.55em;
+  overflow: hidden;
+  border-radius: 99em;
+  background: #e7ebf3;
+}
+
+.executive-performance-overall-progress i,
+.executive-performance-progress i {
+  display: block;
+  min-width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--executive-blue);
+}
+
+.executive-performance-overall-progress strong {
+  color: #17489d;
+  font-size: 0.82em;
+}
+
+.executive-performance-summary > small {
+  margin-top: 0.32em;
+  color: #8390a5;
+  font-size: 0.58em;
+  font-weight: 650;
+}
+
+.executive-performance-table {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 2.15em repeat(5, minmax(0, 1fr));
+  padding: 0.7em 1.15em 0.85em;
+}
+
+.executive-performance-table-header,
+.executive-performance-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(8.8em, 1.45fr) minmax(4.3em, 0.62fr) minmax(5em, 0.78fr) minmax(5.4em, 0.82fr) minmax(8em, 1.3fr);
+  align-items: center;
+  column-gap: 0.75em;
+}
+
+.executive-performance-table-header {
+  color: #7d899d;
+  font-size: 0.56em;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+}
+
+.executive-performance-table-header > span:not(:first-child) {
+  text-align: right;
+}
+
+.executive-performance-row {
+  border-top: 1px solid #e4e9f1;
+}
+
+.executive-performance-product {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.68em;
+}
+
+.executive-performance-product > span {
+  width: 2.55em;
+  height: 2.55em;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 0.56em;
+  color: #fff;
+  font-size: 0.67em;
+  font-weight: 800;
+}
+
+.executive-performance-product svg {
+  width: 1.45em;
+  height: 1.45em;
+}
+
+.executive-performance-product > strong {
+  overflow: hidden;
+  color: #263653;
+  font-size: 0.9em;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.executive-performance-number {
+  color: #102a5c;
+  font-size: 1.08em;
+  font-weight: 720;
+  text-align: right;
+}
+
+.executive-performance-number.is-today {
+  color: #0759c8;
+  font-size: 1.38em;
+}
+
+.executive-performance-number.is-target {
+  color: #53627a;
+}
+
+.executive-performance-progress {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(3.5em, 1fr) 3.1em;
+  align-items: center;
+  gap: 0.55em;
+}
+
+.executive-performance-progress strong {
+  color: #384966;
+  font-size: 0.72em;
+  text-align: right;
+}

@@ -4475,5 +4475,39 @@ export const migrations = [
     AND COALESCE(target_screen_xp, 0) = 0
     AND COALESCE(target_screen_vv, 0) = 0
     AND COALESCE(target_screen_de, 0) = 0;
+  `,
+  `
+  -- Metas globais informadas para agosto de 2026.
+  INSERT INTO monthly_targets (
+    year,
+    month,
+    attendant,
+    target_amount,
+    target_batteries,
+    target_screen_xp,
+    target_screen_vv,
+    target_screen_de,
+    target_charging_docks,
+    updated_at
+  ) VALUES (
+    2026,
+    8,
+    'TOTAL',
+    130000,
+    20000,
+    120000,
+    8000,
+    2000,
+    2000,
+    NOW()
+  )
+  ON CONFLICT (year, month, attendant) DO UPDATE
+  SET target_amount = EXCLUDED.target_amount,
+      target_batteries = EXCLUDED.target_batteries,
+      target_screen_xp = EXCLUDED.target_screen_xp,
+      target_screen_vv = EXCLUDED.target_screen_vv,
+      target_screen_de = EXCLUDED.target_screen_de,
+      target_charging_docks = EXCLUDED.target_charging_docks,
+      updated_at = NOW();
   `
 ];

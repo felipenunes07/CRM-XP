@@ -122,6 +122,20 @@ export interface ExecutiveDashboardMetrics {
     chargingDockItems: number;
     otherItems: number;
   };
+  monthlyProductBreakdown: {
+    screenXpItems: number;
+    screenVvItems: number;
+    screenDeItems: number;
+    batteryItems: number;
+    chargingDockItems: number;
+  };
+  productTargets: {
+    screenXpItems: number;
+    screenVvItems: number;
+    screenDeItems: number;
+    batteryItems: number;
+    chargingDockItems: number;
+  };
   inventory: {
     productCount: number;
     stockPieces: number;
