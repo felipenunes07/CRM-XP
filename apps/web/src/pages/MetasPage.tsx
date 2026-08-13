@@ -44,9 +44,9 @@ export function MetasPage() {
     enabled: !!token
   });
 
-  const { data: dashboardData } = useQuery({
-    queryKey: ["dashboard", 730],
-    queryFn: () => api.dashboard(token!, 730),
+  const { data: targetActuals = [], isError: targetActualsError } = useQuery({
+    queryKey: ["monthly-target-actuals", selectedYear],
+    queryFn: () => api.getMonthlyTargetActuals(token!, selectedYear),
     enabled: !!token
   });
 
@@ -84,6 +84,7 @@ export function MetasPage() {
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
+      queryClient.invalidateQueries({ queryKey: ["monthly-target-actuals"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setIsAdding(false);
       setEditingTarget(null);
@@ -107,6 +108,7 @@ export function MetasPage() {
       api.deleteMonthlyTarget(token!, target.year, target.month, target.attendant),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["monthly-targets"] });
+      queryClient.invalidateQueries({ queryKey: ["monthly-target-actuals"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (err) => {
@@ -246,14 +248,14 @@ export function MetasPage() {
 
   const getActualsFor = (year: number, month: number, attendant: string) => {
     if (attendant === 'TOTAL') {
-      const point = dashboardData?.itemsSoldTrend.find(p => p.year === year && p.month === month);
+      const point = targetActuals.find(p => p.year === year && p.month === month && p.attendant === 'TOTAL');
       return {
-        amount: point?.screenItems || 0,
-        screenXp: point?.screenXpItems || 0,
-        screenVv: point?.screenVvItems || 0,
-        screenDe: point?.screenDeItems || 0,
-        batteries: point?.batteryItems || 0,
-        chargingDocks: point?.chargingDockItems || 0,
+        amount: point?.screenItems ?? 0,
+        screenXp: point?.screenXpItems ?? 0,
+        screenVv: point?.screenVvItems ?? 0,
+        screenDe: point?.screenDeItems ?? 0,
+        batteries: point?.batteryItems ?? 0,
+        chargingDocks: point?.chargingDockItems ?? 0,
         revenue: point?.totalRevenue || 0
       };
     } else {
@@ -635,6 +637,12 @@ export function MetasPage() {
           </div>
         </section>
       )}
+
+      {targetActualsError ? (
+        <section className="panel" style={{ borderColor: "rgba(217, 83, 79, 0.35)", color: "var(--danger)" }}>
+          Não foi possível carregar os valores realizados. As metas continuam preservadas; tente atualizar a página em alguns instantes.
+        </section>
+      ) : null}
 
       <div style={{ display: 'grid', gap: '2rem', marginTop: '2rem' }}>
         <section className="panel">

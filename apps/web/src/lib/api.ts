@@ -41,6 +41,7 @@ import type {
   MessageAutomation,
   MessageAutomationRun,
   MonthlyTarget,
+  MonthlyTargetActual,
   PipelineSummary,
   ProspectContactAttemptResult,
   ProspectKeywordPreset,
@@ -494,6 +495,10 @@ export const api = {
     const search = new URLSearchParams();
     if (year) search.set("year", String(year));
     return request<MonthlyTarget[]>(`/api/dashboard/targets${search.toString() ? `?${search.toString()}` : ""}`, {}, token);
+  },
+  getMonthlyTargetActuals(token: string, year: number) {
+    const search = new URLSearchParams({ year: String(year) });
+    return request<MonthlyTargetActual[]>(`/api/dashboard/target-actuals?${search.toString()}`, {}, token);
   },
   saveMonthlyTarget(
     token: string,

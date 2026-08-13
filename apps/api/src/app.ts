@@ -51,7 +51,7 @@ import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./module
 import { getAcquisitionMetrics } from "./modules/crm/acquisitionService.js";
 import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantPortfolio, getAttendantsOverview } from "./modules/crm/attendantService.js";
-import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
+import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getMonthlyTargetActuals, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import { getExecutiveDashboardMetrics } from "./modules/crm/executiveDashboardService.js";
 import {
   createSavedSegment,
@@ -296,6 +296,10 @@ const executiveDashboardQuerySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
   day: z.coerce.number().int().min(1).max(31).optional(),
+});
+
+const monthlyTargetActualsQuerySchema = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
 });
 
 const movementsQuerySchema = z.object({
@@ -1015,6 +1019,15 @@ export function createApp() {
     try {
       const year = request.query.year ? parseInt(String(request.query.year), 10) : undefined;
       response.json(await getMonthlyTargets(year));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/dashboard/target-actuals", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+    try {
+      const query = monthlyTargetActualsQuerySchema.parse(request.query);
+      response.json(await getMonthlyTargetActuals(query.year));
     } catch (error) {
       next(error);
     }

@@ -51,6 +51,19 @@ export interface MonthlyTarget {
   targetRevenue: number;
 }
 
+export interface MonthlyTargetActual {
+  year: number;
+  month: number;
+  attendant: string;
+  screenItems: number;
+  screenXpItems: number;
+  screenVvItems: number;
+  screenDeItems: number;
+  batteryItems: number;
+  chargingDockItems: number;
+  totalRevenue: number;
+}
+
 export interface ExecutiveDashboardPeriodOption {
   year: number;
   month: number;

@@ -7,6 +7,7 @@ import type {
   InsightTag,
   ItemsSoldTrendPoint,
   MonthlyTarget,
+  MonthlyTargetActual,
   NewCustomerDetail,
   NewCustomerLeaderboardEntry,
   ProspectingLeaderboardEntry,
@@ -1289,6 +1290,91 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     totalOrders: Number(row.total_orders ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
     targetAmount: row.target_amount ? Number(row.target_amount) : null,
+  }));
+}
+
+export async function getMonthlyTargetActuals(year: number): Promise<MonthlyTargetActual[]> {
+  const result = await pool.query(
+    `
+      WITH selected_orders AS MATERIALIZED (
+        SELECT
+          id,
+          EXTRACT(MONTH FROM order_date)::int AS month,
+          COALESCE(total_amount, 0)::numeric(14,2) AS total_revenue
+        FROM orders
+        WHERE order_date >= make_date($1::int, 1, 1)
+          AND order_date < make_date(($1::int + 1), 1, 1)
+      ),
+      active_catalog AS (
+        SELECT DISTINCT isi.sku
+        FROM inventory_snapshot_items isi
+        JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
+        WHERE inventory.is_active = TRUE
+          AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
+      ),
+      classified_order_items AS (
+        SELECT
+          oi.order_id,
+          COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
+            WHEN active_catalog.sku IS NOT NULL
+              OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+              THEN 'SCREEN'
+            ELSE 'OTHER'
+          END AS category,
+          CASE
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+            ELSE 'XP'
+          END AS factory
+        FROM order_items oi
+        JOIN selected_orders selected ON selected.id = oi.order_id
+        LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+      ),
+      order_item_totals AS (
+        SELECT
+          order_id,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN'), 0)::numeric(14,2) AS screen_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'XP'), 0)::numeric(14,2) AS screen_xp_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'VV'), 0)::numeric(14,2) AS screen_vv_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'DE'), 0)::numeric(14,2) AS screen_de_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'BATTERY'), 0)::numeric(14,2) AS battery_items,
+          COALESCE(SUM(quantity) FILTER (WHERE category = 'DOCK'), 0)::numeric(14,2) AS charging_dock_items
+        FROM classified_order_items
+        GROUP BY order_id
+      )
+      SELECT
+        $1::int AS year,
+        selected.month,
+        'TOTAL'::text AS attendant,
+        COALESCE(SUM(items.screen_items), 0)::numeric(14,2) AS screen_items,
+        COALESCE(SUM(items.screen_xp_items), 0)::numeric(14,2) AS screen_xp_items,
+        COALESCE(SUM(items.screen_vv_items), 0)::numeric(14,2) AS screen_vv_items,
+        COALESCE(SUM(items.screen_de_items), 0)::numeric(14,2) AS screen_de_items,
+        COALESCE(SUM(items.battery_items), 0)::numeric(14,2) AS battery_items,
+        COALESCE(SUM(items.charging_dock_items), 0)::numeric(14,2) AS charging_dock_items,
+        COALESCE(SUM(selected.total_revenue), 0)::numeric(14,2) AS total_revenue
+      FROM selected_orders selected
+      LEFT JOIN order_item_totals items ON items.order_id = selected.id
+      GROUP BY selected.month
+      ORDER BY selected.month
+    `,
+    [year],
+  );
+
+  return result.rows.map((row) => ({
+    year: Number(row.year ?? year),
+    month: Number(row.month ?? 0),
+    attendant: String(row.attendant ?? "TOTAL"),
+    screenItems: Number(row.screen_items ?? 0),
+    screenXpItems: Number(row.screen_xp_items ?? 0),
+    screenVvItems: Number(row.screen_vv_items ?? 0),
+    screenDeItems: Number(row.screen_de_items ?? 0),
+    batteryItems: Number(row.battery_items ?? 0),
+    chargingDockItems: Number(row.charging_dock_items ?? 0),
+    totalRevenue: Number(row.total_revenue ?? 0),
   }));
 }
 
