@@ -82,6 +82,7 @@ describe("resolveExecutiveDashboardPeriod", () => {
         { attendant: "Suelen", profile_picture_url: "https://photos.test/suelen.jpg" },
         { attendant: "Tamires", profile_picture_url: "https://photos.test/tamires.jpg" },
         { attendant: "Thais", profile_picture_url: "https://photos.test/thais.jpg" },
+        { attendant: "Internal assistant", profile_picture_url: null },
       ],
       [
         {
