@@ -44,6 +44,83 @@ export function fillExecutiveMonthlyCustomers(
   }));
 }
 
+interface ExecutiveSellerDirectoryRow {
+  attendant: string;
+  profile_picture_url: string | null;
+}
+
+interface ExecutiveSellerMetricRow extends ExecutiveSellerDirectoryRow {
+  total_orders: string | number | null;
+  unique_customers: string | number | null;
+  total_revenue: string | number | null;
+  total_items: string | number | null;
+  screen_items: string | number | null;
+  battery_items: string | number | null;
+  charging_dock_items: string | number | null;
+}
+
+function normalizeSellerName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isSameSeller(left: string, right: string) {
+  const normalizedLeft = normalizeSellerName(left);
+  const normalizedRight = normalizeSellerName(right);
+  if (!normalizedLeft || !normalizedRight) return false;
+  return normalizedLeft === normalizedRight
+    || normalizedLeft.split(" ")[0] === normalizedRight.split(" ")[0];
+}
+
+export function fillExecutiveDashboardSellers(
+  directoryRows: ExecutiveSellerDirectoryRow[],
+  metricRows: ExecutiveSellerMetricRow[],
+): ExecutiveDashboardMetrics["sellers"] {
+  const usedMetrics = new Set<ExecutiveSellerMetricRow>();
+  const sellers = directoryRows.map((directory) => {
+    const metric = metricRows.find((candidate) => isSameSeller(directory.attendant, candidate.attendant));
+    if (metric) usedMetrics.add(metric);
+
+    return {
+      attendant: directory.attendant,
+      profilePictureUrl: directory.profile_picture_url || metric?.profile_picture_url || null,
+      totalOrders: Number(metric?.total_orders ?? 0),
+      uniqueCustomers: Number(metric?.unique_customers ?? 0),
+      totalRevenue: Number(metric?.total_revenue ?? 0),
+      totalItems: Number(metric?.total_items ?? 0),
+      screenItems: Number(metric?.screen_items ?? 0),
+      batteryItems: Number(metric?.battery_items ?? 0),
+      chargingDockItems: Number(metric?.charging_dock_items ?? 0),
+    };
+  });
+
+  for (const metric of metricRows) {
+    if (usedMetrics.has(metric)) continue;
+    sellers.push({
+      attendant: metric.attendant,
+      profilePictureUrl: metric.profile_picture_url || null,
+      totalOrders: Number(metric.total_orders ?? 0),
+      uniqueCustomers: Number(metric.unique_customers ?? 0),
+      totalRevenue: Number(metric.total_revenue ?? 0),
+      totalItems: Number(metric.total_items ?? 0),
+      screenItems: Number(metric.screen_items ?? 0),
+      batteryItems: Number(metric.battery_items ?? 0),
+      chargingDockItems: Number(metric.charging_dock_items ?? 0),
+    });
+  }
+
+  return sellers.sort((left, right) => (
+    right.screenItems - left.screenItems
+    || right.totalOrders - left.totalOrders
+    || right.totalRevenue - left.totalRevenue
+    || left.attendant.localeCompare(right.attendant, "pt-BR")
+  ));
+}
+
 function getSaoPauloDateParts(now: Date) {
   const parts = SAO_PAULO_DATE_FORMATTER.formatToParts(now);
   const values = new Map(parts.map((part) => [part.type, part.value]));
@@ -223,7 +300,7 @@ async function loadExecutiveDashboardMetrics(
     period.monthEndExclusive,
   ];
 
-  const [availabilityResult, summaryResult, targetResult, sellersResult, dailyResult, monthlyCustomersResult, inventoryResult, syncResult] =
+  const [availabilityResult, summaryResult, targetResult, sellerDirectoryResult, sellersResult, dailyResult, monthlyCustomersResult, inventoryResult, syncResult] =
     await Promise.all([
       pool.query<{
         year: number;
@@ -392,17 +469,50 @@ async function loadExecutiveDashboardMetrics(
         `,
         [period.year, period.month],
       ),
-      pool.query<{
-        attendant: string | null;
-        profile_picture_url: string | null;
-        total_orders: string | number | null;
-        unique_customers: string | number | null;
-        total_revenue: string | number | null;
-        total_items: string | number | null;
-        screen_items: string | number | null;
-        battery_items: string | number | null;
-        charging_dock_items: string | number | null;
-      }>(
+      pool.query<ExecutiveSellerDirectoryRow>(`
+        WITH historical_attendants AS (
+          SELECT DISTINCT BTRIM(last_attendant) AS attendant
+          FROM orders
+          WHERE NULLIF(BTRIM(last_attendant), '') IS NOT NULL
+        )
+        SELECT DISTINCT ON (
+          LOWER(BTRIM(COALESCE(
+            NULLIF(wi.assigned_user_name, ''),
+            NULLIF(wi.display_label, ''),
+            wi.instance_name
+          )))
+        )
+          BTRIM(COALESCE(
+            NULLIF(wi.assigned_user_name, ''),
+            NULLIF(wi.display_label, ''),
+            wi.instance_name
+          )) AS attendant,
+          NULLIF(wi.profile_picture_url, '') AS profile_picture_url
+        FROM whatsapp_instances wi
+        JOIN historical_attendants history ON (
+          LOWER(BTRIM(history.attendant)) = LOWER(BTRIM(COALESCE(
+            NULLIF(wi.assigned_user_name, ''),
+            NULLIF(wi.display_label, ''),
+            wi.instance_name
+          )))
+          OR LOWER(SPLIT_PART(BTRIM(history.attendant), ' ', 1))
+            = LOWER(SPLIT_PART(BTRIM(COALESCE(
+              NULLIF(wi.assigned_user_name, ''),
+              NULLIF(wi.display_label, ''),
+              wi.instance_name
+            )), ' ', 1))
+        )
+        WHERE UPPER(COALESCE(wi.status, 'ACTIVE')) = 'ACTIVE'
+        ORDER BY
+          LOWER(BTRIM(COALESCE(
+            NULLIF(wi.assigned_user_name, ''),
+            NULLIF(wi.display_label, ''),
+            wi.instance_name
+          ))),
+          (NULLIF(wi.profile_picture_url, '') IS NOT NULL) DESC,
+          wi.updated_at DESC
+      `),
+      pool.query<ExecutiveSellerMetricRow>(
         `
           WITH active_catalog AS (
             SELECT DISTINCT isi.sku
@@ -675,17 +785,7 @@ async function loadExecutiveDashboardMetrics(
       stockPieces: Number(inventoryRow?.stock_pieces ?? 0),
       updatedAt: inventoryRow?.updated_at ? String(inventoryRow.updated_at) : null,
     },
-    sellers: sellersResult.rows.map((row) => ({
-      attendant: String(row.attendant ?? "Sem atendente"),
-      profilePictureUrl: row.profile_picture_url ? String(row.profile_picture_url) : null,
-      totalOrders: Number(row.total_orders ?? 0),
-      uniqueCustomers: Number(row.unique_customers ?? 0),
-      totalRevenue: Number(row.total_revenue ?? 0),
-      totalItems: Number(row.total_items ?? 0),
-      screenItems: Number(row.screen_items ?? 0),
-      batteryItems: Number(row.battery_items ?? 0),
-      chargingDockItems: Number(row.charging_dock_items ?? 0),
-    })),
+    sellers: fillExecutiveDashboardSellers(sellerDirectoryResult.rows, sellersResult.rows),
     dailySeries: dailyResult.rows.map((row) => ({
       date: String(row.date),
       day: Number(row.day),
