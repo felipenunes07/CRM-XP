@@ -80,10 +80,8 @@ export function fillExecutiveDashboardSellers(
   directoryRows: ExecutiveSellerDirectoryRow[],
   metricRows: ExecutiveSellerMetricRow[],
 ): ExecutiveDashboardMetrics["sellers"] {
-  const usedMetrics = new Set<ExecutiveSellerMetricRow>();
   const sellers = directoryRows.map((directory) => {
     const metric = metricRows.find((candidate) => isSameSeller(directory.attendant, candidate.attendant));
-    if (metric) usedMetrics.add(metric);
 
     return {
       attendant: directory.attendant,
@@ -97,21 +95,6 @@ export function fillExecutiveDashboardSellers(
       chargingDockItems: Number(metric?.charging_dock_items ?? 0),
     };
   });
-
-  for (const metric of metricRows) {
-    if (usedMetrics.has(metric)) continue;
-    sellers.push({
-      attendant: metric.attendant,
-      profilePictureUrl: metric.profile_picture_url || null,
-      totalOrders: Number(metric.total_orders ?? 0),
-      uniqueCustomers: Number(metric.unique_customers ?? 0),
-      totalRevenue: Number(metric.total_revenue ?? 0),
-      totalItems: Number(metric.total_items ?? 0),
-      screenItems: Number(metric.screen_items ?? 0),
-      batteryItems: Number(metric.battery_items ?? 0),
-      chargingDockItems: Number(metric.charging_dock_items ?? 0),
-    });
-  }
 
   return sellers.sort((left, right) => (
     right.screenItems - left.screenItems

@@ -95,6 +95,17 @@ describe("resolveExecutiveDashboardPeriod", () => {
           battery_items: 0,
           charging_dock_items: 0,
         },
+        {
+          attendant: "Seller without an active WhatsApp instance",
+          profile_picture_url: null,
+          total_orders: 3,
+          unique_customers: 3,
+          total_revenue: 500,
+          total_items: 20,
+          screen_items: 20,
+          battery_items: 0,
+          charging_dock_items: 0,
+        },
       ],
     );
 
