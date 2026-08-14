@@ -145,6 +145,20 @@ export function formatPercent(value: number | null | undefined) {
   }).format(safeValue * 100)}%`;
 }
 
+export function formatMonthLabel(value: string) {
+  const matched = value.match(/^(\d{4})-(\d{2})$/);
+  if (!matched) return value;
+
+  const date = new Date(Date.UTC(Number(matched[1]!), Number(matched[2]!) - 1, 1));
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(activeLocale, {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  }).format(date).replace(" de ", "/");
+}
+
 export function formatPrecisePercent(value: number | null | undefined) {
   const safeValue = toSafeNumber(value);
   const percentage = safeValue * 100;

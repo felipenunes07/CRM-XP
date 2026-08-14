@@ -6,6 +6,7 @@ import type {
   AttendantPortfolioResponse,
   CarouselSlide,
   CustomerDetail,
+  CustomerAnalyticsResponse,
   CustomerOpportunityDetail,
   CustomerOpportunityQueueResponse,
   CustomerCreditDetailResponse,
@@ -476,7 +477,13 @@ export const api = {
     if (filters.day !== null) {
       search.set("day", String(filters.day));
     }
-    return request<ExecutiveDashboardMetrics>(`/api/dashboard/executive?${search.toString()}`);
+    // Cache-buster e no-store sao importantes para navegadores antigos de Smart TV,
+    // que podem reutilizar a resposta mesmo depois da sincronizacao no servidor.
+    search.set("refresh", String(Date.now()));
+    return request<ExecutiveDashboardMetrics>(
+      `/api/dashboard/executive?${search.toString()}`,
+      { cache: "no-store", headers: { "cache-control": "no-cache" } },
+    );
   },
   dashboardTrendRangeAnalysis(token: string, startDate: string, endDate: string) {
     const search = new URLSearchParams({
@@ -686,6 +693,9 @@ export const api = {
   },
   customer(token: string, id: string) {
     return request<CustomerDetail>(`/api/customers/${id}`, {}, token);
+  },
+  customerAnalytics(token: string, id: string) {
+    return request<CustomerAnalyticsResponse>(`/api/customers/${id}/analytics`, {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   customerCreditDetail(
     token: string,

@@ -641,6 +641,92 @@ export interface CustomerDetail extends CustomerListItem {
   }>;
 }
 
+export interface CustomerAnalyticsTimelinePoint {
+  month: string;
+  salesAmount: number;
+  orderCount: number;
+  pieces: number;
+  paymentAmount: number;
+  paymentCount: number;
+}
+
+export interface CustomerAnalyticsResponse {
+  customer: {
+    id: string;
+    customerCode: string;
+    displayName: string;
+    phone: string | null;
+    email: string | null;
+    customerSince: string | null;
+    state: string | null;
+    city: string | null;
+    lastAttendant: string | null;
+    status: CustomerStatus;
+  };
+  behavior: {
+    lastPurchaseAt: string | null;
+    daysSinceLastPurchase: number | null;
+    averageDaysBetweenOrders: number | null;
+    purchaseFrequency90d: number;
+    frequencyDropRatio: number;
+    predictedNextPurchaseAt: string | null;
+    priorityScore: number;
+    valueScore: number;
+    primaryInsight: InsightTag | null;
+    insightTags: InsightTag[];
+    labels: CustomerLabel[];
+    internalNotes: string;
+  };
+  sales: {
+    totalAmount: number;
+    totalOrders: number;
+    totalPieces: number;
+    averageTicket: number;
+    firstOrderDate: string | null;
+    lastOrderDate: string | null;
+  };
+  payments: {
+    totalAmount: number;
+    totalPayments: number;
+    averagePayment: number;
+    firstPaymentDate: string | null;
+    lastPaymentDate: string | null;
+  };
+  credit: null | {
+    balanceAmount: number;
+    debtAmount: number;
+    creditBalanceAmount: number;
+    creditLimit: number;
+    availableCreditAmount: number;
+    paymentTerm: number | null;
+    riskLevel: CustomerCreditRiskLevel;
+    operationalState: CustomerCreditOperationalState;
+    flags: string[];
+    observation: string;
+    snapshotUpdatedAt: string | null;
+  };
+  timeline: CustomerAnalyticsTimelinePoint[];
+  sellers: Array<{
+    seller: string;
+    salesAmount: number;
+    orderCount: number;
+    pieces: number;
+  }>;
+  paymentTypes: Array<{
+    paymentType: string;
+    amount: number;
+    count: number;
+  }>;
+  products: Array<{
+    sku: string | null;
+    itemDescription: string;
+    quantity: number;
+    salesAmount: number;
+    orderCount: number;
+    lastOrderDate: string | null;
+  }>;
+}
+
 export interface CustomerDocInsightSummary {
   customersWithDoc: number;
   docOrders: number;
