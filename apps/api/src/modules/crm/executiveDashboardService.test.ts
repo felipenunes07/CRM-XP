@@ -97,7 +97,7 @@ describe("resolveExecutiveDashboardPeriod", () => {
           charging_dock_items: 0,
         },
         {
-          attendant: "Seller without an active WhatsApp instance",
+          attendant: "Lucas",
           profile_picture_url: null,
           total_orders: 3,
           unique_customers: 3,
@@ -110,11 +110,16 @@ describe("resolveExecutiveDashboardPeriod", () => {
       ],
     );
 
-    expect(sellers).toHaveLength(4);
-    expect(sellers[0]).toMatchObject({
+    expect(sellers).toHaveLength(5);
+    expect(sellers.find((seller) => seller.attendant === "Amanda")).toMatchObject({
       attendant: "Amanda",
       profilePictureUrl: "https://photos.test/amanda.jpg",
       screenItems: 5,
+    });
+    expect(sellers[0]).toMatchObject({
+      attendant: "Lucas",
+      profilePictureUrl: "/seller-avatars/lucas.svg",
+      screenItems: 20,
     });
 
     for (const name of ["Suelen", "Tamires", "Thais"]) {

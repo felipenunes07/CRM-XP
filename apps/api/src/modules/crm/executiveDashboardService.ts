@@ -59,6 +59,10 @@ interface ExecutiveSellerMetricRow extends ExecutiveSellerDirectoryRow {
   charging_dock_items: string | number | null;
 }
 
+const EXECUTIVE_SELLER_AVATAR_OVERRIDES: ExecutiveSellerDirectoryRow[] = [
+  { attendant: "Lucas", profile_picture_url: "/seller-avatars/lucas.svg" },
+];
+
 function normalizeSellerName(value: string) {
   return value
     .normalize("NFD")
@@ -80,10 +84,27 @@ export function fillExecutiveDashboardSellers(
   directoryRows: ExecutiveSellerDirectoryRow[],
   metricRows: ExecutiveSellerMetricRow[],
 ): ExecutiveDashboardMetrics["sellers"] {
-  const sellers = directoryRows
+  const sellerDirectory = directoryRows.map((directory) => {
+    const override = EXECUTIVE_SELLER_AVATAR_OVERRIDES.find((candidate) => (
+      isSameSeller(directory.attendant, candidate.attendant)
+    ));
+    return override && !directory.profile_picture_url
+      ? { ...directory, profile_picture_url: override.profile_picture_url }
+      : directory;
+  });
+
+  for (const override of EXECUTIVE_SELLER_AVATAR_OVERRIDES) {
+    if (!sellerDirectory.some((directory) => isSameSeller(directory.attendant, override.attendant))) {
+      sellerDirectory.push(override);
+    }
+  }
+
+  const sellers = sellerDirectory
     .filter((directory) => Boolean(directory.profile_picture_url))
     .map((directory) => {
-    const metric = metricRows.find((candidate) => isSameSeller(directory.attendant, candidate.attendant));
+      const metric = metricRows.find((candidate) => (
+        isSameSeller(directory.attendant, candidate.attendant)
+      ));
 
       return {
         attendant: directory.attendant,
