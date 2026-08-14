@@ -612,6 +612,9 @@ export interface CustomerListItem {
 }
 
 export interface CustomerDetail extends CustomerListItem {
+  phone: string | null;
+  email: string | null;
+  customerSince: string | null;
   purchaseFrequency90d: number;
   frequencyDropRatio: number;
   predictedNextPurchaseAt: string | null;
@@ -626,6 +629,15 @@ export interface CustomerDetail extends CustomerListItem {
     totalAmount: number;
     status: string;
     itemCount: number;
+    totalQuantity: number;
+    items: Array<{
+      id: string;
+      sku: string | null;
+      itemDescription: string;
+      quantity: number;
+      unitPrice: number;
+      lineTotal: number;
+    }>;
   }>;
 }
 

@@ -1,6 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CustomerDocInsightListItem } from "@olist-crm/shared";
-import { sortCustomerDocInsights } from "./customerService.js";
+
+const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn() }));
+
+vi.mock("../../db/client.js", () => ({
+  pool: { query: queryMock },
+}));
+
+import {
+  getCustomerDetail,
+  listCustomers,
+  mapCustomerOrderItems,
+  sortCustomerDocInsights,
+} from "./customerService.js";
+
+beforeEach(() => {
+  queryMock.mockReset();
+});
 
 function createInsight(
   displayName: string,
@@ -37,5 +53,67 @@ describe("sortCustomerDocInsights", () => {
       "Alpha Doc",
       "Zulu Cell",
     ]);
+  });
+});
+
+describe("mapCustomerOrderItems", () => {
+  it("maps the product lines with quantities and values", () => {
+    expect(mapCustomerOrderItems([
+      {
+        id: "item-1",
+        sku: "IP13-OLED",
+        itemDescription: "Tela iPhone 13 OLED",
+        quantity: "3",
+        unitPrice: "125.50",
+        lineTotal: "376.50",
+      },
+      null,
+    ])).toEqual([
+      {
+        id: "item-1",
+        sku: "IP13-OLED",
+        itemDescription: "Tela iPhone 13 OLED",
+        quantity: 3,
+        unitPrice: 125.5,
+        lineTotal: 376.5,
+      },
+    ]);
+  });
+});
+
+describe("customer queries", () => {
+  it("keeps the customer list independent from a customer id parameter", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [] });
+
+    await listCustomers({ limit: 5 });
+
+    expect(queryMock).toHaveBeenCalledTimes(1);
+    expect(queryMock.mock.calls[0]?.[1]).toEqual([]);
+    expect(String(queryMock.mock.calls[0]?.[0])).not.toContain("WITH recent_orders");
+  });
+
+  it("limits orders before aggregating their product lines", async () => {
+    queryMock
+      .mockResolvedValueOnce({
+        rows: [{
+          customer_id: "customer-1",
+          customer_code: "CLI-1",
+          display_name: "Cliente teste",
+          total_orders: 0,
+          internal_notes: "",
+          labels: [],
+          insight_tags: [],
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await getCustomerDetail("customer-1");
+
+    const orderQuery = String(queryMock.mock.calls[1]?.[0]);
+    expect(orderQuery).toContain("WITH recent_orders AS MATERIALIZED");
+    expect(orderQuery).toContain("LIMIT 20");
+    expect(orderQuery).toContain("jsonb_agg");
   });
 });

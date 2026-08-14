@@ -2,10 +2,31 @@ import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { LoaderCircle, CheckCircle2, Copy, Check } from "lucide-react";
-import { InfoHint } from "../components/InfoHint";
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Copy,
+  Hash,
+  LoaderCircle,
+  Mail,
+  MapPin,
+  NotebookPen,
+  PackageOpen,
+  Phone,
+  Plus,
+  Search,
+  ShoppingBag,
+  Tag,
+  UserRound,
+  X,
+} from "lucide-react";
+import { CustomerDetailNavigation } from "../components/CustomerDetailNavigation";
+import { CustomerRecentOrders } from "../components/CustomerRecentOrders";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import {
@@ -30,27 +51,6 @@ const insightLabels: Record<InsightTag, string> = {
   novo_cliente: "Novo cliente",
 };
 
-function insightExplanation(tag: InsightTag, customer: CustomerDetail) {
-  switch (tag) {
-    case "risco_churn":
-      return `Considera queda de frequencia a partir de 50% entre os ultimos 90 dias e os 90 dias anteriores, com o cliente ja fora do status ativo. Hoje a queda estimada e ${formatPercent(customer.frequencyDropRatio)}.`;
-    case "queda_frequencia":
-      return `O ritmo de compra caiu na comparacao entre os ultimos 90 dias e a janela anterior. A queda atual estimada e ${formatPercent(customer.frequencyDropRatio)}.`;
-    case "reativacao":
-      return "Cliente esta inativo e vale abordagem de retorno, principalmente quando ja teve boa recorrencia ou bom historico de compra.";
-    case "recorrente":
-      return "Cliente ativo, com intervalo medio de compra curto e sem queda relevante de frequencia.";
-    case "alto_valor":
-      return "Cliente com gasto total acima da faixa alta da base. Merece prioridade de relacionamento.";
-    case "compra_prevista_vencida":
-      return "A previsao simples da proxima compra usa a media de dias corridos entre pedidos. Quando essa data passa e nao entra pedido novo, o cliente sobe de prioridade.";
-    case "novo_cliente":
-      return "Cliente recente, com ate 2 pedidos e compra nos ultimos 30 dias.";
-    default:
-      return "Insight calculado automaticamente com base em recencia, frequencia e valor.";
-  }
-}
-
 function primaryInsightLabel(customer: CustomerDetail) {
   if (!customer.primaryInsight) {
     return "sem alerta";
@@ -73,70 +73,6 @@ function statusClass(status: CustomerDetail["status"]) {
   }
 
   return "status-inactive";
-}
-
-function statusTone(status: CustomerDetail["status"]) {
-  if (status === "ACTIVE" || status === "NEW") {
-    return "success";
-  }
-
-  if (status === "ATTENTION") {
-    return "warning";
-  }
-
-  return "danger";
-}
-
-function frequencyTone(ratio: number) {
-  if (ratio >= 0.5) {
-    return "danger";
-  }
-
-  if (ratio >= 0.25) {
-    return "warning";
-  }
-
-  return "success";
-}
-
-function customerDiagnosis(customer: CustomerDetail): { tone: string; headline: string; summary: string } {
-  if (customer.status === "INACTIVE") {
-    return {
-      tone: "danger",
-      headline: "Cliente inativo",
-      summary: "Ja saiu da zona ativa. Precisa de reativacao antes de perder a recorrencia construida.",
-    };
-  }
-
-  if (customer.insightTags.includes("risco_churn") || customer.frequencyDropRatio >= 0.5) {
-    return {
-      tone: "danger",
-      headline: "Risco de churn",
-      summary: `Frequencia de compra caiu ${formatPercent(customer.frequencyDropRatio)} na comparacao recente. Vale contato imediato.`,
-    };
-  }
-
-  if (customer.status === "ATTENTION" || customer.insightTags.includes("compra_prevista_vencida")) {
-    return {
-      tone: "warning",
-      headline: "Pede acompanhamento",
-      summary: "Entrou em monitoramento. O ideal e agir antes de virar inativo e revisar a rotina de contato.",
-    };
-  }
-
-  if (customer.insightTags.includes("alto_valor")) {
-    return {
-      tone: "success",
-      headline: "Cliente de alto valor",
-      summary: "Gasto total acima da faixa alta da base. Merece prioridade de relacionamento e atencao dedicada.",
-    };
-  }
-
-  return {
-    tone: "success",
-    headline: "Relacao saudavel",
-    summary: "Sem alerta critico no momento. Cliente segue dentro do ritmo esperado de compra.",
-  };
 }
 
 function metricValueLabel(metric: ChartMetric, value: number) {
@@ -178,7 +114,6 @@ function trendVerdict(trendData: CustomerDetail["monthlyTrend"], metric: ChartMe
 
 function buildWhatsappSummary(
   customer: CustomerDetail,
-  diagnosis: { headline: string; summary: string },
   metric: ChartMetric,
   trendWindow: TrendWindow,
   trendData: CustomerDetail["monthlyTrend"],
@@ -187,9 +122,6 @@ function buildWhatsappSummary(
 
   lines.push(`*${customer.displayName}* (${customer.customerCode || "sem codigo"})`);
   lines.push(`Status: ${statusLabel(customer.status)} | Insight: ${primaryInsightLabel(customer)}`);
-  lines.push("");
-  lines.push(`Diagnostico: *${diagnosis.headline}*`);
-  lines.push(diagnosis.summary);
   lines.push("");
   lines.push(`Total gasto: *${formatCurrency(customer.totalSpent)}*`);
   lines.push(`Ticket medio: ${formatCurrency(customer.avgTicket)}`);
@@ -314,12 +246,226 @@ function CustomerTrendTooltip({
   );
 }
 
+function phoneHref(phone: string | null) {
+  const digits = phone?.replace(/\D/g, "") ?? "";
+  return digits ? `tel:+${digits}` : undefined;
+}
+
+function CustomerProfileCard({ customer }: { customer: CustomerDetail }) {
+  const location = [customer.city, customer.state].filter(Boolean).join(" / ") || "Não informado";
+  const profileRows = [
+    { icon: Phone, label: "Telefone", value: customer.phone || "Não informado", href: phoneHref(customer.phone) },
+    { icon: Mail, label: "E-mail", value: customer.email || "Não informado", href: customer.email ? `mailto:${customer.email}` : undefined },
+    { icon: MapPin, label: "Localização", value: location },
+    { icon: UserRound, label: "Última vendedora", value: customer.lastAttendant || "Não informado" },
+    { icon: Hash, label: "Código do cliente", value: customer.customerCode || "Não informado" },
+    { icon: CalendarDays, label: "Cliente desde", value: formatDate(customer.customerSince) },
+  ];
+
+  return (
+    <section className="customer-profile-card" aria-labelledby="customer-profile-title">
+      <header>
+        <span className="customer-profile-card-icon"><UserRound size={19} /></span>
+        <div><p className="eyebrow">Perfil</p><h2 id="customer-profile-title">Informações do cliente</h2></div>
+      </header>
+      <div className="customer-profile-rows">
+        {profileRows.map(({ icon: Icon, label, value, href }) => (
+          <div key={label} className="customer-profile-row">
+            <Icon size={16} aria-hidden="true" />
+            <div><span>{label}</span>{href ? <a href={href}>{value}</a> : <strong>{value}</strong>}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+interface CustomerRecordWorkspaceProps {
+  selectedLabels: string[];
+  availableLabels: string[];
+  labelSearch: string;
+  labelMessage: string;
+  canCreateLabel: boolean;
+  internalNotes: string;
+  notesMessage: string;
+  notesDirty: boolean;
+  labelsSaving: boolean;
+  labelsError: boolean;
+  notesSaving: boolean;
+  notesError: boolean;
+  onLabelSearchChange: (value: string) => void;
+  onAddExistingLabel: (labelName: string) => void;
+  onCreateLabel: () => void;
+  onRemoveLabel: (labelName: string) => void;
+  onNotesChange: (value: string) => void;
+  onSaveNotes: (event: FormEvent) => void;
+}
+
+export function CustomerRecordWorkspace({
+  selectedLabels,
+  availableLabels,
+  labelSearch,
+  labelMessage,
+  canCreateLabel,
+  internalNotes,
+  notesMessage,
+  notesDirty,
+  labelsSaving,
+  labelsError,
+  notesSaving,
+  notesError,
+  onLabelSearchChange,
+  onAddExistingLabel,
+  onCreateLabel,
+  onRemoveLabel,
+  onNotesChange,
+  onSaveNotes,
+}: CustomerRecordWorkspaceProps) {
+  return (
+    <aside className="customer-record-card" aria-label="Organização comercial do cliente">
+      <header className="customer-record-header">
+        <div className="customer-record-icon" aria-hidden="true">
+          <NotebookPen size={20} />
+        </div>
+        <div>
+          <p className="eyebrow">Organização comercial</p>
+          <h2>Rótulos e observação</h2>
+          <p>Deixe aqui o contexto que a equipe precisa encontrar rapidamente.</p>
+        </div>
+      </header>
+
+      <section className="customer-record-section" aria-labelledby="customer-labels-title">
+        <div className="customer-record-section-title">
+          <div>
+            <span className="customer-record-kicker"><Tag size={15} /> Classificação</span>
+            <h3 id="customer-labels-title">Rótulos do cliente</h3>
+          </div>
+          <span className="customer-record-count">{selectedLabels.length}</span>
+        </div>
+
+        <div className="customer-labels-current" aria-label="Rótulos aplicados">
+          {selectedLabels.length ? (
+            selectedLabels.map((labelName) => (
+              <span
+                key={labelName}
+                className={`customer-label-chip ${labelName === AMBASSADOR_LABEL_NAME ? "is-ambassador" : ""}`}
+              >
+                <span>{labelName}</span>
+                {labelName !== AMBASSADOR_LABEL_NAME ? (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveLabel(labelName)}
+                    disabled={labelsSaving}
+                    aria-label={`Remover rótulo ${labelName}`}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </span>
+            ))
+          ) : (
+            <div className="customer-record-empty">
+              <Tag size={18} />
+              <span>Nenhum rótulo aplicado ainda.</span>
+            </div>
+          )}
+        </div>
+
+        <div className="customer-label-picker">
+          <label htmlFor="customer-label-search">Adicionar rótulo</label>
+          <div className="customer-label-search">
+            <Search size={17} aria-hidden="true" />
+            <input
+              id="customer-label-search"
+              value={labelSearch}
+              onChange={(event) => onLabelSearchChange(event.target.value)}
+              placeholder="Busque um rótulo ou crie um novo"
+              autoComplete="off"
+            />
+          </div>
+
+          {availableLabels.length ? (
+            <div className="customer-label-options" aria-label="Rótulos disponíveis">
+              {availableLabels.slice(0, 8).map((labelName) => (
+                <button
+                  key={labelName}
+                  type="button"
+                  onClick={() => onAddExistingLabel(labelName)}
+                  disabled={labelsSaving}
+                >
+                  <Plus size={14} /> {labelName}
+                </button>
+              ))}
+            </div>
+          ) : labelSearch.trim() && !canCreateLabel ? (
+            <span className="customer-record-helper">Esse rótulo já está aplicado.</span>
+          ) : null}
+
+          {canCreateLabel ? (
+            <button type="button" className="customer-create-label" onClick={onCreateLabel} disabled={labelsSaving}>
+              <Plus size={16} /> Criar e aplicar “{labelSearch.trim()}”
+            </button>
+          ) : null}
+        </div>
+
+        <div className="customer-record-status" aria-live="polite">
+          {labelsSaving ? (
+            <><LoaderCircle className="spinner-small" size={15} /> Salvando rótulos...</>
+          ) : labelsError ? (
+            <span className="is-error">{labelMessage || "Não foi possível salvar os rótulos."}</span>
+          ) : (
+            <><CheckCircle2 size={15} /> {labelMessage || "Alterações salvas automaticamente."}</>
+          )}
+        </div>
+      </section>
+
+      <form className="customer-record-section customer-note-form" onSubmit={onSaveNotes}>
+        <div className="customer-record-section-title">
+          <div>
+            <span className="customer-record-kicker"><NotebookPen size={15} /> Contexto da equipe</span>
+            <h3>Observação interna</h3>
+          </div>
+          {notesDirty ? <span className="customer-unsaved-badge">Não salvo</span> : null}
+        </div>
+
+        <label htmlFor="customer-internal-notes" className="sr-only">Observação interna do cliente</label>
+        <textarea
+          id="customer-internal-notes"
+          rows={7}
+          value={internalNotes}
+          onChange={(event) => onNotesChange(event.target.value)}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && notesDirty && !notesSaving) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder="Ex.: prefere contato à tarde, pediu retorno sobre um modelo, condição combinada ou contexto importante para a próxima conversa."
+        />
+        <div className="customer-note-footer">
+          <span className="customer-record-helper">Ctrl + Enter para salvar</span>
+          <button type="submit" className="primary-button" disabled={notesSaving || !notesDirty}>
+            {notesSaving ? <LoaderCircle className="spinner-small" size={16} /> : <Check size={16} />}
+            {notesSaving ? "Salvando..." : notesDirty ? "Salvar observação" : "Observação salva"}
+          </button>
+        </div>
+        <div className="customer-record-status" aria-live="polite">
+          {notesError ? (
+            <span className="is-error">Não foi possível salvar a observação.</span>
+          ) : notesMessage ? (
+            <><CheckCircle2 size={15} /> {notesMessage}</>
+          ) : null}
+        </div>
+      </form>
+    </aside>
+  );
+}
+
 export function CustomerDetailPage() {
   const { id } = useParams();
   const { token } = useAuth();
   const queryClient = useQueryClient();
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
-  const [newLabel, setNewLabel] = useState("");
   const [labelSearch, setLabelSearch] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [labelMessage, setLabelMessage] = useState("");
@@ -371,6 +517,10 @@ export function CustomerDetailPage() {
       void queryClient.invalidateQueries({ queryKey: ["ambassadors"] });
       setLabelMessage("Rotulos salvos com sucesso.");
     },
+    onError: () => {
+      setSelectedLabels(customer?.labels.map((label) => label.name) ?? []);
+      setLabelMessage("Nao foi possivel salvar. Os rotulos anteriores foram restaurados.");
+    },
   });
 
   const saveNotesMutation = useMutation({
@@ -415,8 +565,11 @@ export function CustomerDetailPage() {
   }
 
   function addNewLabel() {
-    const cleaned = newLabel.trim();
-    if (!cleaned || selectedLabels.includes(cleaned)) {
+    const cleaned = labelSearch.trim();
+    const alreadySelected = selectedLabels.some(
+      (labelName) => labelName.toLocaleLowerCase("pt-BR") === cleaned.toLocaleLowerCase("pt-BR"),
+    );
+    if (!cleaned || alreadySelected) {
       return;
     }
 
@@ -428,7 +581,7 @@ export function CustomerDetailPage() {
     const nextLabels = [...selectedLabels, cleaned];
     setSelectedLabels(nextLabels);
     saveLabelsMutation.mutate({ labels: nextLabels });
-    setNewLabel("");
+    setLabelSearch("");
     setLabelMessage("");
   }
 
@@ -441,13 +594,6 @@ export function CustomerDetailPage() {
     setSelectedLabels(nextLabels);
     saveLabelsMutation.mutate({ labels: nextLabels });
     setLabelMessage("");
-  }
-
-  function handleSaveLabels(event: FormEvent) {
-    event.preventDefault();
-    saveLabelsMutation.mutate({
-      labels: selectedLabels,
-    });
   }
 
   function handleSaveNotes(event: FormEvent) {
@@ -464,7 +610,6 @@ export function CustomerDetailPage() {
 
     const summary = buildWhatsappSummary(
       customer,
-      customerDiagnosis(customer),
       chartMetric,
       trendWindow,
       (customer.monthlyTrend ?? []).slice(-trendWindow),
@@ -492,81 +637,67 @@ export function CustomerDetailPage() {
     window.setTimeout(() => setCopied(false), 2500);
   }
 
-  const diagnosis = customerDiagnosis(customer);
   const trendData = (customer.monthlyTrend ?? []).slice(-trendWindow);
-  const kpiCards = [
+  const normalizedLabelSearch = labelSearch.trim().toLocaleLowerCase("pt-BR");
+  const canCreateLabel = Boolean(
+    normalizedLabelSearch &&
+      normalizedLabelSearch !== AMBASSADOR_LABEL_NAME.toLocaleLowerCase("pt-BR") &&
+      !knownLabels.some((labelName) => labelName.toLocaleLowerCase("pt-BR") === normalizedLabelSearch) &&
+      !selectedLabels.some((labelName) => labelName.toLocaleLowerCase("pt-BR") === normalizedLabelSearch),
+  );
+  const notesDirty = internalNotes !== customer.internalNotes;
+  const locationLabel = [customer.city, customer.state].filter(Boolean).join(" / ") || "Não informado";
+  const topProducts = customer.topProducts.slice(0, 5);
+  const analysisMetrics = [
     {
-      label: "Total gasto",
-      value: formatCurrency(customer.totalSpent),
-      detail: `Score de valor ${customer.valueScore.toFixed(1)} de 100.`,
-      tone: "purple",
-    },
-    {
-      label: "Ticket medio",
+      label: "Ticket médio",
       value: formatCurrency(customer.avgTicket),
-      detail: `${formatNumber(customer.totalOrders)} pedidos no historico.`,
-      tone: "neutral",
+      detail: `${formatNumber(customer.totalOrders)} pedidos no histórico.`,
     },
     {
-      label: "Recencia",
-      value: formatDaysSince(customer.daysSinceLastPurchase),
-      detail: `Ultima compra: ${formatDate(customer.lastPurchaseAt)}.`,
-      tone: statusTone(customer.status),
+      label: "Frequência em 90 dias",
+      value: customer.purchaseFrequency90d.toFixed(1),
+      detail: "Pedidos registrados nos últimos 90 dias.",
     },
     {
-      label: "Queda de frequencia",
+      label: "Queda de frequência",
       value: formatPercent(customer.frequencyDropRatio),
-      detail:
-        customer.frequencyDropRatio >= 0.5
-          ? "Queda relevante: priorize contato."
-          : "Ritmo de compra sob controle.",
-      tone: frequencyTone(customer.frequencyDropRatio),
+      detail: customer.frequencyDropRatio >= 0.5 ? "Queda relevante; priorize contato." : "Ritmo sob controle.",
     },
     {
-      label: "Proxima compra prevista",
-      value: formatDate(customer.predictedNextPurchaseAt),
-      detail: customer.insightTags.includes("compra_prevista_vencida")
-        ? "Previsao vencida sem novo pedido."
-        : `Intervalo medio: ${customer.avgDaysBetweenOrders?.toFixed(0) ?? "--"} dias.`,
-      tone: customer.insightTags.includes("compra_prevista_vencida") ? "warning" : "neutral",
-    },
-    {
-      label: "Score de prioridade",
+      label: "Prioridade comercial",
       value: customer.priorityScore.toFixed(1),
-      detail: "40% recencia, 25% valor, 20% queda, 15% previsao vencida.",
-      tone: "neutral",
+      detail: "Score calculado por recência, valor e frequência.",
     },
   ];
 
   return (
-    <div className="page-stack">
-      <section className="hero-panel">
-        <div>
-          <p className="eyebrow">Ficha do cliente</p>
-          <h2>{customer.displayName}</h2>
-          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap", marginTop: "0.4rem" }}>
-            <span className={`status-badge ${statusClass(customer.status)}`}>{statusLabel(customer.status)}</span>
-            <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>{customer.customerCode || "Sem codigo"}</span>
-            <span style={{ fontSize: "0.85rem", color: "var(--muted)" }}>
-              Insight principal: <strong>{primaryInsightLabel(customer)}</strong>
-            </span>
+    <div className="page-stack customer-detail-page">
+      <Link to="/clientes" className="customer-back-link">
+        <ArrowLeft size={16} /> Voltar para clientes
+      </Link>
+
+      <section className="customer-detail-hero">
+        <div className="customer-identity">
+          <div className="customer-avatar" aria-hidden="true">
+            <UserRound size={24} />
+          </div>
+          <div>
+            <p className="eyebrow">Ficha do cliente</p>
+            <h1>{customer.displayName}</h1>
+            <div className="customer-identity-meta">
+              <span className={`status-badge ${statusClass(customer.status)}`}>{statusLabel(customer.status)}</span>
+              <span>{customer.customerCode || "Sem código"}</span>
+              <span><MapPin size={14} /> {locationLabel}</span>
+              <span><CalendarDays size={14} /> Última compra em {formatDate(customer.lastPurchaseAt)}</span>
+            </div>
           </div>
         </div>
-        <div className="hero-actions">
-          {customer.isAmbassador ? (
-            <span className="tag ambassador-tag">
-              {AMBASSADOR_LABEL_NAME}
-              {customer.ambassadorAssignedAt ? ` desde ${formatDate(customer.ambassadorAssignedAt)}` : ""}
-            </span>
-          ) : null}
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={handleCopySummary}
-            style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
-          >
+
+        <div className="customer-hero-actions">
+          <button type="button" className="ghost-button" onClick={handleCopySummary}>
             {copied ? <Check size={16} /> : <Copy size={16} />}
-            {copied ? "Resumo copiado!" : `Copiar resumo p/ WhatsApp (${chartMetricLabel(chartMetric)})`}
+            {copied ? "Resumo copiado" : "Copiar resumo para WhatsApp"}
           </button>
           <button
             type="button"
@@ -583,323 +714,120 @@ export function CustomerDetailPage() {
                 ? "Remover de embaixadores"
                 : "Marcar como embaixador"}
           </button>
-          {ambassadorMessage ? <span className="save-ok">{ambassadorMessage}</span> : null}
+          {ambassadorMessage ? <span className="customer-action-feedback">{ambassadorMessage}</span> : null}
         </div>
       </section>
 
-      <section className={`panel customer-diagnosis tone-${diagnosis.tone}`} style={{ borderLeft: `4px solid var(--${diagnosis.tone === "neutral" ? "line" : diagnosis.tone})` }}>
-        <div className="panel-header" style={{ marginBottom: "0.3rem" }}>
-          <div>
-            <p className="eyebrow">Diagnostico comercial</p>
-            <h3 style={{ margin: 0 }}>{diagnosis.headline}</h3>
-          </div>
-        </div>
-        <p className="panel-subcopy" style={{ margin: 0 }}>{diagnosis.summary}</p>
+      <CustomerDetailNavigation customerId={customer.id} />
+
+      <section className="customer-summary-strip" aria-label="Resumo de compras do cliente">
+        <article><span><ShoppingBag size={17} /></span><div><small>Total comprado</small><strong>{formatCurrency(customer.totalSpent)}</strong></div></article>
+        <article><span><PackageOpen size={17} /></span><div><small>Pedidos no histórico</small><strong>{formatNumber(customer.totalOrders)}</strong></div></article>
+        <article><span><ShoppingBag size={17} /></span><div><small>Ticket médio</small><strong>{formatCurrency(customer.avgTicket)}</strong></div></article>
+        <article><span><CalendarDays size={17} /></span><div><small>Última compra</small><strong>{formatDate(customer.lastPurchaseAt)}</strong><em>{formatDaysSince(customer.daysSinceLastPurchase)}</em></div></article>
       </section>
 
-      <section className="stats-grid">
-        {kpiCards.map((card) => (
-          <div key={card.label} className={`stat-card tone-${card.tone}`}>
-            <div className="stat-card-header">
-              <h3 className="stat-card-title">{card.label}</h3>
-            </div>
-            <div className="stat-card-body">
-              <strong>{card.value}</strong>
-              <p className="stat-card-helper">{card.detail}</p>
-            </div>
-          </div>
-        ))}
-      </section>
+      <section className="customer-profile-orders-layout">
+        <div className="customer-orders-main">
+          <CustomerRecentOrders orders={customer.recentOrders} initialLimit={4} />
 
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Historico mensal</p>
-            <h3>Tendencia de {customer.displayName}</h3>
-          </div>
-          <div className="ambassador-chart-controls" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <div className="ambassador-chart-toggle" role="tablist">
-              {(["revenue", "orders", "pieces"] as ChartMetric[]).map((metric) => (
-                <button
-                  key={metric}
-                  type="button"
-                  className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`}
-                  onClick={() => setChartMetric(metric)}
-                >
-                  {chartMetricLabel(metric)}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ width: "1px", height: "24px", background: "var(--line)" }} />
-
-            <div className="ambassador-range-toggle" role="tablist">
-              {([6, 12, 24] as TrendWindow[]).map((windowSize) => (
-                <button
-                  key={windowSize}
-                  type="button"
-                  className={`ambassador-range-button ${trendWindow === windowSize ? "active" : ""}`}
-                  onClick={() => setTrendWindow(windowSize)}
-                >
-                  {windowSize}m
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {trendData.length ? (
-          <div className="trend-chart-wrap">
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={trendData} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
-                <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
-                <XAxis
-                  dataKey="month"
-                  tickFormatter={(value) => formatMonthLabel(String(value))}
-                  stroke="#5f6f95"
-                  minTickGap={trendWindow === 24 ? 18 : 8}
-                />
-                <YAxis stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
-                <Tooltip
-                  content={<CustomerTrendTooltip metric={chartMetric} subjectLabel={customer.displayName} />}
-                  cursor={{ fill: "rgba(41, 86, 215, 0.04)" }}
-                />
-                <Bar dataKey={chartMetric} fill={chartMetricColor(chartMetric)} radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        ) : (
-          <div className="empty-state">Ainda nao ha historico de compra suficiente para montar a tendencia.</div>
-        )}
-      </section>
-
-      <section className="grid-two">
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Sinais analiticos</p>
-              <h3>Leitura comercial rapida</h3>
-            </div>
-          </div>
-
-          <div className="detail-grid">
-            <div>
-              <span>Frequencia nos ultimos 90 dias</span>
-              <strong>{customer.purchaseFrequency90d.toFixed(1)}</strong>
-            </div>
-            <div>
-              <span>Media entre pedidos</span>
-              <strong>{customer.avgDaysBetweenOrders?.toFixed(1) ?? "Sem base"}</strong>
-            </div>
-            <div>
-              <span>Queda de frequencia</span>
-              <strong>{formatPercent(customer.frequencyDropRatio)}</strong>
-            </div>
-            <div>
-              <span>Proxima compra prevista</span>
-              <strong>{formatDate(customer.predictedNextPurchaseAt)}</strong>
-            </div>
-            <div>
-              <span>Atendente mais recente</span>
-              <strong>{customer.lastAttendant ?? "Nao informado"}</strong>
-            </div>
-            <div>
-              <span className="label-with-info">
-                Score de prioridade
-                <InfoHint text="Pontuacao de prioridade: 40% recencia, 25% valor do cliente, 20% queda de frequencia e 15% compra prevista vencida." />
-              </span>
-              <strong>{customer.priorityScore.toFixed(1)}</strong>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Como ler os insights</p>
-              <h3>O que o sistema esta vendo</h3>
-            </div>
-          </div>
-
-          <div className="insight-list">
-            {customer.insightTags.length ? (
-              customer.insightTags.map((tag) => (
-                <article key={tag} className="insight-card">
-                  <strong>{insightLabels[tag]}</strong>
-                  <p>{insightExplanation(tag, customer)}</p>
-                </article>
-              ))
-            ) : (
-              <article className="insight-card">
-                <strong>Sem alerta no momento</strong>
-                <p>O cliente nao bateu nenhum gatilho especial de prioridade ou risco agora.</p>
-              </article>
-            )}
-          </div>
-        </article>
-      </section>
-
-      <section className="grid-two">
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Mix de compra</p>
-              <h3>Pecas que esse cliente mais compra</h3>
-            </div>
-          </div>
-
-          {customer.topProducts.length ? (
-            <div className="top-products-list">
-              {customer.topProducts.map((product) => (
-                <article key={`${product.sku ?? product.itemDescription}`} className="top-product-card">
-                  <div className="top-product-copy">
-                    <strong>{product.itemDescription}</strong>
-                    <span>{product.sku ? `SKU ${product.sku}` : "SKU nao informado"}</span>
-                  </div>
-                  <div className="top-product-metrics">
-                    <span>{formatNumber(product.totalQuantity)} pecas</span>
-                    <span>{formatNumber(product.orderCount)} pedidos</span>
-                    <span>Ultima compra: {formatDate(product.lastBoughtAt)}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">Ainda nao ha base suficiente para montar o mix de compra.</div>
-          )}
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Classificacao interna</p>
-              <h3>Rotulos e observacoes do comercial</h3>
-            </div>
-          </div>
-
-          <div className="stack-list">
-            <form className="label-block" onSubmit={handleSaveLabels}>
-              <span className="label-block-title">Rotulos do cliente</span>
-              <p className="panel-subcopy">Os rotulos sao salvos automaticamente ao serem alterados.</p>
-
-              <div className="tag-row compact">
-                {selectedLabels.length ? (
-                  selectedLabels.map((labelName) => (
-                    <span
-                      key={labelName}
-                      className={`tag ${labelName === AMBASSADOR_LABEL_NAME ? "ambassador-tag" : "removable-tag"}`}
-                    >
-                      <span>{labelName}</span>
-                      {labelName !== AMBASSADOR_LABEL_NAME ? (
-                        <button type="button" className="tag-remove-button" onClick={() => removeLabel(labelName)}>
-                          x
-                        </button>
-                      ) : null}
-                    </span>
-                  ))
-                ) : (
-                  <span className="muted-copy">Nenhum rotulo aplicado.</span>
-                )}
-              </div>
-
-              <div className="label-create-row">
-                <input
-                  value={labelSearch}
-                  onChange={(event) => setLabelSearch(event.target.value)}
-                  placeholder="Buscar rotulo existente"
-                />
-              </div>
-
-              <div className="tag-row compact">
-                {availableLabels.length ? (
-                  availableLabels.slice(0, 12).map((labelName) => (
-                    <button
-                      key={labelName}
-                      type="button"
-                      className="tag-selector"
-                      onClick={() => addExistingLabel(labelName)}
-                    >
-                      + {labelName}
-                    </button>
-                  ))
-                ) : (
-                  <span className="muted-copy">Nenhum rotulo disponivel para esse filtro.</span>
-                )}
-              </div>
-
-              <div className="label-create-row">
-                <input
-                  value={newLabel}
-                  onChange={(event) => setNewLabel(event.target.value)}
-                  placeholder="Criar novo rotulo"
-                />
-                <button type="button" className="ghost-button" onClick={addNewLabel}>
-                  Adicionar
-                </button>
-              </div>
-
-              {labelMessage ? <span className="muted-copy" style={{ fontSize: "0.85rem" }}>{labelMessage}</span> : null}
-
-              <div className="inline-actions" style={{ minHeight: "36px", display: "flex", alignItems: "center" }}>
-                {saveLabelsMutation.isPending ? (
-                  <span className="muted-copy" style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.85rem" }}>
-                    <LoaderCircle className="spinner-small" size={16} style={{ animation: "spin 1s linear infinite" }} /> Salvando alteracoes...
-                  </span>
-                ) : saveLabelsMutation.isError ? (
-                  <span className="inline-error" style={{ fontSize: "0.85rem" }}>Nao foi possivel salvar os rotulos.</span>
-                ) : (
-                  <span className="save-ok" style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.85rem", color: "var(--semantic-positive)" }}>
-                    <CheckCircle2 size={16} /> Rotulos salvos automaticamente!
-                  </span>
-                )}
-              </div>
-            </form>
-
-            <form className="label-block" onSubmit={handleSaveNotes}>
-              <span className="label-block-title">Observacao interna</span>
-              <textarea
-                rows={5}
-                value={internalNotes}
-                onChange={(event) => {
-                  setInternalNotes(event.target.value);
-                  setNotesMessage("");
-                }}
-                placeholder="Ex: cliente pede credito, esta bloqueado, e parceiro bom para reativacao, historico sensivel..."
-              />
-
-              <div className="inline-actions">
-                <button type="submit" className="ghost-button" disabled={saveNotesMutation.isPending}>
-                  {saveNotesMutation.isPending ? "Salvando..." : "Salvar observacao"}
-                </button>
-                {saveNotesMutation.isError ? <span className="inline-error">Nao foi possivel salvar a observacao.</span> : null}
-                {notesMessage ? <span className="save-ok">{notesMessage}</span> : null}
-              </div>
-            </form>
-          </div>
-        </article>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Historico recente</p>
-            <h3>Pedidos mais recentes</h3>
-          </div>
-        </div>
-
-        <div className="stack-list">
-          {customer.recentOrders.map((order) => (
-            <div key={order.id} className="history-card">
+          <details className="customer-analysis-panel">
+            <summary>
               <div>
-                <strong>{order.orderNumber}</strong>
-                <p>{formatDate(order.orderDate)}</p>
+                <span className="customer-analysis-icon"><CalendarDays size={18} /></span>
+                <div><strong>Análises e preferências</strong><span>Consulte somente quando precisar aprofundar o atendimento.</span></div>
               </div>
-              <div className="history-card-meta">
-                <span>{order.itemCount} itens</span>
-                <strong>{formatCurrency(order.totalAmount)}</strong>
-              </div>
+              <ChevronDown size={20} className="customer-analysis-chevron" />
+            </summary>
+
+            <div className="customer-analysis-content">
+              <section className="customer-analysis-section">
+                <div className="customer-analysis-heading">
+                  <div><p className="eyebrow">Histórico mensal</p><h3>Tendência de compras</h3></div>
+                  <div className="ambassador-chart-controls">
+                    <div className="ambassador-chart-toggle" role="tablist" aria-label="Métrica do gráfico">
+                      {(["revenue", "orders", "pieces"] as ChartMetric[]).map((metric) => (
+                        <button key={metric} type="button" className={`ambassador-chart-button ${chartMetric === metric ? "active" : ""}`} onClick={() => setChartMetric(metric)}>
+                          {chartMetricLabel(metric)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="ambassador-range-toggle" role="tablist" aria-label="Período do gráfico">
+                      {([6, 12, 24] as TrendWindow[]).map((windowSize) => (
+                        <button key={windowSize} type="button" className={`ambassador-range-button ${trendWindow === windowSize ? "active" : ""}`} onClick={() => setTrendWindow(windowSize)}>
+                          {windowSize}m
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {trendData.length ? (
+                  <div className="trend-chart-wrap">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={trendData} margin={{ top: 12, right: 8, left: 0, bottom: 4 }}>
+                        <CartesianGrid stroke="rgba(41, 86, 215, 0.08)" vertical={false} />
+                        <XAxis dataKey="month" tickFormatter={(value) => formatMonthLabel(String(value))} stroke="#5f6f95" minTickGap={trendWindow === 24 ? 18 : 8} />
+                        <YAxis stroke="#5f6f95" tickFormatter={(value) => formatNumber(Number(value))} />
+                        <Tooltip content={<CustomerTrendTooltip metric={chartMetric} subjectLabel={customer.displayName} />} cursor={{ fill: "rgba(41, 86, 215, 0.04)" }} />
+                        <Bar dataKey={chartMetric} fill={chartMetricColor(chartMetric)} radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : <div className="customer-list-empty">Ainda não há histórico suficiente para montar a tendência.</div>}
+              </section>
+
+              <section className="customer-secondary-insights">
+                <article>
+                  <div className="customer-column-title"><PackageOpen size={17} /><h3>Indicadores comerciais</h3></div>
+                  <div className="customer-analysis-metrics">
+                    {analysisMetrics.map((metric) => (
+                      <div key={metric.label}><span>{metric.label}</span><strong>{metric.value}</strong><small>{metric.detail}</small></div>
+                    ))}
+                  </div>
+                </article>
+                <article>
+                  <div className="customer-column-title"><ShoppingBag size={17} /><h3>Preferências resumidas</h3></div>
+                  <div className="customer-preference-list">
+                    {topProducts.length ? topProducts.map((product) => (
+                      <div key={product.sku ?? product.itemDescription}>
+                        <span>{product.itemDescription}</span>
+                        <strong>{formatNumber(product.totalQuantity)} peças</strong>
+                      </div>
+                    )) : <div className="customer-list-empty">Sem produtos suficientes para identificar preferências.</div>}
+                  </div>
+                  <div className="customer-insight-chips">
+                    <span>Insight: <strong>{primaryInsightLabel(customer)}</strong></span>
+                    {customer.isAmbassador ? <span className="is-ambassador">{AMBASSADOR_LABEL_NAME}</span> : null}
+                  </div>
+                </article>
+              </section>
             </div>
-          ))}
+          </details>
+        </div>
+
+        <div className="customer-profile-sidebar">
+          <CustomerProfileCard customer={customer} />
+          <CustomerRecordWorkspace
+            selectedLabels={selectedLabels}
+            availableLabels={availableLabels}
+            labelSearch={labelSearch}
+            labelMessage={labelMessage}
+            canCreateLabel={canCreateLabel}
+            internalNotes={internalNotes}
+            notesMessage={notesMessage}
+            notesDirty={notesDirty}
+            labelsSaving={saveLabelsMutation.isPending}
+            labelsError={saveLabelsMutation.isError}
+            notesSaving={saveNotesMutation.isPending}
+            notesError={saveNotesMutation.isError}
+            onLabelSearchChange={(value) => { setLabelSearch(value); setLabelMessage(""); }}
+            onAddExistingLabel={addExistingLabel}
+            onCreateLabel={addNewLabel}
+            onRemoveLabel={removeLabel}
+            onNotesChange={(value) => { setInternalNotes(value); setNotesMessage(""); }}
+            onSaveNotes={handleSaveNotes}
+          />
         </div>
       </section>
     </div>
