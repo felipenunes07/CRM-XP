@@ -150,6 +150,8 @@
         var COLORS = ["#e85ecf", "#8a6be8", "#d93636", "#57d99d"];
         var MEDALS = ["🏆", "🥈", "🥉", "♥"];
         var refreshTimer = null;
+        var retryTimer = null;
+        var followsCurrentPeriod = true;
         var state = currentPeriod();
 
         function byId(id) { return document.getElementById(id); }
@@ -193,6 +195,7 @@
           canvas.style.top = Math.max((height - (1040 * scale)) / 2, 0) + "px";
         }
         function requestData() {
+          if (followsCurrentPeriod) state = currentPeriod();
           var updated = byId("updated");
           updated.innerHTML = "Atualizando dados...";
           var url = API_URL + "?year=" + state.year + "&month=" + state.month;
@@ -205,6 +208,10 @@
             if (xhr.readyState !== 4) return;
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
+                if (retryTimer !== null) {
+                  window.clearTimeout(retryTimer);
+                  retryTimer = null;
+                }
                 render(JSON.parse(xhr.responseText));
               } catch (error) {
                 renderError("A TV recebeu os dados, mas não conseguiu exibir o painel.");
@@ -224,6 +231,12 @@
           byId("daily").innerHTML = html;
           byId("monthly").innerHTML = html;
           byId("updated").innerHTML = "Nova tentativa em 1 minuto";
+          if (retryTimer === null) {
+            retryTimer = window.setTimeout(function () {
+              retryTimer = null;
+              requestData();
+            }, 60 * 1000);
+          }
         }
         function fillFilters(data) {
           var periods = data.availablePeriods || [];
@@ -345,10 +358,10 @@
           html += '</div>';
           byId("monthly").innerHTML = html;
         }
-        byId("year").onchange = function () { state.year = Number(this.value); state.month = 1; state.day = null; requestData(); };
-        byId("month").onchange = function () { state.month = Number(this.value); state.day = null; requestData(); };
-        byId("day").onchange = function () { state.day = this.value ? Number(this.value) : null; requestData(); };
-        byId("current").onclick = function () { state = currentPeriod(); requestData(); };
+        byId("year").onchange = function () { followsCurrentPeriod = false; state.year = Number(this.value); state.month = 1; state.day = null; requestData(); };
+        byId("month").onchange = function () { followsCurrentPeriod = false; state.month = Number(this.value); state.day = null; requestData(); };
+        byId("day").onchange = function () { followsCurrentPeriod = false; state.day = this.value ? Number(this.value) : null; requestData(); };
+        byId("current").onclick = function () { followsCurrentPeriod = true; state = currentPeriod(); requestData(); };
         window.onresize = scaleCanvas;
         scaleCanvas();
         requestData();
