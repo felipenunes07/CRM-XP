@@ -11,7 +11,29 @@
     />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div
+        id="boot-fallback"
+        style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f7f9ff;color:#071f54;font-family:Arial,sans-serif;text-align:center;padding:32px;box-sizing:border-box"
+      >
+        <div>
+          <img src="/xp-factory-logo.png" alt="XP Factory" style="width:180px;max-width:45vw;margin-bottom:24px" />
+          <strong style="display:block;font-size:28px">Carregando painel de vendas...</strong>
+          <p id="boot-fallback-detail" style="font-size:18px;color:#52617a;margin-top:12px">
+            Aguarde alguns segundos enquanto os dados são preparados.
+          </p>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.setTimeout(function () {
+        var fallback = document.getElementById("boot-fallback");
+        var detail = document.getElementById("boot-fallback-detail");
+        if (fallback && detail) {
+          detail.innerHTML = "O navegador da TV não conseguiu iniciar o painel.<br>Atualize o navegador ou use um Chromecast, Fire TV ou TV Box.";
+        }
+      }, 20000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
