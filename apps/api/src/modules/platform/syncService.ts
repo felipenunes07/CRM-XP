@@ -10,8 +10,10 @@ import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.j
 const DAILY_SYNC_KEY = "primary_daily_sync_date";
 const HOURLY_SYNC_KEY = "primary_hourly_sync_timestamp";
 const DAILY_SYNC_TIMEZONE = "America/Sao_Paulo";
-const SYNC_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
+export const PRIMARY_SYNC_INTERVAL_MINUTES = 15;
+const SYNC_INTERVAL_MS = PRIMARY_SYNC_INTERVAL_MINUTES * 60 * 1000;
+const CHECK_INTERVAL_MS = 60 * 1000;
+const PRIMARY_SYNC_ADVISORY_LOCK_ID = 742_026_814;
 const SYNC_WINDOW_START_HOUR = 8;  // 8 AM
 const SYNC_WINDOW_END_HOUR = 18;   // 6 PM
 
@@ -103,7 +105,31 @@ export async function runPrimarySync(reason: string) {
     return activeSync;
   }
 
-  const syncPromise = runPrimarySyncInternal(reason);
+  const syncPromise = (async () => {
+    const lockClient = await pool.connect();
+    let lockAcquired = false;
+
+    try {
+      const lockResult = await lockClient.query<{ acquired: boolean }>(
+        "SELECT pg_try_advisory_lock($1) AS acquired",
+        [PRIMARY_SYNC_ADVISORY_LOCK_ID],
+      );
+      lockAcquired = Boolean(lockResult.rows[0]?.acquired);
+      if (!lockAcquired) {
+        logger.info("primary sync skipped because another process is already syncing", { reason });
+        return { skipped: true, reason: "already-running-in-another-process" };
+      }
+
+      return await runPrimarySyncInternal(reason);
+    } finally {
+      if (lockAcquired) {
+        await lockClient.query("SELECT pg_advisory_unlock($1)", [PRIMARY_SYNC_ADVISORY_LOCK_ID]).catch((error) => {
+          logger.warn("failed to release primary sync advisory lock", { reason, error: String(error) });
+        });
+      }
+      lockClient.release();
+    }
+  })();
 
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(() => reject(new Error("A sincronizacao excedeu o limite de 10 minutos.")), 10 * 60 * 1000)
@@ -212,7 +238,9 @@ export function startPrimarySyncScheduler({
 
 export function startDailySyncScheduler() {
   return startPrimarySyncScheduler({
-    enabled: env.STARTUP_SYNC_ENABLED,
+    // Em alguns ambientes EasyPanel somente o processo da API permanece ativo.
+    // O lock distribuido acima impede duplicidade quando o worker tambem existe.
+    enabled: env.STARTUP_SYNC_ENABLED || env.WORKER_OLIST_SYNC_ENABLED,
     reason: "scheduled-periodic-sync",
   });
 }

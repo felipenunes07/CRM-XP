@@ -31,8 +31,9 @@ import type {
 import { api } from "../lib/api";
 import "./executiveSalesDashboard.css";
 
-const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
 const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
+const DATA_SYNC_INTERVAL_LABEL = "15min";
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
@@ -55,6 +56,8 @@ interface FilterBarProps {
 interface HeaderProps extends FilterBarProps {
   generatedAt: string;
   isFetching: boolean;
+  refreshFailed: boolean;
+  onRefresh: () => void;
 }
 
 const numberFormatter = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -137,11 +140,11 @@ function ExecutiveSidebar() {
         </div>
       </nav>
 
-      <div className="executive-tv-mode" title="Modo TV com atualização automática a cada 5 minutos">
+      <div className="executive-tv-mode" title="Modo TV com sincronização automática das vendas a cada 15 minutos">
         <span className="executive-live-dot" />
         <div>
           <strong>TV</strong>
-          <small>5min</small>
+          <small>{DATA_SYNC_INTERVAL_LABEL}</small>
         </div>
       </div>
 
@@ -209,6 +212,8 @@ function ExecutiveHeader({
   onUseCurrentPeriod,
   generatedAt,
   isFetching,
+  refreshFailed,
+  onRefresh,
 }: HeaderProps) {
   const updatedAt = new Date(generatedAt).toLocaleTimeString("pt-BR", {
     hour: "2-digit",
@@ -231,13 +236,24 @@ function ExecutiveHeader({
         onUseCurrentPeriod={onUseCurrentPeriod}
       />
       <div className="executive-header-actions">
-        <div className="executive-refresh-copy" title="Os dados são buscados novamente sem precisar recarregar a página">
+        <div className={`executive-refresh-copy${refreshFailed ? " has-error" : ""}`} title="Os dados são buscados novamente sem precisar recarregar a página">
           <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
           <span>
-            <strong>ATUALIZA SOZINHO</strong>
-            <small>5 min · {updatedAt}</small>
+            <strong>{isFetching ? "ATUALIZANDO..." : refreshFailed ? "FALHA AO ATUALIZAR" : "ATUALIZA SOZINHO"}</strong>
+            <small>{DATA_SYNC_INTERVAL_LABEL} · {updatedAt}</small>
           </span>
         </div>
+        <button
+          type="button"
+          className="executive-refresh-button"
+          onClick={onRefresh}
+          disabled={isFetching}
+          title="Buscar os dados mais recentes agora"
+          aria-label={isFetching ? "Atualizando painel" : "Atualizar painel agora"}
+        >
+          <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
+          <span>{isFetching ? "Atualizando" : "Atualizar"}</span>
+        </button>
         <span className="executive-live-dot" aria-label="Atualização automática ativa" />
       </div>
     </header>
@@ -688,6 +704,8 @@ export function ExecutiveSalesDashboardPage() {
             onUseCurrentPeriod={useCurrentPeriod}
             generatedAt={data.generatedAt}
             isFetching={query.isFetching}
+            refreshFailed={query.isError}
+            onRefresh={() => void query.refetch()}
           />
           <div className="executive-dashboard-grid">
             <IndicatorPanel data={data} />

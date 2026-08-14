@@ -40,8 +40,9 @@ describe("GET /api/dashboard/executive", () => {
     const response = await request(createApp()).get("/api/dashboard/executive?year=2026&month=8&day=12");
 
     expect(response.status).toBe(200);
+    expect(response.headers["cache-control"]).toContain("no-store");
     expect(response.body.summary.totalItems).toBe(2450);
-    expect(response.headers["cache-control"]).toContain("public");
+    expect(response.headers["cache-control"]).not.toContain("public");
     expect(requireAuthMock).not.toHaveBeenCalled();
     expect(getExecutiveDashboardMetricsMock).toHaveBeenCalledWith({ year: 2026, month: 8, day: 12 });
   });

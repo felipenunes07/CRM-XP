@@ -67,7 +67,7 @@ WORKER_DEFECT_SYNC_HOUR=5
 
 No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use caminhos reais do Dropbox iniciando com `/`.
 
-Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 1 hora mesmo quando ninguem estiver logado no CRM. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`, porque a producao atual nem sempre sobe um container worker separado.
+Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minutos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
 
 Depois que o backend estiver no ar, teste:
 

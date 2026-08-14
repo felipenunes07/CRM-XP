@@ -1199,6 +1199,50 @@
   white-space: nowrap;
 }
 
+.executive-refresh-copy.has-error,
+.executive-refresh-copy.has-error strong,
+.executive-refresh-copy.has-error > svg {
+  color: #c53d4d;
+}
+
+.executive-refresh-button {
+  min-height: 2.55em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.38em;
+  padding: 0 0.78em;
+  border: 1px solid rgba(34, 80, 219, 0.2);
+  border-radius: 0.55em;
+  color: var(--executive-blue);
+  background: #f3f6ff;
+  font-size: 0.72em;
+  font-weight: 750;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.executive-refresh-button:hover:not(:disabled),
+.executive-refresh-button:focus-visible {
+  border-color: var(--executive-blue);
+  background: #e9efff;
+}
+
+.executive-refresh-button:focus-visible {
+  outline: 2px solid rgba(34, 80, 219, 0.2);
+  outline-offset: 2px;
+}
+
+.executive-refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.executive-refresh-button svg {
+  width: 1.15em;
+  height: 1.15em;
+}
+
 .executive-header-actions .executive-live-dot {
   width: 0.72em;
   height: 0.72em;

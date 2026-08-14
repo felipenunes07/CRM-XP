@@ -2,7 +2,9 @@ import type { ExecutiveDashboardMetrics } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 
 const DAILY_TARGET_DIVISOR = 20;
-const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+// O worker pode sincronizar em outro processo, onde nao consegue limpar este Map.
+// Um TTL curto garante que a TV enxergue a nova importacao no minuto seguinte.
+const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
 const SAO_PAULO_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
   year: "numeric",

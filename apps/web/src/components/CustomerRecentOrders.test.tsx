@@ -35,9 +35,11 @@ const orders: CustomerDetail["recentOrders"] = [
 ];
 
 describe("CustomerRecentOrders", () => {
-  it("shows the products, quantities and values without requiring another page", () => {
+  it("keeps every order collapsed by default with its item details available", () => {
     const markup = renderToStaticMarkup(<CustomerRecentOrders orders={orders} />);
 
+    expect(markup).toContain('<details class="customer-order-card"><summary');
+    expect(markup).not.toContain('<details class="customer-order-card" open=""');
     expect(markup).toContain("Pedido PED-1001");
     expect(markup).toContain("Tela iPhone 13 OLED");
     expect(markup).toContain("SKU IP13-OLED");

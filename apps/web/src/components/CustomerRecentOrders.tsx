@@ -43,8 +43,8 @@ export function CustomerRecentOrders({
       {visibleOrders.length ? (
         <div className="customer-order-cards">
           {visibleOrders.map((order) => (
-            <article key={order.id} className="customer-order-card">
-              <header className="customer-order-card-header">
+            <details key={order.id} className="customer-order-card">
+              <summary className="customer-order-card-header">
                 <div className="customer-order-primary">
                   <span className="customer-order-icon" aria-hidden="true"><ReceiptText size={18} /></span>
                   <div>
@@ -56,8 +56,12 @@ export function CustomerRecentOrders({
                   <span className={`customer-order-status ${orderStatusClass(order.status)}`}>{order.status}</span>
                   <span>{formatNumber(order.itemCount)} produtos · {formatNumber(order.totalQuantity)} peças</span>
                   <strong>{formatCurrency(order.totalAmount)}</strong>
+                  <span className="customer-order-toggle">
+                    <span>Itens</span>
+                    <ChevronDown size={16} aria-hidden="true" />
+                  </span>
                 </div>
-              </header>
+              </summary>
 
               {order.items.length ? (
                 <div className="customer-order-items" role="table" aria-label={`Itens do pedido ${order.orderNumber}`}>
@@ -84,7 +88,7 @@ export function CustomerRecentOrders({
                   <PackageOpen size={17} /> Os itens deste pedido não estão detalhados na origem.
                 </div>
               )}
-            </article>
+            </details>
           ))}
         </div>
       ) : (

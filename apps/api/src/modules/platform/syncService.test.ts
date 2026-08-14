@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startPrimarySyncScheduler } from "./syncService.js";
+import { PRIMARY_SYNC_INTERVAL_MINUTES, startPrimarySyncScheduler } from "./syncService.js";
 
 describe("startPrimarySyncScheduler", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("uses a 15 minute source synchronization window for the TV dashboard", () => {
+    expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(15);
   });
 
   it("runs primary sync immediately and on later checks when the schedule allows it", async () => {

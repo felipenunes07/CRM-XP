@@ -27,6 +27,7 @@ import {
   refreshCustomerCreditOverview,
   updateCustomerCreditSettings,
 } from "./modules/crm/customerCreditService.js";
+import { getCustomerAnalytics } from "./modules/crm/customerAnalyticsService.js";
 import {
   getCustomerDefectCustomerDetail,
   getCustomerDefectOverview,
@@ -867,7 +868,9 @@ export function createApp() {
   app.get("/api/dashboard/executive", async (request, response, next) => {
     try {
       const query = executiveDashboardQuerySchema.parse(request.query);
-      response.setHeader("Cache-Control", "public, max-age=60, s-maxage=300, stale-while-revalidate=600");
+      response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      response.setHeader("Pragma", "no-cache");
+      response.setHeader("Expires", "0");
       response.json(await getExecutiveDashboardMetrics(query));
     } catch (error) {
       next(error instanceof RangeError ? new HttpError(400, error.message) : error);
@@ -1299,6 +1302,18 @@ export function createApp() {
         throw new HttpError(404, "Cliente não encontrado");
       }
       response.json(customer);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customers/:id/analytics", async (request, response, next) => {
+    try {
+      const analytics = await getCustomerAnalytics(request.params.id);
+      if (!analytics) {
+        throw new HttpError(404, "Cliente não encontrado");
+      }
+      response.json(analytics);
     } catch (error) {
       next(error);
     }
