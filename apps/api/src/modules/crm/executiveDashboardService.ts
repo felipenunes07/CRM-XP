@@ -122,7 +122,8 @@ export function fillExecutiveDashboardSellers(
     });
 
   return sellers.sort((left, right) => (
-    right.screenItems - left.screenItems
+    right.totalItems - left.totalItems
+    || right.screenItems - left.screenItems
     || right.totalOrders - left.totalOrders
     || right.totalRevenue - left.totalRevenue
     || left.attendant.localeCompare(right.attendant, "pt-BR")
@@ -597,7 +598,7 @@ async function loadExecutiveDashboardMetrics(
               wi.updated_at DESC
             LIMIT 1
           ) seller_identity ON true
-          ORDER BY screen_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
+          ORDER BY total_items DESC, screen_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
           LIMIT 10
         `,
         [dailyPeriod.startDate, dailyPeriod.endDateExclusive],

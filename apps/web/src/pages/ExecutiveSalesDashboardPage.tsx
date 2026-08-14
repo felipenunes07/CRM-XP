@@ -33,6 +33,7 @@ import "./executiveSalesDashboard.css";
 
 const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
 const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
+const FULL_PAGE_RELOAD_INTERVAL_MS = 15 * 60 * 1000;
 const DATA_SYNC_INTERVAL_LABEL = "15min";
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
@@ -236,23 +237,19 @@ function ExecutiveHeader({
         onUseCurrentPeriod={onUseCurrentPeriod}
       />
       <div className="executive-header-actions">
-        <div className={`executive-refresh-copy${refreshFailed ? " has-error" : ""}`} title="Os dados são buscados novamente sem precisar recarregar a página">
+        <button
+          type="button"
+          className={`executive-refresh-copy${refreshFailed ? " has-error" : ""}`}
+          onClick={onRefresh}
+          disabled={isFetching}
+          title="Atualizar os dados do painel agora"
+          aria-label={isFetching ? "Atualizando painel" : "Atualizar painel agora"}
+        >
           <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
           <span>
             <strong>{isFetching ? "ATUALIZANDO..." : refreshFailed ? "FALHA AO ATUALIZAR" : "ATUALIZA SOZINHO"}</strong>
             <small>{DATA_SYNC_INTERVAL_LABEL} · {updatedAt}</small>
           </span>
-        </div>
-        <button
-          type="button"
-          className="executive-refresh-button"
-          onClick={onRefresh}
-          disabled={isFetching}
-          title="Buscar os dados mais recentes agora"
-          aria-label={isFetching ? "Atualizando painel" : "Atualizar painel agora"}
-        >
-          <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
-          <span>{isFetching ? "Atualizando" : "Atualizar"}</span>
         </button>
         <span className="executive-live-dot" aria-label="Atualização automática ativa" />
       </div>
@@ -446,8 +443,8 @@ function SellerRow({ seller, rank }: { seller: ExecutiveDashboardSeller | null; 
           <strong>{seller?.attendant ?? "Aguardando vendas"}</strong>
         </div>
         <div className="executive-seller-score">
-          <strong title={seller ? `${formatNumber(seller.screenItems)} telas · ${seller.batteryItems} baterias · ${seller.chargingDockItems} doc. carga` : undefined}>
-            {seller ? formatNumber(seller.screenItems) : "—"}
+          <strong title={seller ? `${formatNumber(seller.totalItems)} itens · ${formatNumber(seller.screenItems)} telas · ${formatNumber(seller.batteryItems)} baterias · ${formatNumber(seller.chargingDockItems)} doc. carga` : undefined}>
+            {seller ? formatNumber(seller.totalItems) : "—"}
           </strong>
           <span title={seller ? `${seller.totalOrders} pedidos · ${currencyFormatter.format(seller.totalRevenue)}` : undefined}>
             {RANK_EMOJIS[rank]}
@@ -632,6 +629,28 @@ export function ExecutiveSalesDashboardPage() {
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [followsCurrentPeriod]);
+
+  useEffect(() => {
+    if (!followsCurrentPeriod) return;
+
+    const pageOpenedAt = Date.now();
+    const reloadIfNeeded = () => {
+      if (Date.now() - pageOpenedAt < FULL_PAGE_RELOAD_INTERVAL_MS) return;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("tvRefresh", String(Date.now()));
+      window.location.replace(nextUrl.toString());
+    };
+
+    // Checagem curta: se o navegador da TV suspender timers, a primeira execucao
+    // ao retomar percebe o tempo transcorrido e recarrega a aplicacao completa.
+    const interval = window.setInterval(reloadIfNeeded, AUTO_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", reloadIfNeeded);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", reloadIfNeeded);
     };
   }, [followsCurrentPeriod]);
 
