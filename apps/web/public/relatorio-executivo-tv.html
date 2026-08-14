@@ -7,7 +7,7 @@
     <link rel="icon" type="image/jpeg" href="/xp-logo.jpg">
     <style>
       html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #eef2fb; }
-      body { color: #101725; font-family: Arial, Helvetica, sans-serif; }
+      body { color: #101725; font-family: "Segoe UI", Arial, Helvetica, sans-serif; }
       * { box-sizing: border-box; }
       #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #eef2fb; }
       #canvas { position: absolute; left: 0; top: 0; width: 1900px; height: 1040px; overflow: hidden; background: #fff; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
@@ -15,23 +15,27 @@
       .brand { display: block; width: 110px; margin: 30px auto 24px; }
       .brand img { width: 100%; height: auto; }
       .side-line { height: 1px; margin: 0 18px 22px; background: #dfe3eb; }
-      .side-button { width: 112px; margin: 0 auto; padding: 15px 5px; border-radius: 7px; color: #fff; background: #2855dd; font-size: 18px; font-weight: bold; }
+      .side-button { width: 112px; height: 58px; margin: 0 auto; padding: 10px 5px; border-radius: 8px; color: #fff; background: #2855dd; font-size: 16px; font-weight: 700; box-shadow: 0 5px 12px rgba(40,85,221,.22); }
+      .side-button .ui-icon { display: block; margin: 0 auto 2px; }
       .tv-badge { width: 112px; margin: 18px auto; padding: 12px 5px; border: 1px solid #d8e1f6; border-radius: 10px; background: #f4f7fd; color: #071f54; font-weight: bold; }
       .live-dot { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; background: #2cad78; vertical-align: middle; }
       .olist { position: absolute; bottom: 28px; left: 0; width: 100%; color: #0754cf; font-size: 28px; font-weight: bold; }
       .olist b { color: #ff4c6a; }
       .content { position: absolute; left: 168px; top: 0; width: 1714px; height: 1040px; }
       .header { position: relative; height: 88px; white-space: nowrap; }
-      .title { position: absolute; left: 5px; top: 24px; font-size: 30px; font-weight: normal; }
+      .title { position: absolute; left: 5px; top: 23px; font-size: 31px; font-weight: 400; letter-spacing: -.8px; }
       .title strong { color: #000; }
-      .title .runner { margin-left: 9px; }
-      .filters { position: absolute; left: 670px; top: 20px; height: 48px; padding: 6px 8px; border: 1px solid #d8e1f5; border-radius: 10px; background: #f8faff; font-size: 13px; }
+      .title .runner { display: inline-block; width: 31px; height: 31px; margin-left: 8px; color: #071f54; vertical-align: -6px; }
+      .filters { position: absolute; left: 650px; top: 18px; height: 52px; padding: 8px 10px; border: 1px solid #d8e1f5; border-radius: 11px; background: #f8faff; font-size: 13px; }
+      .filters > .ui-icon { margin-right: 3px; color: #2855dd; vertical-align: -5px; }
       .filters label { margin-left: 6px; color: #52617a; }
       .filters select { height: 32px; min-width: 76px; margin-left: 4px; border: 1px solid #cbd5e8; border-radius: 5px; background: #fff; color: #1b2942; font-size: 14px; }
       .filters #day { min-width: 142px; }
       .filters button { height: 32px; margin-left: 7px; padding: 0 14px; border: 0; border-radius: 5px; color: #fff; background: #2855dd; font-weight: bold; }
+      .filters button .ui-icon { margin-right: 4px; vertical-align: -4px; }
       .refresh { position: absolute; right: 15px; top: 25px; color: #16356c; font-size: 12px; text-align: right; }
       .refresh strong { display: block; font-size: 12px; }
+      .refresh .ui-icon { margin-right: 4px; color: #2855dd; vertical-align: -4px; }
       .refresh span { color: #72809a; }
       .layout-table { display: table; width: 100%; table-layout: fixed; border-spacing: 0; }
       .layout-cell { display: table-cell; vertical-align: top; }
@@ -50,15 +54,16 @@
       .inventory div { display: inline-block; min-width: 105px; text-align: center; vertical-align: middle; }
       .inventory span { display: block; font-size: 13px; }
       .inventory strong { display: block; color: #071f54; font-size: 22px; }
-      .inventory .boxes { min-width: 50px; color: #1244ae; font-size: 36px; }
+      .inventory .boxes { min-width: 54px; color: #1244ae; }
+      .inventory .boxes .ui-icon { width: 41px; height: 41px; }
       .performance { padding: 24px 24px 18px; }
       .summary { float: left; width: 235px; height: 365px; padding: 20px 18px; border-left: 7px solid #2855dd; background: #f8faff; }
       .summary .eyebrow { display: block; color: #344055; font-size: 16px; font-weight: bold; }
-      .summary .big { display: block; margin: 10px 0 18px; color: #1653c5; font-size: 58px; line-height: 1; }
+      .summary .big { display: block; margin: 10px 0 18px; color: #1653c5; font-size: 64px; font-weight: 700; line-height: 1; letter-spacing: -2px; }
       .summary-pair { display: table; width: 100%; table-layout: fixed; }
       .summary-pair div { display: table-cell; padding: 10px; border: 1px solid #d9e1f1; background: #fff; }
       .summary-pair span { display: block; color: #66738a; font-size: 11px; }
-      .summary-pair strong { display: block; margin-top: 4px; color: #09255c; font-size: 19px; }
+      .summary-pair strong { display: block; margin-top: 4px; color: #09255c; font-size: 21px; font-weight: 700; }
       .overall-progress { position: relative; height: 14px; margin-top: 20px; border-radius: 8px; background: #e3e8f1; }
       .overall-progress i { display: block; height: 14px; border-radius: 8px; background: #2855dd; }
       .overall-percent { display: block; margin-top: 8px; color: #2855dd; font-size: 17px; font-weight: bold; text-align: right; }
@@ -69,16 +74,20 @@
       .product-head span, .product-row > span, .product-row > div { display: table-cell; vertical-align: middle; text-align: center; }
       .product-head span:first-child, .product-row > div:first-child { width: 31%; text-align: left; }
       .product-row { height: 64px; border-top: 1px solid #dfe4ee; }
-      .product-name i { display: inline-block; width: 35px; height: 35px; margin-right: 10px; border-radius: 7px; color: #fff; font-size: 12px; font-style: normal; font-weight: bold; line-height: 35px; text-align: center; }
-      .product-name strong { font-size: 16px; }
-      .metric { color: #001c55; font-size: 21px; font-weight: bold; }
-      .metric.today { color: #0754cf; font-size: 25px; }
+      .product-name i { display: inline-block; width: 37px; height: 37px; margin-right: 10px; border-radius: 8px; color: #fff; font-size: 12px; font-style: normal; font-weight: bold; line-height: 37px; text-align: center; vertical-align: middle; }
+      .product-name i .ui-icon { width: 21px; height: 21px; margin-top: 8px; }
+      .product-name strong { font-size: 17px; font-weight: 700; vertical-align: middle; }
+      .metric { color: #001c55; font-size: 24px; font-weight: 700; letter-spacing: -.5px; }
+      .metric.today { color: #0754cf; font-size: 29px; }
       .progress-cell { padding-left: 12px; }
       .progress-track { display: inline-block; width: 88px; height: 12px; border-radius: 8px; background: #e3e8f1; vertical-align: middle; }
       .progress-track i { display: block; height: 12px; border-radius: 8px; }
       .progress-value { display: inline-block; width: 49px; font-size: 13px; font-weight: bold; text-align: right; }
       .ranking-head { height: 80px; padding: 28px 24px 0; border-bottom: 1px solid rgba(255,255,255,.35); }
-      .ranking-head h2 { display: inline-block; margin: 0; font-size: 21px; }
+      .ranking-head h2 { display: inline-block; margin: 0; font-size: 22px; }
+      .ranking-search { position: absolute; right: 24px; top: 26px; width: 27px; height: 27px; color: #fff; }
+      .ranking-search.ui-icon { width: 27px; height: 27px; }
+      .ranking-head { position: relative; }
       .ranking-list { padding: 26px 20px; }
       .seller { display: table; width: 100%; height: 88px; margin-bottom: 11px; table-layout: fixed; }
       .avatar { position: relative; display: table-cell; width: 88px; height: 88px; overflow: hidden; color: #fff; font-size: 25px; font-weight: bold; line-height: 88px; text-align: center; vertical-align: middle; }
@@ -86,12 +95,13 @@
       .seller-info { display: table-cell; padding: 13px 15px; border: 1px solid rgba(255,255,255,.55); border-radius: 9px; background: rgba(255,255,255,.24); vertical-align: middle; }
       .seller-copy { float: left; width: 56%; border-right: 1px solid rgba(255,255,255,.5); }
       .seller-copy small { display: block; font-size: 11px; }
-      .seller-copy strong { display: block; margin-top: 3px; overflow: hidden; font-size: 21px; white-space: nowrap; text-overflow: ellipsis; }
-      .seller-score { float: right; width: 41%; padding-top: 9px; font-size: 24px; font-weight: bold; text-align: right; }
+      .seller-copy strong { display: block; margin-top: 2px; overflow: hidden; font-size: 24px; font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+      .seller-score { float: right; width: 41%; padding-top: 5px; font-size: 29px; font-weight: 700; letter-spacing: -.5px; text-align: right; white-space: nowrap; }
+      .rank-icon { width: 30px; height: 30px; margin-left: 7px; vertical-align: -6px; }
       .chart-heading { position: relative; height: 65px; padding: 17px 20px 0; }
-      .chart-heading h2 { display: inline-block; margin: 0; font-size: 23px; }
+      .chart-heading h2 { display: inline-block; margin: 0; font-size: 24px; font-weight: 700; }
       .chart-heading small { margin-left: 8px; color: #6e7b92; font-size: 11px; }
-      .delta { position: absolute; right: 22px; top: 18px; font-size: 20px; }
+      .delta { position: absolute; right: 22px; top: 16px; font-size: 22px; font-weight: 600; }
       .daily-chart { position: relative; height: 315px; margin: 0 24px; padding: 20px 0 38px 70px; border-bottom: 1px solid #bfc7d6; }
       .target-line { position: absolute; left: 70px; right: 0; border-top: 1px dashed #8894aa; color: #65718a; font-size: 11px; text-align: right; }
       .bars { display: table; width: 100%; height: 255px; table-layout: fixed; }
@@ -103,10 +113,12 @@
       .month-row { display: table; width: 100%; height: 37px; table-layout: fixed; }
       .month-label { display: table-cell; width: 38px; color: #667187; font-size: 14px; vertical-align: middle; }
       .month-track { display: table-cell; vertical-align: middle; }
-      .month-bar { min-width: 35px; height: 27px; color: #fff; background: #2855dd; font-size: 13px; font-weight: bold; line-height: 27px; text-align: right; }
+      .month-bar { min-width: 35px; height: 29px; color: #fff; background: #2855dd; font-size: 15px; font-weight: 700; line-height: 29px; text-align: right; }
       .month-bar span { padding-right: 7px; }
       .state { padding: 80px 20px; color: #21417b; font-size: 22px; text-align: center; }
       .error { color: #a52525; }
+      .ui-icon { display: inline-block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+      .title .runner .ui-icon { width: 31px; height: 31px; }
     </style>
   </head>
   <body>
@@ -115,20 +127,24 @@
         <div class="sidebar">
           <a class="brand" href="/"><img src="/xp-factory-logo.png" alt="XP Factory"></a>
           <div class="side-line"></div>
-          <div class="side-button">▦&nbsp; Painel</div>
+          <div class="side-button">
+            <svg class="ui-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+            Painel
+          </div>
           <div class="tv-badge"><span class="live-dot"></span>TV<br><small>5 min</small></div>
           <div class="olist">olist<b>•</b></div>
         </div>
         <div class="content">
           <div class="header">
-            <div class="title">PERFORMANCE DE <strong>VENDAS</strong><span class="runner">🏃</span></div>
+            <div class="title">PERFORMANCE DE <strong>VENDAS</strong><span class="runner"><svg class="ui-icon" viewBox="0 0 24 24"><circle cx="14" cy="4" r="2"></circle><path d="m7 21 3-6 2 2 1 4"></path><path d="m6 12 4-5 4 3 4 1"></path><path d="m10 7 2 5-5 2"></path></svg></span></div>
             <div class="filters">
+              <svg class="ui-icon" viewBox="0 0 24 24"><path d="M4 6h10"></path><path d="M18 6h2"></path><circle cx="16" cy="6" r="2"></circle><path d="M4 12h2"></path><path d="M10 12h10"></path><circle cx="8" cy="12" r="2"></circle><path d="M4 18h10"></path><path d="M18 18h2"></path><circle cx="16" cy="18" r="2"></circle></svg>
               <label>Ano <select id="year"></select></label>
               <label>Mês <select id="month"></select></label>
               <label>Dia <select id="day"></select></label>
-              <button id="current" type="button">▣ Atual</button>
+              <button id="current" type="button"><svg class="ui-icon" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>Atual</button>
             </div>
-            <div class="refresh"><strong>↻ ATUALIZA SOZINHO <span class="live-dot"></span></strong><span id="updated">Carregando...</span></div>
+            <div class="refresh"><strong><svg class="ui-icon" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0 2 5"></path><path d="M20 4v7h-7"></path></svg>ATUALIZA SOZINHO <span class="live-dot"></span></strong><span id="updated">Carregando...</span></div>
           </div>
           <div class="layout-table top-row">
             <div class="layout-cell wide"><div id="primary" class="panel primary"><div class="state">Carregando indicadores...</div></div></div>
@@ -148,7 +164,6 @@
         var API_URL = "https://xpcrm-crm-backend.f0dgeg.easypanel.host/api/dashboard/executive";
         var MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
         var COLORS = ["#e85ecf", "#8a6be8", "#d93636", "#57d99d"];
-        var MEDALS = ["🏆", "🥈", "🥉", "♥"];
         var refreshTimer = null;
         var retryTimer = null;
         var followsCurrentPeriod = true;
@@ -173,6 +188,20 @@
         function percent(value) { return (Number(value) || 0).toFixed(1).replace(".", ",") + "%"; }
         function escapeHtml(value) {
           return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+        }
+        function icon(name, extraClass) {
+          var body = "";
+          if (name === "boxes") body = '<path d="m12 2 5 3-5 3-5-3 5-3Z"></path><path d="m7 5v6l5 3 5-3V5"></path><path d="m5 11 5 3-5 3-4-3 4-3Z"></path><path d="m19 11 4 3-4 3-5-3 5-3Z"></path><path d="M1 14v5l4 3 5-3v-5M14 14v5l5 3 4-3v-5"></path>';
+          if (name === "search") body = '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>';
+          if (name === "battery") body = '<rect x="3" y="6" width="16" height="12" rx="2"></rect><path d="M22 10v4M8 10v4M11 9v6M14 11v2"></path>';
+          if (name === "plug") body = '<path d="M9 2v6M15 2v6M7 8h10v2a5 5 0 0 1-5 5 5 5 0 0 1-5-5V8Z"></path><path d="M12 15v7"></path>';
+          return '<svg class="ui-icon ' + (extraClass || "") + '" viewBox="0 0 24 24">' + body + '</svg>';
+        }
+        function rankIcon(rank) {
+          if (rank === 0) return '<svg class="rank-icon" viewBox="0 0 32 32"><path d="M10 5h12v5c0 5-2.5 8-6 8s-6-3-6-8V5Z" fill="#ffc928" stroke="#6f4b00" stroke-width="2"></path><path d="M10 8H5c0 5 2 8 7 8M22 8h5c0 5-2 8-7 8M16 18v6M11 27h10" fill="none" stroke="#6f4b00" stroke-width="2" stroke-linecap="round"></path></svg>';
+          if (rank === 1) return '<svg class="rank-icon" viewBox="0 0 32 32"><path d="m10 3 6 8 6-8v11H10V3Z" fill="#7fb5db" stroke="#2d5877" stroke-width="2"></path><circle cx="16" cy="20" r="8" fill="#dce4ec" stroke="#5b6e82" stroke-width="2"></circle><text x="16" y="24" text-anchor="middle" font-size="11" font-family="Arial" font-weight="bold" fill="#526579">2</text></svg>';
+          if (rank === 2) return '<svg class="rank-icon" viewBox="0 0 32 32"><path d="m10 3 6 8 6-8v11H10V3Z" fill="#45b981" stroke="#176a47" stroke-width="2"></path><circle cx="16" cy="20" r="8" fill="#f09a36" stroke="#8b4b10" stroke-width="2"></circle><text x="16" y="24" text-anchor="middle" font-size="11" font-family="Arial" font-weight="bold" fill="#6a3408">3</text></svg>';
+          return '<svg class="rank-icon" viewBox="0 0 32 32"><path d="M16 27S5 20 5 12a6 6 0 0 1 11-3 6 6 0 0 1 11 3c0 8-11 15-11 15Z" fill="#ff6681" stroke="#a6223a" stroke-width="2"></path></svg>';
         }
         function initials(name) {
           var parts = String(name || "?").replace(/^\s+|\s+$/g, "").split(/\s+/);
@@ -283,15 +312,15 @@
           var monthly = data.monthlyProductBreakdown || {};
           var targets = data.productTargets || {};
           var products = [
-            ["XP", "Telas XP", data.productBreakdown.screenXpItems, monthly.screenXpItems, targets.screenXpItems, "#2855dd"],
-            ["VV", "Telas VV", data.productBreakdown.screenVvItems, monthly.screenVvItems, targets.screenVvItems, "#7758dc"],
-            ["DE", "Telas DE", data.productBreakdown.screenDeItems, monthly.screenDeItems, targets.screenDeItems, "#e45b4b"],
-            ["BAT", "Baterias", data.productBreakdown.batteryItems, monthly.batteryItems, targets.batteryItems, "#18a68b"],
-            ["DOC", "Dock de carga", data.productBreakdown.chargingDockItems, monthly.chargingDockItems, targets.chargingDockItems, "#e69a00"]
+            ["XP", "Telas XP", data.productBreakdown.screenXpItems, monthly.screenXpItems, targets.screenXpItems, "#2855dd", ""],
+            ["VV", "Telas VV", data.productBreakdown.screenVvItems, monthly.screenVvItems, targets.screenVvItems, "#7758dc", ""],
+            ["DE", "Telas DE", data.productBreakdown.screenDeItems, monthly.screenDeItems, targets.screenDeItems, "#e45b4b", ""],
+            ["BAT", "Baterias", data.productBreakdown.batteryItems, monthly.batteryItems, targets.batteryItems, "#18a68b", "battery"],
+            ["DOC", "Dock de carga", data.productBreakdown.chargingDockItems, monthly.chargingDockItems, targets.chargingDockItems, "#e69a00", "plug"]
           ];
           var totalProgress = data.summary.monthlyTarget > 0 ? (data.summary.monthScreenItems / data.summary.monthlyTarget) * 100 : 0;
           var html = '<div class="panel-heading"><h2>PRINCIPAIS INDICADORES <span class="day-tag">' + formatDay(data.selection.dailyDate) + '</span></h2>';
-          html += '<div class="inventory"><div><span>PRODUTOS</span><strong>' + number(data.inventory.productCount) + '</strong></div><div class="boxes">▦</div><div><span>ESTOQUE</span><strong>' + compact(data.inventory.stockPieces) + '</strong></div></div></div>';
+          html += '<div class="inventory"><div><span>PRODUTOS</span><strong>' + number(data.inventory.productCount) + '</strong></div><div class="boxes">' + icon("boxes", "") + '</div><div><span>ESTOQUE</span><strong>' + compact(data.inventory.stockPieces) + '</strong></div></div></div>';
           html += '<div class="performance"><div class="summary"><span class="eyebrow">TELAS DO DIA</span><strong class="big">' + number(data.productBreakdown.screenItems) + '</strong>';
           html += '<div class="summary-pair"><div><span>NO MÊS</span><strong>' + number(data.summary.monthScreenItems) + '</strong></div><div><span>META TELAS</span><strong>' + number(data.summary.monthlyTarget) + '</strong></div></div>';
           html += '<div class="overall-progress"><i style="width:' + Math.min(totalProgress, 100) + '%"></i></div><span class="overall-percent">' + percent(totalProgress) + '</span><small>XP + VV + DE no mês</small></div>';
@@ -299,7 +328,7 @@
           for (var i = 0; i < products.length; i += 1) {
             var p = products[i];
             var progress = Number(p[4]) > 0 ? (Number(p[3]) / Number(p[4])) * 100 : 0;
-            html += '<div class="product-row"><div class="product-name"><i style="background:' + p[5] + '">' + p[0] + '</i><strong>' + p[1] + '</strong></div>';
+            html += '<div class="product-row"><div class="product-name"><i style="background:' + p[5] + '">' + (p[6] ? icon(p[6], "") : p[0]) + '</i><strong>' + p[1] + '</strong></div>';
             html += '<span class="metric today">' + number(p[2]) + '</span><span class="metric">' + number(p[3]) + '</span><span class="metric">' + number(p[4]) + '</span>';
             html += '<div class="progress-cell"><span class="progress-track"><i style="width:' + Math.min(progress, 100) + '%;background:' + p[5] + '"></i></span><span class="progress-value">' + percent(progress) + '</span></div></div>';
           }
@@ -308,13 +337,13 @@
         }
         function renderRanking(data) {
           var sellers = data.sellers || [];
-          var html = '<div class="ranking-head"><h2>TOP VENDEDORES <span class="day-tag">' + formatDay(data.selection.dailyDate) + '</span></h2></div><div class="ranking-list">';
+          var html = '<div class="ranking-head"><h2>TOP VENDEDORES <span class="day-tag">' + formatDay(data.selection.dailyDate) + '</span></h2>' + icon("search", "ranking-search") + '</div><div class="ranking-list">';
           for (var i = 0; i < 4; i += 1) {
             var seller = sellers[i];
             var name = seller ? seller.attendant : "Aguardando vendas";
             var photo = seller && seller.profilePictureUrl ? '<img src="' + escapeHtml(seller.profilePictureUrl) + '" alt="" onerror="this.style.display=\'none\'">' : "";
             html += '<div class="seller"><div class="avatar" style="background:' + COLORS[i] + '">' + initials(name) + photo + '</div><div class="seller-info">';
-            html += '<div class="seller-copy"><small>Nome</small><strong>' + escapeHtml(name) + '</strong></div><div class="seller-score">' + (seller ? number(seller.screenItems) : "—") + ' ' + MEDALS[i] + '</div></div></div>';
+            html += '<div class="seller-copy"><small>Nome</small><strong>' + escapeHtml(name) + '</strong></div><div class="seller-score">' + (seller ? number(seller.screenItems) : "—") + rankIcon(i) + '</div></div></div>';
           }
           html += '</div>';
           byId("ranking").innerHTML = html;
