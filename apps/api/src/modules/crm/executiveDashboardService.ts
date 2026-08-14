@@ -181,9 +181,15 @@ const executiveDashboardCache = new Map<
   { value: ExecutiveDashboardMetrics; expiresAt: number }
 >();
 const executiveDashboardRequests = new Map<string, Promise<ExecutiveDashboardMetrics>>();
+let executiveDashboardCacheGeneration = 0;
 
 function executiveDashboardCacheKey(period: ExecutiveDashboardResolvedPeriod) {
-  return `${period.year}-${period.month}-${period.day ?? "latest"}`;
+  return `${executiveDashboardCacheGeneration}:${period.year}-${period.month}-${period.day ?? "latest"}`;
+}
+
+export function clearExecutiveDashboardCache() {
+  executiveDashboardCacheGeneration += 1;
+  executiveDashboardCache.clear();
 }
 
 async function loadExecutiveDashboardMetrics(

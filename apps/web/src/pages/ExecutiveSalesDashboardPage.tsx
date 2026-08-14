@@ -31,7 +31,7 @@ import type {
 import { api } from "../lib/api";
 import "./executiveSalesDashboard.css";
 
-const AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
@@ -137,11 +137,11 @@ function ExecutiveSidebar() {
         </div>
       </nav>
 
-      <div className="executive-tv-mode" title="Modo TV com atualização automática a cada hora">
+      <div className="executive-tv-mode" title="Modo TV com atualização automática a cada 5 minutos">
         <span className="executive-live-dot" />
         <div>
           <strong>TV</strong>
-          <small>1h</small>
+          <small>5min</small>
         </div>
       </div>
 
@@ -235,7 +235,7 @@ function ExecutiveHeader({
           <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
           <span>
             <strong>ATUALIZA SOZINHO</strong>
-            <small>1 hora · {updatedAt}</small>
+            <small>5 min · {updatedAt}</small>
           </span>
         </div>
         <span className="executive-live-dot" aria-label="Atualização automática ativa" />
