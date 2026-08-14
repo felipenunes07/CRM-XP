@@ -131,4 +131,40 @@ describe("resolveExecutiveDashboardPeriod", () => {
       });
     }
   });
+
+  it("ranks sellers by every item sold instead of screens only", () => {
+    const sellers = fillExecutiveDashboardSellers(
+      [
+        { attendant: "Tamires", profile_picture_url: "https://photos.test/tamires.jpg" },
+        { attendant: "Thais", profile_picture_url: "https://photos.test/thais.jpg" },
+      ],
+      [
+        {
+          attendant: "Tamires",
+          profile_picture_url: null,
+          total_orders: 4,
+          unique_customers: 3,
+          total_revenue: 1000,
+          total_items: 1483,
+          screen_items: 233,
+          battery_items: 1240,
+          charging_dock_items: 10,
+        },
+        {
+          attendant: "Thais",
+          profile_picture_url: null,
+          total_orders: 8,
+          unique_customers: 8,
+          total_revenue: 2000,
+          total_items: 1192,
+          screen_items: 1141,
+          battery_items: 45,
+          charging_dock_items: 6,
+        },
+      ],
+    );
+
+    expect(sellers.map((seller) => seller.attendant)).toEqual(["Tamires", "Thais", "Lucas"]);
+    expect(sellers[0]).toMatchObject({ totalItems: 1483, screenItems: 233 });
+  });
 });
