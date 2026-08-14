@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XP - Performance de Vendas</title>
+    <link rel="icon" type="image/jpeg" href="/xp-logo.jpg">
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #eef2fb; }
+      body { color: #101725; font-family: Arial, Helvetica, sans-serif; }
+      * { box-sizing: border-box; }
+      #stage { position: relative; width: 100%; height: 100%; overflow: hidden; background: #eef2fb; }
+      #canvas { position: absolute; left: 0; top: 0; width: 1900px; height: 1040px; overflow: hidden; background: #fff; -webkit-transform-origin: 0 0; transform-origin: 0 0; }
+      .sidebar { position: absolute; left: 0; top: 0; width: 150px; height: 1040px; border-right: 1px solid #d9deea; background: #fff; text-align: center; }
+      .brand { display: block; width: 110px; margin: 30px auto 24px; }
+      .brand img { width: 100%; height: auto; }
+      .side-line { height: 1px; margin: 0 18px 22px; background: #dfe3eb; }
+      .side-button { width: 112px; margin: 0 auto; padding: 15px 5px; border-radius: 7px; color: #fff; background: #2855dd; font-size: 18px; font-weight: bold; }
+      .tv-badge { width: 112px; margin: 18px auto; padding: 12px 5px; border: 1px solid #d8e1f6; border-radius: 10px; background: #f4f7fd; color: #071f54; font-weight: bold; }
+      .live-dot { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; background: #2cad78; vertical-align: middle; }
+      .olist { position: absolute; bottom: 28px; left: 0; width: 100%; color: #0754cf; font-size: 28px; font-weight: bold; }
+      .olist b { color: #ff4c6a; }
+      .content { position: absolute; left: 168px; top: 0; width: 1714px; height: 1040px; }
+      .header { position: relative; height: 88px; white-space: nowrap; }
+      .title { position: absolute; left: 5px; top: 24px; font-size: 30px; font-weight: normal; }
+      .title strong { color: #000; }
+      .title .runner { margin-left: 9px; }
+      .filters { position: absolute; left: 670px; top: 20px; height: 48px; padding: 6px 8px; border: 1px solid #d8e1f5; border-radius: 10px; background: #f8faff; font-size: 13px; }
+      .filters label { margin-left: 6px; color: #52617a; }
+      .filters select { height: 32px; min-width: 76px; margin-left: 4px; border: 1px solid #cbd5e8; border-radius: 5px; background: #fff; color: #1b2942; font-size: 14px; }
+      .filters #day { min-width: 142px; }
+      .filters button { height: 32px; margin-left: 7px; padding: 0 14px; border: 0; border-radius: 5px; color: #fff; background: #2855dd; font-weight: bold; }
+      .refresh { position: absolute; right: 15px; top: 25px; color: #16356c; font-size: 12px; text-align: right; }
+      .refresh strong { display: block; font-size: 12px; }
+      .refresh span { color: #72809a; }
+      .layout-table { display: table; width: 100%; table-layout: fixed; border-spacing: 0; }
+      .layout-cell { display: table-cell; vertical-align: top; }
+      .layout-gap { width: 16px; }
+      .panel { overflow: hidden; border: 2px solid #2855dd; border-radius: 28px; background: #fff; box-shadow: 0 8px 15px rgba(13, 38, 86, .13); }
+      .top-row .primary { height: 510px; }
+      .top-row .ranking { height: 510px; background: #2855dd; color: #fff; }
+      .bottom-row { margin-top: 17px; }
+      .bottom-row .panel { height: 407px; }
+      .wide { width: 69%; }
+      .narrow { width: 31%; }
+      .panel-heading { position: relative; height: 82px; padding: 28px 25px 0; border-bottom: 1px solid #dce2ee; }
+      .panel-heading h2 { margin: 0; font-size: 22px; }
+      .day-tag { display: inline-block; margin-left: 10px; padding: 5px 9px; border-radius: 12px; color: #2350d0; background: #edf3ff; font-size: 11px; vertical-align: 3px; }
+      .inventory { position: absolute; right: 28px; top: 16px; height: 55px; white-space: nowrap; }
+      .inventory div { display: inline-block; min-width: 105px; text-align: center; vertical-align: middle; }
+      .inventory span { display: block; font-size: 13px; }
+      .inventory strong { display: block; color: #071f54; font-size: 22px; }
+      .inventory .boxes { min-width: 50px; color: #1244ae; font-size: 36px; }
+      .performance { padding: 24px 24px 18px; }
+      .summary { float: left; width: 235px; height: 365px; padding: 20px 18px; border-left: 7px solid #2855dd; background: #f8faff; }
+      .summary .eyebrow { display: block; color: #344055; font-size: 16px; font-weight: bold; }
+      .summary .big { display: block; margin: 10px 0 18px; color: #1653c5; font-size: 58px; line-height: 1; }
+      .summary-pair { display: table; width: 100%; table-layout: fixed; }
+      .summary-pair div { display: table-cell; padding: 10px; border: 1px solid #d9e1f1; background: #fff; }
+      .summary-pair span { display: block; color: #66738a; font-size: 11px; }
+      .summary-pair strong { display: block; margin-top: 4px; color: #09255c; font-size: 19px; }
+      .overall-progress { position: relative; height: 14px; margin-top: 20px; border-radius: 8px; background: #e3e8f1; }
+      .overall-progress i { display: block; height: 14px; border-radius: 8px; background: #2855dd; }
+      .overall-percent { display: block; margin-top: 8px; color: #2855dd; font-size: 17px; font-weight: bold; text-align: right; }
+      .summary small { display: block; margin-top: 18px; color: #71809a; }
+      .product-table { margin-left: 255px; height: 365px; }
+      .product-head, .product-row { display: table; width: 100%; table-layout: fixed; }
+      .product-head { height: 34px; color: #738099; font-size: 11px; font-weight: bold; }
+      .product-head span, .product-row > span, .product-row > div { display: table-cell; vertical-align: middle; text-align: center; }
+      .product-head span:first-child, .product-row > div:first-child { width: 31%; text-align: left; }
+      .product-row { height: 64px; border-top: 1px solid #dfe4ee; }
+      .product-name i { display: inline-block; width: 35px; height: 35px; margin-right: 10px; border-radius: 7px; color: #fff; font-size: 12px; font-style: normal; font-weight: bold; line-height: 35px; text-align: center; }
+      .product-name strong { font-size: 16px; }
+      .metric { color: #001c55; font-size: 21px; font-weight: bold; }
+      .metric.today { color: #0754cf; font-size: 25px; }
+      .progress-cell { padding-left: 12px; }
+      .progress-track { display: inline-block; width: 88px; height: 12px; border-radius: 8px; background: #e3e8f1; vertical-align: middle; }
+      .progress-track i { display: block; height: 12px; border-radius: 8px; }
+      .progress-value { display: inline-block; width: 49px; font-size: 13px; font-weight: bold; text-align: right; }
+      .ranking-head { height: 80px; padding: 28px 24px 0; border-bottom: 1px solid rgba(255,255,255,.35); }
+      .ranking-head h2 { display: inline-block; margin: 0; font-size: 21px; }
+      .ranking-list { padding: 26px 20px; }
+      .seller { display: table; width: 100%; height: 88px; margin-bottom: 11px; table-layout: fixed; }
+      .avatar { position: relative; display: table-cell; width: 88px; height: 88px; overflow: hidden; color: #fff; font-size: 25px; font-weight: bold; line-height: 88px; text-align: center; vertical-align: middle; }
+      .avatar img { position: absolute; left: 0; top: 0; width: 88px; height: 88px; object-fit: cover; }
+      .seller-info { display: table-cell; padding: 13px 15px; border: 1px solid rgba(255,255,255,.55); border-radius: 9px; background: rgba(255,255,255,.24); vertical-align: middle; }
+      .seller-copy { float: left; width: 56%; border-right: 1px solid rgba(255,255,255,.5); }
+      .seller-copy small { display: block; font-size: 11px; }
+      .seller-copy strong { display: block; margin-top: 3px; overflow: hidden; font-size: 21px; white-space: nowrap; text-overflow: ellipsis; }
+      .seller-score { float: right; width: 41%; padding-top: 9px; font-size: 24px; font-weight: bold; text-align: right; }
+      .chart-heading { position: relative; height: 65px; padding: 17px 20px 0; }
+      .chart-heading h2 { display: inline-block; margin: 0; font-size: 23px; }
+      .chart-heading small { margin-left: 8px; color: #6e7b92; font-size: 11px; }
+      .delta { position: absolute; right: 22px; top: 18px; font-size: 20px; }
+      .daily-chart { position: relative; height: 315px; margin: 0 24px; padding: 20px 0 38px 70px; border-bottom: 1px solid #bfc7d6; }
+      .target-line { position: absolute; left: 70px; right: 0; border-top: 1px dashed #8894aa; color: #65718a; font-size: 11px; text-align: right; }
+      .bars { display: table; width: 100%; height: 255px; table-layout: fixed; }
+      .bar-cell { position: relative; display: table-cell; height: 255px; text-align: center; vertical-align: bottom; }
+      .bar { display: inline-block; width: 63%; min-height: 2px; background: #001a4f; vertical-align: bottom; }
+      .bar.hit { background: #2855dd; }
+      .bar-label { position: absolute; left: 0; right: 0; bottom: -24px; color: #606b7e; font-size: 13px; }
+      .month-chart { padding: 3px 25px 10px; }
+      .month-row { display: table; width: 100%; height: 37px; table-layout: fixed; }
+      .month-label { display: table-cell; width: 38px; color: #667187; font-size: 14px; vertical-align: middle; }
+      .month-track { display: table-cell; vertical-align: middle; }
+      .month-bar { min-width: 35px; height: 27px; color: #fff; background: #2855dd; font-size: 13px; font-weight: bold; line-height: 27px; text-align: right; }
+      .month-bar span { padding-right: 7px; }
+      .state { padding: 80px 20px; color: #21417b; font-size: 22px; text-align: center; }
+      .error { color: #a52525; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="canvas">
+        <div class="sidebar">
+          <a class="brand" href="/"><img src="/xp-factory-logo.png" alt="XP Factory"></a>
+          <div class="side-line"></div>
+          <div class="side-button">▦&nbsp; Painel</div>
+          <div class="tv-badge"><span class="live-dot"></span>TV<br><small>5 min</small></div>
+          <div class="olist">olist<b>•</b></div>
+        </div>
+        <div class="content">
+          <div class="header">
+            <div class="title">PERFORMANCE DE <strong>VENDAS</strong><span class="runner">🏃</span></div>
+            <div class="filters">
+              <label>Ano <select id="year"></select></label>
+              <label>Mês <select id="month"></select></label>
+              <label>Dia <select id="day"></select></label>
+              <button id="current" type="button">▣ Atual</button>
+            </div>
+            <div class="refresh"><strong>↻ ATUALIZA SOZINHO <span class="live-dot"></span></strong><span id="updated">Carregando...</span></div>
+          </div>
+          <div class="layout-table top-row">
+            <div class="layout-cell wide"><div id="primary" class="panel primary"><div class="state">Carregando indicadores...</div></div></div>
+            <div class="layout-cell layout-gap"></div>
+            <div class="layout-cell narrow"><div id="ranking" class="panel ranking"><div class="state" style="color:#fff">Carregando vendedores...</div></div></div>
+          </div>
+          <div class="layout-table bottom-row">
+            <div class="layout-cell wide"><div id="daily" class="panel"><div class="state">Carregando vendas do mês...</div></div></div>
+            <div class="layout-cell layout-gap"></div>
+            <div class="layout-cell narrow"><div id="monthly" class="panel"><div class="state">Carregando clientes...</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var API_URL = "https://xpcrm-crm-backend.f0dgeg.easypanel.host/api/dashboard/executive";
+        var MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+        var COLORS = ["#e85ecf", "#8a6be8", "#d93636", "#57d99d"];
+        var MEDALS = ["🏆", "🥈", "🥉", "♥"];
+        var refreshTimer = null;
+        var state = currentPeriod();
+
+        function byId(id) { return document.getElementById(id); }
+        function pad(value) { return value < 10 ? "0" + value : String(value); }
+        function currentPeriod() {
+          var brazil = new Date(new Date().getTime() - (3 * 60 * 60 * 1000));
+          return { year: brazil.getUTCFullYear(), month: brazil.getUTCMonth() + 1, day: null };
+        }
+        function number(value) {
+          var text = String(Math.round(Number(value) || 0));
+          return text.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+        function compact(value) {
+          var numeric = Number(value) || 0;
+          if (numeric >= 1000000) return (numeric / 1000000).toFixed(1).replace(".", ",") + " mi";
+          if (numeric >= 1000) return (numeric / 1000).toFixed(1).replace(".0", "").replace(".", ",") + " mil";
+          return number(numeric);
+        }
+        function percent(value) { return (Number(value) || 0).toFixed(1).replace(".", ",") + "%"; }
+        function escapeHtml(value) {
+          return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+        }
+        function initials(name) {
+          var parts = String(name || "?").replace(/^\s+|\s+$/g, "").split(/\s+/);
+          var result = parts[0] ? parts[0].charAt(0) : "?";
+          if (parts.length > 1) result += parts[1].charAt(0);
+          return result.toUpperCase();
+        }
+        function formatDay(date) {
+          var parts = String(date || "").substring(0, 10).split("-");
+          return parts.length === 3 ? "DIA " + Number(parts[2]) + " " + (MONTHS[Number(parts[1]) - 1] || "").toUpperCase() : "DIA";
+        }
+        function scaleCanvas() {
+          var width = window.innerWidth || document.documentElement.clientWidth || 1900;
+          var height = window.innerHeight || document.documentElement.clientHeight || 1040;
+          var scale = Math.min(width / 1900, height / 1040);
+          var canvas = byId("canvas");
+          canvas.style.webkitTransform = "scale(" + scale + ")";
+          canvas.style.transform = "scale(" + scale + ")";
+          canvas.style.left = Math.max((width - (1900 * scale)) / 2, 0) + "px";
+          canvas.style.top = Math.max((height - (1040 * scale)) / 2, 0) + "px";
+        }
+        function requestData() {
+          var updated = byId("updated");
+          updated.innerHTML = "Atualizando dados...";
+          var url = API_URL + "?year=" + state.year + "&month=" + state.month;
+          if (state.day !== null) url += "&day=" + state.day;
+          url += "&_=" + new Date().getTime();
+          var xhr = new XMLHttpRequest();
+          xhr.open("GET", url, true);
+          xhr.timeout = 45000;
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                render(JSON.parse(xhr.responseText));
+              } catch (error) {
+                renderError("A TV recebeu os dados, mas não conseguiu exibir o painel.");
+              }
+            } else {
+              renderError("Não foi possível buscar os dados. Tentando novamente automaticamente.");
+            }
+          };
+          xhr.ontimeout = function () { renderError("A conexão demorou demais. Tentando novamente automaticamente."); };
+          xhr.onerror = function () { renderError("Falha de conexão com o painel. Tentando novamente automaticamente."); };
+          xhr.send(null);
+        }
+        function renderError(message) {
+          var html = '<div class="state error">' + escapeHtml(message) + "</div>";
+          byId("primary").innerHTML = html;
+          byId("ranking").innerHTML = '<div class="state" style="color:#fff">Aguardando conexão...</div>';
+          byId("daily").innerHTML = html;
+          byId("monthly").innerHTML = html;
+          byId("updated").innerHTML = "Nova tentativa em 1 minuto";
+        }
+        function fillFilters(data) {
+          var periods = data.availablePeriods || [];
+          var years = [];
+          var months = [];
+          var i, item, option;
+          for (i = 0; i < periods.length; i += 1) {
+            item = periods[i];
+            if (years.indexOf(item.year) < 0) years.push(item.year);
+            if (item.year === state.year && months.indexOf(item.month) < 0) months.push(item.month);
+          }
+          if (years.indexOf(state.year) < 0) years.push(state.year);
+          if (months.indexOf(state.month) < 0) months.push(state.month);
+          years.sort(function (a, b) { return b - a; });
+          months.sort(function (a, b) { return b - a; });
+          var yearSelect = byId("year");
+          var monthSelect = byId("month");
+          var daySelect = byId("day");
+          yearSelect.innerHTML = "";
+          for (i = 0; i < years.length; i += 1) {
+            option = document.createElement("option"); option.value = years[i]; option.text = years[i]; option.selected = years[i] === state.year; yearSelect.appendChild(option);
+          }
+          monthSelect.innerHTML = "";
+          for (i = 0; i < months.length; i += 1) {
+            option = document.createElement("option"); option.value = months[i]; option.text = MONTHS[months[i] - 1]; option.selected = months[i] === state.month; monthSelect.appendChild(option);
+          }
+          daySelect.innerHTML = '<option value="">Último com venda</option>';
+          var totalDays = new Date(Date.UTC(state.year, state.month, 0)).getUTCDate();
+          for (i = 1; i <= totalDays; i += 1) {
+            option = document.createElement("option"); option.value = i; option.text = i; option.selected = i === state.day; daySelect.appendChild(option);
+          }
+        }
+        function render(data) {
+          fillFilters(data);
+          renderPrimary(data);
+          renderRanking(data);
+          renderDaily(data);
+          renderMonthly(data);
+          var generated = new Date(data.generatedAt || new Date().toISOString());
+          var brazil = new Date(generated.getTime() - (3 * 60 * 60 * 1000));
+          byId("updated").innerHTML = "5 min · " + pad(brazil.getUTCHours()) + ":" + pad(brazil.getUTCMinutes());
+        }
+        function renderPrimary(data) {
+          var monthly = data.monthlyProductBreakdown || {};
+          var targets = data.productTargets || {};
+          var products = [
+            ["XP", "Telas XP", data.productBreakdown.screenXpItems, monthly.screenXpItems, targets.screenXpItems, "#2855dd"],
+            ["VV", "Telas VV", data.productBreakdown.screenVvItems, monthly.screenVvItems, targets.screenVvItems, "#7758dc"],
+            ["DE", "Telas DE", data.productBreakdown.screenDeItems, monthly.screenDeItems, targets.screenDeItems, "#e45b4b"],
+            ["BAT", "Baterias", data.productBreakdown.batteryItems, monthly.batteryItems, targets.batteryItems, "#18a68b"],
+            ["DOC", "Dock de carga", data.productBreakdown.chargingDockItems, monthly.chargingDockItems, targets.chargingDockItems, "#e69a00"]
+          ];
+          var totalProgress = data.summary.monthlyTarget > 0 ? (data.summary.monthScreenItems / data.summary.monthlyTarget) * 100 : 0;
+          var html = '<div class="panel-heading"><h2>PRINCIPAIS INDICADORES <span class="day-tag">' + formatDay(data.selection.dailyDate) + '</span></h2>';
+          html += '<div class="inventory"><div><span>PRODUTOS</span><strong>' + number(data.inventory.productCount) + '</strong></div><div class="boxes">▦</div><div><span>ESTOQUE</span><strong>' + compact(data.inventory.stockPieces) + '</strong></div></div></div>';
+          html += '<div class="performance"><div class="summary"><span class="eyebrow">TELAS DO DIA</span><strong class="big">' + number(data.productBreakdown.screenItems) + '</strong>';
+          html += '<div class="summary-pair"><div><span>NO MÊS</span><strong>' + number(data.summary.monthScreenItems) + '</strong></div><div><span>META TELAS</span><strong>' + number(data.summary.monthlyTarget) + '</strong></div></div>';
+          html += '<div class="overall-progress"><i style="width:' + Math.min(totalProgress, 100) + '%"></i></div><span class="overall-percent">' + percent(totalProgress) + '</span><small>XP + VV + DE no mês</small></div>';
+          html += '<div class="product-table"><div class="product-head"><span>PRODUTO</span><span>HOJE</span><span>NO MÊS</span><span>META</span><span>ATINGIDO</span></div>';
+          for (var i = 0; i < products.length; i += 1) {
+            var p = products[i];
+            var progress = Number(p[4]) > 0 ? (Number(p[3]) / Number(p[4])) * 100 : 0;
+            html += '<div class="product-row"><div class="product-name"><i style="background:' + p[5] + '">' + p[0] + '</i><strong>' + p[1] + '</strong></div>';
+            html += '<span class="metric today">' + number(p[2]) + '</span><span class="metric">' + number(p[3]) + '</span><span class="metric">' + number(p[4]) + '</span>';
+            html += '<div class="progress-cell"><span class="progress-track"><i style="width:' + Math.min(progress, 100) + '%;background:' + p[5] + '"></i></span><span class="progress-value">' + percent(progress) + '</span></div></div>';
+          }
+          html += '</div><div style="clear:both"></div></div>';
+          byId("primary").innerHTML = html;
+        }
+        function renderRanking(data) {
+          var sellers = data.sellers || [];
+          var html = '<div class="ranking-head"><h2>TOP VENDEDORES <span class="day-tag">' + formatDay(data.selection.dailyDate) + '</span></h2></div><div class="ranking-list">';
+          for (var i = 0; i < 4; i += 1) {
+            var seller = sellers[i];
+            var name = seller ? seller.attendant : "Aguardando vendas";
+            var photo = seller && seller.profilePictureUrl ? '<img src="' + escapeHtml(seller.profilePictureUrl) + '" alt="" onerror="this.style.display=\'none\'">' : "";
+            html += '<div class="seller"><div class="avatar" style="background:' + COLORS[i] + '">' + initials(name) + photo + '</div><div class="seller-info">';
+            html += '<div class="seller-copy"><small>Nome</small><strong>' + escapeHtml(name) + '</strong></div><div class="seller-score">' + (seller ? number(seller.screenItems) : "—") + ' ' + MEDALS[i] + '</div></div></div>';
+          }
+          html += '</div>';
+          byId("ranking").innerHTML = html;
+        }
+        function businessDaysThrough(date) {
+          var parts = String(date || "").substring(0, 10).split("-");
+          if (parts.length !== 3) return 0;
+          var count = 0;
+          for (var day = 1; day <= Number(parts[2]); day += 1) {
+            var weekday = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, day)).getUTCDay();
+            if (weekday >= 1 && weekday <= 5) count += 1;
+          }
+          return count;
+        }
+        function renderDaily(data) {
+          var points = data.dailySeries || [];
+          var max = Number(data.summary.dailyTarget) || 1;
+          var i;
+          for (i = 0; i < points.length; i += 1) if (points[i].screenItems > max) max = points[i].screenItems;
+          var elapsed = points.length ? businessDaysThrough(points[points.length - 1].date) : 0;
+          var delta = data.summary.monthScreenItems - (data.summary.dailyTarget * elapsed);
+          var html = '<div class="chart-heading"><h2>Quantidade de Telas por Dia</h2><small>MÊS DE ' + MONTHS[data.selection.month - 1].toUpperCase() + '</small><span class="delta">' + (delta >= 0 ? "▲ " : "▼ ") + number(Math.abs(delta)) + (delta >= 0 ? " acima" : " abaixo") + ' da meta</span></div>';
+          html += '<div class="daily-chart"><div class="target-line" style="bottom:' + (38 + Math.round((data.summary.dailyTarget / max) * 255)) + 'px">Meta ' + number(data.summary.dailyTarget) + '</div><div class="bars">';
+          for (i = 0; i < points.length; i += 1) {
+            var height = Math.max(Math.round((points[i].screenItems / max) * 255), 2);
+            html += '<div class="bar-cell"><span class="bar' + (points[i].screenItems >= data.summary.dailyTarget ? " hit" : "") + '" style="height:' + height + 'px"></span><span class="bar-label">' + points[i].day + '</span></div>';
+          }
+          html += '</div></div>';
+          byId("daily").innerHTML = html;
+        }
+        function renderMonthly(data) {
+          var points = data.monthlyCustomers || [];
+          var max = 1;
+          var i;
+          for (i = 0; i < points.length; i += 1) if (points[i].uniqueCustomers > max) max = points[i].uniqueCustomers;
+          var html = '<div class="chart-heading"><h2>Qtd Clientes por Mês</h2><small>JAN–MÊS ATUAL · ' + data.selection.year + '</small></div><div class="month-chart">';
+          for (i = 0; i < points.length; i += 1) {
+            var width = Math.max(Math.round((points[i].uniqueCustomers / max) * 100), 8);
+            html += '<div class="month-row"><span class="month-label">' + MONTHS[points[i].month - 1] + '</span><div class="month-track"><div class="month-bar" style="width:' + width + '%"><span>' + number(points[i].uniqueCustomers) + '</span></div></div></div>';
+          }
+          html += '</div>';
+          byId("monthly").innerHTML = html;
+        }
+        byId("year").onchange = function () { state.year = Number(this.value); state.month = 1; state.day = null; requestData(); };
+        byId("month").onchange = function () { state.month = Number(this.value); state.day = null; requestData(); };
+        byId("day").onchange = function () { state.day = this.value ? Number(this.value) : null; requestData(); };
+        byId("current").onclick = function () { state = currentPeriod(); requestData(); };
+        window.onresize = scaleCanvas;
+        scaleCanvas();
+        requestData();
+        refreshTimer = window.setInterval(requestData, 5 * 60 * 1000);
+        window.setInterval(function () { scaleCanvas(); }, 60 * 1000);
+      })();
+    </script>
+  </body>
+</html>

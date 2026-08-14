@@ -9,6 +9,16 @@
       name="description"
       content="CRM inteligente para recorrência, reativação e priorização comercial com Olist V2."
     />
+    <script>
+      (function () {
+        var userAgent = navigator.userAgent || "";
+        var forceTvMode = /(?:^|[?&])tv=1(?:&|$)/.test(window.location.search);
+        var isLgTv = /(Web0S|WebOS|webOS|NetCast|LG[ _-]?Browser|LG[ _-]?SmartTV|SmartTV)/i.test(userAgent);
+        if ((forceTvMode || isLgTv) && window.location.pathname !== "/relatorio-executivo-tv.html") {
+          window.location.replace("/relatorio-executivo-tv.html" + window.location.search);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root">
