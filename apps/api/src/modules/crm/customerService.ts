@@ -54,6 +54,27 @@ function mapLabels(value: unknown): CustomerLabel[] {
     .filter((entry): entry is CustomerLabel => Boolean(entry?.id && entry.name));
 }
 
+export function mapCustomerOrderItems(
+  value: unknown,
+): CustomerDetail["recentOrders"][number]["items"] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const row = entry as Record<string, unknown>;
+    if (!row.id) return [];
+
+    return [{
+      id: String(row.id),
+      sku: row.sku ? String(row.sku) : null,
+      itemDescription: String(row.itemDescription ?? "Produto sem descrição"),
+      quantity: Number(row.quantity ?? 0),
+      unitPrice: Number(row.unitPrice ?? 0),
+      lineTotal: Number(row.lineTotal ?? 0),
+    }];
+  });
+}
+
 function mapCustomerRow(row: Record<string, unknown>): CustomerListItem {
   return {
     id: String(row.customer_id),
@@ -482,6 +503,11 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
         s.primary_insight,
         s.insight_tags,
         s.last_attendant,
+        s.state,
+        s.city,
+        c.phone,
+        c.email,
+        c.created_at::text AS customer_since,
         c.internal_notes,
         EXISTS (
           SELECT 1
@@ -527,18 +553,46 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
 
   const ordersResult = await pool.query(
     `
+      WITH recent_orders AS MATERIALIZED (
+        SELECT *
+        FROM orders
+        WHERE customer_id = $1
+        ORDER BY order_date DESC, order_number DESC
+        LIMIT 20
+      )
       SELECT
-        id,
-        order_number,
-        order_date::text AS order_date,
-        source_system,
-        total_amount,
-        status,
-        item_count
-      FROM orders
-      WHERE customer_id = $1
-      ORDER BY order_date DESC
-      LIMIT 20
+        orders.id,
+        orders.order_number,
+        orders.order_date::text AS order_date,
+        orders.source_system,
+        orders.total_amount,
+        orders.status,
+        COUNT(items.id)::int AS item_count,
+        COALESCE(SUM(items.quantity), 0)::numeric(14,2) AS total_quantity,
+        COALESCE(
+          jsonb_agg(
+            jsonb_build_object(
+              'id', items.id,
+              'sku', items.sku,
+              'itemDescription', COALESCE(NULLIF(items.item_description, ''), 'Produto sem descrição'),
+              'quantity', items.quantity,
+              'unitPrice', items.unit_price,
+              'lineTotal', items.line_total
+            )
+            ORDER BY items.created_at, items.id
+          ) FILTER (WHERE items.id IS NOT NULL),
+          '[]'::jsonb
+        ) AS items
+      FROM recent_orders orders
+      LEFT JOIN order_items items ON items.order_id = orders.id
+      GROUP BY
+        orders.id,
+        orders.order_number,
+        orders.order_date,
+        orders.source_system,
+        orders.total_amount,
+        orders.status
+      ORDER BY orders.order_date DESC, orders.order_number DESC
     `,
     [customerId],
   );
@@ -608,6 +662,9 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   const base = mapCustomerRow(row);
   return {
     ...base,
+    phone: row.phone ? String(row.phone) : null,
+    email: row.email ? String(row.email) : null,
+    customerSince: row.customer_since ? String(row.customer_since) : null,
     totalOrders: Number(row.total_orders ?? 0),
     avgDaysBetweenOrders:
       row.avg_days_between_orders === null || row.avg_days_between_orders === undefined
@@ -641,6 +698,8 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
       totalAmount: Number(order.total_amount ?? 0),
       status: String(order.status),
       itemCount: Number(order.item_count ?? 0),
+      totalQuantity: Number(order.total_quantity ?? 0),
+      items: mapCustomerOrderItems(order.items),
     })),
   };
 }
