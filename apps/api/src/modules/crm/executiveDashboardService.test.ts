@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fillExecutiveDashboardSellers,
   fillExecutiveMonthlyCustomers,
   resolveExecutiveDashboardDailyPeriod,
   resolveExecutiveDashboardPeriod,
@@ -72,5 +73,45 @@ describe("resolveExecutiveDashboardPeriod", () => {
     const daily = resolveExecutiveDashboardDailyPeriod(selected, "2026-08-12");
 
     expect(daily.startDate).toBe("2026-08-07");
+  });
+
+  it("keeps active sellers and their WhatsApp photos when daily sales are zero", () => {
+    const sellers = fillExecutiveDashboardSellers(
+      [
+        { attendant: "Amanda", profile_picture_url: "https://photos.test/amanda.jpg" },
+        { attendant: "Suelen", profile_picture_url: "https://photos.test/suelen.jpg" },
+        { attendant: "Tamires", profile_picture_url: "https://photos.test/tamires.jpg" },
+        { attendant: "Thais", profile_picture_url: "https://photos.test/thais.jpg" },
+      ],
+      [
+        {
+          attendant: "Amanda Oliveira",
+          profile_picture_url: null,
+          total_orders: 1,
+          unique_customers: 1,
+          total_revenue: 225,
+          total_items: 5,
+          screen_items: 5,
+          battery_items: 0,
+          charging_dock_items: 0,
+        },
+      ],
+    );
+
+    expect(sellers).toHaveLength(4);
+    expect(sellers[0]).toMatchObject({
+      attendant: "Amanda",
+      profilePictureUrl: "https://photos.test/amanda.jpg",
+      screenItems: 5,
+    });
+
+    for (const name of ["Suelen", "Tamires", "Thais"]) {
+      expect(sellers.find((seller) => seller.attendant === name)).toMatchObject({
+        profilePictureUrl: `https://photos.test/${name.toLocaleLowerCase("pt-BR")}.jpg`,
+        totalOrders: 0,
+        uniqueCustomers: 0,
+        screenItems: 0,
+      });
+    }
   });
 });
