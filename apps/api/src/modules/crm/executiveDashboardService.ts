@@ -689,6 +689,13 @@ async function loadExecutiveDashboardMetrics(
         stock_pieces: string | number | null;
         updated_at: string | null;
       }>(`
+        WITH selected_snapshot AS (
+          SELECT id, imported_at
+          FROM inventory_snapshots
+          WHERE imported_at < $1::date
+          ORDER BY imported_at DESC
+          LIMIT 1
+        )
         SELECT
           COUNT(DISTINCT UPPER(BTRIM(items.sku))) FILTER (
             WHERE items.stock_quantity > 0
@@ -698,11 +705,10 @@ async function loadExecutiveDashboardMetrics(
             SUM(items.stock_quantity) FILTER (WHERE items.stock_quantity > 0),
             0
           )::int AS stock_pieces,
-          MAX(snapshots.imported_at)::text AS updated_at
+          MAX(snapshot.imported_at)::text AS updated_at
         FROM inventory_snapshot_items items
-        JOIN inventory_snapshots snapshots ON snapshots.id = items.snapshot_id
-        WHERE snapshots.is_active = TRUE
-      `),
+        JOIN selected_snapshot snapshot ON snapshot.id = items.snapshot_id
+      `, [period.monthEndExclusive]),
       pool.query<{ last_sync_at: string | null }>(`
         SELECT MAX(finished_at)::text AS last_sync_at
         FROM (
