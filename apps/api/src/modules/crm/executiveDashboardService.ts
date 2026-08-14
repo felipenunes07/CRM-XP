@@ -80,21 +80,23 @@ export function fillExecutiveDashboardSellers(
   directoryRows: ExecutiveSellerDirectoryRow[],
   metricRows: ExecutiveSellerMetricRow[],
 ): ExecutiveDashboardMetrics["sellers"] {
-  const sellers = directoryRows.map((directory) => {
+  const sellers = directoryRows
+    .filter((directory) => Boolean(directory.profile_picture_url))
+    .map((directory) => {
     const metric = metricRows.find((candidate) => isSameSeller(directory.attendant, candidate.attendant));
 
-    return {
-      attendant: directory.attendant,
-      profilePictureUrl: directory.profile_picture_url || metric?.profile_picture_url || null,
-      totalOrders: Number(metric?.total_orders ?? 0),
-      uniqueCustomers: Number(metric?.unique_customers ?? 0),
-      totalRevenue: Number(metric?.total_revenue ?? 0),
-      totalItems: Number(metric?.total_items ?? 0),
-      screenItems: Number(metric?.screen_items ?? 0),
-      batteryItems: Number(metric?.battery_items ?? 0),
-      chargingDockItems: Number(metric?.charging_dock_items ?? 0),
-    };
-  });
+      return {
+        attendant: directory.attendant,
+        profilePictureUrl: directory.profile_picture_url || metric?.profile_picture_url || null,
+        totalOrders: Number(metric?.total_orders ?? 0),
+        uniqueCustomers: Number(metric?.unique_customers ?? 0),
+        totalRevenue: Number(metric?.total_revenue ?? 0),
+        totalItems: Number(metric?.total_items ?? 0),
+        screenItems: Number(metric?.screen_items ?? 0),
+        batteryItems: Number(metric?.battery_items ?? 0),
+        chargingDockItems: Number(metric?.charging_dock_items ?? 0),
+      };
+    });
 
   return sellers.sort((left, right) => (
     right.screenItems - left.screenItems
@@ -486,6 +488,7 @@ async function loadExecutiveDashboardMetrics(
             )), ' ', 1))
         )
         WHERE UPPER(COALESCE(wi.status, 'ACTIVE')) = 'ACTIVE'
+          AND NULLIF(wi.profile_picture_url, '') IS NOT NULL
         ORDER BY
           LOWER(BTRIM(COALESCE(
             NULLIF(wi.assigned_user_name, ''),
