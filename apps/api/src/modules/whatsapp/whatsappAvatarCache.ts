@@ -31,6 +31,13 @@ interface WhatsappInstanceAvatarRow {
   profile_picture_url: string | null;
 }
 
+interface EvolutionAvatarLookupRow {
+  id: string;
+  instance_name: string;
+  evolution_base_url: string | null;
+  evolution_api_key: string | null;
+}
+
 /** Deterministic storage key for an (instance, jid) pair. Pure / testable. */
 export function avatarStorageKey(instanceName: string, remoteJid: string): string {
   const hash = crypto
@@ -132,14 +139,16 @@ async function storeAvatar(
   );
 }
 
-async function refreshEvolutionInstanceAvatar(row: WhatsappInstanceAvatarRow): Promise<string | null> {
-  const baseUrl = (row.evolution_base_url || env.EVOLUTION_API_BASE_URL || "").replace(/\/+$/, "");
-  const apiKey = row.evolution_api_key || env.EVOLUTION_API_KEY;
-  const phone = String(row.phone_number || "").replace(/\D/g, "");
-  if (!baseUrl || !apiKey || !phone) return null;
+async function fetchEvolutionAvatarUrl(
+  instance: EvolutionAvatarLookupRow,
+  phone: string,
+): Promise<string | null> {
+  const baseUrl = (instance.evolution_base_url || env.EVOLUTION_API_BASE_URL || "").replace(/\/+$/, "");
+  const apiKey = instance.evolution_api_key || env.EVOLUTION_API_KEY;
+  if (!baseUrl || !apiKey) return null;
 
   const response = await fetch(
-    `${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(row.instance_name)}`,
+    `${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(instance.instance_name)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: apiKey },
@@ -147,14 +156,61 @@ async function refreshEvolutionInstanceAvatar(row: WhatsappInstanceAvatarRow): P
     },
   );
   if (!response.ok) return null;
-  const freshUrl = readAvatarUrl(await response.json().catch(() => null));
-  if (!freshUrl) return null;
+  return readAvatarUrl(await response.json().catch(() => null));
+}
 
-  await pool.query(
-    "UPDATE whatsapp_instances SET profile_picture_url = $2, updated_at = NOW() WHERE id = $1",
-    [row.id, freshUrl],
+async function refreshEvolutionInstanceAvatar(
+  row: WhatsappInstanceAvatarRow,
+): Promise<{ sourceUrl: string; avatar: { contentType: string; bytes: Buffer } } | null> {
+  const phone = String(row.phone_number || "").replace(/\D/g, "");
+  if (!phone) return null;
+
+  // A propria instancia pode devolver uma URL antiga da foto do numero
+  // conectado. Nesse caso, outra instancia ativa consegue consultar o mesmo
+  // numero e obter uma assinatura nova do CDN do WhatsApp.
+  const lookupResult = await pool.query<EvolutionAvatarLookupRow>(
+    `SELECT id, instance_name, evolution_base_url, evolution_api_key
+       FROM whatsapp_instances
+      WHERE UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+        AND (provider = 'EVOLUTION' OR provider IS NULL)
+      ORDER BY CASE WHEN id = $1 THEN 0 ELSE 1 END, updated_at DESC
+      LIMIT 10`,
+    [row.id],
   );
-  return freshUrl;
+
+  const candidates = lookupResult.rows.length
+    ? lookupResult.rows
+    : [{
+        id: row.id,
+        instance_name: row.instance_name,
+        evolution_base_url: row.evolution_base_url,
+        evolution_api_key: row.evolution_api_key,
+      }];
+  const attemptedUrls = new Set<string>();
+
+  for (const instance of candidates) {
+    try {
+      const freshUrl = await fetchEvolutionAvatarUrl(instance, phone);
+      if (!freshUrl || attemptedUrls.has(freshUrl) || isExpiredAvatarUrl(freshUrl)) continue;
+      attemptedUrls.add(freshUrl);
+      const avatar = await downloadAvatar(freshUrl);
+      if (!avatar) continue;
+
+      await pool.query(
+        "UPDATE whatsapp_instances SET profile_picture_url = $2, updated_at = NOW() WHERE id = $1",
+        [row.id, freshUrl],
+      );
+      return { sourceUrl: freshUrl, avatar };
+    } catch (error) {
+      logger.warn("evolution avatar lookup failed", {
+        targetInstance: row.instance_name,
+        lookupInstance: instance.instance_name,
+        error: String(error),
+      });
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -188,8 +244,9 @@ export async function getWhatsappInstanceAvatarBytes(
       : null;
 
     if (!avatar && String(row.provider || "EVOLUTION").toUpperCase() === "EVOLUTION") {
-      sourceUrl = await refreshEvolutionInstanceAvatar(row);
-      avatar = sourceUrl ? await downloadAvatar(sourceUrl) : null;
+      const refreshed = await refreshEvolutionInstanceAvatar(row);
+      sourceUrl = refreshed?.sourceUrl ?? null;
+      avatar = refreshed?.avatar ?? null;
     }
 
     if (!sourceUrl || !avatar) return null;
@@ -203,6 +260,28 @@ export async function getWhatsappInstanceAvatarBytes(
     });
     return null;
   }
+}
+
+/**
+ * Aquece o cache permanente de todas as instancias ativas. Executado na subida
+ * da API para o dashboard nunca precisar esperar o primeiro acesso da TV.
+ */
+export async function cacheActiveWhatsappInstanceAvatars() {
+  const result = await pool.query<{ id: string }>(
+    `SELECT id::text AS id
+       FROM whatsapp_instances
+      WHERE UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+        AND NULLIF(BTRIM(instance_name), '') IS NOT NULL`,
+  );
+
+  const outcomes = await Promise.allSettled(
+    result.rows.map((row) => getWhatsappInstanceAvatarBytes(row.id)),
+  );
+  const cached = outcomes.filter((outcome) => (
+    outcome.status === "fulfilled" && Boolean(outcome.value)
+  )).length;
+
+  return { scanned: result.rows.length, cached };
 }
 
 /**

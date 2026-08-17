@@ -15,6 +15,7 @@ import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWa
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
 import { startDailyCustomerDefectSyncScheduler } from "./modules/crm/customerDefectService.js";
 import { runConversationIntelligence } from "./modules/events/conversationAi.js";
+import { cacheActiveWhatsappInstanceAvatars } from "./modules/whatsapp/whatsappAvatarCache.js";
 
 /**
  * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
@@ -53,6 +54,13 @@ function configureUazapiWebhooksAtStartup() {
 async function main() {
   await runMigrations();
   await bootstrapPlatform();
+  // Guarda as fotos das instancias como bytes no Postgres. Os links assinados
+  // do WhatsApp podem expirar; a ultima imagem valida do CRM permanece.
+  void cacheActiveWhatsappInstanceAvatars()
+    .then((result) => logger.info("whatsapp instance avatar cache warmed", result))
+    .catch((error) => logger.warn("whatsapp instance avatar cache warmup failed", {
+      error: String(error),
+    }));
   const scheduler = startDailySyncScheduler();
   const rebuildScheduler = startDailyRebuildScheduler();
   const payloadCleanupScheduler = startPayloadCleanupScheduler();
