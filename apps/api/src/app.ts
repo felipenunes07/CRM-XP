@@ -129,7 +129,10 @@ import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
 import { login, verifyToken } from "./modules/platform/authService.js";
 import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
 import { subscribeMonitorMessages } from "./modules/whatsapp/whatsappMonitorBus.js";
-import { getAvatarBytes } from "./modules/whatsapp/whatsappAvatarCache.js";
+import {
+  getAvatarBytes,
+  getWhatsappInstanceAvatarBytes,
+} from "./modules/whatsapp/whatsappAvatarCache.js";
 import {
   createAdminUser,
   createPasswordResetLink,
@@ -851,6 +854,23 @@ export function createApp() {
   app.get("/api/whatsapp-monitor/avatar/:key", async (request, response, next) => {
     try {
       const avatar = await getAvatarBytes(String(request.params.key));
+      if (!avatar) {
+        response.status(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", avatar.contentType);
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      response.end(avatar.bytes);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Public proxy for seller photos shown on TVs. The browser never receives
+  // the short-lived pps.whatsapp.net URL; the backend renews and stores it.
+  app.get("/api/dashboard/executive/avatar/:instanceId", async (request, response, next) => {
+    try {
+      const avatar = await getWhatsappInstanceAvatarBytes(String(request.params.instanceId));
       if (!avatar) {
         response.status(404).end();
         return;

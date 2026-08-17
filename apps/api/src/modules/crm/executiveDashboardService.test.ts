@@ -4,6 +4,7 @@ import {
   fillExecutiveMonthlyCustomers,
   resolveExecutiveDashboardDailyPeriod,
   resolveExecutiveDashboardPeriod,
+  useExecutiveSellerAvatarProxy,
 } from "./executiveDashboardService.js";
 
 describe("resolveExecutiveDashboardPeriod", () => {
@@ -166,5 +167,27 @@ describe("resolveExecutiveDashboardPeriod", () => {
 
     expect(sellers.map((seller) => seller.attendant)).toEqual(["Tamires", "Thais", "Lucas"]);
     expect(sellers[0]).toMatchObject({ totalItems: 1483, screenItems: 233 });
+  });
+});
+
+describe("useExecutiveSellerAvatarProxy", () => {
+  it("replaces expiring WhatsApp URLs with the CRM proxy", () => {
+    const row = useExecutiveSellerAvatarProxy({
+      attendant: "Suelen",
+      profile_picture_url: "https://pps.whatsapp.net/expired.jpg",
+      instance_id: "00000000-0000-0000-0000-000000000001",
+    });
+
+    expect(row.profile_picture_url).toContain(
+      "/api/dashboard/executive/avatar/00000000-0000-0000-0000-000000000001",
+    );
+  });
+
+  it("keeps the local Lucas asset", () => {
+    expect(useExecutiveSellerAvatarProxy({
+      attendant: "Lucas",
+      profile_picture_url: "/seller-avatars/lucas.svg",
+      instance_id: null,
+    }).profile_picture_url).toBe("/seller-avatars/lucas.svg");
   });
 });

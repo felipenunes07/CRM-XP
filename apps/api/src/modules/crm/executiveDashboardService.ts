@@ -1,5 +1,6 @@
 import type { ExecutiveDashboardMetrics } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { executiveSellerAvatarPublicUrl } from "../whatsapp/whatsappAvatarCache.js";
 
 const DAILY_TARGET_DIVISOR = 20;
 // O worker pode sincronizar em outro processo, onde nao consegue limpar este Map.
@@ -49,6 +50,7 @@ export function fillExecutiveMonthlyCustomers(
 interface ExecutiveSellerDirectoryRow {
   attendant: string;
   profile_picture_url: string | null;
+  instance_id?: string | null;
 }
 
 interface ExecutiveSellerMetricRow extends ExecutiveSellerDirectoryRow {
@@ -62,8 +64,16 @@ interface ExecutiveSellerMetricRow extends ExecutiveSellerDirectoryRow {
 }
 
 const EXECUTIVE_SELLER_AVATAR_OVERRIDES: ExecutiveSellerDirectoryRow[] = [
-  { attendant: "Lucas", profile_picture_url: "/seller-avatars/lucas.svg" },
+  { attendant: "Lucas", profile_picture_url: "/seller-avatars/lucas.svg", instance_id: null },
 ];
+
+export function useExecutiveSellerAvatarProxy(
+  row: ExecutiveSellerDirectoryRow,
+): ExecutiveSellerDirectoryRow {
+  return row.instance_id
+    ? { ...row, profile_picture_url: executiveSellerAvatarPublicUrl(row.instance_id) }
+    : row;
+}
 
 function normalizeSellerName(value: string) {
   return value
@@ -496,7 +506,8 @@ async function loadExecutiveDashboardMetrics(
             NULLIF(wi.display_label, ''),
             wi.instance_name
           )) AS attendant,
-          NULLIF(wi.profile_picture_url, '') AS profile_picture_url
+          NULLIF(wi.profile_picture_url, '') AS profile_picture_url,
+          wi.id::text AS instance_id
         FROM whatsapp_instances wi
         JOIN historical_attendants history ON (
           LOWER(BTRIM(history.attendant)) = LOWER(BTRIM(COALESCE(
@@ -801,7 +812,10 @@ async function loadExecutiveDashboardMetrics(
       stockPieces: Number(inventoryRow?.stock_pieces ?? 0),
       updatedAt: inventoryRow?.updated_at ? String(inventoryRow.updated_at) : null,
     },
-    sellers: fillExecutiveDashboardSellers(sellerDirectoryResult.rows, sellersResult.rows),
+    sellers: fillExecutiveDashboardSellers(
+      sellerDirectoryResult.rows.map(useExecutiveSellerAvatarProxy),
+      sellersResult.rows,
+    ),
     dailySeries: dailyResult.rows.map((row) => ({
       date: String(row.date),
       day: Number(row.day),
