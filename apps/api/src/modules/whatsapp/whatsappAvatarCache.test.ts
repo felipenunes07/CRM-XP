@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   avatarPublicUrl,
   avatarStorageKey,
+  executiveSellerAvatarPublicUrl,
+  isExpiredAvatarUrl,
   isCacheableAvatarUrl,
 } from "./whatsappAvatarCache.js";
 
@@ -33,6 +35,24 @@ describe("avatarStorageKey", () => {
 describe("avatarPublicUrl", () => {
   it("points at the avatar route", () => {
     expect(avatarPublicUrl("abc.jpg")).toContain("/api/whatsapp-monitor/avatar/abc.jpg");
+  });
+});
+
+describe("executiveSellerAvatarPublicUrl", () => {
+  it("points at the public executive dashboard avatar route", () => {
+    expect(executiveSellerAvatarPublicUrl("00000000-0000-0000-0000-000000000001"))
+      .toContain("/api/dashboard/executive/avatar/00000000-0000-0000-0000-000000000001");
+  });
+});
+
+describe("isExpiredAvatarUrl", () => {
+  it("detects expired WhatsApp signed URLs", () => {
+    expect(isExpiredAvatarUrl("https://pps.whatsapp.net/photo.jpg?oe=00000001", 2_000)).toBe(true);
+  });
+
+  it("keeps permanent or future URLs", () => {
+    expect(isExpiredAvatarUrl("https://crm.example.com/photo.jpg", 2_000)).toBe(false);
+    expect(isExpiredAvatarUrl("https://pps.whatsapp.net/photo.jpg?oe=00000003", 2_000)).toBe(false);
   });
 });
 
