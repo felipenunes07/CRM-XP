@@ -19,7 +19,12 @@ const EXECUTIVE_AVATAR_ROUTE = "/api/dashboard/executive/avatar/";
 const DEFAULT_PUBLIC_URL = "https://xpcrm-crm-backend.f0dgeg.easypanel.host";
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024; // 3 MB safety cap
 const FETCH_TIMEOUT_MS = 8000;
+const PROVIDER_FETCH_TIMEOUT_MS = 5000;
 const INSTANCE_AVATAR_JID = "__instance_profile__";
+const instanceAvatarRequests = new Map<
+  string,
+  Promise<{ contentType: string; bytes: Buffer } | null>
+>();
 
 interface WhatsappInstanceAvatarRow {
   id: string;
@@ -147,16 +152,23 @@ async function fetchEvolutionAvatarUrl(
   const apiKey = instance.evolution_api_key || env.EVOLUTION_API_KEY;
   if (!baseUrl || !apiKey) return null;
 
-  const response = await fetch(
-    `${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(instance.instance_name)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: apiKey },
-      body: JSON.stringify({ number: phone }),
-    },
-  );
-  if (!response.ok) return null;
-  return readAvatarUrl(await response.json().catch(() => null));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${baseUrl}/chat/fetchProfilePictureUrl/${encodeURIComponent(instance.instance_name)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: apiKey },
+        body: JSON.stringify({ number: phone }),
+        signal: controller.signal,
+      },
+    );
+    if (!response.ok) return null;
+    return readAvatarUrl(await response.json().catch(() => null));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function refreshEvolutionInstanceAvatar(
@@ -187,37 +199,37 @@ async function refreshEvolutionInstanceAvatar(
         evolution_api_key: row.evolution_api_key,
       }];
   const attemptedUrls = new Set<string>();
-
-  for (const instance of candidates) {
+  const attempts = await Promise.all(candidates.map(async (instance) => {
     try {
       const freshUrl = await fetchEvolutionAvatarUrl(instance, phone);
-      if (!freshUrl || attemptedUrls.has(freshUrl) || isExpiredAvatarUrl(freshUrl)) continue;
+      if (!freshUrl || attemptedUrls.has(freshUrl) || isExpiredAvatarUrl(freshUrl)) return null;
       attemptedUrls.add(freshUrl);
       const avatar = await downloadAvatar(freshUrl);
-      if (!avatar) continue;
-
-      await pool.query(
-        "UPDATE whatsapp_instances SET profile_picture_url = $2, updated_at = NOW() WHERE id = $1",
-        [row.id, freshUrl],
-      );
-      return { sourceUrl: freshUrl, avatar };
+      return avatar ? { sourceUrl: freshUrl, avatar } : null;
     } catch (error) {
       logger.warn("evolution avatar lookup failed", {
         targetInstance: row.instance_name,
         lookupInstance: instance.instance_name,
         error: String(error),
       });
+      return null;
     }
-  }
+  }));
+  const resolved = attempts.find((attempt) => Boolean(attempt)) ?? null;
+  if (!resolved) return null;
 
-  return null;
+  await pool.query(
+    "UPDATE whatsapp_instances SET profile_picture_url = $2, updated_at = NOW() WHERE id = $1",
+    [row.id, resolved.sourceUrl],
+  );
+  return resolved;
 }
 
 /**
  * Entrega a foto de uma instancia pelo proprio CRM. Na primeira chamada, baixa
  * e guarda a imagem; se o link assinado ja venceu, renova-o na Evolution antes.
  */
-export async function getWhatsappInstanceAvatarBytes(
+async function loadWhatsappInstanceAvatarBytes(
   instanceId: string,
 ): Promise<{ contentType: string; bytes: Buffer } | null> {
   if (!/^[0-9a-fA-F-]{36}$/.test(instanceId)) return null;
@@ -260,6 +272,18 @@ export async function getWhatsappInstanceAvatarBytes(
     });
     return null;
   }
+}
+
+export function getWhatsappInstanceAvatarBytes(
+  instanceId: string,
+): Promise<{ contentType: string; bytes: Buffer } | null> {
+  const activeRequest = instanceAvatarRequests.get(instanceId);
+  if (activeRequest) return activeRequest;
+
+  const request = loadWhatsappInstanceAvatarBytes(instanceId)
+    .finally(() => instanceAvatarRequests.delete(instanceId));
+  instanceAvatarRequests.set(instanceId, request);
+  return request;
 }
 
 /**
