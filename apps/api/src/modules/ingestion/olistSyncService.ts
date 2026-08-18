@@ -5,6 +5,7 @@ import { extractDisplayName, normalizeCode, normalizeText, safeNumber, toIsoDate
 import { rebuildReadModels } from "../analytics/analyticsService.js";
 import { buildSaleLineFingerprint } from "./fingerprint.js";
 import { OlistClient, withRetry } from "./olistClient.js";
+import { getOlistApiToken } from "./olistTokenProvider.js";
 import type { NormalizedSaleRow } from "./types.js";
 
 const client = new OlistClient();
@@ -521,7 +522,7 @@ export function getOlistTodayDateKey(date = new Date()) {
 }
 
 export async function syncOlistIncremental(options: OlistIncrementalSyncOptions = {}) {
-  if (!env.OLIST_API_TOKEN) {
+  if (!(await getOlistApiToken())) {
     logger.warn("olist sync skipped: OLIST_API_TOKEN not configured");
     return { skipped: true, reason: "MISSING_TOKEN" };
   }

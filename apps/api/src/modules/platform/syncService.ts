@@ -3,6 +3,7 @@ import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 import { syncOlistIncremental } from "../ingestion/olistSyncService.js";
+import { getOlistApiToken } from "../ingestion/olistTokenProvider.js";
 import { importSupabase2026 } from "../ingestion/supabaseImporter.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { clearDashboardCache } from "../crm/dashboardService.js";
@@ -91,7 +92,7 @@ async function runPrimarySyncInternal(reason: string) {
     env.SUPABASE_DATABASE_URL && !env.SUPABASE_DATABASE_URL.includes("[YOUR-PASSWORD]"),
   );
   const source = resolvePrimarySyncSource({
-    olistConfigured: Boolean(env.OLIST_API_TOKEN),
+    olistConfigured: Boolean(await getOlistApiToken()),
     supabaseConfigured,
   });
 
