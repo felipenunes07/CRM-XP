@@ -4,7 +4,10 @@ import { pool, redis } from "./db/client.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
 import { bootstrapPlatform } from "./modules/platform/bootstrap.js";
-import { startDailySyncScheduler } from "./modules/platform/syncService.js";
+import {
+  startDailySyncScheduler,
+  startSupabaseSalesChangeListener,
+} from "./modules/platform/syncService.js";
 import { startDailyRebuildScheduler } from "./modules/analytics/readModelRebuild.js";
 import { startPayloadCleanupScheduler } from "./modules/whatsapp/payloadRetentionService.js";
 import { runMigrations } from "./db/runMigrations.js";
@@ -62,6 +65,7 @@ async function main() {
       error: String(error),
     }));
   const scheduler = startDailySyncScheduler();
+  const realtimeSalesScheduler = startSupabaseSalesChangeListener();
   const rebuildScheduler = startDailyRebuildScheduler();
   const payloadCleanupScheduler = startPayloadCleanupScheduler();
   // Roda tambem na API (alem do worker) para o alerta diario das 8h disparar
@@ -170,6 +174,7 @@ async function main() {
     }
     server.close(async () => {
       await scheduler.close();
+      await realtimeSalesScheduler.close();
       await rebuildScheduler.close();
       await payloadCleanupScheduler.close();
       await offboardingScheduler.close();
