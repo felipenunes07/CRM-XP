@@ -2,6 +2,7 @@ import { z } from "zod";
 import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
 import { logger } from "../../lib/logger.js";
+import { getOlistApiToken } from "./olistTokenProvider.js";
 import { OlistRateLimiter } from "./rateLimiter.js";
 
 const pedidosPesquisaSchema = z.object({
@@ -424,14 +425,15 @@ export class OlistClient {
   private limiter = new OlistRateLimiter("olist-api");
 
   private async request(pathName: string, params: Record<string, string>) {
-    if (!env.OLIST_API_TOKEN) {
+    const apiToken = await getOlistApiToken();
+    if (!apiToken) {
       throw new HttpError(400, "OLIST_API_TOKEN não configurado");
     }
 
     await this.limiter.acquire();
     try {
       const body = new URLSearchParams({
-        token: env.OLIST_API_TOKEN,
+        token: apiToken,
         formato: "json",
         ...params,
       });
