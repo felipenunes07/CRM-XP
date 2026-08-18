@@ -734,6 +734,8 @@ function logWhatsappMonitorEndpointTiming(
 
 export function createApp() {
   const app = express();
+  const publicExecutiveRefreshCooldownMs = 30_000;
+  let lastPublicExecutiveRefreshAt = 0;
 
   app.use(
     cors({
@@ -894,6 +896,31 @@ export function createApp() {
       response.json(await getExecutiveDashboardMetrics(query));
     } catch (error) {
       next(error instanceof RangeError ? new HttpError(400, error.message) : error);
+    }
+  });
+
+  // O painel da TV e publico e nao possui sessao. Este endpoint faz o botao
+  // Atualizar buscar novas vendas de verdade (Olist com fallback Supabase),
+  // em vez de apenas reler o ultimo snapshot. O cooldown limita chamadas
+  // repetidas sem impedir a atualizacao manual quando necessario.
+  app.post("/api/dashboard/executive/refresh", async (_request, response, next) => {
+    try {
+      const now = Date.now();
+      const elapsed = now - lastPublicExecutiveRefreshAt;
+      if (lastPublicExecutiveRefreshAt > 0 && elapsed < publicExecutiveRefreshCooldownMs) {
+        response.status(202).json({
+          skipped: true,
+          reason: "cooldown",
+          retryAfterMs: publicExecutiveRefreshCooldownMs - elapsed,
+        });
+        return;
+      }
+
+      lastPublicExecutiveRefreshAt = now;
+      response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+      response.json(await runPrimarySync("public-executive-dashboard-refresh"));
+    } catch (error) {
+      next(error);
     }
   });
 

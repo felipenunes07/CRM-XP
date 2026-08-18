@@ -1,5 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
-import { extractOrderAttendantName, resolveOrderAttendantName } from "./olistSyncService.js";
+import {
+  extractOrderAttendantName,
+  getOlistTodayDateKey,
+  isOlistOrderSnapshotUnchanged,
+  resolveOrderAttendantName,
+} from "./olistSyncService.js";
+
+describe("Olist current-day safety scan", () => {
+  it("uses the Sao Paulo calendar day even around the UTC day boundary", () => {
+    expect(getOlistTodayDateKey(new Date("2026-08-19T01:30:00.000Z"))).toBe("2026-08-18");
+  });
+
+  it("detects changed order lines so a stale snapshot is replaced", () => {
+    const existing = [{ fingerprint: "old", order_status: "Enviado", attendant_name: "Suelen" }];
+    const incoming = [{ fingerprint: "new", orderStatus: "Enviado", attendantName: "Suelen" }];
+    expect(isOlistOrderSnapshotUnchanged(existing, incoming)).toBe(false);
+  });
+
+  it("keeps an identical order snapshot without rewriting it", () => {
+    const existing = [{ fingerprint: "same", order_status: "Enviado", attendant_name: "Suelen" }];
+    const incoming = [{ fingerprint: "same", orderStatus: "Enviado", attendantName: "Suelen" }];
+    expect(isOlistOrderSnapshotUnchanged(existing, incoming)).toBe(true);
+  });
+});
 
 describe("olistSyncService attendant fallback", () => {
   it("extracts the attendant directly from the raw order payload when Olist sends it", () => {

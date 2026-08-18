@@ -91,6 +91,25 @@ describe("api request timeouts", () => {
     );
   });
 
+  it("can trigger the public executive dashboard source sync without a login token", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ source: "olist_v2" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.refreshExecutiveDashboard();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/dashboard/executive/refresh",
+      expect.objectContaining({
+        method: "POST",
+        cache: "no-store",
+        headers: expect.not.objectContaining({ authorization: expect.any(String) }),
+      }),
+    );
+  });
+
   it("forwards monitor cancellation and requests lightweight agents", async () => {
     let callCount = 0;
     const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {

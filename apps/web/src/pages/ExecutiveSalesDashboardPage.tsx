@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
@@ -34,7 +34,9 @@ import "./executiveSalesDashboard.css";
 const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
 const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const FULL_PAGE_RELOAD_INTERVAL_MS = 15 * 60 * 1000;
-const DATA_SYNC_INTERVAL_LABEL = "15min";
+const SOURCE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const SOURCE_SYNC_INITIAL_DELAY_MS = 5 * 1000;
+const DATA_SYNC_INTERVAL_LABEL = "5min";
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
@@ -141,7 +143,7 @@ function ExecutiveSidebar() {
         </div>
       </nav>
 
-      <div className="executive-tv-mode" title="Modo TV com sincronização automática das vendas a cada 15 minutos">
+      <div className="executive-tv-mode" title="Modo TV com sincronização automática das vendas a cada 5 minutos">
         <span className="executive-live-dot" />
         <div>
           <strong>TV</strong>
@@ -682,6 +684,26 @@ export function ExecutiveSalesDashboardPage() {
     placeholderData: (previousData) => previousData,
   });
 
+  const sourceRefresh = useMutation({
+    mutationFn: () => api.refreshExecutiveDashboard(),
+    onSuccess: () => query.refetch(),
+  });
+
+  useEffect(() => {
+    if (!followsCurrentPeriod) return;
+
+    const refreshSource = () => sourceRefresh.mutate();
+    // Ao ligar a TV, busca a origem logo no inicio. Depois continua sozinho a
+    // cada cinco minutos, mesmo que o navegador antigo nao recarregue a aba.
+    const initialTimeout = window.setTimeout(refreshSource, SOURCE_SYNC_INITIAL_DELAY_MS);
+    const interval = window.setInterval(refreshSource, SOURCE_SYNC_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(initialTimeout);
+      window.clearInterval(interval);
+    };
+  }, [followsCurrentPeriod, sourceRefresh.mutate]);
+
   const periodOptions = query.data?.availablePeriods ?? [];
   const years = useMemo(() => {
     const values = new Set(periodOptions.map((period) => period.year));
@@ -725,9 +747,9 @@ export function ExecutiveSalesDashboardPage() {
             onChange={changeFilters}
             onUseCurrentPeriod={useCurrentPeriod}
             generatedAt={data.generatedAt}
-            isFetching={query.isFetching}
-            refreshFailed={query.isError}
-            onRefresh={() => void query.refetch()}
+            isFetching={query.isFetching || sourceRefresh.isPending}
+            refreshFailed={query.isError || sourceRefresh.isError}
+            onRefresh={() => sourceRefresh.mutate()}
           />
           <div className="executive-dashboard-grid">
             <IndicatorPanel data={data} />
