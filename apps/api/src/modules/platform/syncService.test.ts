@@ -11,8 +11,8 @@ describe("startPrimarySyncScheduler", () => {
     vi.useRealTimers();
   });
 
-  it("uses a 15 minute source synchronization window for the TV dashboard", () => {
-    expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(15);
+  it("uses a 5 minute source synchronization window for the TV dashboard", () => {
+    expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(5);
   });
 
   it("uses Olist as the live sales source when Olist and Supabase are configured", () => {

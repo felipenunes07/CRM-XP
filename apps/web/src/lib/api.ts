@@ -97,6 +97,7 @@ import type { AuthUser } from "../hooks/useAuth";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
+export const EXECUTIVE_REFRESH_TIMEOUT_MS = 180_000;
 // A primeira leitura do snapshot financeiro reprocessa a planilha de saldos
 // (60MB+), o que pode levar mais de 1 minuto. Damos uma folga maior so para
 // essas chamadas; depois o resultado fica em cache e responde em milissegundos.
@@ -483,6 +484,20 @@ export const api = {
     return request<ExecutiveDashboardMetrics>(
       `/api/dashboard/executive?${search.toString()}`,
       { cache: "no-store", headers: { "cache-control": "no-cache" } },
+    );
+  },
+  refreshExecutiveDashboard() {
+    return request<{
+      source?: "olist_v2" | "supabase_2026";
+      skipped?: boolean;
+      reason?: string;
+      retryAfterMs?: number;
+    }>(
+      "/api/dashboard/executive/refresh",
+      { method: "POST", cache: "no-store", headers: { "cache-control": "no-cache" } },
+      null,
+      false,
+      EXECUTIVE_REFRESH_TIMEOUT_MS,
     );
   },
   dashboardTrendRangeAnalysis(token: string, startDate: string, endDate: string) {

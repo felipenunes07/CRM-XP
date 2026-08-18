@@ -342,7 +342,15 @@ function olistDateParts(value: string) {
   };
 }
 
-function toOlistDate(value: string) {
+export function toOlistDate(value: string) {
+  // Datas sem horario representam um dia civil, nao um instante UTC. Passar
+  // "2026-08-18" por new Date() e depois converter para Sao Paulo retornava
+  // 17/08/2026, fazendo consultas diarias buscarem o dia anterior.
+  const dateOnly = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  }
+
   const parts = olistDateParts(value);
   if (!parts) {
     return value;
@@ -351,7 +359,7 @@ function toOlistDate(value: string) {
   return `${parts.day}/${parts.month}/${parts.year}`;
 }
 
-function toOlistDateTime(value: string) {
+export function toOlistDateTime(value: string) {
   const parts = olistDateParts(value);
   if (!parts) {
     return value;

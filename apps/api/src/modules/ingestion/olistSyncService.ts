@@ -11,6 +11,7 @@ const client = new OlistClient();
 const CONTACT_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 
 type OlistOrder = Awaited<ReturnType<OlistClient["getOrder"]>>;
+type OlistOrderSummary = Awaited<ReturnType<OlistClient["searchOrders"]>>["orders"][number];
 
 interface TinyContactCacheRow {
   customer_code: string;
@@ -38,6 +39,28 @@ interface ContactLike {
 interface ResolveOrderAttendantDeps {
   findContactAttendantByCustomer: (customerCode: string, customerName: string) => Promise<string | null>;
   getHistoricalAttendantByCustomerCode: (customerCode: string) => Promise<string | null>;
+}
+
+interface ExistingOlistSnapshotLine {
+  fingerprint: string;
+  order_status: string | null;
+  attendant_name: string | null;
+}
+
+export function isOlistOrderSnapshotUnchanged(
+  existing: ExistingOlistSnapshotLine[],
+  incoming: Array<Pick<NormalizedSaleRow, "fingerprint" | "orderStatus" | "attendantName">>,
+) {
+  if (!incoming.length || existing.length !== incoming.length) return false;
+  const incomingFingerprints = new Set(incoming.map((row) => row.fingerprint));
+  const existingFingerprints = new Set(existing.map((row) => row.fingerprint));
+  const firstIncoming = incoming[0];
+  return incomingFingerprints.size === existingFingerprints.size
+    && [...incomingFingerprints].every((fingerprint) => existingFingerprints.has(fingerprint))
+    && existing.every((row) =>
+      String(row.order_status ?? "") === String(firstIncoming?.orderStatus ?? "")
+      && String(row.attendant_name ?? "") === String(firstIncoming?.attendantName ?? ""),
+    );
 }
 
 function normalizeAttendantName(value: unknown) {
@@ -309,6 +332,27 @@ async function insertOlistRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: n
     return { rowCount: 0, insertedCustomerCodes: [] };
   }
 
+  const externalOrderIds = [...new Set(rows.map((row) => row.externalOrderId).filter(Boolean))] as string[];
+  const existing = await pool.query<{
+    fingerprint: string;
+    customer_code: string;
+    order_status: string | null;
+    attendant_name: string | null;
+  }>(
+    `
+      SELECT fingerprint, customer_code, order_status, attendant_name
+      FROM sales_raw
+      WHERE source_system = 'olist_v2'
+        AND external_order_id = ANY($1::text[])
+    `,
+    [externalOrderIds],
+  );
+  const unchanged = isOlistOrderSnapshotUnchanged(existing.rows, rows);
+
+  if (unchanged) {
+    return { rowCount: 0, insertedCustomerCodes: [] };
+  }
+
   const arrays = {
     sourceSystem: rows.map((row) => row.sourceSystem),
     sourceFileId: rows.map((row) => row.sourceFileId),
@@ -331,8 +375,20 @@ async function insertOlistRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: n
     rawPayload: rows.map((row) => JSON.stringify(row.rawPayload)),
   };
 
-  const result = await pool.query<{ customer_code: string }>(
-    `
+  const database = await pool.connect();
+  try {
+    await database.query("BEGIN");
+    const previousCustomers = await database.query<{ customer_code: string }>(
+      `
+        DELETE FROM sales_raw
+        WHERE source_system = 'olist_v2'
+          AND external_order_id = ANY($1::text[])
+        RETURNING customer_code
+      `,
+      [externalOrderIds],
+    );
+    const result = await database.query<{ customer_code: string }>(
+      `
       INSERT INTO sales_raw (
         source_system, source_file_id, import_run_id, external_order_id, external_customer_id,
         sale_date, item_description, quantity, customer_code, unit_price, line_total,
@@ -347,35 +403,45 @@ async function insertOlistRows(rows: NormalizedSaleRow[]): Promise<{ rowCount: n
       )
       ON CONFLICT (fingerprint) DO NOTHING
       RETURNING customer_code
-    `,
-    [
-      arrays.sourceSystem,
-      arrays.sourceFileId,
-      arrays.importRunId,
-      arrays.externalOrderId,
-      arrays.externalCustomerId,
-      arrays.saleDate,
-      arrays.itemDescription,
-      arrays.quantity,
-      arrays.customerCode,
-      arrays.unitPrice,
-      arrays.lineTotal,
-      arrays.orderNumber,
-      arrays.sku,
-      arrays.customerLabel,
-      arrays.attendantName,
-      arrays.orderStatus,
-      arrays.orderUpdatedAt,
-      arrays.fingerprint,
-      arrays.rawPayload,
-    ],
-  );
+      `,
+      [
+        arrays.sourceSystem,
+        arrays.sourceFileId,
+        arrays.importRunId,
+        arrays.externalOrderId,
+        arrays.externalCustomerId,
+        arrays.saleDate,
+        arrays.itemDescription,
+        arrays.quantity,
+        arrays.customerCode,
+        arrays.unitPrice,
+        arrays.lineTotal,
+        arrays.orderNumber,
+        arrays.sku,
+        arrays.customerLabel,
+        arrays.attendantName,
+        arrays.orderStatus,
+        arrays.orderUpdatedAt,
+        arrays.fingerprint,
+        arrays.rawPayload,
+      ],
+    );
+    await database.query("COMMIT");
 
-  const insertedCustomerCodes = result.rows.map((row) => row.customer_code).filter(Boolean);
-  return {
-    rowCount: result.rowCount ?? 0,
-    insertedCustomerCodes,
-  };
+    const insertedCustomerCodes = [...new Set([
+      ...previousCustomers.rows.map((row) => row.customer_code),
+      ...result.rows.map((row) => row.customer_code),
+    ].filter(Boolean))];
+    return {
+      rowCount: result.rowCount ?? 0,
+      insertedCustomerCodes,
+    };
+  } catch (error) {
+    await database.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    database.release();
+  }
 }
 
 function toNormalizedSaleRows(order: OlistOrder, attendantName: string | null): NormalizedSaleRow[] {
@@ -442,6 +508,18 @@ interface OlistIncrementalSyncOptions {
   initialLookbackDays?: number;
 }
 
+export function getOlistTodayDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const read = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${read("year")}-${read("month")}-${read("day")}`;
+}
+
 export async function syncOlistIncremental(options: OlistIncrementalSyncOptions = {}) {
   if (!env.OLIST_API_TOKEN) {
     logger.warn("olist sync skipped: OLIST_API_TOKEN not configured");
@@ -459,7 +537,6 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
   const resolvedHistoricalAttendants = new Map<string, string | null>();
 
   try {
-    let page = 1;
     // Cursor para eficiência, mas com rede de segurança: sempre revarre os
     // últimos OLIST_SYNC_SAFETY_DAYS dias. Se o cursor estiver adiantado (ex.:
     // bug de fuso que o empurrou pro futuro) ou a sync tiver falhado, as vendas
@@ -477,57 +554,73 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
     const updatedSince = cursorValue
       ? (cursorValue < safetyFloor ? cursorValue : safetyFloor)
       : initialFloor;
-    let totalPages = 1;
+    const orderSummaries = new Map<string, OlistOrderSummary>();
 
-    do {
-      const response = await withRetry(() => client.searchOrders({ page, updatedSince }));
-      totalPages = response.totalPages;
-      for (const summary of response.orders) {
-        const order = await withRetry(() => client.getOrder(summary.id));
-        const { customerCode, customerName } = buildOrderCustomerContext(order);
-        const cacheKey = customerCode || normalizeText(customerName).toLowerCase();
-        const attendantName = await resolveOrderAttendantName(order, {
-          findContactAttendantByCustomer: async (candidateCustomerCode, candidateCustomerName) => {
-            const candidateKey = candidateCustomerCode || normalizeText(candidateCustomerName).toLowerCase();
-            if (resolvedContactAttendants.has(candidateKey)) {
-              return resolvedContactAttendants.get(candidateKey) ?? null;
-            }
+    const collectOrders = async (filters: { updatedSince?: string; startDate?: string; endDate?: string }) => {
+      let page = 1;
+      let totalPages = 1;
+      do {
+        const response = await withRetry(() => client.searchOrders({ page, ...filters }));
+        totalPages = response.totalPages;
+        for (const summary of response.orders) {
+          orderSummaries.set(String(summary.id), summary);
+        }
+        page += 1;
+      } while (page <= totalPages);
+    };
 
-            const resolved = await findContactAttendantByCustomer(candidateCustomerCode, candidateCustomerName);
-            resolvedContactAttendants.set(candidateKey, resolved);
-            return resolved;
-          },
-          getHistoricalAttendantByCustomerCode: async (candidateCustomerCode) => {
-            if (resolvedHistoricalAttendants.has(candidateCustomerCode)) {
-              return resolvedHistoricalAttendants.get(candidateCustomerCode) ?? null;
-            }
+    await collectOrders({ updatedSince });
 
-            const resolved = await getHistoricalAttendantByCustomerCode(candidateCustomerCode);
-            resolvedHistoricalAttendants.set(candidateCustomerCode, resolved);
-            return resolved;
-          },
+    // A API Tiny/Olist pode atrasar ou omitir pedidos no filtro
+    // dataAtualizacao. Para o painel nunca ficar abaixo do fechamento do dia,
+    // fazemos tambem uma varredura pelo dia civil atual e deduplicamos por ID.
+    const today = getOlistTodayDateKey();
+    await collectOrders({ startDate: today, endDate: today });
+
+    for (const summary of orderSummaries.values()) {
+      const order = await withRetry(() => client.getOrder(summary.id));
+      const { customerCode, customerName } = buildOrderCustomerContext(order);
+      const cacheKey = customerCode || normalizeText(customerName).toLowerCase();
+      const attendantName = await resolveOrderAttendantName(order, {
+        findContactAttendantByCustomer: async (candidateCustomerCode, candidateCustomerName) => {
+          const candidateKey = candidateCustomerCode || normalizeText(candidateCustomerName).toLowerCase();
+          if (resolvedContactAttendants.has(candidateKey)) {
+            return resolvedContactAttendants.get(candidateKey) ?? null;
+          }
+
+          const resolved = await findContactAttendantByCustomer(candidateCustomerCode, candidateCustomerName);
+          resolvedContactAttendants.set(candidateKey, resolved);
+          return resolved;
+        },
+        getHistoricalAttendantByCustomerCode: async (candidateCustomerCode) => {
+          if (resolvedHistoricalAttendants.has(candidateCustomerCode)) {
+            return resolvedHistoricalAttendants.get(candidateCustomerCode) ?? null;
+          }
+
+          const resolved = await getHistoricalAttendantByCustomerCode(candidateCustomerCode);
+          resolvedHistoricalAttendants.set(candidateCustomerCode, resolved);
+          return resolved;
+        },
+      });
+
+      if (!attendantName) {
+        logger.warn("olist order without resolved attendant", {
+          orderId: String(order.id),
+          orderNumber: normalizeText(String(order.numero)),
+          customerCode,
+          customerName,
+          cacheKey,
         });
-
-        if (!attendantName) {
-          logger.warn("olist order without resolved attendant", {
-            orderId: String(order.id),
-            orderNumber: normalizeText(String(order.numero)),
-            customerCode,
-            customerName,
-            cacheKey,
-          });
-        }
-
-        const rows = toNormalizedSaleRows(order, attendantName);
-        recordsSeen += rows.length;
-        const { rowCount: rowsInserted, insertedCustomerCodes } = await insertOlistRows(rows);
-        recordsInserted += rowsInserted;
-        for (const code of insertedCustomerCodes) {
-          impactedCustomerCodes.add(code);
-        }
       }
-      page += 1;
-    } while (page <= totalPages);
+
+      const rows = toNormalizedSaleRows(order, attendantName);
+      recordsSeen += rows.length;
+      const { rowCount: rowsInserted, insertedCustomerCodes } = await insertOlistRows(rows);
+      recordsInserted += rowsInserted;
+      for (const code of insertedCustomerCodes) {
+        impactedCustomerCodes.add(code);
+      }
+    }
 
     if (impactedCustomerCodes.size) {
       await rebuildReadModels(Array.from(impactedCustomerCodes));

@@ -11,7 +11,7 @@ import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.j
 const DAILY_SYNC_KEY = "primary_daily_sync_date";
 const HOURLY_SYNC_KEY = "primary_hourly_sync_timestamp";
 const DAILY_SYNC_TIMEZONE = "America/Sao_Paulo";
-export const PRIMARY_SYNC_INTERVAL_MINUTES = 15;
+export const PRIMARY_SYNC_INTERVAL_MINUTES = 5;
 const SYNC_INTERVAL_MS = PRIMARY_SYNC_INTERVAL_MINUTES * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const PRIMARY_SYNC_ADVISORY_LOCK_ID = 742_026_814;
