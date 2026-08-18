@@ -438,7 +438,11 @@ async function setCursor(key: string, value: string) {
   );
 }
 
-export async function syncOlistIncremental() {
+interface OlistIncrementalSyncOptions {
+  initialLookbackDays?: number;
+}
+
+export async function syncOlistIncremental(options: OlistIncrementalSyncOptions = {}) {
   if (!env.OLIST_API_TOKEN) {
     logger.warn("olist sync skipped: OLIST_API_TOKEN not configured");
     return { skipped: true, reason: "MISSING_TOKEN" };
@@ -465,9 +469,14 @@ export async function syncOlistIncremental() {
     const safetyFloor = new Date(
       Date.now() - env.OLIST_SYNC_SAFETY_DAYS * 24 * 60 * 60 * 1000,
     ).toISOString();
+    const initialFloor = options.initialLookbackDays
+      ? new Date(
+          Date.now() - Math.max(1, options.initialLookbackDays) * 24 * 60 * 60 * 1000,
+        ).toISOString()
+      : `${env.OLIST_SYNC_START_DATE} 00:00:00`;
     const updatedSince = cursorValue
       ? (cursorValue < safetyFloor ? cursorValue : safetyFloor)
-      : `${env.OLIST_SYNC_START_DATE} 00:00:00`;
+      : initialFloor;
     let totalPages = 1;
 
     do {

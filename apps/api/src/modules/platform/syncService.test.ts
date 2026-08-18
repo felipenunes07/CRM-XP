@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PRIMARY_SYNC_INTERVAL_MINUTES, startPrimarySyncScheduler } from "./syncService.js";
+import {
+  PRIMARY_SYNC_INTERVAL_MINUTES,
+  resolvePrimarySyncSource,
+  startPrimarySyncScheduler,
+} from "./syncService.js";
 
 describe("startPrimarySyncScheduler", () => {
   afterEach(() => {
@@ -8,6 +12,16 @@ describe("startPrimarySyncScheduler", () => {
 
   it("uses a 15 minute source synchronization window for the TV dashboard", () => {
     expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(15);
+  });
+
+  it("uses Olist as the live sales source when Olist and Supabase are configured", () => {
+    expect(resolvePrimarySyncSource({ olistConfigured: true, supabaseConfigured: true }))
+      .toBe("olist_v2");
+  });
+
+  it("keeps Supabase as fallback when Olist is not configured", () => {
+    expect(resolvePrimarySyncSource({ olistConfigured: false, supabaseConfigured: true }))
+      .toBe("supabase_2026");
   });
 
   it("runs primary sync immediately and on later checks when the schedule allows it", async () => {

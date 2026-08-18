@@ -28,6 +28,17 @@ interface PrimarySyncSchedulerOptions {
   runSync?: (reason: string) => Promise<unknown>;
 }
 
+export type PrimarySyncSource = "olist_v2" | "supabase_2026";
+
+export function resolvePrimarySyncSource(input: {
+  olistConfigured: boolean;
+  supabaseConfigured: boolean;
+}): PrimarySyncSource | null {
+  if (input.olistConfigured) return "olist_v2";
+  if (input.supabaseConfigured) return "supabase_2026";
+  return null;
+}
+
 function getLocalParts(date = new Date()) {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: DAILY_SYNC_TIMEZONE,
@@ -67,34 +78,49 @@ async function setCursor(key: string, value: string) {
 async function runPrimarySyncInternal(reason: string) {
   logger.info("primary sync started", { reason });
 
-  if (env.SUPABASE_DATABASE_URL && !env.SUPABASE_DATABASE_URL.includes("[YOUR-PASSWORD]")) {
-    const result = await importSupabase2026();
+  const supabaseConfigured = Boolean(
+    env.SUPABASE_DATABASE_URL && !env.SUPABASE_DATABASE_URL.includes("[YOUR-PASSWORD]"),
+  );
+  const source = resolvePrimarySyncSource({
+    olistConfigured: Boolean(env.OLIST_API_TOKEN),
+    supabaseConfigured,
+  });
+
+  const completeSync = async (completedSource: PrimarySyncSource, result: unknown) => {
     const local = getLocalParts();
     await setCursor(DAILY_SYNC_KEY, local.dateKey);
     await setCursor(HOURLY_SYNC_KEY, new Date().toISOString());
     await refreshDashboardDailyMetrics();
     await clearDashboardCache();
     clearExecutiveDashboardCache();
-    logger.info("primary sync completed", { reason, source: "supabase_2026", result });
+    logger.info("primary sync completed", { reason, source: completedSource, result });
     return {
-      source: "supabase_2026",
+      source: completedSource,
       result,
     };
+  };
+
+  if (source === "olist_v2") {
+    try {
+      const result = await syncOlistIncremental({
+        // O CRM ja possui o historico vindo do Supabase. Se ainda nao houver
+        // cursor da Olist, buscamos somente a janela recente para que a primeira
+        // atualizacao da TV termine dentro do limite do agendador.
+        initialLookbackDays: env.OLIST_SYNC_SAFETY_DAYS,
+      });
+      return await completeSync("olist_v2", result);
+    } catch (error) {
+      if (!supabaseConfigured) throw error;
+      logger.warn("olist primary sync failed; using supabase fallback", {
+        reason,
+        error: String(error),
+      });
+    }
   }
 
-  if (env.OLIST_API_TOKEN) {
-    const result = await syncOlistIncremental();
-    const local = getLocalParts();
-    await setCursor(DAILY_SYNC_KEY, local.dateKey);
-    await setCursor(HOURLY_SYNC_KEY, new Date().toISOString());
-    await refreshDashboardDailyMetrics();
-    await clearDashboardCache();
-    clearExecutiveDashboardCache();
-    logger.info("primary sync completed", { reason, source: "olist_v2", result });
-    return {
-      source: "olist_v2",
-      result,
-    };
+  if (supabaseConfigured) {
+    const result = await importSupabase2026();
+    return await completeSync("supabase_2026", result);
   }
 
   throw new Error("Nenhuma fonte de sincronizacao ativa foi configurada.");
