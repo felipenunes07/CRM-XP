@@ -229,8 +229,18 @@ export function resolveExecutiveDashboardPeriod(
 export function resolveExecutiveDashboardDailyPeriod(
   period: ExecutiveDashboardResolvedPeriod,
   latestSaleDate: string | null,
+  now = new Date(),
 ) {
   if (period.day !== null) return period;
+
+  const today = getSaoPauloDateParts(now);
+  if (period.year === today.year && period.month === today.month) {
+    return resolveExecutiveDashboardPeriod({
+      year: today.year,
+      month: today.month,
+      day: today.day,
+    }, now);
+  }
 
   const candidate = String(latestSaleDate ?? "").slice(0, 10);
   const isInsideSelectedMonth = candidate >= period.monthStart && candidate < period.monthEndExclusive;
@@ -280,7 +290,12 @@ const executiveDashboardRequests = new Map<string, Promise<ExecutiveDashboardMet
 let executiveDashboardCacheGeneration = 0;
 
 function executiveDashboardCacheKey(period: ExecutiveDashboardResolvedPeriod) {
-  return `${executiveDashboardCacheGeneration}:${period.year}-${period.month}-${period.day ?? "latest"}`;
+  const today = getSaoPauloDateParts(new Date());
+  const openCurrentDay = period.day === null
+    && period.year === today.year
+    && period.month === today.month;
+  const dayKey = period.day ?? (openCurrentDay ? `today-${today.day}` : "latest");
+  return `${executiveDashboardCacheGeneration}:${period.year}-${period.month}-${dayKey}`;
 }
 
 export function clearExecutiveDashboardCache() {
