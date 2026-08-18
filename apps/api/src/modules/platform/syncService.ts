@@ -1,3 +1,4 @@
+import { Client } from "pg";
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
@@ -16,6 +17,9 @@ const CHECK_INTERVAL_MS = 60 * 1000;
 const PRIMARY_SYNC_ADVISORY_LOCK_ID = 742_026_814;
 const SYNC_WINDOW_START_HOUR = 8;  // 8 AM
 const SYNC_WINDOW_END_HOUR = 18;   // 6 PM
+const SUPABASE_SALES_CHANGE_DEBOUNCE_MS = 2_000;
+const SUPABASE_SALES_CHANGE_CHANNEL = "crm_sales_changed";
+const SUPABASE_LISTENER_RECONNECT_MS = 15_000;
 
 let activeSync: Promise<unknown> | null = null;
 
@@ -37,6 +41,11 @@ export function resolvePrimarySyncSource(input: {
   if (input.olistConfigured) return "olist_v2";
   if (input.supabaseConfigured) return "supabase_2026";
   return null;
+}
+
+export function isSupabaseSalesChangeListenerConfigured(connectionString?: string | null) {
+  const value = String(connectionString ?? "").trim();
+  return Boolean(value && !value.includes("[YOUR-PASSWORD]"));
 }
 
 function getLocalParts(date = new Date()) {
@@ -269,4 +278,96 @@ export function startDailySyncScheduler() {
     enabled: env.STARTUP_SYNC_ENABLED || env.WORKER_OLIST_SYNC_ENABLED,
     reason: "scheduled-periodic-sync",
   });
+}
+
+export function startSupabaseSalesChangeListener() {
+  if (!isSupabaseSalesChangeListenerConfigured(env.SUPABASE_DATABASE_URL)) {
+    logger.info("supabase sales change listener disabled because database credentials are missing");
+    return {
+      async close() {
+        return;
+      },
+    };
+  }
+
+  let debounceTimer: NodeJS.Timeout | undefined;
+  let reconnectTimer: NodeJS.Timeout | undefined;
+  let client: Client | null = null;
+  let closed = false;
+  let initialSyncTriggered = false;
+
+  const scheduleSync = (reason: string) => {
+    if (closed) return;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      runPrimarySync(reason).catch((error) => {
+        logger.error("supabase sales change sync failed", { reason, error: String(error) });
+      });
+    }, SUPABASE_SALES_CHANGE_DEBOUNCE_MS);
+  };
+
+  const scheduleReconnect = () => {
+    if (closed || reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      void connect();
+    }, SUPABASE_LISTENER_RECONNECT_MS);
+  };
+
+  const connect = async () => {
+    if (closed) return;
+    const nextClient = new Client({
+      connectionString: env.SUPABASE_DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 15_000,
+    });
+    client = nextClient;
+    nextClient.on("notification", (message) => {
+      if (message.channel === SUPABASE_SALES_CHANGE_CHANNEL) {
+        scheduleSync("supabase-sales-change");
+      }
+    });
+    nextClient.on("error", (error) => {
+      logger.warn("supabase sales change listener error", { error: String(error) });
+      if (client === nextClient) client = null;
+      scheduleReconnect();
+    });
+    nextClient.on("end", () => {
+      if (client === nextClient) client = null;
+      scheduleReconnect();
+    });
+
+    try {
+      await nextClient.connect();
+      await nextClient.query(`LISTEN ${SUPABASE_SALES_CHANGE_CHANNEL}`);
+      logger.info("supabase sales change listener connected", {
+        table: env.SUPABASE_TABLE_2026,
+      });
+      if (!initialSyncTriggered) {
+        initialSyncTriggered = true;
+        // Atualiza imediatamente ao iniciar/reimplantar o backend, sem aguardar
+        // a proxima janela de 15 minutos do agendador de contingencia.
+        scheduleSync("supabase-sales-listener-startup");
+      }
+    } catch (error) {
+      logger.warn("failed to connect supabase sales change listener", { error: String(error) });
+      if (client === nextClient) client = null;
+      await nextClient.end().catch(() => undefined);
+      scheduleReconnect();
+    }
+  };
+
+  void connect();
+
+  return {
+    async close() {
+      closed = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      const activeClient = client;
+      client = null;
+      if (activeClient) await activeClient.end().catch(() => undefined);
+    },
+  };
 }

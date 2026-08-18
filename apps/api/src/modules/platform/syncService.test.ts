@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PRIMARY_SYNC_INTERVAL_MINUTES,
+  isSupabaseSalesChangeListenerConfigured,
   resolvePrimarySyncSource,
   startPrimarySyncScheduler,
 } from "./syncService.js";
@@ -22,6 +23,13 @@ describe("startPrimarySyncScheduler", () => {
   it("keeps Supabase as fallback when Olist is not configured", () => {
     expect(resolvePrimarySyncSource({ olistConfigured: false, supabaseConfigured: true }))
       .toBe("supabase_2026");
+  });
+
+  it("enables the internal sales change listener only with a real database connection", () => {
+    expect(isSupabaseSalesChangeListenerConfigured("postgresql://server/database")).toBe(true);
+    expect(isSupabaseSalesChangeListenerConfigured("")).toBe(false);
+    expect(isSupabaseSalesChangeListenerConfigured("postgresql://[YOUR-PASSWORD]@server/database"))
+      .toBe(false);
   });
 
   it("runs primary sync immediately and on later checks when the schedule allows it", async () => {
