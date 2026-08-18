@@ -162,6 +162,9 @@ function ExecutiveFilterBar({
   onChange,
   onUseCurrentPeriod,
 }: FilterBarProps) {
+  const today = getTodayFilters();
+  const isCurrentMonth = filters.year === today.year && filters.month === today.month;
+
   return (
     <div className="executive-filter-bar" aria-label="Filtros do relatório">
       <SlidersHorizontal aria-hidden="true" />
@@ -192,7 +195,7 @@ function ExecutiveFilterBar({
           value={filters.day ?? ""}
           onChange={(event) => onChange({ ...filters, day: event.target.value ? Number(event.target.value) : null })}
         >
-          <option value="">Último com venda</option>
+          <option value="">{isCurrentMonth ? "Hoje" : "Último com venda"}</option>
           {days.map((day) => <option key={day} value={day}>{day}</option>)}
         </select>
       </label>

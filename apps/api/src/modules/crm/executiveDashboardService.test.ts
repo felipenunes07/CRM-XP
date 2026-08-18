@@ -58,20 +58,43 @@ describe("resolveExecutiveDashboardPeriod", () => {
     ]);
   });
 
-  it("uses the latest sale day for daily indicators when the day filter is open", () => {
+  it("uses today for daily indicators in the current month even without sales", () => {
     const month = resolveExecutiveDashboardPeriod({ year: 2026, month: 8 });
-    const daily = resolveExecutiveDashboardDailyPeriod(month, "2026-08-12");
+    const daily = resolveExecutiveDashboardDailyPeriod(
+      month,
+      "2026-08-17",
+      new Date("2026-08-18T12:00:00.000Z"),
+    );
 
     expect(daily).toMatchObject({
-      day: 12,
-      startDate: "2026-08-12",
-      endDateExclusive: "2026-08-13",
+      day: 18,
+      startDate: "2026-08-18",
+      endDateExclusive: "2026-08-19",
+    });
+  });
+
+  it("uses the latest sale day for a historical month", () => {
+    const month = resolveExecutiveDashboardPeriod({ year: 2026, month: 7 });
+    const daily = resolveExecutiveDashboardDailyPeriod(
+      month,
+      "2026-07-31",
+      new Date("2026-08-18T12:00:00.000Z"),
+    );
+
+    expect(daily).toMatchObject({
+      day: 31,
+      startDate: "2026-07-31",
+      endDateExclusive: "2026-08-01",
     });
   });
 
   it("keeps the explicitly selected day for daily indicators", () => {
     const selected = resolveExecutiveDashboardPeriod({ year: 2026, month: 8, day: 7 });
-    const daily = resolveExecutiveDashboardDailyPeriod(selected, "2026-08-12");
+    const daily = resolveExecutiveDashboardDailyPeriod(
+      selected,
+      "2026-08-12",
+      new Date("2026-08-18T12:00:00.000Z"),
+    );
 
     expect(daily.startDate).toBe("2026-08-07");
   });
