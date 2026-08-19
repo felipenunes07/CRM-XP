@@ -49,6 +49,7 @@ DEFAULT_ADMIN_PASSWORD=senha-forte-inicial
 OLIST_API_TOKEN=...
 OLIST_API_BASE_URL=https://api.tiny.com.br/api2
 OLIST_SYNC_START_DATE=2026-01-01
+OLIST_WEBHOOK_TOKEN=um-segredo-longo-e-aleatorio
 STARTUP_SYNC_ENABLED=false
 WORKER_OLIST_SYNC_ENABLED=true
 WORKER_OLIST_SYNC_INTERVAL_MINUTES=60
@@ -66,6 +67,8 @@ WORKER_DEFECT_SYNC_HOUR=5
 ```
 
 No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use caminhos reais do Dropbox iniciando com `/`.
+
+`OLIST_WEBHOOK_TOKEN` liga o webhook de vendas da Olist em `/api/webhooks/olist`, que leva a venda ao relatorio executivo em segundos. Passo a passo da configuracao no ERP em [docs/PAINEL_AO_VIVO.md](docs/PAINEL_AO_VIVO.md).
 
 Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minutos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
 

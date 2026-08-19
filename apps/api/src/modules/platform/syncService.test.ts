@@ -11,8 +11,11 @@ describe("startPrimarySyncScheduler", () => {
     vi.useRealTimers();
   });
 
-  it("uses a 5 minute source synchronization window for the TV dashboard", () => {
-    expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(5);
+  it("uses a 1 minute source synchronization window for the TV dashboard", () => {
+    // Sem o webhook da Olist (extensao fora do plano), esta varredura e o que
+    // leva a venda ao painel. So e viavel porque a sync incremental pula o
+    // pedidos.obter de pedidos que nao mudaram.
+    expect(PRIMARY_SYNC_INTERVAL_MINUTES).toBe(1);
   });
 
   it("uses Olist as the live sales source when Olist and Supabase are configured", () => {

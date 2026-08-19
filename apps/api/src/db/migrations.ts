@@ -4509,5 +4509,23 @@ export const migrations = [
       target_screen_de = EXCLUDED.target_screen_de,
       target_charging_docks = EXCLUDED.target_charging_docks,
       updated_at = NOW();
+  `,
+  `
+  -- Resumo do que a Olist ja devolveu em pedidos.pesquisa para cada pedido.
+  -- A sync incremental compara este resumo com o da busca e so gasta uma
+  -- chamada pedidos.obter quando algo mudou. Sem isto, cada ciclo refazia
+  -- ~78 chamadas (2 dias de pedidos), o que impedia rodar de minuto em minuto
+  -- dentro do limite da API da Tiny.
+  CREATE TABLE IF NOT EXISTS olist_order_summaries (
+    order_id TEXT PRIMARY KEY,
+    order_number TEXT,
+    order_date TEXT,
+    situacao TEXT,
+    valor TEXT,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS olist_order_summaries_synced_at_idx
+    ON olist_order_summaries (synced_at DESC);
   `
 ];

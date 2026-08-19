@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Bar,
@@ -28,7 +28,7 @@ import type {
   ExecutiveDashboardMetrics,
   ExecutiveDashboardSeller,
 } from "@olist-crm/shared";
-import { api } from "../lib/api";
+import { API_BASE_URL, api } from "../lib/api";
 import "./executiveSalesDashboard.css";
 
 const AUTO_REFRESH_INTERVAL_MS = 60 * 1000;
@@ -36,7 +36,8 @@ const AUTO_REFRESH_RETRY_INTERVAL_MS = 60 * 1000;
 const FULL_PAGE_RELOAD_INTERVAL_MS = 15 * 60 * 1000;
 const SOURCE_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const SOURCE_SYNC_INITIAL_DELAY_MS = 5 * 1000;
-const DATA_SYNC_INTERVAL_LABEL = "5min";
+const DATA_SYNC_INTERVAL_LABEL = "1min";
+const LIVE_LABEL = "ao vivo";
 const MONTH_LABELS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 const RANK_EMOJIS = ["🏆", "🥈", "🥉", "❤"];
 const SELLER_COLORS = ["#8ea9ef", "#7193ea", "#557be1", "#3f67d5"];
@@ -60,6 +61,7 @@ interface HeaderProps extends FilterBarProps {
   generatedAt: string;
   isFetching: boolean;
   refreshFailed: boolean;
+  isLive: boolean;
   onRefresh: () => void;
 }
 
@@ -127,7 +129,7 @@ function getInitials(name: string) {
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
-function ExecutiveSidebar() {
+function ExecutiveSidebar({ isLive }: { isLive: boolean }) {
   return (
     <aside className="executive-sidebar">
       <Link to="/" className="executive-brand" aria-label="Voltar ao CRM">
@@ -143,11 +145,16 @@ function ExecutiveSidebar() {
         </div>
       </nav>
 
-      <div className="executive-tv-mode" title="Modo TV com sincronização automática das vendas a cada 5 minutos">
+      <div
+        className="executive-tv-mode"
+        title={isLive
+          ? "Modo TV ao vivo: cada venda aparece assim que entra na Olist"
+          : "Modo TV com sincronização automática das vendas a cada minuto"}
+      >
         <span className="executive-live-dot" />
         <div>
           <strong>TV</strong>
-          <small>{DATA_SYNC_INTERVAL_LABEL}</small>
+          <small>{isLive ? LIVE_LABEL : DATA_SYNC_INTERVAL_LABEL}</small>
         </div>
       </div>
 
@@ -219,6 +226,7 @@ function ExecutiveHeader({
   generatedAt,
   isFetching,
   refreshFailed,
+  isLive,
   onRefresh,
 }: HeaderProps) {
   const updatedAt = new Date(generatedAt).toLocaleTimeString("pt-BR", {
@@ -252,8 +260,8 @@ function ExecutiveHeader({
         >
           <RefreshCw className={isFetching ? "is-spinning" : ""} aria-hidden="true" />
           <span>
-            <strong>{isFetching ? "ATUALIZANDO..." : refreshFailed ? "FALHA AO ATUALIZAR" : "ATUALIZA SOZINHO"}</strong>
-            <small>{DATA_SYNC_INTERVAL_LABEL} · {updatedAt}</small>
+            <strong>{isFetching ? "ATUALIZANDO..." : refreshFailed ? "FALHA AO ATUALIZAR" : isLive ? "AO VIVO" : "ATUALIZA SOZINHO"}</strong>
+            <small>{isLive ? LIVE_LABEL : DATA_SYNC_INTERVAL_LABEL} · {updatedAt}</small>
           </span>
         </button>
         <span className="executive-live-dot" aria-label="Atualização automática ativa" />
@@ -610,6 +618,47 @@ function DashboardError({ message, onRetry }: { message: string; onRetry: () => 
   );
 }
 
+/**
+ * Canal ao vivo do painel. O backend empurra um evento assim que uma venda
+ * entra (webhook da Olist, sync agendada ou NOTIFY do Supabase) e a TV so
+ * refaz a consulta nesse momento — sem isso, a venda esperava ate 60s no
+ * polling. O EventSource reconecta sozinho; enquanto estiver fora do ar,
+ * `isLive` volta a false e o polling assume.
+ */
+function useExecutiveLiveStream(enabled: boolean, onUpdate: () => void) {
+  const [isLive, setIsLive] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setIsLive(false);
+      return;
+    }
+    if (typeof window === "undefined" || typeof window.EventSource === "undefined") {
+      // Navegadores antigos de Smart TV podem nao ter EventSource. O polling
+      // continua cobrindo o painel nesse caso.
+      return;
+    }
+
+    const base = API_BASE_URL.replace(/\/+$/, "");
+    const stream = new EventSource(`${base}/api/dashboard/executive/stream`);
+
+    stream.addEventListener("ready", () => setIsLive(true));
+    stream.onopen = () => setIsLive(true);
+    stream.onerror = () => setIsLive(false);
+    stream.onmessage = () => {
+      setIsLive(true);
+      onUpdate();
+    };
+
+    return () => {
+      setIsLive(false);
+      stream.close();
+    };
+  }, [enabled, onUpdate]);
+
+  return isLive;
+}
+
 export function ExecutiveSalesDashboardPage() {
   const [filters, setFilters] = useState<DashboardFilters>(getTodayFilters);
   const [followsCurrentPeriod, setFollowsCurrentPeriod] = useState(true);
@@ -704,6 +753,11 @@ export function ExecutiveSalesDashboardPage() {
     };
   }, [followsCurrentPeriod, sourceRefresh.mutate]);
 
+  const refetchDashboard = useCallback(() => {
+    void query.refetch();
+  }, [query.refetch]);
+  const isLive = useExecutiveLiveStream(followsCurrentPeriod, refetchDashboard);
+
   const periodOptions = query.data?.availablePeriods ?? [];
   const years = useMemo(() => {
     const values = new Set(periodOptions.map((period) => period.year));
@@ -737,7 +791,7 @@ export function ExecutiveSalesDashboardPage() {
   return (
     <main className="executive-dashboard-viewport">
       <div className="executive-dashboard-canvas">
-        <ExecutiveSidebar />
+        <ExecutiveSidebar isLive={isLive} />
         <div className="executive-dashboard-content">
           <ExecutiveHeader
             filters={filters}
@@ -749,6 +803,7 @@ export function ExecutiveSalesDashboardPage() {
             generatedAt={data.generatedAt}
             isFetching={query.isFetching || sourceRefresh.isPending}
             refreshFailed={query.isError || sourceRefresh.isError}
+            isLive={isLive}
             onRefresh={() => sourceRefresh.mutate()}
           />
           <div className="executive-dashboard-grid">
