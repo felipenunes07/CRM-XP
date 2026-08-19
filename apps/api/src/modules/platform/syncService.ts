@@ -8,11 +8,17 @@ import { importSupabase2026 } from "../ingestion/supabaseImporter.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { clearDashboardCache } from "../crm/dashboardService.js";
 import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.js";
+import { publishExecutiveDashboardUpdate } from "../crm/executiveDashboardBus.js";
 
 const DAILY_SYNC_KEY = "primary_daily_sync_date";
 const HOURLY_SYNC_KEY = "primary_hourly_sync_timestamp";
 const DAILY_SYNC_TIMEZONE = "America/Sao_Paulo";
-export const PRIMARY_SYNC_INTERVAL_MINUTES = 5;
+// A extensao Webhooks nao esta no plano da conta Olist, entao o painel depende
+// desta varredura. Com o resumo em olist_order_summaries um ciclo sem venda nova
+// custa so as paginas de pedidos.pesquisa (~2 chamadas), o que cabe folgado no
+// limite de 60/min do plano mais basico da API 2.0 — antes eram ~78 chamadas por
+// ciclo e 1 minuto era inviavel.
+export const PRIMARY_SYNC_INTERVAL_MINUTES = 1;
 const SYNC_INTERVAL_MS = PRIMARY_SYNC_INTERVAL_MINUTES * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 1000;
 const PRIMARY_SYNC_ADVISORY_LOCK_ID = 742_026_814;
@@ -85,6 +91,20 @@ async function setCursor(key: string, value: string) {
   );
 }
 
+/**
+ * Quantas linhas de venda a sync realmente gravou. A Olist devolve
+ * `recordsInserted` e o importador do Supabase devolve `rowsInserted`.
+ * `null` = nao deu para saber; nesse caso tratamos como "mudou", para o painel
+ * nunca ficar atrasado por causa de um formato de retorno inesperado.
+ */
+function readRecordsInserted(result: unknown): number | null {
+  const payload = result as { recordsInserted?: unknown; rowsInserted?: unknown } | null;
+  for (const value of [payload?.recordsInserted, payload?.rowsInserted]) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
 async function runPrimarySyncInternal(reason: string) {
   logger.info("primary sync started", { reason });
 
@@ -100,10 +120,31 @@ async function runPrimarySyncInternal(reason: string) {
     const local = getLocalParts();
     await setCursor(DAILY_SYNC_KEY, local.dateKey);
     await setCursor(HOURLY_SYNC_KEY, new Date().toISOString());
-    await refreshDashboardDailyMetrics();
-    await clearDashboardCache();
-    clearExecutiveDashboardCache();
-    logger.info("primary sync completed", { reason, source: completedSource, result });
+
+    // Rodando de minuto em minuto, a maioria dos ciclos nao traz venda nenhuma.
+    // refreshDashboardDailyMetrics e uma agregacao pesada sobre orders/customers:
+    // so vale paga-la quando algo entrou. O mesmo para acordar a TV.
+    const recordsInserted = readRecordsInserted(result);
+    if (recordsInserted === null || recordsInserted > 0) {
+      await refreshDashboardDailyMetrics();
+      await clearDashboardCache();
+      clearExecutiveDashboardCache();
+      publishExecutiveDashboardUpdate({
+        reason,
+        source: completedSource,
+        recordsInserted: recordsInserted ?? 0,
+        updatedAt: new Date().toISOString(),
+      });
+      logger.info("primary sync completed with changes", {
+        reason,
+        source: completedSource,
+        recordsInserted,
+        result,
+      });
+    } else {
+      logger.info("primary sync completed without changes", { reason, source: completedSource });
+    }
+
     return {
       source: completedSource,
       result,

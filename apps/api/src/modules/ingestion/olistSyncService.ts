@@ -521,6 +521,155 @@ export function getOlistTodayDateKey(date = new Date()) {
   return `${read("year")}-${read("month")}-${read("day")}`;
 }
 
+type AttendantResolver = ResolveOrderAttendantDeps;
+
+/**
+ * Resolve a vendedora de um pedido reaproveitando o que ja foi descoberto na
+ * mesma execucao. Sem o cache, um lote com varios pedidos do mesmo cliente
+ * repetia a mesma consulta (e a mesma ida a API) uma vez por pedido.
+ */
+function createAttendantResolver(): AttendantResolver {
+  const contactAttendants = new Map<string, string | null>();
+  const historicalAttendants = new Map<string, string | null>();
+
+  return {
+    findContactAttendantByCustomer: async (customerCode, customerName) => {
+      const key = customerCode || normalizeText(customerName).toLowerCase();
+      if (contactAttendants.has(key)) {
+        return contactAttendants.get(key) ?? null;
+      }
+
+      const resolved = await findContactAttendantByCustomer(customerCode, customerName);
+      contactAttendants.set(key, resolved);
+      return resolved;
+    },
+    getHistoricalAttendantByCustomerCode: async (customerCode) => {
+      if (historicalAttendants.has(customerCode)) {
+        return historicalAttendants.get(customerCode) ?? null;
+      }
+
+      const resolved = await getHistoricalAttendantByCustomerCode(customerCode);
+      historicalAttendants.set(customerCode, resolved);
+      return resolved;
+    },
+  };
+}
+
+/**
+ * Baixa o pedido completo, resolve a vendedora e grava as linhas de venda.
+ * Isolado para que o webhook da Olist consiga processar um unico pedido com
+ * exatamente as mesmas regras da sync em lote.
+ */
+async function ingestOlistOrder(orderId: string | number, resolver: AttendantResolver) {
+  const order = await withRetry(() => client.getOrder(orderId));
+  const { customerCode, customerName } = buildOrderCustomerContext(order);
+  const attendantName = await resolveOrderAttendantName(order, resolver);
+
+  if (!attendantName) {
+    logger.warn("olist order without resolved attendant", {
+      orderId: String(order.id),
+      orderNumber: normalizeText(String(order.numero)),
+      customerCode,
+      customerName,
+    });
+  }
+
+  const rows = toNormalizedSaleRows(order, attendantName);
+  const { rowCount, insertedCustomerCodes } = await insertOlistRows(rows);
+
+  return {
+    order,
+    attendantName,
+    recordsSeen: rows.length,
+    recordsInserted: rowCount,
+    insertedCustomerCodes,
+  };
+}
+
+function buildOrderSummaryFingerprint(summary: Pick<OlistOrderSummary, "situacao" | "valor" | "data_pedido">) {
+  return [
+    normalizeText(String(summary.situacao ?? "")),
+    String(summary.valor ?? ""),
+    String(summary.data_pedido ?? ""),
+  ].join("|");
+}
+
+interface StoredOrderSummary {
+  fingerprint: string;
+  hasAttendant: boolean;
+}
+
+/**
+ * Le o que a Olist ja tinha devolvido para estes pedidos. Se o resumo da busca
+ * bater com o resumo guardado, o pedido nao mudou e nao vale gastar uma chamada
+ * pedidos.obter com ele.
+ */
+async function loadStoredOrderSummaries(orderIds: string[]) {
+  const stored = new Map<string, StoredOrderSummary>();
+  if (!orderIds.length) return stored;
+
+  const result = await pool.query<{
+    order_id: string;
+    situacao: string | null;
+    valor: string | null;
+    order_date: string | null;
+    has_attendant: boolean;
+  }>(
+    `
+      SELECT
+        s.order_id,
+        s.situacao,
+        s.valor,
+        s.order_date,
+        EXISTS (
+          SELECT 1
+          FROM sales_raw sr
+          WHERE sr.source_system = 'olist_v2'
+            AND sr.external_order_id = s.order_id
+            AND NULLIF(sr.attendant_name, '') IS NOT NULL
+        ) AS has_attendant
+      FROM olist_order_summaries s
+      WHERE s.order_id = ANY($1::text[])
+    `,
+    [orderIds],
+  );
+
+  for (const row of result.rows) {
+    stored.set(String(row.order_id), {
+      fingerprint: buildOrderSummaryFingerprint({
+        situacao: row.situacao ?? "",
+        valor: row.valor ?? "",
+        data_pedido: row.order_date ?? "",
+      }),
+      hasAttendant: Boolean(row.has_attendant),
+    });
+  }
+
+  return stored;
+}
+
+async function saveOrderSummary(summary: OlistOrderSummary) {
+  await pool.query(
+    `
+      INSERT INTO olist_order_summaries (order_id, order_number, order_date, situacao, valor, synced_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
+      ON CONFLICT (order_id) DO UPDATE
+      SET order_number = EXCLUDED.order_number,
+          order_date = EXCLUDED.order_date,
+          situacao = EXCLUDED.situacao,
+          valor = EXCLUDED.valor,
+          synced_at = NOW()
+    `,
+    [
+      String(summary.id),
+      normalizeText(String(summary.numero ?? "")) || null,
+      String(summary.data_pedido ?? "") || null,
+      normalizeText(String(summary.situacao ?? "")) || null,
+      String(summary.valor ?? "") || null,
+    ],
+  );
+}
+
 export async function syncOlistIncremental(options: OlistIncrementalSyncOptions = {}) {
   if (!(await getOlistApiToken())) {
     logger.warn("olist sync skipped: OLIST_API_TOKEN not configured");
@@ -534,8 +683,8 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
   let recordsSeen = 0;
   let recordsInserted = 0;
   const impactedCustomerCodes = new Set<string>();
-  const resolvedContactAttendants = new Map<string, string | null>();
-  const resolvedHistoricalAttendants = new Map<string, string | null>();
+  let recordsSkipped = 0;
+  const resolver = createAttendantResolver();
 
   try {
     // Cursor para eficiência, mas com rede de segurança: sempre revarre os
@@ -578,49 +727,32 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
     const today = getOlistTodayDateKey();
     await collectOrders({ startDate: today, endDate: today });
 
+    // A busca ja diz situacao, valor e data de cada pedido. Guardamos esse
+    // resumo e so gastamos um pedidos.obter quando ele muda — e o que permite
+    // rodar a sync de minuto em minuto sem estourar o limite da API da Tiny.
+    // Pedido que ficou sem vendedora e sempre reprocessado, para o painel se
+    // corrigir sozinho quando o vinculo do cliente aparecer.
+    const storedSummaries = await loadStoredOrderSummaries([...orderSummaries.keys()]);
+
     for (const summary of orderSummaries.values()) {
-      const order = await withRetry(() => client.getOrder(summary.id));
-      const { customerCode, customerName } = buildOrderCustomerContext(order);
-      const cacheKey = customerCode || normalizeText(customerName).toLowerCase();
-      const attendantName = await resolveOrderAttendantName(order, {
-        findContactAttendantByCustomer: async (candidateCustomerCode, candidateCustomerName) => {
-          const candidateKey = candidateCustomerCode || normalizeText(candidateCustomerName).toLowerCase();
-          if (resolvedContactAttendants.has(candidateKey)) {
-            return resolvedContactAttendants.get(candidateKey) ?? null;
-          }
+      const stored = storedSummaries.get(String(summary.id));
+      const isUnchanged = stored
+        && stored.hasAttendant
+        && stored.fingerprint === buildOrderSummaryFingerprint(summary);
 
-          const resolved = await findContactAttendantByCustomer(candidateCustomerCode, candidateCustomerName);
-          resolvedContactAttendants.set(candidateKey, resolved);
-          return resolved;
-        },
-        getHistoricalAttendantByCustomerCode: async (candidateCustomerCode) => {
-          if (resolvedHistoricalAttendants.has(candidateCustomerCode)) {
-            return resolvedHistoricalAttendants.get(candidateCustomerCode) ?? null;
-          }
-
-          const resolved = await getHistoricalAttendantByCustomerCode(candidateCustomerCode);
-          resolvedHistoricalAttendants.set(candidateCustomerCode, resolved);
-          return resolved;
-        },
-      });
-
-      if (!attendantName) {
-        logger.warn("olist order without resolved attendant", {
-          orderId: String(order.id),
-          orderNumber: normalizeText(String(order.numero)),
-          customerCode,
-          customerName,
-          cacheKey,
-        });
+      if (isUnchanged) {
+        recordsSkipped += 1;
+        continue;
       }
 
-      const rows = toNormalizedSaleRows(order, attendantName);
-      recordsSeen += rows.length;
-      const { rowCount: rowsInserted, insertedCustomerCodes } = await insertOlistRows(rows);
-      recordsInserted += rowsInserted;
-      for (const code of insertedCustomerCodes) {
+      const outcome = await ingestOlistOrder(summary.id, resolver);
+      recordsSeen += outcome.recordsSeen;
+      recordsInserted += outcome.recordsInserted;
+      for (const code of outcome.insertedCustomerCodes) {
         impactedCustomerCodes.add(code);
       }
+
+      await saveOrderSummary(summary);
     }
 
     if (impactedCustomerCodes.size) {
@@ -638,7 +770,7 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
       [runId, recordsSeen, recordsInserted],
     );
 
-    return { runId, recordsSeen, recordsInserted, cursor };
+    return { runId, recordsSeen, recordsInserted, recordsSkipped, cursor };
   } catch (error) {
     await pool.query(
       `
@@ -655,4 +787,42 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
     );
     throw error;
   }
+}
+
+/**
+ * Processa um unico pedido, sob demanda. Usado pelo webhook da Olist: em vez de
+ * revarrer a janela inteira, gastamos uma unica chamada pedidos.obter para o
+ * pedido que acabou de mudar.
+ *
+ * Nao grava o resumo em olist_order_summaries de proposito — o webhook nao
+ * informa o valor do pedido, entao deixamos a proxima sync incremental gravar o
+ * resumo canonico vindo de pedidos.pesquisa.
+ */
+export async function syncOlistOrderById(orderId: string | number) {
+  if (!(await getOlistApiToken())) {
+    logger.warn("olist order sync skipped: OLIST_API_TOKEN not configured", { orderId: String(orderId) });
+    return { skipped: true, reason: "MISSING_TOKEN" as const, recordsInserted: 0 };
+  }
+
+  const outcome = await ingestOlistOrder(orderId, createAttendantResolver());
+
+  if (outcome.insertedCustomerCodes.length) {
+    await rebuildReadModels(outcome.insertedCustomerCodes);
+  }
+
+  logger.info("olist single order sync completed", {
+    orderId: String(orderId),
+    orderNumber: normalizeText(String(outcome.order.numero)),
+    recordsSeen: outcome.recordsSeen,
+    recordsInserted: outcome.recordsInserted,
+    attendantName: outcome.attendantName,
+  });
+
+  return {
+    skipped: false as const,
+    orderId: String(outcome.order.id),
+    orderNumber: normalizeText(String(outcome.order.numero)),
+    recordsSeen: outcome.recordsSeen,
+    recordsInserted: outcome.recordsInserted,
+  };
 }

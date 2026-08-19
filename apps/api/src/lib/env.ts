@@ -65,6 +65,10 @@ const envSchema = z.object({
   // o cursor esteja mais recente — garante que vendas de hoje nunca fiquem de
   // fora por cursor adiantado ou falha de sync.
   OLIST_SYNC_SAFETY_DAYS: z.coerce.number().int().min(1).max(30).default(2),
+  // Segredo compartilhado na URL do webhook da Olist (?token=...). A Tiny nao
+  // assina o payload, entao o segredo na URL e o que impede terceiros de
+  // dispararem sync na nossa conta. Vazio desliga o webhook.
+  OLIST_WEBHOOK_TOKEN: z.string().optional(),
   STARTUP_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

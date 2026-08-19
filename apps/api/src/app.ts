@@ -54,6 +54,7 @@ import { getAmbassadorOverview } from "./modules/crm/ambassadorService.js";
 import { getAttendantPortfolio, getAttendantsOverview } from "./modules/crm/attendantService.js";
 import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getMonthlyTargetActuals, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import { getExecutiveDashboardMetrics } from "./modules/crm/executiveDashboardService.js";
+import { subscribeExecutiveDashboardUpdates } from "./modules/crm/executiveDashboardBus.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -223,6 +224,7 @@ import {
 } from "./modules/pipeline/pipelineService.js";
 import { handleEvolutionWebhook } from "./modules/whatsapp/evolutionWebhook.js";
 import { handleUazapiWebhook } from "./modules/whatsapp/uazapiWebhook.js";
+import { handleOlistWebhook, isValidOlistWebhookToken } from "./modules/ingestion/olistWebhookService.js";
 import { assertSupportedOutboundVideo, getCampaignMediaDir, IMAGE_MIME_EXTENSIONS } from "./modules/whatsapp/whatsappMedia.js";
 import { pool, redis } from "./db/client.js";
 
@@ -812,6 +814,33 @@ export function createApp() {
     }
   });
 
+  // Webhook de vendas da Olist/Tiny. Dispara em inclusao_pedido e
+  // atualizacao_pedido, inclusive para pedidos lancados a mao no ERP, e e o que
+  // leva a venda ao painel em segundos em vez de esperar a proxima sync.
+  //
+  // A Tiny nao assina o payload; o segredo vai na URL (?token=OLIST_WEBHOOK_TOKEN).
+  // O urlencoded cobre o caso de a Tiny postar formulario em vez de JSON.
+  app.post(
+    "/api/webhooks/olist",
+    express.urlencoded({ extended: true, limit: "5mb" }),
+    async (request, response) => {
+      if (!isValidOlistWebhookToken(request.query.token)) {
+        logger.warn("olist webhook rejected: invalid token", { ip: request.ip });
+        response.status(401).json({ received: false, reason: "invalid-token" });
+        return;
+      }
+
+      // Sempre 200, mesmo em payload que nao interessa: qualquer outra coisa
+      // faz a Olist reenviar o mesmo evento ate 10 vezes.
+      try {
+        response.json(await handleOlistWebhook(request.body));
+      } catch (error) {
+        logger.error("olist webhook handler failed", { error: String(error) });
+        response.json({ received: true, processed: false, reason: "handler-error" });
+      }
+    },
+  );
+
   // SSE stream for real-time WhatsApp monitor messages (Auth verified manually via query token)
   app.get("/api/whatsapp-monitor/stream", async (request, response) => {
     const token = typeof request.query.token === "string" ? request.query.token : "";
@@ -922,6 +951,37 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  // Canal ao vivo da TV. Assim que uma venda entra (webhook da Olist, sync
+  // agendada ou NOTIFY do Supabase) o painel recebe o aviso e refaz a consulta,
+  // em vez de esperar o polling de 60s. Publico igual ao endpoint do relatorio:
+  // nao expoe dado nenhum, so avisa que ha algo novo para buscar.
+  app.get("/api/dashboard/executive/stream", (request, response) => {
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no", // sem isto o proxy do EasyPanel segura o evento
+    });
+
+    response.write(`event: ready\ndata: "ok"\n\n`);
+
+    const unsubscribe = subscribeExecutiveDashboardUpdates((update) => {
+      response.write(`data: ${JSON.stringify(update)}\n\n`);
+    });
+
+    // Navegadores de Smart TV derrubam conexoes ociosas. O ping mantem viva a
+    // conexao e faz o EventSource reconectar sozinho quando o link cai.
+    const heartbeat = setInterval(() => {
+      response.write(`: ping\n\n`);
+    }, 25_000);
+
+    request.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      response.end();
+    });
   });
 
   app.use("/api", requireAuth);
