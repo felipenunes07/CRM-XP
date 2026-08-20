@@ -21,7 +21,7 @@ describe("relatório executivo conta apenas venda enviada", () => {
   it("filtra por 'enviado' em todas as consultas de pedidos", async () => {
     queryMock.mockResolvedValue({ rows: [], rowCount: 0 });
 
-    await getExecutiveDashboardMetrics({ year: 2026, month: 8, day: null }).catch(() => undefined);
+    await getExecutiveDashboardMetrics({ year: 2026, month: 8 }).catch(() => undefined);
 
     const sqls = queryMock.mock.calls.map((call) => String(call[0]));
     // historical_attendants monta a LISTA DE NOMES das vendedoras, nao conta
@@ -40,7 +40,7 @@ describe("relatório executivo conta apenas venda enviada", () => {
   it("preserva o histórico de outras fontes, que nunca tem status 'enviado'", async () => {
     queryMock.mockResolvedValue({ rows: [], rowCount: 0 });
 
-    await getExecutiveDashboardMetrics({ year: 2026, month: 7, day: null }).catch(() => undefined);
+    await getExecutiveDashboardMetrics({ year: 2026, month: 7 }).catch(() => undefined);
 
     const comFiltro = queryMock.mock.calls
       .map((call) => String(call[0]))
