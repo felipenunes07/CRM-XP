@@ -1,5 +1,14 @@
 import { redis } from "../../db/client.js";
 
+/**
+ * Fatia do limite da conta que o CRM pode consumir. O limite da API 2.0 e por
+ * CONTA, nao por aplicacao: o n8n e qualquer outra integracao dividem a mesma
+ * cota. Se o CRM usar 100%, uma rodada do n8n no mesmo minuto leva
+ * "API Bloqueada" e perde a carga. O CRM precisa de ~2 chamadas por ciclo, entao
+ * abrir mao de metade nao custa nada aqui e evita derrubar o vizinho.
+ */
+const ACCOUNT_LIMIT_SHARE = 0.5;
+
 export class OlistRateLimiter {
   private tokens = 30;
   private capacity = 30;
@@ -43,14 +52,16 @@ export class OlistRateLimiter {
       return;
     }
 
-    this.capacity = limit;
+    const budget = Math.max(1, Math.floor(limit * ACCOUNT_LIMIT_SHARE));
+    this.capacity = budget;
     this.tokens = Math.min(this.tokens, this.capacity);
-    this.refillPerSecond = limit / 60;
-    this.concurrency = Math.max(1, Math.floor(limit / 4));
+    this.refillPerSecond = budget / 60;
+    this.concurrency = Math.max(1, Math.floor(budget / 4));
     await redis.set(
       `ratelimit:${this.resourceKey}`,
       JSON.stringify({
-        limit,
+        accountLimit: limit,
+        budget,
         refillPerSecond: this.refillPerSecond,
         concurrency: this.concurrency,
         updatedAt: new Date().toISOString(),

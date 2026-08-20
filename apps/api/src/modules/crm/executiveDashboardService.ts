@@ -1,11 +1,27 @@
 import type { ExecutiveDashboardMetrics } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { env } from "../../lib/env.js";
 import { executiveSellerAvatarPublicUrl } from "../whatsapp/whatsappAvatarCache.js";
 
 const DAILY_TARGET_DIVISOR = 20;
 // O worker pode sincronizar em outro processo, onde nao consegue limpar este Map.
 // Um TTL curto garante que a TV enxergue a nova importacao no minuto seguinte.
 const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+
+/**
+ * A TV so conta venda da Olist ja despachada ("Enviado"). "Em aberto" e
+ * "Preparando envio" ficam de fora ate sairem — decisao do time comercial.
+ *
+ * O filtro so vale para linhas vindas da Olist. Historico do Dropbox e vendas
+ * importadas do Supabase gravam status 'VALID', nunca 'Enviado'; sem a excecao
+ * por source_system, os anos anteriores e os graficos de comparacao zerariam.
+ *
+ * Cancelado ja e descartado antes, na montagem dos read models
+ * (analyticsService.rebuildOrders), entao nao precisa ser repetido aqui.
+ */
+const SHIPPED_ONLY_SQL = env.EXECUTIVE_ONLY_SHIPPED
+  ? `AND (source_system <> 'olist_v2' OR LOWER(COALESCE(status, '')) = 'enviado')`
+  : "";
 const SAO_PAULO_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
   year: "numeric",
@@ -314,6 +330,7 @@ async function loadExecutiveDashboardMetrics(
             SELECT MAX(order_date)::text AS focus_date
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
+              ${SHIPPED_ONLY_SQL}
           `,
           [period.monthStart, period.monthEndExclusive],
         )
@@ -349,6 +366,7 @@ async function loadExecutiveDashboardMetrics(
             ORDER BY EXTRACT(DAY FROM order_date)::int
           ) AS days
         FROM orders
+        WHERE TRUE ${SHIPPED_ONLY_SQL}
         GROUP BY EXTRACT(YEAR FROM order_date), EXTRACT(MONTH FROM order_date)
         ORDER BY year DESC, month DESC
       `),
@@ -364,9 +382,12 @@ async function loadExecutiveDashboardMetrics(
           selected_orders AS MATERIALIZED (
             SELECT id, customer_id, order_date::date AS order_date, total_amount
             FROM orders
-            WHERE (order_date >= $3::date AND order_date < $4::date)
-               OR (order_date >= $5::date AND order_date < $6::date)
-               OR (order_date >= $7::date AND order_date < $8::date)
+            WHERE (
+                 (order_date >= $3::date AND order_date < $4::date)
+              OR (order_date >= $5::date AND order_date < $6::date)
+              OR (order_date >= $7::date AND order_date < $8::date)
+            )
+            ${SHIPPED_ONLY_SQL}
           ),
           raw_order_items AS (
             SELECT
@@ -562,6 +583,7 @@ async function loadExecutiveDashboardMetrics(
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
               AND NULLIF(BTRIM(last_attendant), '') IS NOT NULL
+              ${SHIPPED_ONLY_SQL}
           ),
           classified_order_items AS (
             SELECT
@@ -649,6 +671,7 @@ async function loadExecutiveDashboardMetrics(
             SELECT id, customer_id, order_date::date AS order_date
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
+              ${SHIPPED_ONLY_SQL}
           ),
           classified_order_items AS (
             SELECT
@@ -702,6 +725,7 @@ async function loadExecutiveDashboardMetrics(
               COUNT(DISTINCT customer_id)::int AS unique_customers
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
+              ${SHIPPED_ONLY_SQL}
             GROUP BY EXTRACT(MONTH FROM order_date)
           )
           SELECT
