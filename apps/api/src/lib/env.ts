@@ -65,6 +65,15 @@ const envSchema = z.object({
   // o cursor esteja mais recente — garante que vendas de hoje nunca fiquem de
   // fora por cursor adiantado ou falha de sync.
   OLIST_SYNC_SAFETY_DAYS: z.coerce.number().int().min(1).max(30).default(2),
+  // Quando true, o RELATORIO EXECUTIVO da TV so conta venda da Olist com a
+  // situacao "Enviado" — "Em aberto" e "Preparando envio" ficam de fora ate
+  // despacharem. Vale so para esse painel; o resto do CRM continua contando
+  // tudo que nao esta cancelado. O historico (Dropbox/Supabase) tambem nao e
+  // afetado, porque grava order_status = 'VALID' e nao 'Enviado'.
+  EXECUTIVE_ONLY_SHIPPED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   // Segredo compartilhado na URL do webhook da Olist (?token=...). A Tiny nao
   // assina o payload, entao o segredo na URL e o que impede terceiros de
   // dispararem sync na nossa conta. Vazio desliga o webhook.
