@@ -19,6 +19,18 @@ const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
  * Cancelado ja e descartado antes, na montagem dos read models
  * (analyticsService.rebuildOrders), entao nao precisa ser repetido aqui.
  */
+/**
+ * Classificacao de produto da TV: o que nao for bateria nem dock de carga e
+ * tela. A XP so vende esses tres tipos, e o nome do produto e o modelo do
+ * aparelho ("SM-A10 PREMIER MAX ORI"), sem a palavra "tela" — em 21/08, de
+ * 7.120 pecas vendidas, so 1.620 batiam por descricao.
+ *
+ * Antes o resto dependia do SKU estar no catalogo de estoque ativo. SKU fora
+ * do catalogo caia num balde "OTHER" e sumia da contagem de telas: 49 pecas
+ * perdidas so naquele dia. Agora nao ha mais como uma venda escapar.
+ *
+ * other_items continua no retorno por compatibilidade, mas e sempre zero.
+ */
 const SHIPPED_ONLY_SQL = env.EXECUTIVE_ONLY_SHIPPED
   ? `AND (source_system <> 'olist_v2' OR LOWER(COALESCE(status, '')) = 'enviado')`
   : "";
@@ -372,14 +384,7 @@ async function loadExecutiveDashboardMetrics(
       `),
       pool.query<SummaryRow>(
         `
-          WITH active_catalog AS (
-            SELECT DISTINCT isi.sku
-            FROM inventory_snapshot_items isi
-            JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
-            WHERE inventory.is_active = TRUE
-              AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
-          ),
-          selected_orders AS MATERIALIZED (
+          WITH selected_orders AS MATERIALIZED (
             SELECT id, customer_id, order_date::date AS order_date, total_amount
             FROM orders
             WHERE (
@@ -393,11 +398,9 @@ async function loadExecutiveDashboardMetrics(
             SELECT
               oi.order_id,
               COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
-              UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) AS product_text,
-              active_catalog.sku IS NOT NULL AS in_catalog
+              UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) AS product_text
             FROM order_items oi
             JOIN selected_orders selected ON selected.id = oi.order_id
-            LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           classified_order_items AS (
             SELECT
@@ -406,10 +409,7 @@ async function loadExecutiveDashboardMetrics(
               CASE
                 WHEN product_text ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
                 WHEN product_text ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
-                WHEN in_catalog
-                  OR product_text ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
-                  THEN 'SCREEN'
-                ELSE 'OTHER'
+                ELSE 'SCREEN'
               END AS category,
               CASE
                 WHEN product_text ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
@@ -571,14 +571,7 @@ async function loadExecutiveDashboardMetrics(
       `),
       pool.query<ExecutiveSellerMetricRow>(
         `
-          WITH active_catalog AS (
-            SELECT DISTINCT isi.sku
-            FROM inventory_snapshot_items isi
-            JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
-            WHERE inventory.is_active = TRUE
-              AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
-          ),
-          selected_orders AS MATERIALIZED (
+          WITH selected_orders AS MATERIALIZED (
             SELECT id, customer_id, last_attendant, total_amount
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
@@ -592,14 +585,10 @@ async function loadExecutiveDashboardMetrics(
               CASE
                 WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
                 WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
-                WHEN active_catalog.sku IS NOT NULL
-                  OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
-                  THEN 'SCREEN'
-                ELSE 'OTHER'
+                ELSE 'SCREEN'
               END AS category
             FROM order_items oi
             JOIN selected_orders selected ON selected.id = oi.order_id
-            LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           order_item_totals AS (
             SELECT
@@ -660,14 +649,7 @@ async function loadExecutiveDashboardMetrics(
         unique_customers: string | number | null;
       }>(
         `
-          WITH active_catalog AS (
-            SELECT DISTINCT isi.sku
-            FROM inventory_snapshot_items isi
-            JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
-            WHERE inventory.is_active = TRUE
-              AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
-          ),
-          selected_orders AS MATERIALIZED (
+          WITH selected_orders AS MATERIALIZED (
             SELECT id, customer_id, order_date::date AS order_date
             FROM orders
             WHERE order_date >= $1::date AND order_date < $2::date
@@ -680,14 +662,10 @@ async function loadExecutiveDashboardMetrics(
               CASE
                 WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
                 WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
-                WHEN active_catalog.sku IS NOT NULL
-                  OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
-                  THEN 'SCREEN'
-                ELSE 'OTHER'
+                ELSE 'SCREEN'
               END AS category
             FROM order_items oi
             JOIN selected_orders selected ON selected.id = oi.order_id
-            LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           ),
           order_item_totals AS (
             SELECT
