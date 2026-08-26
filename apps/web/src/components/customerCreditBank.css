@@ -658,6 +658,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+.bankfin-listhead-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .bankfin-table-wrap {
   background: var(--bf-surface);
   border: 1px solid var(--bf-line);
