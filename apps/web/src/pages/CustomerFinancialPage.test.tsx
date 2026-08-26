@@ -220,6 +220,8 @@ describe("CustomerFinancialPageView", () => {
     );
 
     expect(markup).toContain("Financeiro por cliente");
+    expect(markup).toContain("Exportar Excel");
+    expect(markup).toContain("Exportar 2 cliente(s) do filtro atual");
     expect(markup).toContain("Fast Phone");
     expect(markup).toContain("Patrick Sos Celular");
     expect(markup).toContain("Saldo devedor");

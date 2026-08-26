@@ -4629,6 +4629,13 @@ textarea {
   color: var(--muted);
 }
 
+.customer-financial-snapshot-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .customer-financial-workspace {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
