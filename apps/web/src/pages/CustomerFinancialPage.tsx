@@ -4,7 +4,7 @@ import type {
   CustomerCreditRow,
 } from "@olist-crm/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, RefreshCw, Search } from "lucide-react";
+import { Download, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
@@ -26,6 +26,7 @@ import {
   customerCreditRiskLabel,
   customerCreditVisibleFlags,
 } from "../lib/customerCredit";
+import { exportCustomerFinancialWorkbook } from "../lib/customerFinancialExport";
 
 interface CustomerFinancialPageViewProps {
   overview: CustomerCreditOverviewResponse | null;
@@ -162,6 +163,8 @@ export function CustomerFinancialPageView({
   onSelectCustomer,
   onRefresh,
 }: CustomerFinancialPageViewProps) {
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState(false);
   const linkedRows = overview?.linkedRows ?? [];
   const filteredRows = useMemo(() => filterCreditRows(linkedRows, search), [linkedRows, search]);
   const selectedRow = linkedRows.find((row) => row.customerId === selectedCustomerId) ?? null;
@@ -174,6 +177,21 @@ export function CustomerFinancialPageView({
   const usage = creditRow ? usagePercent(creditRow) : null;
   const daysSinceLastPayment =
     creditRow?.daysSinceLastPayment ?? calculateDaysSince(creditRow?.lastPaymentDate ?? null);
+
+  const handleExport = async () => {
+    if (isExporting || !filteredRows.length) return;
+
+    setIsExporting(true);
+    setExportError(false);
+    try {
+      await exportCustomerFinancialWorkbook({ rows: filteredRows, snapshot, search });
+    } catch (error) {
+      console.error("Falha ao exportar o financeiro para Excel:", error);
+      setExportError(true);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="page-stack customer-financial-page bankfin">
@@ -194,15 +212,28 @@ export function CustomerFinancialPageView({
                 ? `Arquivo ${formatDateTime(snapshot.sourceFileUpdatedAt)} | Importado ${formatDateTime(snapshot.importedAt)}`
                 : "Atualize o financeiro para carregar os saldos."}
             </span>
-            {canRefreshCredit ? (
-              <button type="button" className="ghost-button small" onClick={onRefresh} disabled={isRefreshing}>
-                <RefreshCw size={14} />
-                {isRefreshing ? "Atualizando..." : "Atualizar agora"}
+            <div className="customer-financial-snapshot-actions">
+              <button
+                type="button"
+                className="primary-button small"
+                onClick={() => void handleExport()}
+                disabled={isExporting || isOverviewLoading || !filteredRows.length}
+                title={`Exportar ${formatNumber(filteredRows.length)} cliente(s) do filtro atual`}
+              >
+                <Download size={14} />
+                {isExporting ? "Gerando Excel..." : "Exportar Excel"}
               </button>
-            ) : null}
+              {canRefreshCredit ? (
+                <button type="button" className="ghost-button small" onClick={onRefresh} disabled={isRefreshing}>
+                  <RefreshCw size={14} />
+                  {isRefreshing ? "Atualizando..." : "Atualizar agora"}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
         {refreshError ? <div className="inline-error">Nao foi possivel atualizar o arquivo agora.</div> : null}
+        {exportError ? <div className="inline-error">Nao foi possivel gerar o Excel. Tente novamente.</div> : null}
       </section>
 
       <div className="customer-financial-workspace">
