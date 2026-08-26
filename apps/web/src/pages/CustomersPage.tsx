@@ -5,6 +5,7 @@ import { Copy, Download, Repeat, Search, Send, SlidersHorizontal, Users, X } fro
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
+import { exportCustomerFinancialWorkbook } from "../lib/customerFinancialExport";
 import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPrecisePercent } from "../lib/format";
 import { getCustomerCreditDeadline, isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
@@ -378,6 +379,8 @@ export function CustomersPage() {
   };
 
   const [downloadingFiltered, setDownloadingFiltered] = useState(false);
+  const [downloadingCreditExcel, setDownloadingCreditExcel] = useState(false);
+  const [creditExportError, setCreditExportError] = useState(false);
 
   const getDownloadInfo = () => {
     const status = state.portfolioFilters.status;
@@ -695,6 +698,25 @@ export function CustomersPage() {
       ),
     [currentCreditPage, displayedCreditRows],
   );
+
+  const downloadCreditExcel = async () => {
+    if (downloadingCreditExcel || !displayedCreditRows.length) return;
+
+    setDownloadingCreditExcel(true);
+    setCreditExportError(false);
+    try {
+      await exportCustomerFinancialWorkbook({
+        rows: displayedCreditRows,
+        snapshot: creditOverviewQuery.data?.snapshot ?? null,
+        search: state.creditFilters.search,
+      });
+    } catch (error) {
+      console.error("Falha ao exportar Credito & Pagamento para Excel:", error);
+      setCreditExportError(true);
+    } finally {
+      setDownloadingCreditExcel(false);
+    }
+  };
 
   useEffect(() => {
     setCreditPage(1);
@@ -1514,29 +1536,45 @@ export function CustomersPage() {
 
               <div className="bankfin-listhead">
                 <h3>Clientes para acompanhar</h3>
-                <p>
-                  {formatNumber(displayedCreditRows.length ? (currentCreditPage - 1) * CREDIT_PAGE_SIZE + 1 : 0)}
-                  {"–"}
-                  {formatNumber(Math.min(currentCreditPage * CREDIT_PAGE_SIZE, displayedCreditRows.length))} de{" "}
-                  {formatNumber(displayedCreditRows.length)}
-                  {displayedCreditRows.length > 0 ? (
-                    <>
-                      {" · "}
-                      <button
-                        type="button"
-                        className="bankfin-linkbtn"
-                        onClick={() =>
-                          toggleAllVisibleCredit(selectedVisibleCreditRows.length !== visibleCreditRows.length)
-                        }
-                      >
-                        {selectedVisibleCreditRows.length === visibleCreditRows.length
-                          ? "desmarcar página"
-                          : "selecionar página"}
-                      </button>
-                    </>
-                  ) : null}
-                </p>
+                <div className="bankfin-listhead-actions">
+                  <p>
+                    {formatNumber(displayedCreditRows.length ? (currentCreditPage - 1) * CREDIT_PAGE_SIZE + 1 : 0)}
+                    {"–"}
+                    {formatNumber(Math.min(currentCreditPage * CREDIT_PAGE_SIZE, displayedCreditRows.length))} de{" "}
+                    {formatNumber(displayedCreditRows.length)}
+                    {displayedCreditRows.length > 0 ? (
+                      <>
+                        {" · "}
+                        <button
+                          type="button"
+                          className="bankfin-linkbtn"
+                          onClick={() =>
+                            toggleAllVisibleCredit(selectedVisibleCreditRows.length !== visibleCreditRows.length)
+                          }
+                        >
+                          {selectedVisibleCreditRows.length === visibleCreditRows.length
+                            ? "desmarcar página"
+                            : "selecionar página"}
+                        </button>
+                      </>
+                    ) : null}
+                  </p>
+                  <button
+                    type="button"
+                    className="primary-button small"
+                    onClick={() => void downloadCreditExcel()}
+                    disabled={downloadingCreditExcel || !displayedCreditRows.length}
+                    title={`Exportar ${formatNumber(displayedCreditRows.length)} cliente(s) do filtro atual`}
+                  >
+                    <Download size={15} />
+                    {downloadingCreditExcel ? "Gerando Excel..." : "Baixar Excel"}
+                  </button>
+                </div>
               </div>
+
+              {creditExportError ? (
+                <div className="inline-error">Nao foi possivel gerar o Excel. Tente novamente.</div>
+              ) : null}
 
               {/* Barra de acao do publico de cobranca */}
               {selectedCreditRows.length > 0 ? (
