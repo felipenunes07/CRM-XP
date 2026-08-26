@@ -1189,8 +1189,8 @@ async function getHistoricalReactivationLeaderboard(): Promise<HistoricalReactiv
   }));
 }
 
-async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTrendPoint[]> {
-  const params: any[] = [];
+export function buildItemsSoldTrendQuery(customerPrefix?: string) {
+  const params: string[] = [];
   let prefixFilter = "";
 
   if (customerPrefix) {
@@ -1198,33 +1198,54 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     prefixFilter = `AND c.customer_code ~ ('^' || $1 || '[0-9]+')`;
   }
 
-  const result = await pool.query(
-    `
-      WITH active_catalog AS (
+  return {
+    sql: `
+      WITH selected_orders AS MATERIALIZED (
+        SELECT
+          o.id,
+          o.order_date,
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_amount,
+          c.customer_code
+        FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.order_date >= '2023-01-01'::date
+          ${prefixFilter}
+      ),
+      active_catalog AS (
         SELECT DISTINCT isi.sku
         FROM inventory_snapshot_items isi
         JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
         WHERE inventory.is_active = TRUE
+          AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
       ),
-      classified_order_items AS (
+      raw_order_items AS MATERIALIZED (
         SELECT
           oi.order_id,
           COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
+          UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) AS product_text,
+          active_catalog.sku IS NOT NULL AS is_active_catalog_item
+        FROM order_items oi
+        JOIN selected_orders selected ON selected.id = oi.order_id
+        LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+      ),
+      classified_order_items AS (
+        SELECT
+          order_id,
+          quantity,
           CASE
-            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
-            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
-            WHEN active_catalog.sku IS NOT NULL
-              OR UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+            WHEN product_text ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
+            WHEN product_text ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
+            WHEN is_active_catalog_item
+              OR product_text ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
               THEN 'SCREEN'
             ELSE 'OTHER'
           END AS category,
           CASE
-            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
-            WHEN UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+            WHEN product_text ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+            WHEN product_text ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
             ELSE 'XP'
           END AS factory
-        FROM order_items oi
-        LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+        FROM raw_order_items
       ),
       order_item_totals AS (
         SELECT
@@ -1250,17 +1271,14 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
           COALESCE(SUM(oi.screen_de_quantity), 0)::int AS screen_de_items,
           COALESCE(SUM(oi.battery_quantity), 0)::int AS battery_items,
           COALESCE(SUM(oi.charging_dock_quantity), 0)::int AS charging_dock_items,
-          COALESCE(SUM(CASE WHEN c.customer_code ~ '^CL[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS cl_items,
-          COALESCE(SUM(CASE WHEN c.customer_code ~ '^KH[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS kh_items,
-          COALESCE(SUM(CASE WHEN c.customer_code ~ '^LJ[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS lj_items,
-          COALESCE(SUM(CASE WHEN c.customer_code !~ '^(CL|KH|LJ)[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS other_items,
+          COALESCE(SUM(CASE WHEN o.customer_code ~ '^CL[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS cl_items,
+          COALESCE(SUM(CASE WHEN o.customer_code ~ '^KH[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS kh_items,
+          COALESCE(SUM(CASE WHEN o.customer_code ~ '^LJ[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS lj_items,
+          COALESCE(SUM(CASE WHEN o.customer_code !~ '^(CL|KH|LJ)[0-9]+' THEN oi.quantity ELSE 0 END), 0)::int AS other_items,
           COUNT(DISTINCT o.id)::int AS total_orders,
           COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
+        FROM selected_orders o
         LEFT JOIN order_item_totals oi ON oi.order_id = o.id
-        WHERE o.order_date >= '2023-01-01'::date
-          ${prefixFilter}
         GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date)
       )
       SELECT 
@@ -1270,8 +1288,13 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
       LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month AND mt.attendant = 'TOTAL'
       ORDER BY s.year ASC, s.month ASC
     `,
-    params
-  );
+    params,
+  };
+}
+
+async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTrendPoint[]> {
+  const query = buildItemsSoldTrendQuery(customerPrefix);
+  const result = await pool.query(query.sql, query.params);
 
   return result.rows.map(row => ({
     year: Number(row.year ?? 0),
@@ -1376,6 +1399,27 @@ export async function getMonthlyTargetActuals(year: number): Promise<MonthlyTarg
     chargingDockItems: Number(row.charging_dock_items ?? 0),
     totalRevenue: Number(row.total_revenue ?? 0),
   }));
+}
+
+export function loadDashboardItemsSoldTrends(
+  customerPrefix: string | undefined,
+  loader: (prefix?: string) => Promise<ItemsSoldTrendPoint[]> = getItemsSoldTrend,
+) {
+  const loadSafely = (prefix?: string) =>
+    loader(prefix).catch((error) => {
+      logger.error("failed to load dashboard items sold trend", {
+        customerPrefix: prefix ?? "all",
+        error: String(error),
+      });
+      return [];
+    });
+
+  const globalItemsSoldTrend = loadSafely(undefined);
+
+  return {
+    itemsSoldTrend: customerPrefix ? loadSafely(customerPrefix) : globalItemsSoldTrend,
+    globalItemsSoldTrend,
+  };
 }
 
 export async function saveMonthlyTarget(
@@ -1510,6 +1554,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
   }
 
   const validatedTrendDays = await ensureDashboardMetricsFresh(trendDays);
+  const itemsSoldTrendRequests = loadDashboardItemsSoldTrends(customerPrefix);
   const [totals, buckets, lastSync, topCustomers, agendaEligibleCount, reactivationLeaderboard, reactivationHistory, portfolioTrend, salesPerformance, newCustomerLeaderboard, prospectingLeaderboard, itemsSoldTrend, globalItemsSoldTrend, currentMonthTargetData, ltvData, todaySalesPerformance, todaySalesData] =
     await Promise.all([
       pool.query(
@@ -1561,8 +1606,8 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
       getSalesPerformance(),
       getNewCustomerLeaderboard(),
       getProspectingLeaderboard(),
-      getItemsSoldTrend(customerPrefix),
-      getItemsSoldTrend(undefined), // Global trend for cards
+      itemsSoldTrendRequests.itemsSoldTrend,
+      itemsSoldTrendRequests.globalItemsSoldTrend,
       pool.query(`
         SELECT target_amount 
         FROM monthly_targets 
