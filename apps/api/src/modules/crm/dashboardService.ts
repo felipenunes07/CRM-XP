@@ -25,6 +25,7 @@ import { refreshAllSnapshots, refreshDashboardDailyMetrics } from "../analytics/
 import { AMBASSADOR_LABEL_NORMALIZED_NAME, listCustomers, buildWhere } from "./customerService.js";
 import type { CustomerFilters } from "./customerService.js";
 import { getMetaAdsMonthlySpend } from "./metaAdsService.js";
+import { buildShippedSalesOnlySql } from "./salesOrderScope.js";
 
 const DASHBOARD_TREND_WINDOW_DAYS = 90;
 const DASHBOARD_TREND_MAX_DAYS = 3650;
@@ -391,6 +392,7 @@ async function getTodaySalesPerformance() {
         FROM orders o
         LEFT JOIN order_item_totals oit ON oit.order_id = o.id
         WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+          ${buildShippedSalesOnlySql("o")}
       )
       SELECT
         so.attendant,
@@ -1662,6 +1664,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
           LEFT JOIN order_items oi ON oi.order_id = o.id
           LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
           WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+            ${buildShippedSalesOnlySql("o")}
         )
         SELECT
           COALESCE(SUM(order_total), 0)::numeric(14,2) AS total_amount,
