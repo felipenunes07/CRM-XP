@@ -137,23 +137,14 @@
   border-radius: 10px;
   overflow: hidden;
 }
-/* A tarefa não estica sozinha até o fim da tela: ela ocupa até 480px e a
-   observação preenche o meio, que antes ficava vazio. */
 .tarefas-row {
   display: grid;
-  grid-template-columns: minmax(0, 480px) minmax(0, 1fr) 116px 150px 90px;
+  grid-template-columns: minmax(0, 1fr) 116px 150px 90px;
   gap: 12px;
   align-items: center;
   padding: 0 16px;
   min-height: 42px;
   border-bottom: 1px solid #f0f0f0;
-}
-.tarefas-note {
-  font-size: 12px;
-  color: #a3a3a3;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .tarefas-card-foot {
   display: flex;
