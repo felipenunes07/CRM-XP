@@ -4,11 +4,13 @@ Quadro por funcionário, separado do CRM. Identidade reaproveitada do CRM: logo 
 
 ## Acessos
 - `/gestao#CHAVE_DA_GESTAO`: criar, editar, transferir tarefas, cadastrar pessoas e fotos.
-- `/equipe#CHAVE_DA_EQUIPE`: consultar todos e marcar início/entrega.
+- `/equipe#CHAVE_DA_EQUIPE`: consultar todos, marcar início/entrega e desfazer uma entrega.
 As chaves são variáveis secretas ADMIN_TOKEN e TEAM_TOKEN no servidor. O frontend recebe apenas a chave presente no link; o acesso da equipe nunca recebe a chave de gestão. O fragmento é enviado à API por Authorization, não pela URL. Alterar apenas o caminho não concede privilégios.
 
 ## Dados
 D1 guarda pessoas, prazos, situação e data de entrega. R2 guarda as fotos. O quadro atualiza a cada 8 segundos enquanto a tela está visível. Alterações usam controle de versão para evitar que uma tela sobrescreva outra. Prazos usam America/Sao_Paulo, com fim do dia quando não há horário. Os seis nomes iniciais são adicionados sem sobrescrever nomes editados.
+
+Os componentes de cartão, badge, avatar e botão seguem a composição React/Tailwind do catálogo 21st.dev e foram adaptados ao quadro da XP. A interface usa uma paleta neutra; vermelho fica reservado a tarefas atrasadas.
 
 ## Validação
 - `npx tsc --noEmit`

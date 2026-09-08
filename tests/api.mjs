@@ -123,11 +123,14 @@ assert.equal(
       action: 'status',
       id: t.id,
       version: t.version,
-      status: 'todo',
+      status: 'doing',
     })
   ).status,
-  403,
+  200,
 );
+t = (await request(admin)).tasks.find((x) => x.id === t.id);
+assert.equal(t.status, 'doing');
+assert.equal(t.completed_at, null);
 assert.equal(
   (
     await request(admin, {
@@ -177,4 +180,24 @@ console.log(
   'PASS: seis pessoas, dois acessos, criação, prazo, transferência, conflito simultâneo, início, entrega, reabertura e foto persistida.',
 );
 
-const person=await request(admin,{action:'person',name:'TESTE LOCAL nova pessoa'});assert.equal(person.status,200);assert.equal((await request(admin,{action:'person',id:person.id,name:'TESTE LOCAL pessoa atualizada'})).status,200);assert.ok((await request(team)).people.some(p=>p.id===person.id&&p.name==='TESTE LOCAL pessoa atualizada'));console.log('PASS: cadastro e edição de pessoa sincronizados.');
+const person = await request(admin, {
+  action: 'person',
+  name: 'TESTE LOCAL nova pessoa',
+});
+assert.equal(person.status, 200);
+assert.equal(
+  (
+    await request(admin, {
+      action: 'person',
+      id: person.id,
+      name: 'TESTE LOCAL pessoa atualizada',
+    })
+  ).status,
+  200,
+);
+assert.ok(
+  (await request(team)).people.some(
+    (p) => p.id === person.id && p.name === 'TESTE LOCAL pessoa atualizada',
+  ),
+);
+console.log('PASS: cadastro e edição de pessoa sincronizados.');

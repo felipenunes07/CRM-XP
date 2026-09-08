@@ -21,7 +21,16 @@ import {
   Camera,
   Pencil,
   RefreshCw,
+  Undo2,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import {
+  Avatar as AvatarRoot,
+  AvatarFallback,
+  AvatarImage,
+} from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -61,21 +70,21 @@ type Draft = {
   due_date: string;
   due_time: string;
 };
-function Avatar({ person, index = 0 }: { person: Person; index?: number }) {
+function PersonAvatar({
+  person,
+  index = 0,
+}: {
+  person: Person;
+  index?: number;
+}) {
   return (
-    <span className={'avatar color-' + (index % 6)}>
+    <AvatarRoot className={'avatar color-' + (index % 6)}>
       {person.photo ? (
-        <Image
-          unoptimized
-          width={44}
-          height={44}
-          src={'/api/photo/' + person.photo}
-          alt={person.name}
-        />
+        <AvatarImage src={'/api/photo/' + person.photo} alt={person.name} />
       ) : (
-        person.name.slice(0, 2).toUpperCase()
+        <AvatarFallback>{person.name.slice(0, 2).toUpperCase()}</AvatarFallback>
       )}
-    </span>
+    </AvatarRoot>
   );
 }
 function SelectPerson({
@@ -108,7 +117,11 @@ function SelectPerson({
     </Select>
   );
 }
-export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) {
+export default function Board({
+  mode = 'team',
+}: {
+  mode?: 'manager' | 'team';
+}) {
   const [key, setKey] = useState(''),
     [ready, setReady] = useState(false),
     [data, setData] = useState<BoardData | null>(null),
@@ -267,7 +280,9 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
         s === 'done'
           ? 'Entrega registrada!'
           : s === 'doing'
-            ? 'Tarefa iniciada.'
+            ? t.status === 'done'
+              ? 'Entrega desfeita. A tarefa voltou para fazendo.'
+              : 'Tarefa iniciada.'
             : 'Tarefa reaberta.',
       );
     } catch (e) {
@@ -459,7 +474,8 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
   function card(t: Task) {
     const isLate = late(t);
     return (
-      <article
+      <Card
+        size="sm"
         key={t.id}
         className={
           'task-card ' +
@@ -473,13 +489,13 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
         }}
       >
         <div className="card-top">
-          <span className={'status status-' + t.status}>
+          <Badge variant="secondary" className={'status status-' + t.status}>
             {t.status === 'done'
               ? 'Entregue'
               : t.status === 'doing'
                 ? 'Fazendo'
                 : 'A fazer'}
-          </span>
+          </Badge>
           {manager && t.status !== 'done' && (
             <GripVertical size={16} aria-label="Arraste para outra pessoa" />
           )}
@@ -496,37 +512,55 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
           {t.due_time ? ' às ' + t.due_time : ''}
         </p>
         {t.status === 'done' ? (
-          <p className="delivered">
-            {t.completed_at &&
-              new Intl.DateTimeFormat('pt-BR', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'America/Sao_Paulo',
-              }).format(new Date(t.completed_at))}
-            <br />
-            {Date.parse(t.completed_at ?? '') > t.deadline
-              ? 'Entregue com atraso'
-              : 'Entregue no prazo'}
-          </p>
+          <div className="delivered-block">
+            <p className="delivered">
+              {t.completed_at &&
+                new Intl.DateTimeFormat('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: 'America/Sao_Paulo',
+                }).format(new Date(t.completed_at))}
+              <br />
+              {Date.parse(t.completed_at ?? '') > t.deadline
+                ? 'Entregue com atraso'
+                : 'Entregue no prazo'}
+            </p>
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={busy}
+              className="undo-delivery"
+              onClick={() => status(t, 'doing')}
+            >
+              <Undo2 /> Desfazer entrega
+            </Button>
+          </div>
         ) : (
           <div className="card-actions">
             {t.status === 'todo' && (
-              <button disabled={busy} onClick={() => status(t, 'doing')}>
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={busy}
+                onClick={() => status(t, 'doing')}
+              >
                 Começar <ArrowRight size={14} />
-              </button>
+              </Button>
             )}
-            <button
+            <Button
+              variant="outline"
+              size="xs"
               disabled={busy}
               className="deliver"
               onClick={() => status(t, 'done')}
             >
               <CircleCheck size={15} /> Entregar
-            </button>
+            </Button>
           </div>
         )}
-      </article>
+      </Card>
     );
   }
   return (
@@ -559,12 +593,12 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
         </div>
         {manager && (
           <div className="heading-actions">
-            <button className="secondary" onClick={copyTeam}>
+            <Button variant="outline" className="secondary" onClick={copyTeam}>
               <Link2 size={18} /> Link da equipe
-            </button>
-            <button className="primary" onClick={() => setTeamOpen(true)}>
+            </Button>
+            <Button className="primary" onClick={() => setTeamOpen(true)}>
               <Users size={18} /> Gerenciar equipe
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -721,7 +755,7 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
                           }}
                         >
                           <div className="person-heading">
-                            <Avatar person={p} index={i} />
+                            <PersonAvatar person={p} index={i} />
                             <div>
                               <h2>{p.name}</h2>
                               <span>
@@ -745,12 +779,14 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
                             )}
                           </div>
                           {manager && (
-                            <button
+                            <Button
+                              variant="outline"
+                              size="sm"
                               className="add-task"
                               onClick={() => create(p.id)}
                             >
                               <Plus size={18} /> Adicionar tarefa
-                            </button>
+                            </Button>
                           )}
                           <div className="task-list">{visible.map(card)}</div>
                           {!visible.length && (
@@ -763,17 +799,29 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
                               </p>
                             </div>
                           )}
-                          {filter === 'all' && completed.length > 0 && (
-                            <details className="completed-list">
-                              <summary>
-                                <CircleCheck size={15} /> Ver entregues (
-                                {completed.length})
-                              </summary>
-                              <div className="task-list">
-                                {completed.map(card)}
-                              </div>
-                            </details>
-                          )}
+                          {filter === 'all' &&
+                            completed.some(
+                              (t) =>
+                                t.completed_at &&
+                                Date.parse(t.completed_at) >= weekStart(),
+                            ) && (
+                              <section className="completed-list">
+                                <h3>
+                                  <CircleCheck size={15} /> Entregues nesta
+                                  semana
+                                </h3>
+                                <div className="task-list">
+                                  {completed
+                                    .filter(
+                                      (t) =>
+                                        t.completed_at &&
+                                        Date.parse(t.completed_at) >=
+                                          weekStart(),
+                                    )
+                                    .map(card)}
+                                </div>
+                              </section>
+                            )}
                         </article>
                       );
                     })}
@@ -957,15 +1005,13 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
                     Entregar
                   </button>
                 ) : (
-                  manager && (
-                    <button
-                      className="secondary"
-                      disabled={busy}
-                      onClick={() => status(detail, 'todo')}
-                    >
-                      Reabrir
-                    </button>
-                  )
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={() => status(detail, 'doing')}
+                  >
+                    <Undo2 size={15} /> Voltar para fazendo
+                  </button>
                 )}
               </div>
             </>
@@ -1007,7 +1053,7 @@ export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) 
                   if (photoInput.current) photoInput.current.value = '';
                 }}
               >
-                <Avatar person={p} index={i} />
+                <PersonAvatar person={p} index={i} />
                 <span>{p.name}</span>
                 <Pencil size={14} />
               </button>
