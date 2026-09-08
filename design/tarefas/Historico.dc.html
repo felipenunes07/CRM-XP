@@ -1,0 +1,305 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    /* === TOKENS: Claro + azul XP === */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+    :root {
+      --rail-accent: #2956d7;
+      --badge-bg: #eef2fe;
+      --badge-ink: #2148b6;
+      --badge-line: #c9d7f9;
+      --font: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --font-display: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --ground: #f7f7f8;
+      --surface: #ffffff;
+      --sunken: #fafafa;
+      --rail: #ffffff;
+      --rail-ink: #0a0a0a;
+      --rail-muted: #a3a3a3;
+      --rail-line: #e5e5e5;
+      --rail-btn-bg: #ffffff;
+      --rail-btn-ink: #262626;
+      --rail-btn-line: #e0e0e0;
+      --ink: #0a0a0a;
+      --muted: #6e6e6e;
+      --faint: #a3a3a3;
+      --line: #e6e6e6;
+      --line-soft: #f0f0f0;
+      --tabs-bg: #ededed;
+      --check: #d0d0d0;
+      --accent-strong: #2148b6;
+      --accent-tint: #eef2fe;
+      --accent-line: #c3d2f8;
+      --pri-bg: #2956d7;
+      --pri-ink: #ffffff;
+      --pri-line: #2148b6;
+      --late: #c8321f;
+      --late-tint: rgba(200,50,31,.06);
+      --late-line: rgba(200,50,31,.28);
+      --done: #17803d;
+      --done-tint: rgba(23,128,61,.06);
+      --done-line: rgba(23,128,61,.28);
+      --r-lg: 8px;
+      --r-md: 6px;
+      --r-sm: 5px;
+      --av0: #1e3a5f;
+      --av1: #4c2a6b;
+      --av2: #7a3d0f;
+      --av3: #14532d;
+      --av4: #7d1f3d;
+      --av5: #26355c;
+      --av-ink: #ffffff;
+    }
+    /* === LAYOUT === */
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    p { margin: 0; }
+    a { color: var(--accent-strong); text-decoration: none; }
+    a:hover { color: var(--ink); }
+    .ico { width: 14px; height: 14px; flex-shrink: 0; }
+    .ico-sm { width: 12px; height: 12px; flex-shrink: 0; }
+    .app { width: 1440px; height: 900px; display: flex; flex-direction: column; background: var(--ground); overflow: hidden; }
+    .topbar { height: 56px; background: var(--rail); color: var(--rail-ink); border-bottom: 1px solid var(--rail-line); display: flex; align-items: center; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+    .logo { width: 100px; height: 24px; border-radius: var(--r-sm); border: 1px dashed var(--rail-line); display: flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 600; letter-spacing: .12em; color: var(--rail-muted); }
+    .sep { width: 1px; height: 20px; background: var(--rail-line); flex-shrink: 0; }
+    .page-name { font-family: var(--font-display); font-size: 15px; font-weight: 600; letter-spacing: -.01em; color: var(--rail-ink); }
+    .access { height: 24px; padding: 0 9px; border-radius: var(--r-sm); background: var(--badge-bg); color: var(--badge-ink); border: 1px solid var(--badge-line); font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: .08em; display: inline-flex; align-items: center; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: var(--r-md); font-size: 12.5px; font-weight: 500; font-family: inherit; border: 1px solid transparent; background: none; color: inherit; }
+    .btn-sec { background: var(--rail-btn-bg); border-color: var(--rail-btn-line); color: var(--rail-btn-ink); }
+    .btn-pri { background: var(--pri-bg); border-color: var(--pri-line); color: var(--pri-ink); font-weight: 600; }
+    .viewbar { height: 50px; display: flex; align-items: center; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+    .viewbar .sep { background: var(--line); height: 22px; }
+    .tabs { display: inline-flex; gap: 2px; background: var(--tabs-bg); padding: 3px; border-radius: var(--r-md); }
+    .tab { height: 28px; padding: 0 11px; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 500; color: var(--muted); background: none; border: 0; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+    .tab-on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .chips { display: flex; align-items: center; gap: 6px; }
+    .chip { height: 28px; padding: 0 10px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; }
+    .chip-on { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-strong); font-weight: 600; }
+    .search { height: 28px; width: 180px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--faint); font-size: 12px; }
+    .btn-light { height: 28px; padding: 0 10px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; }
+    .board { flex: 1; min-height: 0; padding: 0 20px 18px; display: flex; }
+    .sheet { flex: 1; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; display: flex; flex-direction: column; }
+    .summary { height: 52px; display: flex; align-items: center; gap: 18px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+    .summary .sep { background: var(--line); height: 22px; }
+    .stat { display: flex; align-items: baseline; gap: 7px; }
+    .stat strong { font-family: var(--mono); font-size: 18px; font-weight: 500; color: var(--ink); }
+    .stat span { font-size: 12px; color: var(--muted); }
+    .stat-green strong { color: var(--done); }
+    .stat-late strong { color: var(--late); }
+    .bar { flex: 1; max-width: 240px; height: 5px; border-radius: 999px; background: var(--line-soft); overflow: hidden; display: flex; }
+    .bar i { display: block; height: 100%; }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) 168px 104px 132px 128px 40px; gap: 12px; align-items: center; padding: 0 16px; }
+    .thead { height: 32px; background: var(--sunken); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 9.5px; font-weight: 500; letter-spacing: .1em; color: var(--faint); }
+    .dhead { height: 32px; background: var(--sunken); border-bottom: 1px solid var(--line-soft); font-size: 11.5px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 8px; padding: 0 16px; }
+    .dhead b { font-family: var(--mono); font-weight: 400; color: var(--faint); }
+    .rec { height: 40px; border-bottom: 1px solid var(--line-soft); }
+    .cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .ok-ico { color: var(--done); }
+    .late-ico { color: var(--late); }
+    .title { font-size: 13px; font-weight: 400; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .av { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 700; letter-spacing: .02em; color: var(--av-ink); flex-shrink: 0; }
+    .c0 { background: var(--av0); }
+    .c1 { background: var(--av1); }
+    .c2 { background: var(--av2); }
+    .c3 { background: var(--av3); }
+    .c4 { background: var(--av4); }
+    .c5 { background: var(--av5); }
+    .who { font-size: 12.5px; color: var(--ink); }
+    .meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+    .pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-sm); border: 1px solid transparent; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; }
+    .p-ok { color: var(--done); border-color: var(--done-line); background: var(--done-tint); }
+    .p-latedone { color: var(--late); border-color: var(--late-line); background: var(--late-tint); }
+    .iconbtn { width: 26px; height: 26px; border-radius: var(--r-sm); border: 0; background: none; color: var(--faint); display: inline-flex; align-items: center; justify-content: center; font-family: inherit; }
+    .sheetfoot { margin-top: auto; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-top: 1px solid var(--line); background: var(--sunken); font-size: 12px; color: var(--muted); }
+    .more { height: 26px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--accent-strong); font-size: 11.5px; font-weight: 500; font-family: inherit; }
+    /* === AJUSTES DA DIREÇÃO CLARO === */
+    .topbar { border-bottom: 2px solid var(--rail-accent); }
+    .page-name { font-weight: 800; letter-spacing: -.02em; }
+    .gname, .who strong { font-weight: 700; letter-spacing: -.015em; }
+    .title, .ctitle { font-weight: 500; letter-spacing: -.01em; }
+    .due, .cdue, .count, .chip b, .sync, .meta, .who span, .stat strong, .doneline, .dhead b { font-variant-numeric: tabular-nums; }
+    .thead { font-weight: 700; font-size: 9.5px; letter-spacing: .12em; }
+    .access { font-weight: 700; letter-spacing: .09em; }
+    .btn-pri { font-weight: 700; }
+    .tab-on { box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .av { overflow: hidden; }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  </style>
+</helmet>
+<div class="app">
+
+  <header class="topbar">
+    <div class="logo">XP FACTORY</div>
+    <div class="sep"></div>
+    <span class="page-name">Tarefas</span>
+    <div style="flex: 1"></div>
+    <button type="button" class="btn btn-sec">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+      Copiar link
+    </button>
+    <button type="button" class="btn btn-sec">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+      Equipe
+    </button>
+    <button type="button" class="btn btn-pri">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Nova tarefa
+    </button>
+  </header>
+
+  <div class="viewbar">
+    <div class="tabs">
+      <button type="button" class="tab">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+        Tarefas
+      </button>
+      <button type="button" class="tab tab-on">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></svg>
+        Histórico
+      </button>
+    </div>
+    <div class="sep"></div>
+    <div class="chips">
+      <button type="button" class="chip chip-on">Esta semana</button>
+      <button type="button" class="chip">Últimos 30 dias</button>
+      <button type="button" class="chip">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+        Todas as pessoas
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+      </button>
+    </div>
+    <div style="flex: 1"></div>
+    <div class="search">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      Buscar no histórico
+    </div>
+    <button type="button" class="btn-light">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M4 21h16"></path></svg>
+      Exportar
+    </button>
+  </div>
+
+  <div class="board">
+    <div class="sheet">
+
+      <div class="summary">
+        <div class="stat"><strong>10</strong><span>entregas nesta semana</span></div>
+        <div class="sep"></div>
+        <div class="stat stat-green"><strong>7</strong><span>no prazo</span></div>
+        <div class="stat stat-late"><strong>3</strong><span>com atraso</span></div>
+        <div class="bar"><i style="width: 70%; background: #2c7a52"></i><i style="width: 30%; background: #b8382f"></i></div>
+        <span class="meta">70% no prazo</span>
+      </div>
+
+      <div class="row thead">
+        <span>TAREFA</span>
+        <span>RESPONSÁVEL</span>
+        <span>PRAZO</span>
+        <span>ENTREGUE EM</span>
+        <span>RESULTADO</span>
+        <span></span>
+      </div>
+
+      <div class="dhead">Hoje <b>08/09</b></div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Separar o pedido da Ana (Bauru)</span></div>
+        <div class="cell"><span class="av c1"><img src="suelen.jpg" alt="Suelen"></span><span class="who">Suelen</span></div>
+        <span class="meta">08/09</span>
+        <span class="meta">08/09 10:42</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Conferir a nota fiscal 8823</span></div>
+        <div class="cell"><span class="av c4"><img src="tamires.jpg" alt="Tamires"></span><span class="who">Tamires</span></div>
+        <span class="meta">08/09</span>
+        <span class="meta">08/09 09:15</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico late-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Atualizar o mural da produção</span></div>
+        <div class="cell"><span class="av c4"><img src="tamires.jpg" alt="Tamires"></span><span class="who">Tamires</span></div>
+        <span class="meta">04/09</span>
+        <span class="meta">08/09 08:50</span>
+        <span><span class="pill p-latedone">4 dias depois</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Separar as etiquetas do lote 219</span></div>
+        <div class="cell"><span class="av c0"><img src="thais.jpg" alt="Thais"></span><span class="who">Thais</span></div>
+        <span class="meta">08/09</span>
+        <span class="meta">08/09 08:12</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+
+      <div class="dhead">Ontem <b>07/09</b></div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico late-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Cobrar o boleto da Ótica Vision</span></div>
+        <div class="cell"><span class="av c1"><img src="suelen.jpg" alt="Suelen"></span><span class="who">Suelen</span></div>
+        <span class="meta">05/09</span>
+        <span class="meta">07/09 17:40</span>
+        <span><span class="pill p-latedone">2 dias depois</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Montar o kit de amostras</span></div>
+        <div class="cell"><span class="av c3">LU</span><span class="who">Lucas</span></div>
+        <span class="meta">07/09</span>
+        <span class="meta">07/09 16:05</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Responder a avaliação do Google</span></div>
+        <div class="cell"><span class="av c2"><img src="amanda.jpg" alt="Amanda"></span><span class="who">Amanda</span></div>
+        <span class="meta">07/09</span>
+        <span class="meta">07/09 14:22</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Revisar o estoque de etiquetas</span></div>
+        <div class="cell"><span class="av c2"><img src="amanda.jpg" alt="Amanda"></span><span class="who">Amanda</span></div>
+        <span class="meta">07/09</span>
+        <span class="meta">07/09 11:30</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico ok-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Ligar para a transportadora</span></div>
+        <div class="cell"><span class="av c3">LU</span><span class="who">Lucas</span></div>
+        <span class="meta">07/09</span>
+        <span class="meta">07/09 10:15</span>
+        <span><span class="pill p-ok">No prazo</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+      <div class="row rec">
+        <div class="cell"><svg class="ico late-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg><span class="title">Fechar o caixa da semana</span></div>
+        <div class="cell"><span class="av c0"><img src="thais.jpg" alt="Thais"></span><span class="who">Thais</span></div>
+        <span class="meta">06/09</span>
+        <span class="meta">07/09 09:02</span>
+        <span><span class="pill p-latedone">1 dia depois</span></span>
+        <div class="cell" style="justify-content: flex-end"><button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"></path></svg></button></div>
+      </div>
+
+      <div class="sheetfoot">
+        <span>10 entregas na semana de 07/09 a 13/09</span>
+        <button type="button" class="more">Ver semanas anteriores</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

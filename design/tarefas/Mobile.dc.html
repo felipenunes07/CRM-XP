@@ -1,0 +1,282 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    /* === TOKENS: Claro + azul XP / modo EQUIPE (acento verde) === */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+    :root {
+      --rail-accent: #2956d7;
+      --team: #2148b6;
+      --team-tint: #eef2fe;
+      --team-line: #c3d2f8;
+      --font: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --font-display: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --ground: #f7f7f8;
+      --surface: #ffffff;
+      --sunken: #fafafa;
+      --rail: #ffffff;
+      --rail-ink: #0a0a0a;
+      --rail-muted: #a3a3a3;
+      --rail-line: #e5e5e5;
+      --rail-btn-bg: #ffffff;
+      --rail-btn-ink: #262626;
+      --rail-btn-line: #e0e0e0;
+      --ink: #0a0a0a;
+      --muted: #6e6e6e;
+      --faint: #a3a3a3;
+      --line: #e6e6e6;
+      --line-soft: #f0f0f0;
+      --tabs-bg: #ededed;
+      --check: #d0d0d0;
+      --accent-strong: #2148b6;
+      --accent-tint: #eef2fe;
+      --accent-line: #c3d2f8;
+      --pri-bg: #2956d7;
+      --pri-ink: #ffffff;
+      --pri-line: #2148b6;
+      --late: #c8321f;
+      --late-tint: rgba(200,50,31,.06);
+      --late-line: rgba(200,50,31,.28);
+      --done: #17803d;
+      --done-tint: rgba(23,128,61,.06);
+      --done-line: rgba(23,128,61,.28);
+      --r-lg: 8px;
+      --r-md: 6px;
+      --r-sm: 5px;
+      --av0: #1e3a5f;
+      --av1: #4c2a6b;
+      --av2: #7a3d0f;
+      --av3: #14532d;
+      --av4: #7d1f3d;
+      --av5: #26355c;
+      --av6: #3f3f46;
+      --av7: #155e63;
+      --av-ink: #ffffff;
+    }
+    /* === LAYOUT === */
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    p { margin: 0; }
+    a { color: var(--team); text-decoration: none; }
+    a:hover { color: var(--ink); }
+    .ico { width: 15px; height: 15px; flex-shrink: 0; }
+    .ico-sm { width: 13px; height: 13px; flex-shrink: 0; }
+    .app { width: 390px; height: 844px; display: flex; flex-direction: column; background: var(--ground); overflow: hidden; }
+    .topbar { height: 52px; background: var(--rail); color: var(--rail-ink); border-bottom: 2px solid var(--team); display: flex; align-items: center; gap: 10px; padding: 0 14px; flex-shrink: 0; }
+    .logo { width: 84px; height: 22px; border-radius: var(--r-sm); border: 1px dashed var(--rail-line); display: flex; align-items: center; justify-content: center; font-size: 7.5px; font-weight: 600; letter-spacing: .12em; color: var(--rail-muted); }
+    .page-name { font-size: 14px; font-weight: 600; letter-spacing: -.01em; color: var(--rail-ink); }
+    .access { height: 30px; padding: 0 11px; border-radius: var(--r-md); background: var(--pri-bg); color: var(--pri-ink); border: 1px solid var(--pri-line); font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; display: inline-flex; align-items: center; gap: 6px; }
+    .tabbar { height: 42px; background: var(--surface); display: flex; align-items: stretch; padding: 0 14px; gap: 20px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+    .tab { border: 0; background: none; font-family: inherit; font-size: 13.5px; font-weight: 500; color: var(--muted); display: inline-flex; align-items: center; border-bottom: 2px solid transparent; padding: 0 2px; }
+    .tab-on { color: var(--ink); font-weight: 600; border-bottom-color: var(--team); }
+    .chipbar { height: 46px; display: flex; align-items: center; gap: 7px; padding: 0 14px; flex-shrink: 0; overflow-x: auto; }
+    .chip { height: 32px; padding: 0 11px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+    .chip b { font-family: var(--mono); font-weight: 500; font-size: 11px; color: var(--faint); }
+    .chip-on { background: var(--team-tint); border-color: var(--team-line); color: var(--team); font-weight: 600; }
+    .chip-on b { color: var(--team); }
+    .chip b.warn { color: var(--late); }
+    .list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+    .group { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+    .ghead { height: 46px; display: flex; align-items: center; gap: 10px; padding: 0 12px; background: var(--sunken); border-bottom: 1px solid var(--line-soft); }
+    .ghead svg { color: var(--faint); }
+    .av { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 700; letter-spacing: .02em; color: var(--av-ink); flex-shrink: 0; }
+    .c0 { background: var(--av0); }
+    .c1 { background: var(--av1); }
+    .c2 { background: var(--av2); }
+    .c3 { background: var(--av3); }
+    .c4 { background: var(--av4); }
+    .c5 { background: var(--av5); }
+    .c6 { background: var(--av6); }
+    .c7 { background: var(--av7); }
+    .gname { font-size: 14px; font-weight: 600; letter-spacing: -.005em; color: var(--ink); flex: 1; }
+    .count { height: 20px; min-width: 20px; padding: 0 6px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-family: var(--mono); font-size: 10.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; }
+    .count-warn { background: var(--late-tint); border-color: var(--late-line); color: var(--late); }
+    .muted { font-size: 11.5px; color: var(--faint); }
+    .task { display: flex; align-items: center; gap: 11px; padding: 11px 12px; border-bottom: 1px solid var(--line-soft); min-height: 64px; }
+    .task:last-child { border-bottom: 0; }
+    .body { flex: 1; min-width: 0; }
+    .title { font-size: 13.5px; font-weight: 500; line-height: 1.35; color: var(--ink); text-wrap: pretty; }
+    .meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-sm); border: 1px solid transparent; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; }
+    .p-todo { color: var(--muted); border-color: var(--line); }
+    .p-doing { color: var(--accent-strong); border-color: var(--accent-line); background: var(--accent-tint); }
+    .p-late { color: var(--late); border-color: var(--late-line); background: var(--late-tint); }
+    .due { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    .due svg { color: var(--faint); }
+    .due-red { color: var(--late); }
+    .due-red svg { color: var(--late); }
+    .deliver { width: 44px; height: 44px; border-radius: var(--r-md); border: 1px solid var(--done-line); background: var(--done-tint); color: var(--done); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: inherit; }
+    .deliver svg { width: 21px; height: 21px; }
+    .late-mark { border-left: 2px solid var(--late); padding-left: 10px; }
+    /* === AJUSTES DA DIREÇÃO CLARO === */
+    .topbar { border-bottom: 2px solid var(--rail-accent); }
+    .page-name { font-weight: 800; letter-spacing: -.02em; }
+    .gname { font-weight: 700; letter-spacing: -.015em; }
+    .title { font-weight: 600; letter-spacing: -.01em; }
+    .due, .count, .chip b { font-variant-numeric: tabular-nums; }
+    .access { font-weight: 700; letter-spacing: .09em; }
+    .av { overflow: hidden; }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  </style>
+</helmet>
+<div class="app">
+
+  <header class="topbar">
+    <div class="logo">XP FACTORY</div>
+    <span class="page-name">Tarefas</span>
+    <div style="flex: 1"></div>
+    <button type="button" class="access">
+      <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      NOVA
+    </button>
+  </header>
+
+  <div class="tabbar">
+    <button type="button" class="tab tab-on">Tarefas</button>
+    <button type="button" class="tab">Histórico</button>
+  </div>
+
+  <div class="chipbar">
+    <button type="button" class="chip chip-on">Todas <b>11</b></button>
+    <button type="button" class="chip">Vencem hoje <b>4</b></button>
+    <button type="button" class="chip">Atrasadas <b class="warn">1</b></button>
+    <button type="button" class="chip">Sem tarefas <b>2</b></button>
+  </div>
+
+  <div class="list">
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        <span class="av c1"><img src="suelen.jpg" alt="Suelen"></span>
+        <span class="gname">Suelen</span>
+        <span class="count">3</span>
+        <span class="count count-warn">1 atrasada</span>
+      </div>
+      <div class="task">
+        <div class="body late-mark">
+          <p class="title">Fechar o pedido da Ótica Central</p>
+          <div class="meta">
+            <span class="pill p-late">Atrasada</span>
+            <span class="due due-red"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg> 3 dias · 05/09</span>
+          </div>
+        </div>
+        <button type="button" class="deliver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></button>
+      </div>
+      <div class="task">
+        <div class="body">
+          <p class="title">Responder os orçamentos do WhatsApp</p>
+          <div class="meta">
+            <span class="pill p-doing">Fazendo</span>
+            <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> Hoje</span>
+          </div>
+        </div>
+        <button type="button" class="deliver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></button>
+      </div>
+      <div class="task">
+        <div class="body">
+          <p class="title">Enviar o catálogo para a Ana (Bauru)</p>
+          <div class="meta">
+            <span class="pill p-todo">A fazer</span>
+            <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 11/09</span>
+          </div>
+        </div>
+        <button type="button" class="deliver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        <span class="av c0"><img src="thais.jpg" alt="Thais"></span>
+        <span class="gname">Thais</span>
+        <span class="count">2</span>
+      </div>
+      <div class="task">
+        <div class="body">
+          <p class="title">Conferir o estoque de embalagens</p>
+          <div class="meta">
+            <span class="pill p-todo">A fazer</span>
+            <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> Hoje 17:00</span>
+          </div>
+        </div>
+        <button type="button" class="deliver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></button>
+      </div>
+      <div class="task">
+        <div class="body">
+          <p class="title">Ligar para os clientes inativos da lista</p>
+          <div class="meta">
+            <span class="pill p-doing">Fazendo</span>
+            <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 12/09</span>
+          </div>
+        </div>
+        <button type="button" class="deliver"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m8.5 12 2.5 2.5 4.5-5"></path></svg></button>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c3"><img src="lucas.jpg" alt="Lucas"></span>
+        <span class="gname">Lucas</span>
+        <span class="count">3</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c2"><img src="amanda.jpg" alt="Amanda"></span>
+        <span class="gname">Amanda</span>
+        <span class="count">1</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c4">CA</span>
+        <span class="gname">Camila</span>
+        <span class="count">1</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c5">IZ</span>
+        <span class="gname">Iza</span>
+        <span class="muted">sem tarefas pendentes</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c6">PE</span>
+        <span class="gname">Pedro</span>
+        <span class="count">1</span>
+      </div>
+    </section>
+
+    <section class="group">
+      <div class="ghead">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <span class="av c7"><img src="tamires.jpg" alt="Tamires"></span>
+        <span class="gname">Tamires</span>
+        <span class="muted">sem tarefas pendentes</span>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

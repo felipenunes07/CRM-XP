@@ -1,0 +1,393 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    /* === TOKENS: Claro + azul XP === */
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+    :root {
+      --rail-accent: #2956d7;
+      --badge-bg: #eef2fe;
+      --badge-ink: #2148b6;
+      --badge-line: #c9d7f9;
+      --font: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --font-display: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --mono: 'Manrope', -apple-system, 'Segoe UI', sans-serif;
+      --ground: #f7f7f8;
+      --surface: #ffffff;
+      --sunken: #fafafa;
+      --rail: #ffffff;
+      --rail-ink: #0a0a0a;
+      --rail-muted: #a3a3a3;
+      --rail-line: #e5e5e5;
+      --rail-btn-bg: #ffffff;
+      --rail-btn-ink: #262626;
+      --rail-btn-line: #e0e0e0;
+      --ink: #0a0a0a;
+      --muted: #6e6e6e;
+      --faint: #a3a3a3;
+      --line: #e6e6e6;
+      --line-soft: #f0f0f0;
+      --tabs-bg: #ededed;
+      --check: #d0d0d0;
+      --accent-strong: #2148b6;
+      --accent-tint: #eef2fe;
+      --accent-line: #c3d2f8;
+      --pri-bg: #2956d7;
+      --pri-ink: #ffffff;
+      --pri-line: #2148b6;
+      --late: #c8321f;
+      --late-tint: rgba(200,50,31,.06);
+      --late-line: rgba(200,50,31,.28);
+      --done: #17803d;
+      --done-tint: rgba(23,128,61,.06);
+      --done-line: rgba(23,128,61,.28);
+      --r-lg: 8px;
+      --r-md: 6px;
+      --r-sm: 5px;
+      --av0: #1e3a5f;
+      --av1: #4c2a6b;
+      --av2: #7a3d0f;
+      --av3: #14532d;
+      --av4: #7d1f3d;
+      --av5: #26355c;
+      --av6: #3f3f46;
+      --av7: #155e63;
+      --av-ink: #ffffff;
+    }
+    /* === LAYOUT === */
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    p { margin: 0; }
+    a { color: var(--accent-strong); text-decoration: none; }
+    a:hover { color: var(--ink); }
+    .ico { width: 14px; height: 14px; flex-shrink: 0; }
+    .ico-sm { width: 12px; height: 12px; flex-shrink: 0; }
+    .app { width: 1440px; height: 900px; display: flex; flex-direction: column; background: var(--ground); overflow: hidden; }
+    .topbar { height: 56px; background: var(--rail); color: var(--rail-ink); border-bottom: 2px solid var(--rail-accent); display: flex; align-items: center; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+    .logo { width: 100px; height: 24px; border-radius: var(--r-sm); border: 1px dashed var(--rail-line); display: flex; align-items: center; justify-content: center; font-size: 8.5px; font-weight: 600; letter-spacing: .12em; color: var(--rail-muted); }
+    .sep { width: 1px; height: 20px; background: var(--rail-line); flex-shrink: 0; }
+    .page-name { font-family: var(--font-display); font-size: 15px; font-weight: 800; letter-spacing: -.02em; color: var(--rail-ink); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: var(--r-md); font-size: 12.5px; font-weight: 500; font-family: inherit; border: 1px solid transparent; background: none; color: inherit; }
+    .btn-sec { background: var(--rail-btn-bg); border-color: var(--rail-btn-line); color: var(--rail-btn-ink); }
+    .btn-pri { background: var(--pri-bg); border-color: var(--pri-line); color: var(--pri-ink); font-weight: 700; }
+    .viewbar { height: 50px; display: flex; align-items: center; gap: 12px; padding: 0 20px; flex-shrink: 0; }
+    .viewbar .sep { background: var(--line); height: 22px; }
+    .tabs { display: inline-flex; gap: 2px; background: var(--tabs-bg); padding: 3px; border-radius: var(--r-md); }
+    .tab { height: 28px; padding: 0 11px; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 500; color: var(--muted); background: none; border: 0; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+    .tab-on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+    .chips { display: flex; align-items: center; gap: 6px; }
+    .chip { height: 28px; padding: 0 10px; border-radius: var(--r-md); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; }
+    .chip b { font-weight: 600; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+    .chip-on { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent-strong); font-weight: 600; }
+    .chip-on b { color: var(--accent-strong); }
+    .chip b.warn { color: var(--late); }
+    .search { height: 28px; width: 196px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); display: flex; align-items: center; gap: 7px; padding: 0 10px; color: var(--faint); font-size: 12px; }
+    .sync { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--done); }
+    .board { flex: 1; min-height: 0; padding: 0 20px 18px; display: flex; }
+    .sheet { flex: 1; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; display: flex; flex-direction: column; }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 152px 78px; gap: 12px; align-items: center; padding: 0 16px; }
+    .thead { height: 32px; background: var(--sunken); border-bottom: 1px solid var(--line); font-size: 9.5px; font-weight: 700; letter-spacing: .12em; color: var(--faint); }
+    .ghead { height: 40px; background: var(--sunken); border-bottom: 1px solid var(--line-soft); }
+    .task { height: 40px; border-bottom: 1px solid var(--line-soft); }
+    .cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .cell svg { color: var(--faint); }
+    .gname { font-size: 13px; font-weight: 700; letter-spacing: -.015em; color: var(--ink); }
+    .count { height: 18px; min-width: 18px; padding: 0 5px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 10.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+    .count-warn { background: var(--late-tint); border-color: var(--late-line); color: var(--late); }
+    .muted { font-size: 11.5px; color: var(--faint); }
+    .av { width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; letter-spacing: .02em; color: var(--av-ink); flex-shrink: 0; overflow: hidden; }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .c0 { background: var(--av0); }
+    .c1 { background: var(--av1); }
+    .c2 { background: var(--av2); }
+    .c3 { background: var(--av3); }
+    .c4 { background: var(--av4); }
+    .c5 { background: var(--av5); }
+    .c6 { background: var(--av6); }
+    .c7 { background: var(--av7); }
+    .av-falta { background: var(--surface); border: 1px dashed var(--line); color: var(--faint); }
+    .check { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--check); flex-shrink: 0; }
+    .check-late { border-color: var(--late-line); }
+    .title { font-size: 13px; font-weight: 500; letter-spacing: -.01em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: var(--r-sm); border: 1px solid transparent; font-size: 10.5px; font-weight: 600; letter-spacing: .01em; }
+    .p-todo { color: var(--muted); border-color: var(--line); }
+    .p-doing { color: var(--accent-strong); border-color: var(--accent-line); background: var(--accent-tint); }
+    .p-late { color: var(--late); border-color: var(--late-line); background: var(--late-tint); }
+    .due { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .due svg { color: var(--faint); }
+    .due-red { color: var(--late); }
+    .due-red svg { color: var(--late); }
+    .acts { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+    .iconbtn { width: 26px; height: 26px; border-radius: var(--r-sm); border: 0; background: none; color: var(--faint); display: inline-flex; align-items: center; justify-content: center; font-family: inherit; }
+    .addrow { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 16px 0 42px; color: var(--faint); font-size: 12px; border-bottom: 1px solid var(--line-soft); background: var(--surface); }
+    .addbtn { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface); color: var(--accent-strong); font-size: 11.5px; font-weight: 600; font-family: inherit; }
+    /* menu de acoes da linha */
+    .task-open { position: relative; background: var(--sunken); }
+    .iconbtn-on { background: #ebebeb; color: var(--ink); }
+    .menu { position: absolute; right: 14px; top: 33px; width: 196px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 28px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.05); padding: 4px; }
+    .mi { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 9px; border-radius: var(--r-sm); font-size: 12.5px; font-weight: 500; color: var(--ink); }
+    .mi svg { width: 14px; height: 14px; color: var(--faint); flex-shrink: 0; }
+    .mi-on { background: #f4f4f4; }
+    .mi-danger { color: var(--late); }
+    .mi-danger svg { color: var(--late); }
+    .msep { height: 1px; background: var(--line-soft); margin: 4px 0; }
+  </style>
+</helmet>
+<div class="app">
+
+  <header class="topbar">
+    <div class="logo">XP FACTORY</div>
+    <div class="sep"></div>
+    <span class="page-name">Tarefas</span>
+    <div style="flex: 1"></div>
+    <button type="button" class="btn btn-sec">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"></path><path d="M15 7h2a5 5 0 1 1 0 10h-2"></path><line x1="8" x2="16" y1="12" y2="12"></line></svg>
+      Copiar link
+    </button>
+    <button type="button" class="btn btn-sec">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+      Equipe
+    </button>
+    <button type="button" class="btn btn-pri">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+      Nova tarefa
+    </button>
+  </header>
+
+  <div class="viewbar">
+    <div class="tabs">
+      <button type="button" class="tab tab-on">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+        Tarefas
+      </button>
+      <button type="button" class="tab">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l3 2"></path></svg>
+        Histórico
+      </button>
+    </div>
+    <div class="sep"></div>
+    <div class="chips">
+      <button type="button" class="chip chip-on">Todas <b>11</b></button>
+      <button type="button" class="chip">Vencem hoje <b>4</b></button>
+      <button type="button" class="chip">Atrasadas <b class="warn">1</b></button>
+      <button type="button" class="chip">Sem tarefas <b>2</b></button>
+    </div>
+    <div style="flex: 1"></div>
+    <div class="search">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      Buscar tarefa ou pessoa
+    </div>
+    <span class="sync"><span class="dot"></span> 11:18</span>
+  </div>
+
+  <div class="board">
+    <div class="sheet">
+
+      <div class="row thead">
+        <span>TAREFA</span>
+        <span>STATUS</span>
+        <span>PRAZO</span>
+        <span style="text-align: right">AÇÕES</span>
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          <span class="av c0"><img src="thais.jpg" alt="Thais"></span>
+          <span class="gname">Thais</span>
+          <span class="count">2</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Conferir o estoque de embalagens</span></div>
+        <span><span class="pill p-todo">A fazer</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> Hoje 17:00</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Ligar para os clientes inativos da lista</span></div>
+        <span><span class="pill p-doing">Fazendo</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 12/09</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="addrow">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        Escreva a tarefa e aperte Enter
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          <span class="av c1"><img src="suelen.jpg" alt="Suelen"></span>
+          <span class="gname">Suelen</span>
+          <span class="count">3</span>
+          <span class="count count-warn">1 atrasada</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check check-late"></span><span class="title">Fechar o pedido da Ótica Central</span></div>
+        <span><span class="pill p-late">Atrasada</span></span>
+        <span class="due due-red"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg> 3 dias · 05/09</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Responder os orçamentos do WhatsApp</span></div>
+        <span><span class="pill p-doing">Fazendo</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> Hoje</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Enviar o catálogo para a Ana (Bauru)</span></div>
+        <span><span class="pill p-todo">A fazer</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 11/09</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="addrow">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        Escreva a tarefa e aperte Enter
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="av c2"><img src="amanda.jpg" alt="Amanda"></span>
+          <span class="gname">Amanda</span>
+          <span class="count">1</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+          <span class="av c3"><img src="lucas.jpg" alt="Lucas"></span>
+          <span class="gname">Lucas</span>
+          <span class="count">3</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+      <div class="row task task-open">
+        <div class="cell"><span class="check"></span><span class="title">Separar as amostras para a feira</span></div>
+        <span><span class="pill p-doing">Fazendo</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> Hoje 14:00</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn iconbtn-on"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+        <div class="menu">
+          <div class="mi mi-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg> Editar</div>
+          <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6"></path><path d="M22 11h-6"></path></svg> Mudar responsável</div>
+          <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="12" height="12" x="8" y="8" rx="2"></rect><path d="M16 6V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"></path></svg> Duplicar</div>
+          <div class="msep"></div>
+          <div class="mi mi-danger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path></svg> Excluir</div>
+        </div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Revisar o romaneio da semana</span></div>
+        <span><span class="pill p-todo">A fazer</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 11/09</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="row task">
+        <div class="cell"><span class="check"></span><span class="title">Conferir a devolução do pedido 4471</span></div>
+        <span><span class="pill p-todo">A fazer</span></span>
+        <span class="due"><svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg> 15/09</span>
+        <div class="acts">
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></button>
+          <button type="button" class="iconbtn"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="5" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="9" cy="19" r="1.4"></circle><circle cx="15" cy="5" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="15" cy="19" r="1.4"></circle></svg></button>
+        </div>
+      </div>
+      <div class="addrow">
+        <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>
+        Escreva a tarefa e aperte Enter
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="av c4">CA</span>
+          <span class="gname">Camila</span>
+          <span class="count">1</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="av c5">IZ</span>
+          <span class="gname">Iza</span>
+          <span class="muted">sem tarefas pendentes</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="av c6">PE</span>
+          <span class="gname">Pedro</span>
+          <span class="count">1</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+
+      <div class="row ghead">
+        <div class="cell">
+          <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+          <span class="av c7"><img src="tamires.jpg" alt="Tamires"></span>
+          <span class="gname">Tamires</span>
+          <span class="muted">sem tarefas pendentes</span>
+        </div>
+        <span></span>
+        <span></span>
+        <div class="acts"><button type="button" class="addbtn">+ tarefa</button></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

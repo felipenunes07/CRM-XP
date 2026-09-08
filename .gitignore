@@ -41,3 +41,6 @@ next-env.d.ts
 wrangler.local.json
 
 *.tsbuildinfo
+
+# canvas de design gerado (2,6 MB, regeravel a partir dos .dc.html)
+/design/**/tarefas-xp-redesign.html

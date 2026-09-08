@@ -1,0 +1,38 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Tarefas - lista por pessoa" },
+    { "file": "Historico.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 900, "title": "Historico de entregas" },
+    { "file": "Mobile.dc.html", "x": 3120, "y": 0, "w": 390, "h": 844, "title": "No celular" }
+  ],
+  "annotations": [
+    {
+      "id": "equipe",
+      "x": 0,
+      "y": -330,
+      "w": 480,
+      "text": "EQUIPE - 8 pessoas\n\nThais, Suelen, Amanda, Lucas, Camila, Iza, Pedro e Tamires.\n\nCOM FOTO (5):\nThais, Suelen, Amanda e Tamires vieram do CRM (as fotos de WhatsApp que ele ja guarda).\nLucas veio de seller-avatars/lucas.svg, que ja estava no projeto.\n\nSEM FOTO (3):\nCamila, Iza e Pedro estao com as iniciais. As imagens que voce mandou no chat eu nao consigo gravar em disco - preciso que voce salve os arquivos."
+    },
+    {
+      "id": "onde-salvar",
+      "x": 520,
+      "y": -330,
+      "w": 480,
+      "text": "ONDE SALVAR AS 3 QUE FALTAM\n\nO projeto ja tem a pasta certa, com a do Lucas dentro:\n\ncrm-tarefas-menu/apps/web/public/seller-avatars/\n\nSalve as tres ali com estes nomes exatos:\ncamila.png  (a de fundo creme)\niza.png     (a de fundo verde claro)\npedro.png   (a preta, Financeiro)\n\nMe avisa que eu coloco nas telas na hora."
+    },
+    {
+      "id": "um-link",
+      "x": 1560,
+      "y": -330,
+      "w": 460,
+      "text": "UM LINK SO\n\nMesma tela para todo mundo, duas abas: Tarefas e Historico. Sem kanban.\n\nO menu aberto na linha do Lucas mostra onde fica o Excluir - que hoje nao existe na API (testei: responde 'Acao invalida').\n\nCom um link so o app nao sabe quem esta usando: o Historico consegue dizer 'entregue as 10:42', nunca 'entregue pela Suelen'."
+    },
+    {
+      "id": "pendencias",
+      "x": 3120,
+      "y": -330,
+      "w": 420,
+      "text": "PENDENTE\n\n- Logo ainda e caixa tracejada; entra o xp-factory-logo.png.\n- Tarefas e clientes sao exemplos.\n- A busca no topo e proposta minha.\n- Bug no app atual: 'Desfazer entrega' aparece para a equipe mas a API recusa com 403."
+    }
+  ],
+  "launch": { "view": "focused", "file": "Main.dc.html" }
+}
