@@ -144,10 +144,14 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
     [updated, setUpdated] = useState('');
   const sequence = useRef(0),
     mutating = useRef(false),
+    fails = useRef(0),
+    hasData = useRef(false),
     photoInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const apply = () => {
       setKey(location.hash.slice(1));
+      hasData.current = false;
+      fails.current = 0;
       setData(null);
       setReady(true);
     };
@@ -159,8 +163,22 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
     async (path: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
       headers.set('Authorization', 'Bearer ' + key);
-      const r = await fetch(path, { ...init, headers, cache: 'no-store' });
-      const result = (await r.json()) as BoardData & { error?: string; id: string };
+      let r: Response;
+      try {
+        r = await fetch(path, { ...init, headers, cache: 'no-store' });
+      } catch {
+        throw new Error('Sem conexão com o servidor. Verifique a internet — vamos tentar de novo sozinhos.');
+      }
+      let result: BoardData & { error?: string; id: string };
+      try {
+        result = (await r.json()) as BoardData & { error?: string; id: string };
+      } catch {
+        throw new Error(
+          r.ok
+            ? 'O servidor respondeu de forma inesperada. Tente novamente.'
+            : 'O servidor está fora do ar no momento. Vamos tentar de novo sozinhos.',
+        );
+      }
       if (!r.ok)
         throw new Error(result.error ?? 'Não foi possível conectar. Tente novamente.');
       return result;
@@ -173,6 +191,8 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
     try {
       const b = await api('/api/board');
       if (n === sequence.current) {
+        fails.current = 0;
+        hasData.current = true;
         setData(b);
         setError('');
         setUpdated(
@@ -184,8 +204,14 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
         );
       }
     } catch (e) {
-      if (n === sequence.current)
-        setError(e instanceof Error ? e.message : 'Sem conexão. Tente novamente.');
+      if (n === sequence.current) {
+        fails.current += 1;
+        // Uma falha isolada durante a atualização automática não assusta:
+        // só mostramos o aviso se ainda não há dados na tela, ou se
+        // falhou duas vezes seguidas. O ciclo de 8s tenta de novo sozinho.
+        if (!hasData.current || fails.current >= 2)
+          setError(e instanceof Error ? e.message : 'Sem conexão. Tente novamente.');
+      }
     }
   }, [api, key]);
   useEffect(() => {
@@ -626,7 +652,7 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
       <Toaster />
       <header className="topbar">
         <a className="brand" href={location.hash ? '#' + location.hash.slice(1) : '#'}>
-          <Image unoptimized width={104} height={26} src="/xp-factory-logo.png" alt="XP Factory" />
+          <Image unoptimized width={86} height={26} src="/xp-factory-logo.png" alt="XP Factory" />
           <span className="sep" />
           <span className="page-name">Tarefas</span>
         </a>
