@@ -280,9 +280,7 @@ export default function Board({
         s === 'done'
           ? 'Entrega registrada!'
           : s === 'doing'
-            ? t.status === 'done'
-              ? 'Entrega desfeita. A tarefa voltou para fazendo.'
-              : 'Tarefa iniciada.'
+            ? 'Tarefa iniciada.'
             : 'Tarefa reaberta.',
       );
     } catch (e) {

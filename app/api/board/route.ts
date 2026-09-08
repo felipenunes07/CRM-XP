@@ -114,8 +114,7 @@ export function POST(request: Request) {
         !(
           (current.status === 'todo' &&
             (status === 'doing' || status === 'done')) ||
-          (current.status === 'doing' && status === 'done') ||
-          (current.status === 'done' && status === 'doing')
+          (current.status === 'doing' && status === 'done')
         )
       )
         throw new ApiError('Essa alteração precisa do acesso de gestão.', 403);

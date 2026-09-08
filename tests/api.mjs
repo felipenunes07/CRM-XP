@@ -123,14 +123,11 @@ assert.equal(
       action: 'status',
       id: t.id,
       version: t.version,
-      status: 'doing',
+      status: 'todo',
     })
   ).status,
-  200,
+  403,
 );
-t = (await request(admin)).tasks.find((x) => x.id === t.id);
-assert.equal(t.status, 'doing');
-assert.equal(t.completed_at, null);
 assert.equal(
   (
     await request(admin, {
