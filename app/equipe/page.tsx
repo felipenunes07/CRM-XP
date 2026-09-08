@@ -1,4 +1,4 @@
 import Board from '../board';
 export default function Page() {
-  return <Board />;
+  return <Board mode="team" />;
 }

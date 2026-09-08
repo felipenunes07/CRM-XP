@@ -5,6 +5,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type SubmitEvent,
 } from 'react';
 import {
@@ -107,7 +108,7 @@ function SelectPerson({
     </Select>
   );
 }
-export default function Board() {
+export default function Board({ mode = 'team' }: { mode?: 'manager' | 'team' }) {
   const [key, setKey] = useState(''),
     [ready, setReady] = useState(false),
     [data, setData] = useState<BoardData | null>(null),
@@ -217,6 +218,7 @@ export default function Board() {
   const report = (e: unknown) =>
     toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.');
   const manager = data?.role === 'manager';
+  const managerView = manager || mode === 'manager';
   const tasks = data?.tasks ?? [],
     people = data?.people ?? [];
   const pending = tasks.filter((t) => t.status !== 'done'),
@@ -528,7 +530,7 @@ export default function Board() {
     );
   }
   return (
-    <main className="workspace">
+    <main className={`workspace ${managerView ? 'is-manager' : 'is-team'}`}>
       <Toaster />
       <header className="topbar">
         <div className="brand">
@@ -542,17 +544,17 @@ export default function Board() {
           <span>Tarefas</span>
         </div>
         <span className="access-label">
-          {manager ? 'Gestão · Lili' : 'Quadro da equipe'}
+          {managerView ? 'MODO GESTÃO · LILI' : 'VISÃO DA EQUIPE'}
         </span>
       </header>
       <section className="heading">
         <div>
           <p className="eyebrow">EQUIPE XP</p>
-          <h1>Tarefas</h1>
+          <h1>{managerView ? 'Gestão de tarefas' : 'Tarefas da equipe'}</h1>
           <p>
-            {manager
-              ? 'Adicione uma tarefa na coluna de quem vai fazer.'
-              : 'O trabalho de todo mundo, em um só lugar.'}
+            {managerView
+              ? 'Crie, distribua e acompanhe o trabalho do time.'
+              : 'Acompanhe e atualize o andamento das tarefas.'}
           </p>
         </div>
         {manager && (
@@ -640,7 +642,22 @@ export default function Board() {
                     {busy ? 'Salvando…' : 'Atualizado às ' + updated}
                   </span>
                 </div>
-                <section className="kanban" aria-label="Tarefas por pessoa">
+                <section
+                  className={`kanban ${people.length > 6 ? 'kanban-dense' : ''} ${people.length > 12 ? 'kanban-super-dense' : ''}`}
+                  style={
+                    {
+                      '--board-columns': Math.max(
+                        1,
+                        people.length <= 6
+                          ? people.length
+                          : people.length <= 10
+                            ? Math.ceil(people.length / 2)
+                            : 6,
+                      ),
+                    } as CSSProperties
+                  }
+                  aria-label="Tarefas por pessoa"
+                >
                   {people
                     .filter(
                       (p) => filter !== 'empty' || emptyPeople.includes(p),
