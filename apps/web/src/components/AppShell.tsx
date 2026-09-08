@@ -36,6 +36,7 @@ import { permissionForPath } from "../lib/navigationPermissions";
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
+  { to: "https://xp-tarefas-equipe.base-coat.chatgpt.site/gestao#ec439da81db605f7bcee8f12315a1a8bd5a42fa509d3d752f4edcc8db4f324e0", icon: ClipboardList, labelPt: "Tarefas", external: true },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
@@ -66,6 +67,7 @@ interface SidebarItem {
   labelPt: string;
   icon?: React.ComponentType<{ size?: number }>;
   adminOnly?: boolean;
+  external?: boolean;
 }
 
 interface SidebarGroup {
@@ -85,6 +87,12 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
 const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
+  {
+    to: "https://xp-tarefas-equipe.base-coat.chatgpt.site/gestao#ec439da81db605f7bcee8f12315a1a8bd5a42fa509d3d752f4edcc8db4f324e0",
+    icon: ClipboardList,
+    labelPt: "Tarefas",
+    external: true,
+  },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
@@ -291,6 +299,18 @@ export function AppShell() {
           );
         }
                 const Icon = entry.icon!;
+                if (entry.external) {
+                  return (
+                    <li key={entry.to} className="cw-item">
+                      <a className="cw-link" href={entry.to}>
+                        <Icon size={16} />
+                        <span className="cw-label">
+                          {tx(entry.labelPt, entry.labelPt)}
+                        </span>
+                      </a>
+                    </li>
+                  );
+                }
                 return (
                   <li key={entry.to} className="cw-item">
                     <NavLink
