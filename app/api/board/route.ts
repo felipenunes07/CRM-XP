@@ -172,6 +172,11 @@ export function POST(request: Request) {
           'UPDATE tasks SET person_id=?,version=version+1 WHERE id=? AND version=?',
         )
         .bind(person, id, current.version);
+    } else if (b.action === 'delete') {
+      manager(request);
+      statement = db
+        .prepare('DELETE FROM tasks WHERE id=? AND version=?')
+        .bind(id, current.version);
     } else throw new ApiError('Ação inválida.');
     const result = await statement.run();
     if (!result.meta.changes)
