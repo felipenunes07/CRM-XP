@@ -602,7 +602,6 @@ export default function TarefasPage() {
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
             <span>TAREFA</span>
-            <span>OBSERVAÇÃO</span>
             <span>STATUS</span>
             <span>PRAZO</span>
             <span />
@@ -644,8 +643,6 @@ export default function TarefasPage() {
                         <span className="tarefas-count is-late">{lateCount} atrasada(s)</span>
                       )}
                     </span>
-                    <span />
-                    <span />
                     <span />
                     <span />
                     <span className="tarefas-actions">
@@ -698,9 +695,6 @@ export default function TarefasPage() {
                             >
                               {task.title}
                             </button>
-                          </span>
-                          <span className="tarefas-note" title={task.notes || undefined}>
-                            {task.notes}
                           </span>
                           <span
                             className={`tarefas-pill ${
