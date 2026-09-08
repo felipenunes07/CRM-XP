@@ -10,6 +10,7 @@ const ExecutiveSalesDashboardPage = lazy(async () => ({
   default: (await import("./pages/ExecutiveSalesDashboardPage")).ExecutiveSalesDashboardPage,
 }));
 const AttendantsPage = lazy(async () => ({ default: (await import("./pages/AttendantsPage")).AttendantsPage }));
+const TarefasPage = lazy(() => import("./pages/TarefasPage"));
 const CustomersPage = lazy(async () => ({ default: (await import("./pages/CustomersPage")).CustomersPage }));
 const CustomerFinancialPage = lazy(async () => ({
   default: (await import("./pages/CustomerFinancialPage")).CustomerFinancialPage,
@@ -79,10 +80,11 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
         <Route path="/relatorio-executivo" element={<ExecutiveSalesDashboardPage />} />
+        <Route path="/tarefas" element={<TarefasPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
-            <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
+            <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
             <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
             <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />
             <Route path="/clientes" element={<PermissionElement permission="commercial.customers.view"><CustomersPage /></PermissionElement>} />

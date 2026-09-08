@@ -36,7 +36,7 @@ import { permissionForPath } from "../lib/navigationPermissions";
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
-  { to: "https://xp-tarefas-equipe.base-coat.chatgpt.site/gestao#ec439da81db605f7bcee8f12315a1a8bd5a42fa509d3d752f4edcc8db4f324e0", icon: ClipboardList, labelPt: "Tarefas", external: true },
+  { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
@@ -87,12 +87,7 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
 const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
-  {
-    to: "https://xp-tarefas-equipe.base-coat.chatgpt.site/gestao#ec439da81db605f7bcee8f12315a1a8bd5a42fa509d3d752f4edcc8db4f324e0",
-    icon: ClipboardList,
-    labelPt: "Tarefas",
-    external: true,
-  },
+  { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
   { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
