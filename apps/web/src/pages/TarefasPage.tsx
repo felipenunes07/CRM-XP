@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Trash2,
 } from "lucide-react";
 import "./TarefasPage.css";
 
@@ -67,6 +68,28 @@ const LOCAL_AVATARS: Record<string, string> = {
   iza: "/seller-avatars/iza.jpg",
   pedro: "/seller-avatars/pedro.jpg",
 };
+// Cor de cada pessoa, puxada do crachá dela, para bater o olho e reconhecer.
+const PERSON_COLORS: Record<string, string> = {
+  thais: "#8b5cf6",
+  suelen: "#ec4899",
+  amanda: "#b91c1c",
+  lucas: "#0891b2",
+  camila: "#a16207",
+  iza: "#4d7c0f",
+  pedro: "#111827",
+  tamires: "#0f766e",
+};
+function personColor(person: Person) {
+  return PERSON_COLORS[firstName(person.name)] ?? "#475569";
+}
+
+/**
+ * A API do quadro não tem operação de apagar (responde "Ação inválida").
+ * Para dar um apagar de verdade sem depender dela, a tarefa é movida para uma
+ * pessoa oculta chamada "Lixeira", usando o `edit` que já existe. Ela some do
+ * quadro para todo mundo e continua recuperável.
+ */
+const TRASH_NAME = "Lixeira";
 
 function firstName(name: string) {
   return name.trim().toLowerCase().split(/\s+/)[0] ?? "";
@@ -141,6 +164,7 @@ export default function TarefasPage() {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState("");
 
   const boardQuery = useQuery({
     queryKey: ["tarefas-board"],
@@ -160,9 +184,34 @@ export default function TarefasPage() {
     onSuccess: invalidate,
   });
 
-  const people = boardQuery.data?.people ?? [];
-  const tasks = boardQuery.data?.tasks ?? [];
+  const allPeople = boardQuery.data?.people ?? [];
+  const trash = allPeople.find((p) => p.name.trim().toLowerCase() === TRASH_NAME.toLowerCase());
+  // A Lixeira e o que esta dentro dela nao aparecem no quadro nem nas contagens.
+  const people = allPeople.filter((p) => p.id !== trash?.id);
+  const tasks = (boardQuery.data?.tasks ?? []).filter((t) => t.person_id !== trash?.id);
   const manager = boardQuery.data?.role === "manager";
+
+  const deleteTask = async (task: Task) => {
+    let trashId = trash?.id;
+    if (!trashId) {
+      const created = await tarefasRequest<{ id: string }>("/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "person", name: TRASH_NAME }),
+      });
+      trashId = created.id;
+    }
+    mutation.mutate({
+      action: "edit",
+      id: task.id,
+      version: task.version,
+      title: task.title,
+      notes: task.notes ?? "",
+      person_id: trashId,
+      due_date: task.due_date,
+      due_time: task.due_time ?? "",
+    });
+  };
 
   const pending = useMemo(() => tasks.filter((t) => t.status !== "done"), [tasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
@@ -444,10 +493,14 @@ export default function TarefasPage() {
                 (t) => t.person_id === person.id && t.status !== "done",
               );
               return (
-                <article className="tarefas-col" key={person.id}>
+                <article
+                  className="tarefas-col"
+                  key={person.id}
+                  style={{ borderTop: `3px solid ${personColor(person)}` }}
+                >
                   <div className="tarefas-col-head">
                     <Avatar person={person} />
-                    <strong>{person.name}</strong>
+                    <strong style={{ color: personColor(person) }}>{person.name}</strong>
                     {open.length > 0 && <span className="tarefas-count">{open.length}</span>}
                   </div>
                   <div className="tarefas-cards">
@@ -499,11 +552,37 @@ export default function TarefasPage() {
                           >
                             {task.title}
                           </button>
-                          <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
-                            {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
-                            {shortDate(task)}
-                            {task.due_time ? ` ${task.due_time}` : ""}
-                          </span>
+                          <div className="tarefas-card-foot">
+                            <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
+                              {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
+                              {shortDate(task)}
+                              {task.due_time ? ` ${task.due_time}` : ""}
+                            </span>
+                            {manager &&
+                              (confirmDelete === task.id ? (
+                                <button
+                                  type="button"
+                                  className="tarefas-confirm"
+                                  disabled={mutation.isPending}
+                                  onClick={() => {
+                                    void deleteTask(task);
+                                    setConfirmDelete("");
+                                  }}
+                                >
+                                  Apagar
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="tarefas-icon is-danger"
+                                  aria-label="Apagar tarefa"
+                                  title="Apagar tarefa"
+                                  onClick={() => setConfirmDelete(task.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ))}
+                          </div>
                         </div>
                       ))
                     )}
@@ -523,6 +602,7 @@ export default function TarefasPage() {
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
             <span>TAREFA</span>
+            <span>OBSERVAÇÃO</span>
             <span>STATUS</span>
             <span>PRAZO</span>
             <span />
@@ -554,7 +634,7 @@ export default function TarefasPage() {
                         {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                       </button>
                       <Avatar person={person} />
-                      <strong>{person.name}</strong>
+                      <strong style={{ color: personColor(person) }}>{person.name}</strong>
                       {open.length > 0 ? (
                         <span className="tarefas-count">{open.length}</span>
                       ) : (
@@ -564,6 +644,8 @@ export default function TarefasPage() {
                         <span className="tarefas-count is-late">{lateCount} atrasada(s)</span>
                       )}
                     </span>
+                    <span />
+                    <span />
                     <span />
                     <span />
                     <span className="tarefas-actions">
@@ -617,6 +699,9 @@ export default function TarefasPage() {
                               {task.title}
                             </button>
                           </span>
+                          <span className="tarefas-note" title={task.notes || undefined}>
+                            {task.notes}
+                          </span>
                           <span
                             className={`tarefas-pill ${
                               task.status === "done"
@@ -639,7 +724,32 @@ export default function TarefasPage() {
                             {shortDate(task)}
                             {task.due_time ? ` ${task.due_time}` : ""}
                           </span>
-                          <span className="tarefas-actions" />
+                          <span className="tarefas-actions">
+                            {manager &&
+                              (confirmDelete === task.id ? (
+                                <button
+                                  type="button"
+                                  className="tarefas-confirm"
+                                  disabled={mutation.isPending}
+                                  onClick={() => {
+                                    void deleteTask(task);
+                                    setConfirmDelete("");
+                                  }}
+                                >
+                                  Apagar
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="tarefas-icon is-danger"
+                                  aria-label="Apagar tarefa"
+                                  title="Apagar tarefa"
+                                  onClick={() => setConfirmDelete(task.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              ))}
+                          </span>
                         </div>
                       ))}
                       {manager && filter === "all" && !search.trim() && (
