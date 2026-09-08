@@ -250,6 +250,18 @@
   border-color: #17803d;
   color: #fff;
 }
+/* Concluída: continua na lista, riscada, até o dia seguinte. Um clique sem
+   querer não some com nada — basta clicar de novo no círculo para reabrir. */
+.tarefas-row.is-finished {
+  background: #fcfcfc;
+}
+.tarefas-row.is-finished .tarefas-title {
+  text-decoration: line-through;
+  color: #a3a3a3;
+}
+.tarefas-row.is-finished .tarefas-due {
+  color: #a3a3a3;
+}
 .tarefas-pill {
   display: inline-flex;
   align-items: center;

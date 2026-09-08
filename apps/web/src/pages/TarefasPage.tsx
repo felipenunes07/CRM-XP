@@ -14,7 +14,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Trash2,
 } from "lucide-react";
 import "./TarefasPage.css";
 
@@ -79,6 +78,9 @@ function brazilDate(d = new Date()) {
 function isLate(t: Task) {
   return t.status !== "done" && t.deadline < Date.now();
 }
+function startOfToday() {
+  return new Date(`${brazilDate()}T00:00:00-03:00`).getTime();
+}
 function weekStart() {
   const today = brazilDate();
   const d = new Date(`${today}T00:00:00-03:00`);
@@ -130,7 +132,6 @@ export default function TarefasPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [addingFor, setAddingFor] = useState("");
   const [addTitle, setAddTitle] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState("");
 
   const boardQuery = useQuery({
     queryKey: ["tarefas-board"],
@@ -182,16 +183,33 @@ export default function TarefasPage() {
   };
 
   const visibleFor = (person: Person) => {
-    const own = tasks.filter((t) => t.person_id === person.id && t.status !== "done");
+    const own = tasks.filter((t) => t.person_id === person.id);
+    const open = own.filter((t) => t.status !== "done");
     const byFilter =
       filter === "today"
-        ? own.filter((t) => t.due_date === brazilDate())
+        ? open.filter((t) => t.due_date === brazilDate())
         : filter === "late"
-          ? own.filter(isLate)
-          : own;
-    return byFilter
+          ? open.filter(isLate)
+          : open;
+    const pendentes = byFilter
       .filter((t) => matchesSearch(t, person))
       .sort((a, b) => Number(isLate(b)) - Number(isLate(a)) || a.deadline - b.deadline);
+    // A tarefa concluida hoje continua na lista, riscada, em vez de sumir.
+    // Assim um clique sem querer no circulo nao faz nada desaparecer: basta
+    // clicar de novo para reabrir. Ela sai da lista sozinha no dia seguinte.
+    const concluidasHoje =
+      filter === "late"
+        ? []
+        : own
+            .filter(
+              (t) =>
+                t.status === "done" &&
+                t.completed_at &&
+                Date.parse(t.completed_at) >= startOfToday(),
+            )
+            .filter((t) => matchesSearch(t, person))
+            .sort((a, b) => (b.completed_at ?? "").localeCompare(a.completed_at ?? ""));
+    return [...pendentes, ...concluidasHoje];
   };
 
   const toggleStatus = (task: Task) =>
@@ -446,12 +464,24 @@ export default function TarefasPage() {
                   {!isCollapsed && (
                     <>
                       {visible.map((task) => (
-                        <div className="tarefas-row" key={task.id}>
+                        <div
+                          className={`tarefas-row${task.status === "done" ? " is-finished" : ""}`}
+                          key={task.id}
+                        >
                           <span className="tarefas-person">
                             <button
                               type="button"
                               className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
-                              aria-label="Marcar como entregue"
+                              aria-label={
+                                task.status === "done"
+                                  ? "Reabrir tarefa"
+                                  : "Marcar como concluída"
+                              }
+                              title={
+                                task.status === "done"
+                                  ? "Clique para reabrir"
+                                  : "Marcar como concluída"
+                              }
                               disabled={mutation.isPending}
                               onClick={() => toggleStatus(task)}
                             >
@@ -461,49 +491,27 @@ export default function TarefasPage() {
                           </span>
                           <span
                             className={`tarefas-pill ${
-                              isLate(task)
-                                ? "is-late"
-                                : task.status === "doing"
-                                  ? "is-doing"
-                                  : "is-todo"
+                              task.status === "done"
+                                ? "is-ok"
+                                : isLate(task)
+                                  ? "is-late"
+                                  : task.status === "doing"
+                                    ? "is-doing"
+                                    : "is-todo"
                             }`}
                           >
-                            {isLate(task) ? "Atrasada" : statusLabel(task.status)}
+                            {task.status === "done"
+                              ? "Concluída"
+                              : isLate(task)
+                                ? "Atrasada"
+                                : statusLabel(task.status)}
                           </span>
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                             {shortDate(task)}
                             {task.due_time ? ` ${task.due_time}` : ""}
                           </span>
-                          <span className="tarefas-actions">
-                            {manager &&
-                              (confirmDelete === task.id ? (
-                                <button
-                                  type="button"
-                                  className="tarefas-confirm"
-                                  disabled={mutation.isPending}
-                                  onClick={() => {
-                                    mutation.mutate({
-                                      action: "delete",
-                                      id: task.id,
-                                      version: task.version,
-                                    });
-                                    setConfirmDelete("");
-                                  }}
-                                >
-                                  Confirmar
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="tarefas-icon is-danger"
-                                  aria-label="Excluir tarefa"
-                                  onClick={() => setConfirmDelete(task.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              ))}
-                          </span>
+                          <span className="tarefas-actions" />
                         </div>
                       ))}
                       {manager &&
