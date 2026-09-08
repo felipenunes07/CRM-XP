@@ -1,7 +1,7 @@
 import type { ExecutiveDashboardMetrics } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
-import { env } from "../../lib/env.js";
 import { executiveSellerAvatarPublicUrl } from "../whatsapp/whatsappAvatarCache.js";
+import { buildShippedSalesOnlySql } from "./salesOrderScope.js";
 
 const DAILY_TARGET_DIVISOR = 20;
 // O worker pode sincronizar em outro processo, onde nao consegue limpar este Map.
@@ -9,8 +9,9 @@ const DAILY_TARGET_DIVISOR = 20;
 const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
 
 /**
- * A TV so conta venda da Olist ja despachada ("Enviado"). "Em aberto" e
- * "Preparando envio" ficam de fora ate sairem — decisao do time comercial.
+ * Os indicadores diarios so contam venda da Olist ja despachada ("Enviado").
+ * "Em aberto" e "Preparando envio" ficam de fora ate sairem — decisao do
+ * time comercial. A mesma regra alimenta a TV e a Saude da Carteira.
  *
  * O filtro so vale para linhas vindas da Olist. Historico do Dropbox e vendas
  * importadas do Supabase gravam status 'VALID', nunca 'Enviado'; sem a excecao
@@ -31,9 +32,7 @@ const EXECUTIVE_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
  *
  * other_items continua no retorno por compatibilidade, mas e sempre zero.
  */
-const SHIPPED_ONLY_SQL = env.EXECUTIVE_ONLY_SHIPPED
-  ? `AND (source_system <> 'olist_v2' OR LOWER(COALESCE(status, '')) = 'enviado')`
-  : "";
+const SHIPPED_ONLY_SQL = buildShippedSalesOnlySql();
 const SAO_PAULO_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Sao_Paulo",
   year: "numeric",
