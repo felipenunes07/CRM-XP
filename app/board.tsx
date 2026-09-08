@@ -75,10 +75,17 @@ const CRM_AVATARS: Record<string, string> = {
   thais: 'c57d6e20-09ef-472f-86ba-f60e9b19eb9b',
   tamires: 'e408855a-74b4-4009-80f4-520ac758761c',
 };
+// Fotos guardadas no próprio projeto, em /public/seller-avatars/<nome>.jpg.
+// Para dar foto a alguém que o CRM não expõe, basta colocar o arquivo lá
+// (ex.: camila.jpg, pedro.jpg, iza.jpg) e adicionar o nome nesta lista.
+const LOCAL_AVATARS: Record<string, string> = {
+  lucas: '/seller-avatars/lucas.jpg',
+};
 function avatarUrl(person: Person) {
   if (person.photo) return '/api/photo/' + person.photo;
-  const id = CRM_AVATARS[person.name.trim().toLowerCase().split(/\s+/)[0]];
-  return id ? CRM_AVATAR_BASE + id : null;
+  const first = person.name.trim().toLowerCase().split(/\s+/)[0];
+  if (LOCAL_AVATARS[first]) return LOCAL_AVATARS[first];
+  return CRM_AVATARS[first] ? CRM_AVATAR_BASE + CRM_AVATARS[first] : null;
 }
 function PersonAvatar({
   person,
