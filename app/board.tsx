@@ -63,6 +63,23 @@ type Draft = {
   due_date: string;
   due_time: string;
 };
+// Fotos de WhatsApp que o CRM já mantém (baixa a imagem da Meta e re-hospeda
+// num endereço estável, o mesmo que o painel da TV usa). Servem de fallback
+// quando a pessoa ainda não teve uma foto enviada pela tela "Gerenciar equipe".
+// Chave = primeiro nome em minúsculas.
+const CRM_AVATAR_BASE =
+  'https://xpcrm-crm-backend.f0dgeg.easypanel.host/api/dashboard/executive/avatar/';
+const CRM_AVATARS: Record<string, string> = {
+  suelen: 'bdb17129-1cee-434d-b6de-07430707c658',
+  amanda: '8b1f1149-4947-45c8-8dfd-e752bc2644f0',
+  thais: 'c57d6e20-09ef-472f-86ba-f60e9b19eb9b',
+  tamires: 'e408855a-74b4-4009-80f4-520ac758761c',
+};
+function avatarUrl(person: Person) {
+  if (person.photo) return '/api/photo/' + person.photo;
+  const id = CRM_AVATARS[person.name.trim().toLowerCase().split(/\s+/)[0]];
+  return id ? CRM_AVATAR_BASE + id : null;
+}
 function PersonAvatar({
   person,
   index = 0,
@@ -72,15 +89,17 @@ function PersonAvatar({
   index?: number;
   big?: boolean;
 }) {
+  const url = avatarUrl(person);
   return (
     <span className={'avatar color-' + (index % 8) + (big ? ' big' : '')}>
-      {person.photo ? (
-        <Image
-          unoptimized
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- fotos podem vir de um host externo (CRM), onde next/image não ajuda
+        <img
+          src={url}
+          alt={person.name}
           width={big ? 34 : 24}
           height={big ? 34 : 24}
-          src={'/api/photo/' + person.photo}
-          alt={person.name}
+          decoding="async"
         />
       ) : (
         person.name.slice(0, 2).toUpperCase()
