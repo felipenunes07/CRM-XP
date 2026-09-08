@@ -8,6 +8,7 @@ import {
   ChevronUp,
   ClipboardList,
   Clock3,
+  Columns3,
   History,
   ListTodo,
   Loader2,
@@ -42,6 +43,15 @@ type Task = {
   version: number;
 };
 type Board = { people: Person[]; tasks: Task[]; role: "manager" | "team" };
+type Draft = {
+  id?: string;
+  version?: number;
+  title: string;
+  person_id: string;
+  due_date: string;
+  due_time: string;
+  notes: string;
+};
 
 const CRM_AVATAR_BASE =
   "https://xpcrm-crm-backend.f0dgeg.easypanel.host/api/dashboard/executive/avatar/";
@@ -126,12 +136,11 @@ function Avatar({ person }: { person: Person }) {
 
 export default function TarefasPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"tarefas" | "historico">("tarefas");
+  const [tab, setTab] = useState<"tarefas" | "quadro" | "historico">("tarefas");
   const [filter, setFilter] = useState<"all" | "today" | "late" | "empty">("all");
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [addingFor, setAddingFor] = useState("");
-  const [addTitle, setAddTitle] = useState("");
+  const [draft, setDraft] = useState<Draft | null>(null);
 
   const boardQuery = useQuery({
     queryKey: ["tarefas-board"],
@@ -220,20 +229,40 @@ export default function TarefasPage() {
       status: task.status === "done" ? "doing" : "done",
     });
 
-  const quickAdd = (personId: string) => {
-    const title = addTitle.trim();
-    if (!title) {
-      setAddingFor("");
-      return;
-    }
-    mutation.mutate({
-      action: "create",
-      title,
-      person_id: personId,
+  const openNew = (personId: string) =>
+    setDraft({
+      title: "",
+      person_id: personId || people[0]?.id || "",
       due_date: brazilDate(),
+      due_time: "",
       notes: "",
     });
-    setAddTitle("");
+  const openEdit = (task: Task) =>
+    setDraft({
+      id: task.id,
+      version: task.version,
+      title: task.title,
+      person_id: task.person_id,
+      due_date: task.due_date,
+      due_time: task.due_time ?? "",
+      notes: task.notes ?? "",
+    });
+
+  const saveDraft = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!draft || !draft.title.trim()) return;
+    mutation.mutate(
+      {
+        action: draft.id ? "edit" : "create",
+        ...(draft.id ? { id: draft.id, version: draft.version } : {}),
+        title: draft.title.trim(),
+        person_id: draft.person_id,
+        due_date: draft.due_date,
+        due_time: draft.due_time,
+        notes: draft.notes,
+      },
+      { onSuccess: () => setDraft(null) },
+    );
   };
 
   const historyByDay = useMemo(() => {
@@ -281,13 +310,21 @@ export default function TarefasPage() {
           <button
             type="button"
             className="tarefas-tab"
+            data-on={tab === "quadro" ? "" : undefined}
+            onClick={() => setTab("quadro")}
+          >
+            <Columns3 size={13} /> Quadro
+          </button>
+          <button
+            type="button"
+            className="tarefas-tab"
             data-on={tab === "historico" ? "" : undefined}
             onClick={() => setTab("historico")}
           >
             <History size={13} /> Histórico
           </button>
         </div>
-        {tab === "tarefas" && (
+        {tab !== "historico" && (
           <div className="tarefas-chips">
             <button
               type="button"
@@ -397,6 +434,91 @@ export default function TarefasPage() {
             ))
           )}
         </div>
+      ) : tab === "quadro" ? (
+        <div className="tarefas-kanban">
+          {people
+            .filter((person) => filter !== "empty" || emptyPeople.includes(person))
+            .map((person) => {
+              const cards = visibleFor(person);
+              const open = tasks.filter(
+                (t) => t.person_id === person.id && t.status !== "done",
+              );
+              return (
+                <article className="tarefas-col" key={person.id}>
+                  <div className="tarefas-col-head">
+                    <Avatar person={person} />
+                    <strong>{person.name}</strong>
+                    {open.length > 0 && <span className="tarefas-count">{open.length}</span>}
+                  </div>
+                  <div className="tarefas-cards">
+                    {cards.length === 0 ? (
+                      <p className="tarefas-col-empty">Sem tarefas pendentes</p>
+                    ) : (
+                      cards.map((task) => (
+                        <div
+                          className={`tarefas-card${task.status === "done" ? " is-finished" : ""}`}
+                          key={task.id}
+                        >
+                          <div className="tarefas-card-top">
+                            <button
+                              type="button"
+                              className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
+                              aria-label={
+                                task.status === "done"
+                                  ? "Reabrir tarefa"
+                                  : "Marcar como concluída"
+                              }
+                              disabled={mutation.isPending}
+                              onClick={() => toggleStatus(task)}
+                            >
+                              <Check size={12} strokeWidth={3} />
+                            </button>
+                            <span
+                              className={`tarefas-pill ${
+                                task.status === "done"
+                                  ? "is-ok"
+                                  : isLate(task)
+                                    ? "is-late"
+                                    : task.status === "doing"
+                                      ? "is-doing"
+                                      : "is-todo"
+                              }`}
+                            >
+                              {task.status === "done"
+                                ? "Concluída"
+                                : isLate(task)
+                                  ? "Atrasada"
+                                  : statusLabel(task.status)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="tarefas-title is-link"
+                            title="Abrir para editar"
+                            onClick={() => openEdit(task)}
+                          >
+                            {task.title}
+                          </button>
+                          <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
+                            {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
+                            {shortDate(task)}
+                            {task.due_time ? ` ${task.due_time}` : ""}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {manager && (
+                    <div className="tarefas-col-add">
+                      <button type="button" onClick={() => openNew(person.id)}>
+                        + tarefa
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+        </div>
       ) : (
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
@@ -451,8 +573,7 @@ export default function TarefasPage() {
                           className="tarefas-icon"
                           aria-label={`Adicionar tarefa para ${person.name}`}
                           onClick={() => {
-                            setAddingFor(person.id);
-                            setAddTitle("");
+                            openNew(person.id);
                             setCollapsed((current) => ({ ...current, [person.id]: false }));
                           }}
                         >
@@ -487,7 +608,14 @@ export default function TarefasPage() {
                             >
                               <Check size={12} strokeWidth={3} />
                             </button>
-                            <span className="tarefas-title">{task.title}</span>
+                            <button
+                              type="button"
+                              className="tarefas-title is-link"
+                              title="Abrir para editar"
+                              onClick={() => openEdit(task)}
+                            >
+                              {task.title}
+                            </button>
                           </span>
                           <span
                             className={`tarefas-pill ${
@@ -514,34 +642,13 @@ export default function TarefasPage() {
                           <span className="tarefas-actions" />
                         </div>
                       ))}
-                      {manager &&
-                        (addingFor === person.id ? (
-                          <div className="tarefas-addrow">
-                            <input
-                              autoFocus
-                              value={addTitle}
-                              placeholder="Escreva a tarefa e aperte Enter"
-                              onChange={(event) => setAddTitle(event.target.value)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") quickAdd(person.id);
-                                if (event.key === "Escape") {
-                                  setAddingFor("");
-                                  setAddTitle("");
-                                }
-                              }}
-                              onBlur={() => quickAdd(person.id)}
-                            />
-                          </div>
-                        ) : (
-                          filter === "all" &&
-                          !search.trim() && (
-                            <div className="tarefas-addrow">
-                              <button type="button" onClick={() => setAddingFor(person.id)}>
-                                <Plus size={14} /> tarefa
-                              </button>
-                            </div>
-                          )
-                        ))}
+                      {manager && filter === "all" && !search.trim() && (
+                        <div className="tarefas-addrow">
+                          <button type="button" onClick={() => openNew(person.id)}>
+                            <Plus size={14} /> tarefa
+                          </button>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -552,6 +659,100 @@ export default function TarefasPage() {
               <ClipboardList size={18} /> Todos têm tarefas pendentes.
             </p>
           )}
+        </div>
+      )}
+
+      {draft && (
+        <div
+          className="tarefas-modal-bg"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !mutation.isPending) setDraft(null);
+          }}
+        >
+          <form className="tarefas-modal" onSubmit={saveDraft}>
+            <h2>{draft.id ? "Editar tarefa" : "Nova tarefa"}</h2>
+            <p className="tarefas-modal-sub">Defina o que precisa ser feito e até quando.</p>
+
+            <label>
+              O que precisa ser feito?
+              <input
+                autoFocus
+                required
+                maxLength={240}
+                value={draft.title}
+                placeholder="Ex.: Conferir o estoque de embalagens"
+                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+              />
+            </label>
+
+            <label>
+              Responsável
+              <select
+                value={draft.person_id}
+                onChange={(event) => setDraft({ ...draft, person_id: event.target.value })}
+              >
+                {people.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="tarefas-modal-cols">
+              <label>
+                Prazo
+                <input
+                  type="date"
+                  required
+                  value={draft.due_date}
+                  onChange={(event) => setDraft({ ...draft, due_date: event.target.value })}
+                />
+              </label>
+              <label>
+                Horário <span>(opcional)</span>
+                <input
+                  type="time"
+                  value={draft.due_time}
+                  onChange={(event) => setDraft({ ...draft, due_time: event.target.value })}
+                />
+              </label>
+            </div>
+
+            <label>
+              Observação <span>(opcional)</span>
+              <textarea
+                rows={3}
+                maxLength={3000}
+                value={draft.notes}
+                placeholder="Algum detalhe para ajudar na execução?"
+                onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
+              />
+            </label>
+
+            <div className="tarefas-modal-actions">
+              <button
+                type="button"
+                className="tarefas-btn"
+                disabled={mutation.isPending}
+                onClick={() => setDraft(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="tarefas-btn is-primary"
+                disabled={mutation.isPending || !draft.title.trim()}
+              >
+                {mutation.isPending
+                  ? "Salvando..."
+                  : draft.id
+                    ? "Salvar alterações"
+                    : "Criar tarefa"}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </section>

@@ -424,3 +424,181 @@
     display: none;
   }
 }
+
+/* Formulário de nova tarefa / editar */
+.tarefas-title.is-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+.tarefas-title.is-link:hover {
+  text-decoration: underline;
+}
+.tarefas-modal-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 10, 10, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.tarefas-modal {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px;
+  display: grid;
+  gap: 14px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
+}
+.tarefas-modal h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+.tarefas-modal-sub {
+  margin: -8px 0 0;
+  font-size: 13px;
+  color: #6e6e6e;
+}
+.tarefas-modal label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0a0a0a;
+}
+.tarefas-modal label span {
+  font-weight: 400;
+  color: #6e6e6e;
+}
+.tarefas-modal input,
+.tarefas-modal select,
+.tarefas-modal textarea {
+  width: 100%;
+  border: 1px solid #cfd6e0;
+  border-radius: 8px;
+  padding: 10px 11px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #0a0a0a;
+  background: #fff;
+  outline-color: #2956d7;
+}
+.tarefas-modal textarea {
+  resize: vertical;
+}
+.tarefas-modal-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.tarefas-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 4px;
+}
+.tarefas-btn {
+  height: 38px;
+  padding: 0 15px;
+  border-radius: 9px;
+  border: 1px solid #e0e0e0;
+  background: #fff;
+  color: #262626;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tarefas-btn.is-primary {
+  background: #2956d7;
+  border-color: #2148b6;
+  color: #fff;
+}
+.tarefas-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Visualização em quadro (kanban) */
+.tarefas-kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.tarefas-col {
+  background: #fff;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.tarefas-col-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
+}
+.tarefas-col-head strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarefas-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-height: 60px;
+}
+.tarefas-card {
+  border: 1px solid #e6e6e6;
+  border-radius: 9px;
+  padding: 10px;
+  display: grid;
+  gap: 7px;
+}
+.tarefas-card.is-finished {
+  background: #fcfcfc;
+}
+.tarefas-card.is-finished .tarefas-title {
+  text-decoration: line-through;
+  color: #a3a3a3;
+}
+.tarefas-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tarefas-col-empty {
+  padding: 14px 10px;
+  text-align: center;
+  color: #a3a3a3;
+  font-size: 11.5px;
+}
+.tarefas-col-add {
+  padding: 0 10px 10px;
+}
+.tarefas-col-add button {
+  width: 100%;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px dashed #cfd6e0;
+  background: none;
+  color: #2148b6;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
