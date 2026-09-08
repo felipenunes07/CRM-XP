@@ -21,6 +21,7 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   MoreVertical,
   Pencil,
   UserCog,
@@ -80,6 +81,9 @@ const CRM_AVATARS: Record<string, string> = {
 // (ex.: camila.jpg, pedro.jpg, iza.jpg) e adicionar o nome nesta lista.
 const LOCAL_AVATARS: Record<string, string> = {
   lucas: '/seller-avatars/lucas.jpg',
+  camila: '/seller-avatars/camila.jpg',
+  iza: '/seller-avatars/iza.jpg',
+  pedro: '/seller-avatars/pedro.jpg',
 };
 function avatarUrl(person: Person) {
   if (person.photo) return '/api/photo/' + person.photo;
@@ -165,6 +169,7 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
     [teamOpen, setTeamOpen] = useState(false),
     [personEdit, setPersonEdit] = useState<Person | null>(null),
     [personName, setPersonName] = useState(''),
+    [confirmDel, setConfirmDel] = useState(''),
     [photo, setPhoto] = useState<File | null>(null),
     [dragOver, setDragOver] = useState(''),
     [updated, setUpdated] = useState('');
@@ -461,6 +466,31 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
       if (saved) await refresh();
       mutating.current = false;
       setBusy(false);
+    }
+  }
+  async function reorderPerson(id: string, dir: -1 | 1) {
+    const ids = people.map((p) => p.id);
+    const i = ids.indexOf(id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    try {
+      await mutate({ action: 'people-order', order: ids });
+    } catch (e) {
+      report(e);
+    }
+  }
+  async function removePerson(p: Person) {
+    try {
+      await mutate({ action: 'person-delete', id: p.id });
+      setConfirmDel('');
+      if (personEdit?.id === p.id) {
+        setPersonEdit(null);
+        setPersonName('');
+      }
+      toast.success(p.name + ' saiu da equipe.');
+    } catch (e) {
+      report(e);
     }
   }
   async function copyTeam() {
@@ -1121,22 +1151,67 @@ export default function Board({ mode: _mode = 'team' }: { mode?: 'manager' | 'te
           <DialogDescription>
             Adicione pessoas ou clique no lápis para atualizar nome e foto.
           </DialogDescription>
-          <div className="team-grid">
+          <div className="team-list">
             {people.map((p, i) => (
-              <button
-                className={'team-person ' + (personEdit?.id === p.id ? 'selected' : '')}
+              <div
+                className={'team-row ' + (personEdit?.id === p.id ? 'selected' : '')}
                 key={p.id}
-                onClick={() => {
-                  setPersonEdit(p);
-                  setPersonName(p.name);
-                  setPhoto(null);
-                  if (photoInput.current) photoInput.current.value = '';
-                }}
               >
                 <PersonAvatar person={p} index={i} />
-                <span>{p.name}</span>
-                <Pencil size={14} />
-              </button>
+                <span className="nm">{p.name}</span>
+                <button
+                  type="button"
+                  className="rowbtn"
+                  aria-label={'Subir ' + p.name}
+                  disabled={busy || i === 0}
+                  onClick={() => void reorderPerson(p.id, -1)}
+                >
+                  <ChevronUp size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="rowbtn"
+                  aria-label={'Descer ' + p.name}
+                  disabled={busy || i === people.length - 1}
+                  onClick={() => void reorderPerson(p.id, 1)}
+                >
+                  <ChevronDown size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="rowbtn"
+                  aria-label={'Editar ' + p.name}
+                  onClick={() => {
+                    setConfirmDel('');
+                    setPersonEdit(p);
+                    setPersonName(p.name);
+                    setPhoto(null);
+                    if (photoInput.current) photoInput.current.value = '';
+                  }}
+                >
+                  <Pencil size={14} />
+                </button>
+                {confirmDel === p.id ? (
+                  <button
+                    type="button"
+                    className="confirm"
+                    disabled={busy}
+                    onClick={() => void removePerson(p)}
+                  >
+                    Confirmar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="rowbtn danger"
+                    aria-label={'Remover ' + p.name}
+                    disabled={busy}
+                    onClick={() => setConfirmDel(p.id)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <form className="form-stack" onSubmit={savePerson}>

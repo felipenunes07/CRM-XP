@@ -23,7 +23,19 @@ export type BoardData = {
   role: 'manager' | 'team';
   teamKey?: string;
 };
-export const names = ['Thais', 'Suelen', 'Amanda', 'Lucas', 'Camila', 'Pedro'];
+// A ordem é fixa: o id de cada pessoa semeada é `initial-<índice>`, então
+// nomes novos entram SEMPRE no fim — reordenar remontaria os ids e duplicaria
+// quem já existe no banco.
+export const names = [
+  'Thais',
+  'Suelen',
+  'Amanda',
+  'Lucas',
+  'Camila',
+  'Pedro',
+  'Iza',
+  'Tamires',
+];
 export function brazilDate(d = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',

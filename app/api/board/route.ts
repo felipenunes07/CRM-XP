@@ -14,15 +14,26 @@ export function GET(request: Request) {
   return safely(async () => {
     const access = role(request);
     const db = bindings().DB;
-    await db.batch(
-      names.map((name, i) =>
-        db
-          .prepare(
-            'INSERT OR IGNORE INTO people (id,name,position) VALUES (?,?,?)',
-          )
-          .bind('initial-' + i, name, i),
+    await db
+      .prepare('CREATE TABLE IF NOT EXISTS removed_people (id TEXT PRIMARY KEY)')
+      .run();
+    const removed = new Set(
+      (await db.prepare('SELECT id FROM removed_people').all()).results.map((r) =>
+        String((r as { id: string }).id),
       ),
     );
+    // Semeia a equipe inicial, mas nunca revive quem a gestão removeu de propósito.
+    const seed = names
+      .map((name, i) => ({ id: 'initial-' + i, name, i }))
+      .filter((p) => !removed.has(p.id));
+    if (seed.length)
+      await db.batch(
+        seed.map((p) =>
+          db
+            .prepare('INSERT OR IGNORE INTO people (id,name,position) VALUES (?,?,?)')
+            .bind(p.id, p.name, p.i),
+        ),
+      );
     const [people, tasks] = await db.batch([
       db.prepare('SELECT * FROM people ORDER BY position, name'),
       db.prepare('SELECT * FROM tasks ORDER BY deadline ASC'),
@@ -92,6 +103,30 @@ export function POST(request: Request) {
         )
         .run();
       return json({ id });
+    }
+    if (b.action === 'people-order') {
+      manager(request);
+      const order = Array.isArray(b.order) ? b.order : [];
+      if (!order.length) throw new ApiError('Ordem inválida.');
+      await db.batch(
+        order.map((pid, i) =>
+          db.prepare('UPDATE people SET position=? WHERE id=?').bind(i, clean(pid, 80)),
+        ),
+      );
+      return json({ id: 'ok' });
+    }
+    if (b.action === 'person-delete') {
+      manager(request);
+      const pid = clean(b.id, 80);
+      await db
+        .prepare('CREATE TABLE IF NOT EXISTS removed_people (id TEXT PRIMARY KEY)')
+        .run();
+      await db.batch([
+        db.prepare('DELETE FROM tasks WHERE person_id=?').bind(pid),
+        db.prepare('DELETE FROM people WHERE id=?').bind(pid),
+        db.prepare('INSERT OR IGNORE INTO removed_people (id) VALUES (?)').bind(pid),
+      ]);
+      return json({ id: pid });
     }
     const id = clean(b.id, 80);
     const current = await db

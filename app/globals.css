@@ -887,6 +887,71 @@ img {
   max-height: 240px;
   overflow: auto;
 }
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 264px;
+  overflow: auto;
+}
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.team-row.selected {
+  border-color: var(--pri-bg);
+  background: var(--accent-tint);
+}
+.team-row .nm {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-row .rowbtn {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  color: var(--faint);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.team-row .rowbtn:hover {
+  background: #ececec;
+  color: var(--ink);
+}
+.team-row .rowbtn:disabled {
+  opacity: 0.3;
+}
+.team-row .rowbtn.danger {
+  color: var(--late);
+}
+.team-row .rowbtn.danger:hover {
+  background: var(--late-tint);
+}
+.team-row .confirm {
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--late-line);
+  background: var(--late-tint);
+  color: var(--late);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 .team-person {
   display: flex;
   align-items: center;
