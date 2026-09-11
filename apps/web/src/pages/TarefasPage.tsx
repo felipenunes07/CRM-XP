@@ -543,13 +543,21 @@ export default function TarefasPage() {
     return i === -1 ? order.length + p.position : i;
   };
   const orderedPeople = [...boardPeople].sort((a, b) => rank(a) - rank(b));
-  const people = orderedPeople.filter((p) => !hidden.includes(p.id) && !p.hidden);
-  // A lista de responsáveis não deve depender das colunas visíveis: qualquer
-  // usuário ativo pode receber uma tarefa criada por uma vendedora.
-  const assignablePeople = orderedPeople;
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
+  // O Time só ocupa espaço para funcionários quando houver uma tarefa pública.
+  // Se foi removido pelo administrador (inclusive na configuração antiga), ele
+  // não fica aparecendo vazio nas tarefas pessoais.
+  const people = orderedPeople.filter(
+    (person) =>
+      !hidden.includes(person.id) &&
+      !person.hidden &&
+      (person.id !== TEAM_PERSON_ID || manager || tasks.some((task) => task.person_id === TEAM_PERSON_ID)),
+  );
+  // A lista de responsáveis não deve depender das colunas visíveis: qualquer
+  // usuário ativo pode receber uma tarefa criada por uma vendedora.
+  const assignablePeople = orderedPeople;
   const currentUserId = boardQuery.data?.current_user_id;
   const isTaskAssignedByMe = (person: Person) =>
     tasks.some((task) => task.person_id === person.id && task.created_by_user_id === currentUserId);
