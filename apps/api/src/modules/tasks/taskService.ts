@@ -45,6 +45,17 @@ export async function setTaskPersonVisible(personId: string, visible: boolean) {
   );
 }
 
+export async function setTaskPeopleOrder(personIds: string[]) {
+  if (!Array.isArray(personIds) || new Set(personIds).size !== personIds.length || personIds.some((id) => id !== TEAM_PERSON_ID && !/^[0-9a-f-]{36}$/i.test(id))) {
+    throw new HttpError(400, "Ordem de usuarios invalida");
+  }
+  await pool.query(
+    `INSERT INTO task_board_settings (key, value) VALUES ('people_order', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [JSON.stringify(personIds)],
+  );
+}
+
 interface TaskRow {
   id: string;
   title: string;
@@ -201,7 +212,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
            LIMIT 500`,
         )
       : Promise.resolve({ rows: [] }),
-    pool.query<{ key: string; value: unknown }>("SELECT key, value FROM task_board_settings WHERE key IN ('team_avatar_url', 'hidden_people')"),
+    pool.query<{ key: string; value: unknown }>("SELECT key, value FROM task_board_settings WHERE key IN ('team_avatar_url', 'hidden_people', 'people_order')"),
   ]);
 
   const setting = (key: string) => settingsResult.rows.find((row) => row.key === key)?.value;
@@ -210,16 +221,21 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
     ? (storedAvatar.startsWith("\"") ? JSON.parse(storedAvatar) as string : storedAvatar)
     : null;
   const hiddenPeople = new Set(Array.isArray(setting("hidden_people")) ? setting("hidden_people") as string[] : []);
+  const peopleOrder = Array.isArray(setting("people_order")) ? setting("people_order") as string[] : [];
+  const positionOf = (id: string, fallback: number) => {
+    const position = peopleOrder.indexOf(id);
+    return position < 0 ? peopleOrder.length + fallback : position;
+  };
 
   return {
     people: [
-      { id: TEAM_PERSON_ID, name: "Time", photo: teamAvatar, position: 0 },
+      { id: TEAM_PERSON_ID, name: "Time", photo: teamAvatar, position: positionOf(TEAM_PERSON_ID, 0) },
       ...peopleResult.rows.map((person, index) => ({
         id: String(person.id),
         name: String(person.full_name),
         photo: person.profile_avatar_url,
         hidden: hiddenPeople.has(String(person.id)),
-        position: index + 1,
+        position: positionOf(String(person.id), index + 1),
       })),
     ],
     tasks: tasksResult.rows.map(toBoardTask),

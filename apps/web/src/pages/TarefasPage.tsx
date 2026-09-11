@@ -531,6 +531,11 @@ export default function TarefasPage() {
     ids[from] = displaced;
     ids[to] = moved;
     setOrder(ids);
+    if (manager && token) {
+      void api.setTaskPeopleOrder(token, ids)
+        .then(() => boardQuery.refetch())
+        .catch(() => setNotice("Não foi possível salvar a ordem da equipe."));
+    }
   };
   const togglePerson = (id: string) =>
     setHidden((current) =>
@@ -1345,8 +1350,7 @@ export default function TarefasPage() {
               })}
             </ul>
             <p className="tarefas-modal-note">
-              Esta escolha vale neste navegador. Para tirar alguém da equipe para todo mundo, é
-              preciso publicar a versão nova do app de tarefas.
+              Como administrador, sua ordem é salva para toda a equipe. Use as setas para definir a sequência.
             </p>
             <div className="tarefas-modal-actions">
               <button

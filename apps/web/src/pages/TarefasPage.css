@@ -787,12 +787,14 @@
 
 /* Visualização em quadro (kanban) */
 .tarefas-kanban {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  display: flex;
+  overflow-x: auto;
+  padding-bottom: 12px;
   gap: 12px;
   align-items: start;
 }
 .tarefas-col {
+  flex: 0 0 260px;
   background: #fff;
   border: 1px solid #e6e6e6;
   border-radius: 10px;

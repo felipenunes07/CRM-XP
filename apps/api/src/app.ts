@@ -148,6 +148,7 @@ import {
   mutateTask,
   setTaskTeamAvatar,
   setTaskPersonVisible,
+  setTaskPeopleOrder,
   type TaskMutationInput,
 } from "./modules/tasks/taskService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
@@ -2864,6 +2865,14 @@ export function createApp() {
       const visible = z.object({ visible: z.boolean() }).parse(request.body).visible;
       const personId = z.string().uuid().parse(request.params.id);
       await setTaskPersonVisible(personId, visible);
+      response.status(204).end();
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/tasks/people/order", requirePermission("tasks.view"), requireRole(["ADMIN"]), async (request, response, next) => {
+    try {
+      const personIds = z.object({ personIds: z.array(z.string()).max(200) }).parse(request.body).personIds;
+      await setTaskPeopleOrder(personIds);
       response.status(204).end();
     } catch (error) { next(error); }
   });

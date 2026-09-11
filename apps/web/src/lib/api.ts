@@ -1122,6 +1122,9 @@ export const api = {
   setTaskPersonVisibility(token: string, personId: string, visible: boolean) {
     return request<void>(`/tasks/people/${personId}/visibility`, { method: "POST", body: JSON.stringify({ visible }) }, token);
   },
+  setTaskPeopleOrder(token: string, personIds: string[]) {
+    return request<void>("/tasks/people/order", { method: "POST", body: JSON.stringify({ personIds }) }, token);
+  },
   createUser(token: string, input: AdminUserInput) {
     return request<AdminUser[]>("/api/admin/users", {
       method: "POST",
