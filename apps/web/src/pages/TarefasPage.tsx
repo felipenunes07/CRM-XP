@@ -395,6 +395,7 @@ export default function TarefasPage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const [calendarPersonId, setCalendarPersonId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "today" | "late" | "empty">("all");
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -741,6 +742,9 @@ export default function TarefasPage() {
     people.find((p) => p.id === id) ?? { id, name: personName(id), photo: null, position: 0 };
   const viewedMonth = monthKey(calendarCursor);
   const monthTasks = tasks.filter((task) => task.due_date.startsWith(viewedMonth));
+  const calendarTasks = calendarPersonId
+    ? monthTasks.filter((task) => task.person_id === calendarPersonId)
+    : monthTasks;
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
@@ -929,15 +933,17 @@ export default function TarefasPage() {
           )}
           {manager && (
             <div className="tarefas-audit">
-              <div className="tarefas-dayhead">LOG DE ATIVIDADES</div>
+              <div className="tarefas-audit-heading">
+                <div><span>ATIVIDADES RECENTES</span><strong>Histórico do time</strong></div>
+                <small>{auditLogs.length} registro(s)</small>
+              </div>
               {auditLogs.length === 0 ? (
                 <p className="tarefas-empty">Nenhuma ação registrada ainda.</p>
               ) : (
                 auditLogs.map((log) => (
                   <div className="tarefas-audit-row" key={log.id}>
-                    <span>
-                      <strong>{log.actor_name}</strong> {auditActionLabel(log.action)} “{log.task_title}”
-                    </span>
+                    <span className="tarefas-audit-avatar">{log.actor_name.slice(0, 2).toUpperCase()}</span>
+                    <span><strong>{log.actor_name}</strong><small>{auditActionLabel(log.action)} “{log.task_title}”</small></span>
                     <time dateTime={log.created_at}>
                       {formatAuditTime(log.created_at)}
                     </time>
@@ -963,15 +969,23 @@ export default function TarefasPage() {
             }}>Hoje</button>
           </div>
           <div className="tarefas-coverage">
+            <button
+              type="button"
+              className={`tarefas-coverage-card tarefas-coverage-all${calendarPersonId === null ? " is-selected" : ""}`}
+              onClick={() => setCalendarPersonId(null)}
+            >
+              <Users size={16} />
+              <span><strong>Toda a equipe</strong><small>{monthTasks.length} tarefa(s) no mês</small></span>
+            </button>
             {displayPeople.map((person) => {
               const assigned = monthTasks.filter((task) => task.person_id === person.id);
               const dates = assigned.map((task) => task.due_date).sort();
               const lastDate = dates[dates.length - 1];
               return (
-                <div key={person.id} className="tarefas-coverage-card">
+                <button type="button" key={person.id} className={`tarefas-coverage-card${calendarPersonId === person.id ? " is-selected" : ""}`} onClick={() => setCalendarPersonId(calendarPersonId === person.id ? null : person.id)}>
                   <Avatar person={person} />
                   <span><strong>{person.name}</strong><small>{assigned.length ? `${assigned.length} tarefa(s) · última em ${lastDate?.slice(8, 10)}/${lastDate?.slice(5, 7)}` : "sem tarefas neste mês"}</small></span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -980,7 +994,7 @@ export default function TarefasPage() {
             {calendarDays(calendarCursor).map((day, index) => {
               if (day === null) return <div className="tarefas-calendar-day is-blank" key={`blank-${index}`} />;
               const date = `${viewedMonth}-${String(day).padStart(2, "0")}`;
-              const dayTasks = monthTasks.filter((task) => task.due_date === date);
+              const dayTasks = calendarTasks.filter((task) => task.due_date === date);
               return (
                 <div className={`tarefas-calendar-day${date === brazilDate() ? " is-today" : ""}`} key={date}>
                   <span className="tarefas-calendar-number">{day}</span>

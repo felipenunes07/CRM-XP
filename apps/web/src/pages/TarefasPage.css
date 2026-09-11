@@ -553,19 +553,33 @@
 }
 .tarefas-audit {
   margin-top: 20px;
-  border-top: 1px solid #e8e8e8;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(145deg, #fff, #f8fafc);
 }
+.tarefas-audit-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.tarefas-audit-heading div { display:grid; gap:2px; }
+.tarefas-audit-heading span { color:#64748b; font-size:9px; font-weight:800; letter-spacing:.1em; }
+.tarefas-audit-heading strong { font-size:14px; }
+.tarefas-audit-heading small { color:#64748b; font-size:11px; }
 .tarefas-audit-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  min-height: 42px;
-  padding: 8px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  min-height: 54px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  background:#fff;
   color: #525252;
   font-size: 12px;
 }
+.tarefas-audit-row > span:not(.tarefas-audit-avatar) { display:grid; gap:2px; min-width:0; }
+.tarefas-audit-row small { color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tarefas-audit-avatar { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; background:#eaf0ff; color:#2956d7; font-size:9px; font-weight:800; }
 .tarefas-audit-row time {
   color: #a3a3a3;
   white-space: nowrap;
@@ -902,7 +916,11 @@
   border: 1px solid #e6e6e6;
   border-radius: 9px;
   background: #fff;
+  text-align: left;
+  cursor: pointer;
 }
+.tarefas-coverage-card.is-selected { border-color:#2956d7; box-shadow:0 0 0 2px rgba(41,86,215,.12); background:#f6f8ff; }
+.tarefas-coverage-card:hover { border-color:#9db4f5; }
 .tarefas-coverage-card > span {
   min-width: 0;
   display: grid;
