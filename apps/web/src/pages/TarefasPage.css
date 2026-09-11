@@ -998,103 +998,61 @@
 }
 
 /* Calendário e leitura de carga por pessoa. */
-.tarefas-calendar-wrap {
-  display: grid;
-  gap: 12px;
+.tarefas-calendar-wrap { min-width: 0; border: 1px solid #e3e8ef; border-radius: 14px; background: #fff; overflow: hidden; box-shadow: 0 4px 20px #23355405; }
+.tarefas-calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 26px 20px; }
+.tarefas-calendar-eyebrow { display: inline-flex; align-items: center; gap: 6px; color: #7b87a0; font-size: 11px; }
+.tarefas-calendar-heading h2 { margin: 7px 0 5px; font-size: 24px; font-weight: 650; line-height: 1.25; letter-spacing: -.65px; color: #27334b; }
+.tarefas-calendar-heading h2::first-letter { text-transform: uppercase; }
+.tarefas-calendar-heading p { margin: 0; color: #8a94a5; font-size: 11.5px; }
+.tarefas-calendar-heading p span { margin: 0 5px; color: #b4becb; }
+.tarefas-calendar-navigation, .tarefas-calendar-navigation > div { display: flex; align-items: center; gap: 7px; }
+.tarefas-calendar-navigation > div { border: 1px solid #e4e8ef; border-radius: 8px; gap: 0; padding: 2px; }
+.tarefas-calendar-navigation .tarefas-icon { height: 30px; width: 32px; color: #73829b; }
+.tarefas-calendar-navigation .tarefas-btn { color: #4c5d7a; font-size: 12px; font-weight: 600; border-color: #e4e8ef; }
+.tarefas-calendar-filterbar { padding: 0 26px 18px; }
+.tarefas-calendar-filterlabel { display: block; margin-bottom: 9px; color: #9aa4b3; font-size: 10px; font-weight: 600; }
+.tarefas-coverage { display: flex; flex-wrap: wrap; gap: 7px; }
+.tarefas-coverage-card { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; padding: 5px 9px; border: 1px solid #e8ecf2; border-radius: 8px; background: #fff; color: #708099; cursor: pointer; transition: background .15s, border-color .15s; }
+.tarefas-coverage-card:hover { background: #f8faff; border-color: #bac9eb; }
+.tarefas-coverage-card.is-selected { background: #edf2ff; border-color: #b7c9f8; color: #3159c2; }
+.tarefas-coverage-card strong { font-size: 11px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-coverage-card .tarefas-avatar { width: 21px; height: 21px; font-size: 8px; }
+.tarefas-coverage-total { min-width: 18px; padding: 2px 4px; text-align: center; border-radius: 4px; font-size: 10px; background: #f1f4f8; color: #8e9aae; }
+.is-selected .tarefas-coverage-total { background: #dfe8ff; color: #3159c2; }
+.tarefas-calendar-scroll { max-width: 100%; overflow-x: auto; }
+.tarefas-calendar { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-width: 770px; background: #fff; }
+.tarefas-calendar-weekday { padding: 12px; background: #f9fafc; border-top: 1px solid #edf0f5; border-bottom: 1px solid #e8edf4; color: #8a97ab; font-size: 10px; font-weight: 600; }
+.tarefas-calendar-day { min-width: 0; min-height: 145px; padding: 8px; border-right: 1px solid #edf0f5; border-bottom: 1px solid #edf0f5; }
+.tarefas-calendar-day:nth-child(7n) { border-right: 0; }
+.tarefas-calendar-day.is-weekend { background: #fcfcfe; }
+.tarefas-calendar-day.is-blank { background: #f8f9fb; }
+.tarefas-calendar-day.is-today { background: #f5f8ff; }
+.tarefas-calendar-dayhead { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; height: 26px; }
+.tarefas-calendar-number { display: inline-flex; align-items: center; justify-content: center; height: 26px; min-width: 26px; color: #718096; font-size: 11px; font-weight: 600; }
+.is-today .tarefas-calendar-number { background: #3b63d8; color: #fff; border-radius: 50%; }
+.tarefas-calendar-dayhead > span { font-size: 9px; color: #6b87d7; }
+.tarefas-calendar-dayhead small { margin-left: auto; color: #a0aabd; font-size: 9px; padding-right: 4px; }
+.tarefas-calendar-task { display: flex; flex-direction: column; gap: 7px; width: 100%; margin-bottom: 6px; padding: 9px; border: 1px solid #e6ebf2; border-left: 3px solid #475569; border-radius: 7px; background: #fff; text-align: left; cursor: pointer; box-shadow: 0 2px 4px #253a5f04; transition: border-color .15s, box-shadow .15s; }
+.tarefas-calendar-task:hover { border-color: #bbcbed; box-shadow: 0 3px 10px #334f8520; }
+.tarefas-calendar-task-top { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; }
+.tarefas-calendar-task-top > span { display: inline-flex; align-items: center; gap: 4px; color: #8b99ad; font-size: 9px; }
+.tarefas-calendar-task-top > span.is-late { color: #c16b64; }
+.tarefas-calendar-task > strong { color: #34425b; font-size: 12px; line-height: 1.5; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.tarefas-calendar-task-person { display: flex; align-items: center; gap: 5px; min-width: 0; color: #8a96a8; font-size: 9.5px; }
+.tarefas-calendar-task-person .tarefas-avatar { width: 18px; height: 18px; font-size: 7px; }
+.tarefas-calendar-task-person > span:not(.tarefas-avatar) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-calendar-task-person time { margin-left: auto; font-size: 9px; }
+.tarefas-calendar-task.is-done > strong { text-decoration: line-through; color: #98a6a8; }
+.tarefas-calendar-task.is-done .tarefas-calendar-task-top > span { color: #3a9975; }
+.tarefas-calendar-empty { display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 26px; border-top: 1px solid #eef1f5; color: #8895aa; font-size: 12px; }
+.tarefas-calendar-wrap button:focus-visible, .tarefas-calendar-scroll:focus-visible { outline: 2px solid #7499f1; outline-offset: -2px; }
+@media (max-width: 600px) {
+  .tarefas-tabs { max-width: 100%; overflow-x: auto; }
+  .tarefas-tab { flex-shrink: 0; }
+  .tarefas-calendar-toolbar { padding: 18px 16px; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .tarefas-calendar-heading h2 { font-size: 21px; }
+  .tarefas-calendar-filterbar { padding: 0 16px 16px; }
+  .tarefas-coverage { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; }
+  .tarefas-coverage-card { flex-shrink: 0; }
+  .tarefas-calendar-empty { padding: 12px 16px; }
 }
-.tarefas-calendar-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.tarefas-calendar-toolbar strong {
-  min-width: 170px;
-  text-transform: capitalize;
-  font-size: 15px;
-}
-.tarefas-calendar-toolbar .tarefas-btn {
-  margin-left: auto;
-  height: 30px;
-}
-.tarefas-coverage {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 8px;
-}
-.tarefas-coverage-card {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  padding: 9px 11px;
-  border: 1px solid #e6e6e6;
-  border-radius: 9px;
-  background: #fff;
-  text-align: left;
-  cursor: pointer;
-}
-.tarefas-coverage-card.is-selected { border-color:#2956d7; box-shadow:0 0 0 2px rgba(41,86,215,.12); background:#f6f8ff; }
-.tarefas-coverage-card:hover { border-color:#9db4f5; }
-.tarefas-coverage-card > span {
-  min-width: 0;
-  display: grid;
-}
-.tarefas-coverage-card strong,
-.tarefas-coverage-card small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tarefas-coverage-card strong { font-size: 12px; }
-.tarefas-coverage-card small { color: #64748b; font-size: 10.5px; }
-.tarefas-calendar {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(115px, 1fr));
-  overflow-x: auto;
-  border: 1px solid #e6e6e6;
-  border-radius: 10px;
-  background: #fff;
-}
-.tarefas-calendar-weekday {
-  padding: 7px 9px;
-  border-bottom: 1px solid #e6e6e6;
-  color: #94a3b8;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: .08em;
-}
-.tarefas-calendar-day {
-  min-height: 118px;
-  padding: 7px;
-  border-right: 1px solid #f0f0f0;
-  border-bottom: 1px solid #f0f0f0;
-}
-.tarefas-calendar-day.is-blank { background: #fafafa; }
-.tarefas-calendar-day.is-today { background: #f4f7ff; }
-.tarefas-calendar-number {
-  display: block;
-  margin-bottom: 5px;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
-}
-.tarefas-calendar-task {
-  display: grid;
-  width: 100%;
-  margin-bottom: 4px;
-  padding: 5px 6px;
-  border: 0;
-  border-left: 3px solid #475569;
-  border-radius: 5px;
-  background: #f8fafc;
-  text-align: left;
-  cursor: pointer;
-}
-.tarefas-calendar-task strong,
-.tarefas-calendar-task small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tarefas-calendar-task strong { color: #1e293b; font-size: 10.5px; }
-.tarefas-calendar-task small { color: #64748b; font-size: 9.5px; }

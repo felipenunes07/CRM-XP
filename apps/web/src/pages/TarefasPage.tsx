@@ -233,6 +233,7 @@ function calendarDays(date: Date) {
   return [
     ...Array.from({ length: firstWeekday }, () => null),
     ...Array.from({ length: count }, (_, index) => index + 1),
+    ...Array.from({ length: (7 - (firstWeekday + count) % 7) % 7 }, () => null),
   ];
 }
 
@@ -254,10 +255,11 @@ async function tarefasRequest<T>(token: string, path: string, init: RequestInit 
 
 function Avatar({ person }: { person: Person }) {
   const url = avatarUrl(person);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
   return (
-    <span className="tarefas-avatar">
-      {url ? (
-        <img src={url} alt={person.name} width={24} height={24} decoding="async" />
+    <span className="tarefas-avatar" title={person.name}>
+      {url && url !== failedUrl ? (
+        <img src={url} alt={person.name} width={24} height={24} decoding="async" onError={() => setFailedUrl(url)} />
       ) : (
         person.name.slice(0, 2).toUpperCase()
       )}
@@ -753,9 +755,12 @@ export default function TarefasPage() {
   });
   const viewedMonth = monthKey(calendarCursor);
   const monthTasks = tasks.filter((task) => task.due_date.startsWith(viewedMonth));
-  const calendarTasks = calendarPersonId
-    ? monthTasks.filter((task) => task.person_id === calendarPersonId)
-    : monthTasks;
+  const selectedCalendarPerson = displayPeople.find(person => person.id === calendarPersonId);
+  const calendarTasks = monthTasks.filter(task =>
+    (!selectedCalendarPerson || task.person_id === selectedCalendarPerson.id) &&
+    matchesSearch(task, personById(task.person_id)) &&
+    (filter === "all" || (task.status !== "done" && (filter === "today" ? task.due_date === brazilDate() : isLate(task)))),
+  );
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
@@ -959,60 +964,80 @@ export default function TarefasPage() {
       ) : tab === "calendario" ? (
         <div className="tarefas-calendar-wrap">
           <div className="tarefas-calendar-toolbar">
-            <button type="button" className="tarefas-icon" aria-label="Mês anterior" onClick={() => shiftMonth(-1)}>
-              <ChevronLeft size={17} />
-            </button>
-            <strong>{monthLabel}</strong>
-            <button type="button" className="tarefas-icon" aria-label="Próximo mês" onClick={() => shiftMonth(1)}>
-              <ChevronRight size={17} />
-            </button>
-            <button type="button" className="tarefas-btn" onClick={() => {
-              const now = new Date();
-              setCalendarCursor(new Date(now.getFullYear(), now.getMonth(), 1));
-            }}>Hoje</button>
+            <div className="tarefas-calendar-heading">
+              <span className="tarefas-calendar-eyebrow"><CalendarDays size={14} /> Planejamento</span>
+              <h2>{monthLabel}</h2>
+              <p>{selectedCalendarPerson ? selectedCalendarPerson.name : "Todos os responsáveis"} <span>·</span> {calendarTasks.length} {calendarTasks.length === 1 ? "tarefa" : "tarefas"} nesta visualização</p>
+            </div>
+            <div className="tarefas-calendar-navigation">
+              <button type="button" className="tarefas-btn" onClick={() => {
+                const now = new Date();
+                setCalendarCursor(new Date(now.getFullYear(), now.getMonth(), 1));
+              }}>Hoje</button>
+              <div>
+                <button type="button" className="tarefas-icon" aria-label="Mês anterior" onClick={() => shiftMonth(-1)}><ChevronLeft size={18} /></button>
+                <button type="button" className="tarefas-icon" aria-label="Próximo mês" onClick={() => shiftMonth(1)}><ChevronRight size={18} /></button>
+              </div>
+            </div>
           </div>
-          <div className="tarefas-coverage">
-            <button
-              type="button"
-              className={`tarefas-coverage-card tarefas-coverage-all${calendarPersonId === null ? " is-selected" : ""}`}
-              onClick={() => setCalendarPersonId(null)}
-            >
-              <Users size={16} />
-              <span><strong>Toda a equipe</strong><small>{monthTasks.length} tarefa(s) no mês</small></span>
-            </button>
-            {displayPeople.map((person) => {
-              const assigned = monthTasks.filter((task) => task.person_id === person.id);
-              const dates = assigned.map((task) => task.due_date).sort();
-              const lastDate = dates[dates.length - 1];
-              return (
-                <button type="button" key={person.id} className={`tarefas-coverage-card${calendarPersonId === person.id ? " is-selected" : ""}`} onClick={() => setCalendarPersonId(calendarPersonId === person.id ? null : person.id)}>
-                  <Avatar person={person} />
-                  <span><strong>{person.name}</strong><small>{assigned.length ? `${assigned.length} tarefa(s) · última em ${lastDate?.slice(8, 10)}/${lastDate?.slice(5, 7)}` : "sem tarefas neste mês"}</small></span>
-                </button>
-              );
-            })}
+          <div className="tarefas-calendar-filterbar">
+            <span className="tarefas-calendar-filterlabel">Responsáveis</span>
+            <div className="tarefas-coverage" aria-label="Filtrar calendário por responsável">
+              <button type="button" className={`tarefas-coverage-card tarefas-coverage-all${!selectedCalendarPerson ? " is-selected" : ""}`}
+                aria-pressed={!selectedCalendarPerson} onClick={() => setCalendarPersonId(null)}>
+                <Users size={15} /><strong>Todos</strong><span className="tarefas-coverage-total">{monthTasks.length}</span>
+              </button>
+              {displayPeople.map((person) => {
+                const count = monthTasks.filter(task => task.person_id === person.id).length;
+                return (
+                  <button type="button" key={person.id}
+                    title={`${person.name} · ${count ? `${count} tarefa(s) neste mês` : "Sem tarefas neste mês"}`}
+                    aria-pressed={selectedCalendarPerson?.id === person.id}
+                    className={`tarefas-coverage-card${selectedCalendarPerson?.id === person.id ? " is-selected" : ""}`}
+                    onClick={() => setCalendarPersonId(calendarPersonId === person.id ? null : person.id)}>
+                    <Avatar person={person} /><strong>{person.name}</strong><span className="tarefas-coverage-total">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="tarefas-calendar">
-            {["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"].map((day) => <div className="tarefas-calendar-weekday" key={day}>{day}</div>)}
-            {calendarDays(calendarCursor).map((day, index) => {
-              if (day === null) return <div className="tarefas-calendar-day is-blank" key={`blank-${index}`} />;
-              const date = `${viewedMonth}-${String(day).padStart(2, "0")}`;
-              const dayTasks = calendarTasks.filter((task) => task.due_date === date);
-              return (
-                <div className={`tarefas-calendar-day${date === brazilDate() ? " is-today" : ""}`} key={date}>
-                  <span className="tarefas-calendar-number">{day}</span>
-                  {dayTasks.map((task) => {
-                    const person = personById(task.person_id);
-                    return (
-                      <button type="button" className="tarefas-calendar-task" key={task.id} style={{ borderLeftColor: personColor(person) }} onClick={() => openDetails(task)}>
-                        <strong>{task.due_time ? `${task.due_time} ` : ""}{task.title}</strong>
-                        <small>{person.name} · por {task.created_by_name}</small>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })}
+          {calendarTasks.length === 0 && <p className="tarefas-calendar-empty"><CalendarDays size={16} /> Nenhuma tarefa neste mês com os filtros selecionados.</p>}
+          <div className="tarefas-calendar-scroll" role="region" aria-label="Calendário mensal de tarefas" tabIndex={0}>
+            <div className="tarefas-calendar">
+              {["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"].map((day) => <div className="tarefas-calendar-weekday" key={day}>{day}</div>)}
+              {calendarDays(calendarCursor).map((day, index) => {
+                if (day === null) return <div className="tarefas-calendar-day is-blank" key={`blank-${index}`} />;
+                const date = `${viewedMonth}-${String(day).padStart(2, "0")}`;
+                const dayTasks = calendarTasks.filter(task => task.due_date === date).sort((a, b) => a.deadline - b.deadline);
+                const today = date === brazilDate();
+                return (
+                  <div className={`tarefas-calendar-day${today ? " is-today" : ""}${index % 7 >= 5 ? " is-weekend" : ""}`} key={date}>
+                    <div className="tarefas-calendar-dayhead">
+                      <time dateTime={date} className="tarefas-calendar-number" aria-current={today ? "date" : undefined}>{day}</time>
+                      {today && <span>Hoje</span>}
+                      {dayTasks.length > 0 && <small>{dayTasks.length}</small>}
+                    </div>
+                    {dayTasks.map((task) => {
+                      const person = personById(task.person_id);
+                      const late = isLate(task) && task.status !== "done";
+                      return (
+                        <button type="button" className={`tarefas-calendar-task${task.status === "done" ? " is-done" : ""}`}
+                          key={task.id} style={{ borderLeftColor: personColor(person) }}
+                          title={`${task.title} · ${person.name} · Atribuída por ${task.created_by_name}`}
+                          onClick={() => openDetails(task)}>
+                          <span className="tarefas-calendar-task-top">
+                            <span className={late ? "is-late" : ""}>{task.status === "done" ? <><Check size={11} /> Concluída</> : late ? <><Clock3 size={11} /> Atrasada</> : task.due_time || "Sem horário"}</span>
+                            {(task.priority === "high" || task.priority === "urgent") && <Flag size={12} fill="currentColor" className={`tarefas-priority is-${task.priority}`} aria-label={`Prioridade ${PRIORITY_LABEL[task.priority]}`} />}
+                          </span>
+                          <strong>{task.title}</strong>
+                          <span className="tarefas-calendar-task-person"><Avatar person={person} /><span>{person.name}</span>{late && task.due_time && <time>{task.due_time}</time>}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : tab === "quadro" ? (
