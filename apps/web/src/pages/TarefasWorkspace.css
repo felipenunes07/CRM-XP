@@ -1,5 +1,5 @@
 /* Task workspace: clear hierarchy, generous inset and compact editable cells. */
-.tarefas-page { container-type: inline-size; padding: 30px clamp(20px, 4vw, 68px) 60px; background: #f7f7f8; max-width: 1700px; margin: 0 auto; color: #243044; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tarefas-page { box-sizing: border-box; container-type: inline-size; width: 100%; min-width: 0; padding: 30px clamp(20px, 4vw, 68px) 60px; background: #f7f7f8; max-width: 1700px; margin: 0 auto; color: #243044; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .tarefas-page button, .tarefas-page input, .tarefas-page select, .tarefas-page textarea { font-family: inherit; }
 .tarefas-page-heading { display: flex; align-items: center; gap: 14px; padding: 0 0 24px; }
 .tarefas-page-mark { display: grid; place-items: center; height: 44px; width: 44px; border-radius: 12px; background: #eef2fe; color: #2956d7; }
