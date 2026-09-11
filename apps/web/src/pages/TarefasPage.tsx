@@ -57,6 +57,7 @@ type Task = {
   created_at: string;
   created_by_user_id: string;
   created_by_name: string;
+  created_by_photo: string | null;
   completed_at: string | null;
   version: number;
   can_notify: boolean;
@@ -406,7 +407,7 @@ export default function TarefasPage() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [calendarPersonId, setCalendarPersonId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "today" | "late" | "empty">("all");
+  const [filter, setFilter] = useState<"all" | "today" | "late">("all");
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -598,10 +599,6 @@ export default function TarefasPage() {
     () => pending.filter((t) => t.due_date === brazilDate()),
     [pending],
   );
-  const emptyPeople = useMemo(
-    () => displayPeople.filter((p) => !pending.some((t) => t.person_id === p.id)),
-    [displayPeople, pending],
-  );
   const deliveredThisWeek = useMemo(
     () => tasks.filter((t) => t.completed_at && Date.parse(t.completed_at) >= weekStart()),
     [tasks],
@@ -770,6 +767,12 @@ export default function TarefasPage() {
   const personName = (id: string) => people.find((p) => p.id === id)?.name ?? "—";
   const personById = (id: string) =>
     people.find((p) => p.id === id) ?? { id, name: personName(id), photo: null, position: 0 };
+  const creatorFor = (task: Task): Person => ({
+    id: task.created_by_user_id,
+    name: task.created_by_name,
+    photo: task.created_by_photo ?? personById(task.created_by_user_id).photo,
+    position: 0,
+  });
   const viewedMonth = monthKey(calendarCursor);
   const monthTasks = tasks.filter((task) => task.due_date.startsWith(viewedMonth));
   const calendarTasks = calendarPersonId
@@ -860,14 +863,6 @@ export default function TarefasPage() {
               onClick={() => setFilter("late")}
             >
               Atrasadas <b className={overdue.length ? "warn" : undefined}>{overdue.length}</b>
-            </button>
-            <button
-              type="button"
-              className="tarefas-chip"
-              data-on={filter === "empty" ? "" : undefined}
-              onClick={() => setFilter("empty")}
-            >
-              Sem tarefas <b>{emptyPeople.length}</b>
             </button>
           </div>
         )}
@@ -1045,7 +1040,6 @@ export default function TarefasPage() {
       ) : tab === "quadro" ? (
         <div ref={kanbanRef} className="tarefas-kanban" onPointerDown={startKanbanDrag} onPointerMove={moveKanbanDrag} onPointerUp={endKanbanDrag} onPointerCancel={endKanbanDrag}>
           {displayPeople
-            .filter((person) => filter !== "empty" || emptyPeople.includes(person))
             .map((person) => {
               const cards = visibleFor(person);
               const open = tasks.filter(
@@ -1195,14 +1189,13 @@ export default function TarefasPage() {
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
             <span>TAREFA</span>
-            <span>RESPONSÁVEL</span>
+            <span>ATRIBUÍDA POR</span>
             <span>PRIORIDADE</span>
             <span>STATUS</span>
             <span>PRAZO</span>
             <span />
           </div>
           {displayPeople
-            .filter((person) => filter !== "empty" || emptyPeople.includes(person))
             .map((person) => {
               const open = tasks.filter(
                 (t) => t.person_id === person.id && t.status !== "done",
@@ -1306,9 +1299,9 @@ export default function TarefasPage() {
                               </span>
                             </span>
                           </span>
-                          <span className="tarefas-assignee" title={`Responsável: ${personById(task.person_id).name}`}>
-                            <Avatar person={personById(task.person_id)} />
-                            <span>{personById(task.person_id).name}</span>
+                          <span className="tarefas-assignee" title={`Atribuída por ${task.created_by_name}`}>
+                            <Avatar person={creatorFor(task)} />
+                            <span>{task.created_by_name}</span>
                           </span>
                           <span className={`tarefas-priority is-${task.priority ?? "normal"}`}>
                             <Flag size={14} fill="currentColor" />
@@ -1370,11 +1363,6 @@ export default function TarefasPage() {
                 </div>
               );
             })}
-          {filter === "empty" && emptyPeople.length === 0 && (
-            <p className="tarefas-empty">
-              <ClipboardList size={18} /> Todos têm tarefas pendentes.
-            </p>
-          )}
         </div>
       )}
 

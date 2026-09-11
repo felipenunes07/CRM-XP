@@ -71,6 +71,7 @@ interface TaskRow {
   priority: TaskPriority;
   created_by_user_id: string;
   created_by_name?: string;
+  created_by_photo?: string | null;
   assignee_has_whatsapp?: boolean;
   created_at: string;
   updated_at: string;
@@ -144,6 +145,7 @@ function toBoardTask(row: TaskRow) {
     priority: row.priority ?? "normal",
     created_by_user_id: row.created_by_user_id,
     created_by_name: row.created_by_name ?? "Usuario",
+    created_by_photo: row.created_by_photo ?? null,
     can_notify: row.audience === "user" && Boolean(row.assignee_has_whatsapp),
     created_at: row.created_at,
     completed_at: row.completed_at,
@@ -192,6 +194,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
       `SELECT t.id, t.title, t.notes, t.checklist, t.audience, t.assignee_user_id,
               t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
+              creator.profile_avatar_url AS created_by_photo,
               (assignee.whatsapp_phone IS NOT NULL AND assignee.whatsapp_phone <> '') AS assignee_has_whatsapp,
               t.created_at::text, t.updated_at::text, t.completed_at::text, t.version
        FROM tasks t
