@@ -448,8 +448,8 @@ export function AdminUsersPage() {
               </label>
               <label>
                 WhatsApp
-                <span className="admin-password-control">
-                  <Phone size={15} />
+                <span className="admin-phone-control">
+                  <Phone size={15} aria-hidden="true" />
                   <input
                     value={draft.whatsappPhone}
                     type="tel"
