@@ -7025,6 +7025,46 @@ textarea {
   color: var(--muted);
 }
 
+/* Dashboard compacto: ocupa a área ao lado da barra sem parecer ampliado e
+   sem forçar uma rolagem horizontal em telas comuns de notebook. */
+.dashboard-page {
+  gap: 0.8rem;
+  min-width: 0;
+}
+
+.dashboard-page .dashboard-hero-premium { margin-bottom: 0.8rem; border-radius: 24px; }
+.dashboard-page .hero-premium-content { gap: 1.4rem; padding: 1.45rem 1.8rem; }
+.dashboard-page .hero-premium-copy { gap: 0.7rem; max-width: 590px; }
+.dashboard-page .premium-badge { padding: 0.26rem 0.65rem; font-size: 0.67rem; }
+.dashboard-page .premium-title { font-size: clamp(1.35rem, 2.15vw, 1.7rem); }
+.dashboard-page .premium-subtitle { font-size: 0.9rem; line-height: 1.4; }
+.dashboard-page .premium-actions { margin-top: 0.2rem; }
+.dashboard-page .premium-button { padding: 0.66rem 1rem; font-size: 0.84rem; }
+.dashboard-page .hero-premium-stats { min-width: 235px; gap: 0.6rem; }
+.dashboard-page .premium-stat-card { gap: 0.75rem; padding: 0.68rem 0.85rem; border-radius: 14px; }
+.dashboard-page .premium-stat-icon { width: 34px; height: 34px; border-radius: 10px; }
+.dashboard-page .premium-stat-icon svg { width: 16px; height: 16px; }
+.dashboard-page .premium-stat-info span { font-size: 0.64rem; margin-bottom: 0.08rem; }
+.dashboard-page .premium-stat-info strong { font-size: 0.98rem; }
+.dashboard-page .stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.7rem; }
+.dashboard-page .stat-card { min-width: 0; padding: 0.8rem 0.85rem; border-radius: 16px; gap: 0.45rem; }
+.dashboard-page .stat-card-title { font-size: 0.63rem; letter-spacing: 0.09em; }
+.dashboard-page .stat-card-icon { width: 28px; height: 28px; border-radius: 8px; }
+.dashboard-page .stat-card-icon > svg { width: 14px; height: 14px; }
+.dashboard-page .stat-card strong { font-size: 1.35rem; }
+.dashboard-page .stat-card-footer { gap: 0.35rem; min-height: 16px; }
+.dashboard-page .stat-card-badge { padding: 0.12rem 0.38rem; font-size: 0.6rem; }
+.dashboard-page .stat-card-helper { font-size: 0.62rem; }
+.dashboard-page .monthly-goal-card { min-width: 0; padding: 0.8rem 0.85rem; border-radius: 16px; }
+.dashboard-page .monthly-goal-card__value { font-size: 1.35rem; }
+.dashboard-page .monthly-goal-card__progress { transform: scale(.82); transform-origin: right center; }
+
+@media (max-width: 1050px) {
+  .dashboard-page .hero-premium-content { padding: 1.2rem 1.3rem; }
+  .dashboard-page .hero-premium-stats { min-width: 205px; }
+  .dashboard-page .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 @media (max-width: 900px) {
   .hero-premium-content {
     flex-direction: column;

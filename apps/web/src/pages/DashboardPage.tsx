@@ -1571,7 +1571,7 @@ export function DashboardPage() {
   const monthlyGoalMetaLabel = targetAmount > 0 ? tx(`Alvo ${formatNumber(targetAmount)}`, `目标 ${formatNumber(targetAmount)}`) : tx("Meta pendente", "待设置目标");
 
   return (
-    <div className="page-stack">
+    <div className="page-stack dashboard-page">
       <section className="dashboard-hero-premium">
         <div className="hero-premium-bg">
           <div className="hero-premium-gradient"></div>
