@@ -10,6 +10,8 @@ import {
   LayoutDashboard,
   Lightbulb,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   MessageSquareText,
   MonitorUp,
   Activity,
@@ -159,10 +161,12 @@ function SidebarGroupItem({
   group,
   tx,
   canAccess,
+  collapsed,
 }: {
   group: SidebarGroup;
   tx: (pt: string, fallback: string) => string;
   canAccess: (permissionKey: string) => boolean;
+  collapsed: boolean;
 }) {
   const location = useLocation();
   const visibleChildren = group.children.filter((child) => {
@@ -189,12 +193,13 @@ function SidebarGroupItem({
         className={`cw-group-toggle ${isChildActive ? "is-active" : ""}`}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
+        title={collapsed ? tx(group.labelPt, group.labelPt) : undefined}
       >
         <Icon size={16} />
-        <span className="cw-label">{tx(group.labelPt, group.labelPt)}</span>
-        <ChevronDown size={14} className={`cw-chevron ${open ? "open" : ""}`} />
+        {!collapsed && <span className="cw-label">{tx(group.labelPt, group.labelPt)}</span>}
+        {!collapsed && <ChevronDown size={14} className={`cw-chevron ${open ? "open" : ""}`} />}
       </button>
-      {open && (
+      {!collapsed && open && (
         <ul className="cw-group-children">
           {visibleChildren.map((child) => (
             <li key={child.to} className="cw-child-item">
@@ -222,6 +227,16 @@ export function AppShell() {
   const { language, setLanguage, tx } = useUiLanguage();
   const location = useLocation();
   const isLifecycleCockpit = location.pathname === "/automacao-carteira";
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    window.localStorage.getItem("xpcrm-sidebar-collapsed") === "true"
+  );
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("xpcrm-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
   const userInitials = user?.name
     ?.split(" ")
     .filter(Boolean)
@@ -230,15 +245,26 @@ export function AppShell() {
     .join("");
 
   return (
-    <div className={`app-shell ${isLifecycleCockpit ? "is-lifecycle-cockpit" : ""}`}>
+    <div className={`app-shell ${isLifecycleCockpit ? "is-lifecycle-cockpit" : ""} ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
       <aside className="cw-sidebar">
         {/* ── Header ── */}
         <section className="cw-header">
+          <div className="cw-brand-row">
           <Link to={user?.appRole === "tarefas" ? "/tarefas" : "/"} className="cw-premium-brand">
             <img src="/xp-factory-logo.png" alt="XP CRM" className="cw-logo-image" />
           </Link>
+          <button
+            type="button"
+            className="cw-sidebar-collapse-button"
+            onClick={toggleSidebar}
+            aria-label={sidebarCollapsed ? tx("Expandir menu", "Expandir menu") : tx("Recolher menu", "Recolher menu")}
+            title={sidebarCollapsed ? tx("Expandir menu", "Expandir menu") : tx("Recolher menu", "Recolher menu")}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+          </div>
 
-          <div className="sidebar-language-card">
+          {!sidebarCollapsed && <div className="sidebar-language-card">
             <span className="sidebar-language-label">Idioma</span>
             <div
               className="language-switch"
@@ -264,7 +290,7 @@ export function AppShell() {
                 中文
               </button>
             </div>
-          </div>
+          </div>}
         </section>
 
         {/* ── Navigation ── */}
@@ -290,6 +316,7 @@ export function AppShell() {
               group={entry}
               tx={tx}
               canAccess={canAccess}
+              collapsed={sidebarCollapsed}
             />
           );
         }
@@ -311,14 +338,15 @@ export function AppShell() {
                     <NavLink
                       to={entry.to}
                       end={entry.to === "/"}
+                      title={sidebarCollapsed ? tx(entry.labelPt, entry.labelPt) : undefined}
                       className={({ isActive }) =>
                         `cw-link ${isActive ? "active" : ""}`
                       }
                     >
                       <Icon size={16} />
-                      <span className="cw-label">
+                      {!sidebarCollapsed && <span className="cw-label">
                         {tx(entry.labelPt, entry.labelPt)}
-                      </span>
+                      </span>}
                     </NavLink>
                   </li>
                 );
@@ -328,12 +356,12 @@ export function AppShell() {
 
         {/* ── Footer / User ── */}
         <section className="cw-footer">
-          <div className="cw-user-card">
+          <div className="cw-user-card" title={sidebarCollapsed ? user?.name : undefined}>
             <span className="cw-user-avatar">{userInitials || "XP"}</span>
-            <div className="cw-user-info">
+            {!sidebarCollapsed && <div className="cw-user-info">
               <strong>{user?.name || tx("Usuario interno", "Usuario interno")}</strong>
               <span>{user?.email || tx("Sem email", "Sem email")}</span>
-            </div>
+            </div>}
             <button
               type="button"
               className="cw-logout-btn"

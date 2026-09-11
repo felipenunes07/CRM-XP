@@ -12868,6 +12868,81 @@ button.attendants-ranking-row:hover {
   box-shadow: inset -1px 0 0 rgba(41, 86, 215, 0.08);
 }
 
+/* Sidebar compacta: libera área para o conteúdo sem perder a navegação. */
+.cw-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.cw-brand-row .cw-premium-brand {
+  flex: 1;
+  min-width: 0;
+}
+
+.cw-sidebar-collapse-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(41, 86, 215, 0.14);
+  border-radius: 10px;
+  color: var(--accent);
+  background: #fff;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.cw-sidebar-collapse-button:hover {
+  background: rgba(41, 86, 215, 0.08);
+  transform: translateX(-1px);
+}
+
+.app-shell.is-sidebar-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.is-sidebar-collapsed .cw-header {
+  padding: 1rem 0.6rem 0.8rem;
+}
+
+.is-sidebar-collapsed .cw-brand-row .cw-premium-brand {
+  display: none;
+}
+
+.is-sidebar-collapsed .cw-brand-row {
+  justify-content: center;
+}
+
+.is-sidebar-collapsed .cw-sidebar-collapse-button {
+  width: 2.6rem;
+  height: 2.6rem;
+}
+
+.is-sidebar-collapsed .cw-nav {
+  padding: 0 0.45rem 1rem;
+}
+
+.is-sidebar-collapsed .cw-link,
+.is-sidebar-collapsed .cw-group-toggle {
+  justify-content: center;
+  padding: 0.65rem;
+}
+
+.is-sidebar-collapsed .cw-footer {
+  padding: 0.55rem 0.45rem;
+}
+
+.is-sidebar-collapsed .cw-user-card {
+  justify-content: center;
+  padding: 0.45rem;
+}
+
+.is-sidebar-collapsed .cw-logout-btn {
+  display: none;
+}
+
 .main-content {
   display: grid;
   align-content: start;
@@ -13084,6 +13159,18 @@ button.attendants-ranking-row:hover {
 
   .login-hero {
     min-height: auto;
+  }
+
+  .app-shell.is-sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .is-sidebar-collapsed .cw-premium-brand,
+  .is-sidebar-collapsed .sidebar-language-card,
+  .is-sidebar-collapsed .cw-label,
+  .is-sidebar-collapsed .cw-user-info,
+  .is-sidebar-collapsed .cw-logout-btn {
+    display: flex;
   }
 }
 
