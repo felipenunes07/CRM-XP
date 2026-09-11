@@ -410,6 +410,7 @@ export default function TarefasPage() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico">("tarefas");
+  const [listScope, setListScope] = useState<"received" | "created">("received");
   const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
   const [calendarCursor, setCalendarCursor] = useState(() => {
     const now = new Date();
@@ -657,7 +658,23 @@ export default function TarefasPage() {
     kanbanRef.current?.classList.remove("is-dragging");
   };
 
-  const pending = useMemo(() => tasks.filter((t) => t.status !== "done"), [tasks]);
+  const listTasks = useMemo(() => {
+    if (manager && adminScope === "all") return tasks;
+    return tasks.filter((task) =>
+      listScope === "received"
+        ? task.person_id === currentUserId
+        : task.person_id !== currentUserId && task.created_by_user_id === currentUserId,
+    );
+  }, [adminScope, currentUserId, listScope, manager, tasks]);
+  const listPeople = useMemo(() => {
+    if (manager && adminScope === "all") return displayPeople;
+    return displayPeople.filter((person) =>
+      listScope === "received"
+        ? person.id === currentUserId
+        : person.id !== currentUserId && listTasks.some((task) => task.person_id === person.id),
+    );
+  }, [adminScope, currentUserId, displayPeople, listScope, listTasks, manager]);
+  const pending = useMemo(() => listTasks.filter((t) => t.status !== "done"), [listTasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
   const dueToday = useMemo(
     () => pending.filter((t) => t.due_date === brazilDate()),
@@ -830,18 +847,26 @@ export default function TarefasPage() {
     <section className="tarefas-page">
       <div className="tarefas-page-heading">
         <div className="tarefas-page-mark"><ListTodo size={24} /></div>
-        <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : "Minhas tarefas"}</h1></div>
-        <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : "Atribuídas a mim e ao time"}</span>
+        <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : listScope === "received" ? "Tarefas atribuídas a mim" : "Tarefas atribuídas por mim"}</h1></div>
+        <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : listScope === "received" ? "Somente suas tarefas" : "Tarefas que você criou para outras pessoas"}</span>
       </div>
       <header className="tarefas-toolbar">
         <div className="tarefas-tabs">
           <button
             type="button"
             className="tarefas-tab"
-            data-on={tab === "tarefas" ? "" : undefined}
-            onClick={() => setTab("tarefas")}
+            data-on={tab === "tarefas" && listScope === "received" ? "" : undefined}
+            onClick={() => { setTab("tarefas"); setListScope("received"); }}
           >
-            <ListTodo size={13} /> Tarefas
+            <ListTodo size={13} /> Atribuídas a mim
+          </button>
+          <button
+            type="button"
+            className="tarefas-tab"
+            data-on={tab === "tarefas" && listScope === "created" ? "" : undefined}
+            onClick={() => { setTab("tarefas"); setListScope("created"); }}
+          >
+            <Send size={13} /> Atribuídas por mim
           </button>
           <button
             type="button"
@@ -1236,24 +1261,16 @@ export default function TarefasPage() {
             <span><CalendarDays size={16} /> Vencimento</span>
             <span />
           </div>
-          {displayPeople
-            .map((person, index) => {
+          {listPeople
+            .map((person) => {
               const open = tasks.filter(
                 (t) => t.person_id === person.id && t.status !== "done",
               );
               const lateCount = open.filter(isLate).length;
               const visible = visibleFor(person);
               const isCollapsed = collapsed[person.id];
-              const scope = groupScope(person);
-              const previous = index > 0 ? displayPeople[index - 1] : undefined;
-              const previousScope = previous ? groupScope(previous) : null;
               return (
                 <div key={person.id}>
-                  {!manager && scope && scope !== previousScope && (
-                    <div className="tarefas-section-label">
-                      <span>{scope}</span>
-                    </div>
-                  )}
                   <div className="tarefas-row tarefas-group">
                     <span className="tarefas-person">
                       <button
@@ -1271,7 +1288,6 @@ export default function TarefasPage() {
                       </button>
                       <Avatar person={person} />
                       <strong style={{ color: personColor(person) }}>{person.name}</strong>
-                      {scope && <span className="tarefas-group-scope">{scope}</span>}
                       {open.length > 0 ? (
                         <span className="tarefas-count">{open.length}</span>
                       ) : (
