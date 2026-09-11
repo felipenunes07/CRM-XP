@@ -20,7 +20,7 @@ import {
 } from "recharts";
 import { Download, Target, Users, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { AgendaItem, PortfolioTrendPoint, TrendRangeSelection } from "@olist-crm/shared";
+import type { AgendaItem, DashboardMetrics, PortfolioTrendPoint, TrendRangeSelection } from "@olist-crm/shared";
 import { ContactQueueCard } from "../components/ContactQueueCard";
 import { InfoHint } from "../components/InfoHint";
 import { StatCard } from "../components/StatCard";
@@ -52,6 +52,59 @@ const periodOptions: PeriodOption[] = [
 ];
 
 const resolvedPeriodOptions = periodOptions;
+
+const DASHBOARD_CACHE_VERSION = 1;
+const DASHBOARD_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+interface DashboardCacheEntry {
+  version: number;
+  savedAt: number;
+  data: DashboardMetrics;
+}
+
+function dashboardCacheKey(userId: string, trendDays: number, customerPrefix?: string) {
+  return `crm-dashboard:${DASHBOARD_CACHE_VERSION}:${userId}:${trendDays}:${customerPrefix ?? "all"}`;
+}
+
+function readDashboardCache(userId: string | undefined, trendDays: number, customerPrefix?: string): DashboardCacheEntry | undefined {
+  if (typeof window === "undefined" || !userId) return undefined;
+
+  try {
+    const key = dashboardCacheKey(userId, trendDays, customerPrefix);
+    const raw = window.sessionStorage.getItem(key);
+    if (!raw) return undefined;
+
+    const cached = JSON.parse(raw) as DashboardCacheEntry;
+    if (
+      cached.version !== DASHBOARD_CACHE_VERSION ||
+      !cached.data ||
+      !Number.isFinite(cached.savedAt) ||
+      Date.now() - cached.savedAt > DASHBOARD_CACHE_MAX_AGE_MS
+    ) {
+      window.sessionStorage.removeItem(key);
+      return undefined;
+    }
+
+    return cached;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeDashboardCache(userId: string | undefined, trendDays: number, customerPrefix: string | undefined, data: DashboardMetrics) {
+  if (typeof window === "undefined" || !userId) return;
+
+  try {
+    const cached: DashboardCacheEntry = {
+      version: DASHBOARD_CACHE_VERSION,
+      savedAt: Date.now(),
+      data,
+    };
+    window.sessionStorage.setItem(dashboardCacheKey(userId, trendDays, customerPrefix), JSON.stringify(cached));
+  } catch {
+    // Storage may be unavailable or full. React Query still keeps the in-memory cache.
+  }
+}
 
 const bucketFilters = {
   "0-14": { minDaysInactive: 0, maxDaysInactive: 14 },
@@ -863,22 +916,34 @@ function formatShare(value: number, total: number) {
 }
 
 export function DashboardPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { canAccess } = usePermissions();
   const canSyncData = canAccess("settings.manage");
   const { tx } = useUiLanguage();
 
-  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("1y");
+  const [selectedPeriod, setSelectedPeriod] = useState<TrendPeriod>("90d");
   const [selectedPrefix, setSelectedPrefix] = useState<string | undefined>(undefined);
 
-  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? 730;
+  const trendDays = resolvedPeriodOptions.find((opt) => opt.value === selectedPeriod)?.days ?? 90;
+  const cachedDashboard = useMemo(
+    () => readDashboardCache(user?.id, trendDays, selectedPrefix),
+    [user?.id, trendDays, selectedPrefix],
+  );
 
   const dashboardQuery = useQuery({
     queryKey: ["dashboard", trendDays, selectedPrefix],
-    queryFn: () => api.dashboard(token!, trendDays, selectedPrefix),
+    queryFn: async () => {
+      const data = await api.dashboard(token!, trendDays, selectedPrefix);
+      writeDashboardCache(user?.id, trendDays, selectedPrefix, data);
+      return data;
+    },
     enabled: Boolean(token),
+    initialData: cachedDashboard?.data,
+    initialDataUpdatedAt: cachedDashboard?.savedAt,
+    placeholderData: (previousData) => previousData,
+    staleTime: 5 * 60 * 1000,
     refetchInterval: 15 * 60 * 1000, // Atualiza a cada 15 minutos para refletir sincronizações automáticas
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const [selectedBuckets, setSelectedBuckets] = useState<BucketLabel[]>([]);
@@ -925,13 +990,13 @@ export function DashboardPage() {
       const response = await api.getChartAnnotations(token!);
       return response;
     },
-    enabled: Boolean(token),
+    enabled: Boolean(token && dashboardQuery.data),
   });
 
   const agendaQuery = useQuery({
     queryKey: ["dashboard-agenda-preview"],
     queryFn: () => api.agenda(token!, 6, 0),
-    enabled: Boolean(token),
+    enabled: Boolean(token && dashboardQuery.data),
   });
 
   const filteredCustomersQuery = useQuery({
@@ -952,7 +1017,7 @@ export function DashboardPage() {
         sortBy: "priority",
         limit: 120,
       }),
-    enabled: Boolean(token && selectedBuckets.length === 0 && !selectedSaleMonth),
+    enabled: Boolean(token && dashboardQuery.data && selectedBuckets.length === 0 && !selectedSaleMonth),
   });
 
   const salesCustomersQuery = useQuery({
