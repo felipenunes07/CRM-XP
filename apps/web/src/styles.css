@@ -29103,3 +29103,17 @@ input[type="number"] {
     font-size: 0.64rem;
   }
 }
+
+/* Desktop density: keeps the browser at 100% while matching the previous
+   comfortable notebook view. Responsive tablet/mobile layouts remain native. */
+@media (min-width: 1181px) {
+  html {
+    overflow-x: hidden;
+  }
+
+  #root {
+    width: 125%;
+    min-height: 125vh;
+    zoom: 0.8;
+  }
+}
