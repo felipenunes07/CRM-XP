@@ -357,7 +357,9 @@ export function AppShell() {
         {/* ── Footer / User ── */}
         <section className="cw-footer">
           <div className="cw-user-card" title={sidebarCollapsed ? user?.name : undefined}>
-            <span className="cw-user-avatar">{userInitials || "XP"}</span>
+            <span className="cw-user-avatar">
+              {user?.profileAvatarUrl ? <img src={user.profileAvatarUrl} alt="" /> : userInitials || "XP"}
+            </span>
             {!sidebarCollapsed && <div className="cw-user-info">
               <strong>{user?.name || tx("Usuario interno", "Usuario interno")}</strong>
               <span>{user?.email || tx("Sem email", "Sem email")}</span>

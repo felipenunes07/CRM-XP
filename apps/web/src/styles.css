@@ -395,6 +395,13 @@ a {
   letter-spacing: 0.04em;
 }
 
+.cw-user-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .cw-user-info {
   flex: 1;
   min-width: 0;

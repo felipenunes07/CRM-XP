@@ -14,6 +14,7 @@ export interface AuthUser {
   role: LegacyRole;
   appRole: AppRole;
   name: string;
+  profileAvatarUrl?: string | null;
   isActive: boolean;
   permissions: string[];
 }
@@ -196,6 +197,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.subscription.unsubscribe();
     };
   }, [clearSession, loadUserResilient]);
+
+  // Mantém nome, permissões e foto do perfil atualizados quando um administrador
+  // altera o cadastro, sem obrigar o funcionário a sair e entrar novamente.
+  useEffect(() => {
+    if (!token || isLocalAddress()) return;
+    const refresh = () => void loadUserResilient(token);
+    const timer = window.setInterval(refresh, 20_000);
+    return () => window.clearInterval(timer);
+  }, [loadUserResilient, token]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

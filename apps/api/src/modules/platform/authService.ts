@@ -23,6 +23,7 @@ export interface JwtUser {
   role: LegacyRole;
   appRole?: AppRole;
   name: string;
+  profileAvatarUrl?: string | null;
   isActive?: boolean;
   permissions?: string[];
 }
@@ -40,6 +41,7 @@ interface ProfileRow {
   full_name: string | null;
   role: string;
   is_active: boolean;
+  profile_avatar_url?: string | null;
 }
 
 function mapProfile(row: ProfileRow, permissions: string[]): JwtUser {
@@ -50,6 +52,7 @@ function mapProfile(row: ProfileRow, permissions: string[]): JwtUser {
     role: toLegacyRole(appRole),
     appRole,
     name: String(row.full_name ?? row.email),
+    profileAvatarUrl: row.profile_avatar_url ?? null,
     isActive: Boolean(row.is_active),
     permissions,
   };
@@ -75,7 +78,7 @@ async function loadProfile(userId: string, fallbackEmail?: string) {
   const isDefaultAdmin = normalizedFallbackEmail === env.DEFAULT_ADMIN_EMAIL.trim().toLowerCase();
   const result = await pool.query<ProfileRow>(
     `
-      SELECT id, email, full_name, role, is_active
+      SELECT id, email, full_name, role, is_active, profile_avatar_url
       FROM profiles
       WHERE id = $1
     `,
@@ -91,7 +94,7 @@ async function loadProfile(userId: string, fallbackEmail?: string) {
               is_active = true,
               updated_at = NOW()
           WHERE id = $1
-          RETURNING id, email, full_name, role, is_active
+          RETURNING id, email, full_name, role, is_active, profile_avatar_url
         `,
         [userId],
       );
@@ -108,7 +111,7 @@ async function loadProfile(userId: string, fallbackEmail?: string) {
     `
       INSERT INTO profiles (id, email, full_name, role, is_active)
       VALUES ($1, $2, $3, $4, true)
-      RETURNING id, email, full_name, role, is_active
+      RETURNING id, email, full_name, role, is_active, profile_avatar_url
     `,
     [
       userId,
