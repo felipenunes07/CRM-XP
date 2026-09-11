@@ -792,6 +792,12 @@
   padding-bottom: 12px;
   gap: 12px;
   align-items: start;
+  cursor: grab;
+  touch-action: pan-x;
+}
+.tarefas-kanban.is-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 .tarefas-col {
   flex: 0 0 260px;

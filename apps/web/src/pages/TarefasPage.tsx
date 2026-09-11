@@ -402,6 +402,8 @@ export default function TarefasPage() {
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
   const detailsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detailsSaving, setDetailsSaving] = useState(false);
+  const kanbanRef = useRef<HTMLDivElement | null>(null);
+  const kanbanDrag = useRef<{ pointerId: number; startX: number; startScrollLeft: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState("");
   const [confirmNotify, setConfirmNotify] = useState("");
   const [notice, setNotice] = useState("");
@@ -541,6 +543,27 @@ export default function TarefasPage() {
     setHidden((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
     );
+
+  const startKanbanDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, textarea, select, a")) return;
+    const board = kanbanRef.current;
+    if (!board) return;
+    kanbanDrag.current = { pointerId: event.pointerId, startX: event.clientX, startScrollLeft: board.scrollLeft };
+    board.setPointerCapture(event.pointerId);
+    board.classList.add("is-dragging");
+  };
+  const moveKanbanDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = kanbanDrag.current;
+    const board = kanbanRef.current;
+    if (!drag || !board || drag.pointerId !== event.pointerId) return;
+    board.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
+  };
+  const endKanbanDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (kanbanDrag.current?.pointerId !== event.pointerId) return;
+    kanbanDrag.current = null;
+    kanbanRef.current?.classList.remove("is-dragging");
+  };
 
   const pending = useMemo(() => tasks.filter((t) => t.status !== "done"), [tasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
@@ -976,7 +999,7 @@ export default function TarefasPage() {
           </div>
         </div>
       ) : tab === "quadro" ? (
-        <div className="tarefas-kanban">
+        <div ref={kanbanRef} className="tarefas-kanban" onPointerDown={startKanbanDrag} onPointerMove={moveKanbanDrag} onPointerUp={endKanbanDrag} onPointerCancel={endKanbanDrag}>
           {displayPeople
             .filter((person) => filter !== "empty" || emptyPeople.includes(person))
             .map((person) => {
