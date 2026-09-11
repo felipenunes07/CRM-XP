@@ -4649,5 +4649,12 @@ export const migrations = [
     ('operacional', 'reports.executive.view'),
     ('viewer', 'reports.executive.view')
   ON CONFLICT DO NOTHING;
+  `,
+  `
+  CREATE TABLE IF NOT EXISTS task_board_settings (
+    key TEXT PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
   `
 ];

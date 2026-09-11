@@ -638,6 +638,31 @@
   font-size: 11px;
   color: #a3a3a3;
 }
+
+.tarefas-team-avatar-upload {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  margin: 0 0 1rem;
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.tarefas-team-avatar-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.tarefas-team-avatar-upload span {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: .38rem .6rem;
+  color: #1d4ed8;
+  background: #fff;
+  cursor: pointer;
+}
 .tarefas-modal label {
   display: grid;
   gap: 4px;

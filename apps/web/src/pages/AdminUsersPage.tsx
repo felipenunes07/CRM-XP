@@ -373,7 +373,9 @@ export function AdminUsersPage() {
                   className={`admin-user-row ${selectedId === user.id ? "active" : ""}`}
                   onClick={() => setSelectedId(user.id)}
                 >
-                  <span className="admin-user-avatar">{initials(user.name, user.email)}</span>
+                  <span className="admin-user-avatar">
+                    {user.profile_avatar_url ? <img src={user.profile_avatar_url} alt="" /> : initials(user.name, user.email)}
+                  </span>
                   <span className="admin-user-main">
                     <strong>{user.name}</strong>
                     <small>{user.email}</small>
@@ -392,7 +394,7 @@ export function AdminUsersPage() {
           <section className="admin-editor-hero">
             <div className="admin-editor-identity">
               <span className={`admin-editor-avatar ${draft.isActive ? "" : "inactive"}`}>
-                {selectedUser ? initials(selectedUser.name, selectedUser.email) : <UserRound size={22} />}
+                {selectedUser?.profile_avatar_url ? <img src={selectedUser.profile_avatar_url} alt="" /> : selectedUser ? initials(selectedUser.name, selectedUser.email) : <UserRound size={22} />}
               </span>
               <div>
                 <span>{selectedUser ? "Editando acesso" : "Novo acesso"}</span>

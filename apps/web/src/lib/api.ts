@@ -1113,6 +1113,12 @@ export const api = {
       body: JSON.stringify({ fileBase64 }),
     }, token);
   },
+  uploadTaskTeamAvatar(token: string, fileBase64: string) {
+    return request<{ url: string }>("/tasks/team-avatar", {
+      method: "POST",
+      body: JSON.stringify({ fileBase64 }),
+    }, token);
+  },
   createUser(token: string, input: AdminUserInput) {
     return request<AdminUser[]>("/api/admin/users", {
       method: "POST",

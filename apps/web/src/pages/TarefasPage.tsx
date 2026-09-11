@@ -26,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
-import { API_BASE_URL } from "../lib/api";
+import { API_BASE_URL, api } from "../lib/api";
 import "./TarefasPage.css";
 
 /**
@@ -134,6 +134,14 @@ function writeIds(key: string, ids: string[]) {
   } catch {
     /* navegador sem armazenamento: a ordem vale só nesta sessão */
   }
+}
+function readImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Imagem invalida"));
+    reader.onerror = () => reject(new Error("Nao foi possivel ler a imagem"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function firstName(name: string) {
@@ -397,9 +405,24 @@ export default function TarefasPage() {
   const [teamOpen, setTeamOpen] = useState(false);
   const [order, setOrder] = useState<string[]>(() => readIds(ORDER_KEY));
   const [hidden, setHidden] = useState<string[]>(() => readIds(HIDDEN_KEY));
+  const [uploadingTeamAvatar, setUploadingTeamAvatar] = useState(false);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
   useEffect(() => writeIds(HIDDEN_KEY, hidden), [hidden]);
+
+  async function uploadTeamAvatar(file: File | undefined) {
+    if (!file || !token) return;
+    try {
+      setUploadingTeamAvatar(true);
+      await api.uploadTaskTeamAvatar(token, await readImage(file));
+      await boardQuery.refetch();
+      setNotice("Foto do Time atualizada.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Nao foi possivel enviar a foto.");
+    } finally {
+      setUploadingTeamAvatar(false);
+    }
+  }
 
   // O "Apagar" volta a ser um ícone sozinho se ninguém confirmar. Assim um
   // clique sem querer não deixa o botão vermelho preso na tela.
@@ -1240,6 +1263,13 @@ export default function TarefasPage() {
               Escolha a ordem das colunas e quem aparece. Quem sai do quadro fica guardado — as
               tarefas dele continuam salvas e voltam ao clicar no olho de novo.
             </p>
+            {user?.appRole === "admin" && (
+              <label className="tarefas-team-avatar-upload">
+                Foto do Time
+                <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" disabled={uploadingTeamAvatar} onChange={(event) => void uploadTeamAvatar(event.target.files?.[0])} />
+                <span>{uploadingTeamAvatar ? "Enviando..." : "Escolher imagem"}</span>
+              </label>
+            )}
             <ul className="tarefas-team">
               {orderedPeople.map((person, index) => {
                 const off = hidden.includes(person.id);

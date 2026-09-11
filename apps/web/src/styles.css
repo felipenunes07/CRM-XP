@@ -29190,3 +29190,11 @@ input[type="number"] {
     font-size: 0.64rem;
   }
 }
+
+.admin-user-avatar img,
+.admin-editor-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}

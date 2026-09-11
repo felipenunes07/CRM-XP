@@ -22,6 +22,15 @@ export interface TaskMutationInput {
   checklist?: TaskChecklistItem[];
 }
 
+export async function setTaskTeamAvatar(avatarUrl: string) {
+  await pool.query(
+    `INSERT INTO task_board_settings (key, value)
+     VALUES ('team_avatar_url', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [JSON.stringify(avatarUrl)],
+  );
+}
+
 interface TaskRow {
   id: string;
   title: string;
@@ -137,7 +146,7 @@ async function assignment(client: PoolClient, personId: unknown) {
 export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all") {
   const admin = isAdmin(user);
   const showAll = admin && scope === "all";
-  const [peopleResult, tasksResult, logsResult] = await Promise.all([
+  const [peopleResult, tasksResult, logsResult, settingsResult] = await Promise.all([
     pool.query<{ id: string; full_name: string; profile_avatar_url: string | null; created_at: string }>(
       `SELECT id, full_name, profile_avatar_url, created_at::text
        FROM profiles
@@ -178,11 +187,17 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
            LIMIT 500`,
         )
       : Promise.resolve({ rows: [] }),
+    pool.query<{ value: unknown }>("SELECT value FROM task_board_settings WHERE key = 'team_avatar_url'"),
   ]);
+
+  const storedAvatar = settingsResult.rows[0]?.value;
+  const teamAvatar = typeof storedAvatar === "string"
+    ? (storedAvatar.startsWith("\"") ? JSON.parse(storedAvatar) as string : storedAvatar)
+    : null;
 
   return {
     people: [
-      { id: TEAM_PERSON_ID, name: "Time", photo: null, position: 0 },
+      { id: TEAM_PERSON_ID, name: "Time", photo: teamAvatar, position: 0 },
       ...peopleResult.rows.map((person, index) => ({
         id: String(person.id),
         name: String(person.full_name),

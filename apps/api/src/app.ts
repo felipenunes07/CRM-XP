@@ -146,6 +146,7 @@ import { APP_PERMISSIONS } from "./modules/platform/permissionService.js";
 import {
   getTaskBoard,
   mutateTask,
+  setTaskTeamAvatar,
   type TaskMutationInput,
 } from "./modules/tasks/taskService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
@@ -2832,6 +2833,26 @@ export function createApp() {
       await fsPromises.writeFile(path.join(profileAvatarDir, objectName), bytes);
       const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
       response.json({ url: `${base}/media/profile-avatars/${objectName}` });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/tasks/team-avatar", requirePermission("tasks.view"), requireRole(["ADMIN"]), async (request, response, next) => {
+    try {
+      const { fileBase64 } = request.body as { fileBase64?: string };
+      const match = typeof fileBase64 === "string" ? fileBase64.match(/^data:([^;]+);base64,(.*)$/s) : null;
+      const extension = match?.[1] ? IMAGE_MIME_EXTENSIONS[match[1].toLowerCase()] : undefined;
+      if (!extension || !match?.[2]) throw new HttpError(400, "Envie uma imagem JPG, PNG, GIF ou WEBP");
+      const bytes = Buffer.from(match[2], "base64");
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new HttpError(413, "Imagem invalida ou maior que 5MB");
+      const objectName = `team-${Date.now()}-${randomUUID()}.${extension}`;
+      await fsPromises.mkdir(profileAvatarDir, { recursive: true });
+      await fsPromises.writeFile(path.join(profileAvatarDir, objectName), bytes);
+      const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+      const url = `${base}/media/profile-avatars/${objectName}`;
+      await setTaskTeamAvatar(url);
+      response.json({ url });
     } catch (error) {
       next(error);
     }
