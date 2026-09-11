@@ -1119,6 +1119,9 @@ export const api = {
       body: JSON.stringify({ fileBase64 }),
     }, token);
   },
+  setTaskPersonVisibility(token: string, personId: string, visible: boolean) {
+    return request<void>(`/tasks/people/${personId}/visibility`, { method: "POST", body: JSON.stringify({ visible }) }, token);
+  },
   createUser(token: string, input: AdminUserInput) {
     return request<AdminUser[]>("/api/admin/users", {
       method: "POST",

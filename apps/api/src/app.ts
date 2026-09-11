@@ -147,6 +147,7 @@ import {
   getTaskBoard,
   mutateTask,
   setTaskTeamAvatar,
+  setTaskPersonVisible,
   type TaskMutationInput,
 } from "./modules/tasks/taskService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
@@ -2856,6 +2857,15 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  app.post("/api/tasks/people/:id/visibility", requirePermission("tasks.view"), requireRole(["ADMIN"]), async (request, response, next) => {
+    try {
+      const visible = z.object({ visible: z.boolean() }).parse(request.body).visible;
+      const personId = z.string().uuid().parse(request.params.id);
+      await setTaskPersonVisible(personId, visible);
+      response.status(204).end();
+    } catch (error) { next(error); }
   });
 
   app.post("/api/admin/users", requirePermission("admin.users.manage"), async (request, response, next) => {

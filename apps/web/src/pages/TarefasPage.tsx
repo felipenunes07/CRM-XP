@@ -38,7 +38,7 @@ import "./TarefasPage.css";
 const TAREFAS_API = "/api/tasks";
 const TEAM_PERSON_ID = "team";
 
-type Person = { id: string; name: string; photo: string | null; position: number };
+type Person = { id: string; name: string; photo: string | null; position: number; hidden?: boolean };
 type ChecklistItem = { id: string; text: string; done: boolean };
 type Task = {
   id: string;
@@ -424,6 +424,17 @@ export default function TarefasPage() {
     }
   }
 
+  async function setPersonVisibility(person: Person, visible: boolean) {
+    if (!token) return;
+    try {
+      await api.setTaskPersonVisibility(token, person.id, visible);
+      await boardQuery.refetch();
+      setNotice(visible ? `${person.name} voltou para Tarefas.` : `${person.name} foi removido de Tarefas.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Nao foi possivel atualizar o usuario.");
+    }
+  }
+
   // O "Apagar" volta a ser um ícone sozinho se ninguém confirmar. Assim um
   // clique sem querer não deixa o botão vermelho preso na tela.
   useEffect(() => {
@@ -479,8 +490,8 @@ export default function TarefasPage() {
     return i === -1 ? order.length + p.position : i;
   };
   const orderedPeople = [...boardPeople].sort((a, b) => rank(a) - rank(b));
-  const people = orderedPeople.filter((p) => !hidden.includes(p.id));
-  const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id));
+  const people = orderedPeople.filter((p) => !hidden.includes(p.id) && !p.hidden);
+  const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
   const displayPeople =
@@ -1272,7 +1283,7 @@ export default function TarefasPage() {
             )}
             <ul className="tarefas-team">
               {orderedPeople.map((person, index) => {
-                const off = hidden.includes(person.id);
+                const off = hidden.includes(person.id) || Boolean(person.hidden);
                 const pending = tasks.filter(
                   (t) => t.person_id === person.id && t.status !== "done",
                 ).length;
@@ -1316,7 +1327,13 @@ export default function TarefasPage() {
                         off ? `Trazer ${person.name} de volta` : `Tirar ${person.name} do quadro`
                       }
                       title={off ? "Trazer de volta" : "Tirar do quadro"}
-                      onClick={() => togglePerson(person.id)}
+                      onClick={() => {
+                        if (user?.appRole === "admin" && person.id !== TEAM_PERSON_ID) {
+                          void setPersonVisibility(person, Boolean(person.hidden));
+                        } else {
+                          togglePerson(person.id);
+                        }
+                      }}
                     >
                       {off ? <Eye size={15} /> : <EyeOff size={15} />}
                     </button>

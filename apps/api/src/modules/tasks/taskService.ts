@@ -31,6 +31,20 @@ export async function setTaskTeamAvatar(avatarUrl: string) {
   );
 }
 
+export async function setTaskPersonVisible(personId: string, visible: boolean) {
+  const exists = await pool.query("SELECT 1 FROM profiles WHERE id = $1", [personId]);
+  if (!exists.rows[0]) throw new HttpError(404, "Usuario nao encontrado");
+  const current = await pool.query<{ value: unknown }>("SELECT value FROM task_board_settings WHERE key = 'hidden_people'");
+  const raw = current.rows[0]?.value;
+  const hidden = new Set(Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : []);
+  if (visible) hidden.delete(personId); else hidden.add(personId);
+  await pool.query(
+    `INSERT INTO task_board_settings (key, value) VALUES ('hidden_people', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [JSON.stringify([...hidden])],
+  );
+}
+
 interface TaskRow {
   id: string;
   title: string;
@@ -187,13 +201,15 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
            LIMIT 500`,
         )
       : Promise.resolve({ rows: [] }),
-    pool.query<{ value: unknown }>("SELECT value FROM task_board_settings WHERE key = 'team_avatar_url'"),
+    pool.query<{ key: string; value: unknown }>("SELECT key, value FROM task_board_settings WHERE key IN ('team_avatar_url', 'hidden_people')"),
   ]);
 
-  const storedAvatar = settingsResult.rows[0]?.value;
+  const setting = (key: string) => settingsResult.rows.find((row) => row.key === key)?.value;
+  const storedAvatar = setting("team_avatar_url");
   const teamAvatar = typeof storedAvatar === "string"
     ? (storedAvatar.startsWith("\"") ? JSON.parse(storedAvatar) as string : storedAvatar)
     : null;
+  const hiddenPeople = new Set(Array.isArray(setting("hidden_people")) ? setting("hidden_people") as string[] : []);
 
   return {
     people: [
@@ -202,6 +218,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
         id: String(person.id),
         name: String(person.full_name),
         photo: person.profile_avatar_url,
+        hidden: hiddenPeople.has(String(person.id)),
         position: index + 1,
       })),
     ],
