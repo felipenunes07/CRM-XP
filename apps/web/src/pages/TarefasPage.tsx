@@ -482,7 +482,8 @@ export default function TarefasPage() {
     queryKey: ["tarefas-board", adminScope],
     queryFn: () => tarefasRequest<Board>(token!, `/board?scope=${user?.appRole === "admin" ? adminScope : "mine"}`),
     enabled: Boolean(token),
-    refetchInterval: 15000,
+    // Mantém as atribuições chegando para cada pessoa sem recarregar a página.
+    refetchInterval: 3000,
     refetchOnWindowFocus: true,
   });
 
@@ -529,6 +530,9 @@ export default function TarefasPage() {
   };
   const orderedPeople = [...boardPeople].sort((a, b) => rank(a) - rank(b));
   const people = orderedPeople.filter((p) => !hidden.includes(p.id) && !p.hidden);
+  // A lista de responsáveis não deve depender das colunas visíveis: qualquer
+  // usuário ativo pode receber uma tarefa criada por uma vendedora.
+  const assignablePeople = orderedPeople.filter((p) => p.id === TEAM_PERSON_ID || !p.hidden);
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
@@ -536,7 +540,14 @@ export default function TarefasPage() {
     manager && adminScope === "all"
       ? people
       : people.filter(
-          (person) => person.id === TEAM_PERSON_ID || person.id === boardQuery.data?.current_user_id,
+          (person) =>
+            person.id === TEAM_PERSON_ID ||
+            person.id === boardQuery.data?.current_user_id ||
+            tasks.some(
+              (task) =>
+                task.person_id === person.id &&
+                task.created_by_user_id === boardQuery.data?.current_user_id,
+            ),
         );
 
   const deleteTask = (task: Task) => {
@@ -678,7 +689,10 @@ export default function TarefasPage() {
     void invalidate();
   };
   const toggleStatus = (task: Task) => void changeStatus(task, task.status === "done" ? "doing" : "done");
-  const canChangeStatus = (task: Task) => manager || task.status !== "done";
+  const canChangeStatus = (task: Task) =>
+    manager ||
+    (task.status !== "done" &&
+      (task.person_id === TEAM_PERSON_ID || task.person_id === boardQuery.data?.current_user_id));
 
   const openNew = (personId: string) =>
     setDraft({
@@ -1107,7 +1121,7 @@ export default function TarefasPage() {
                             <button
                               type="button"
                               className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
-                              disabled={!manager && task.status === "done"}
+                              disabled={!canChangeStatus(task)}
                               aria-label={
                                 task.status === "done"
                                   ? "Reabrir tarefa"
@@ -1253,7 +1267,7 @@ export default function TarefasPage() {
                             <button
                               type="button"
                               className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
-                              disabled={!manager && task.status === "done"}
+                              disabled={!canChangeStatus(task)}
                               aria-label={
                                 task.status === "done"
                                   ? "Reabrir tarefa"
@@ -1503,7 +1517,7 @@ export default function TarefasPage() {
                 value={draft.person_id}
                 onChange={(event) => setDraft({ ...draft, person_id: event.target.value })}
               >
-                {people.map((person) => (
+                {assignablePeople.map((person) => (
                   <option key={person.id} value={person.id}>
                     {person.name}
                   </option>

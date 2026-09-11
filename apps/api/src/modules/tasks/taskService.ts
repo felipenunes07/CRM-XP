@@ -201,7 +201,12 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
        LEFT JOIN profiles creator ON creator.id = t.created_by_user_id
        LEFT JOIN profiles assignee ON assignee.id = t.assignee_user_id
        WHERE t.deleted_at IS NULL
-         AND ($1::boolean OR t.audience = 'team' OR t.assignee_user_id = $2::uuid)
+         AND (
+           $1::boolean
+           OR t.audience = 'team'
+           OR t.assignee_user_id = $2::uuid
+           OR t.created_by_user_id = $2::uuid
+         )
        ORDER BY t.due_date ASC, t.due_time ASC NULLS LAST, t.created_at ASC`,
       [showAll, user.id],
     ),

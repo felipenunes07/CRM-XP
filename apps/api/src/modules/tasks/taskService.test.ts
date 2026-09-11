@@ -66,7 +66,7 @@ describe("taskService", () => {
     sendUazapi.mockReset();
   });
 
-  it("filters a regular user's board to own and team tasks at the server", async () => {
+  it("filters a regular user's board to assigned, team, and self-created tasks at the server", async () => {
     poolQuery
       .mockResolvedValueOnce({ rows: [{ id: seller.id, full_name: "Pedro", created_at: "2026-01-01" }] })
       .mockResolvedValueOnce({ rows: [taskRow] });
@@ -74,7 +74,7 @@ describe("taskService", () => {
     const board = await getTaskBoard(seller);
 
     expect(poolQuery.mock.calls[1]?.[1]).toEqual([false, seller.id]);
-    expect(poolQuery.mock.calls[1]?.[0]).toContain("AND ($1::boolean OR t.audience = 'team' OR t.assignee_user_id = $2::uuid)");
+    expect(poolQuery.mock.calls[1]?.[0]).toContain("OR t.created_by_user_id = $2::uuid");
     expect(board.tasks).toHaveLength(1);
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);
