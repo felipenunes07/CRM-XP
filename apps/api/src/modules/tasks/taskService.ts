@@ -22,6 +22,7 @@ export interface TaskMutationInput {
   status?: TaskStatus;
   priority?: TaskPriority;
   checklist?: TaskChecklistItem[];
+  images?: string[];
 }
 
 export async function setTaskTeamAvatar(avatarUrl: string) {
@@ -65,6 +66,7 @@ interface TaskRow {
   title: string;
   notes: string;
   checklist: TaskChecklistItem[];
+  images: string[];
   audience: "user" | "team";
   assignee_user_id: string | null;
   due_date: string;
@@ -130,6 +132,13 @@ function cleanChecklist(value: unknown): TaskChecklistItem[] {
     return { id, text, done: Boolean(item.done) };
   });
 }
+function cleanImages(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 5) throw new HttpError(400, "Imagens invalidas");
+  return value.map((image) => {
+    if (typeof image !== "string" || !/^data:image\/(jpeg|png|gif|webp);base64,/.test(image) || image.length > 1_100_000) throw new HttpError(400, "Envie imagens JPG, PNG, GIF ou WEBP de ate 800KB");
+    return image;
+  });
+}
 
 function toBoardTask(row: TaskRow) {
   const dueTime = row.due_time ? String(row.due_time).slice(0, 5) : null;
@@ -139,6 +148,7 @@ function toBoardTask(row: TaskRow) {
     title: row.title,
     notes: row.notes,
     checklist: Array.isArray(row.checklist) ? row.checklist : [],
+    images: Array.isArray(row.images) ? row.images : [],
     person_id: row.audience === "team" ? TEAM_PERSON_ID : row.assignee_user_id,
     due_date: row.due_date,
     due_time: dueTime,
@@ -193,7 +203,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
        ORDER BY full_name ASC, created_at ASC`,
     ),
     pool.query<TaskRow>(
-      `SELECT t.id, t.title, t.notes, t.checklist, t.audience, t.assignee_user_id,
+      `SELECT t.id, t.title, t.notes, t.checklist, t.images, t.audience, t.assignee_user_id,
               t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
               creator.profile_avatar_url AS created_by_photo,
@@ -308,7 +318,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
 
     const id = cleanText(input.id, "Tarefa", 80);
     const currentResult = await client.query<TaskRow>(
-      `SELECT id, title, notes, checklist, audience, assignee_user_id,
+        `SELECT id, title, notes, checklist, images, audience, assignee_user_id,
               due_date::text, due_time::text, status, priority, created_by_user_id,
               created_at::text, updated_at::text, completed_at::text, version
        FROM tasks WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
@@ -334,13 +344,14 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       if (!isAdmin(user) && !ownsPrivateTask) throw new HttpError(404, "Tarefa nao encontrada");
       const notes = cleanText(input.notes ?? "", "Observacao", 10000, false);
       const checklist = cleanChecklist(input.checklist ?? []);
+      const images = cleanImages(input.images ?? current.images ?? []);
       const priority = input.priority === undefined ? current.priority : cleanPriority(input.priority);
       if (!isAdmin(user) && priority !== current.priority) throw new HttpError(403, "Somente administradores podem alterar a prioridade");
       await client.query(
         `UPDATE tasks
-         SET notes = $1, checklist = $2::jsonb, priority = $4, updated_at = NOW(), version = version + 1
-         WHERE id = $3`,
-        [notes, JSON.stringify(checklist), id, priority],
+         SET notes = $1, checklist = $2::jsonb, images = $3::jsonb, priority = $4, updated_at = NOW(), version = version + 1
+         WHERE id = $5`,
+        [notes, JSON.stringify(checklist), JSON.stringify(images), priority, id],
       );
       await addAudit(client, user, current, "details_updated", {
         notes_changed: notes !== current.notes,

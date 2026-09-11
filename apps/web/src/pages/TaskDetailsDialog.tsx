@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
 type Item = { id: string; text: string; done: boolean };
-type Content = { notes: string; checklist: Item[]; priority: TaskPriority };
+type Content = { notes: string; checklist: Item[]; priority: TaskPriority; images: string[] };
 type TaskInfo = Content & {
   id: string; title: string; version: number; status: string;
   person_id: string; due_date: string; due_time: string | null;
@@ -24,7 +24,7 @@ type Props = {
 // The next write uses the last acknowledged version, even while typing during a request.
 export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, priority: task.priority ?? "normal" });
+  const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
   const version = useRef(task.version);
   const revision = useRef(0);
@@ -40,6 +40,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
     notes: value.notes,
     priority: value.priority,
     checklist: value.checklist.map(item => ({ ...item, text: item.text.trim() })).filter(item => item.text),
+    images: value.images,
   });
 
   async function flush(): Promise<boolean> {
@@ -154,6 +155,11 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             </div>
           )}
           <fieldset disabled={!canWrite || closing}>
+            <section className="task-detail-section">
+              <label><Paperclip size={17} /> Imagens</label>
+              <div className="task-detail-images">{content.images.map((image, index) => <span key={image.slice(-24)}><img src={image} alt={`Anexo ${index + 1}`} /><button type="button" onClick={() => change({ ...latest.current, images: latest.current.images.filter((_, itemIndex) => itemIndex !== index) })}><X size={13} /></button></span>)}</div>
+              {canWrite && content.images.length < 5 && <label className="task-detail-add" style={{ cursor: "pointer" }}><Paperclip size={15} /> Anexar imagem<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={event => { const file = event.target.files?.[0]; if (!file || file.size > 800 * 1024) return; const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" && change({ ...latest.current, images: [...latest.current.images, reader.result] }); reader.readAsDataURL(file); event.currentTarget.value = ""; }} /></label>}
+            </section>
             <section className="task-detail-section">
               <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Observações</label>
               <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6}

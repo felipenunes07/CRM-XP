@@ -4637,6 +4637,12 @@ export const migrations = [
     CHECK (jsonb_typeof(checklist) = 'array' AND jsonb_array_length(checklist) <= 30);
   `,
   `
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_images_array_check;
+  ALTER TABLE tasks ADD CONSTRAINT tasks_images_array_check
+    CHECK (jsonb_typeof(images) = 'array' AND jsonb_array_length(images) <= 5);
+  `,
+  `
   ALTER TABLE profiles ADD COLUMN IF NOT EXISTS profile_avatar_url TEXT;
   INSERT INTO permissions (key, name, description)
   VALUES ('reports.executive.view', 'Relatorio executivo', 'Exibir o relatorio executivo de vendas.')

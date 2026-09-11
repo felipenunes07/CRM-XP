@@ -54,6 +54,7 @@ type Task = {
   title: string;
   notes: string;
   checklist: ChecklistItem[];
+  images: string[];
   person_id: string;
   due_date: string;
   due_time: string | null;
