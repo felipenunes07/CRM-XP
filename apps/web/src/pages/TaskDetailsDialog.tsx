@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Trash2, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
@@ -19,10 +19,12 @@ type Props = {
   onEdit?: (content: Content, version: number) => void;
   canNotify?: boolean;
   onNotify?: () => Promise<void>;
+  canDelete?: boolean;
+  onDelete?: () => Promise<void>;
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify }: Props) {
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -37,6 +39,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [confirmNotify, setConfirmNotify] = useState(false);
   const [sendingNotify, setSendingNotify] = useState(false);
   const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const clean = (value: Content): Content => ({
     notes: value.notes,
     priority: value.priority,
@@ -99,6 +102,17 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
       setError(failure instanceof Error ? failure.message : "Não foi possível enviar a cobrança.");
     } finally {
       setSendingNotify(false);
+    }
+  }
+
+  async function removeTask() {
+    if (!onDelete) return;
+    setClosing(true);
+    try {
+      await onDelete();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Não foi possível excluir a tarefa.");
+      setClosing(false);
     }
   }
 
@@ -205,6 +219,15 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           </div>
         )}
         <footer className="task-detail-footer">
+          {canDelete && onDelete && (confirmDelete ? (
+            <span className="task-detail-delete-confirm">
+              <b>Excluir esta tarefa?</b>
+              <button type="button" className="is-confirm" disabled={closing} onClick={() => void removeTask()}>{closing ? "Excluindo..." : "Excluir"}</button>
+              <button type="button" className="is-cancel" disabled={closing} onClick={() => setConfirmDelete(false)}>Cancelar</button>
+            </span>
+          ) : (
+            <button type="button" className="task-detail-delete" disabled={closing} onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Excluir tarefa</button>
+          ))}
           <span role="status" className={error ? "is-error" : ""}>{saveState === "saved" ? <><Check size={14} /> Tudo salvo</> : saveState === "error" ? error : "Salvando alterações…"}</span>
           {saveState === "error" && <button type="button" className="task-detail-edit" onClick={() => void flush()}>Tentar novamente</button>}
           <button type="button" className="task-detail-done" disabled={closing} onClick={() => void finish()}>Pronto</button>

@@ -1580,6 +1580,11 @@ export default function TarefasPage() {
           } : undefined}
           canNotify={manager && detailsDraft.task.can_notify && detailsDraft.task.status !== "done"}
           onNotify={manager ? () => notifyTask(detailsDraft.task) : undefined}
+          canDelete={canDeleteTask(detailsDraft.task)}
+          onDelete={canDeleteTask(detailsDraft.task) ? async () => {
+            await mutation.mutateAsync({ action: "delete", id: detailsDraft.task.id, version: detailsDraft.task.version });
+            setDetailsDraft(null);
+          } : undefined}
         />
       )}
 

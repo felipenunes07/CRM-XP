@@ -99,6 +99,13 @@
 .task-image-lightbox-count { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); border-radius: 12px; padding: 5px 10px; background: rgba(15, 23, 42, .62); color: #fff; font-size: 12px; }
 .task-detail-footer { padding: 14px 26px; background: #fafbfd; }
 .task-detail-footer > span { font-size: 12px; }
+.task-detail-delete, .task-detail-delete-confirm { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12px; }
+.task-detail-footer > .task-detail-delete-confirm { flex: 0 0 auto; }
+.task-detail-delete { border: 0; background: transparent; color: #c24141; cursor: pointer; padding: 7px 4px; }
+.task-detail-delete:hover { color: #991b1b; }
+.task-detail-delete-confirm { color: #8f2430; white-space: nowrap; }
+.task-detail-delete-confirm .is-confirm { border: 0; border-radius: 6px; background: #c24141; color: #fff; padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.task-detail-delete-confirm .is-cancel { border: 0; background: transparent; color: #64748b; padding: 6px 3px; font: inherit; font-size: 12px; cursor: pointer; }
 .task-detail-done { background: #2956d7; padding: 9px 22px; font-size: 13px; }
 @media (max-width: 700px) {
   .task-detail { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
