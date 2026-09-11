@@ -852,7 +852,7 @@ export default function TarefasPage() {
     <section className="tarefas-page">
       <div className="tarefas-page-heading">
         <div className="tarefas-page-mark"><ListTodo size={24} /></div>
-        <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : listScope === "received" ? "Tarefas atribuídas a mim" : "Tarefas atribuídas por mim"}</h1></div>
+        <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : listScope === "received" ? "Minhas tarefas" : "Tarefas atribuídas por mim"}</h1></div>
         <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : listScope === "received" ? "Somente suas tarefas" : "Tarefas que você criou para outras pessoas"}</span>
       </div>
       <header className="tarefas-toolbar">
@@ -863,7 +863,7 @@ export default function TarefasPage() {
             data-on={tab === "tarefas" && listScope === "received" ? "" : undefined}
             onClick={() => { setTab("tarefas"); setListScope("received"); }}
           >
-            <ListTodo size={13} /> Atribuídas a mim
+            <ListTodo size={13} /> Minhas tarefas
           </button>
           <button
             type="button"
