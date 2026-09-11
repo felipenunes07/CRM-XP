@@ -415,10 +415,6 @@
   border-color: rgba(23, 128, 61, 0.28);
   background: rgba(23, 128, 61, 0.06);
 }
-.tarefas-status-picker { position: relative; display: inline-flex; align-items: center; cursor: pointer; padding-right: 5px; }
-.tarefas-status-picker select { appearance: none; min-width: 0; border: 0; outline: 0; color: inherit; background: transparent; font: inherit; font-size: inherit; font-weight: inherit; cursor: pointer; padding: 0 2px 0 0; }
-.tarefas-status-picker:hover { filter: brightness(.97); }
-.tarefas-status-picker:focus-within { outline: 2px solid #c3d2f8; outline-offset: 2px; }
 .tarefas-due {
   display: flex;
   align-items: center;

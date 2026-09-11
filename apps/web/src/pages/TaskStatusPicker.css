@@ -1,0 +1,11 @@
+.task-status-trigger, .task-status-value { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 5px; padding: 5px 8px; font: inherit; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.task-status-trigger { cursor: pointer; }
+.task-status-trigger:hover, .task-status-trigger[aria-expanded=true] { filter: brightness(.96); box-shadow: 0 0 0 1px currentColor; }
+.task-status-trigger:disabled { cursor: default; opacity: .65; }
+.task-status-trigger.is-todo, .task-status-value.is-todo { background: #eef1f5; color: #64748b; }
+.task-status-trigger.is-doing, .task-status-value.is-doing { background: #eaf2ff; color: #306ddd; }
+.task-status-trigger.is-done, .task-status-value.is-done { background: #e6f6ed; color: #1c8b5c; }
+.task-status-menu { position: fixed; inset: auto; width: 202px; margin: 0; padding: 8px; border: 1px solid #e1e6ee; border-radius: 9px; background: #fff; color: #334155; box-shadow: 0 12px 32px #17203326; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; z-index: 100; }
+.task-status-menu-label { padding: 7px 8px 9px; color: #78869a; font-size: 12px; }
+.task-status-menu button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 6px; padding: 9px; background: transparent; cursor: pointer; color: inherit; font: inherit; font-size: 13px; text-align: left; }
+.task-status-menu button span { flex: 1; }.task-status-menu button:hover, .task-status-menu button[aria-checked=true] { background: #f2f6fc; }.task-status-menu button.is-todo { color: #64748b; }.task-status-menu button.is-doing { color: #306ddd; }.task-status-menu button.is-done { color: #1c8b5c; }.task-status-menu p { margin: 5px 8px; color: #c24141; font-size: 11px; }

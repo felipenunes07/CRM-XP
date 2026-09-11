@@ -35,6 +35,7 @@ import { API_BASE_URL, api } from "../lib/api";
 import "./TarefasPage.css";
 import { TaskDetailsDialog } from "./TaskDetailsDialog";
 import { TaskPriorityPicker } from "./TaskPriorityPicker";
+import { TaskStatusPicker } from "./TaskStatusPicker";
 import "./TarefasWorkspace.css";
 
 /**
@@ -201,19 +202,6 @@ function shortDate(t: Task) {
 }
 function statusLabel(s: Task["status"]) {
   return s === "done" ? "Entregue" : s === "doing" ? "Fazendo" : "A fazer";
-}
-function statusClass(status: Task["status"]) {
-  return status === "done" ? "is-ok" : status === "doing" ? "is-doing" : "is-todo";
-}
-function TaskStatusPicker({ task, canChange, onChange }: { task: Task; canChange: boolean; onChange: (status: Task["status"]) => void }) {
-  if (!canChange) return <span className={`tarefas-pill ${statusClass(task.status)}`}>{statusLabel(task.status)}</span>;
-  return <label className={`tarefas-status-picker tarefas-pill ${statusClass(task.status)}`} title="Alterar status da tarefa">
-    <span className="sr-only">Status de {task.title}</span>
-    <select value={task.status} aria-label={`Status de ${task.title}`} onChange={event => onChange(event.target.value as Task["status"])}>
-      <option value="todo">A fazer</option><option value="doing">Em andamento</option><option value="done">Concluída</option>
-    </select>
-    <ChevronDown size={13} aria-hidden="true" />
-  </label>;
 }
 function auditActionLabel(action: AuditLog["action"]) {
   return {
@@ -1129,7 +1117,7 @@ export default function TarefasPage() {
                             >
                               <Check size={12} strokeWidth={3} />
                             </button>
-                            <TaskStatusPicker task={task} canChange={canChangeStatus(task)} onChange={status => void changeStatus(task, status)} />
+                            <TaskStatusPicker taskTitle={task.title} value={task.status} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           </div>
                           <div className="tarefas-titlewrap">
                             {manager ? (
@@ -1310,7 +1298,7 @@ export default function TarefasPage() {
                           </span>
                           <TaskPriorityPicker value={task.priority ?? "normal"} label={`Prioridade de ${task.title}`}
                             onChange={manager ? priority => changePriority(task, priority) : undefined} />
-                          <TaskStatusPicker task={task} canChange={canChangeStatus(task)} onChange={status => void changeStatus(task, status)} />
+                          <TaskStatusPicker taskTitle={task.title} value={task.status} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                             {shortDate(task)}
