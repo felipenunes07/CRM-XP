@@ -4527,5 +4527,127 @@ export const migrations = [
 
   CREATE INDEX IF NOT EXISTS olist_order_summaries_synced_at_idx
     ON olist_order_summaries (synced_at DESC);
+  `,
+  `
+  -- Quadro de tarefas integrado aos usuarios autenticados do CRM.
+  CREATE TABLE IF NOT EXISTS tasks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    audience TEXT NOT NULL DEFAULT 'user',
+    assignee_user_id UUID REFERENCES profiles(id) ON DELETE RESTRICT,
+    due_date DATE NOT NULL,
+    due_time TIME,
+    status TEXT NOT NULL DEFAULT 'todo',
+    created_by_user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    version INTEGER NOT NULL DEFAULT 1,
+    CONSTRAINT tasks_audience_check CHECK (audience IN ('user', 'team')),
+    CONSTRAINT tasks_status_check CHECK (status IN ('todo', 'doing', 'done')),
+    CONSTRAINT tasks_assignee_check CHECK (
+      (audience = 'team' AND assignee_user_id IS NULL)
+      OR (audience = 'user' AND assignee_user_id IS NOT NULL)
+    )
+  );
+
+  CREATE INDEX IF NOT EXISTS tasks_assignee_user_id_idx
+    ON tasks (assignee_user_id) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS tasks_audience_idx
+    ON tasks (audience) WHERE deleted_at IS NULL;
+  CREATE INDEX IF NOT EXISTS tasks_deadline_idx
+    ON tasks (due_date, due_time) WHERE deleted_at IS NULL;
+
+  CREATE TABLE IF NOT EXISTS task_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+    actor_user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
+    action TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    details JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS task_audit_logs_task_id_idx
+    ON task_audit_logs (task_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS task_audit_logs_actor_user_id_idx
+    ON task_audit_logs (actor_user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS task_audit_logs_created_at_idx
+    ON task_audit_logs (created_at DESC);
+
+  ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE task_audit_logs ENABLE ROW LEVEL SECURITY;
+
+  ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_role_check;
+  ALTER TABLE profiles ADD CONSTRAINT profiles_role_check
+    CHECK (role IN ('admin', 'vendas', 'financeiro', 'operacional', 'tarefas', 'viewer'));
+  ALTER TABLE role_permissions DROP CONSTRAINT IF EXISTS role_permissions_role_check;
+  ALTER TABLE role_permissions ADD CONSTRAINT role_permissions_role_check
+    CHECK (role IN ('admin', 'vendas', 'financeiro', 'operacional', 'tarefas', 'viewer'));
+
+  INSERT INTO permissions (key, name, description)
+  VALUES ('tasks.view', 'Tarefas', 'Acessar o quadro de tarefas.')
+  ON CONFLICT (key) DO UPDATE
+  SET name = EXCLUDED.name, description = EXCLUDED.description;
+
+  INSERT INTO role_permissions (role, permission_key)
+  VALUES
+    ('admin', 'tasks.view'),
+    ('vendas', 'tasks.view'),
+    ('financeiro', 'tasks.view'),
+    ('operacional', 'tasks.view'),
+    ('tarefas', 'tasks.view'),
+    ('viewer', 'tasks.view')
+  ON CONFLICT DO NOTHING;
+
+  -- Preserva as duas tarefas reais do quadro anterior; itens da Lixeira eram
+  -- testes/apagados e nao devem reaparecer.
+  WITH creator AS (
+    SELECT id FROM profiles WHERE role = 'admin' AND is_active = TRUE
+    ORDER BY created_at ASC LIMIT 1
+  ), assignee AS (
+    SELECT id FROM profiles
+    WHERE is_active = TRUE AND lower(split_part(full_name, ' ', 1)) = 'thais'
+    ORDER BY created_at ASC LIMIT 1
+  ), legacy (id, title, notes, due_date, status, created_at, version) AS (
+    VALUES
+      ('cce521e1-5ae5-4d82-96ac-39042164096e'::uuid, 'chamar naiara', 'oferecer vv de bateria ,,,quero saber porque ela compra pouco,qual e a dificuldade', '2026-09-09'::date, 'doing', '2026-09-08T20:04:37.248Z'::timestamptz, 5),
+      ('1c980327-d6b4-4d0a-a0c4-54f886bc91c7'::uuid, 'vendas do james', 'sistema james com as vendas', '2026-09-09'::date, 'doing', '2026-09-08T20:05:27.695Z'::timestamptz, 3)
+  )
+  INSERT INTO tasks (
+    id, title, notes, audience, assignee_user_id, due_date, status,
+    created_by_user_id, created_at, updated_at, version
+  )
+  SELECT legacy.id, legacy.title, legacy.notes, 'user', assignee.id,
+         legacy.due_date, legacy.status, creator.id, legacy.created_at, legacy.created_at, legacy.version
+  FROM legacy CROSS JOIN creator CROSS JOIN assignee
+  ON CONFLICT (id) DO NOTHING;
+
+  `,
+  `
+  -- WhatsApp do usuario para lembretes manuais de tarefas.
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS whatsapp_phone TEXT;
+  `,
+  `
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_checklist_array_check;
+  ALTER TABLE tasks ADD CONSTRAINT tasks_checklist_array_check
+    CHECK (jsonb_typeof(checklist) = 'array' AND jsonb_array_length(checklist) <= 30);
+  `,
+  `
+  ALTER TABLE profiles ADD COLUMN IF NOT EXISTS profile_avatar_url TEXT;
+  INSERT INTO permissions (key, name, description)
+  VALUES ('reports.executive.view', 'Relatorio executivo', 'Exibir o relatorio executivo de vendas.')
+  ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description;
+  INSERT INTO role_permissions (role, permission_key)
+  VALUES
+    ('admin', 'reports.executive.view'),
+    ('vendas', 'reports.executive.view'),
+    ('financeiro', 'reports.executive.view'),
+    ('operacional', 'reports.executive.view'),
+    ('viewer', 'reports.executive.view')
+  ON CONFLICT DO NOTHING;
   `
 ];

@@ -15,11 +15,7 @@
   ],
   "rewrites": [
     {
-      "source": "/tarefas-api/:path*",
-      "destination": "https://xp-tarefas-equipe.base-coat.chatgpt.site/api/:path*"
-    },
-    {
-      "source": "/((?!assets/|tarefas-api/|.*\\.(?:html|png|jpg|jpeg|gif|svg|ico|js|css|json|woff2?|ttf|otf)).*)",
+      "source": "/((?!assets/|.*\\.(?:html|png|jpg|jpeg|gif|svg|ico|js|css|json|woff2?|ttf|otf)).*)",
       "destination": "/"
     }
   ]

@@ -50,6 +50,11 @@ describe("permissionService", () => {
     expect(normalizeAppRole("ADMIN")).toBe("admin");
     expect(normalizeAppRole("SELLER")).toBe("vendas");
     expect(normalizeAppRole("MANAGER")).toBe("operacional");
+    expect(normalizeAppRole("task_only")).toBe("tarefas");
+  });
+
+  it("keeps the task-only role isolated from the rest of the CRM", () => {
+    expect(ROLE_PERMISSIONS.tarefas).toEqual(["tasks.view"]);
   });
 
   it("checks permissions against the effective permission set", () => {

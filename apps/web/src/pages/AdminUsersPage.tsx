@@ -8,6 +8,8 @@ import {
   EyeOff,
   KeyRound,
   Mail,
+  ImageUp,
+  Phone,
   Plus,
   RefreshCw,
   Save,
@@ -27,6 +29,7 @@ const roleOptions: Array<{ value: AppRole; label: string; description: string }>
   { value: "vendas", label: "Vendas", description: "Modelo para vendedoras, com ferramentas comerciais, mensagens e relatorios." },
   { value: "financeiro", label: "Financeiro", description: "Financeiro, comprovantes, metas e relatorios." },
   { value: "operacional", label: "Operacional", description: "Rotina operacional, mensagens e integracoes." },
+  { value: "tarefas", label: "Somente tarefas", description: "Acesso exclusivo ao quadro de tarefas." },
   { value: "viewer", label: "Viewer", description: "Apenas leitura em areas permitidas." },
 ];
 
@@ -48,7 +51,9 @@ function emptyDraft(): AdminUserInput {
   return {
     email: "",
     fullName: "",
-    role: "viewer",
+    whatsappPhone: "",
+    avatarUrl: "",
+    role: "tarefas",
     isActive: true,
     permissionOverrides: [],
     password: "",
@@ -59,6 +64,8 @@ function draftFromUser(user: AdminUser): AdminUserInput {
   return {
     email: user.email,
     fullName: user.name,
+    whatsappPhone: user.whatsapp_phone ?? "",
+    avatarUrl: user.profile_avatar_url ?? "",
     role: user.role,
     isActive: user.is_active ?? user.isActive ?? true,
     permissionOverrides: user.permission_overrides ?? [],
@@ -125,6 +132,15 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+function readImageAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(file);
+  });
+}
+
 function roleLabel(role: AppRole) {
   return roleOptions.find((option) => option.value === role)?.label ?? role;
 }
@@ -141,6 +157,7 @@ export function AdminUsersPage() {
   const [temporaryPassword, setTemporaryPassword] = useState("");
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     if (toastMessage) {
@@ -216,6 +233,28 @@ export function AdminUsersPage() {
       setToastMessage(`Erro ao salvar: ${err.message}`);
     },
   });
+
+  const uploadAvatar = async (file: File | undefined) => {
+    if (!file || !token) return;
+    if (!file.type.startsWith("image/")) {
+      setToastMessage("Escolha um arquivo de imagem.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setToastMessage("A imagem deve ter no máximo 5MB.");
+      return;
+    }
+    try {
+      setUploadingAvatar(true);
+      const uploaded = await api.uploadUserAvatar(token, await readImageAsDataUrl(file));
+      setDraft((current) => ({ ...current, avatarUrl: uploaded.url }));
+      setToastMessage("Imagem enviada. Salve o acesso para defini-la como padrão.");
+    } catch (error) {
+      setToastMessage(`Erro ao enviar imagem: ${(error as Error).message}`);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   const statusMutation = useMutation({
     mutationFn: async (input: { id: string; isActive: boolean }) => {
@@ -404,6 +443,41 @@ export function AdminUsersPage() {
                   onChange={(event) => setDraft({ ...draft, email: event.target.value })}
                   placeholder="nome@empresa.com"
                 />
+              </label>
+              <label>
+                WhatsApp
+                <span className="admin-password-control">
+                  <Phone size={15} />
+                  <input
+                    value={draft.whatsappPhone}
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    onChange={(event) => setDraft({ ...draft, whatsappPhone: event.target.value })}
+                    placeholder="Ex.: (11) 99999-9999"
+                  />
+                </span>
+                <small>Usado para lembretes manuais enviados pela Lili.</small>
+              </label>
+              <label>
+                Foto de perfil
+                <span className="admin-avatar-upload">
+                  {draft.avatarUrl ? (
+                    <img src={draft.avatarUrl} alt="Prévia do avatar" />
+                  ) : (
+                    <ImageUp size={18} />
+                  )}
+                  <span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      disabled={uploadingAvatar}
+                      onChange={(event) => void uploadAvatar(event.target.files?.[0])}
+                    />
+                    {uploadingAvatar ? "Enviando imagem..." : "Escolher imagem"}
+                  </span>
+                </span>
+                <small>Ela aparecerá como avatar padrão no CRM e em Tarefas. Máximo 5MB.</small>
               </label>
               <label>
                 Role base

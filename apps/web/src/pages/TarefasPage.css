@@ -1,4 +1,4 @@
-/* Quadro de tarefas da equipe (/tarefas) — página pública, sem login. */
+/* Quadro de tarefas autenticado do CRM (/tarefas). */
 .tarefas-page {
   min-height: 100vh;
   background: #f7f7f8;
@@ -97,7 +97,6 @@
   color: #0a0a0a;
 }
 .tarefas-refresh {
-  margin-left: auto;
   height: 30px;
   padding: 0 11px;
   border-radius: 8px;
@@ -111,6 +110,56 @@
   gap: 7px;
   cursor: pointer;
 }
+.tarefas-scope {
+  display: inline-flex;
+  border: 1px solid #dbe3f4;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.tarefas-scope button {
+  height: 28px;
+  border: 0;
+  padding: 0 10px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 12px;
+}
+.tarefas-scope button[data-on] {
+  background: #2956d7;
+  color: #fff;
+}
+.tarefas-creator {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.tarefas-details-button,
+.tarefas-add-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.tarefas-checklist-preview {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: #475569;
+}
+.tarefas-checklist-preview small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-checklist-preview small.is-done { color: #059669; text-decoration: line-through; }
 .tarefas-spin {
   animation: tarefas-rotate 1s linear infinite;
 }
@@ -130,6 +179,27 @@
   background: rgba(200, 50, 31, 0.06);
   color: #c8321f;
   font-size: 13px;
+}
+.tarefas-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 13px;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 13px;
+}
+.tarefas-icon.is-notify { color: #2563eb; }
+.tarefas-icon.is-notify:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+.tarefas-confirm.is-notify {
+  background: #2563eb;
+  border-color: #1d4ed8;
 }
 .tarefas-sheet {
   background: #fff;
@@ -256,6 +326,10 @@
   border-color: #17803d;
   color: #fff;
 }
+.tarefas-check:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
 /* Concluída: continua na lista, riscada, até o dia seguinte. Um clique sem
    querer não some com nada — basta clicar de novo no círculo para reabrir. */
 .tarefas-row.is-finished {
@@ -335,6 +409,11 @@
   background: rgba(200, 50, 31, 0.08);
   color: #c8321f;
 }
+.tarefas-confirmbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
 .tarefas-confirm {
   height: 27px;
   padding: 0 9px;
@@ -345,6 +424,65 @@
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
+}
+.tarefas-confirm:hover {
+  background: #c8321f;
+  border-color: #c8321f;
+  color: #fff;
+}
+/* Observação escrita na tarefa: fica visível na lista e no card, sem precisar
+   abrir a tarefa para descobrir que existe um recado. */
+.tarefas-titlewrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.tarefas-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+.tarefas-note-tag {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid #e2d6b0;
+  background: #fdf8e7;
+  color: #92700e;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 15px;
+}
+.tarefas-note-text {
+  font-size: 11.5px;
+  color: #8a8a8a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarefas-note:hover .tarefas-note-text {
+  color: #6e6e6e;
+}
+.tarefas-card .tarefas-note-text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.tarefas-row.is-finished .tarefas-note-text,
+.tarefas-card.is-finished .tarefas-note-text {
+  color: #c4c4c4;
 }
 .tarefas-addrow {
   padding: 7px 16px 7px 46px;
@@ -410,6 +548,25 @@
 .tarefas-history {
   grid-template-columns: minmax(0, 1fr) 180px 110px 120px;
 }
+.tarefas-audit {
+  margin-top: 20px;
+  border-top: 1px solid #e8e8e8;
+}
+.tarefas-audit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #525252;
+  font-size: 12px;
+}
+.tarefas-audit-row time {
+  color: #a3a3a3;
+  white-space: nowrap;
+}
 .tarefas-empty {
   display: flex;
   align-items: center;
@@ -452,32 +609,39 @@
   justify-content: center;
   padding: 20px;
 }
+/* O formulário é apertado de propósito: cabeçalho, prazo e horário ocupam o
+   mínimo para sobrar altura de verdade para a Observação. */
 .tarefas-modal {
   width: 100%;
-  max-width: 520px;
-  max-height: 90vh;
+  max-width: 440px;
+  max-height: 88vh;
   overflow-y: auto;
   background: #fff;
-  border-radius: 14px;
-  padding: 22px;
+  border-radius: 12px;
+  padding: 18px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.18);
 }
 .tarefas-modal h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
 }
 .tarefas-modal-sub {
-  margin: -8px 0 0;
-  font-size: 13px;
+  margin: -7px 0 1px;
+  font-size: 11.5px;
   color: #6e6e6e;
+}
+.tarefas-modal-note {
+  margin: 0;
+  font-size: 11px;
+  color: #a3a3a3;
 }
 .tarefas-modal label {
   display: grid;
-  gap: 7px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #0a0a0a;
 }
@@ -490,32 +654,92 @@
 .tarefas-modal textarea {
   width: 100%;
   border: 1px solid #cfd6e0;
-  border-radius: 8px;
-  padding: 10px 11px;
-  font-size: 14px;
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 13px;
   font-family: inherit;
   color: #0a0a0a;
   background: #fff;
   outline-color: #2956d7;
 }
+.tarefas-details-modal { width: min(640px, calc(100vw - 28px)); }
+.tarefas-details-modal textarea { min-height: 230px; }
+.tarefas-checklist-editor {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.tarefas-checklist-editor > strong { font-size: 13px; color: #0f172a; }
+.tarefas-checklist-editor > p { margin: -3px 0 3px; font-size: 11px; color: #64748b; }
+.tarefas-checklist-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+.tarefas-checklist-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2563eb; }
+.tarefas-checklist-item input[type="text"],
+.tarefas-checklist-item input:not([type]) { min-height: 32px; }
 .tarefas-modal textarea {
   resize: vertical;
+  min-height: 118px;
+  line-height: 1.45;
+}
+.tarefas-modal-notes {
+  margin-top: 2px;
 }
 .tarefas-modal-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 .tarefas-modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 9px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 2px;
+}
+/* Painel de equipe: ordem das colunas e quem aparece no quadro. */
+.tarefas-team {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.tarefas-team li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: 7px;
+}
+.tarefas-team li:hover {
+  background: #fafafa;
+}
+.tarefas-team li strong {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarefas-team li.is-off strong {
+  color: #a3a3a3;
+  text-decoration: line-through;
+}
+.tarefas-team .tarefas-icon:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.tarefas-team .tarefas-icon:disabled:hover {
+  background: none;
+  color: #a3a3a3;
 }
 .tarefas-btn {
-  height: 38px;
-  padding: 0 15px;
-  border-radius: 9px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
   border: 1px solid #e0e0e0;
   background: #fff;
   color: #262626;
@@ -608,3 +832,101 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Calendário e leitura de carga por pessoa. */
+.tarefas-calendar-wrap {
+  display: grid;
+  gap: 12px;
+}
+.tarefas-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tarefas-calendar-toolbar strong {
+  min-width: 170px;
+  text-transform: capitalize;
+  font-size: 15px;
+}
+.tarefas-calendar-toolbar .tarefas-btn {
+  margin-left: auto;
+  height: 30px;
+}
+.tarefas-coverage {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+.tarefas-coverage-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid #e6e6e6;
+  border-radius: 9px;
+  background: #fff;
+}
+.tarefas-coverage-card > span {
+  min-width: 0;
+  display: grid;
+}
+.tarefas-coverage-card strong,
+.tarefas-coverage-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarefas-coverage-card strong { font-size: 12px; }
+.tarefas-coverage-card small { color: #64748b; font-size: 10.5px; }
+.tarefas-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(115px, 1fr));
+  overflow-x: auto;
+  border: 1px solid #e6e6e6;
+  border-radius: 10px;
+  background: #fff;
+}
+.tarefas-calendar-weekday {
+  padding: 7px 9px;
+  border-bottom: 1px solid #e6e6e6;
+  color: #94a3b8;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.tarefas-calendar-day {
+  min-height: 118px;
+  padding: 7px;
+  border-right: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.tarefas-calendar-day.is-blank { background: #fafafa; }
+.tarefas-calendar-day.is-today { background: #f4f7ff; }
+.tarefas-calendar-number {
+  display: block;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+.tarefas-calendar-task {
+  display: grid;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 5px 6px;
+  border: 0;
+  border-left: 3px solid #475569;
+  border-radius: 5px;
+  background: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+.tarefas-calendar-task strong,
+.tarefas-calendar-task small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tarefas-calendar-task strong { color: #1e293b; font-size: 10.5px; }
+.tarefas-calendar-task small { color: #64748b; font-size: 9.5px; }

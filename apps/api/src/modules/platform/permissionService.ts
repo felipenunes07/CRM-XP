@@ -1,6 +1,6 @@
 import { pool } from "../../db/client.js";
 
-export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "tarefas" | "viewer";
 export type LegacyRole = "ADMIN" | "MANAGER" | "SELLER";
 
 export interface PermissionDefinition {
@@ -16,6 +16,7 @@ export interface PermissionOverride {
 
 export const APP_PERMISSIONS: PermissionDefinition[] = [
   { key: "dashboard.view", name: "Dashboard geral", description: "Visualizar os indicadores principais do CRM." },
+  { key: "tasks.view", name: "Tarefas", description: "Acessar o quadro de tarefas." },
   { key: "commercial.view", name: "Ferramentas comerciais", description: "Acessar clientes, agenda, pipeline e prospeccao." },
   { key: "commercial.manage", name: "Gestao comercial", description: "Criar e alterar registros comerciais." },
   { key: "commercial.pipeline.view", name: "Pipeline", description: "Exibir o Pipeline no menu lateral." },
@@ -41,6 +42,7 @@ export const APP_PERMISSIONS: PermissionDefinition[] = [
   { key: "finance.customers.view", name: "Financeiro de Clientes", description: "Exibir saldos e detalhes financeiros de clientes." },
   { key: "finance.goals.view", name: "Metas", description: "Exibir a pagina de metas." },
   { key: "reports.view", name: "Relatorios", description: "Visualizar relatorios e analises." },
+  { key: "reports.executive.view", name: "Relatorio executivo", description: "Exibir o relatorio executivo de vendas." },
   { key: "reports.attendants.view", name: "Atendentes", description: "Exibir o desempenho de atendentes." },
   { key: "reports.whatsapp.view", name: "Relatorios WhatsApp", description: "Exibir os relatorios de atividade do WhatsApp." },
   { key: "reports.movement.view", name: "Movimentacao da Base", description: "Exibir entradas e saidas da base." },
@@ -62,6 +64,7 @@ const ALL_PERMISSION_KEYS = APP_PERMISSIONS.map((permission) => permission.key);
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   admin: ALL_PERMISSION_KEYS,
   vendas: [
+    "tasks.view",
     "dashboard.view",
     "commercial.view",
     "commercial.manage",
@@ -84,6 +87,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
     "messages.lifecycle.view",
     "messages.broadcast.view",
     "reports.view",
+    "reports.executive.view",
     "reports.attendants.view",
     "reports.whatsapp.view",
     "reports.movement.view",
@@ -94,18 +98,21 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
     "changelog.view",
   ],
   financeiro: [
+    "tasks.view",
     "dashboard.view",
     "finance.view",
     "finance.manage",
     "finance.customers.view",
     "finance.goals.view",
     "reports.view",
+    "reports.executive.view",
     "reports.inventory.view",
     "reports.segments.view",
     "reports.strategies.view",
     "changelog.view",
   ],
   operacional: [
+    "tasks.view",
     "dashboard.view",
     "commercial.view",
     "commercial.pipeline.view",
@@ -125,6 +132,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
     "messages.lifecycle.view",
     "messages.broadcast.view",
     "reports.view",
+    "reports.executive.view",
     "reports.attendants.view",
     "reports.whatsapp.view",
     "reports.movement.view",
@@ -136,9 +144,12 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
     "integrations.whatsapp.view",
     "changelog.view",
   ],
+  tarefas: ["tasks.view"],
   viewer: [
+    "tasks.view",
     "dashboard.view",
     "reports.view",
+    "reports.executive.view",
     "reports.attendants.view",
     "reports.whatsapp.view",
     "reports.movement.view",
@@ -158,6 +169,7 @@ export function normalizeAppRole(value: unknown): AppRole {
   if (["vendas", "seller", "sales"].includes(normalized)) return "vendas";
   if (["financeiro", "finance", "financial"].includes(normalized)) return "financeiro";
   if (["operacional", "operations", "operator", "manager"].includes(normalized)) return "operacional";
+  if (["tarefas", "tasks", "task_only"].includes(normalized)) return "tarefas";
   if (["viewer", "leitor", "read_only"].includes(normalized)) return "viewer";
 
   return "viewer";
@@ -165,6 +177,7 @@ export function normalizeAppRole(value: unknown): AppRole {
 
 export function toLegacyRole(role: AppRole): LegacyRole {
   if (role === "admin") return "ADMIN";
+  if (role === "tarefas") return "SELLER";
   if (role === "vendas") return "SELLER";
   return "MANAGER";
 }

@@ -36,7 +36,7 @@ export function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (token && user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={user.appRole === "tarefas" ? "/tarefas" : "/"} replace />;
   }
 
   return children;

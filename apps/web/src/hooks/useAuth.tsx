@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 const delay = (ms: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
 
 export type LegacyRole = "ADMIN" | "MANAGER" | "SELLER";
-export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "tarefas" | "viewer";
 
 export interface AuthUser {
   id: string;

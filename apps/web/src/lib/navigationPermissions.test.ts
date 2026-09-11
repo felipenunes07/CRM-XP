@@ -17,8 +17,12 @@ describe("navigation permissions", () => {
     expect(permissionForPath("/clientes/financeiro/123")).toBe("finance.customers.view");
   });
 
-  it("uses the dashboard permission for the executive report shortcut", () => {
-    expect(permissionForPath("/relatorio-executivo")).toBe("dashboard.view");
+  it("uses its own permission for the executive report shortcut", () => {
+    expect(permissionForPath("/relatorio-executivo")).toBe("reports.executive.view");
+  });
+
+  it("protects the task board with its own permission", () => {
+    expect(permissionForPath("/tarefas")).toBe("tasks.view");
   });
 
   it("keeps one unique permission for every configurable menu item", () => {

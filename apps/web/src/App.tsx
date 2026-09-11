@@ -79,11 +79,11 @@ export default function App() {
     <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>
       <Routes>
         <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
-        <Route path="/relatorio-executivo" element={<ExecutiveSalesDashboardPage />} />
-        <Route path="/tarefas" element={<TarefasPage />} />
+        <Route path="/relatorio-executivo" element={<PermissionElement permission="reports.executive.view"><ExecutiveSalesDashboardPage /></PermissionElement>} />
         <Route element={<ProtectedRoute />}>
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
+            <Route path="/tarefas" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />
             <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
             <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
             <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />

@@ -18,9 +18,11 @@ export const navigationAccessFolders: NavigationAccessFolder[] = [
     description: "Telas principais que aparecem diretamente no menu.",
     items: [
       { label: "Dashboard", path: "/", permissionKey: "dashboard.view" },
+      { label: "Tarefas", path: "/tarefas", permissionKey: "tasks.view" },
       { label: "Pipeline", path: "/pipeline", permissionKey: "commercial.pipeline.view" },
       { label: "Metas", path: "/metas", permissionKey: "finance.goals.view" },
       { label: "Atendentes", path: "/atendentes", permissionKey: "reports.attendants.view" },
+      { label: "Relatório Executivo", path: "/relatorio-executivo", permissionKey: "reports.executive.view" },
     ],
   },
   {

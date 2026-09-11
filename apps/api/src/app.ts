@@ -143,6 +143,11 @@ import {
   updateAdminUser,
 } from "./modules/platform/adminUserService.js";
 import { APP_PERMISSIONS } from "./modules/platform/permissionService.js";
+import {
+  getTaskBoard,
+  mutateTask,
+  type TaskMutationInput,
+} from "./modules/tasks/taskService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
@@ -241,7 +246,9 @@ const userPermissionOverrideSchema = z.object({
 const adminUserSchema = z.object({
   email: z.string().email(),
   fullName: z.string().min(1),
-  role: z.enum(["admin", "vendas", "financeiro", "operacional", "viewer", "ADMIN", "MANAGER", "SELLER"]),
+  whatsappPhone: z.string().max(30).default(""),
+  avatarUrl: z.string().max(1000).default(""),
+  role: z.enum(["admin", "vendas", "financeiro", "operacional", "tarefas", "viewer", "ADMIN", "MANAGER", "SELLER"]),
   isActive: z.boolean().default(true),
   permissionOverrides: z.array(userPermissionOverrideSchema).default([]),
   password: z.string().min(6).or(z.literal("")).optional(),
@@ -758,6 +765,7 @@ export function createApp() {
   // servido publicamente em /media/campaign-videos. Mandar a URL (em vez de base64
   // inline) pros provedores elimina o timeout e o "Bad Request" no disparo.
   const campaignMediaDir = getCampaignMediaDir();
+  const profileAvatarDir = path.join(campaignMediaDir, "profile-avatars");
   app.use(
     "/media/campaign-videos",
     express.static(campaignMediaDir, {
@@ -771,6 +779,7 @@ export function createApp() {
   // computador. Mesmo diretório dos vídeos, mas servidas deixando o express
   // inferir o Content-Type pela extensão do arquivo.
   app.use("/media/campaign-images", express.static(campaignMediaDir, { maxAge: "7d" }));
+  app.use("/media/profile-avatars", express.static(profileAvatarDir, { maxAge: "30d", immutable: true }));
 
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
@@ -985,6 +994,18 @@ export function createApp() {
   });
 
   app.use("/api", requireAuth);
+  app.use("/api", (request, _response, next) => {
+    const isTasksPath = request.path === "/tasks" || request.path.startsWith("/tasks/");
+    if (
+      request.user?.appRole === "tarefas" &&
+      request.path !== "/auth/me" &&
+      !isTasksPath
+    ) {
+      next(new HttpError(403, "Este acesso e exclusivo para tarefas"));
+      return;
+    }
+    next();
+  });
   app.use("/api/whatsapp-monitor/agents", requirePermission("messages.inbox.view"));
   app.use("/api/whatsapp-monitor/conversations", requirePermission("messages.inbox.view"));
   app.use("/api/whatsapp-monitor/metrics", requirePermission("messages.inbox.view"));
@@ -1000,6 +1021,23 @@ export function createApp() {
 
   app.get("/api/auth/me", (request, response) => {
     response.json({ user: request.user });
+  });
+
+  app.get("/api/tasks/board", async (request, response, next) => {
+    try {
+      const scope = request.query.scope === "mine" ? "mine" : "all";
+      response.json(await getTaskBoard(request.user!, scope));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/tasks/board", async (request, response, next) => {
+    try {
+      response.json(await mutateTask(request.body as TaskMutationInput, request.user!));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/prospecting/config", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (_request, response, next) => {
@@ -2766,6 +2804,34 @@ export function createApp() {
   app.get("/api/admin/users", requirePermission("admin.users.manage"), async (_request, response, next) => {
     try {
       response.json(await listAdminUsers());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/users/avatar", requirePermission("admin.users.manage"), async (request, response, next) => {
+    try {
+      const { fileBase64 } = request.body as { fileBase64?: string };
+      if (!fileBase64 || typeof fileBase64 !== "string") {
+        throw new HttpError(400, "Imagem obrigatoria");
+      }
+      const match = fileBase64.match(/^data:([^;]+);base64,(.*)$/s);
+      if (!match?.[1] || !match[2]) {
+        throw new HttpError(400, "Imagem invalida");
+      }
+      const extension = IMAGE_MIME_EXTENSIONS[match[1].toLowerCase()];
+      if (!extension) {
+        throw new HttpError(400, "Envie uma imagem JPG, PNG, GIF ou WEBP");
+      }
+      const bytes = Buffer.from(match[2], "base64");
+      if (!bytes.length || bytes.length > 5 * 1024 * 1024) {
+        throw new HttpError(413, "Imagem invalida ou maior que 5MB");
+      }
+      const objectName = `${Date.now()}-${randomUUID()}.${extension}`;
+      await fsPromises.mkdir(profileAvatarDir, { recursive: true });
+      await fsPromises.writeFile(path.join(profileAvatarDir, objectName), bytes);
+      const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
+      response.json({ url: `${base}/media/profile-avatars/${objectName}` });
     } catch (error) {
       next(error);
     }

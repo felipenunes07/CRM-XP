@@ -235,7 +235,9 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
-  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  whatsapp_phone?: string | null;
+  profile_avatar_url?: string | null;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "tarefas" | "viewer";
   is_active: boolean;
   isActive?: boolean;
   created_at: string;
@@ -248,7 +250,9 @@ export interface AdminUser {
 export interface AdminUserInput {
   email: string;
   fullName: string;
-  role: "admin" | "vendas" | "financeiro" | "operacional" | "viewer";
+  whatsappPhone: string;
+  avatarUrl: string;
+  role: "admin" | "vendas" | "financeiro" | "operacional" | "tarefas" | "viewer";
   isActive: boolean;
   permissionOverrides: UserPermissionOverride[];
   password?: string;
@@ -1102,6 +1106,12 @@ export const api = {
   },
   users(token: string) {
     return request<AdminUser[]>("/api/admin/users", {}, token);
+  },
+  uploadUserAvatar(token: string, fileBase64: string) {
+    return request<{ url: string }>("/api/admin/users/avatar", {
+      method: "POST",
+      body: JSON.stringify({ fileBase64 }),
+    }, token);
   },
   createUser(token: string, input: AdminUserInput) {
     return request<AdminUser[]>("/api/admin/users", {

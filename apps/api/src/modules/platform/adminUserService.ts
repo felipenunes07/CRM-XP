@@ -7,10 +7,22 @@ import { createSupabaseAdminClient, isSupabaseAdminConfigured } from "./supabase
 export interface AdminUserInput {
   email: string;
   fullName: string;
+  whatsappPhone: string;
+  avatarUrl: string;
   role: string;
   isActive: boolean;
   permissionOverrides: PermissionOverride[];
   password?: string;
+}
+
+function normalizeWhatsappPhone(value: string) {
+  let digits = value.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  if (digits.length < 12 || digits.length > 15) {
+    throw new HttpError(400, "WhatsApp invalido. Informe DDD e numero");
+  }
+  return digits;
 }
 
 function normalizeOverrides(overrides: PermissionOverride[]) {
@@ -62,8 +74,8 @@ export async function createAdminUser(input: AdminUserInput, createdBy: string) 
   });
 
   await pool.query(
-    "UPDATE profiles SET is_active = $2, created_by = $3, updated_at = NOW() WHERE id = $1",
-    [created.id, input.isActive, createdBy],
+    "UPDATE profiles SET is_active = $2, created_by = $3, whatsapp_phone = $4, profile_avatar_url = $5, updated_at = NOW() WHERE id = $1",
+    [created.id, input.isActive, createdBy, normalizeWhatsappPhone(input.whatsappPhone), input.avatarUrl || null],
   );
   await replacePermissionOverrides(String(created.id), input.permissionOverrides);
 
@@ -100,10 +112,12 @@ export async function updateAdminUser(userId: string, input: AdminUserInput) {
           full_name = $3,
           role = $4,
           is_active = $5,
+          whatsapp_phone = $6,
+          profile_avatar_url = $7,
           updated_at = NOW()
       WHERE id = $1
     `,
-    [userId, email, fullName, appRole, input.isActive],
+    [userId, email, fullName, appRole, input.isActive, normalizeWhatsappPhone(input.whatsappPhone), input.avatarUrl || null],
   );
 
   await pool.query(

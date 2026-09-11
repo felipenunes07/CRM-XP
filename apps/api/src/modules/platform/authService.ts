@@ -377,6 +377,8 @@ export async function listUsers() {
         p.created_at,
         p.updated_at,
         p.last_sign_in_at,
+        p.whatsapp_phone,
+        p.profile_avatar_url,
         COALESCE(
           jsonb_agg(
             jsonb_build_object('permissionKey', up.permission_key, 'allowed', up.allowed)

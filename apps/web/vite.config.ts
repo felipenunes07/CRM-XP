@@ -20,13 +20,6 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     proxy: {
-      // Espelha o rewrite do vercel.json para a página /tarefas funcionar no dev.
-      "/tarefas-api": {
-        target: "https://xp-tarefas-equipe.base-coat.chatgpt.site",
-        changeOrigin: true,
-        secure: true,
-        rewrite: (path) => path.replace(/^\/tarefas-api/, "/api"),
-      },
       "/api": {
         target: "http://localhost:4000",
         changeOrigin: true,

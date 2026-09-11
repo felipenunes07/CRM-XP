@@ -234,7 +234,7 @@ export function AppShell() {
       <aside className="cw-sidebar">
         {/* ── Header ── */}
         <section className="cw-header">
-          <Link to="/" className="cw-premium-brand">
+          <Link to={user?.appRole === "tarefas" ? "/tarefas" : "/"} className="cw-premium-brand">
             <img src="/xp-factory-logo.png" alt="XP CRM" className="cw-logo-image" />
           </Link>
 
