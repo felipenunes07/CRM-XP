@@ -500,6 +500,20 @@ export default function TarefasPage() {
     onError: invalidate,
   });
 
+  // Versões anteriores guardavam "fora do quadro" apenas neste navegador.
+  // Ao abrir como administrador, migra essa escolha uma única vez para a
+  // configuração compartilhada, inclusive para o Time.
+  useEffect(() => {
+    if (!token || user?.appRole !== "admin" || !boardQuery.data) return;
+    const legacyHidden = boardQuery.data.people.filter(
+      (person) => hidden.includes(person.id) && !person.hidden,
+    );
+    if (legacyHidden.length === 0) return;
+    void Promise.all(
+      legacyHidden.map((person) => api.setTaskPersonVisibility(token, person.id, false)),
+    ).then(() => boardQuery.refetch()).catch(() => undefined);
+  }, [boardQuery.data, hidden, token, user?.appRole]);
+
   /**
    * Aplica a mudança na tela na hora e só depois avisa o servidor. Antes, cada
    * clique esperava a resposta e ainda um recarregamento inteiro do quadro —
@@ -536,19 +550,30 @@ export default function TarefasPage() {
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
+  const currentUserId = boardQuery.data?.current_user_id;
+  const isTaskAssignedByMe = (person: Person) =>
+    tasks.some((task) => task.person_id === person.id && task.created_by_user_id === currentUserId);
+  const groupScope = (person: Person) => {
+    if (manager) return null;
+    if (person.id === currentUserId) return "Minhas tarefas";
+    if (isTaskAssignedByMe(person)) return "Atribuídas por mim";
+    return person.id === TEAM_PERSON_ID ? "Tarefas do Time" : null;
+  };
   const displayPeople =
     manager && adminScope === "all"
       ? people
-      : people.filter(
-          (person) =>
-            person.id === TEAM_PERSON_ID ||
-            person.id === boardQuery.data?.current_user_id ||
-            tasks.some(
-              (task) =>
-                task.person_id === person.id &&
-                task.created_by_user_id === boardQuery.data?.current_user_id,
-            ),
-        );
+      : people
+          .filter(
+            (person) =>
+              person.id === TEAM_PERSON_ID ||
+              person.id === currentUserId ||
+              isTaskAssignedByMe(person),
+          )
+          .sort((left, right) => {
+            const weight = (person: Person) =>
+              person.id === currentUserId ? 0 : person.id === TEAM_PERSON_ID ? 1 : 2;
+            return weight(left) - weight(right);
+          });
 
   const deleteTask = (task: Task) => {
     setConfirmDelete("");
@@ -1106,6 +1131,7 @@ export default function TarefasPage() {
                     )}
                     <Avatar person={person} />
                     <strong style={{ color: personColor(person) }}>{person.name}</strong>
+                    {groupScope(person) && <span className="tarefas-group-scope">{groupScope(person)}</span>}
                     {open.length > 0 && <span className="tarefas-count">{open.length}</span>}
                   </div>
                   <div className="tarefas-cards">
@@ -1229,6 +1255,7 @@ export default function TarefasPage() {
                       </button>
                       <Avatar person={person} />
                       <strong style={{ color: personColor(person) }}>{person.name}</strong>
+                      {groupScope(person) && <span className="tarefas-group-scope">{groupScope(person)}</span>}
                       {open.length > 0 ? (
                         <span className="tarefas-count">{open.length}</span>
                       ) : (

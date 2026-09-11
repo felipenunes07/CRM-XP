@@ -259,6 +259,18 @@
   font-weight: 700;
   letter-spacing: -0.015em;
 }
+.tarefas-group-scope {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #3564cc;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .tarefas-assignee {
   display: inline-flex;
   align-items: center;
