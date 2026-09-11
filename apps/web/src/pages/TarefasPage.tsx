@@ -532,7 +532,7 @@ export default function TarefasPage() {
   const people = orderedPeople.filter((p) => !hidden.includes(p.id) && !p.hidden);
   // A lista de responsáveis não deve depender das colunas visíveis: qualquer
   // usuário ativo pode receber uma tarefa criada por uma vendedora.
-  const assignablePeople = orderedPeople.filter((p) => p.id === TEAM_PERSON_ID || !p.hidden);
+  const assignablePeople = orderedPeople;
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
@@ -1523,6 +1523,7 @@ export default function TarefasPage() {
                   </option>
                 ))}
               </select>
+              <small className="tarefas-field-help">Você pode atribuir esta tarefa para qualquer pessoa ativa.</small>
             </label>
 
             <div className="tarefas-modal-cols">
