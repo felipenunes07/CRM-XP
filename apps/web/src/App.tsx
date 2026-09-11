@@ -81,6 +81,7 @@ export default function App() {
         <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
         <Route path="/relatorio-executivo" element={<PermissionElement permission="reports.executive.view"><ExecutiveSalesDashboardPage /></PermissionElement>} />
         <Route element={<ProtectedRoute />}>
+          <Route path="/tarefas/tela" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
             <Route path="/tarefas" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />

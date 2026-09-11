@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Clock3,
   Columns3,
+  ExternalLink,
   Eye,
   EyeOff,
   History,
@@ -819,6 +820,9 @@ export default function TarefasPage() {
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
         </button>
+        <a className="tarefas-refresh tarefas-fullscreen-link" href="/tarefas/tela" target="_blank" rel="noreferrer">
+          <ExternalLink size={14} /> Abrir tela
+        </a>
         {manager && (
           <button type="button" className="tarefas-refresh" onClick={() => setTeamOpen(true)}>
             <Users size={14} />

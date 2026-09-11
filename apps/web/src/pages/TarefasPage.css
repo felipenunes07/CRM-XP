@@ -12,6 +12,9 @@
   flex-wrap: wrap;
   margin-bottom: 14px;
 }
+.tarefas-fullscreen-link {
+  text-decoration: none;
+}
 .tarefas-tabs {
   display: inline-flex;
   gap: 2px;
