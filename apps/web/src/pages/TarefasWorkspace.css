@@ -1,0 +1,98 @@
+/* Task workspace: clear hierarchy, generous inset and compact editable cells. */
+.tarefas-page { container-type: inline-size; padding: 30px clamp(20px, 4vw, 68px) 60px; background: #fff; max-width: 1700px; margin: 0 auto; color: #34323f; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tarefas-page button, .tarefas-page input, .tarefas-page select, .tarefas-page textarea { font-family: inherit; }
+.tarefas-page-heading { display: flex; align-items: center; gap: 14px; padding: 0 0 24px; }
+.tarefas-page-mark { display: grid; place-items: center; height: 44px; width: 44px; border-radius: 12px; background: #eee9ff; color: #7951d9; }
+.tarefas-page-heading p { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 12px; color: #96919f; }
+.tarefas-page-heading h1 { margin: 0; font-size: 25px; line-height: 1.3; font-weight: 650; letter-spacing: -.7px; }
+.tarefas-page-caption { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; color: #938d9e; font-size: 12px; }
+.tarefas-toolbar { padding-bottom: 18px; border-bottom: 1px solid #eeecf2; gap: 10px; margin-bottom: 24px; }
+.tarefas-tabs { background: #f5f4f7; padding: 4px; border-radius: 8px; }
+.tarefas-tab { font-size: 14px; gap: 7px; height: 34px; }
+.tarefas-tab svg { width: 16px; height: 16px; }
+.tarefas-tab[data-on] { color: #7244cd; }
+.tarefas-scope button { height: 32px; font-size: 12px; }
+.tarefas-scope button[data-on] { background: #7851d5; }
+.tarefas-chip { height: 32px; font-size: 12px; }
+.tarefas-chip[data-on] { background: #f3edff; border-color: #d9cbf8; color: #7947cf; }
+.tarefas-refresh { height: 32px; font-size: 12px; }
+.tarefas-search input { font-size: 12px; }
+.tarefas-sheet { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+.tarefas-sheet .tarefas-row { grid-template-columns: minmax(270px, 1fr) 150px 130px 115px 125px 64px; padding: 12px 8px; gap: 12px; min-height: 62px; border-bottom-color: #eeedf2; }
+.tarefas-sheet .tarefas-head { min-height: 38px; padding: 6px 8px 12px; background: white; font-size: 12px; letter-spacing: 0; font-weight: 500; color: #8a8593; }
+.tarefas-sheet .tarefas-head > span { display: flex; align-items: center; gap: 7px; }
+.tarefas-sheet .tarefas-head > span:first-child { padding-left: 30px; }
+.tarefas-sheet .tarefas-group { display: flex; padding: 18px 8px 10px; border: 0; background: #fff; min-height: 64px; }
+.tarefas-sheet .tarefas-group > .tarefas-person { flex: 1; gap: 10px; }
+.tarefas-sheet .tarefas-group > span:empty { display: none; }
+.tarefas-sheet .tarefas-group .tarefas-person strong { font-size: 15px; font-weight: 600; }
+.tarefas-sheet .tarefas-group .tarefas-avatar { width: 27px; height: 27px; font-size: 10px; }
+.tarefas-sheet .tarefas-group .tarefas-muted { color: #aaa4b1; font-size: 12px; }
+.tarefas-sheet .tarefas-row:not(.tarefas-group):not(.tarefas-head) > .tarefas-person { padding-left: 29px; gap: 12px; }
+.tarefas-sheet .tarefas-row:not(.tarefas-group):not(.tarefas-head):hover { background: #fcfaff; box-shadow: none; }
+.tarefas-sheet .tarefas-check { height: 19px; width: 19px; border-color: #a5a0b0; position: relative; }
+.tarefas-sheet .tarefas-check:not(.is-done)::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: #9980d2; position: absolute; }
+.tarefas-sheet .tarefas-title { font-size: 15px; font-weight: 550; line-height: 1.5; color: #34323d; max-width: 100%; }
+.tarefas-sheet .tarefas-task-meta { gap: 9px; margin-top: 3px; }
+.tarefas-sheet .tarefas-task-meta .tarefas-creator { display: none; }
+.tarefas-sheet .tarefas-note { color: #94899f; }
+.tarefas-sheet .tarefas-note::before { content: none; }
+.tarefas-sheet .tarefas-checklist-preview > span { display: inline-flex; gap: 5px; align-items: center; }
+.tarefas-sheet .tarefas-details-button { color: #93879f; font-size: 11px; }
+.tarefas-sheet .tarefas-checklist-preview { border: 0; padding: 0; font-size: 11px; color: #8d8797; }
+.tarefas-sheet .tarefas-assignee { font-size: 13px; font-weight: 500; color: #777080; }
+.tarefas-sheet .tarefas-assignee .tarefas-avatar { width: 28px; height: 28px; }
+.tarefas-sheet .tarefas-pill { height: 25px; border: 0; font-size: 11px; gap: 5px; }
+.tarefas-sheet .tarefas-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.tarefas-sheet .tarefas-pill.is-todo { background: #f2f0f5; color: #82798e; }
+.tarefas-sheet .tarefas-pill.is-doing { background: #f0eaff; color: #8451d1; }
+.tarefas-sheet .tarefas-due { font-size: 13px; gap: 7px; }
+.tarefas-sheet .tarefas-addrow { padding: 8px 8px 12px 38px; border-bottom: 1px solid #eeedf2; }
+.tarefas-sheet .tarefas-addrow button { border: 0; background: transparent; font-size: 13px; font-weight: 400; color: #9b92a5; height: 30px; padding: 0; }
+.tarefas-sheet .tarefas-addrow button:hover { color: #8050cc; }
+.tarefas-compose.tarefas-modal { width: min(680px, calc(100vw - 32px)); max-width: 680px; padding: 28px 32px; border-radius: 14px; gap: 22px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tarefas-compose-heading { display: flex; gap: 12px; align-items: center; }
+.tarefas-compose-heading > span { display: grid; place-items: center; width: 44px; height: 44px; background: #f1ebff; color: #7b4cce; border-radius: 11px; }
+.tarefas-compose-heading > div { flex: 1; }
+.tarefas-compose-heading h2 { font-size: 22px; color: #3d344a; }
+.tarefas-compose-heading p { margin: 4px 0 0; color: #9a92a3; font-size: 13px; }
+.tarefas-compose .tarefas-field-label { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; color: #797181; margin-bottom: 5px; }
+.tarefas-compose .tarefas-field-label svg { color: #8e7fa2; }
+.tarefas-compose .tarefas-field-label small { color: #b0a9b8; font-size: 11px; }
+.tarefas-compose input, .tarefas-compose select { min-height: 42px; font-size: 14px; border-color: #e3dfe9; background: #fff; border-radius: 7px; }
+.tarefas-compose input:focus, .tarefas-compose select:focus, .tarefas-compose textarea:focus { outline: 2px solid #eadffb; border-color: #ba99e3; }
+.tarefas-compose textarea { min-height: 130px; font-size: 14px; line-height: 1.6; border-color: #e3dfe9; background: #fcfbfd; }
+.tarefas-compose .tarefas-modal-cols { grid-template-columns: 1fr 1.25fr 1fr; gap: 16px; }
+.tarefas-compose-priority { display: grid; align-content: start; }
+.tarefas-compose-priority .task-priority-trigger { min-height: 42px; margin-left: 0; border: 1px solid #e3dfe9; padding: 8px 10px; justify-content: space-between; }
+.tarefas-compose .tarefas-modal-actions { padding-top: 18px; border-top: 1px solid #eeeaf3; }
+.tarefas-compose .tarefas-btn { height: 38px; font-size: 14px; }
+.tarefas-compose .tarefas-btn.is-primary { background: #7a4bd0; border-color: #7a4bd0; }
+.tarefas-compose-error { color: #c24450; font-size: 13px; margin: 0; }
+@media (max-width: 1150px) and (min-width: 821px) {
+  .tarefas-page { padding-left: 24px; padding-right: 24px; }
+  .tarefas-sheet .tarefas-row { grid-template-columns: minmax(200px, 1fr) 110px 105px 100px 110px 56px; gap: 8px; }
+}
+@media (max-width: 820px) {
+  .tarefas-page { padding: 20px 16px 40px; }
+  .tarefas-page-heading h1 { font-size: 22px; }
+  .tarefas-page-caption { display: none; }
+  .tarefas-sheet .tarefas-head { display: none; }
+  .tarefas-sheet .tarefas-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 14px 6px; }
+  .tarefas-sheet .tarefas-row:not(.tarefas-group):not(.tarefas-head) > .tarefas-person { grid-column: 1 / -1; padding-left: 12px; }
+  .tarefas-sheet .tarefas-group { flex-wrap: wrap; }
+  .tarefas-sheet .tarefas-group > .tarefas-person { flex-wrap: wrap; }
+  .tarefas-sheet .tarefas-title { white-space: normal; }
+  .tarefas-compose.tarefas-modal { padding: 24px; }
+  .tarefas-compose .tarefas-modal-cols { grid-template-columns: 1fr 1fr; }
+}
+@container (max-width: 1000px) {
+  .tarefas-sheet .tarefas-row { grid-template-columns: minmax(180px, 1fr) 105px 100px 95px 105px 56px; gap: 8px; }
+}
+@container (max-width: 740px) {
+  .tarefas-sheet .tarefas-head { display: none; }
+  .tarefas-sheet .tarefas-row { grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 14px 6px; }
+  .tarefas-sheet .tarefas-row:not(.tarefas-group):not(.tarefas-head) > .tarefas-person { grid-column: 1 / -1; padding-left: 12px; }
+  .tarefas-sheet .tarefas-group, .tarefas-sheet .tarefas-group > .tarefas-person { flex-wrap: wrap; }
+  .tarefas-sheet .tarefas-title { white-space: normal; }
+}

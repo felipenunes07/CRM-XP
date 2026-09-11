@@ -14,6 +14,9 @@ import {
   Eye,
   EyeOff,
   Flag,
+  FileText,
+  CircleCheck,
+  UserRound,
   GripVertical,
   History,
   ListTodo,
@@ -31,6 +34,8 @@ import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL, api } from "../lib/api";
 import "./TarefasPage.css";
 import { TaskDetailsDialog } from "./TaskDetailsDialog";
+import { TaskPriorityPicker } from "./TaskPriorityPicker";
+import "./TarefasWorkspace.css";
 
 /**
  * Quadro de tarefas da equipe dentro do CRM.
@@ -284,6 +289,7 @@ function TaskNote({ task, onOpen }: { task: Task; onOpen?: () => void }) {
   }
   return (
     <button type="button" className="tarefas-note" title={note} onClick={onOpen}>
+      <NotebookPen size={14} />
       <span className="tarefas-note-tag">obs</span>
       <span className="tarefas-note-text">{note}</span>
     </button>
@@ -299,7 +305,7 @@ function TaskChecklistPreview({ task, compact = false }: { task: Task; compact?:
   const done = task.checklist.filter((item) => item.done).length;
   return (
     <span className="tarefas-checklist-preview">
-      <span>{done}/{task.checklist.length} concluídos</span>
+      <span>{compact && <CircleCheck size={13} />}{done}/{task.checklist.length} concluídos</span>
       {!compact && task.checklist.slice(0, 3).map((item) => (
           <small key={item.id} className={item.done ? "is-done" : undefined}>
             {item.done ? "☑" : "☐"} {item.text}
@@ -502,6 +508,19 @@ export default function TarefasPage() {
       current ? { ...current, tasks: change(current.tasks) } : current,
     );
 
+  const changePriority = async (task: Task, priority: Task["priority"]) => {
+    try {
+      await tarefasRequest(token!, "/board", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "priority", id: task.id, version: task.version, priority }),
+      });
+      patchTasks(current => current.map(item => item.id === task.id ? { ...item, priority, version: task.version + 1 } : item));
+    } finally {
+      void invalidate();
+    }
+  };
+
   const boardPeople = boardQuery.data?.people ?? [];
   const rank = (p: Person) => {
     const i = order.indexOf(p.id);
@@ -690,40 +709,24 @@ export default function TarefasPage() {
       checklist: task.checklist ?? [],
     });
 
-  const saveDraft = (event: React.FormEvent) => {
+  const saveDraft = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!draft || !draft.title.trim()) return;
-    // Editar já aparece na hora; criar precisa do id que o servidor devolve.
-    if (draft.id) {
-      patchTasks((current) =>
-        current.map((t) =>
-          t.id === draft.id
-            ? {
-                ...t,
-                title: draft.title.trim(),
-                notes: draft.notes,
-                person_id: draft.person_id,
-                due_date: draft.due_date,
-                due_time: draft.due_time || null,
-                priority: draft.priority,
-                deadline: deadlineOf(draft.due_date, draft.due_time),
-                version: t.version + 1,
-              }
-            : t,
-        ),
-      );
+    if (!draft || !draft.title.trim() || mutation.isPending) return;
+    try {
+      await mutation.mutateAsync({
+        action: draft.id ? "edit" : "create",
+        ...(draft.id ? { id: draft.id, version: draft.version } : {}),
+        title: draft.title.trim(),
+        person_id: draft.person_id,
+        due_date: draft.due_date,
+        due_time: draft.due_time,
+        notes: draft.notes,
+        priority: draft.priority,
+      });
+      setDraft(null);
+    } catch {
+      // Keep the form and its contents available when saving fails.
     }
-    mutation.mutate({
-      action: draft.id ? "edit" : "create",
-      ...(draft.id ? { id: draft.id, version: draft.version } : {}),
-      title: draft.title.trim(),
-      person_id: draft.person_id,
-      due_date: draft.due_date,
-      due_time: draft.due_time,
-      notes: draft.notes,
-      priority: draft.priority,
-    });
-    setDraft(null);
   };
 
   const historyByDay = useMemo(() => {
@@ -780,6 +783,11 @@ export default function TarefasPage() {
 
   return (
     <section className="tarefas-page">
+      <div className="tarefas-page-heading">
+        <div className="tarefas-page-mark"><ListTodo size={24} /></div>
+        <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : "Minhas tarefas"}</h1></div>
+        <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : "Atribuídas a mim e ao time"}</span>
+      </div>
       <header className="tarefas-toolbar">
         <div className="tarefas-tabs">
           <button
@@ -1191,11 +1199,11 @@ export default function TarefasPage() {
       ) : (
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
-            <span>TAREFA</span>
-            <span>ATRIBUÍDA POR</span>
-            <span>PRIORIDADE</span>
-            <span>STATUS</span>
-            <span>PRAZO</span>
+            <span><FileText size={16} /> Nome da tarefa</span>
+            <span><UserRound size={16} /> Atribuída por</span>
+            <span><Flag size={16} /> Prioridade</span>
+            <span><CircleCheck size={16} /> Status</span>
+            <span><CalendarDays size={16} /> Vencimento</span>
             <span />
           </div>
           {displayPeople
@@ -1306,26 +1314,20 @@ export default function TarefasPage() {
                             <Avatar person={creatorFor(task)} />
                             <span>{task.created_by_name}</span>
                           </span>
-                          <span className={`tarefas-priority is-${task.priority ?? "normal"}`}>
-                            <Flag size={14} fill="currentColor" />
-                            {PRIORITY_LABEL[task.priority ?? "normal"]}
-                          </span>
+                          <TaskPriorityPicker value={task.priority ?? "normal"} label={`Prioridade de ${task.title}`}
+                            onChange={manager ? priority => changePriority(task, priority) : undefined} />
                           <span
                             className={`tarefas-pill ${
                               task.status === "done"
                                 ? "is-ok"
-                                : isLate(task)
-                                  ? "is-late"
-                                  : task.status === "doing"
+                                : task.status === "doing"
                                     ? "is-doing"
                                     : "is-todo"
                             }`}
                           >
                             {task.status === "done"
                               ? "Concluída"
-                              : isLate(task)
-                                ? "Atrasada"
-                                : statusLabel(task.status)}
+                              : statusLabel(task.status)}
                           </span>
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
@@ -1357,7 +1359,7 @@ export default function TarefasPage() {
                       {filter === "all" && !search.trim() && (
                         <div className="tarefas-addrow">
                           <button type="button" onClick={() => openNew(person.id)}>
-                            <Plus size={14} /> tarefa
+                            <Plus size={17} /> Adicionar tarefa
                           </button>
                         </div>
                       )}
@@ -1505,17 +1507,17 @@ export default function TarefasPage() {
           className="tarefas-modal-bg"
           role="presentation"
           onClick={(event) => {
-            if (event.target === event.currentTarget) setDraft(null);
+            if (event.target === event.currentTarget && !mutation.isPending) setDraft(null);
           }}
         >
-          <form className="tarefas-modal" onSubmit={saveDraft}>
-            <h2>{draft.id ? "Editar tarefa" : "Nova tarefa"}</h2>
-            <p className="tarefas-modal-sub">Defina o que precisa ser feito e até quando.</p>
+          <form className="tarefas-modal tarefas-compose" onSubmit={saveDraft}>
+            <div className="tarefas-compose-heading"><span><FileText size={22} /></span><div><h2>{draft.id ? "Editar tarefa" : "Nova tarefa"}</h2><p>Organize o próximo passo.</p></div><button type="button" className="tarefas-icon" aria-label="Fechar formulário" disabled={mutation.isPending} onClick={() => setDraft(null)}><X size={20} /></button></div>
 
             <label>
-              O que precisa ser feito?
+              <span className="tarefas-field-label"><FileText size={16} /> Nome da tarefa</span>
               <input
                 autoFocus
+                disabled={mutation.isPending}
                 required
                 maxLength={240}
                 value={draft.title}
@@ -1525,8 +1527,9 @@ export default function TarefasPage() {
             </label>
 
             <label>
-              Responsável
+              <span className="tarefas-field-label"><Users size={16} /> Responsável</span>
               <select
+                disabled={mutation.isPending}
                 value={draft.person_id}
                 onChange={(event) => setDraft({ ...draft, person_id: event.target.value })}
               >
@@ -1539,31 +1542,25 @@ export default function TarefasPage() {
             </label>
 
             <div className="tarefas-modal-cols">
+              <div className="tarefas-compose-priority">
+                <span className="tarefas-field-label"><Flag size={16} /> Prioridade</span>
+                <TaskPriorityPicker value={draft.priority} disabled={mutation.isPending} onChange={priority => setDraft({ ...draft, priority })} />
+              </div>
               <label>
-                Prioridade
-                <select
-                  value={draft.priority}
-                  onChange={(event) => setDraft({ ...draft, priority: event.target.value as Task["priority"] })}
-                >
-                  <option value="low">Baixa</option>
-                  <option value="normal">Normal</option>
-                  <option value="high">Alta</option>
-                  <option value="urgent">Urgente</option>
-                </select>
-              </label>
-              <label>
-                Prazo
+                <span className="tarefas-field-label"><CalendarDays size={16} /> Vencimento</span>
                 <input
                   type="date"
+                  disabled={mutation.isPending}
                   required
                   value={draft.due_date}
                   onChange={(event) => setDraft({ ...draft, due_date: event.target.value })}
                 />
               </label>
               <label>
-                Horário <span>(opcional)</span>
+                <span className="tarefas-field-label"><Clock3 size={16} /> Horário <small>opcional</small></span>
                 <input
                   type="time"
+                  disabled={mutation.isPending}
                   value={draft.due_time}
                   onChange={(event) => setDraft({ ...draft, due_time: event.target.value })}
                 />
@@ -1571,26 +1568,28 @@ export default function TarefasPage() {
             </div>
 
             <label className="tarefas-modal-notes">
-              Observação <span>(opcional)</span>
+              <span className="tarefas-field-label"><NotebookPen size={16} /> Descrição <small>opcional</small></span>
               <textarea
-                rows={6}
-                maxLength={3000}
+                rows={4}
+                disabled={mutation.isPending}
+                maxLength={10000}
                 value={draft.notes}
                 placeholder="Algum detalhe para ajudar na execução?"
                 onChange={(event) => setDraft({ ...draft, notes: event.target.value })}
               />
             </label>
 
+            {mutation.isError && <p className="tarefas-compose-error" role="alert">{(mutation.error as Error).message}</p>}
             <div className="tarefas-modal-actions">
-              <button type="button" className="tarefas-btn" onClick={() => setDraft(null)}>
+              <button type="button" className="tarefas-btn" disabled={mutation.isPending} onClick={() => setDraft(null)}>
                 Cancelar
               </button>
               <button
                 type="submit"
                 className="tarefas-btn is-primary"
-                disabled={!draft.title.trim()}
+                disabled={!draft.title.trim() || mutation.isPending}
               >
-                {draft.id ? "Salvar alterações" : "Criar tarefa"}
+                {mutation.isPending ? "Salvando…" : draft.id ? "Salvar alterações" : "Criar tarefa"}
               </button>
             </div>
           </form>

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Pencil, Plus, Users, X } from "lucide-react";
+import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Pencil, Plus, Users, X, UserRound, FileText } from "lucide-react";
+import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
 type Item = { id: string; text: string; done: boolean };
-type Content = { notes: string; checklist: Item[] };
+type Content = { notes: string; checklist: Item[]; priority: TaskPriority };
 type TaskInfo = Content & {
-  id: string; title: string; version: number; status: string; priority: string;
+  id: string; title: string; version: number; status: string;
   person_id: string; due_date: string; due_time: string | null;
 };
 type Props = {
@@ -21,7 +22,7 @@ type Props = {
 // The next write uses the last acknowledged version, even while typing during a request.
 export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist });
+  const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, priority: task.priority ?? "normal" });
   const latest = useRef(content);
   const version = useRef(task.version);
   const revision = useRef(0);
@@ -33,6 +34,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [closing, setClosing] = useState(false);
   const clean = (value: Content): Content => ({
     notes: value.notes,
+    priority: value.priority,
     checklist: value.checklist.map(item => ({ ...item, text: item.text.trim() })).filter(item => item.text),
   });
 
@@ -93,7 +95,6 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const done = content.checklist.filter(item => item.done).length;
   const progress = content.checklist.length ? done / content.checklist.length * 100 : 0;
   const status = task.status === "done" ? "Concluída" : task.status === "doing" ? "Em andamento" : "A fazer";
-  const priority = ({ low: "Baixa", normal: "Normal", high: "Alta", urgent: "Urgente" } as Record<string, string>)[task.priority] ?? "Normal";
 
   return (
     <dialog ref={dialog} className="task-detail" aria-labelledby="task-detail-title"
@@ -108,13 +109,15 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           <div className="task-detail-eyebrow">
             {task.person_id === "team" ? <><Users size={13} /> Compartilhada com o time</> : <><LockKeyhole size={13} /> Particular · responsável e administradores</>}
           </div>
+          <div className="task-detail-type"><FileText size={16} /> Tarefa</div>
           <h2 id="task-detail-title">{task.title}</h2>
           <div className="task-detail-properties">
             <div><span><CheckCheck size={15} /> Status</span><b className={`task-detail-status is-${task.status}`}>{status}</b></div>
             <div><span><Users size={15} /> Responsável</span>{assignee}</div>
             <div><span><Clock3 size={15} /> Prazo</span><strong>{task.due_date.split("-").reverse().join("/")}{task.due_time ? ` · ${task.due_time}` : ""}</strong></div>
-            <div><span><Flag size={15} /> Prioridade</span><strong className={`tarefas-priority is-${task.priority}`}><Flag size={13} fill="currentColor" />{priority}</strong></div>
-            <div className="task-detail-created"><span>Atribuída por</span>{creator}</div>
+            <div><span><Flag size={18} /> Prioridade</span><TaskPriorityPicker value={content.priority} disabled={closing}
+              onChange={onEdit ? async priority => { change({ ...latest.current, priority }); if (!await flush()) throw new Error("Não foi possível salvar. Tente novamente."); } : undefined} /></div>
+            <div className="task-detail-created"><span><UserRound size={18} /> Atribuída por</span>{creator}</div>
             {onEdit && <button type="button" className="task-detail-edit" disabled={closing} onClick={() => void finish(true)}><Pencil size={13} /> Editar dados da tarefa</button>}
           </div>
           <fieldset disabled={!canWrite || closing}>

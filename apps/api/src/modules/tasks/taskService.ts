@@ -11,7 +11,7 @@ export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 
 export interface TaskMutationInput {
-  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details";
+  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority";
   id?: string;
   version?: number;
   title?: string;
@@ -307,21 +307,34 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       throw new HttpError(409, "Essa tarefa mudou em outra tela. Atualize e tente novamente");
     }
 
+    if (input.action === "priority") {
+      if (!isAdmin(user)) throw new HttpError(403, "Somente administradores podem alterar a prioridade");
+      const priority = cleanPriority(input.priority);
+      await client.query("UPDATE tasks SET priority = $1, updated_at = NOW(), version = version + 1 WHERE id = $2", [priority, id]);
+      await addAudit(client, user, current, "updated", { previous: { priority: current.priority }, current: { priority } });
+      await client.query("COMMIT");
+      return { id };
+    }
+
     if (input.action === "details") {
       const ownsPrivateTask = current.audience === "user" && current.assignee_user_id === user.id;
       if (!isAdmin(user) && !ownsPrivateTask) throw new HttpError(404, "Tarefa nao encontrada");
       const notes = cleanText(input.notes ?? "", "Observacao", 10000, false);
       const checklist = cleanChecklist(input.checklist ?? []);
+      const priority = input.priority === undefined ? current.priority : cleanPriority(input.priority);
+      if (!isAdmin(user) && priority !== current.priority) throw new HttpError(403, "Somente administradores podem alterar a prioridade");
       await client.query(
         `UPDATE tasks
-         SET notes = $1, checklist = $2::jsonb, updated_at = NOW(), version = version + 1
+         SET notes = $1, checklist = $2::jsonb, priority = $4, updated_at = NOW(), version = version + 1
          WHERE id = $3`,
-        [notes, JSON.stringify(checklist), id],
+        [notes, JSON.stringify(checklist), id, priority],
       );
       await addAudit(client, user, current, "details_updated", {
         notes_changed: notes !== current.notes,
         checklist_total: checklist.length,
         checklist_done: checklist.filter((item) => item.done).length,
+        previous_priority: current.priority,
+        priority,
       });
       await client.query("COMMIT");
       return { id };

@@ -46,6 +46,7 @@ const taskRow = {
   due_date: "2026-09-10",
   due_time: "14:30:00",
   status: "todo",
+  priority: "normal",
   created_by_user_id: admin.id,
   created_by_name: "Felipe",
   assignee_has_whatsapp: true,
@@ -196,6 +197,40 @@ describe("taskService", () => {
       .mockResolvedValueOnce({ rows: [] });
     await expect(mutateTask({ action: "details", id: taskRow.id, version: 1, notes: "Private" }, seller))
       .rejects.toMatchObject({ statusCode: 404 });
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
+  });
+
+  it("updates only priority inline and audits the administrator", async () => {
+    clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
+    await mutateTask({ action: "priority", id: taskRow.id, version: 1, priority: "urgent" }, admin);
+    expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("UPDATE tasks SET priority"), ["urgent", taskRow.id]);
+    const audit = clientQuery.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO task_audit_logs"));
+    expect(audit?.[1]).toEqual([taskRow.id, admin.id, "updated", taskRow.title, JSON.stringify({ previous: { priority: "normal" }, current: { priority: "urgent" } })]);
+    expect(clientQuery).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it.each(["priority", "details"] as const)("blocks a non-admin priority change through %s", async action => {
+    clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
+    await expect(mutateTask({ action, id: taskRow.id, version: 1, priority: "urgent", notes: "Notes" }, seller)).rejects.toMatchObject({ statusCode: 403 });
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
+  });
+
+  it("rejects a stale inline change without overwriting another edit", async () => {
+    clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
+    await expect(mutateTask({ action: "priority", id: taskRow.id, version: 0, priority: "high" }, admin)).rejects.toMatchObject({ statusCode: 409 });
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
+  });
+
+  it("saves notes, checklist and priority together for an administrator", async () => {
+    clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
+    await mutateTask({ action: "details", id: taskRow.id, version: 1, priority: "high", notes: "Acompanhar", checklist: [] }, admin);
+    expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("checklist = $2::jsonb"), ["Acompanhar", "[]", taskRow.id, "high"]);
+    expect(clientQuery).toHaveBeenCalledWith("COMMIT");
+  });
+
+  it("rejects an invalid inline priority", async () => {
+    clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
+    await expect(mutateTask({ action: "priority", id: taskRow.id, version: 1, priority: "invalid" }, admin)).rejects.toMatchObject({ statusCode: 400 });
     expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
   });
 
