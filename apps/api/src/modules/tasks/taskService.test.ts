@@ -230,7 +230,11 @@ describe("taskService", () => {
 
   it("rejects an invalid inline priority", async () => {
     clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
-    await expect(mutateTask({ action: "priority", id: taskRow.id, version: 1, priority: "invalid" }, admin)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(mutateTask({
+      action: "priority", id: taskRow.id, version: 1,
+      // @ts-expect-error Deliberately malformed HTTP input must be rejected at runtime.
+      priority: "invalid",
+    }, admin)).rejects.toMatchObject({ statusCode: 400 });
     expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
   });
 
