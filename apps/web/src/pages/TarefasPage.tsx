@@ -577,6 +577,7 @@ export default function TarefasPage() {
   // usuário ativo pode receber uma tarefa criada por uma vendedora.
   const assignablePeople = orderedPeople;
   const currentUserId = boardQuery.data?.current_user_id;
+  const canDeleteTask = (task: Task) => manager || task.created_by_user_id === currentUserId;
   const isTaskAssignedByMe = (person: Person) =>
     tasks.some((task) => task.person_id === person.id && task.created_by_user_id === currentUserId);
   const groupScope = (person: Person) => {
@@ -1247,14 +1248,16 @@ export default function TarefasPage() {
                               {task.due_time ? ` ${task.due_time}` : ""}
                             </span>
                             {manager && (
+                              <NotifyTaskButton
+                                task={task}
+                                confirming={confirmNotify === task.id}
+                                onAsk={() => setConfirmNotify(task.id)}
+                                onCancel={() => setConfirmNotify("")}
+                                onConfirm={() => notifyTask(task)}
+                              />
+                            )}
+                            {canDeleteTask(task) && (
                               <>
-                                <NotifyTaskButton
-                                  task={task}
-                                  confirming={confirmNotify === task.id}
-                                  onAsk={() => setConfirmNotify(task.id)}
-                                  onCancel={() => setConfirmNotify("")}
-                                  onConfirm={() => notifyTask(task)}
-                                />
                                 <DeleteTaskButton
                                   task={task}
                                   confirming={confirmDelete === task.id}
@@ -1415,14 +1418,16 @@ export default function TarefasPage() {
                           </span>
                           <span className="tarefas-actions">
                             {manager && (
+                              <NotifyTaskButton
+                                task={task}
+                                confirming={confirmNotify === task.id}
+                                onAsk={() => setConfirmNotify(task.id)}
+                                onCancel={() => setConfirmNotify("")}
+                                onConfirm={() => notifyTask(task)}
+                              />
+                            )}
+                            {canDeleteTask(task) && (
                               <>
-                                <NotifyTaskButton
-                                  task={task}
-                                  confirming={confirmNotify === task.id}
-                                  onAsk={() => setConfirmNotify(task.id)}
-                                  onCancel={() => setConfirmNotify("")}
-                                  onConfirm={() => notifyTask(task)}
-                                />
                                 <DeleteTaskButton
                                   task={task}
                                   confirming={confirmDelete === task.id}

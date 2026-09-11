@@ -478,7 +478,9 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         { from: current.status, to: status },
       );
     } else if (input.action === "delete") {
-      if (!isAdmin(user)) throw new HttpError(403, "Somente administradores podem excluir tarefas");
+      if (!isAdmin(user) && current.created_by_user_id !== user.id) {
+        throw new HttpError(403, "Voce so pode excluir tarefas criadas por voce");
+      }
       await client.query(
         "UPDATE tasks SET deleted_at = NOW(), updated_at = NOW(), version = version + 1 WHERE id = $1",
         [id],

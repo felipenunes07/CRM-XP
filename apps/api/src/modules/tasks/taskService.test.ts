@@ -181,6 +181,23 @@ describe("taskService", () => {
     expect(auditCall?.[1]?.slice(1, 4)).toEqual([seller.id, "details_updated", taskRow.title]);
   });
 
+  it("allows a regular user to delete only a task they created", async () => {
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ ...taskRow, created_by_user_id: seller.id }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await mutateTask({ action: "delete", id: taskRow.id, version: 1 }, seller);
+
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE tasks SET deleted_at = NOW()"),
+      [taskRow.id],
+    );
+    expect(clientQuery).toHaveBeenCalledWith("COMMIT");
+  });
+
   it("blocks a different user from changing a private task", async () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [] })
