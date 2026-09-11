@@ -4669,5 +4669,14 @@ export const migrations = [
   ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
   ALTER TABLE tasks ADD CONSTRAINT tasks_priority_check
     CHECK (priority IN ('low', 'normal', 'high', 'urgent'));
+  `,
+  `
+  -- Compatibilidade: a primeira versão de imagens foi adicionada em uma
+  -- posição já registrada por bancos existentes. Mantemos esta migração no
+  -- fim para que ela seja executada também em instalações antigas.
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS images JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_images_array_check;
+  ALTER TABLE tasks ADD CONSTRAINT tasks_images_array_check
+    CHECK (jsonb_typeof(images) = 'array' AND jsonb_array_length(images) <= 5);
   `
 ];
