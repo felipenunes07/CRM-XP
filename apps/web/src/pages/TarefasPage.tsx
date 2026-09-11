@@ -411,6 +411,7 @@ export default function TarefasPage() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico">("tarefas");
   const [listScope, setListScope] = useState<"received" | "created">("received");
+  const [assignedPeopleFilter, setAssignedPeopleFilter] = useState<"all" | "with_tasks">("all");
   const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
   const [calendarCursor, setCalendarCursor] = useState(() => {
     const now = new Date();
@@ -666,12 +667,14 @@ export default function TarefasPage() {
   }, [adminScope, currentUserId, listScope, manager, tasks]);
   const listPeople = useMemo(() => {
     if (manager && adminScope === "all") return displayPeople;
-    return displayPeople.filter((person) =>
-      listScope === "received"
-        ? person.id === currentUserId
-        : person.id !== currentUserId && listTasks.some((task) => task.person_id === person.id),
+    if (listScope === "received") return displayPeople.filter((person) => person.id === currentUserId);
+    const coworkers = assignablePeople.filter(
+      (person) => person.id !== TEAM_PERSON_ID && person.id !== currentUserId,
     );
-  }, [adminScope, currentUserId, displayPeople, listScope, listTasks, manager]);
+    return assignedPeopleFilter === "with_tasks"
+      ? coworkers.filter((person) => listTasks.some((task) => task.person_id === person.id))
+      : coworkers;
+  }, [adminScope, assignedPeopleFilter, assignablePeople, currentUserId, displayPeople, listScope, listTasks, manager]);
   const pending = useMemo(() => listTasks.filter((t) => t.status !== "done"), [listTasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
   const dueToday = useMemo(
@@ -895,6 +898,12 @@ export default function TarefasPage() {
             <History size={13} /> Histórico
           </button>
         </div>
+        {tab === "tarefas" && listScope === "created" && !(manager && adminScope === "all") && (
+          <div className="tarefas-scope" aria-label="Funcionários exibidos">
+            <button type="button" data-on={assignedPeopleFilter === "all" ? "" : undefined} onClick={() => setAssignedPeopleFilter("all")}>Todos os funcionários</button>
+            <button type="button" data-on={assignedPeopleFilter === "with_tasks" ? "" : undefined} onClick={() => setAssignedPeopleFilter("with_tasks")}>Com tarefas</button>
+          </div>
+        )}
         {manager && (
           <div className="tarefas-scope" aria-label="Escopo das tarefas">
             <button type="button" data-on={adminScope === "mine" ? "" : undefined} onClick={() => setAdminScope("mine")}>Minhas</button>
