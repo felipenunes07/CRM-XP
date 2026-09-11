@@ -203,6 +203,9 @@
 .tarefas-confirm.is-notify {
   background: #2563eb;
   border-color: #1d4ed8;
+  color: #fff;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 .tarefas-sheet {
   background: #fff;
