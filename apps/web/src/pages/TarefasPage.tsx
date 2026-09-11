@@ -282,17 +282,17 @@ function TaskCreator({ task }: { task: Task }) {
   return <span className="tarefas-creator">Atribuída por {task.created_by_name}</span>;
 }
 
-function TaskChecklistPreview({ task }: { task: Task }) {
+function TaskChecklistPreview({ task, compact = false }: { task: Task; compact?: boolean }) {
   if (!task.checklist.length) return null;
   const done = task.checklist.filter((item) => item.done).length;
   return (
     <span className="tarefas-checklist-preview">
       <span>{done}/{task.checklist.length} concluídos</span>
-      {task.checklist.slice(0, 3).map((item) => (
-        <small key={item.id} className={item.done ? "is-done" : undefined}>
-          {item.done ? "☑" : "☐"} {item.text}
-        </small>
-      ))}
+      {!compact && task.checklist.slice(0, 3).map((item) => (
+          <small key={item.id} className={item.done ? "is-done" : undefined}>
+            {item.done ? "☑" : "☐"} {item.text}
+          </small>
+        ))}
     </span>
   );
 }
@@ -1278,13 +1278,15 @@ export default function TarefasPage() {
                               ) : (
                                 <span className="tarefas-title">{task.title}</span>
                               )}
-                              <TaskNote task={task} onOpen={manager ? () => openEdit(task) : undefined} />
-                              <TaskCreator task={task} />
-                              <TaskChecklistPreview task={task} />
-                              <TaskDetailsButton
-                                task={task}
-                                onOpen={manager || task.person_id === boardQuery.data?.current_user_id ? () => openDetails(task) : undefined}
-                              />
+                              <span className="tarefas-task-meta">
+                                <TaskCreator task={task} />
+                                <TaskNote task={task} onOpen={manager ? () => openEdit(task) : undefined} />
+                                <TaskChecklistPreview task={task} compact />
+                                <TaskDetailsButton
+                                  task={task}
+                                  onOpen={manager || task.person_id === boardQuery.data?.current_user_id ? () => openDetails(task) : undefined}
+                                />
+                              </span>
                             </span>
                           </span>
                           <span
