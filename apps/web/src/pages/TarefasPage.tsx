@@ -202,6 +202,19 @@ function shortDate(t: Task) {
 function statusLabel(s: Task["status"]) {
   return s === "done" ? "Entregue" : s === "doing" ? "Fazendo" : "A fazer";
 }
+function statusClass(status: Task["status"]) {
+  return status === "done" ? "is-ok" : status === "doing" ? "is-doing" : "is-todo";
+}
+function TaskStatusPicker({ task, canChange, onChange }: { task: Task; canChange: boolean; onChange: (status: Task["status"]) => void }) {
+  if (!canChange) return <span className={`tarefas-pill ${statusClass(task.status)}`}>{statusLabel(task.status)}</span>;
+  return <label className={`tarefas-status-picker tarefas-pill ${statusClass(task.status)}`} title="Alterar status da tarefa">
+    <span className="sr-only">Status de {task.title}</span>
+    <select value={task.status} aria-label={`Status de ${task.title}`} onChange={event => onChange(event.target.value as Task["status"])}>
+      <option value="todo">A fazer</option><option value="doing">Em andamento</option><option value="done">Concluída</option>
+    </select>
+    <ChevronDown size={13} aria-hidden="true" />
+  </label>;
+}
 function auditActionLabel(action: AuditLog["action"]) {
   return {
     created: "criou",
@@ -665,22 +678,19 @@ export default function TarefasPage() {
     return [...pendentes, ...concluidasHoje];
   };
 
-  const toggleStatus = (task: Task) => {
-    const status = task.status === "done" ? "doing" : "done";
-    patchTasks((current) =>
-      current.map((t) =>
-        t.id === task.id
-          ? {
-              ...t,
-              status,
-              completed_at: status === "done" ? new Date().toISOString() : null,
-              version: t.version + 1,
-            }
-          : t,
-      ),
-    );
-    mutation.mutate({ action: "status", id: task.id, version: task.version, status });
+  const changeStatus = async (task: Task, status: Task["status"]) => {
+    if (status === task.status) return;
+    await tarefasRequest(token!, "/board", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status", id: task.id, version: task.version, status }),
+    });
+    patchTasks(current => current.map(item => item.id === task.id ? {
+      ...item, status, completed_at: status === "done" ? new Date().toISOString() : null, version: task.version + 1,
+    } : item));
+    void invalidate();
   };
+  const toggleStatus = (task: Task) => void changeStatus(task, task.status === "done" ? "doing" : "done");
+  const canChangeStatus = (task: Task) => manager || task.status !== "done";
 
   const openNew = (personId: string) =>
     setDraft({
@@ -1119,23 +1129,7 @@ export default function TarefasPage() {
                             >
                               <Check size={12} strokeWidth={3} />
                             </button>
-                            <span
-                              className={`tarefas-pill ${
-                                task.status === "done"
-                                  ? "is-ok"
-                                  : isLate(task)
-                                    ? "is-late"
-                                    : task.status === "doing"
-                                      ? "is-doing"
-                                      : "is-todo"
-                              }`}
-                            >
-                              {task.status === "done"
-                                ? "Concluída"
-                                : isLate(task)
-                                  ? "Atrasada"
-                                  : statusLabel(task.status)}
-                            </span>
+                            <TaskStatusPicker task={task} canChange={canChangeStatus(task)} onChange={status => void changeStatus(task, status)} />
                           </div>
                           <div className="tarefas-titlewrap">
                             {manager ? (
@@ -1316,19 +1310,7 @@ export default function TarefasPage() {
                           </span>
                           <TaskPriorityPicker value={task.priority ?? "normal"} label={`Prioridade de ${task.title}`}
                             onChange={manager ? priority => changePriority(task, priority) : undefined} />
-                          <span
-                            className={`tarefas-pill ${
-                              task.status === "done"
-                                ? "is-ok"
-                                : task.status === "doing"
-                                    ? "is-doing"
-                                    : "is-todo"
-                            }`}
-                          >
-                            {task.status === "done"
-                              ? "Concluída"
-                              : statusLabel(task.status)}
-                          </span>
+                          <TaskStatusPicker task={task} canChange={canChangeStatus(task)} onChange={status => void changeStatus(task, status)} />
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                             {shortDate(task)}
