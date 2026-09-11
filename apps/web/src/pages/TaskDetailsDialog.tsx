@@ -21,10 +21,11 @@ type Props = {
   onNotify?: () => Promise<void>;
   canDelete?: boolean;
   onDelete?: () => Promise<void>;
+  onReturn?: () => Promise<void>;
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete }: Props) {
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -219,6 +220,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           </div>
         )}
         <footer className="task-detail-footer">
+          {onReturn && <button type="button" className="task-detail-return" disabled={closing} onClick={() => void onReturn()}><Send size={15} /> Devolver tarefa</button>}
           {canDelete && onDelete && (confirmDelete ? (
             <span className="task-detail-delete-confirm">
               <b>Excluir esta tarefa?</b>

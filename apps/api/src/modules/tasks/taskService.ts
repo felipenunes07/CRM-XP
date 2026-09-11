@@ -11,7 +11,7 @@ export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 
 export interface TaskMutationInput {
-  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority";
+  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority" | "return";
   id?: string;
   version?: number;
   title?: string;
@@ -477,6 +477,11 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         status === "done" ? "completed" : current.status === "done" ? "reopened" : "status_changed",
         { from: current.status, to: status },
       );
+    } else if (input.action === "return") {
+      if (!isAdmin(user) && current.assignee_user_id !== user.id) throw new HttpError(403, "Somente o responsável pode devolver a tarefa");
+      if (current.audience !== "user" || !current.created_by_user_id || current.created_by_user_id === current.assignee_user_id) throw new HttpError(400, "Esta tarefa não pode ser devolvida");
+      await client.query("UPDATE tasks SET assignee_user_id = $1, status = 'todo', completed_at = NULL, updated_at = NOW(), version = version + 1 WHERE id = $2", [current.created_by_user_id, id]);
+      await addAudit(client, user, current, "returned", { returned_to: current.created_by_user_id });
     } else if (input.action === "delete") {
       if (!isAdmin(user) && current.created_by_user_id !== user.id) {
         throw new HttpError(403, "Voce so pode excluir tarefas criadas por voce");

@@ -102,6 +102,7 @@
 .task-detail-delete, .task-detail-delete-confirm { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12px; }
 .task-detail-footer > .task-detail-delete-confirm { flex: 0 0 auto; }
 .task-detail-delete { border: 0; background: transparent; color: #c24141; cursor: pointer; padding: 7px 4px; }
+.task-detail-return { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #2563eb; padding: 7px 4px; font: inherit; font-size: 12px; cursor: pointer; }
 .task-detail-delete:hover { color: #991b1b; }
 .task-detail-delete-confirm { color: #8f2430; white-space: nowrap; }
 .task-detail-delete-confirm .is-confirm { border: 0; border-radius: 6px; background: #c24141; color: #fff; padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }

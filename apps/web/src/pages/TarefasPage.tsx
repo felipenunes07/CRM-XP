@@ -1585,6 +1585,10 @@ export default function TarefasPage() {
             await mutation.mutateAsync({ action: "delete", id: detailsDraft.task.id, version: detailsDraft.task.version });
             setDetailsDraft(null);
           } : undefined}
+          onReturn={detailsDraft.task.person_id === boardQuery.data?.current_user_id && detailsDraft.task.created_by_user_id !== boardQuery.data?.current_user_id ? async () => {
+            await mutation.mutateAsync({ action: "return", id: detailsDraft.task.id, version: detailsDraft.task.version });
+            setDetailsDraft(null);
+          } : undefined}
         />
       )}
 
