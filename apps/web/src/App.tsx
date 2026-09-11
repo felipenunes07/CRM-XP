@@ -72,6 +72,26 @@ function PermissionElement({ permission, children }: { permission: string; child
   return <>{children}</>;
 }
 
+const landingRoutes = [
+  { path: "/", permission: "dashboard.view" },
+  { path: "/relatorio-executivo", permission: "reports.executive.view" },
+  { path: "/tarefas", permission: "tasks.view" },
+  { path: "/pipeline", permission: "commercial.pipeline.view" },
+  { path: "/atendentes", permission: "reports.attendants.view" },
+  { path: "/clientes", permission: "commercial.customers.view" },
+  { path: "/metas", permission: "finance.goals.view" },
+  { path: "/mensagens", permission: "messages.inbox.view" },
+] as const;
+
+export function defaultAccessiblePath(canAccess: (permission: string) => boolean) {
+  return landingRoutes.find(route => canAccess(route.permission))?.path ?? "/acesso-negado";
+}
+
+function DefaultLandingRoute() {
+  const { canAccess } = usePermissions();
+  return <Navigate to={defaultAccessiblePath(canAccess)} replace />;
+}
+
 export default function App() {
   const { tx } = useUiLanguage();
 
@@ -85,7 +105,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
             <Route path="/tarefas" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />
-            <Route path="/" element={<PermissionElement permission="dashboard.view"><DashboardPage /></PermissionElement>} />
+            <Route path="/" element={<DefaultLandingRoute />} />
             <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
             <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />
             <Route path="/clientes" element={<PermissionElement permission="commercial.customers.view"><CustomersPage /></PermissionElement>} />
