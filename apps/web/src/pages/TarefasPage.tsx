@@ -138,7 +138,6 @@ const PRIORITY_LABEL: Record<Task["priority"], string> = {
  * a ordem e quem aparece no quadro ficam guardadas neste navegador.
  */
 const ORDER_KEY = "tarefas:ordem-pessoas";
-const HIDDEN_KEY = "tarefas:pessoas-ocultas";
 function readIds(key: string): string[] {
   try {
     const raw = JSON.parse(localStorage.getItem(key) ?? "[]");
@@ -431,12 +430,12 @@ export default function TarefasPage() {
   const [notice, setNotice] = useState("");
   const [teamOpen, setTeamOpen] = useState(false);
   const [order, setOrder] = useState<string[]>(() => readIds(ORDER_KEY));
-  const [hidden, setHidden] = useState<string[]>(() => readIds(HIDDEN_KEY));
+  const [hidden, setHidden] = useState<string[]>([]);
   const [uploadingTeamAvatar, setUploadingTeamAvatar] = useState(false);
+  const [savingTeam, setSavingTeam] = useState(false);
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
-  useEffect(() => writeIds(HIDDEN_KEY, hidden), [hidden]);
 
   async function uploadTeamAvatar(file: File | undefined) {
     if (!file || !token) return;
@@ -449,17 +448,6 @@ export default function TarefasPage() {
       setNotice(error instanceof Error ? error.message : "Nao foi possivel enviar a foto.");
     } finally {
       setUploadingTeamAvatar(false);
-    }
-  }
-
-  async function setPersonVisibility(person: Person, visible: boolean) {
-    if (!token) return;
-    try {
-      await api.setTaskPersonVisibility(token, person.id, visible);
-      await boardQuery.refetch();
-      setNotice(visible ? `${person.name} voltou para Tarefas.` : `${person.name} foi removido de Tarefas.`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Nao foi possivel atualizar o usuario.");
     }
   }
 
@@ -549,6 +537,33 @@ export default function TarefasPage() {
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
+
+  const openTeamSettings = () => {
+    setHidden(boardPeople.filter((person) => person.hidden).map((person) => person.id));
+    setTeamOpen(true);
+  };
+
+  const saveTeamSettings = async () => {
+    if (!manager || !token) {
+      setTeamOpen(false);
+      return;
+    }
+    const previousHidden = new Set(boardPeople.filter((person) => person.hidden).map((person) => person.id));
+    const desiredHidden = new Set(hidden);
+    const changedPeople = boardPeople.filter((person) => previousHidden.has(person.id) !== desiredHidden.has(person.id));
+
+    try {
+      setSavingTeam(true);
+      await Promise.all(changedPeople.map((person) => api.setTaskPersonVisibility(token, person.id, !desiredHidden.has(person.id))));
+      await boardQuery.refetch();
+      setTeamOpen(false);
+      setNotice("Configuração da equipe salva.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Não foi possível salvar a equipe.");
+    } finally {
+      setSavingTeam(false);
+    }
+  };
   // O Time só ocupa espaço para funcionários quando houver uma tarefa pública.
   // Se foi removido pelo administrador (inclusive na configuração antiga), ele
   // não fica aparecendo vazio nas tarefas pessoais.
@@ -954,7 +969,7 @@ export default function TarefasPage() {
           <ExternalLink size={14} /> Abrir tela
         </a>
         {manager && (
-          <button type="button" className="tarefas-refresh" onClick={() => setTeamOpen(true)}>
+          <button type="button" className="tarefas-refresh" onClick={openTeamSettings}>
             <Users size={14} />
             Equipe
           </button>
@@ -1458,7 +1473,7 @@ export default function TarefasPage() {
             )}
             <ul className="tarefas-team">
               {orderedPeople.map((person, index) => {
-                const off = hidden.includes(person.id) || Boolean(person.hidden);
+                const off = hidden.includes(person.id);
                 const pending = tasks.filter(
                   (t) => t.person_id === person.id && t.status !== "done",
                 ).length;
@@ -1502,13 +1517,7 @@ export default function TarefasPage() {
                         off ? `Trazer ${person.name} de volta` : `Tirar ${person.name} do quadro`
                       }
                       title={off ? "Trazer de volta" : "Tirar do quadro"}
-                      onClick={() => {
-                        if (user?.appRole === "admin") {
-                          void setPersonVisibility(person, Boolean(person.hidden));
-                        } else {
-                          togglePerson(person.id);
-                        }
-                      }}
+                      onClick={() => togglePerson(person.id)}
                     >
                       {off ? <Eye size={15} /> : <EyeOff size={15} />}
                     </button>
@@ -1533,9 +1542,10 @@ export default function TarefasPage() {
               <button
                 type="button"
                 className="tarefas-btn is-primary"
-                onClick={() => setTeamOpen(false)}
+                disabled={savingTeam}
+                onClick={() => void saveTeamSettings()}
               >
-                Pronto
+                {savingTeam ? "Salvando..." : "Pronto"}
               </button>
             </div>
           </div>
