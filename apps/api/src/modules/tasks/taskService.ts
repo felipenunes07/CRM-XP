@@ -7,6 +7,7 @@ import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
 
 export const TEAM_PERSON_ID = "team";
 export type TaskStatus = "todo" | "doing" | "done";
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 
 export interface TaskMutationInput {
@@ -19,6 +20,7 @@ export interface TaskMutationInput {
   due_date?: string;
   due_time?: string | null;
   status?: TaskStatus;
+  priority?: TaskPriority;
   checklist?: TaskChecklistItem[];
 }
 
@@ -66,6 +68,7 @@ interface TaskRow {
   due_date: string;
   due_time: string | null;
   status: TaskStatus;
+  priority: TaskPriority;
   created_by_user_id: string;
   created_by_name?: string;
   assignee_has_whatsapp?: boolean;
@@ -103,6 +106,12 @@ function cleanDueTime(value: unknown) {
   return time;
 }
 
+function cleanPriority(value: unknown): TaskPriority {
+  if (value === undefined || value === null || value === "") return "normal";
+  if (value === "low" || value === "normal" || value === "high" || value === "urgent") return value;
+  throw new HttpError(400, "Prioridade invalida");
+}
+
 function cleanChecklist(value: unknown): TaskChecklistItem[] {
   if (!Array.isArray(value) || value.length > 30) {
     throw new HttpError(400, "Checklist invalido");
@@ -132,6 +141,7 @@ function toBoardTask(row: TaskRow) {
     due_time: dueTime,
     deadline,
     status: row.status,
+    priority: row.priority ?? "normal",
     created_by_user_id: row.created_by_user_id,
     created_by_name: row.created_by_name ?? "Usuario",
     can_notify: row.audience === "user" && Boolean(row.assignee_has_whatsapp),
@@ -180,7 +190,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
     ),
     pool.query<TaskRow>(
       `SELECT t.id, t.title, t.notes, t.checklist, t.audience, t.assignee_user_id,
-              t.due_date::text, t.due_time::text, t.status, t.created_by_user_id,
+              t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
               (assignee.whatsapp_phone IS NOT NULL AND assignee.whatsapp_phone <> '') AS assignee_has_whatsapp,
               t.created_at::text, t.updated_at::text, t.completed_at::text, t.version
@@ -256,15 +266,16 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       const checklist = cleanChecklist(input.checklist ?? []);
       const dueDate = cleanDueDate(input.due_date);
       const dueTime = cleanDueTime(input.due_time);
+      const priority = cleanPriority(input.priority);
       const assigned = await assignment(client, input.person_id);
       const result = await client.query<TaskRow>(
         `INSERT INTO tasks (
-           title, notes, checklist, audience, assignee_user_id, due_date, due_time, created_by_user_id
-         ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+           title, notes, checklist, audience, assignee_user_id, due_date, due_time, priority, created_by_user_id
+         ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
          RETURNING id, title, notes, checklist, audience, assignee_user_id,
-                   due_date::text, due_time::text, status, created_by_user_id,
+                   due_date::text, due_time::text, status, priority, created_by_user_id,
                    created_at::text, updated_at::text, completed_at::text, version`,
-        [title, notes, JSON.stringify(checklist), assigned.audience, assigned.assigneeUserId, dueDate, dueTime, user.id],
+        [title, notes, JSON.stringify(checklist), assigned.audience, assigned.assigneeUserId, dueDate, dueTime, priority, user.id],
       );
       const task = result.rows[0];
       if (!task) throw new HttpError(500, "Nao foi possivel criar a tarefa");
@@ -273,6 +284,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         assignee_user_id: assigned.assigneeUserId,
         due_date: dueDate,
         due_time: dueTime,
+        priority,
       });
       await client.query("COMMIT");
       return { id: task.id };
@@ -281,7 +293,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
     const id = cleanText(input.id, "Tarefa", 80);
     const currentResult = await client.query<TaskRow>(
       `SELECT id, title, notes, checklist, audience, assignee_user_id,
-              due_date::text, due_time::text, status, created_by_user_id,
+              due_date::text, due_time::text, status, priority, created_by_user_id,
               created_at::text, updated_at::text, completed_at::text, version
        FROM tasks WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`,
       [id],
@@ -450,11 +462,12 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         const notes = cleanText(input.notes ?? "", "Observacao", 10000, false);
         const dueDate = cleanDueDate(input.due_date);
         const dueTime = cleanDueTime(input.due_time);
+        const priority = cleanPriority(input.priority);
         await client.query(
           `UPDATE tasks SET title = $1, notes = $2, audience = $3,
-                  assignee_user_id = $4, due_date = $5, due_time = $6,
-                  updated_at = NOW(), version = version + 1 WHERE id = $7`,
-          [title, notes, assigned.audience, assigned.assigneeUserId, dueDate, dueTime, id],
+                  assignee_user_id = $4, due_date = $5, due_time = $6, priority = $7,
+                  updated_at = NOW(), version = version + 1 WHERE id = $8`,
+          [title, notes, assigned.audience, assigned.assigneeUserId, dueDate, dueTime, priority, id],
         );
         await addAudit(client, user, { id, title }, "updated", {
           previous: {
@@ -463,6 +476,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
             assignee_user_id: current.assignee_user_id,
             due_date: current.due_date,
             due_time: current.due_time,
+            priority: current.priority,
           },
           current: {
             title,
@@ -470,6 +484,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
             assignee_user_id: assigned.assigneeUserId,
             due_date: dueDate,
             due_time: dueTime,
+            priority,
           },
         });
       }

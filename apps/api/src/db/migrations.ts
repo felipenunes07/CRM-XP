@@ -4656,5 +4656,12 @@ export const migrations = [
     value JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  `,
+  `
+  -- Prioridade operacional da tarefa, exibida no quadro e na lista.
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'normal';
+  ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_priority_check;
+  ALTER TABLE tasks ADD CONSTRAINT tasks_priority_check
+    CHECK (priority IN ('low', 'normal', 'high', 'urgent'));
   `
 ];

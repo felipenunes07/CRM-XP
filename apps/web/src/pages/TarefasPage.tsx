@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Flag,
   GripVertical,
   History,
   ListTodo,
@@ -52,6 +53,7 @@ type Task = {
   due_time: string | null;
   deadline: number;
   status: "todo" | "doing" | "done";
+  priority: "low" | "normal" | "high" | "urgent";
   created_at: string;
   created_by_user_id: string;
   created_by_name: string;
@@ -84,6 +86,7 @@ type Draft = {
   due_date: string;
   due_time: string;
   notes: string;
+  priority: Task["priority"];
 };
 type DetailsDraft = { task: Task; notes: string; checklist: ChecklistItem[] };
 
@@ -115,6 +118,12 @@ const PERSON_COLORS: Record<string, string> = {
 function personColor(person: Person) {
   return PERSON_COLORS[firstName(person.name)] ?? "#475569";
 }
+const PRIORITY_LABEL: Record<Task["priority"], string> = {
+  low: "Baixa",
+  normal: "Normal",
+  high: "Alta",
+  urgent: "Urgente",
+};
 
 /**
  * A API do quadro ainda não expõe remover/reordenar pessoas. Enquanto isso,
@@ -664,6 +673,7 @@ export default function TarefasPage() {
       due_date: brazilDate(),
       due_time: "",
       notes: "",
+      priority: "normal",
     });
   const openEdit = (task: Task) =>
     setDraft({
@@ -674,6 +684,7 @@ export default function TarefasPage() {
       due_date: task.due_date,
       due_time: task.due_time ?? "",
       notes: task.notes ?? "",
+      priority: task.priority ?? "normal",
     });
   const openDetails = (task: Task) =>
     setDetailsDraft({
@@ -717,6 +728,7 @@ export default function TarefasPage() {
                 person_id: draft.person_id,
                 due_date: draft.due_date,
                 due_time: draft.due_time || null,
+                priority: draft.priority,
                 deadline: deadlineOf(draft.due_date, draft.due_time),
                 version: t.version + 1,
               }
@@ -732,6 +744,7 @@ export default function TarefasPage() {
       due_date: draft.due_date,
       due_time: draft.due_time,
       notes: draft.notes,
+      priority: draft.priority,
     });
     setDraft(null);
   };
@@ -1182,6 +1195,8 @@ export default function TarefasPage() {
         <div className="tarefas-sheet">
           <div className="tarefas-row tarefas-head">
             <span>TAREFA</span>
+            <span>RESPONSÁVEL</span>
+            <span>PRIORIDADE</span>
             <span>STATUS</span>
             <span>PRAZO</span>
             <span />
@@ -1223,6 +1238,8 @@ export default function TarefasPage() {
                         <span className="tarefas-count is-late">{lateCount} atrasada(s)</span>
                       )}
                     </span>
+                    <span />
+                    <span />
                     <span />
                     <span />
                     <span className="tarefas-actions">
@@ -1288,6 +1305,14 @@ export default function TarefasPage() {
                                 />
                               </span>
                             </span>
+                          </span>
+                          <span className="tarefas-assignee" title={`Responsável: ${personById(task.person_id).name}`}>
+                            <Avatar person={personById(task.person_id)} />
+                            <span>{personById(task.person_id).name}</span>
+                          </span>
+                          <span className={`tarefas-priority is-${task.priority ?? "normal"}`}>
+                            <Flag size={14} fill="currentColor" />
+                            {PRIORITY_LABEL[task.priority ?? "normal"]}
                           </span>
                           <span
                             className={`tarefas-pill ${
@@ -1588,6 +1613,18 @@ export default function TarefasPage() {
             </label>
 
             <div className="tarefas-modal-cols">
+              <label>
+                Prioridade
+                <select
+                  value={draft.priority}
+                  onChange={(event) => setDraft({ ...draft, priority: event.target.value as Task["priority"] })}
+                >
+                  <option value="low">Baixa</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">Alta</option>
+                  <option value="urgent">Urgente</option>
+                </select>
+              </label>
               <label>
                 Prazo
                 <input
