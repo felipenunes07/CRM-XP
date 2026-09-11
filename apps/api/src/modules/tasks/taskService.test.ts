@@ -58,6 +58,7 @@ const taskRow = {
 describe("taskService", () => {
   beforeEach(() => {
     poolQuery.mockReset();
+    poolQuery.mockResolvedValue({ rows: [] });
     clientQuery.mockReset();
     release.mockReset();
     sendEvolution.mockReset();
@@ -72,6 +73,7 @@ describe("taskService", () => {
     const board = await getTaskBoard(seller);
 
     expect(poolQuery.mock.calls[1]?.[1]).toEqual([false, seller.id]);
+    expect(poolQuery.mock.calls[1]?.[0]).toContain("AND ($1::boolean OR t.audience = 'team' OR t.assignee_user_id = $2::uuid)");
     expect(board.tasks).toHaveLength(1);
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);
@@ -177,6 +179,24 @@ describe("taskService", () => {
       mutateTask({ action: "status", id: taskRow.id, version: 1, status: "done" }, other),
     ).rejects.toMatchObject({ statusCode: 404 });
     expect(clientQuery).toHaveBeenCalledWith("ROLLBACK");
+  });
+
+  it("only gives administrators the all-team scope", async () => {
+    await getTaskBoard(seller, "all");
+    expect(poolQuery.mock.calls[1]?.[1]).toEqual([false, seller.id]);
+    poolQuery.mockClear();
+    await getTaskBoard(admin, "all");
+    expect(poolQuery.mock.calls[1]?.[1]).toEqual([true, admin.id]);
+  });
+
+  it("does not let a non-admin creator change the assignee's private notes", async () => {
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ ...taskRow, assignee_user_id: admin.id, created_by_user_id: seller.id }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(mutateTask({ action: "details", id: taskRow.id, version: 1, notes: "Private" }, seller))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(clientQuery.mock.calls.some(([sql]) => String(sql).includes("UPDATE tasks"))).toBe(false);
   });
 
   it("sends a manual reminder through Lili and records the administrator", async () => {

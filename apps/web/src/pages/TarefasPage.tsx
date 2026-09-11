@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  ClipboardList,
   Clock3,
   Columns3,
   ExternalLink,
@@ -31,6 +30,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL, api } from "../lib/api";
 import "./TarefasPage.css";
+import { TaskDetailsDialog } from "./TaskDetailsDialog";
 
 /**
  * Quadro de tarefas da equipe dentro do CRM.
@@ -310,8 +310,8 @@ function TaskChecklistPreview({ task, compact = false }: { task: Task; compact?:
 function TaskDetailsButton({ task, onOpen }: { task: Task; onOpen?: () => void }) {
   if (!onOpen) return null;
   return (
-    <button type="button" className="tarefas-details-button" onClick={onOpen} title="Adicionar notas ou checklist">
-      <NotebookPen size={13} /> Notas e checklist
+    <button type="button" className="tarefas-details-button" onClick={onOpen} aria-label={`Abrir detalhes de ${task.title}`} title="Abrir tarefa">
+      <NotebookPen size={13} /> Detalhes
     </button>
   );
 }
@@ -412,8 +412,6 @@ export default function TarefasPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
-  const detailsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [detailsSaving, setDetailsSaving] = useState(false);
   const kanbanRef = useRef<HTMLDivElement | null>(null);
   const kanbanDrag = useRef<{ pointerId: number; startX: number; startScrollLeft: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState("");
@@ -690,26 +688,6 @@ export default function TarefasPage() {
       checklist: task.checklist ?? [],
     });
 
-  const queueDetailsSave = (next: DetailsDraft) => {
-    setDetailsDraft(next);
-    if (detailsSaveTimer.current) clearTimeout(detailsSaveTimer.current);
-    detailsSaveTimer.current = setTimeout(() => {
-      const checklist = next.checklist
-      .map((item) => ({ ...item, text: item.text.trim() }))
-      .filter((item) => item.text);
-      setDetailsSaving(true);
-      patchTasks((current) => current.map((task) => task.id === next.task.id
-        ? { ...task, notes: next.notes, checklist, version: task.version + 1 } : task));
-      setDetailsDraft((current) => current?.task.id === next.task.id
-        ? { ...current, task: { ...current.task, version: current.task.version + 1 } }
-        : current);
-      mutation.mutate(
-        { action: "details", id: next.task.id, version: next.task.version, notes: next.notes, checklist },
-        { onSettled: () => setDetailsSaving(false) },
-      );
-    }, 550);
-  };
-
   const saveDraft = (event: React.FormEvent) => {
     event.preventDefault();
     if (!draft || !draft.title.trim()) return;
@@ -939,7 +917,7 @@ export default function TarefasPage() {
                     : false;
                   return (
                     <div className="tarefas-row tarefas-history" key={task.id}>
-                      <span className="tarefas-title">{task.title}</span>
+                      <button type="button" className="tarefas-title is-link" onClick={() => openDetails(task)}>{task.title}</button>
                       <span className="tarefas-person">
                         <Avatar person={personById(task.person_id)} />
                         {personName(task.person_id)}
@@ -1026,7 +1004,7 @@ export default function TarefasPage() {
                   {dayTasks.map((task) => {
                     const person = personById(task.person_id);
                     return (
-                      <button type="button" className="tarefas-calendar-task" key={task.id} style={{ borderLeftColor: personColor(person) }} onClick={() => manager && openEdit(task)}>
+                      <button type="button" className="tarefas-calendar-task" key={task.id} style={{ borderLeftColor: personColor(person) }} onClick={() => openDetails(task)}>
                         <strong>{task.due_time ? `${task.due_time} ` : ""}{task.title}</strong>
                         <small>{person.name} · por {task.created_by_name}</small>
                       </button>
@@ -1131,20 +1109,20 @@ export default function TarefasPage() {
                               <button
                                 type="button"
                                 className="tarefas-title is-link"
-                                title="Abrir para editar"
-                                onClick={() => openEdit(task)}
+                                title="Abrir tarefa"
+                                onClick={() => openDetails(task)}
                               >
                                 {task.title}
                               </button>
                             ) : (
-                              <span className="tarefas-title">{task.title}</span>
+                              <button type="button" className="tarefas-title is-link" onClick={() => openDetails(task)}>{task.title}</button>
                             )}
-                            <TaskNote task={task} onOpen={manager ? () => openEdit(task) : undefined} />
+                            <TaskNote task={task} onOpen={() => openDetails(task)} />
                             <TaskCreator task={task} />
                             <TaskChecklistPreview task={task} />
                             <TaskDetailsButton
                               task={task}
-                              onOpen={manager || task.person_id === boardQuery.data?.current_user_id ? () => openDetails(task) : undefined}
+                              onOpen={() => openDetails(task)}
                             />
                           </div>
                           <div className="tarefas-card-foot">
@@ -1280,21 +1258,21 @@ export default function TarefasPage() {
                                 <button
                                   type="button"
                                   className="tarefas-title is-link"
-                                  title="Abrir para editar"
-                                  onClick={() => openEdit(task)}
+                                  title="Abrir tarefa"
+                                  onClick={() => openDetails(task)}
                                 >
                                   {task.title}
                                 </button>
                               ) : (
-                                <span className="tarefas-title">{task.title}</span>
+                                <button type="button" className="tarefas-title is-link" onClick={() => openDetails(task)}>{task.title}</button>
                               )}
                               <span className="tarefas-task-meta">
                                 <TaskCreator task={task} />
-                                <TaskNote task={task} onOpen={manager ? () => openEdit(task) : undefined} />
+                                <TaskNote task={task} onOpen={() => openDetails(task)} />
                                 <TaskChecklistPreview task={task} compact />
                                 <TaskDetailsButton
                                   task={task}
-                                  onOpen={manager || task.person_id === boardQuery.data?.current_user_id ? () => openDetails(task) : undefined}
+                                  onOpen={() => openDetails(task)}
                                 />
                               </span>
                             </span>
@@ -1474,92 +1452,27 @@ export default function TarefasPage() {
       )}
 
       {detailsDraft && (
-        <div
-          className="tarefas-modal-bg"
-          role="presentation"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) setDetailsDraft(null);
+        <TaskDetailsDialog
+          key={detailsDraft.task.id}
+          task={detailsDraft.task}
+          canWrite={manager || detailsDraft.task.person_id === boardQuery.data?.current_user_id}
+          assignee={<span className="tarefas-assignee"><Avatar person={personById(detailsDraft.task.person_id)} /><span>{personById(detailsDraft.task.person_id).name}</span></span>}
+          creator={<span className="tarefas-assignee"><Avatar person={creatorFor(detailsDraft.task)} /><span>{detailsDraft.task.created_by_name}</span></span>}
+          onSave={async (content, version) => {
+            await tarefasRequest(token!, "/board", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "details", id: detailsDraft.task.id, version, ...content }),
+            });
+            patchTasks(current => current.map(task => task.id === detailsDraft.task.id ? { ...task, ...content, version: version + 1 } : task));
+            void invalidate();
           }}
-        >
-          <div className="tarefas-modal tarefas-details-modal">
-            <h2>Notas e checklist</h2>
-            <p className="tarefas-modal-sub">{detailsDraft.task.title}</p>
-            <label className="tarefas-modal-notes">
-              Suas notas e atualização
-              <textarea
-                rows={12}
-                maxLength={10000}
-                value={detailsDraft.notes}
-                placeholder="Escreva aqui o andamento, resultado, impedimentos ou qualquer observação importante..."
-                onChange={(event) => queueDetailsSave({ ...detailsDraft, notes: event.target.value })}
-              />
-              <small>{detailsDraft.notes.length}/10000 caracteres</small>
-            </label>
-            <div className="tarefas-checklist-editor">
-              <strong>Checklist</strong>
-              <p>Marque os itens concluídos ou crie seus próprios checkpoints.</p>
-              {detailsDraft.checklist.map((item) => (
-                <div className="tarefas-checklist-item" key={item.id}>
-                  <input
-                    type="checkbox"
-                    checked={item.done}
-                    onChange={(event) =>
-                      queueDetailsSave({
-                        ...detailsDraft,
-                        checklist: detailsDraft.checklist.map((current) =>
-                          current.id === item.id ? { ...current, done: event.target.checked } : current,
-                        ),
-                      })
-                    }
-                  />
-                  <input
-                    value={item.text}
-                    maxLength={240}
-                    aria-label="Texto do checkpoint"
-                    onChange={(event) =>
-                      queueDetailsSave({
-                        ...detailsDraft,
-                        checklist: detailsDraft.checklist.map((current) =>
-                          current.id === item.id ? { ...current, text: event.target.value } : current,
-                        ),
-                      })
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="tarefas-icon is-danger"
-                    aria-label="Remover checkpoint"
-                    onClick={() =>
-                      queueDetailsSave({
-                        ...detailsDraft,
-                        checklist: detailsDraft.checklist.filter((current) => current.id !== item.id),
-                      })
-                    }
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="tarefas-add-check"
-                disabled={detailsDraft.checklist.length >= 30}
-                onClick={() =>
-                  queueDetailsSave({
-                    ...detailsDraft,
-                    checklist: [...detailsDraft.checklist, { id: crypto.randomUUID(), text: "", done: false }],
-                  })
-                }
-              >
-                <Plus size={14} /> Adicionar checkpoint
-              </button>
-            </div>
-            <div className="tarefas-modal-actions">
-              <span className="tarefas-muted">{detailsSaving ? "Salvando..." : "Salvo automaticamente"}</span>
-              <button type="button" className="tarefas-btn is-primary" onClick={() => setDetailsDraft(null)}>Pronto</button>
-            </div>
-          </div>
-        </div>
+          onClose={() => setDetailsDraft(null)}
+          onEdit={manager ? (content, version) => {
+            openEdit({ ...detailsDraft.task, ...content, version });
+            setDetailsDraft(null);
+          } : undefined}
+        />
       )}
 
       {draft && (
