@@ -1229,15 +1229,23 @@ export default function TarefasPage() {
             <span />
           </div>
           {displayPeople
-            .map((person) => {
+            .map((person, index) => {
               const open = tasks.filter(
                 (t) => t.person_id === person.id && t.status !== "done",
               );
               const lateCount = open.filter(isLate).length;
               const visible = visibleFor(person);
               const isCollapsed = collapsed[person.id];
+              const scope = groupScope(person);
+              const previous = index > 0 ? displayPeople[index - 1] : undefined;
+              const previousScope = previous ? groupScope(previous) : null;
               return (
                 <div key={person.id}>
+                  {!manager && scope && scope !== previousScope && (
+                    <div className="tarefas-section-label">
+                      <span>{scope}</span>
+                    </div>
+                  )}
                   <div className="tarefas-row tarefas-group">
                     <span className="tarefas-person">
                       <button
@@ -1255,7 +1263,7 @@ export default function TarefasPage() {
                       </button>
                       <Avatar person={person} />
                       <strong style={{ color: personColor(person) }}>{person.name}</strong>
-                      {groupScope(person) && <span className="tarefas-group-scope">{groupScope(person)}</span>}
+                      {scope && <span className="tarefas-group-scope">{scope}</span>}
                       {open.length > 0 ? (
                         <span className="tarefas-count">{open.length}</span>
                       ) : (
