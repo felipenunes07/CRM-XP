@@ -19,6 +19,11 @@
 .task-detail-status.is-done { background: #e6f6ed; color: #1c8b5c; }
 .task-detail-edit { width: fit-content; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #5e6e95; font-size: 11px; cursor: pointer; padding: 4px 0; }
 .task-detail-edit:hover { color: #2956d7; }
+.task-detail-notify { display: flex; align-items: center; gap: 12px; padding: 18px 0 0; }
+.task-detail-notify > button, .task-detail-notify > span { display: inline-flex; align-items: center; gap: 9px; }
+.task-detail-notify > button, .task-detail-notify .is-confirm { border: 0; border-radius: 7px; background: #20a765; color: #fff; padding: 9px 13px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.task-detail-notify .is-cancel { border: 0; background: transparent; color: #64748b; font: inherit; font-size: 12px; cursor: pointer; }
+.task-detail-notify small { color: #8b94a3; font-size: 11px; }
 .task-detail fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .task-detail-section { margin-top: 26px; }
 .task-detail-section > label, .task-detail h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: #3c485c; font-size: 14px; font-weight: 650; }

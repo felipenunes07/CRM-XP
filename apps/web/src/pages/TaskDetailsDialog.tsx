@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Pencil, Plus, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
@@ -17,10 +17,12 @@ type Props = {
   onSave: (content: Content, version: number) => Promise<void>;
   onClose: () => void;
   onEdit?: (content: Content, version: number) => void;
+  canNotify?: boolean;
+  onNotify?: () => Promise<void>;
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit }: Props) {
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -32,6 +34,8 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [saveState, setSaveState] = useState<"saved" | "pending" | "saving" | "error">("saved");
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
+  const [confirmNotify, setConfirmNotify] = useState(false);
+  const [sendingNotify, setSendingNotify] = useState(false);
   const clean = (value: Content): Content => ({
     notes: value.notes,
     priority: value.priority,
@@ -83,6 +87,19 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
     setClosing(false);
   }
 
+  async function notify() {
+    if (!onNotify) return;
+    setSendingNotify(true);
+    try {
+      await onNotify();
+      setConfirmNotify(false);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Não foi possível enviar a cobrança.");
+    } finally {
+      setSendingNotify(false);
+    }
+  }
+
   useEffect(() => {
     dialog.current?.showModal();
     const guard = (event: BeforeUnloadEvent) => {
@@ -120,6 +137,22 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             <div className="task-detail-created"><span><UserRound size={18} /> Atribuída por</span>{creator}</div>
             {onEdit && <button type="button" className="task-detail-edit" disabled={closing} onClick={() => void finish(true)}><Pencil size={13} /> Editar dados da tarefa</button>}
           </div>
+          {onNotify && (
+            <div className="task-detail-notify">
+              {!confirmNotify ? (
+                <button type="button" disabled={!canNotify || sendingNotify} onClick={() => setConfirmNotify(true)}>
+                  <Send size={16} /> Cobrar no WhatsApp
+                </button>
+              ) : (
+                <span>
+                  <b>Enviar cobrança privada pelo WhatsApp da Lili?</b>
+                  <button type="button" className="is-confirm" disabled={sendingNotify} onClick={() => void notify()}>{sendingNotify ? "Enviando..." : "Enviar cobrança"}</button>
+                  <button type="button" className="is-cancel" disabled={sendingNotify} onClick={() => setConfirmNotify(false)}>Cancelar</button>
+                </span>
+              )}
+              {!canNotify && <small>Cadastre o WhatsApp do responsável para liberar a cobrança.</small>}
+            </div>
+          )}
           <fieldset disabled={!canWrite || closing}>
             <section className="task-detail-section">
               <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Observações</label>

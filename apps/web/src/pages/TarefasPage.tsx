@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -593,12 +593,10 @@ export default function TarefasPage() {
       version: task.version,
     });
   };
-  const notifyTask = (task: Task) => {
+  const notifyTask = async (task: Task) => {
     setConfirmNotify("");
-    mutation.mutate(
-      { action: "notify", id: task.id, version: task.version },
-      { onSuccess: () => setNotice("Cobrança enviada pelo WhatsApp principal da Lili.") },
-    );
+    await mutation.mutateAsync({ action: "notify", id: task.id, version: task.version });
+    setNotice("Cobrança enviada pelo WhatsApp principal da Lili.");
   };
 
   const movePerson = (id: string, direction: -1 | 1) => {
@@ -770,6 +768,10 @@ export default function TarefasPage() {
       notes: task.notes ?? "",
       checklist: task.checklist ?? [],
     });
+  const openTaskFromRow = (event: ReactMouseEvent<HTMLDivElement>, task: Task) => {
+    if ((event.target as HTMLElement).closest("button, input, select, a, label")) return;
+    openDetails(task);
+  };
 
   const saveDraft = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1319,8 +1321,17 @@ export default function TarefasPage() {
                     <>
                       {visible.map((task) => (
                         <div
-                          className={`tarefas-row${task.status === "done" ? " is-finished" : ""}`}
+                          className={`tarefas-row is-openable${task.status === "done" ? " is-finished" : ""}`}
                           key={task.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => openTaskFromRow(event, task)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              openDetails(task);
+                            }
+                          }}
                         >
                           <span className="tarefas-person">
                             <button
@@ -1542,6 +1553,8 @@ export default function TarefasPage() {
             openEdit({ ...detailsDraft.task, ...content, version });
             setDetailsDraft(null);
           } : undefined}
+          canNotify={manager && detailsDraft.task.can_notify && detailsDraft.task.status !== "done"}
+          onNotify={manager ? () => notifyTask(detailsDraft.task) : undefined}
         />
       )}
 
