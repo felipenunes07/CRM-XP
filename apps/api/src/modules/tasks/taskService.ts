@@ -34,8 +34,10 @@ export async function setTaskTeamAvatar(avatarUrl: string) {
 }
 
 export async function setTaskPersonVisible(personId: string, visible: boolean) {
-  const exists = await pool.query("SELECT 1 FROM profiles WHERE id = $1", [personId]);
-  if (!exists.rows[0]) throw new HttpError(404, "Usuario nao encontrado");
+  if (personId !== TEAM_PERSON_ID) {
+    const exists = await pool.query("SELECT 1 FROM profiles WHERE id = $1", [personId]);
+    if (!exists.rows[0]) throw new HttpError(404, "Usuario nao encontrado");
+  }
   const current = await pool.query<{ value: unknown }>("SELECT value FROM task_board_settings WHERE key = 'hidden_people'");
   const raw = current.rows[0]?.value;
   const hidden = new Set(Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : []);
@@ -247,7 +249,13 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
 
   return {
     people: [
-      { id: TEAM_PERSON_ID, name: "Time", photo: teamAvatar, position: positionOf(TEAM_PERSON_ID, 0) },
+      {
+        id: TEAM_PERSON_ID,
+        name: "Time",
+        photo: teamAvatar,
+        hidden: hiddenPeople.has(TEAM_PERSON_ID),
+        position: positionOf(TEAM_PERSON_ID, 0),
+      },
       ...peopleResult.rows.map((person, index) => ({
         id: String(person.id),
         name: String(person.full_name),

@@ -17,7 +17,7 @@ vi.mock("../../db/client.js", () => ({
 vi.mock("../whatsapp/evolutionService.js", () => ({ sendWhatsappInstanceTextMessage: sendEvolution }));
 vi.mock("../whatsapp/uazapiService.js", () => ({ sendUazapiTextMessage: sendUazapi }));
 
-import { getTaskBoard, mutateTask } from "./taskService.js";
+import { getTaskBoard, mutateTask, setTaskPersonVisible } from "./taskService.js";
 import type { JwtUser } from "../platform/authService.js";
 
 const seller: JwtUser = {
@@ -79,6 +79,18 @@ describe("taskService", () => {
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);
     expect(board.people[0]).toMatchObject({ id: "team", name: "Time" });
+  });
+
+  it("persists Time outside the board for every user", async () => {
+    poolQuery
+      .mockResolvedValueOnce({ rows: [{ value: [] }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await setTaskPersonVisible("team", false);
+
+    expect(String(poolQuery.mock.calls[0]?.[0])).toContain("task_board_settings");
+    expect(String(poolQuery.mock.calls[0]?.[0])).not.toContain("FROM profiles");
+    expect(poolQuery.mock.calls[1]?.[1]).toEqual([JSON.stringify(["team"])]);
   });
 
   it("allows a regular user to create a private task and records who assigned it", async () => {

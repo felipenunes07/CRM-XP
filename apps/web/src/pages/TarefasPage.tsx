@@ -1423,7 +1423,7 @@ export default function TarefasPage() {
                       }
                       title={off ? "Trazer de volta" : "Tirar do quadro"}
                       onClick={() => {
-                        if (user?.appRole === "admin" && person.id !== TEAM_PERSON_ID) {
+                        if (user?.appRole === "admin") {
                           void setPersonVisibility(person, Boolean(person.hidden));
                         } else {
                           togglePerson(person.id);

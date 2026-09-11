@@ -146,6 +146,7 @@ import { APP_PERMISSIONS } from "./modules/platform/permissionService.js";
 import {
   getTaskBoard,
   mutateTask,
+  TEAM_PERSON_ID,
   setTaskTeamAvatar,
   setTaskPersonVisible,
   setTaskPeopleOrder,
@@ -2863,7 +2864,10 @@ export function createApp() {
   app.post("/api/tasks/people/:id/visibility", requirePermission("tasks.view"), requireRole(["ADMIN"]), async (request, response, next) => {
     try {
       const visible = z.object({ visible: z.boolean() }).parse(request.body).visible;
-      const personId = z.string().uuid().parse(request.params.id);
+      const personId = z.string().refine(
+        (id) => id === TEAM_PERSON_ID || z.string().uuid().safeParse(id).success,
+        "Usuario invalido",
+      ).parse(request.params.id);
       await setTaskPersonVisible(personId, visible);
       response.status(204).end();
     } catch (error) { next(error); }
