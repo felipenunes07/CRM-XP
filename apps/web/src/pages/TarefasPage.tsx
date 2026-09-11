@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -399,6 +399,8 @@ export default function TarefasPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
+  const detailsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [detailsSaving, setDetailsSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState("");
   const [confirmNotify, setConfirmNotify] = useState("");
   const [notice, setNotice] = useState("");
@@ -633,27 +635,24 @@ export default function TarefasPage() {
       checklist: task.checklist ?? [],
     });
 
-  const saveDetails = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!detailsDraft) return;
-    const checklist = detailsDraft.checklist
+  const queueDetailsSave = (next: DetailsDraft) => {
+    setDetailsDraft(next);
+    if (detailsSaveTimer.current) clearTimeout(detailsSaveTimer.current);
+    detailsSaveTimer.current = setTimeout(() => {
+      const checklist = next.checklist
       .map((item) => ({ ...item, text: item.text.trim() }))
       .filter((item) => item.text);
-    patchTasks((current) =>
-      current.map((task) =>
-        task.id === detailsDraft.task.id
-          ? { ...task, notes: detailsDraft.notes, checklist, version: task.version + 1 }
-          : task,
-      ),
-    );
-    mutation.mutate({
-      action: "details",
-      id: detailsDraft.task.id,
-      version: detailsDraft.task.version,
-      notes: detailsDraft.notes,
-      checklist,
-    });
-    setDetailsDraft(null);
+      setDetailsSaving(true);
+      patchTasks((current) => current.map((task) => task.id === next.task.id
+        ? { ...task, notes: next.notes, checklist, version: task.version + 1 } : task));
+      setDetailsDraft((current) => current?.task.id === next.task.id
+        ? { ...current, task: { ...current.task, version: current.task.version + 1 } }
+        : current);
+      mutation.mutate(
+        { action: "details", id: next.task.id, version: next.task.version, notes: next.notes, checklist },
+        { onSettled: () => setDetailsSaving(false) },
+      );
+    }, 550);
   };
 
   const saveDraft = (event: React.FormEvent) => {
@@ -1376,7 +1375,7 @@ export default function TarefasPage() {
             if (event.target === event.currentTarget) setDetailsDraft(null);
           }}
         >
-          <form className="tarefas-modal tarefas-details-modal" onSubmit={saveDetails}>
+          <div className="tarefas-modal tarefas-details-modal">
             <h2>Notas e checklist</h2>
             <p className="tarefas-modal-sub">{detailsDraft.task.title}</p>
             <label className="tarefas-modal-notes">
@@ -1386,7 +1385,7 @@ export default function TarefasPage() {
                 maxLength={10000}
                 value={detailsDraft.notes}
                 placeholder="Escreva aqui o andamento, resultado, impedimentos ou qualquer observação importante..."
-                onChange={(event) => setDetailsDraft({ ...detailsDraft, notes: event.target.value })}
+                onChange={(event) => queueDetailsSave({ ...detailsDraft, notes: event.target.value })}
               />
               <small>{detailsDraft.notes.length}/10000 caracteres</small>
             </label>
@@ -1399,7 +1398,7 @@ export default function TarefasPage() {
                     type="checkbox"
                     checked={item.done}
                     onChange={(event) =>
-                      setDetailsDraft({
+                      queueDetailsSave({
                         ...detailsDraft,
                         checklist: detailsDraft.checklist.map((current) =>
                           current.id === item.id ? { ...current, done: event.target.checked } : current,
@@ -1412,7 +1411,7 @@ export default function TarefasPage() {
                     maxLength={240}
                     aria-label="Texto do checkpoint"
                     onChange={(event) =>
-                      setDetailsDraft({
+                      queueDetailsSave({
                         ...detailsDraft,
                         checklist: detailsDraft.checklist.map((current) =>
                           current.id === item.id ? { ...current, text: event.target.value } : current,
@@ -1425,7 +1424,7 @@ export default function TarefasPage() {
                     className="tarefas-icon is-danger"
                     aria-label="Remover checkpoint"
                     onClick={() =>
-                      setDetailsDraft({
+                      queueDetailsSave({
                         ...detailsDraft,
                         checklist: detailsDraft.checklist.filter((current) => current.id !== item.id),
                       })
@@ -1440,7 +1439,7 @@ export default function TarefasPage() {
                 className="tarefas-add-check"
                 disabled={detailsDraft.checklist.length >= 30}
                 onClick={() =>
-                  setDetailsDraft({
+                  queueDetailsSave({
                     ...detailsDraft,
                     checklist: [...detailsDraft.checklist, { id: crypto.randomUUID(), text: "", done: false }],
                   })
@@ -1450,10 +1449,10 @@ export default function TarefasPage() {
               </button>
             </div>
             <div className="tarefas-modal-actions">
-              <button type="button" className="tarefas-btn" onClick={() => setDetailsDraft(null)}>Cancelar</button>
-              <button type="submit" className="tarefas-btn is-primary">Salvar notas</button>
+              <span className="tarefas-muted">{detailsSaving ? "Salvando..." : "Salvo automaticamente"}</span>
+              <button type="button" className="tarefas-btn is-primary" onClick={() => setDetailsDraft(null)}>Pronto</button>
             </div>
-          </form>
+          </div>
         </div>
       )}
 
