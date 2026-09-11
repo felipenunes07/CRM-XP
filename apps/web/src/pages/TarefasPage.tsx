@@ -14,6 +14,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  GripVertical,
   History,
   ListTodo,
   Loader2,
@@ -412,6 +413,7 @@ export default function TarefasPage() {
   const [order, setOrder] = useState<string[]>(() => readIds(ORDER_KEY));
   const [hidden, setHidden] = useState<string[]>(() => readIds(HIDDEN_KEY));
   const [uploadingTeamAvatar, setUploadingTeamAvatar] = useState(false);
+  const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
   useEffect(() => writeIds(HIDDEN_KEY, hidden), [hidden]);
@@ -540,6 +542,21 @@ export default function TarefasPage() {
         .catch(() => setNotice("Não foi possível salvar a ordem da equipe."));
     }
   };
+
+  const reorderPeople = (draggedId: string, targetId: string) => {
+    if (!manager || draggedId === targetId) return;
+    const ids = orderedPeople.map((person) => person.id);
+    if (!ids.includes(draggedId) || !ids.includes(targetId)) return;
+
+    ids.splice(ids.indexOf(draggedId), 1);
+    ids.splice(ids.indexOf(targetId), 0, draggedId);
+    setOrder(ids);
+    if (token) {
+      void api.setTaskPeopleOrder(token, ids)
+        .then(() => boardQuery.refetch())
+        .catch(() => setNotice("Não foi possível salvar a ordem da equipe."));
+    }
+  };
   const togglePerson = (id: string) =>
     setHidden((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
@@ -547,7 +564,7 @@ export default function TarefasPage() {
 
   const startKanbanDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest("button, input, textarea, select, a")) return;
+    if (target.closest("button, input, textarea, select, a, .tarefas-column-drag-handle")) return;
     const board = kanbanRef.current;
     if (!board) return;
     kanbanDrag.current = { pointerId: event.pointerId, startX: event.clientX, startScrollLeft: board.scrollLeft };
@@ -1023,11 +1040,40 @@ export default function TarefasPage() {
               );
               return (
                 <article
-                  className="tarefas-col"
+                  className={`tarefas-col${draggingPersonId === person.id ? " is-reordering" : ""}`}
                   key={person.id}
                   style={{ borderTop: `3px solid ${personColor(person)}` }}
+                  onDragOver={(event) => {
+                    if (!manager || !draggingPersonId || draggingPersonId === person.id) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const draggedId = event.dataTransfer.getData("text/plain") || draggingPersonId;
+                    if (draggedId) reorderPeople(draggedId, person.id);
+                    setDraggingPersonId(null);
+                  }}
                 >
                   <div className="tarefas-col-head">
+                    {manager && (
+                      <span
+                        className="tarefas-column-drag-handle"
+                        draggable
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Arrastar ${person.name} para mudar a posição`}
+                        title="Arraste para mudar a posição no quadro"
+                        onDragStart={(event) => {
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", person.id);
+                          setDraggingPersonId(person.id);
+                        }}
+                        onDragEnd={() => setDraggingPersonId(null)}
+                      >
+                        <GripVertical size={16} aria-hidden="true" />
+                      </span>
+                    )}
                     <Avatar person={person} />
                     <strong style={{ color: personColor(person) }}>{person.name}</strong>
                     {open.length > 0 && <span className="tarefas-count">{open.length}</span>}

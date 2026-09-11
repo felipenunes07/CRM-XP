@@ -819,6 +819,14 @@
   border: 1px solid #e6e6e6;
   border-radius: 10px;
   overflow: hidden;
+  transition: opacity 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+.tarefas-col.is-reordering {
+  opacity: 0.48;
+  transform: scale(0.985);
+}
+.tarefas-col:has(.tarefas-column-drag-handle:hover) {
+  box-shadow: 0 7px 18px rgba(25, 55, 105, 0.12);
 }
 .tarefas-col-head {
   display: flex;
@@ -827,6 +835,27 @@
   padding: 10px 12px;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
+}
+.tarefas-column-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  margin: -5px -5px -5px -8px;
+  border-radius: 6px;
+  color: #8a98ab;
+  cursor: grab;
+  touch-action: none;
+}
+.tarefas-column-drag-handle:hover,
+.tarefas-column-drag-handle:focus-visible {
+  color: #2148b6;
+  background: #eaf0ff;
+  outline: none;
+}
+.tarefas-column-drag-handle:active {
+  cursor: grabbing;
 }
 .tarefas-col-head strong {
   font-size: 13.5px;
