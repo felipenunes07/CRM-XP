@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
@@ -36,6 +36,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [closing, setClosing] = useState(false);
   const [confirmNotify, setConfirmNotify] = useState(false);
   const [sendingNotify, setSendingNotify] = useState(false);
+  const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
   const clean = (value: Content): Content => ({
     notes: value.notes,
     priority: value.priority,
@@ -154,12 +155,21 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
               {!canNotify && <small>Cadastre o WhatsApp do responsável para liberar a cobrança.</small>}
             </div>
           )}
+          <section className="task-detail-section">
+            <label><Paperclip size={17} /> Imagens{content.images.length > 0 && <small>{content.images.length}</small>}</label>
+            <div className="task-detail-images">
+              {content.images.map((image, index) => (
+                <span key={`${index}-${image.slice(-24)}`}>
+                  <button type="button" className="task-detail-image-preview" onClick={() => setPreviewImageIndex(index)} aria-label={`Abrir imagem ${index + 1}`}>
+                    <img src={image} alt={`Anexo ${index + 1}`} />
+                  </button>
+                  {canWrite && <button type="button" className="task-detail-image-remove" aria-label={`Remover imagem ${index + 1}`} onClick={() => change({ ...latest.current, images: latest.current.images.filter((_, itemIndex) => itemIndex !== index) })}><X size={13} /></button>}
+                </span>
+              ))}
+            </div>
+            {canWrite && content.images.length < 5 && <label className="task-detail-add" style={{ cursor: "pointer" }}><Paperclip size={15} /> Anexar imagem<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={event => { const file = event.target.files?.[0]; if (!file || file.size > 800 * 1024) return; const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" && change({ ...latest.current, images: [...latest.current.images, reader.result] }); reader.readAsDataURL(file); event.currentTarget.value = ""; }} /></label>}
+          </section>
           <fieldset disabled={!canWrite || closing}>
-            <section className="task-detail-section">
-              <label><Paperclip size={17} /> Imagens</label>
-              <div className="task-detail-images">{content.images.map((image, index) => <span key={image.slice(-24)}><img src={image} alt={`Anexo ${index + 1}`} /><button type="button" onClick={() => change({ ...latest.current, images: latest.current.images.filter((_, itemIndex) => itemIndex !== index) })}><X size={13} /></button></span>)}</div>
-              {canWrite && content.images.length < 5 && <label className="task-detail-add" style={{ cursor: "pointer" }}><Paperclip size={15} /> Anexar imagem<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={event => { const file = event.target.files?.[0]; if (!file || file.size > 800 * 1024) return; const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" && change({ ...latest.current, images: [...latest.current.images, reader.result] }); reader.readAsDataURL(file); event.currentTarget.value = ""; }} /></label>}
-            </section>
             <section className="task-detail-section">
               <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Observações</label>
               <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6}
@@ -185,6 +195,15 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             </section>
           </fieldset>
         </div>
+        {previewImageIndex !== null && content.images[previewImageIndex] && (
+          <div className="task-image-lightbox" role="dialog" aria-modal="true" aria-label={`Imagem ${previewImageIndex + 1} de ${content.images.length}`} onClick={event => { if (event.target === event.currentTarget) setPreviewImageIndex(null); }}>
+            <button type="button" className="task-image-lightbox-close" aria-label="Fechar imagem" onClick={() => setPreviewImageIndex(null)}><X size={20} /></button>
+            {content.images.length > 1 && <button type="button" className="task-image-lightbox-nav is-previous" aria-label="Imagem anterior" onClick={() => setPreviewImageIndex(index => index === null ? 0 : (index - 1 + content.images.length) % content.images.length)}><ChevronLeft size={25} /></button>}
+            <img src={content.images[previewImageIndex]} alt={`Imagem ampliada ${previewImageIndex + 1}`} />
+            {content.images.length > 1 && <button type="button" className="task-image-lightbox-nav is-next" aria-label="Próxima imagem" onClick={() => setPreviewImageIndex(index => index === null ? 0 : (index + 1) % content.images.length)}><ChevronRight size={25} /></button>}
+            {content.images.length > 1 && <span className="task-image-lightbox-count">{previewImageIndex + 1} de {content.images.length}</span>}
+          </div>
+        )}
         <footer className="task-detail-footer">
           <span role="status" className={error ? "is-error" : ""}>{saveState === "saved" ? <><Check size={14} /> Tudo salvo</> : saveState === "error" ? error : "Salvando alterações…"}</span>
           {saveState === "error" && <button type="button" className="task-detail-edit" onClick={() => void flush()}>Tentar novamente</button>}
