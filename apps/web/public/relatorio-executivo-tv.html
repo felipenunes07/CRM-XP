@@ -15,7 +15,7 @@
       .brand { display: block; width: 110px; margin: 30px auto 24px; }
       .brand img { width: 100%; height: auto; }
       .side-line { height: 1px; margin: 0 18px 22px; background: #dfe3eb; }
-      .side-button { width: 112px; height: 58px; margin: 0 auto; padding: 10px 5px; border-radius: 8px; color: #fff; background: #2855dd; font-size: 16px; font-weight: 700; box-shadow: 0 5px 12px rgba(40,85,221,.22); }
+      .side-button { display: block; width: 112px; height: 58px; margin: 0 auto; padding: 10px 5px; border-radius: 8px; color: #fff; background: #2855dd; font-size: 16px; font-weight: 700; text-decoration: none; box-shadow: 0 5px 12px rgba(40,85,221,.22); }
       .side-button .ui-icon { display: block; margin: 0 auto 2px; }
       .tv-badge { width: 112px; margin: 18px auto; padding: 12px 5px; border: 1px solid #d8e1f6; border-radius: 10px; background: #f4f7fd; color: #071f54; font-weight: bold; }
       .live-dot { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; background: #2cad78; vertical-align: middle; }
@@ -127,10 +127,10 @@
         <div class="sidebar">
           <a class="brand" href="/"><img src="/xp-factory-logo.png" alt="XP Factory"></a>
           <div class="side-line"></div>
-          <div class="side-button">
+          <a class="side-button" href="/" title="Voltar ao CRM">
             <svg class="ui-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
-            Painel
-          </div>
+            Voltar<br>ao CRM
+          </a>
           <div class="tv-badge"><span class="live-dot"></span>TV<br><small>5 min</small></div>
           <div class="olist">olist<b>•</b></div>
         </div>

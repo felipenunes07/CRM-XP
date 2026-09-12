@@ -12,10 +12,11 @@
     <script>
       (function () {
         var userAgent = navigator.userAgent || "";
-        var forceTvMode = /(?:^|[?&])tv=1(?:&|$)/.test(window.location.search);
         var isLgTv = /(Web0S|WebOS|webOS|NetCast|LG[ _-]?Browser|LG[ _-]?SmartTV|SmartTV)/i.test(userAgent);
-        if ((forceTvMode || isLgTv) && window.location.pathname !== "/relatorio-executivo-tv.html") {
-          window.location.replace("/relatorio-executivo-tv.html" + window.location.search);
+        // O parâmetro ?tv=1 ficava gravado em links antigos e fazia funcionários
+        // caírem no painel de TV. Só aparelhos LG reais usam esse modo agora.
+        if (isLgTv && window.location.pathname !== "/relatorio-executivo-tv.html") {
+          window.location.replace("/relatorio-executivo-tv.html");
         }
       })();
     </script>
