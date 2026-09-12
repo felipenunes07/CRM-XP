@@ -56,6 +56,8 @@ type Task = {
   checklist: ChecklistItem[];
   images: string[];
   person_id: string;
+  person_ids?: string[];
+  my_status?: "todo" | "doing" | "done" | null;
   due_date: string;
   due_time: string | null;
   deadline: number;
@@ -91,6 +93,7 @@ type Draft = {
   version?: number;
   title: string;
   person_id: string;
+  person_ids: string[];
   due_date: string;
   due_time: string;
   notes: string;
@@ -534,7 +537,10 @@ export default function TarefasPage() {
     return i === -1 ? order.length + p.position : i;
   };
   const orderedPeople = [...boardPeople].sort((a, b) => rank(a) - rank(b));
-  const tasks = (boardQuery.data?.tasks ?? []).filter((t) => !hidden.includes(t.person_id) && !orderedPeople.find((p) => p.id === t.person_id)?.hidden);
+  const taskPeople = (task: Task) => task.person_ids?.length ? task.person_ids : [task.person_id];
+  const assignedTo = (task: Task, personId: string) => taskPeople(task).includes(personId);
+  const effectiveStatus = (task: Task) => task.my_status ?? task.status;
+  const tasks = (boardQuery.data?.tasks ?? []).filter((t) => taskPeople(t).some((id) => !hidden.includes(id) && !orderedPeople.find((p) => p.id === id)?.hidden));
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
 
@@ -579,7 +585,7 @@ export default function TarefasPage() {
   const currentUserId = boardQuery.data?.current_user_id;
   const canDeleteTask = (task: Task) => manager || task.created_by_user_id === currentUserId;
   const isTaskAssignedByMe = (person: Person) =>
-    tasks.some((task) => task.person_id === person.id && task.created_by_user_id === currentUserId);
+    tasks.some((task) => assignedTo(task, person.id) && task.created_by_user_id === currentUserId);
   const groupScope = (person: Person) => {
     if (manager) return null;
     if (person.id === currentUserId) return "Minhas tarefas";
@@ -678,8 +684,8 @@ export default function TarefasPage() {
     if (manager && adminScope === "all") return tasks;
     return tasks.filter((task) =>
       listScope === "received"
-        ? task.person_id === currentUserId
-        : task.person_id !== currentUserId && task.created_by_user_id === currentUserId,
+        ? assignedTo(task, currentUserId ?? "")
+        : !assignedTo(task, currentUserId ?? "") && task.created_by_user_id === currentUserId,
     );
   }, [adminScope, currentUserId, listScope, manager, tasks]);
   const listPeople = useMemo(() => {
@@ -689,7 +695,7 @@ export default function TarefasPage() {
       (person) => person.id !== TEAM_PERSON_ID && person.id !== currentUserId,
     );
     return assignedPeopleFilter === "with_tasks"
-      ? coworkers.filter((person) => listTasks.some((task) => task.person_id === person.id))
+      ? coworkers.filter((person) => listTasks.some((task) => assignedTo(task, person.id)))
       : coworkers;
   }, [adminScope, assignedPeopleFilter, assignablePeople, currentUserId, displayPeople, listScope, listTasks, manager]);
   const pending = useMemo(() => listTasks.filter((t) => t.status !== "done"), [listTasks]);
@@ -716,8 +722,8 @@ export default function TarefasPage() {
   };
 
   const visibleFor = (person: Person) => {
-    const own = tasks.filter((t) => t.person_id === person.id);
-    const open = own.filter((t) => t.status !== "done");
+    const own = tasks.filter((t) => assignedTo(t, person.id));
+    const open = own.filter((t) => effectiveStatus(t) !== "done");
     const byFilter =
       filter === "today"
         ? open.filter((t) => t.due_date === brazilDate())
@@ -736,7 +742,7 @@ export default function TarefasPage() {
         : own
             .filter(
               (t) =>
-                t.status === "done" &&
+                effectiveStatus(t) === "done" &&
                 t.completed_at &&
                 Date.parse(t.completed_at) >= startOfToday(),
             )
@@ -746,26 +752,27 @@ export default function TarefasPage() {
   };
 
   const changeStatus = async (task: Task, status: Task["status"]) => {
-    if (status === task.status) return;
+    if (status === effectiveStatus(task)) return;
     await tarefasRequest(token!, "/board", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "status", id: task.id, version: task.version, status }),
     });
     patchTasks(current => current.map(item => item.id === task.id ? {
-      ...item, status, completed_at: status === "done" ? new Date().toISOString() : null, version: task.version + 1,
+      ...item, status, my_status: status, completed_at: status === "done" ? new Date().toISOString() : null, version: task.version + 1,
     } : item));
     void invalidate();
   };
-  const toggleStatus = (task: Task) => void changeStatus(task, task.status === "done" ? "doing" : "done");
+  const toggleStatus = (task: Task) => void changeStatus(task, effectiveStatus(task) === "done" ? "doing" : "done");
   const canChangeStatus = (task: Task) =>
     manager ||
-    (task.status !== "done" &&
-      (task.person_id === TEAM_PERSON_ID || task.person_id === boardQuery.data?.current_user_id));
+    (effectiveStatus(task) !== "done" &&
+      (task.person_id === TEAM_PERSON_ID || assignedTo(task, boardQuery.data?.current_user_id ?? "")));
 
   const openNew = (personId: string) =>
     setDraft({
       title: "",
       person_id: personId || boardQuery.data?.current_user_id || people[0]?.id || "",
+      person_ids: [personId || boardQuery.data?.current_user_id || people[0]?.id || ""].filter(Boolean),
       due_date: brazilDate(),
       due_time: "",
       notes: "",
@@ -777,6 +784,7 @@ export default function TarefasPage() {
       version: task.version,
       title: task.title,
       person_id: task.person_id,
+      person_ids: taskPeople(task),
       due_date: task.due_date,
       due_time: task.due_time ?? "",
       notes: task.notes ?? "",
@@ -802,6 +810,7 @@ export default function TarefasPage() {
         ...(draft.id ? { id: draft.id, version: draft.version } : {}),
         title: draft.title.trim(),
         person_id: draft.person_id,
+        person_ids: draft.person_ids,
         due_date: draft.due_date,
         due_time: draft.due_time,
         notes: draft.notes,
@@ -846,7 +855,7 @@ export default function TarefasPage() {
   const calendarTasks = monthTasks.filter(task =>
     (!selectedCalendarPerson || task.person_id === selectedCalendarPerson.id) &&
     matchesSearch(task, personById(task.person_id)) &&
-    (filter === "all" || (task.status !== "done" && (filter === "today" ? task.due_date === brazilDate() : isLate(task)))),
+    (filter === "all" || (effectiveStatus(task) !== "done" && (filter === "today" ? task.due_date === brazilDate() : isLate(task)))),
   );
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
@@ -1094,7 +1103,7 @@ export default function TarefasPage() {
                 <Users size={15} /><strong>Todos</strong><span className="tarefas-coverage-total">{monthTasks.length}</span>
               </button>
               {displayPeople.map((person) => {
-                const count = monthTasks.filter(task => task.person_id === person.id).length;
+                const count = monthTasks.filter(task => assignedTo(task, person.id)).length;
                 return (
                   <button type="button" key={person.id}
                     title={`${person.name} · ${count ? `${count} tarefa(s) neste mês` : "Sem tarefas neste mês"}`}
@@ -1125,14 +1134,14 @@ export default function TarefasPage() {
                     </div>
                     {dayTasks.map((task) => {
                       const person = personById(task.person_id);
-                      const late = isLate(task) && task.status !== "done";
+                      const late = isLate(task) && effectiveStatus(task) !== "done";
                       return (
-                        <button type="button" className={`tarefas-calendar-task${task.status === "done" ? " is-done" : ""}`}
+                        <button type="button" className={`tarefas-calendar-task${effectiveStatus(task) === "done" ? " is-done" : ""}`}
                           key={task.id} style={{ borderLeftColor: personColor(person) }}
                           title={`${task.title} · ${person.name} · Atribuída por ${task.created_by_name}`}
                           onClick={() => openDetails(task)}>
                           <span className="tarefas-calendar-task-top">
-                            <span className={late ? "is-late" : ""}>{task.status === "done" ? <><Check size={11} /> Concluída</> : late ? <><Clock3 size={11} /> Atrasada</> : task.due_time || "Sem horário"}</span>
+                            <span className={late ? "is-late" : ""}>{effectiveStatus(task) === "done" ? <><Check size={11} /> Concluída</> : late ? <><Clock3 size={11} /> Atrasada</> : task.due_time || "Sem horário"}</span>
                             {(task.priority === "high" || task.priority === "urgent") && <Flag size={12} fill="currentColor" className={`tarefas-priority is-${task.priority}`} aria-label={`Prioridade ${PRIORITY_LABEL[task.priority]}`} />}
                           </span>
                           <strong>{task.title}</strong>
@@ -1152,7 +1161,7 @@ export default function TarefasPage() {
             .map((person) => {
               const cards = visibleFor(person);
               const open = tasks.filter(
-                (t) => t.person_id === person.id && t.status !== "done",
+                (t) => assignedTo(t, person.id) && effectiveStatus(t) !== "done",
               );
               return (
                 <article
@@ -1201,16 +1210,16 @@ export default function TarefasPage() {
                     ) : (
                       cards.map((task) => (
                         <div
-                          className={`tarefas-card${task.status === "done" ? " is-finished" : ""}`}
+                          className={`tarefas-card${effectiveStatus(task) === "done" ? " is-finished" : ""}`}
                           key={task.id}
                         >
                           <div className="tarefas-card-top">
                             <button
                               type="button"
-                              className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
+                              className={`tarefas-check${effectiveStatus(task) === "done" ? " is-done" : ""}`}
                               disabled={!canChangeStatus(task)}
                               aria-label={
-                                task.status === "done"
+                                effectiveStatus(task) === "done"
                                   ? "Reabrir tarefa"
                                   : "Marcar como concluída"
                               }
@@ -1218,7 +1227,7 @@ export default function TarefasPage() {
                             >
                               <Check size={12} strokeWidth={3} />
                             </button>
-                            <TaskStatusPicker taskTitle={task.title} value={task.status} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
+                            <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           </div>
                           <div className="tarefas-titlewrap">
                             {manager ? (
@@ -1294,7 +1303,7 @@ export default function TarefasPage() {
           {listPeople
             .map((person) => {
               const open = tasks.filter(
-                (t) => t.person_id === person.id && t.status !== "done",
+                (t) => assignedTo(t, person.id) && effectiveStatus(t) !== "done",
               );
               const lateCount = open.filter(isLate).length;
               const visible = visibleFor(person);
@@ -1349,7 +1358,7 @@ export default function TarefasPage() {
                     <>
                       {visible.map((task) => (
                         <div
-                          className={`tarefas-row is-openable${task.status === "done" ? " is-finished" : ""}`}
+                          className={`tarefas-row is-openable${effectiveStatus(task) === "done" ? " is-finished" : ""}`}
                           key={task.id}
                           role="button"
                           tabIndex={0}
@@ -1364,15 +1373,15 @@ export default function TarefasPage() {
                           <span className="tarefas-person">
                             <button
                               type="button"
-                              className={`tarefas-check${task.status === "done" ? " is-done" : ""}`}
+                              className={`tarefas-check${effectiveStatus(task) === "done" ? " is-done" : ""}`}
                               disabled={!canChangeStatus(task)}
                               aria-label={
-                                task.status === "done"
+                                effectiveStatus(task) === "done"
                                   ? "Reabrir tarefa"
                                   : "Marcar como concluída"
                               }
                               title={
-                                task.status === "done"
+                                effectiveStatus(task) === "done"
                                   ? "Clique para reabrir"
                                   : "Marcar como concluída"
                               }
@@ -1410,7 +1419,7 @@ export default function TarefasPage() {
                           </span>
                           <TaskPriorityPicker value={task.priority ?? "normal"} label={`Prioridade de ${task.title}`}
                             onChange={manager ? priority => changePriority(task, priority) : undefined} />
-                          <TaskStatusPicker taskTitle={task.title} value={task.status} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
+                          <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                             {shortDate(task)}
@@ -1480,7 +1489,7 @@ export default function TarefasPage() {
               {orderedPeople.map((person, index) => {
                 const off = hidden.includes(person.id);
                 const pending = tasks.filter(
-                  (t) => t.person_id === person.id && t.status !== "done",
+                  (t) => assignedTo(t, person.id) && effectiveStatus(t) !== "done",
                 ).length;
                 return (
                   <li key={person.id} className={off ? "is-off" : undefined}>
@@ -1561,8 +1570,8 @@ export default function TarefasPage() {
         <TaskDetailsDialog
           key={detailsDraft.task.id}
           task={detailsDraft.task}
-          canWrite={manager || detailsDraft.task.person_id === boardQuery.data?.current_user_id}
-          assignee={<span className="tarefas-assignee"><Avatar person={personById(detailsDraft.task.person_id)} /><span>{personById(detailsDraft.task.person_id).name}</span></span>}
+          canWrite={manager || assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "")}
+          assignee={<span className="tarefas-assignee">{taskPeople(detailsDraft.task).map((id) => <Avatar key={id} person={personById(id)} />)}<span>{taskPeople(detailsDraft.task).map(personName).join(", ")}</span></span>}
           creator={<span className="tarefas-assignee"><Avatar person={creatorFor(detailsDraft.task)} /><span>{detailsDraft.task.created_by_name}</span></span>}
           onSave={async (content, version) => {
             await tarefasRequest(token!, "/board", {
@@ -1585,7 +1594,7 @@ export default function TarefasPage() {
             await mutation.mutateAsync({ action: "delete", id: detailsDraft.task.id, version: detailsDraft.task.version });
             setDetailsDraft(null);
           } : undefined}
-          onReturn={detailsDraft.task.person_id === boardQuery.data?.current_user_id && detailsDraft.task.created_by_user_id !== boardQuery.data?.current_user_id ? async () => {
+          onReturn={assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "") && detailsDraft.task.created_by_user_id !== boardQuery.data?.current_user_id ? async () => {
             await mutation.mutateAsync({ action: "return", id: detailsDraft.task.id, version: detailsDraft.task.version });
             setDetailsDraft(null);
           } : undefined}
@@ -1617,11 +1626,16 @@ export default function TarefasPage() {
             </label>
 
             <label>
-              <span className="tarefas-field-label"><Users size={16} /> Responsável</span>
+              <span className="tarefas-field-label"><Users size={16} /> Responsáveis</span>
               <select
+                multiple
+                size={Math.min(6, Math.max(3, assignablePeople.length))}
                 disabled={mutation.isPending}
-                value={draft.person_id}
-                onChange={(event) => setDraft({ ...draft, person_id: event.target.value })}
+                value={draft.person_ids}
+                onChange={(event) => {
+                  const person_ids = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
+                  setDraft({ ...draft, person_ids, person_id: person_ids[0] ?? "" });
+                }}
               >
                 {assignablePeople.map((person) => (
                   <option key={person.id} value={person.id}>
@@ -1629,7 +1643,7 @@ export default function TarefasPage() {
                   </option>
                 ))}
               </select>
-              <small className="tarefas-field-help">Você pode atribuir esta tarefa para qualquer pessoa ativa.</small>
+              <small className="tarefas-field-help">Segure Ctrl para escolher mais de uma pessoa. Cada responsável conclui a própria parte.</small>
             </label>
 
             <div className="tarefas-modal-cols">

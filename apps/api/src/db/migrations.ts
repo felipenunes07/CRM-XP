@@ -4678,5 +4678,25 @@ export const migrations = [
   ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_images_array_check;
   ALTER TABLE tasks ADD CONSTRAINT tasks_images_array_check
     CHECK (jsonb_typeof(images) = 'array' AND jsonb_array_length(images) <= 5);
+  `,
+  `
+  -- Uma tarefa pode ter vários responsáveis, cada um com seu próprio andamento.
+  CREATE TABLE IF NOT EXISTS task_assignees (
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'todo' CHECK (status IN ('todo', 'doing', 'done')),
+    completed_at TIMESTAMPTZ,
+    reminded_on DATE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (task_id, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS task_assignees_user_status_idx ON task_assignees (user_id, status);
+  CREATE INDEX IF NOT EXISTS task_assignees_reminder_idx ON task_assignees (reminded_on);
+  INSERT INTO task_assignees (task_id, user_id, status, completed_at)
+  SELECT id, assignee_user_id, status, completed_at
+  FROM tasks
+  WHERE audience = 'user' AND assignee_user_id IS NOT NULL
+  ON CONFLICT (task_id, user_id) DO NOTHING;
   `
 ];

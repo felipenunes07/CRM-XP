@@ -17,6 +17,7 @@ export interface TaskMutationInput {
   title?: string;
   notes?: string;
   person_id?: string;
+  person_ids?: string[];
   due_date?: string;
   due_time?: string | null;
   status?: TaskStatus;
@@ -69,6 +70,8 @@ interface TaskRow {
   images: string[];
   audience: "user" | "team";
   assignee_user_id: string | null;
+  assignee_ids?: string[];
+  my_assignee_status?: TaskStatus | null;
   due_date: string;
   due_time: string | null;
   status: TaskStatus;
@@ -150,6 +153,12 @@ function toBoardTask(row: TaskRow) {
     checklist: Array.isArray(row.checklist) ? row.checklist : [],
     images: Array.isArray(row.images) ? row.images : [],
     person_id: row.audience === "team" ? TEAM_PERSON_ID : row.assignee_user_id,
+    // person_id continua como o primeiro responsável para compatibilidade com
+    // clientes antigos. A lista é a fonte de verdade para tarefas em conjunto.
+    person_ids: row.audience === "team"
+      ? [TEAM_PERSON_ID]
+      : (row.assignee_ids?.length ? row.assignee_ids : (row.assignee_user_id ? [row.assignee_user_id] : [])),
+    my_status: row.my_assignee_status ?? null,
     due_date: row.due_date,
     due_time: dueTime,
     deadline,
@@ -192,6 +201,22 @@ async function assignment(client: PoolClient, personId: unknown) {
   return { audience: "user" as const, assigneeUserId: id };
 }
 
+async function assignments(client: PoolClient, personIds: unknown, fallbackPersonId: unknown) {
+  const supplied = Array.isArray(personIds) ? personIds : [fallbackPersonId];
+  const ids = [...new Set(supplied.map((id) => cleanText(id, "Responsavel", 80)))];
+  if (ids.length === 0 || ids.length > 20) throw new HttpError(400, "Escolha entre 1 e 20 responsaveis");
+  if (ids.includes(TEAM_PERSON_ID)) {
+    if (ids.length !== 1) throw new HttpError(400, "O Time nao pode ser combinado com responsaveis individuais");
+    return { audience: "team" as const, assigneeUserIds: [] as string[] };
+  }
+  const result = await client.query<{ id: string }>(
+    "SELECT id FROM profiles WHERE id = ANY($1::uuid[]) AND is_active = true",
+    [ids],
+  );
+  if (result.rows.length !== ids.length) throw new HttpError(400, "Escolha apenas usuarios ativos");
+  return { audience: "user" as const, assigneeUserIds: ids };
+}
+
 export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all") {
   const admin = isAdmin(user);
   const showAll = admin && scope === "all";
@@ -204,6 +229,9 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
     ),
     pool.query<TaskRow>(
       `SELECT t.id, t.title, t.notes, t.checklist, t.images, t.audience, t.assignee_user_id,
+              COALESCE((SELECT array_agg(ta.user_id::text ORDER BY ta.created_at)
+                        FROM task_assignees ta WHERE ta.task_id = t.id), ARRAY[]::text[]) AS assignee_ids,
+              (SELECT ta.status FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $2::uuid) AS my_assignee_status,
               t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
               creator.profile_avatar_url AS created_by_photo,
@@ -217,6 +245,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
            $1::boolean
            OR t.audience = 'team'
            OR t.assignee_user_id = $2::uuid
+           OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $2::uuid)
            OR t.created_by_user_id = $2::uuid
          )
        ORDER BY t.due_date ASC, t.due_time ASC NULLS LAST, t.created_at ASC`,
@@ -293,7 +322,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       const dueDate = cleanDueDate(input.due_date);
       const dueTime = cleanDueTime(input.due_time);
       const priority = cleanPriority(input.priority);
-      const assigned = await assignment(client, input.person_id);
+      const assigned = await assignments(client, input.person_ids, input.person_id);
       const result = await client.query<TaskRow>(
         `INSERT INTO tasks (
            title, notes, checklist, audience, assignee_user_id, due_date, due_time, priority, created_by_user_id
@@ -301,13 +330,21 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
          RETURNING id, title, notes, checklist, audience, assignee_user_id,
                    due_date::text, due_time::text, status, priority, created_by_user_id,
                    created_at::text, updated_at::text, completed_at::text, version`,
-        [title, notes, JSON.stringify(checklist), assigned.audience, assigned.assigneeUserId, dueDate, dueTime, priority, user.id],
+        [title, notes, JSON.stringify(checklist), assigned.audience, assigned.assigneeUserIds[0] ?? null, dueDate, dueTime, priority, user.id],
       );
       const task = result.rows[0];
       if (!task) throw new HttpError(500, "Nao foi possivel criar a tarefa");
+      if (assigned.audience === "user") {
+        await client.query(
+          `INSERT INTO task_assignees (task_id, user_id)
+           SELECT $1::uuid, unnest($2::uuid[])
+           ON CONFLICT (task_id, user_id) DO NOTHING`,
+          [task.id, assigned.assigneeUserIds],
+        );
+      }
       await addAudit(client, user, task, "created", {
         audience: assigned.audience,
-        assignee_user_id: assigned.assigneeUserId,
+        assignee_user_ids: assigned.assigneeUserIds,
         due_date: dueDate,
         due_time: dueTime,
         priority,
@@ -340,7 +377,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
     }
 
     if (input.action === "details") {
-      const ownsPrivateTask = current.audience === "user" && current.assignee_user_id === user.id;
+      const ownsPrivateTask = current.audience === "user" && (current.assignee_user_id === user.id || Boolean((await client.query("SELECT 1 FROM task_assignees WHERE task_id = $1 AND user_id = $2", [id, user.id])).rows[0]));
       if (!isAdmin(user) && !ownsPrivateTask) throw new HttpError(404, "Tarefa nao encontrada");
       const notes = cleanText(input.notes ?? "", "Observacao", 10000, false);
       const checklist = cleanChecklist(input.checklist ?? []);
@@ -454,15 +491,37 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       if (!status || !["todo", "doing", "done"].includes(status)) {
         throw new HttpError(400, "Situacao invalida");
       }
-      const ownsTask = current.audience === "team" || current.assignee_user_id === user.id;
+      const assignmentResult = current.audience === "user"
+        ? await client.query<{ status: TaskStatus }>("SELECT status FROM task_assignees WHERE task_id = $1 AND user_id = $2 FOR UPDATE", [id, user.id])
+        : { rows: [] as { status: TaskStatus }[] };
+      const ownAssignment = assignmentResult.rows[0];
+      const ownsTask = current.audience === "team" || current.assignee_user_id === user.id || Boolean(ownAssignment);
       if (!isAdmin(user) && !ownsTask) throw new HttpError(404, "Tarefa nao encontrada");
+      const currentStatus = ownAssignment?.status ?? current.status;
       const forwardChange =
-        (current.status === "todo" && (status === "doing" || status === "done")) ||
-        (current.status === "doing" && status === "done");
+        (currentStatus === "todo" && (status === "doing" || status === "done")) ||
+        (currentStatus === "doing" && status === "done");
       if (!isAdmin(user) && !forwardChange) {
         throw new HttpError(403, "Somente administradores podem reabrir ou voltar uma tarefa");
       }
-      await client.query(
+      if (ownAssignment && !isAdmin(user)) {
+        await client.query(
+          `UPDATE task_assignees SET status = $1,
+             completed_at = CASE WHEN $1 = 'done' THEN COALESCE(completed_at, NOW()) ELSE NULL END,
+             updated_at = NOW() WHERE task_id = $2 AND user_id = $3`,
+          [status, id, user.id],
+        );
+        const progress = await client.query<{ all_done: boolean; has_doing: boolean }>(
+          `SELECT bool_and(status = 'done') AS all_done, bool_or(status = 'doing') AS has_doing
+           FROM task_assignees WHERE task_id = $1`, [id],
+        );
+        const allDone = Boolean(progress.rows[0]?.all_done);
+        const overall = allDone ? "done" : progress.rows[0]?.has_doing ? "doing" : "todo";
+        await client.query(
+          `UPDATE tasks SET status = $1, completed_at = CASE WHEN $1 = 'done' THEN COALESCE(completed_at, NOW()) ELSE NULL END,
+           updated_at = NOW(), version = version + 1 WHERE id = $2`, [overall, id],
+        );
+      } else await client.query(
         `UPDATE tasks
          SET status = $1,
              completed_at = CASE WHEN $1 = 'done' THEN COALESCE(completed_at, NOW()) ELSE NULL END,
@@ -474,12 +533,15 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         client,
         user,
         current,
-        status === "done" ? "completed" : current.status === "done" ? "reopened" : "status_changed",
-        { from: current.status, to: status },
+        status === "done" ? "completed" : currentStatus === "done" ? "reopened" : "status_changed",
+        { from: currentStatus, to: status, individual: Boolean(ownAssignment && !isAdmin(user)) },
       );
     } else if (input.action === "return") {
-      if (!isAdmin(user) && current.assignee_user_id !== user.id) throw new HttpError(403, "Somente o responsável pode devolver a tarefa");
-      if (current.audience !== "user" || !current.created_by_user_id || current.created_by_user_id === current.assignee_user_id) throw new HttpError(400, "Esta tarefa não pode ser devolvida");
+      const isAssigned = Boolean((await client.query("SELECT 1 FROM task_assignees WHERE task_id = $1 AND user_id = $2", [id, user.id])).rows[0]);
+      if (!isAdmin(user) && current.assignee_user_id !== user.id && !isAssigned) throw new HttpError(403, "Somente o responsável pode devolver a tarefa");
+      if (current.audience !== "user" || !current.created_by_user_id || current.created_by_user_id === user.id) throw new HttpError(400, "Esta tarefa não pode ser devolvida");
+      await client.query("DELETE FROM task_assignees WHERE task_id = $1 AND user_id = $2", [id, user.id]);
+      await client.query("INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2) ON CONFLICT (task_id, user_id) DO UPDATE SET status = 'todo', completed_at = NULL, updated_at = NOW()", [id, current.created_by_user_id]);
       await client.query("UPDATE tasks SET assignee_user_id = $1, status = 'todo', completed_at = NULL, updated_at = NOW(), version = version + 1 WHERE id = $2", [current.created_by_user_id, id]);
       await addAudit(client, user, current, "returned", { returned_to: current.created_by_user_id });
     } else if (input.action === "delete") {
@@ -493,12 +555,17 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       await addAudit(client, user, current, "deleted", {});
     } else if (input.action === "edit" || input.action === "move") {
       if (!isAdmin(user)) throw new HttpError(403, "Somente administradores podem editar tarefas");
-      const assigned = await assignment(client, input.person_id);
+      const assigned = await assignments(client, input.person_ids, input.person_id);
       if (input.action === "move") {
         await client.query(
           `UPDATE tasks SET audience = $1, assignee_user_id = $2,
                   updated_at = NOW(), version = version + 1 WHERE id = $3`,
-          [assigned.audience, assigned.assigneeUserId, id],
+          [assigned.audience, assigned.assigneeUserIds[0] ?? null, id],
+        );
+        await client.query("DELETE FROM task_assignees WHERE task_id = $1", [id]);
+        if (assigned.audience === "user") await client.query(
+          "INSERT INTO task_assignees (task_id, user_id) SELECT $1::uuid, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
+          [id, assigned.assigneeUserIds],
         );
         await addAudit(client, user, current, "assigned", {
           from: current.audience === "team" ? TEAM_PERSON_ID : current.assignee_user_id,
@@ -514,7 +581,12 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
           `UPDATE tasks SET title = $1, notes = $2, audience = $3,
                   assignee_user_id = $4, due_date = $5, due_time = $6, priority = $7,
                   updated_at = NOW(), version = version + 1 WHERE id = $8`,
-          [title, notes, assigned.audience, assigned.assigneeUserId, dueDate, dueTime, priority, id],
+          [title, notes, assigned.audience, assigned.assigneeUserIds[0] ?? null, dueDate, dueTime, priority, id],
+        );
+        await client.query("DELETE FROM task_assignees WHERE task_id = $1", [id]);
+        if (assigned.audience === "user") await client.query(
+          "INSERT INTO task_assignees (task_id, user_id) SELECT $1::uuid, unnest($2::uuid[]) ON CONFLICT DO NOTHING",
+          [id, assigned.assigneeUserIds],
         );
         await addAudit(client, user, { id, title }, "updated", {
           previous: {
@@ -528,7 +600,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
           current: {
             title,
             audience: assigned.audience,
-            assignee_user_id: assigned.assigneeUserId,
+            assignee_user_ids: assigned.assigneeUserIds,
             due_date: dueDate,
             due_time: dueTime,
             priority,
