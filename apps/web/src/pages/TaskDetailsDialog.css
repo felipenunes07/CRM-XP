@@ -16,6 +16,7 @@
 .task-detail-properties strong { font-size: 12px; font-weight: 500; }
 .task-detail-status { border-radius: 5px; background: #eef1f5; color: #64748b; padding: 5px 9px; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .task-detail-status.is-doing { background: #eaf2ff; color: #306ddd; }
+.task-detail-status.is-review { background: #fff5df; color: #b7791f; }
 .task-detail-status.is-done { background: #e6f6ed; color: #1c8b5c; }
 .task-detail-edit { width: fit-content; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #5e6e95; font-size: 11px; cursor: pointer; padding: 4px 0; }
 .task-detail-edit:hover { color: #2956d7; }

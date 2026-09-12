@@ -10,3 +10,4 @@
 .task-status-menu-label { padding: 7px 8px 9px; color: #78869a; font-size: 12px; }
 .task-status-menu button { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; border-radius: 6px; padding: 9px; background: transparent; cursor: pointer; color: inherit; font: inherit; font-size: 13px; text-align: left; }
 .task-status-menu button span { flex: 1; }.task-status-menu button:hover, .task-status-menu button[aria-checked=true] { background: #f2f6fc; }.task-status-menu button.is-todo { color: #64748b; }.task-status-menu button.is-doing { color: #306ddd; }.task-status-menu button.is-done { color: #1c8b5c; }.task-status-menu p { margin: 5px 8px; color: #c24141; font-size: 11px; }
+.task-status-menu button.is-review { color: #b7791f; }

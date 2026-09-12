@@ -309,7 +309,7 @@ function TaskCreator({ task }: { task: Task }) {
 }
 
 function TaskReturnTrail({ task }: { task: Task }) {
-  if (!task.return_history.length) return null;
+  if (!task.return_history?.length) return null;
   return (
     <span className="tarefas-return-trail" title={`${task.return_history.length} devolução(ões) da tarefa`}>
       {task.return_history.map((item, index) => (
@@ -429,6 +429,10 @@ function NotifyTaskButton({
 
 export default function TarefasPage() {
   const { token, user } = useAuth();
+  const [cardColors, setCardColors] = useState(() => {
+    try { return localStorage.getItem(`tarefas:cores-cards:${user?.id ?? "anon"}`) === "1"; } catch { return false; }
+  });
+  const [colorPreferenceUser, setColorPreferenceUser] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico">("tarefas");
   const [listScope, setListScope] = useState<"received" | "created">("received");
@@ -457,6 +461,15 @@ export default function TarefasPage() {
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
+  useEffect(() => {
+    if (!user?.id || colorPreferenceUser === user.id) return;
+    try { setCardColors(localStorage.getItem(`tarefas:cores-cards:${user.id}`) === "1"); } catch { setCardColors(false); }
+    setColorPreferenceUser(user.id);
+  }, [colorPreferenceUser, user?.id]);
+  useEffect(() => {
+    if (!user?.id || colorPreferenceUser !== user.id) return;
+    try { localStorage.setItem(`tarefas:cores-cards:${user.id}`, cardColors ? "1" : "0"); } catch { /* preferência apenas nesta sessão */ }
+  }, [cardColors, colorPreferenceUser, user?.id]);
 
   async function uploadTeamAvatar(file: File | undefined) {
     if (!file || !token) return;
@@ -558,6 +571,8 @@ export default function TarefasPage() {
   const taskPeople = (task: Task) => task.person_ids?.length ? task.person_ids : [task.person_id];
   const assignedTo = (task: Task, personId: string) => taskPeople(task).includes(personId);
   const effectiveStatus = (task: Task) => task.my_status ?? task.status;
+  const taskColorClass = (task: Task) =>
+    isLate(task) ? "is-late-card" : task.return_history?.length ? "is-returned-card" : `is-${effectiveStatus(task)}-card`;
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => taskPeople(t).some((id) => !hidden.includes(id) && !orderedPeople.find((p) => p.id === id)?.hidden));
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
@@ -898,7 +913,7 @@ export default function TarefasPage() {
   }
 
   return (
-    <section className="tarefas-page">
+    <section className={`tarefas-page${cardColors ? " has-card-colors" : ""}`}>
       <div className="tarefas-page-heading">
         <div className="tarefas-page-mark"><ListTodo size={24} /></div>
         <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : listScope === "received" ? "Minhas tarefas" : "Tarefas atribuídas por mim"}</h1></div>
@@ -997,6 +1012,9 @@ export default function TarefasPage() {
         </label>
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
+        </button>
+        <button type="button" className="tarefas-refresh" data-on={cardColors ? "" : undefined} onClick={() => setCardColors(value => !value)} title="Ativar ou desativar cores de etapa nos cards">
+          {cardColors ? <Eye size={14} /> : <EyeOff size={14} />} Cores dos cards
         </button>
         <a className="tarefas-refresh tarefas-fullscreen-link" href="/tarefas/tela" target="_blank" rel="noreferrer">
           <ExternalLink size={14} /> Abrir tela
@@ -1233,7 +1251,7 @@ export default function TarefasPage() {
                     ) : (
                       cards.map((task) => (
                         <div
-                          className={`tarefas-card${effectiveStatus(task) === "done" ? " is-finished" : ""}`}
+                          className={`tarefas-card${effectiveStatus(task) === "done" ? " is-finished" : ""} ${taskColorClass(task)}`}
                           key={task.id}
                         >
                           <div className="tarefas-card-top">
@@ -1382,7 +1400,7 @@ export default function TarefasPage() {
                     <>
                       {visible.map((task) => (
                         <div
-                          className={`tarefas-row is-openable${effectiveStatus(task) === "done" ? " is-finished" : ""}`}
+                          className={`tarefas-row is-openable${effectiveStatus(task) === "done" ? " is-finished" : ""} ${taskColorClass(task)}`}
                           key={task.id}
                           role="button"
                           tabIndex={0}

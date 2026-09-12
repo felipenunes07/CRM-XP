@@ -230,6 +230,18 @@
 }
 .tarefas-row.is-openable { cursor: pointer; }
 .tarefas-row.is-openable:focus-visible { outline: 2px solid #7499f1; outline-offset: -2px; }
+.tarefas-page.has-card-colors .tarefas-row.is-todo-card,
+.tarefas-page.has-card-colors .tarefas-card.is-todo-card { background: #eff6ff; border-color: #bfdbfe; box-shadow: inset 3px 0 #3b82f6; }
+.tarefas-page.has-card-colors .tarefas-row.is-doing-card,
+.tarefas-page.has-card-colors .tarefas-card.is-doing-card { background: #f5f3ff; border-color: #ddd6fe; box-shadow: inset 3px 0 #8b5cf6; }
+.tarefas-page.has-card-colors .tarefas-row.is-review-card,
+.tarefas-page.has-card-colors .tarefas-card.is-review-card { background: #fff8e7; border-color: #f9d78b; box-shadow: inset 3px 0 #d99a13; }
+.tarefas-page.has-card-colors .tarefas-row.is-done-card,
+.tarefas-page.has-card-colors .tarefas-card.is-done-card { background: #effbf5; border-color: #b9e7cf; box-shadow: inset 3px 0 #24a26a; }
+.tarefas-page.has-card-colors .tarefas-row.is-returned-card,
+.tarefas-page.has-card-colors .tarefas-card.is-returned-card { background: #fff4e8; border-color: #f6c888; box-shadow: inset 3px 0 #e37b13; }
+.tarefas-page.has-card-colors .tarefas-row.is-late-card,
+.tarefas-page.has-card-colors .tarefas-card.is-late-card { background: #fff0f0; border-color: #f0b6b6; box-shadow: inset 3px 0 #dc2626; }
 .tarefas-card-foot {
   display: flex;
   align-items: center;
