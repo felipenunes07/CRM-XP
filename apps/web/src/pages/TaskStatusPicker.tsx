@@ -2,16 +2,17 @@ import { useRef, useState } from "react";
 import { Check, ChevronDown, Circle, CircleCheck, Loader2, PlayCircle } from "lucide-react";
 import "./TaskStatusPicker.css";
 
-export type TaskStatus = "todo" | "doing" | "done";
+export type TaskStatus = "todo" | "doing" | "review" | "done";
 const options: { value: TaskStatus; label: string; Icon: typeof Circle }[] = [
   { value: "todo", label: "A fazer", Icon: Circle },
   { value: "doing", label: "Em andamento", Icon: PlayCircle },
+  { value: "review", label: "Em revisão", Icon: CircleCheck },
   { value: "done", label: "Concluída", Icon: CircleCheck },
 ];
 const defaultOption = { value: "todo" as const, label: "A fazer", Icon: Circle };
 const optionFor = (status: TaskStatus) => options.find(option => option.value === status) ?? defaultOption;
 
-export function TaskStatusPicker({ taskTitle, value, onChange }: { taskTitle: string; value: TaskStatus; onChange?: (status: TaskStatus) => Promise<void> | void }) {
+export function TaskStatusPicker({ taskTitle, value, onChange, allowedStatuses }: { taskTitle: string; value: TaskStatus; onChange?: (status: TaskStatus) => Promise<void> | void; allowedStatuses?: TaskStatus[] }) {
   const popup = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -44,7 +45,7 @@ export function TaskStatusPicker({ taskTitle, value, onChange }: { taskTitle: st
     <div ref={popup} popover="auto" className="task-status-menu" onToggle={event => setOpen(event.newState === "open")}>
       <div className="task-status-menu-label">Status</div>
       <div role="menu" aria-label="Escolher status">
-        {options.map(option => <button key={option.value} type="button" role="menuitemradio" aria-checked={option.value === value}
+        {options.filter(option => !allowedStatuses || option.value === value || allowedStatuses.includes(option.value)).map(option => <button key={option.value} type="button" role="menuitemradio" aria-checked={option.value === value}
           className={`is-${option.value}`} onClick={() => void choose(option.value)} disabled={pending}>
           <option.Icon size={16} /><span>{option.label}</span>{option.value === value && <Check size={15} />}
         </button>)}

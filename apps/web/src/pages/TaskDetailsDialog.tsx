@@ -128,7 +128,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
 
   const done = content.checklist.filter(item => item.done).length;
   const progress = content.checklist.length ? done / content.checklist.length * 100 : 0;
-  const status = task.status === "done" ? "Concluída" : task.status === "doing" ? "Em andamento" : "A fazer";
+  const status = task.status === "done" ? "Finalizada" : task.status === "review" ? "Em revisão" : task.status === "doing" ? "Em andamento" : "A fazer";
 
   return (
     <dialog ref={dialog} className="task-detail" aria-labelledby="task-detail-title"

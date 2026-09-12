@@ -4,9 +4,10 @@ import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { sendWhatsappInstanceTextMessage } from "../whatsapp/evolutionService.js";
 import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
+import { sendTaskReviewNotification } from "./taskReminderService.js";
 
 export const TEAM_PERSON_ID = "team";
-export type TaskStatus = "todo" | "doing" | "done";
+export type TaskStatus = "todo" | "doing" | "review" | "done";
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 
@@ -488,20 +489,22 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
 
     if (input.action === "status") {
       const status = input.status;
-      if (!status || !["todo", "doing", "done"].includes(status)) {
+      if (!status || !["todo", "doing", "review", "done"].includes(status)) {
         throw new HttpError(400, "Situacao invalida");
       }
       const assignmentResult = current.audience === "user"
         ? await client.query<{ status: TaskStatus }>("SELECT status FROM task_assignees WHERE task_id = $1 AND user_id = $2 FOR UPDATE", [id, user.id])
         : { rows: [] as { status: TaskStatus }[] };
       const ownAssignment = assignmentResult.rows[0];
-      const ownsTask = current.audience === "team" || current.assignee_user_id === user.id || Boolean(ownAssignment);
+      const isCreatorReview = current.status === "review" && current.created_by_user_id === user.id;
+      const ownsTask = current.audience === "team" || current.assignee_user_id === user.id || Boolean(ownAssignment) || isCreatorReview;
       if (!isAdmin(user) && !ownsTask) throw new HttpError(404, "Tarefa nao encontrada");
+      if (!isAdmin(user) && isCreatorReview && status !== "done") throw new HttpError(403, "Quem criou a tarefa deve finaliza-la ou devolve-la");
       const currentStatus = ownAssignment?.status ?? current.status;
       const forwardChange =
         (currentStatus === "todo" && (status === "doing" || status === "done")) ||
         (currentStatus === "doing" && status === "done");
-      if (!isAdmin(user) && !forwardChange) {
+      if (!isAdmin(user) && !isCreatorReview && !forwardChange) {
         throw new HttpError(403, "Somente administradores podem reabrir ou voltar uma tarefa");
       }
       if (ownAssignment && !isAdmin(user)) {
@@ -516,11 +519,18 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
            FROM task_assignees WHERE task_id = $1`, [id],
         );
         const allDone = Boolean(progress.rows[0]?.all_done);
-        const overall = allDone ? "done" : progress.rows[0]?.has_doing ? "doing" : "todo";
+        const overall = allDone ? "review" : progress.rows[0]?.has_doing ? "doing" : "todo";
         await client.query(
           `UPDATE tasks SET status = $1, completed_at = CASE WHEN $1 = 'done' THEN COALESCE(completed_at, NOW()) ELSE NULL END,
-           updated_at = NOW(), version = version + 1 WHERE id = $2`, [overall, id],
+          updated_at = NOW(), version = version + 1 WHERE id = $2`, [overall, id],
         );
+        if (allDone) {
+          const creator = await client.query<{ full_name: string; whatsapp_phone: string | null }>(
+            "SELECT full_name, whatsapp_phone FROM profiles WHERE id = $1", [current.created_by_user_id],
+          );
+          const person = creator.rows[0];
+          if (person) void sendTaskReviewNotification({ creatorName: person.full_name, creatorPhone: person.whatsapp_phone, taskTitle: current.title, taskId: id });
+        }
       } else await client.query(
         `UPDATE tasks
          SET status = $1,
@@ -533,7 +543,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         client,
         user,
         current,
-        status === "done" ? "completed" : currentStatus === "done" ? "reopened" : "status_changed",
+        status === "done" && !(ownAssignment && !isAdmin(user)) ? "completed" : currentStatus === "done" ? "reopened" : "status_changed",
         { from: currentStatus, to: status, individual: Boolean(ownAssignment && !isAdmin(user)) },
       );
     } else if (input.action === "return") {

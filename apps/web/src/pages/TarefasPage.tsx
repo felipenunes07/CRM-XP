@@ -57,11 +57,11 @@ type Task = {
   images: string[];
   person_id: string;
   person_ids?: string[];
-  my_status?: "todo" | "doing" | "done" | null;
+  my_status?: "todo" | "doing" | "review" | "done" | null;
   due_date: string;
   due_time: string | null;
   deadline: number;
-  status: "todo" | "doing" | "done";
+  status: "todo" | "doing" | "review" | "done";
   priority: "low" | "normal" | "high" | "urgent";
   created_at: string;
   created_by_user_id: string;
@@ -184,7 +184,7 @@ function brazilDate(d = new Date()) {
   }).format(d);
 }
 function isLate(t: Task) {
-  return t.status !== "done" && t.deadline < Date.now();
+  return t.status !== "done" && t.status !== "review" && t.deadline < Date.now();
 }
 // Mesma conta que o servidor faz: sem horário, vale até o fim do dia (Brasília).
 function deadlineOf(date: string, time: string) {
@@ -765,8 +765,13 @@ export default function TarefasPage() {
   const toggleStatus = (task: Task) => void changeStatus(task, effectiveStatus(task) === "done" ? "doing" : "done");
   const canChangeStatus = (task: Task) =>
     manager ||
+    (task.status === "review" && task.created_by_user_id === boardQuery.data?.current_user_id) ||
     (effectiveStatus(task) !== "done" &&
       (task.person_id === TEAM_PERSON_ID || assignedTo(task, boardQuery.data?.current_user_id ?? "")));
+  const allowedStatuses = (task: Task): Task["status"][] | undefined => {
+    if (manager) return undefined;
+    return task.status === "review" ? ["done"] : ["todo", "doing", "done"];
+  };
 
   const openNew = (personId: string) =>
     setDraft({
@@ -1227,7 +1232,7 @@ export default function TarefasPage() {
                             >
                               <Check size={12} strokeWidth={3} />
                             </button>
-                            <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
+                            <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} allowedStatuses={allowedStatuses(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           </div>
                           <div className="tarefas-titlewrap">
                             {manager ? (
@@ -1419,7 +1424,7 @@ export default function TarefasPage() {
                           </span>
                           <TaskPriorityPicker value={task.priority ?? "normal"} label={`Prioridade de ${task.title}`}
                             onChange={manager ? priority => changePriority(task, priority) : undefined} />
-                          <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
+                          <TaskStatusPicker taskTitle={task.title} value={effectiveStatus(task)} allowedStatuses={allowedStatuses(task)} onChange={canChangeStatus(task) ? status => changeStatus(task, status) : undefined} />
                           <span className={`tarefas-due${isLate(task) ? " is-late" : ""}`}>
                             {isLate(task) ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                             {shortDate(task)}

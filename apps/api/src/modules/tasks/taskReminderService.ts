@@ -33,6 +33,27 @@ async function sendWithLili(instance: LiliInstance, phone: string, message: stri
   throw new Error("WhatsApp da Lili sem credenciais validas");
 }
 
+export async function sendTaskReviewNotification(input: {
+  creatorName: string;
+  creatorPhone: string | null;
+  taskTitle: string;
+  taskId: string;
+}) {
+  const phone = input.creatorPhone?.replace(/\D/g, "") ?? "";
+  if (!phone) return false;
+  const instance = await liliInstance();
+  if (!instance) return false;
+  const message = `Olá, ${input.creatorName}! 👋\n\nA tarefa *${input.taskTitle}* foi entregue por todos os responsáveis e está *Em revisão*.\n\nAbra o CRM XP para conferir e finalizar ou devolver para ajuste.\n\n_Lembrete automático do CRM XP pela Lili._`;
+  try {
+    await sendWithLili(instance, phone, message);
+    logger.info("task review notification sent", { taskId: input.taskId });
+    return true;
+  } catch (error) {
+    logger.warn("task review notification failed", { taskId: input.taskId, error: String(error) });
+    return false;
+  }
+}
+
 /** Envia no máximo uma cobrança por dia para cada responsável ainda pendente. */
 export async function sendOverdueTaskReminders() {
   const instance = await liliInstance();

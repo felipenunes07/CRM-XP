@@ -4698,5 +4698,11 @@ export const migrations = [
   FROM tasks
   WHERE audience = 'user' AND assignee_user_id IS NOT NULL
   ON CONFLICT (task_id, user_id) DO NOTHING;
+  `,
+  `
+  -- A entrega do responsável vai para revisão antes da finalização pelo criador.
+  ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+  ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
+    CHECK (status IN ('todo', 'doing', 'review', 'done'));
   `
 ];
