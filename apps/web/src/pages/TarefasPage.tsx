@@ -49,12 +49,14 @@ const TEAM_PERSON_ID = "team";
 
 type Person = { id: string; name: string; photo: string | null; position: number; hidden?: boolean };
 type ChecklistItem = { id: string; text: string; done: boolean };
+type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 type Task = {
   id: string;
   title: string;
   notes: string;
   checklist: ChecklistItem[];
   images: string[];
+  comments: TaskComment[];
   person_id: string;
   person_ids?: string[];
   my_status?: "todo" | "doing" | "review" | "done" | null;
@@ -1586,6 +1588,12 @@ export default function TarefasPage() {
             });
             patchTasks(current => current.map(task => task.id === detailsDraft.task.id ? { ...task, ...content, version: version + 1 } : task));
             void invalidate();
+          }}
+          onComment={async (comment) => {
+            await mutation.mutateAsync({ action: "comment", id: detailsDraft.task.id, version: detailsDraft.task.version, comment });
+            const refreshed = await boardQuery.refetch();
+            const updated = refreshed.data?.tasks.find(task => task.id === detailsDraft.task.id);
+            if (updated) setDetailsDraft(current => current ? { ...current, task: updated } : current);
           }}
           onClose={() => setDetailsDraft(null)}
           onEdit={manager ? (content, version) => {

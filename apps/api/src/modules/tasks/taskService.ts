@@ -10,9 +10,10 @@ export const TEAM_PERSON_ID = "team";
 export type TaskStatus = "todo" | "doing" | "review" | "done";
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
+export type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 
 export interface TaskMutationInput {
-  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority" | "return";
+  action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority" | "return" | "comment";
   id?: string;
   version?: number;
   title?: string;
@@ -25,6 +26,7 @@ export interface TaskMutationInput {
   priority?: TaskPriority;
   checklist?: TaskChecklistItem[];
   images?: string[];
+  comment?: string;
 }
 
 export async function setTaskTeamAvatar(avatarUrl: string) {
@@ -73,6 +75,7 @@ interface TaskRow {
   assignee_user_id: string | null;
   assignee_ids?: string[];
   my_assignee_status?: TaskStatus | null;
+  comments?: TaskComment[];
   due_date: string;
   due_time: string | null;
   status: TaskStatus;
@@ -153,6 +156,7 @@ function toBoardTask(row: TaskRow) {
     notes: row.notes,
     checklist: Array.isArray(row.checklist) ? row.checklist : [],
     images: Array.isArray(row.images) ? row.images : [],
+    comments: Array.isArray(row.comments) ? row.comments : [],
     person_id: row.audience === "team" ? TEAM_PERSON_ID : row.assignee_user_id,
     // person_id continua como o primeiro responsável para compatibilidade com
     // clientes antigos. A lista é a fonte de verdade para tarefas em conjunto.
@@ -233,6 +237,12 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
               COALESCE((SELECT array_agg(ta.user_id::text ORDER BY ta.created_at)
                         FROM task_assignees ta WHERE ta.task_id = t.id), ARRAY[]::text[]) AS assignee_ids,
               (SELECT ta.status FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $2::uuid) AS my_assignee_status,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'id', c.id, 'body', c.body, 'author_user_id', c.author_user_id,
+                'author_name', COALESCE(p.full_name, p.email, 'Usuário'),
+                'author_photo', p.profile_avatar_url, 'created_at', c.created_at::text
+              ) ORDER BY c.created_at ASC) FROM task_comments c
+              LEFT JOIN profiles p ON p.id = c.author_user_id WHERE c.task_id = t.id), '[]'::jsonb) AS comments,
               t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
               creator.profile_avatar_url AS created_by_photo,
@@ -389,6 +399,23 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       const priority = cleanPriority(input.priority);
       await client.query("UPDATE tasks SET priority = $1, updated_at = NOW(), version = version + 1 WHERE id = $2", [priority, id]);
       await addAudit(client, user, current, "updated", { previous: { priority: current.priority }, current: { priority } });
+      await client.query("COMMIT");
+      return { id };
+    }
+
+    if (input.action === "comment") {
+      const isAssignee = current.audience === "user" && Boolean((await client.query(
+        "SELECT 1 FROM task_assignees WHERE task_id = $1 AND user_id = $2", [id, user.id],
+      )).rows[0]);
+      if (!isAdmin(user) && !isAssignee && current.created_by_user_id !== user.id && current.audience !== "team") {
+        throw new HttpError(404, "Tarefa nao encontrada");
+      }
+      const body = cleanText(input.comment, "Mensagem", 4000);
+      await client.query(
+        "INSERT INTO task_comments (task_id, author_user_id, body) VALUES ($1, $2, $3)",
+        [id, user.id, body],
+      );
+      await addAudit(client, user, current, "commented", {});
       await client.query("COMMIT");
       return { id };
     }

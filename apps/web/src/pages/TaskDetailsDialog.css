@@ -81,6 +81,17 @@
 .task-detail-item input[type=checkbox] { width: 17px; height: 17px; accent-color: #2b9f78; }
 .task-detail-add { font-size: 13px; color: #667ca7; padding-top: 15px; }
 .task-detail-empty { font-size: 13px; }
+.task-comment-list { display: grid; gap: 11px; margin-top: 13px; max-height: 290px; overflow: auto; padding-right: 4px; }
+.task-comment { display: flex; gap: 9px; align-items: flex-start; }
+.task-comment > img, .task-comment > span { width: 29px; height: 29px; flex: 0 0 29px; border-radius: 50%; object-fit: cover; background: #e8eefc; color: #355cc7; display: grid; place-items: center; font-size: 10px; font-weight: 800; }
+.task-comment > div { flex: 1; min-width: 0; border: 1px solid #e8ecf2; border-radius: 9px; padding: 9px 11px; background: #fafbfd; }
+.task-comment header { display: flex; align-items: baseline; gap: 8px; }
+.task-comment header b { color: #3c485c; font-size: 12px; }
+.task-comment header time { color: #94a0b0; font-size: 10px; }
+.task-comment p { margin: 5px 0 0; color: #4b5568; font-size: 13px; line-height: 1.45; white-space: pre-wrap; }
+.task-comment-compose { display: flex; gap: 9px; align-items: flex-end; margin-top: 12px; }
+.task-comment-compose textarea { min-height: 66px !important; margin: 0 !important; }
+.task-comment-compose button { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 7px; padding: 9px 11px; background: #2956d7; color: #fff; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
 .task-detail-section > label small { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 10px; background: #eef1f5; color: #738198; font-size: 11px; }
 .task-detail-images { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
 .task-detail-images > span { position: relative; width: 96px; height: 72px; overflow: hidden; border-radius: 8px; border: 1px solid #e1e7ef; background: #f6f8fb; }

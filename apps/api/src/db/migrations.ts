@@ -4704,5 +4704,16 @@ export const migrations = [
   ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
   ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
     CHECK (status IN ('todo', 'doing', 'review', 'done'));
+  `,
+  `
+  -- Conversa curta da tarefa, com autoria individual para não misturar observações.
+  CREATE TABLE IF NOT EXISTS task_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author_user_id UUID NOT NULL REFERENCES profiles(id),
+    body TEXT NOT NULL CHECK (char_length(trim(body)) BETWEEN 1 AND 4000),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS task_comments_task_created_idx ON task_comments (task_id, created_at);
   `
 ];

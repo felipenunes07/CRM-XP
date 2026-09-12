@@ -5,9 +5,11 @@ import "./TaskDetailsDialog.css";
 
 type Item = { id: string; text: string; done: boolean };
 type Content = { notes: string; checklist: Item[]; priority: TaskPriority; images: string[] };
+type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 type TaskInfo = Content & {
   id: string; title: string; version: number; status: string;
   person_id: string; due_date: string; due_time: string | null;
+  comments: TaskComment[];
 };
 type Props = {
   task: TaskInfo;
@@ -22,10 +24,11 @@ type Props = {
   canDelete?: boolean;
   onDelete?: () => Promise<void>;
   onReturn?: () => Promise<void>;
+  onComment?: (comment: string) => Promise<void>;
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn }: Props) {
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -41,6 +44,8 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [sendingNotify, setSendingNotify] = useState(false);
   const [previewImageIndex, setPreviewImageIndex] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [comment, setComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
   const clean = (value: Content): Content => ({
     notes: value.notes,
     priority: value.priority,
@@ -117,6 +122,14 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
     }
   }
 
+  async function postComment() {
+    if (!onComment || !comment.trim() || sendingComment) return;
+    setSendingComment(true);
+    try { await onComment(comment.trim()); setComment(""); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "Não foi possível enviar a mensagem."); }
+    finally { setSendingComment(false); }
+  }
+
   useEffect(() => {
     dialog.current?.showModal();
     const guard = (event: BeforeUnloadEvent) => {
@@ -184,9 +197,20 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             </div>
             {canWrite && content.images.length < 5 && <label className="task-detail-add" style={{ cursor: "pointer" }}><Paperclip size={15} /> Anexar imagem<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={event => { const file = event.target.files?.[0]; if (!file || file.size > 800 * 1024) return; const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" && change({ ...latest.current, images: [...latest.current.images, reader.result] }); reader.readAsDataURL(file); event.currentTarget.value = ""; }} /></label>}
           </section>
+          <section className="task-detail-section task-detail-comments">
+            <label><NotebookPen size={17} /> Conversa da tarefa <small>{task.comments.length}</small></label>
+            {task.comments.length === 0 && <p className="task-detail-empty">Nenhuma mensagem ainda.</p>}
+            <div className="task-comment-list">
+              {task.comments.map(item => <article key={item.id} className="task-comment">
+                {item.author_photo ? <img src={item.author_photo} alt="" /> : <span>{item.author_name.slice(0, 2).toUpperCase()}</span>}
+                <div><header><b>{item.author_name}</b><time>{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</time></header><p>{item.body}</p></div>
+              </article>)}
+            </div>
+            {onComment && <div className="task-comment-compose"><textarea rows={3} maxLength={4000} value={comment} placeholder="Escreva uma atualização ou resposta…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar"}</button></div>}
+          </section>
           <fieldset disabled={!canWrite || closing}>
             <section className="task-detail-section">
-              <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Observações</label>
+              <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Descrição da tarefa</label>
               <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6}
                 placeholder="Adicione os detalhes, atualizações ou o que falta para concluir…"
                 onChange={event => change({ ...latest.current, notes: event.target.value })} />
