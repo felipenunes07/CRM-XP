@@ -50,6 +50,7 @@ const TEAM_PERSON_ID = "team";
 type Person = { id: string; name: string; photo: string | null; position: number; hidden?: boolean };
 type ChecklistItem = { id: string; text: string; done: boolean };
 type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
+type TaskReturn = { id: string; author_name: string; author_photo: string | null; created_at: string };
 type Task = {
   id: string;
   title: string;
@@ -57,6 +58,7 @@ type Task = {
   checklist: ChecklistItem[];
   images: string[];
   comments: TaskComment[];
+  return_history: TaskReturn[];
   person_id: string;
   person_ids?: string[];
   my_status?: "todo" | "doing" | "review" | "done" | null;
@@ -304,6 +306,20 @@ function TaskNote({ task, onOpen }: { task: Task; onOpen?: () => void }) {
 
 function TaskCreator({ task }: { task: Task }) {
   return <span className="tarefas-creator">Atribuída por {task.created_by_name}</span>;
+}
+
+function TaskReturnTrail({ task }: { task: Task }) {
+  if (!task.return_history.length) return null;
+  return (
+    <span className="tarefas-return-trail" title={`${task.return_history.length} devolução(ões) da tarefa`}>
+      {task.return_history.map((item, index) => (
+        <span className="tarefas-return-event" key={item.id}>
+          {item.author_photo ? <img src={item.author_photo} alt="" /> : <b>{item.author_name.slice(0, 2).toUpperCase()}</b>}
+          <small>{index === 0 ? "Devolvida" : "Devolvida novamente"} por {item.author_name}</small>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function TaskChecklistPreview({ task, compact = false }: { task: Task; compact?: boolean }) {
@@ -1251,6 +1267,7 @@ export default function TarefasPage() {
                             )}
                             <TaskNote task={task} onOpen={() => openDetails(task)} />
                             <TaskCreator task={task} />
+                            <TaskReturnTrail task={task} />
                             <TaskChecklistPreview task={task} />
                             <TaskDetailsButton
                               task={task}
@@ -1418,6 +1435,7 @@ export default function TarefasPage() {
                                   onOpen={() => openDetails(task)}
                                 />
                               </span>
+                              <TaskReturnTrail task={task} />
                             </span>
                           </span>
                           <span className="tarefas-assignee" title={`Atribuída por ${task.created_by_name}`}>

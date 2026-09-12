@@ -526,6 +526,10 @@
   flex-wrap: wrap;
   line-height: 1;
 }
+.tarefas-return-trail { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 3px; }
+.tarefas-return-event { display: inline-flex; align-items: center; gap: 5px; color: #b45309; font-size: 10.5px; }
+.tarefas-return-event img, .tarefas-return-event b { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #f5c878; border-radius: 50%; background: #fff6df; color: #a16207; object-fit: cover; font-size: 7px; }
+.tarefas-return-event small { font: inherit; }
 .tarefas-sheet .tarefas-creator {
   display: inline;
   margin: 0;
