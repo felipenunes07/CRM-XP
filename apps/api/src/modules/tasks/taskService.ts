@@ -4,7 +4,7 @@ import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { sendWhatsappInstanceTextMessage } from "../whatsapp/evolutionService.js";
 import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
-import { sendTaskReviewNotification } from "./taskReminderService.js";
+import { sendTaskAssignmentNotification, sendTaskReviewNotification } from "./taskReminderService.js";
 
 export const TEAM_PERSON_ID = "team";
 export type TaskStatus = "todo" | "doing" | "review" | "done";
@@ -350,7 +350,23 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         due_time: dueTime,
         priority,
       });
+      const recipients = assigned.audience === "user"
+        ? await client.query<{ full_name: string; whatsapp_phone: string | null }>(
+          "SELECT full_name, whatsapp_phone FROM profiles WHERE id = ANY($1::uuid[])",
+          [assigned.assigneeUserIds],
+        )
+        : { rows: [] as { full_name: string; whatsapp_phone: string | null }[] };
       await client.query("COMMIT");
+      for (const recipient of recipients.rows) {
+        void sendTaskAssignmentNotification({
+          recipientName: recipient.full_name,
+          recipientPhone: recipient.whatsapp_phone,
+          taskTitle: task.title,
+          dueDate,
+          dueTime,
+          taskId: task.id,
+        });
+      }
       return { id: task.id };
     }
 

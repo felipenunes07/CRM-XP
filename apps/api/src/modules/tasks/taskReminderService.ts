@@ -54,6 +54,31 @@ export async function sendTaskReviewNotification(input: {
   }
 }
 
+export async function sendTaskAssignmentNotification(input: {
+  recipientName: string;
+  recipientPhone: string | null;
+  taskTitle: string;
+  dueDate: string;
+  dueTime: string | null;
+  taskId: string;
+}) {
+  const phone = input.recipientPhone?.replace(/\D/g, "") ?? "";
+  if (!phone) return false;
+  const instance = await liliInstance();
+  if (!instance) return false;
+  const due = input.dueDate.split("-").reverse().join("/");
+  const when = input.dueTime ? `${due} às ${input.dueTime.slice(0, 5)}` : due;
+  const message = `Olá, ${input.recipientName}! 👋\n\nVocê recebeu uma nova tarefa: *${input.taskTitle}*.\nPrazo: *${when}*.\n\nAbra o CRM XP para ver os detalhes e atualizar o andamento.\n\n_Aviso automático do CRM XP pela Lili._`;
+  try {
+    await sendWithLili(instance, phone, message);
+    logger.info("task assignment notification sent", { taskId: input.taskId });
+    return true;
+  } catch (error) {
+    logger.warn("task assignment notification failed", { taskId: input.taskId, error: String(error) });
+    return false;
+  }
+}
+
 /** Envia no máximo uma cobrança por dia para cada responsável ainda pendente. */
 export async function sendOverdueTaskReminders() {
   const instance = await liliInstance();
