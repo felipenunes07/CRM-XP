@@ -70,4 +70,14 @@ describe("task avatar route", () => {
     expect(response.body).toEqual(Buffer.from("persisted-avatar"));
     expect(readFile).not.toHaveBeenCalled();
   });
+
+  it("delivers a profile through the task route without login or redirect to its old host", async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [{ profile_avatar_url: "https://old-crm.example/api/profile-avatars/profile-test" }] })
+      .mockResolvedValueOnce({ rows: [{ content_type: "image/png", bytes: Buffer.from("saved-photo") }] });
+    const response = await request(createApp()).get(`/api/tasks/avatar/${userId}`).redirects(0);
+    expect(response.status).toBe(200);
+    expect(response.headers.location).toBeUndefined();
+    expect(response.body).toEqual(Buffer.from("saved-photo"));
+    expect(response.headers["cache-control"]).toBe("no-store");
+  });
 });

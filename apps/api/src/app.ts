@@ -832,6 +832,18 @@ export function createApp() {
       }
 
       const sourcePath = new URL(sourceUrl, "https://crm.local").pathname;
+      if (sourcePath.startsWith("/api/profile-avatars/")) {
+        const key = sourcePath.slice("/api/profile-avatars/".length);
+        const stored = await pool.query<{ content_type: string; bytes: Buffer }>(
+          "SELECT content_type, bytes FROM profile_avatars WHERE storage_key = $1 LIMIT 1", [key],
+        );
+        const avatar = stored.rows[0];
+        response.setHeader("Cache-Control", "no-store");
+        if (!avatar?.bytes) { response.status(404).end(); return; }
+        response.setHeader("Content-Type", avatar.content_type);
+        response.end(avatar.bytes);
+        return;
+      }
       const mediaPrefix = "/media/profile-avatars/";
       if (!sourcePath.startsWith(mediaPrefix)) {
         response.redirect(302, sourceUrl);

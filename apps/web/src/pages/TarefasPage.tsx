@@ -290,7 +290,14 @@ async function tarefasRequest<T>(token: string, path: string, init: RequestInit 
 
 function Avatar({ person }: { person: Person }) {
   const urls = avatarUrls(person);
+  const sourcesKey = JSON.stringify(urls);
   const [failedUrls, setFailedUrls] = useState<string[]>([]);
+  useEffect(() => { setFailedUrls([]); }, [sourcesKey]);
+  useEffect(() => {
+    if (!failedUrls.length) return;
+    const retry = window.setTimeout(() => setFailedUrls([]), 30000);
+    return () => window.clearTimeout(retry);
+  }, [failedUrls]);
   const url = urls.find((candidate) => !failedUrls.includes(candidate));
   return (
     <span className="tarefas-avatar" title={person.name}>
@@ -561,7 +568,7 @@ export default function TarefasPage() {
   }, [notice]);
 
   const boardQuery = useQuery({
-    queryKey: ["tarefas-board", adminScope],
+    queryKey: ["tarefas-board", adminScope, user?.id],
     queryFn: () => tarefasRequest<Board>(token!, `/board?scope=${user?.appRole === "admin" ? adminScope : "mine"}`),
     enabled: Boolean(token),
     // Mantém as atribuições chegando para cada pessoa sem recarregar a página.
@@ -588,7 +595,7 @@ export default function TarefasPage() {
    * era isso que fazia a tela parecer travada.
    */
   const patchTasks = (change: (tasks: Task[]) => Task[]) =>
-    queryClient.setQueryData<Board>(["tarefas-board", adminScope], (current) =>
+    queryClient.setQueryData<Board>(["tarefas-board", adminScope, user?.id], (current) =>
       current ? { ...current, tasks: change(current.tasks) } : current,
     );
 
