@@ -522,20 +522,6 @@ export default function TarefasPage() {
     onError: invalidate,
   });
 
-  // Versões anteriores guardavam "fora do quadro" apenas neste navegador.
-  // Ao abrir como administrador, migra essa escolha uma única vez para a
-  // configuração compartilhada, inclusive para o Time.
-  useEffect(() => {
-    if (!token || user?.appRole !== "admin" || !boardQuery.data) return;
-    const legacyHidden = boardQuery.data.people.filter(
-      (person) => hidden.includes(person.id) && !person.hidden,
-    );
-    if (legacyHidden.length === 0) return;
-    void Promise.all(
-      legacyHidden.map((person) => api.setTaskPersonVisibility(token, person.id, false)),
-    ).then(() => boardQuery.refetch()).catch(() => undefined);
-  }, [boardQuery.data, hidden, token, user?.appRole]);
-
   /**
    * Aplica a mudança na tela na hora e só depois avisa o servidor. Antes, cada
    * clique esperava a resposta e ainda um recarregamento inteiro do quadro —
@@ -584,13 +570,11 @@ export default function TarefasPage() {
       setTeamOpen(false);
       return;
     }
-    const previousHidden = new Set(boardPeople.filter((person) => person.hidden).map((person) => person.id));
     const desiredHidden = new Set(hidden);
-    const changedPeople = boardPeople.filter((person) => previousHidden.has(person.id) !== desiredHidden.has(person.id));
 
     try {
       setSavingTeam(true);
-      await Promise.all(changedPeople.map((person) => api.setTaskPersonVisibility(token, person.id, !desiredHidden.has(person.id))));
+      await api.setTaskHiddenPeople(token, [...desiredHidden]);
       await boardQuery.refetch();
       setTeamOpen(false);
       setNotice("Configuração da equipe salva.");

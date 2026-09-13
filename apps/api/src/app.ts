@@ -150,6 +150,7 @@ import {
   setTaskTeamAvatar,
   setTaskPersonVisible,
   setTaskPeopleOrder,
+  setTaskHiddenPeople,
   type TaskMutationInput,
 } from "./modules/tasks/taskService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
@@ -2870,6 +2871,14 @@ export function createApp() {
       ).parse(request.params.id);
       await setTaskPersonVisible(personId, visible);
       response.status(204).end();
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/tasks/people/visibility", requirePermission("tasks.view"), requireRole(["ADMIN"]), async (request, response, next) => {
+    try {
+      const hiddenPeople = z.object({ hiddenPeople: z.array(z.string()).max(200) }).parse(request.body).hiddenPeople;
+      await setTaskHiddenPeople(hiddenPeople);
+      response.json({ saved: true });
     } catch (error) { next(error); }
   });
 

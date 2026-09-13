@@ -1122,6 +1122,9 @@ export const api = {
   setTaskPersonVisibility(token: string, personId: string, visible: boolean) {
     return request<void>(`/api/tasks/people/${personId}/visibility`, { method: "POST", body: JSON.stringify({ visible }) }, token);
   },
+  setTaskHiddenPeople(token: string, hiddenPeople: string[]) {
+    return request<{ saved: boolean }>("/api/tasks/people/visibility", { method: "POST", body: JSON.stringify({ hiddenPeople }) }, token);
+  },
   setTaskPeopleOrder(token: string, personIds: string[]) {
     return request<void>("/api/tasks/people/order", { method: "POST", body: JSON.stringify({ personIds }) }, token);
   },

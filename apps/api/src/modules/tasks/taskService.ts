@@ -55,6 +55,26 @@ export async function setTaskPersonVisible(personId: string, visible: boolean) {
   );
 }
 
+export async function setTaskHiddenPeople(personIds: string[]) {
+  const hidden = [...new Set(personIds)];
+  const userIds = hidden.filter((id) => id !== TEAM_PERSON_ID);
+  if (userIds.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) {
+    throw new HttpError(400, "Usuarios invalidos");
+  }
+  if (userIds.length) {
+    const result = await pool.query<{ id: string }>(
+      "SELECT id FROM profiles WHERE id = ANY($1::uuid[]) AND is_active = true",
+      [userIds],
+    );
+    if (result.rows.length !== userIds.length) throw new HttpError(400, "Escolha apenas usuarios ativos");
+  }
+  await pool.query(
+    `INSERT INTO task_board_settings (key, value) VALUES ('hidden_people', $1::jsonb)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [JSON.stringify(hidden)],
+  );
+}
+
 export async function setTaskPeopleOrder(personIds: string[]) {
   if (!Array.isArray(personIds) || new Set(personIds).size !== personIds.length || personIds.some((id) => id !== TEAM_PERSON_ID && !/^[0-9a-f-]{36}$/i.test(id))) {
     throw new HttpError(400, "Ordem de usuarios invalida");
