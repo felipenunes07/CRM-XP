@@ -539,10 +539,13 @@
   flex-wrap: wrap;
   line-height: 1;
 }
-.tarefas-return-trail { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 3px; }
-.tarefas-return-event { display: inline-flex; align-items: center; gap: 5px; color: #b45309; font-size: 10.5px; }
-.tarefas-return-event img, .tarefas-return-event b { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid #f5c878; border-radius: 50%; background: #fff6df; color: #a16207; object-fit: cover; font-size: 7px; }
-.tarefas-return-event small { font: inherit; }
+.tarefas-return-trail { display: grid; gap: 6px; margin: 7px 0 2px; max-width: 330px; }
+.tarefas-return-event { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px 9px; border: 1px solid #f6c76a; border-left: 3px solid #f59e0b; border-radius: 7px; background: #fff9eb; color: #92400e; }
+.tarefas-return-icon { display: grid; flex: 0 0 22px; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #ffedbd; color: #b45309; }
+.tarefas-return-event .tarefas-avatar { flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid #f5c878; box-shadow: 0 0 0 2px #fff; }
+.tarefas-return-copy { display: grid; min-width: 0; gap: 1px; }
+.tarefas-return-copy strong { overflow: hidden; color: #92400e; font-size: 11px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-return-copy small { color: #a16207; font-size: 9.5px; line-height: 1.25; }
 .tarefas-sheet .tarefas-creator {
   display: inline;
   margin: 0;
