@@ -59,6 +59,7 @@ function auditMessage(event: TaskAuditEvent) {
 
 export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUserId, renderCommentAvatar, renderAuditAvatar, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const historySection = useRef<HTMLElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
   const version = useRef(task.version);
@@ -211,6 +212,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUs
               onChange={onEdit ? async priority => { change({ ...latest.current, priority }); if (!await flush()) throw new Error("Não foi possível salvar. Tente novamente."); } : undefined} /></div>
             <div className="task-detail-created"><span><UserRound size={18} /> Atribuída por</span>{creator}</div>
             {onEdit && <button type="button" className="task-detail-edit" disabled={closing} onClick={() => void finish(true)}><Pencil size={13} /> Editar dados da tarefa</button>}
+            <button type="button" className="task-detail-history-link" onClick={() => historySection.current?.scrollIntoView({ behavior: "smooth", block: "center" })}><History size={14} /> Ver histórico</button>
           </div>
           {onNotify && (
             <div className="task-detail-notify">
@@ -265,7 +267,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUs
             </div>
             {onComment && <div className="task-comment-compose"><textarea rows={2} aria-label="Mensagem no chat da tarefa" maxLength={4000} value={comment} placeholder="Escreva uma mensagem…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar"}</button></div>}
           </section>
-          <section className="task-detail-section task-detail-history" aria-label="Histórico da tarefa">
+          <section ref={historySection} className="task-detail-section task-detail-history" aria-label="Histórico da tarefa">
             <div className="task-detail-section-heading">
               <h3><History size={18} /> Histórico da tarefa <span className="task-history-count">{task.audit_history.length}</span></h3>
               <small>Ações registradas automaticamente</small>
