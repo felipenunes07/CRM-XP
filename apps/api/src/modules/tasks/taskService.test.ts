@@ -229,6 +229,34 @@ describe("taskService", () => {
     expect(clientQuery).toHaveBeenCalledWith("ROLLBACK");
   });
 
+  it("returns an assigned task to its creator and records the return", async () => {
+    clientQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [taskRow] })
+      .mockResolvedValueOnce({ rows: [{ exists: true }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await mutateTask({ action: "return", id: taskRow.id, version: taskRow.version }, seller);
+
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO task_assignees"),
+      [taskRow.id, admin.id],
+    );
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("SET assignee_user_id = $1, status = 'todo'"),
+      [admin.id, taskRow.id],
+    );
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO task_audit_logs"),
+      [taskRow.id, seller.id, "returned", taskRow.title, JSON.stringify({ returned_to: admin.id })],
+    );
+    expect(clientQuery).toHaveBeenCalledWith("COMMIT");
+  });
+
   it("only gives administrators the all-team scope", async () => {
     await getTaskBoard(seller, "all");
     expect(poolQuery.mock.calls[1]?.[1]).toEqual([false, seller.id]);

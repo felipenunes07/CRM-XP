@@ -25,4 +25,13 @@ describe("tarefas page list visibility", () => {
     expect(taskBelongsToList({ personIds: ["team"], createdByUserId: "admin-id" }, created)).toBe(true);
     expect(taskBelongsToList({ personIds: ["team"], createdByUserId: "other-id" }, created)).toBe(false);
   });
+
+  it("keeps a task returned to its creator visible in Atribuídas por mim", () => {
+    const created = { ...mine, listScope: "created" as const };
+    expect(taskBelongsToList({
+      personIds: ["admin-id"],
+      createdByUserId: "admin-id",
+      returnedToCreator: true,
+    }, created)).toBe(true);
+  });
 });

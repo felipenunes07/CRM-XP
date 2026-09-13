@@ -8,7 +8,7 @@ type ListContext = {
 };
 
 export function taskBelongsToList(
-  task: { personIds: string[]; createdByUserId: string },
+  task: { personIds: string[]; createdByUserId: string; returnedToCreator?: boolean },
   context: ListContext,
 ) {
   if (context.manager && context.adminScope === "all") return true;
@@ -18,7 +18,11 @@ export function taskBelongsToList(
     return assignedToCurrentUser || task.personIds.includes(TASK_TEAM_PERSON_ID);
   }
 
-  return !assignedToCurrentUser && task.createdByUserId === context.currentUserId;
+  // Uma devolução muda o responsável para quem criou a tarefa. Ela continua
+  // importante no acompanhamento de quem a atribuiu, mesmo que agora também
+  // apareça em "Minhas tarefas" para essa pessoa agir sobre ela.
+  return task.createdByUserId === context.currentUserId
+    && (!assignedToCurrentUser || Boolean(task.returnedToCreator));
 }
 
 export function personBelongsToList(personId: string, context: ListContext) {

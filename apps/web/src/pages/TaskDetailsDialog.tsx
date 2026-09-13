@@ -23,7 +23,7 @@ type Props = {
   onNotify?: () => Promise<void>;
   canDelete?: boolean;
   onDelete?: () => Promise<void>;
-  onReturn?: () => Promise<void>;
+  onReturn?: (version: number) => Promise<void>;
   onComment?: (comment: string) => Promise<void>;
 };
 
@@ -122,6 +122,21 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
     }
   }
 
+  async function returnTask() {
+    if (!onReturn) return;
+    setClosing(true);
+    if (!await flush()) {
+      setClosing(false);
+      return;
+    }
+    try {
+      await onReturn(version.current);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Não foi possível devolver a tarefa.");
+      setClosing(false);
+    }
+  }
+
   async function postComment() {
     if (!onComment || !comment.trim() || sendingComment) return;
     setSendingComment(true);
@@ -197,8 +212,20 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             </div>
             {canWrite && content.images.length < 5 && <label className="task-detail-add" style={{ cursor: "pointer" }}><Paperclip size={15} /> Anexar imagem<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={event => { const file = event.target.files?.[0]; if (!file || file.size > 800 * 1024) return; const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" && change({ ...latest.current, images: [...latest.current.images, reader.result] }); reader.readAsDataURL(file); event.currentTarget.value = ""; }} /></label>}
           </section>
+          <section className="task-detail-section task-detail-description">
+            <div className="task-detail-section-heading">
+              <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Descrição da tarefa</label>
+              <small>Contexto e instruções</small>
+            </div>
+            <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6} disabled={!canWrite || closing}
+              placeholder="Descreva o que precisa ser feito, critérios e informações importantes…"
+              onChange={event => change({ ...latest.current, notes: event.target.value })} />
+          </section>
           <section className="task-detail-section task-detail-comments">
-            <label><NotebookPen size={17} /> Conversa da tarefa <small>{task.comments.length}</small></label>
+            <div className="task-detail-section-heading">
+              <label><NotebookPen size={17} /> Conversa da tarefa <small>{task.comments.length}</small></label>
+              <small>Atualizações entre responsáveis</small>
+            </div>
             {task.comments.length === 0 && <p className="task-detail-empty">Nenhuma mensagem ainda.</p>}
             <div className="task-comment-list">
               {task.comments.map(item => <article key={item.id} className="task-comment">
@@ -206,15 +233,9 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
                 <div><header><b>{item.author_name}</b><time>{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</time></header><p>{item.body}</p></div>
               </article>)}
             </div>
-            {onComment && <div className="task-comment-compose"><textarea rows={3} maxLength={4000} value={comment} placeholder="Escreva uma atualização ou resposta…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar"}</button></div>}
+            {onComment && <div className="task-comment-compose"><textarea rows={3} maxLength={4000} value={comment} placeholder="Escreva uma atualização para a equipe…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar atualização"}</button></div>}
           </section>
           <fieldset disabled={!canWrite || closing}>
-            <section className="task-detail-section">
-              <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Descrição da tarefa</label>
-              <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6}
-                placeholder="Adicione os detalhes, atualizações ou o que falta para concluir…"
-                onChange={event => change({ ...latest.current, notes: event.target.value })} />
-            </section>
             <section className="task-detail-section">
               <div className="task-detail-check-title"><h3><CheckCheck size={17} /> Checklist</h3><span>{done} de {content.checklist.length}</span></div>
               {content.checklist.length > 0 && <progress max={100} value={progress} aria-label="Progresso do checklist" />}
@@ -244,7 +265,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           </div>
         )}
         <footer className="task-detail-footer">
-          {onReturn && <button type="button" className="task-detail-return" disabled={closing} onClick={() => void onReturn()}><Send size={15} /> Devolver tarefa</button>}
+          {onReturn && <button type="button" className="task-detail-return" disabled={closing} onClick={() => void returnTask()}><Send size={15} /> Devolver tarefa</button>}
           {canDelete && onDelete && (confirmDelete ? (
             <span className="task-detail-delete-confirm">
               <b>Excluir esta tarefa?</b>
