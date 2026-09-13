@@ -231,9 +231,6 @@ function shortDate(t: Task) {
   if (t.due_date === brazilDate()) return "Hoje";
   return t.due_date.split("-").reverse().slice(0, 2).join("/");
 }
-function statusLabel(s: Task["status"]) {
-  return s === "done" ? "Entregue" : s === "doing" ? "Fazendo" : "A fazer";
-}
 function auditActionLabel(action: AuditLog["action"]) {
   return {
     created: "criou",
@@ -359,7 +356,7 @@ function TaskReturnTrail({ task }: { task: Task }) {
   };
   return (
     <aside className="tarefas-return-trail" aria-label={`Linha do tempo da tarefa com ${task.return_history.length} devolução(ões)`}>
-      <div className="tarefas-return-event is-created">
+      <div className="tarefas-return-event">
         <span className="tarefas-return-rail"><Avatar person={creator} /></span>
         <span className="tarefas-return-copy">
           <strong>{task.created_by_name} atribuiu esta tarefa</strong>
@@ -367,7 +364,7 @@ function TaskReturnTrail({ task }: { task: Task }) {
         </span>
       </div>
       {task.return_history.map((item, index) => (
-        <div className="tarefas-return-event is-returned" key={item.id}>
+        <div className="tarefas-return-event" key={item.id}>
           <span className="tarefas-return-rail"><Avatar person={{
             id: item.author_user_id ?? item.id,
             name: item.author_name,
@@ -381,13 +378,6 @@ function TaskReturnTrail({ task }: { task: Task }) {
           </span>
         </div>
       ))}
-      <div className="tarefas-return-event is-current">
-        <span className="tarefas-return-rail"><Avatar person={creator} /></span>
-        <span className="tarefas-return-copy">
-          <strong>{task.created_by_name} recebeu a tarefa novamente</strong>
-          <small>Responsável atual · {statusLabel(task.status)}</small>
-        </span>
-      </div>
     </aside>
   );
 }
