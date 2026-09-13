@@ -786,6 +786,34 @@ export function createApp() {
   app.use("/media/campaign-images", express.static(campaignMediaDir, { maxAge: "7d" }));
   app.use("/media/profile-avatars", express.static(profileAvatarDir, { maxAge: "30d", immutable: true }));
 
+  // Fotos de usuários precisam sobreviver a recriações do container. Os envios
+  // antigos eram gravados apenas no disco local, que pode ser descartado no
+  // próximo deploy. Os novos envios ficam no Postgres e são expostos por uma
+  // URL pública estável para funcionar também em <img> sem JWT.
+  app.get("/api/profile-avatars/:key", async (request, response, next) => {
+    try {
+      const key = String(request.params.key || "").replace(/[^a-zA-Z0-9_-]/g, "");
+      if (!key) {
+        response.status(404).end();
+        return;
+      }
+      const result = await pool.query<{ content_type: string | null; bytes: Buffer | null }>(
+        "SELECT content_type, bytes FROM profile_avatars WHERE storage_key = $1 LIMIT 1",
+        [key],
+      );
+      const avatar = result.rows[0];
+      if (!avatar?.bytes) {
+        response.status(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", avatar.content_type || "image/jpeg");
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      response.end(Buffer.isBuffer(avatar.bytes) ? avatar.bytes : Buffer.from(avatar.bytes));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // As fotos do quadro precisam funcionar para todos os funcionários, sem
   // depender do host que estava configurado quando o administrador enviou a
   // imagem. Esta rota é pública pelo mesmo motivo da mídia estática acima:
@@ -2887,15 +2915,19 @@ export function createApp() {
       if (!extension) {
         throw new HttpError(400, "Envie uma imagem JPG, PNG, GIF ou WEBP");
       }
+      const mimeType = match[1].toLowerCase();
       const bytes = Buffer.from(match[2], "base64");
       if (!bytes.length || bytes.length > 5 * 1024 * 1024) {
         throw new HttpError(413, "Imagem invalida ou maior que 5MB");
       }
-      const objectName = `${Date.now()}-${randomUUID()}.${extension}`;
-      await fsPromises.mkdir(profileAvatarDir, { recursive: true });
-      await fsPromises.writeFile(path.join(profileAvatarDir, objectName), bytes);
+      const objectName = `profile-${randomUUID()}`;
+      await pool.query(
+        `INSERT INTO profile_avatars (storage_key, content_type, bytes, updated_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [objectName, mimeType, bytes],
+      );
       const base = (env.PUBLIC_URL || "https://xpcrm-crm-backend.f0dgeg.easypanel.host").replace(/\/+$/, "");
-      response.json({ url: `${base}/media/profile-avatars/${objectName}` });
+      response.json({ url: `${base}/api/profile-avatars/${objectName}` });
     } catch (error) {
       next(error);
     }

@@ -4715,5 +4715,15 @@ export const migrations = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS task_comments_task_created_idx ON task_comments (task_id, created_at);
+  `,
+  `
+  -- Fotos enviadas pelo cadastro de usuários. Ao contrário de arquivos locais,
+  -- BYTEA no Postgres permanece disponível depois de recriar o container.
+  CREATE TABLE IF NOT EXISTS profile_avatars (
+    storage_key TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    bytes BYTEA NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
   `
 ];
