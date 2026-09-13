@@ -335,29 +335,50 @@ function TaskNote({ task, onOpen }: { task: Task; onOpen?: () => void }) {
 }
 
 function TaskCreator({ task }: { task: Task }) {
+  if (task.return_history?.length) return null;
   return <span className="tarefas-creator">Atribuída por {task.created_by_name}</span>;
 }
 
 function TaskReturnTrail({ task }: { task: Task }) {
   if (!task.return_history?.length) return null;
+  const creator = {
+    id: task.created_by_user_id,
+    name: task.created_by_name,
+    photo: task.created_by_photo,
+    avatar_proxy_url: `/api/tasks/avatar/${task.created_by_user_id}`,
+    position: 0,
+  };
   return (
-    <aside className="tarefas-return-trail" aria-label={`${task.return_history.length} devolução(ões) da tarefa`}>
+    <aside className="tarefas-return-trail" aria-label={`Linha do tempo da tarefa com ${task.return_history.length} devolução(ões)`}>
+      <div className="tarefas-return-event is-created">
+        <span className="tarefas-return-rail"><Avatar person={creator} /></span>
+        <span className="tarefas-return-copy">
+          <strong>{task.created_by_name} atribuiu esta tarefa</strong>
+          <small>Início da tarefa</small>
+        </span>
+      </div>
       {task.return_history.map((item, index) => (
-        <div className="tarefas-return-event" key={item.id}>
-          <span className="tarefas-return-icon"><CornerUpLeft size={13} /></span>
-          <Avatar person={{
+        <div className="tarefas-return-event is-returned" key={item.id}>
+          <span className="tarefas-return-rail"><Avatar person={{
             id: item.author_user_id ?? item.id,
             name: item.author_name,
             photo: item.author_photo,
             avatar_proxy_url: item.author_user_id ? `/api/tasks/avatar/${item.author_user_id}` : null,
             position: 0,
-          }} />
+          }} /></span>
           <span className="tarefas-return-copy">
-            <strong>{item.author_name} {index === 0 ? "devolveu esta tarefa" : "devolveu novamente"}</strong>
+            <strong><CornerUpLeft size={12} /> {item.author_name} {index === 0 ? "devolveu esta tarefa" : "devolveu novamente"}</strong>
             <small>Retornou para você em {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</small>
           </span>
         </div>
       ))}
+      <div className="tarefas-return-event is-current">
+        <span className="tarefas-return-rail"><Avatar person={creator} /></span>
+        <span className="tarefas-return-copy">
+          <strong>{task.created_by_name} recebeu a tarefa novamente</strong>
+          <small>Responsável atual · {statusLabel(task.status)}</small>
+        </span>
+      </div>
     </aside>
   );
 }
