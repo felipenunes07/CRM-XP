@@ -277,6 +277,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
           task_id: string | null;
           actor_user_id: string;
           actor_name: string;
+          actor_photo: string | null;
           action: string;
           task_title: string;
           details: Record<string, unknown>;
@@ -284,6 +285,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
         }>(
           `SELECT l.id::text, l.task_id, l.actor_user_id,
                   COALESCE(p.full_name, p.email, 'Usuario') AS actor_name,
+                  p.profile_avatar_url AS actor_photo,
                   l.action, l.task_title, l.details, l.created_at::text
            FROM task_audit_logs l
            LEFT JOIN profiles p ON p.id = l.actor_user_id

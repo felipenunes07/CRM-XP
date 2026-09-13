@@ -80,6 +80,7 @@ type AuditLog = {
   task_id: string | null;
   actor_user_id: string;
   actor_name: string;
+  actor_photo: string | null;
   action: "created" | "updated" | "assigned" | "status_changed" | "completed" | "reopened" | "deleted" | "reminder_sent" | "details_updated";
   task_title: string;
   details: Record<string, unknown>;
@@ -1102,7 +1103,7 @@ export default function TarefasPage() {
               ) : (
                 auditLogs.map((log) => (
                   <div className="tarefas-audit-row" key={log.id}>
-                    <span className="tarefas-audit-avatar">{log.actor_name.slice(0, 2).toUpperCase()}</span>
+                    <span className="tarefas-audit-avatar"><Avatar person={{ id: log.actor_user_id, name: log.actor_name, photo: log.actor_photo, position: 0 }} /></span>
                     <span><strong>{log.actor_name}</strong><small>{auditActionLabel(log.action)} “{log.task_title}”</small></span>
                     <time dateTime={log.created_at}>
                       {formatAuditTime(log.created_at)}
