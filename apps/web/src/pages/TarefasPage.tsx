@@ -710,13 +710,15 @@ export default function TarefasPage() {
   const listPeople = useMemo(() => {
     if (manager && adminScope === "all") return displayPeople;
     if (listScope === "received") return displayPeople.filter((person) => person.id === currentUserId);
-    const coworkers = assignablePeople.filter(
+    // A lista do quadro respeita quem foi ocultado em "Equipe". O seletor de
+    // nova tarefa continua usando assignablePeople para permitir atribuições.
+    const coworkers = people.filter(
       (person) => person.id !== TEAM_PERSON_ID && person.id !== currentUserId,
     );
     return assignedPeopleFilter === "with_tasks"
       ? coworkers.filter((person) => listTasks.some((task) => assignedTo(task, person.id)))
       : coworkers;
-  }, [adminScope, assignedPeopleFilter, assignablePeople, currentUserId, displayPeople, listScope, listTasks, manager]);
+  }, [adminScope, assignedPeopleFilter, currentUserId, displayPeople, listScope, listTasks, manager, people]);
   const pending = useMemo(() => listTasks.filter((t) => t.status !== "done"), [listTasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
   const dueToday = useMemo(
