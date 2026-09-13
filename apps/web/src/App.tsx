@@ -84,7 +84,12 @@ const landingRoutes = [
 ] as const;
 
 export function defaultAccessiblePath(canAccess: (permission: string) => boolean) {
-  return landingRoutes.find(route => canAccess(route.permission))?.path ?? "/acesso-negado";
+  // Dashboard is the preferred landing page, but task-focused users should
+  // land on the task board instead of being sent to the access-denied screen.
+  if (canAccess("dashboard.view")) return "/";
+  if (canAccess("tasks.view")) return "/tarefas";
+
+  return landingRoutes.find(route => route.path !== "/" && route.path !== "/tarefas" && canAccess(route.permission))?.path ?? "/acesso-negado";
 }
 
 function DefaultLandingRoute() {
