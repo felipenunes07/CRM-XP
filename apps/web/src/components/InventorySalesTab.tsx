@@ -620,8 +620,14 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                   aria-expanded={isCustomRangeOpen}
                   aria-controls="inventory-custom-range"
                   onClick={() => {
+                    const nextIsOpen = !isCustomRangeOpen;
                     setPeriod("custom");
-                    setIsCustomRangeOpen((isOpen) => !isOpen);
+                    setIsCustomRangeOpen(nextIsOpen);
+                    if (nextIsOpen) {
+                      const oneMonthRange = getInventorySalesPresetRange(1);
+                      setCustomDateFrom(oneMonthRange.dateFrom);
+                      setCustomDateTo(oneMonthRange.dateTo);
+                    }
                   }}
                 >
                   <CalendarClock size={15} /> Personalizado
