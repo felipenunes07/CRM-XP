@@ -4,6 +4,7 @@ import { sendWhatsappInstanceTextMessage } from "../whatsapp/evolutionService.js
 import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
+const AUTOMATIC_NOTICE_FOOTER = "Aviso automático do CRM XP";
 
 type LiliInstance = {
   provider: string; instance_name: string; display_label: string | null;
@@ -43,7 +44,7 @@ export async function sendTaskReviewNotification(input: {
   if (!phone) return false;
   const instance = await liliInstance();
   if (!instance) return false;
-  const message = `Olá, ${input.creatorName}! 👋\n\nA tarefa *${input.taskTitle}* foi entregue por todos os responsáveis e está *Em revisão*.\n\nAbra o CRM XP para conferir e finalizar ou devolver para ajuste.\n\n_Lembrete automático do CRM XP pela Lili._`;
+  const message = `Olá, ${input.creatorName}! ✅\n\nA tarefa *${input.taskTitle}* foi entregue por todos os responsáveis e está *Em revisão*.\n\nAbra o CRM XP para conferir e finalizar ou devolver para ajuste.\n\n${AUTOMATIC_NOTICE_FOOTER}`;
   try {
     await sendWithLili(instance, phone, message);
     logger.info("task review notification sent", { taskId: input.taskId });
@@ -68,13 +69,34 @@ export async function sendTaskAssignmentNotification(input: {
   if (!instance) return false;
   const due = input.dueDate.split("-").reverse().join("/");
   const when = input.dueTime ? `${due} às ${input.dueTime.slice(0, 5)}` : due;
-  const message = `Olá, ${input.recipientName}! 👋\n\nVocê recebeu uma nova tarefa: *${input.taskTitle}*.\nPrazo: *${when}*.\n\nAbra o CRM XP para ver os detalhes e atualizar o andamento.\n\n_Aviso automático do CRM XP pela Lili._`;
+  const message = `Olá, ${input.recipientName}! 🆕\n\nVocê recebeu uma nova tarefa: *${input.taskTitle}*.\nPrazo: *${when}*.\n\nAbra o CRM XP para ver os detalhes e atualizar o andamento.\n\n${AUTOMATIC_NOTICE_FOOTER}`;
   try {
     await sendWithLili(instance, phone, message);
     logger.info("task assignment notification sent", { taskId: input.taskId });
     return true;
   } catch (error) {
     logger.warn("task assignment notification failed", { taskId: input.taskId, error: String(error) });
+    return false;
+  }
+}
+
+export async function sendTaskReturnNotification(input: {
+  recipientName: string;
+  recipientPhone: string | null;
+  taskTitle: string;
+  taskId: string;
+}) {
+  const phone = input.recipientPhone?.replace(/\D/g, "") ?? "";
+  if (!phone) return false;
+  const instance = await liliInstance();
+  if (!instance) return false;
+  const message = `Olá, ${input.recipientName}! ↩️\n\nA tarefa *${input.taskTitle}* foi devolvida para você.\n\nAbra o CRM XP para acompanhar o motivo, ajustar o necessário e atribuí-la novamente.\n\n${AUTOMATIC_NOTICE_FOOTER}`;
+  try {
+    await sendWithLili(instance, phone, message);
+    logger.info("task return notification sent", { taskId: input.taskId });
+    return true;
+  } catch (error) {
+    logger.warn("task return notification failed", { taskId: input.taskId, error: String(error) });
     return false;
   }
 }
@@ -106,7 +128,7 @@ export async function sendOverdueTaskReminders() {
     const phone = task.whatsapp_phone.replace(/\D/g, "");
     if (!phone) continue;
     const due = task.due_date.split("-").reverse().join("/");
-    const message = `Olá, ${task.full_name}! 👋\n\nA tarefa *${task.title}* venceu em *${due}* e ainda está pendente.\n\nPor favor, atualize o andamento ou conclua quando finalizar.\n\n_Lembrete automático do CRM XP pela Lili._`;
+    const message = `Olá, ${task.full_name}! ⏰\n\nA tarefa *${task.title}* venceu em *${due}* e ainda está pendente.\n\nPor favor, atualize o andamento ou conclua quando finalizar.\n\n${AUTOMATIC_NOTICE_FOOTER}`;
     try {
       await sendWithLili(instance, phone, message);
       sent += 1;
