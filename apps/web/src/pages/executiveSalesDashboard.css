@@ -84,6 +84,32 @@
   box-shadow: 0 0.55em 1.2em rgba(34, 80, 219, 0.2);
 }
 
+.executive-return-link {
+  min-height: 3.3em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0 0.55em;
+  border: 1px solid #d9e0f3;
+  border-radius: 0.28em;
+  color: #1c4ed8;
+  font-size: 1.02em;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.executive-return-link:hover,
+.executive-return-link:focus-visible {
+  border-color: #2250db;
+  background: #eef3ff;
+}
+
+.executive-return-link svg {
+  width: 1.15em;
+  height: 1.15em;
+  stroke-width: 2;
+}
+
 .executive-filter-title {
   display: flex;
   align-items: center;
