@@ -60,6 +60,7 @@ type Person = {
 type ChecklistItem = { id: string; text: string; done: boolean };
 type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 type TaskReturn = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; created_at: string };
+type TaskAuditEvent = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; action: string; details: Record<string, unknown>; created_at: string };
 type Task = {
   id: string;
   title: string;
@@ -68,6 +69,7 @@ type Task = {
   images: string[];
   comments: TaskComment[];
   return_history: TaskReturn[];
+  audit_history: TaskAuditEvent[];
   person_id: string;
   person_ids?: string[];
   my_status?: "todo" | "doing" | "review" | "done" | null;
@@ -1671,6 +1673,13 @@ export default function TarefasPage() {
             name: item.author_name,
             photo: item.author_photo,
             avatar_proxy_url: `/api/tasks/avatar/${item.author_user_id}`,
+            position: 0,
+          }} />}
+          renderAuditAvatar={item => <Avatar person={{
+            id: item.author_user_id ?? item.id,
+            name: item.author_name,
+            photo: item.author_photo,
+            avatar_proxy_url: item.author_user_id ? `/api/tasks/avatar/${item.author_user_id}` : null,
             position: 0,
           }} />}
           canWrite={manager || assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "")}

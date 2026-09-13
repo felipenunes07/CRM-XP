@@ -12,6 +12,7 @@ export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 export type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 export type TaskReturn = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; created_at: string };
+export type TaskAuditEvent = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; action: string; details: Record<string, unknown>; created_at: string };
 
 export interface TaskMutationInput {
   action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority" | "return" | "comment";
@@ -98,6 +99,7 @@ interface TaskRow {
   my_assignee_status?: TaskStatus | null;
   comments?: TaskComment[];
   return_history?: TaskReturn[];
+  audit_history?: TaskAuditEvent[];
   due_date: string;
   due_time: string | null;
   status: TaskStatus;
@@ -180,6 +182,7 @@ function toBoardTask(row: TaskRow) {
     images: Array.isArray(row.images) ? row.images : [],
     comments: Array.isArray(row.comments) ? row.comments : [],
     return_history: Array.isArray(row.return_history) ? row.return_history : [],
+    audit_history: Array.isArray(row.audit_history) ? row.audit_history : [],
     person_id: row.audience === "team" ? TEAM_PERSON_ID : row.assignee_user_id,
     // person_id continua como o primeiro responsável para compatibilidade com
     // clientes antigos. A lista é a fonte de verdade para tarefas em conjunto.
@@ -272,6 +275,13 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
               ) ORDER BY l.created_at ASC) FROM task_audit_logs l
               LEFT JOIN profiles p ON p.id = l.actor_user_id
               WHERE l.task_id = t.id AND l.action = 'returned'), '[]'::jsonb) AS return_history,
+              COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                'id', l.id, 'author_user_id', l.actor_user_id, 'author_name', COALESCE(p.full_name, p.email, 'Usuário'),
+                'author_photo', p.profile_avatar_url, 'action', l.action, 'details', l.details,
+                'created_at', l.created_at::text
+              ) ORDER BY l.created_at ASC) FROM task_audit_logs l
+              LEFT JOIN profiles p ON p.id = l.actor_user_id
+              WHERE l.task_id = t.id), '[]'::jsonb) AS audit_history,
               t.due_date::text, t.due_time::text, t.status, t.priority, t.created_by_user_id,
               COALESCE(creator.full_name, creator.email, 'Usuario') AS created_by_name,
               creator.profile_avatar_url AS created_by_photo,

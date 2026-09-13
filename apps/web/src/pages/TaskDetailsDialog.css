@@ -145,6 +145,17 @@
 .task-detail-comments .task-comment-compose { margin: 0; padding: 14px 18px; background: #fff; border-top: 1px solid #d5e0eb; align-items: center; }
 .task-detail-comments .task-comment-compose textarea { min-height: 56px !important; border-radius: 12px; font-size: 13px; }
 .task-detail-comments .task-comment-compose button { background: #173c59; flex-shrink: 0; white-space: nowrap; padding: 12px; }
+.task-detail-history { padding: 16px 18px; border: 1px solid #e1e7ef; border-radius: 12px; background: #fbfcfe; }
+.task-history-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #e9eef6; color: #5e6e85; font-size: 11px; }
+.task-history-list { display: grid; gap: 0; margin: 15px 0 0; padding: 0; list-style: none; }
+.task-history-event { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; min-height: 58px; }
+.task-history-rail { position: relative; display: flex; justify-content: center; }
+.task-history-rail::after { content: ""; position: absolute; z-index: 0; top: 31px; bottom: -5px; width: 1px; background: #d9e1eb; }
+.task-history-event:last-child .task-history-rail::after { display: none; }
+.task-history-rail > .tarefas-avatar { position: relative; z-index: 1; width: 28px; height: 28px; border: 2px solid #fbfcfe; }
+.task-history-event p { margin: 2px 0 3px; color: #506078; font-size: 13px; line-height: 1.4; }
+.task-history-event p b { color: #2f4058; }
+.task-history-event time { color: #8a97a9; font-size: 11px; }
 @media (max-width: 700px) {
   .task-detail-section-heading { flex-wrap: wrap; gap: 8px; }
   .task-detail { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
