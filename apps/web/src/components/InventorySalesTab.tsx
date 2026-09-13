@@ -565,6 +565,18 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const customRangeIsValid = Boolean(
     customDateFrom && customDateTo && customDateFrom <= customDateTo && customDateTo <= todayInput,
   );
+  const requestedRangeLabel = `${formatDate(appliedRange.dateFrom)} a ${formatDate(appliedRange.dateTo)}`;
+  const responseMatchesAppliedRange =
+    report.period.dateFrom === appliedRange.dateFrom && report.period.dateTo === appliedRange.dateTo;
+
+  function applyCustomRange() {
+    resetPagination();
+    if (customDateFrom === appliedRange.dateFrom && customDateTo === appliedRange.dateTo) {
+      void reportQuery.refetch();
+      return;
+    }
+    setAppliedRange({ dateFrom: customDateFrom, dateTo: customDateTo });
+  }
 
   const insightIcons = {
     top: <Sparkles size={15} />,
@@ -633,13 +645,23 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                     type="button"
                     className="invsales-apply-range"
                     disabled={!customRangeIsValid}
-                    onClick={() => {
-                      setAppliedRange({ dateFrom: customDateFrom, dateTo: customDateTo });
-                      resetPagination();
-                    }}
+                    onClick={applyCustomRange}
                   >
-                    Aplicar
+                    {reportQuery.isFetching ? "Aplicando..." : "Aplicar"}
                   </button>
+                  <p
+                    className={`invsales-custom-range-status${reportQuery.isError || !responseMatchesAppliedRange ? " error" : ""}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {reportQuery.isFetching
+                      ? `Atualizando vendas para ${requestedRangeLabel}...`
+                      : reportQuery.isError
+                        ? "Não foi possível atualizar o período. Clique em Aplicar para tentar novamente."
+                        : responseMatchesAppliedRange
+                          ? `Aplicado: ${windowRangeLabel}`
+                          : "O servidor ainda não atualizou o período solicitado."}
+                  </p>
                 </div>
               ) : null}
             </div>
