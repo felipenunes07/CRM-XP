@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, MessageCircle, NotebookPen, Paperclip, Pencil, Plus, Send, Trash2, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, History, LockKeyhole, MessageCircle, NotebookPen, Paperclip, Pencil, Plus, Send, Trash2, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
 type Item = { id: string; text: string; done: boolean };
 type Content = { notes: string; checklist: Item[]; priority: TaskPriority; images: string[] };
 type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
+type TaskAuditEvent = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; action: string; details: Record<string, unknown>; created_at: string };
 type TaskInfo = Content & {
   id: string; title: string; version: number; status: string;
   person_id: string; due_date: string; due_time: string | null;
   comments: TaskComment[];
+  audit_history: TaskAuditEvent[];
 };
 type Props = {
   task: TaskInfo;
@@ -18,6 +20,7 @@ type Props = {
   canWrite: boolean;
   currentUserId?: string;
   renderCommentAvatar: (comment: TaskComment) => ReactNode;
+  renderAuditAvatar: (event: TaskAuditEvent) => ReactNode;
   onSave: (content: Content, version: number) => Promise<void>;
   onClose: () => void;
   onEdit?: (content: Content, version: number) => void;
@@ -30,7 +33,31 @@ type Props = {
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUserId, renderCommentAvatar, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
+function statusName(value: unknown) {
+  return value === "doing" ? "em andamento" : value === "review" ? "em revisão" : value === "done" ? "concluída" : "a fazer";
+}
+
+function auditMessage(event: TaskAuditEvent) {
+  const details = event.details ?? {};
+  if (event.action === "created") return "criou esta tarefa";
+  if (event.action === "commented") return "enviou uma mensagem no chat";
+  if (event.action === "returned") return "devolveu a tarefa";
+  if (event.action === "completed") return "concluiu a tarefa";
+  if (event.action === "reopened") return "reabriu a tarefa";
+  if (event.action === "assigned") return "alterou o responsável";
+  if (event.action === "reminder_sent") return "enviou uma cobrança pelo WhatsApp";
+  if (event.action === "details_updated") return "atualizou a descrição, anexos ou checklist";
+  if (event.action === "status_changed") return `alterou o status de ${statusName(details.from)} para ${statusName(details.to)}`;
+  if (event.action === "updated") {
+    const current = details.current as Record<string, unknown> | undefined;
+    const previous = details.previous as Record<string, unknown> | undefined;
+    if (current?.priority && previous?.priority) return `alterou a prioridade de ${String(previous.priority)} para ${String(current.priority)}`;
+    return "atualizou os dados da tarefa";
+  }
+  return "atualizou a tarefa";
+}
+
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUserId, renderCommentAvatar, renderAuditAvatar, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -237,6 +264,23 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUs
               </article>)}
             </div>
             {onComment && <div className="task-comment-compose"><textarea rows={2} aria-label="Mensagem no chat da tarefa" maxLength={4000} value={comment} placeholder="Escreva uma mensagem…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar"}</button></div>}
+          </section>
+          <section className="task-detail-section task-detail-history" aria-label="Histórico da tarefa">
+            <div className="task-detail-section-heading">
+              <h3><History size={18} /> Histórico da tarefa <span className="task-history-count">{task.audit_history.length}</span></h3>
+              <small>Ações registradas automaticamente</small>
+            </div>
+            {task.audit_history.length === 0 ? <p className="task-detail-empty">As próximas ações aparecerão aqui.</p> : (
+              <ol className="task-history-list">
+                {task.audit_history.map(event => <li key={event.id} className="task-history-event">
+                  <span className="task-history-rail">{renderAuditAvatar(event)}</span>
+                  <div>
+                    <p><b>{event.author_name}</b> {auditMessage(event)}</p>
+                    <time>{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(event.created_at))}</time>
+                  </div>
+                </li>)}
+              </ol>
+            )}
           </section>
           <fieldset disabled={!canWrite || closing}>
             <section className="task-detail-section">
