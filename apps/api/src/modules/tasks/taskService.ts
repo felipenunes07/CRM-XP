@@ -4,7 +4,7 @@ import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { sendWhatsappInstanceTextMessage } from "../whatsapp/evolutionService.js";
 import { sendUazapiTextMessage } from "../whatsapp/uazapiService.js";
-import { sendTaskAssignmentNotification, sendTaskReviewNotification } from "./taskReminderService.js";
+import { sendTaskAssignmentNotification, sendTaskReturnNotification, sendTaskReviewNotification } from "./taskReminderService.js";
 
 export const TEAM_PERSON_ID = "team";
 export type TaskStatus = "todo" | "doing" | "review" | "done";
@@ -370,6 +370,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
 
 export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
   const client = await pool.connect();
+  let sendAfterCommit: (() => void) | undefined;
   try {
     await client.query("BEGIN");
 
@@ -547,11 +548,11 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       const due = current.due_date.split("-").reverse().join("/");
       const when = current.due_time ? `${due} às ${String(current.due_time).slice(0, 5)}` : due;
       const message =
-        `Olá, ${recipient.full_name}! 👋\n\n` +
+        `Olá, ${recipient.full_name}! 🔔\n\n` +
         `Passando para lembrar da sua tarefa: *${current.title}*.\n` +
         `Prazo: *${when}*.\n\n` +
         `Ela ainda está pendente. Por favor, conclua a tarefa ou dê um retorno sobre o andamento.\n\n` +
-        `_Lembrete enviado pelo CRM XP através da Lili._`;
+        `Aviso automático do CRM XP`;
 
       if (instance.provider === "UAZAPI" && instance.uazapi_base_url && instance.uazapi_token) {
         await sendUazapiTextMessage(
@@ -650,6 +651,19 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       await client.query("INSERT INTO task_assignees (task_id, user_id) VALUES ($1, $2) ON CONFLICT (task_id, user_id) DO UPDATE SET status = 'todo', completed_at = NULL, updated_at = NOW()", [id, current.created_by_user_id]);
       await client.query("UPDATE tasks SET assignee_user_id = $1, status = 'todo', completed_at = NULL, updated_at = NOW(), version = version + 1 WHERE id = $2", [current.created_by_user_id, id]);
       await addAudit(client, user, current, "returned", { returned_to: current.created_by_user_id });
+      const creatorResult = await client.query<{ full_name: string; whatsapp_phone: string | null }>(
+        "SELECT full_name, whatsapp_phone FROM profiles WHERE id = $1 AND is_active = true",
+        [current.created_by_user_id],
+      );
+      const creator = creatorResult.rows[0];
+      if (creator) {
+        sendAfterCommit = () => void sendTaskReturnNotification({
+          recipientName: creator.full_name,
+          recipientPhone: creator.whatsapp_phone,
+          taskTitle: current.title,
+          taskId: id,
+        });
+      }
     } else if (input.action === "delete") {
       if (!isAdmin(user) && current.created_by_user_id !== user.id) {
         throw new HttpError(403, "Voce so pode excluir tarefas criadas por voce");
@@ -718,6 +732,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
     }
 
     await client.query("COMMIT");
+    sendAfterCommit?.();
     return { id };
   } catch (error) {
     await client.query("ROLLBACK");
