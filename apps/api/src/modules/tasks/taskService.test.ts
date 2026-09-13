@@ -79,7 +79,11 @@ describe("taskService", () => {
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);
     expect(board.people[0]).toMatchObject({ id: "team", name: "Time" });
-    expect(board.people[1]).toMatchObject({ id: seller.id, photo: `/api/tasks/avatar/${seller.id}` });
+    expect(board.people[1]).toMatchObject({
+      id: seller.id,
+      photo: "/media/profile-avatars/pedro.jpg",
+      avatar_proxy_url: `/api/tasks/avatar/${seller.id}`,
+    });
   });
 
   it("persists Time outside the board for every user", async () => {

@@ -48,7 +48,14 @@ import "./TarefasWorkspace.css";
 const TAREFAS_API = "/api/tasks";
 const TEAM_PERSON_ID = "team";
 
-type Person = { id: string; name: string; photo: string | null; position: number; hidden?: boolean };
+type Person = {
+  id: string;
+  name: string;
+  photo: string | null;
+  avatar_proxy_url?: string | null;
+  position: number;
+  hidden?: boolean;
+};
 type ChecklistItem = { id: string; text: string; done: boolean };
 type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
 type TaskReturn = { id: string; author_name: string; author_photo: string | null; created_at: string };
@@ -174,17 +181,24 @@ function readImage(file: File) {
 function firstName(name: string) {
   return name.trim().toLowerCase().split(/\s+/)[0] ?? "";
 }
-function avatarUrl(person: Person) {
-  const storedPhoto = person.photo?.trim();
+function resolveAvatarUrl(value: string | null | undefined) {
+  const storedPhoto = value?.trim();
   if (storedPhoto) {
     // Fotos antigas podem ter sido salvas como caminho relativo do backend.
     // Resolva sempre no mesmo servidor da API, independentemente do login.
     return storedPhoto.startsWith("/") ? `${API_BASE_URL}${storedPhoto}` : storedPhoto;
   }
-  const first = firstName(person.name);
-  if (LOCAL_AVATARS[first]) return LOCAL_AVATARS[first];
-  if (CRM_AVATARS[first]) return CRM_AVATAR_BASE + CRM_AVATARS[first];
   return null;
+}
+function avatarUrls(person: Person) {
+  const urls = [
+    resolveAvatarUrl(person.avatar_proxy_url),
+    resolveAvatarUrl(person.photo),
+  ];
+  const first = firstName(person.name);
+  if (LOCAL_AVATARS[first]) urls.push(LOCAL_AVATARS[first]);
+  if (CRM_AVATARS[first]) urls.push(CRM_AVATAR_BASE + CRM_AVATARS[first]);
+  return [...new Set(urls.filter((url): url is string => Boolean(url)))];
 }
 function brazilDate(d = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -274,12 +288,20 @@ async function tarefasRequest<T>(token: string, path: string, init: RequestInit 
 }
 
 function Avatar({ person }: { person: Person }) {
-  const url = avatarUrl(person);
-  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const urls = avatarUrls(person);
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
+  const url = urls.find((candidate) => !failedUrls.includes(candidate));
   return (
     <span className="tarefas-avatar" title={person.name}>
-      {url && url !== failedUrl ? (
-        <img src={url} alt={person.name} width={24} height={24} decoding="async" onError={() => setFailedUrl(url)} />
+      {url ? (
+        <img
+          src={url}
+          alt={person.name}
+          width={24}
+          height={24}
+          decoding="async"
+          onError={() => setFailedUrls((failed) => failed.includes(url) ? failed : [...failed, url])}
+        />
       ) : (
         person.name.slice(0, 2).toUpperCase()
       )}
