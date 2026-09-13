@@ -57,6 +57,22 @@ const taskRow = {
 };
 
 describe("taskService", () => {
+  it.each([true, false])("allows a former assignee to comment only with a recorded return: %s", async hasReturn => {
+    clientQuery.mockResolvedValue({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ ...taskRow, assignee_user_id: admin.id }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: hasReturn ? [{ exists: 1 }] : [] });
+    const action = mutateTask({ action: "comment", id: taskRow.id, version: 1, comment: "Acompanhando o retorno" }, seller);
+    if (hasReturn) {
+      await action;
+      expect(clientQuery).toHaveBeenCalledWith("COMMIT");
+      expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("INSERT INTO task_comments"), [taskRow.id, seller.id, "Acompanhando o retorno"]);
+    } else {
+      await expect(action).rejects.toMatchObject({ statusCode: 404 });
+      expect(clientQuery).toHaveBeenCalledWith("ROLLBACK");
+    }
+  });
   beforeEach(() => {
     poolQuery.mockReset();
     poolQuery.mockResolvedValue({ rows: [] });
@@ -75,6 +91,8 @@ describe("taskService", () => {
 
     expect(poolQuery.mock.calls[1]?.[1]).toEqual([false, seller.id]);
     expect(poolQuery.mock.calls[1]?.[0]).toContain("OR t.created_by_user_id = $2::uuid");
+    expect(poolQuery.mock.calls[1]?.[0]).toContain("returned.actor_user_id = $2::uuid");
+    expect(poolQuery.mock.calls[1]?.[0]).toContain("returned.action = 'returned'");
     expect(board.tasks).toHaveLength(1);
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);

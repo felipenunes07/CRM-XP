@@ -9,6 +9,14 @@ const mine = {
 };
 
 describe("tarefas page list visibility", () => {
+  it("lets Suelen follow a task she returned to Felipe without making her responsible again", () => {
+    const task = { personIds: ["felipe"], createdByUserId: "felipe", returnedByUserIds: ["suelen"] };
+    const context = { manager: false, adminScope: "mine" as const, currentUserId: "suelen", listScope: "created" as const };
+    expect(taskBelongsToList(task, context)).toBe(true);
+    expect(taskBelongsToList(task, { ...context, listScope: "received" })).toBe(false);
+    expect(taskBelongsToList(task, { ...context, currentUserId: "unrelated" })).toBe(false);
+    expect(personBelongsToList("felipe", context)).toBe(true);
+  });
   it("shows Time in Minhas tarefas when the visible people list contains it", () => {
     expect(personBelongsToList("team", mine)).toBe(true);
     expect(personBelongsToList("admin-id", mine)).toBe(true);

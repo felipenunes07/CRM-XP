@@ -375,7 +375,7 @@ function TaskReturnTrail({ task }: { task: Task }) {
           }} /></span>
           <span className="tarefas-return-copy">
             <strong><CornerUpLeft size={12} /> {item.author_name} {index === 0 ? "devolveu esta tarefa" : "devolveu novamente"}</strong>
-            <small>Retornou para você em {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</small>
+            <small>Retornou para {task.created_by_name} em {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</small>
           </span>
         </div>
       ))}
@@ -767,6 +767,7 @@ export default function TarefasPage() {
       personIds: taskPeople(task),
       createdByUserId: task.created_by_user_id,
       returnedToCreator: task.return_history.length > 0,
+      returnedByUserIds: task.return_history.flatMap(item => item.author_user_id ? [item.author_user_id] : []),
     }, context));
   }, [adminScope, currentUserId, listScope, manager, tasks]);
   const listPeople = useMemo(() => {
@@ -986,7 +987,7 @@ export default function TarefasPage() {
             data-on={tab === "tarefas" && listScope === "created" ? "" : undefined}
             onClick={() => { setTab("tarefas"); setListScope("created"); }}
           >
-            <Send size={13} /> Atribuídas por mim
+            <Send size={13} /> Atribuídas / devolvidas por mim
           </button>
           <button
             type="button"

@@ -287,6 +287,9 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
            OR t.assignee_user_id = $2::uuid
            OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $2::uuid)
            OR t.created_by_user_id = $2::uuid
+           OR EXISTS (SELECT 1 FROM task_audit_logs returned
+                      WHERE returned.task_id = t.id AND returned.actor_user_id = $2::uuid
+                        AND returned.action = 'returned')
          )
        ORDER BY t.due_date ASC, t.due_time ASC NULLS LAST, t.created_at ASC`,
       [showAll, user.id],
@@ -445,7 +448,10 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         "SELECT 1 FROM task_assignees WHERE task_id = $1 AND user_id = $2", [id, user.id],
       )).rows[0]);
       if (!isAdmin(user) && !isAssignee && current.created_by_user_id !== user.id && current.audience !== "team") {
-        throw new HttpError(404, "Tarefa nao encontrada");
+        const returned = await client.query(
+          "SELECT 1 FROM task_audit_logs WHERE task_id = $1 AND actor_user_id = $2 AND action = 'returned' LIMIT 1", [id, user.id],
+        );
+        if (!returned.rows[0]) throw new HttpError(404, "Tarefa nao encontrada");
       }
       const body = cleanText(input.comment, "Mensagem", 4000);
       await client.query(
