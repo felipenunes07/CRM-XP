@@ -20,6 +20,8 @@
 .task-detail-status.is-done { background: #e6f6ed; color: #1c8b5c; }
 .task-detail-edit { width: fit-content; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: #5e6e95; font-size: 11px; cursor: pointer; padding: 4px 0; }
 .task-detail-edit:hover { color: #2956d7; }
+.task-detail-history-link { width: fit-content; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d7e1ed; border-radius: 7px; background: #fff; color: #385b9e; padding: 7px 10px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.task-detail-history-link:hover { border-color: #a9bdd8; background: #f8fbff; }
 .task-detail-notify { display: flex; align-items: center; gap: 12px; padding: 18px 0 0; }
 .task-detail-notify > button, .task-detail-notify > span { display: inline-flex; align-items: center; gap: 9px; }
 .task-detail-notify > button, .task-detail-notify .is-confirm { border: 0; border-radius: 7px; background: #20a765; color: #fff; padding: 9px 13px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }

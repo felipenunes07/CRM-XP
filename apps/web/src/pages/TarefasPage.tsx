@@ -400,8 +400,8 @@ function TaskChecklistPreview({ task, compact = false }: { task: Task; compact?:
 function TaskDetailsButton({ task, onOpen }: { task: Task; onOpen?: () => void }) {
   if (!onOpen) return null;
   return (
-    <button type="button" className="tarefas-details-button" onClick={onOpen} aria-label={`Abrir detalhes de ${task.title}`} title="Abrir tarefa">
-      <NotebookPen size={13} /> Detalhes
+    <button type="button" className="tarefas-details-button" onClick={onOpen} aria-label={`Ver detalhes e histórico de ${task.title}`} title="Ver detalhes e histórico">
+      <History size={13} /> Ver detalhes e histórico
     </button>
   );
 }
