@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, NotebookPen, Paperclip, Pencil, Plus, Send, Trash2, Users, X, UserRound, FileText } from "lucide-react";
+import { Check, CheckCheck, ChevronLeft, ChevronRight, Clock3, Flag, LockKeyhole, MessageCircle, NotebookPen, Paperclip, Pencil, Plus, Send, Trash2, Users, X, UserRound, FileText } from "lucide-react";
 import { TaskPriorityPicker, type TaskPriority } from "./TaskPriorityPicker";
 import "./TaskDetailsDialog.css";
 
@@ -16,6 +16,8 @@ type Props = {
   assignee: ReactNode;
   creator: ReactNode;
   canWrite: boolean;
+  currentUserId?: string;
+  renderCommentAvatar: (comment: TaskComment) => ReactNode;
   onSave: (content: Content, version: number) => Promise<void>;
   onClose: () => void;
   onEdit?: (content: Content, version: number) => void;
@@ -28,7 +30,7 @@ type Props = {
 };
 
 // The next write uses the last acknowledged version, even while typing during a request.
-export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
+export function TaskDetailsDialog({ task, assignee, creator, canWrite, currentUserId, renderCommentAvatar, onSave, onClose, onEdit, canNotify = false, onNotify, canDelete = false, onDelete, onReturn, onComment }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [content, setContent] = useState<Content>({ notes: task.notes, checklist: task.checklist, images: task.images ?? [], priority: task.priority ?? "normal" });
   const latest = useRef(content);
@@ -46,6 +48,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [comment, setComment] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
   const clean = (value: Content): Content => ({
     notes: value.notes,
     priority: value.priority,
@@ -199,7 +202,6 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
             </div>
           )}
           <section className="task-detail-section">
-            <label><Paperclip size={17} /> Imagens{content.images.length > 0 && <small>{content.images.length}</small>}</label>
             <div className="task-detail-images">
               {content.images.map((image, index) => (
                 <span key={`${index}-${image.slice(-24)}`}>
@@ -214,26 +216,27 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           </section>
           <section className="task-detail-section task-detail-description">
             <div className="task-detail-section-heading">
-              <label htmlFor="task-detail-notes"><NotebookPen size={17} /> Descrição da tarefa</label>
-              <small>Contexto e instruções</small>
+              <h3><FileText size={17} /> Descrição da tarefa</h3>
+              {canWrite && <button type="button" className="task-detail-edit" disabled={closing} onClick={() => setEditingDescription(value => !value)}><Pencil size={13} /> {editingDescription ? "Ver descrição" : "Editar descrição"}</button>}
             </div>
-            <textarea id="task-detail-notes" value={content.notes} maxLength={10000} rows={6} disabled={!canWrite || closing}
+            <p className="task-detail-help">O que precisa ser feito · alterações salvas automaticamente</p>
+            {editingDescription ? <textarea id="task-detail-notes" aria-label="Descrição da tarefa" value={content.notes} maxLength={10000} rows={4} disabled={!canWrite || closing}
               placeholder="Descreva o que precisa ser feito, critérios e informações importantes…"
-              onChange={event => change({ ...latest.current, notes: event.target.value })} />
+              onChange={event => change({ ...latest.current, notes: event.target.value })} /> : <p className="task-description-text">{content.notes || "Nenhuma descrição adicionada."}</p>}
           </section>
           <section className="task-detail-section task-detail-comments">
             <div className="task-detail-section-heading">
-              <label><NotebookPen size={17} /> Conversa da tarefa <small>{task.comments.length}</small></label>
-              <small>Atualizações entre responsáveis</small>
+              <h3><MessageCircle size={19} /> Chat da tarefa <span className="task-chat-count">{task.comments.length}</span></h3>
+              <small>Mensagens entre participantes</small>
             </div>
             {task.comments.length === 0 && <p className="task-detail-empty">Nenhuma mensagem ainda.</p>}
             <div className="task-comment-list">
-              {task.comments.map(item => <article key={item.id} className="task-comment">
-                {item.author_photo ? <img src={item.author_photo} alt="" /> : <span>{item.author_name.slice(0, 2).toUpperCase()}</span>}
+              {task.comments.map(item => <article key={item.id} className={`task-comment${item.author_user_id === currentUserId ? " is-own" : ""}`}>
+                {renderCommentAvatar(item)}
                 <div><header><b>{item.author_name}</b><time>{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</time></header><p>{item.body}</p></div>
               </article>)}
             </div>
-            {onComment && <div className="task-comment-compose"><textarea rows={3} maxLength={4000} value={comment} placeholder="Escreva uma atualização para a equipe…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar atualização"}</button></div>}
+            {onComment && <div className="task-comment-compose"><textarea rows={2} aria-label="Mensagem no chat da tarefa" maxLength={4000} value={comment} placeholder="Escreva uma mensagem…" onChange={event => setComment(event.target.value)} /><button type="button" disabled={!comment.trim() || sendingComment} onClick={() => void postComment()}><Send size={15} /> {sendingComment ? "Enviando…" : "Enviar"}</button></div>}
           </section>
           <fieldset disabled={!canWrite || closing}>
             <section className="task-detail-section">
@@ -275,7 +278,7 @@ export function TaskDetailsDialog({ task, assignee, creator, canWrite, onSave, o
           ) : (
             <button type="button" className="task-detail-delete" disabled={closing} onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Excluir tarefa</button>
           ))}
-          <span role="status" className={error ? "is-error" : ""}>{saveState === "saved" ? <><Check size={14} /> Tudo salvo</> : saveState === "error" ? error : "Salvando alterações…"}</span>
+          <span role="status" className={error ? "is-error" : ""}>{error || (saveState === "saved" ? <><Check size={14} /> Tudo salvo</> : "Salvando alterações…")}</span>
           {saveState === "error" && <button type="button" className="task-detail-edit" onClick={() => void flush()}>Tentar novamente</button>}
           <button type="button" className="task-detail-done" disabled={closing} onClick={() => void finish()}>Pronto</button>
         </footer>
