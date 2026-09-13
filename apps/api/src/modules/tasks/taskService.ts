@@ -399,7 +399,10 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
     );
     const current = currentResult.rows[0];
     if (!current) throw new HttpError(404, "Tarefa nao encontrada");
-    if (input.version !== current.version) {
+    // Status é uma ação curta e protegida pelo bloqueio da linha. O quadro se
+    // atualiza ao vivo; não bloqueamos o responsável só porque a versão mudou
+    // enquanto ele estava com o seletor aberto.
+    if (input.version !== current.version && input.action !== "status") {
       throw new HttpError(409, "Essa tarefa mudou em outra tela. Atualize e tente novamente");
     }
 

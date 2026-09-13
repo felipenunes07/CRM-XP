@@ -432,7 +432,6 @@ export default function TarefasPage() {
   const [cardColors, setCardColors] = useState(() => {
     try { return localStorage.getItem(`tarefas:cores-cards:${user?.id ?? "anon"}`) === "1"; } catch { return false; }
   });
-  const [colorPreferenceUser, setColorPreferenceUser] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico">("tarefas");
   const [listScope, setListScope] = useState<"received" | "created">("received");
@@ -461,15 +460,11 @@ export default function TarefasPage() {
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
-  useEffect(() => {
-    if (!user?.id || colorPreferenceUser === user.id) return;
-    try { setCardColors(localStorage.getItem(`tarefas:cores-cards:${user.id}`) === "1"); } catch { setCardColors(false); }
-    setColorPreferenceUser(user.id);
-  }, [colorPreferenceUser, user?.id]);
-  useEffect(() => {
-    if (!user?.id || colorPreferenceUser !== user.id) return;
-    try { localStorage.setItem(`tarefas:cores-cards:${user.id}`, cardColors ? "1" : "0"); } catch { /* preferência apenas nesta sessão */ }
-  }, [cardColors, colorPreferenceUser, user?.id]);
+  const toggleCardColors = () => setCardColors(current => {
+    const next = !current;
+    try { localStorage.setItem(`tarefas:cores-cards:${user?.id ?? "anon"}`, next ? "1" : "0"); } catch { /* preferência apenas nesta sessão */ }
+    return next;
+  });
 
   async function uploadTeamAvatar(file: File | undefined) {
     if (!file || !token) return;
@@ -1013,8 +1008,8 @@ export default function TarefasPage() {
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
         </button>
-        <button type="button" className="tarefas-refresh" data-on={cardColors ? "" : undefined} onClick={() => setCardColors(value => !value)} title="Ativar ou desativar cores de etapa nos cards">
-          {cardColors ? <Eye size={14} /> : <EyeOff size={14} />} Cores dos cards
+        <button type="button" className="tarefas-refresh tarefas-card-colors-toggle" data-on={cardColors ? "" : undefined} onClick={toggleCardColors} title="Ativar ou desativar cores de etapa nos cards" aria-pressed={cardColors}>
+          {cardColors ? <Eye size={14} /> : <EyeOff size={14} />} Cores: {cardColors ? "ligadas" : "desligadas"}
         </button>
         <a className="tarefas-refresh tarefas-fullscreen-link" href="/tarefas/tela" target="_blank" rel="noreferrer">
           <ExternalLink size={14} /> Abrir tela

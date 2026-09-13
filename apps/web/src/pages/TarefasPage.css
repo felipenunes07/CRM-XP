@@ -113,6 +113,7 @@
   gap: 7px;
   cursor: pointer;
 }
+.tarefas-card-colors-toggle[data-on] { border-color: #b8c8f2; background: #edf3ff; color: #2956d7; font-weight: 650; }
 .tarefas-scope {
   display: inline-flex;
   border: 1px solid #dbe3f4;
