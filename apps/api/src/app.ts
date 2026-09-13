@@ -786,6 +786,53 @@ export function createApp() {
   app.use("/media/campaign-images", express.static(campaignMediaDir, { maxAge: "7d" }));
   app.use("/media/profile-avatars", express.static(profileAvatarDir, { maxAge: "30d", immutable: true }));
 
+  // As fotos do quadro precisam funcionar para todos os funcionários, sem
+  // depender do host que estava configurado quando o administrador enviou a
+  // imagem. Esta rota é pública pelo mesmo motivo da mídia estática acima:
+  // imagens carregadas por <img> não levam o JWT da sessão.
+  app.get("/api/tasks/avatar/:userId", async (request, response, next) => {
+    try {
+      const userId = z.string().uuid().parse(request.params.userId);
+      const result = await pool.query<{ profile_avatar_url: string | null }>(
+        "SELECT profile_avatar_url FROM profiles WHERE id = $1 AND is_active = true",
+        [userId],
+      );
+      const sourceUrl = result.rows[0]?.profile_avatar_url?.trim();
+      if (!sourceUrl) {
+        response.status(404).end();
+        return;
+      }
+
+      const sourcePath = new URL(sourceUrl, "https://crm.local").pathname;
+      const mediaPrefix = "/media/profile-avatars/";
+      if (!sourcePath.startsWith(mediaPrefix)) {
+        response.redirect(302, sourceUrl);
+        return;
+      }
+
+      const fileName = path.basename(sourcePath);
+      if (!fileName || fileName !== sourcePath.slice(mediaPrefix.length)) {
+        response.status(404).end();
+        return;
+      }
+
+      const file = await fsPromises.readFile(path.join(profileAvatarDir, fileName));
+      const extension = path.extname(fileName).toLowerCase();
+      const contentType = extension === ".png"
+        ? "image/png"
+        : extension === ".gif"
+          ? "image/gif"
+          : extension === ".webp"
+            ? "image/webp"
+            : "image/jpeg";
+      response.setHeader("Content-Type", contentType);
+      response.setHeader("Cache-Control", "public, max-age=86400");
+      response.end(file);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get("/api/health", async (_request, response) => {
     const db = await pool.query("SELECT 1");
     const redisPing = await redis.ping();
