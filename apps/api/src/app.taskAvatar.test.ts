@@ -57,4 +57,17 @@ describe("task avatar route", () => {
     expect(response.headers["content-type"]).toContain("image/png");
     expect(response.body).toEqual(Buffer.from("avatar-bytes"));
   });
+
+  it("serves a persisted profile avatar without relying on the server disk", async () => {
+    poolQuery.mockResolvedValue({
+      rows: [{ content_type: "image/webp", bytes: Buffer.from("persisted-avatar") }],
+    });
+
+    const response = await request(createApp()).get("/api/profile-avatars/profile-test");
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/webp");
+    expect(response.body).toEqual(Buffer.from("persisted-avatar"));
+    expect(readFile).not.toHaveBeenCalled();
+  });
 });
