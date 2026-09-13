@@ -20,7 +20,7 @@
 .invsales-filterbar-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.4rem;
+  gap: 1rem;
   align-items: flex-end;
 }
 
@@ -51,9 +51,9 @@
 .invsales-seg button {
   border: none;
   background: transparent;
-  padding: 0.38rem 0.85rem;
+  padding: 0.34rem 0.68rem;
   border-radius: 8px;
-  font-size: 0.85rem;
+  font-size: 0.81rem;
   font-weight: 600;
   color: #47536b;
   cursor: pointer;
@@ -85,11 +85,11 @@
   font-size: 0.88rem;
   background: #fff;
   color: #0f172a;
-  min-width: 140px;
+  min-width: 130px;
 }
 
 .invsales-control input {
-  min-width: 210px;
+  min-width: 195px;
 }
 
 .invsales-control select:focus,
@@ -102,14 +102,24 @@
   align-items: flex-start;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
+  position: relative;
 }
 
 .invsales-custom-range {
   align-items: flex-end;
+  background: #fff;
+  border: 1px solid rgba(41, 86, 215, 0.22);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(23, 50, 96, 0.16);
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+  left: 0;
+  padding: 0.6rem;
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  width: max-content;
+  z-index: 10;
 }
 
 .invsales-custom-range label {
@@ -122,7 +132,7 @@
 }
 
 .invsales-custom-range input {
-  min-width: 145px;
+  min-width: 132px;
 }
 
 .invsales-apply-range {
@@ -2511,6 +2521,11 @@
 
   .invsales-period-control .invsales-seg {
     flex-wrap: wrap;
+  }
+
+  .invsales-custom-range {
+    box-shadow: none;
+    position: static;
   }
 
   .invstock-quantity-track {
