@@ -174,7 +174,12 @@ function firstName(name: string) {
   return name.trim().toLowerCase().split(/\s+/)[0] ?? "";
 }
 function avatarUrl(person: Person) {
-  if (person.photo) return person.photo;
+  const storedPhoto = person.photo?.trim();
+  if (storedPhoto) {
+    // Fotos antigas podem ter sido salvas como caminho relativo do backend.
+    // Resolva sempre no mesmo servidor da API, independentemente do login.
+    return storedPhoto.startsWith("/") ? `${API_BASE_URL}${storedPhoto}` : storedPhoto;
+  }
   const first = firstName(person.name);
   if (LOCAL_AVATARS[first]) return LOCAL_AVATARS[first];
   if (CRM_AVATARS[first]) return CRM_AVATAR_BASE + CRM_AVATARS[first];
@@ -859,9 +864,11 @@ export default function TarefasPage() {
     return groups;
   }, [deliveredThisWeek]);
 
-  const personName = (id: string) => people.find((p) => p.id === id)?.name ?? "—";
+  // A foto e o nome vêm da lista completa. Pessoas ocultas do quadro ainda
+  // precisam aparecer corretamente como criadoras/responsáveis das tarefas.
+  const personName = (id: string) => boardPeople.find((p) => p.id === id)?.name ?? "—";
   const personById = (id: string) =>
-    people.find((p) => p.id === id) ?? { id, name: personName(id), photo: null, position: 0 };
+    boardPeople.find((p) => p.id === id) ?? { id, name: personName(id), photo: null, position: 0 };
   const creatorFor = (task: Task): Person => ({
     id: task.created_by_user_id,
     name: task.created_by_name,
