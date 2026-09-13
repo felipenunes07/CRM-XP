@@ -539,13 +539,24 @@
   flex-wrap: wrap;
   line-height: 1;
 }
-.tarefas-return-trail { display: grid; gap: 6px; margin: 7px 0 2px; max-width: 330px; }
-.tarefas-return-event { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px 9px; border: 1px solid #f6c76a; border-left: 3px solid #f59e0b; border-radius: 7px; background: #fff9eb; color: #92400e; }
-.tarefas-return-icon { display: grid; flex: 0 0 22px; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #ffedbd; color: #b45309; }
-.tarefas-return-event .tarefas-avatar { flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid #f5c878; box-shadow: 0 0 0 2px #fff; }
-.tarefas-return-copy { display: grid; min-width: 0; gap: 1px; }
-.tarefas-return-copy strong { overflow: hidden; color: #92400e; font-size: 11px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
-.tarefas-return-copy small { color: #a16207; font-size: 9.5px; line-height: 1.25; }
+.tarefas-return-trail { display: grid; gap: 0; margin: 8px 0 3px; max-width: 360px; }
+.tarefas-return-event { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; column-gap: 8px; min-width: 0; padding: 3px 8px 7px 0; }
+.tarefas-return-event:not(:last-child)::after { position: absolute; top: 29px; bottom: -1px; left: 12px; width: 2px; background: #d9e2ef; content: ""; }
+.tarefas-return-rail { position: relative; z-index: 1; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: #fff; }
+.tarefas-return-event .tarefas-avatar { width: 25px; height: 25px; border: 2px solid #dbe5f2; box-shadow: 0 0 0 2px #fff; }
+.tarefas-return-copy { display: grid; min-width: 0; gap: 1px; padding: 4px 8px; border: 1px solid #e3eaf3; border-radius: 7px; background: #fbfcfe; }
+.tarefas-return-copy strong { display: flex; align-items: center; gap: 4px; overflow: hidden; color: #42516a; font-size: 11px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-return-copy small { color: #7e8ca1; font-size: 9.5px; line-height: 1.25; }
+.tarefas-return-event.is-created .tarefas-avatar { border-color: #a9bff3; }
+.tarefas-return-event.is-created .tarefas-return-copy { border-color: #d8e4fb; background: #f7faff; }
+.tarefas-return-event.is-returned .tarefas-avatar { border-color: #f5c878; }
+.tarefas-return-event.is-returned .tarefas-return-copy { border-color: #f6c76a; background: #fff9eb; }
+.tarefas-return-event.is-returned .tarefas-return-copy strong { color: #92400e; }
+.tarefas-return-event.is-returned .tarefas-return-copy small { color: #a16207; }
+.tarefas-return-event.is-returned::after { background: #f6d997; }
+.tarefas-return-event.is-current .tarefas-avatar { border-color: #8bd2b6; }
+.tarefas-return-event.is-current .tarefas-return-copy { border-color: #bde8d7; background: #f3fcf8; }
+.tarefas-return-event.is-current .tarefas-return-copy strong { color: #187451; }
 .tarefas-sheet .tarefas-creator {
   display: inline;
   margin: 0;
