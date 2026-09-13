@@ -1114,16 +1114,16 @@ export const api = {
     }, token);
   },
   uploadTaskTeamAvatar(token: string, fileBase64: string) {
-    return request<{ url: string }>("/tasks/team-avatar", {
+    return request<{ url: string }>("/api/tasks/team-avatar", {
       method: "POST",
       body: JSON.stringify({ fileBase64 }),
     }, token);
   },
   setTaskPersonVisibility(token: string, personId: string, visible: boolean) {
-    return request<void>(`/tasks/people/${personId}/visibility`, { method: "POST", body: JSON.stringify({ visible }) }, token);
+    return request<void>(`/api/tasks/people/${personId}/visibility`, { method: "POST", body: JSON.stringify({ visible }) }, token);
   },
   setTaskPeopleOrder(token: string, personIds: string[]) {
-    return request<void>("/tasks/people/order", { method: "POST", body: JSON.stringify({ personIds }) }, token);
+    return request<void>("/api/tasks/people/order", { method: "POST", body: JSON.stringify({ personIds }) }, token);
   },
   createUser(token: string, input: AdminUserInput) {
     return request<AdminUser[]>("/api/admin/users", {
