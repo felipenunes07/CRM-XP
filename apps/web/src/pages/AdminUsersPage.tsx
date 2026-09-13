@@ -132,6 +132,16 @@ function formatDate(value?: string | null) {
   }).format(new Date(value));
 }
 
+function userAvatarUrl(user: Pick<AdminUser, "id" | "profile_avatar_url">) {
+  // O proxy do CRM funciona mesmo quando a foto foi salva em um host antigo
+  // ou quando o navegador do usuário não consegue acessar a URL original.
+  return user.profile_avatar_url ? `${apiBaseUrl()}/api/tasks/avatar/${user.id}` : null;
+}
+
+function apiBaseUrl() {
+  return import.meta.env.VITE_API_BASE_URL ?? "";
+}
+
 function readImageAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -374,7 +384,7 @@ export function AdminUsersPage() {
                   onClick={() => setSelectedId(user.id)}
                 >
                   <span className="admin-user-avatar">
-                    {user.profile_avatar_url ? <img src={user.profile_avatar_url} alt="" /> : initials(user.name, user.email)}
+                    {userAvatarUrl(user) ? <img src={userAvatarUrl(user)!} alt="" /> : initials(user.name, user.email)}
                   </span>
                   <span className="admin-user-main">
                     <strong>{user.name}</strong>
@@ -394,7 +404,7 @@ export function AdminUsersPage() {
           <section className="admin-editor-hero">
             <div className="admin-editor-identity">
               <span className={`admin-editor-avatar ${draft.isActive ? "" : "inactive"}`}>
-                {selectedUser?.profile_avatar_url ? <img src={selectedUser.profile_avatar_url} alt="" /> : selectedUser ? initials(selectedUser.name, selectedUser.email) : <UserRound size={22} />}
+                {draft.avatarUrl ? <img src={draft.avatarUrl} alt="Prévia do avatar" /> : selectedUser ? initials(selectedUser.name, selectedUser.email) : <UserRound size={22} />}
               </span>
               <div>
                 <span>{selectedUser ? "Editando acesso" : "Novo acesso"}</span>
