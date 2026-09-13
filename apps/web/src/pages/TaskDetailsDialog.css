@@ -73,6 +73,13 @@
 .task-detail-section { margin-top: 24px; }
 .task-detail-section > label, .task-detail h3 { font-size: 15px; color: #3c485c; }
 .task-detail-section > label > svg, .task-detail h3 > svg { width: 19px; height: 19px; color: #8190a5; }
+.task-detail-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.task-detail-section-heading > small { color: #8491a4; font-size: 12px; }
+.task-detail-description { padding: 16px 18px 18px; border: 1px solid #e1e7f0; border-radius: 12px; background: linear-gradient(180deg, #fbfcff, #f7f9fd); }
+.task-detail-description textarea { margin-top: 10px; background: #fff; }
+.task-detail-comments { padding: 16px 18px 18px; border: 1px solid #dce7ff; border-radius: 12px; background: #f8faff; }
+.task-detail-comments .task-detail-section-heading > small { color: #5571ab; }
+.task-detail-comments .task-comment-compose textarea { background: #fff; border-color: #b7caf5; }
 .task-detail-section textarea { min-height: 126px; font-size: 14px; background: #fafbfd; border-color: #e8ecf2; }
 .task-detail textarea:focus, .task-detail-item input[type=text]:focus { outline-color: #dbe6ff; border-color: #9fb7ed; }
 .task-detail-check-title > span { font-size: 12px; background: #eef1f5; color: #8190a5; padding: 4px 8px; border-radius: 5px; }

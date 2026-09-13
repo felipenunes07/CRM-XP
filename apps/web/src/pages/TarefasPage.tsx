@@ -727,12 +727,16 @@ export default function TarefasPage() {
     return tasks.filter((task) => taskBelongsToList({
       personIds: taskPeople(task),
       createdByUserId: task.created_by_user_id,
+      returnedToCreator: task.return_history.length > 0,
     }, context));
   }, [adminScope, currentUserId, listScope, manager, tasks]);
   const listPeople = useMemo(() => {
     const source = manager && adminScope === "all" ? displayPeople : people;
     const context = { manager, adminScope, listScope, currentUserId: currentUserId ?? "" };
-    const matchingPeople = source.filter((person) => personBelongsToList(person.id, context));
+    const matchingPeople = source.filter((person) =>
+      personBelongsToList(person.id, context)
+      || (listScope === "created" && person.id === currentUserId && listTasks.some((task) => assignedTo(task, person.id))),
+    );
     return listScope === "created" && assignedPeopleFilter === "with_tasks"
       ? matchingPeople.filter((person) => listTasks.some((task) => assignedTo(task, person.id)))
       : matchingPeople;
@@ -1651,8 +1655,9 @@ export default function TarefasPage() {
             await mutation.mutateAsync({ action: "delete", id: detailsDraft.task.id, version: detailsDraft.task.version });
             setDetailsDraft(null);
           } : undefined}
-          onReturn={assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "") && detailsDraft.task.created_by_user_id !== boardQuery.data?.current_user_id ? async () => {
-            await mutation.mutateAsync({ action: "return", id: detailsDraft.task.id, version: detailsDraft.task.version });
+          onReturn={assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "") && detailsDraft.task.created_by_user_id !== boardQuery.data?.current_user_id ? async (version) => {
+            await mutation.mutateAsync({ action: "return", id: detailsDraft.task.id, version });
+            setNotice(`Tarefa devolvida para ${detailsDraft.task.created_by_name}.`);
             setDetailsDraft(null);
           } : undefined}
         />
