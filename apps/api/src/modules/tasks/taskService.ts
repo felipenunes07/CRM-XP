@@ -340,7 +340,10 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
       ...peopleResult.rows.map((person, index) => ({
         id: String(person.id),
         name: String(person.full_name),
-        photo: person.profile_avatar_url,
+        // A foto é entregue por um endpoint público e estável do quadro. Isso
+        // evita que uma URL antiga do storage fique inacessível para outro
+        // funcionário depois que o administrador a salva no CRM.
+        photo: person.profile_avatar_url ? `/api/tasks/avatar/${person.id}` : null,
         hidden: hiddenPeople.has(String(person.id)),
         position: positionOf(String(person.id), index + 1),
       })),

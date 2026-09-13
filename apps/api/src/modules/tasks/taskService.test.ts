@@ -68,7 +68,7 @@ describe("taskService", () => {
 
   it("filters a regular user's board to assigned, team, and self-created tasks at the server", async () => {
     poolQuery
-      .mockResolvedValueOnce({ rows: [{ id: seller.id, full_name: "Pedro", created_at: "2026-01-01" }] })
+      .mockResolvedValueOnce({ rows: [{ id: seller.id, full_name: "Pedro", profile_avatar_url: "/media/profile-avatars/pedro.jpg", created_at: "2026-01-01" }] })
       .mockResolvedValueOnce({ rows: [taskRow] });
 
     const board = await getTaskBoard(seller);
@@ -79,6 +79,7 @@ describe("taskService", () => {
     expect(board.tasks[0]).toMatchObject({ created_by_user_id: admin.id, created_by_name: "Felipe" });
     expect(board.audit_logs).toEqual([]);
     expect(board.people[0]).toMatchObject({ id: "team", name: "Time" });
+    expect(board.people[1]).toMatchObject({ id: seller.id, photo: `/api/tasks/avatar/${seller.id}` });
   });
 
   it("persists Time outside the board for every user", async () => {
