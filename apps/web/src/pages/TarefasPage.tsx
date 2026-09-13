@@ -1664,6 +1664,14 @@ export default function TarefasPage() {
         <TaskDetailsDialog
           key={detailsDraft.task.id}
           task={detailsDraft.task}
+          currentUserId={currentUserId}
+          renderCommentAvatar={item => <Avatar person={{
+            id: item.author_user_id,
+            name: item.author_name,
+            photo: item.author_photo,
+            avatar_proxy_url: `/api/tasks/avatar/${item.author_user_id}`,
+            position: 0,
+          }} />}
           canWrite={manager || assignedTo(detailsDraft.task, boardQuery.data?.current_user_id ?? "")}
           assignee={<span className="tarefas-assignee">{taskPeople(detailsDraft.task).map((id) => <Avatar key={id} person={personById(id)} />)}<span>{taskPeople(detailsDraft.task).map(personName).join(", ")}</span></span>}
           creator={<span className="tarefas-assignee"><Avatar person={creatorFor(detailsDraft.task)} /><span>{detailsDraft.task.created_by_name}</span></span>}
