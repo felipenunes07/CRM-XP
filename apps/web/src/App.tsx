@@ -89,7 +89,15 @@ export function defaultAccessiblePath(canAccess: (permission: string) => boolean
 
 function DefaultLandingRoute() {
   const { canAccess } = usePermissions();
-  return <Navigate to={defaultAccessiblePath(canAccess)} replace />;
+  const defaultPath = defaultAccessiblePath(canAccess);
+
+  // The dashboard already lives at "/". Redirecting there from this same
+  // route leaves the outlet empty because React Router never mounts the page.
+  if (defaultPath === "/") {
+    return <DashboardPage />;
+  }
+
+  return <Navigate to={defaultPath} replace />;
 }
 
 export default function App() {
