@@ -446,6 +446,7 @@ export default function TarefasPage() {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [assigneePickerOpen, setAssigneePickerOpen] = useState(false);
   const [detailsDraft, setDetailsDraft] = useState<DetailsDraft | null>(null);
   const kanbanRef = useRef<HTMLDivElement | null>(null);
   const kanbanDrag = useRef<{ pointerId: number; startX: number; startScrollLeft: number } | null>(null);
@@ -802,7 +803,7 @@ export default function TarefasPage() {
   };
 
   const openNew = (personId: string) =>
-    setDraft({
+    (setAssigneePickerOpen(false), setDraft({
       title: "",
       person_id: personId || boardQuery.data?.current_user_id || people[0]?.id || "",
       person_ids: [personId || boardQuery.data?.current_user_id || people[0]?.id || ""].filter(Boolean),
@@ -810,9 +811,9 @@ export default function TarefasPage() {
       due_time: "",
       notes: "",
       priority: "normal",
-    });
+    }));
   const openEdit = (task: Task) =>
-    setDraft({
+    (setAssigneePickerOpen(false), setDraft({
       id: task.id,
       version: task.version,
       title: task.title,
@@ -822,7 +823,7 @@ export default function TarefasPage() {
       due_time: task.due_time ?? "",
       notes: task.notes ?? "",
       priority: task.priority ?? "normal",
-    });
+    }));
   const openDetails = (task: Task) =>
     setDetailsDraft({
       task,
@@ -1669,26 +1670,31 @@ export default function TarefasPage() {
               />
             </label>
 
-            <label>
+            <div className="tarefas-assignee-field">
               <span className="tarefas-field-label"><Users size={16} /> Responsáveis</span>
-              <select
-                multiple
-                size={Math.min(6, Math.max(3, assignablePeople.length))}
-                disabled={mutation.isPending}
-                value={draft.person_ids}
-                onChange={(event) => {
-                  const person_ids = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
-                  setDraft({ ...draft, person_ids, person_id: person_ids[0] ?? "" });
-                }}
-              >
-                {assignablePeople.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.name}
-                  </option>
-                ))}
-              </select>
-              <small className="tarefas-field-help">Segure Ctrl para escolher mais de uma pessoa. Cada responsável conclui a própria parte.</small>
-            </label>
+              <button type="button" className="tarefas-assignee-picker" disabled={mutation.isPending} aria-expanded={assigneePickerOpen} onClick={() => setAssigneePickerOpen(open => !open)}>
+                <span className="tarefas-assignee-picked">
+                  {draft.person_ids.length ? draft.person_ids.map(id => <span key={id} className="tarefas-assignee-picked-person"><Avatar person={personById(id)} /><b>{personById(id).name}</b></span>) : <span className="tarefas-muted">Escolha responsáveis</span>}
+                </span>
+                <ChevronDown size={16} />
+              </button>
+              {assigneePickerOpen && <div className="tarefas-assignee-options" role="listbox" aria-multiselectable="true">
+                {assignablePeople.map(person => {
+                  const selected = draft.person_ids.includes(person.id);
+                  return <button key={person.id} type="button" role="option" aria-selected={selected} onClick={() => {
+                    const person_ids = person.id === TEAM_PERSON_ID
+                      ? [TEAM_PERSON_ID]
+                      : selected
+                        ? draft.person_ids.filter(id => id !== person.id)
+                        : [...draft.person_ids.filter(id => id !== TEAM_PERSON_ID), person.id];
+                    setDraft({ ...draft, person_ids, person_id: person_ids[0] ?? "" });
+                  }}>
+                    <Avatar person={person} /><span>{person.name}</span>{selected && <Check size={16} />}
+                  </button>;
+                })}
+              </div>}
+              <small className="tarefas-field-help">Clique em cada pessoa para incluir ou retirar. Cada responsável conclui a própria parte.</small>
+            </div>
 
             <div className="tarefas-modal-cols">
               <div className="tarefas-compose-priority">
