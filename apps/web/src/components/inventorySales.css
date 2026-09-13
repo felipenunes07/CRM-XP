@@ -61,6 +61,12 @@
   transition: background 0.15s ease, color 0.15s ease;
 }
 
+.invsales-seg button:has(svg) {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
 .invsales-seg button:hover {
   color: #173260;
 }
@@ -90,6 +96,55 @@
 .invsales-control input:focus {
   outline: 2px solid rgba(41, 86, 215, 0.35);
   outline-offset: 1px;
+}
+
+.invsales-period-picker {
+  align-items: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.invsales-custom-range {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.invsales-custom-range label {
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.7rem;
+  font-weight: 700;
+  gap: 0.2rem;
+}
+
+.invsales-custom-range input {
+  min-width: 145px;
+}
+
+.invsales-apply-range {
+  background: #173260;
+  border: 1px solid #173260;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 700;
+  min-height: 37px;
+  padding: 0.45rem 0.9rem;
+}
+
+.invsales-apply-range:hover:not(:disabled) {
+  background: #2956d7;
+  border-color: #2956d7;
+}
+
+.invsales-apply-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* trilha de filtros ativos (breadcrumb do drill) */
@@ -2443,6 +2498,19 @@
 
   .invsales-control input {
     min-width: 100%;
+  }
+
+  .invsales-period-control,
+  .invsales-period-picker,
+  .invsales-period-control .invsales-seg,
+  .invsales-custom-range,
+  .invsales-custom-range label,
+  .invsales-apply-range {
+    width: 100%;
+  }
+
+  .invsales-period-control .invsales-seg {
+    flex-wrap: wrap;
   }
 
   .invstock-quantity-track {

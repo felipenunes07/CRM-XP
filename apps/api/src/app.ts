@@ -526,6 +526,16 @@ const inventoryIntelligenceQuerySchema = z.object({
   seller: z.string().optional(),
 });
 
+const inventorySalesReportQuerySchema = z
+  .object({
+    dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  })
+  .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
+    message: "A data inicial deve ser anterior ou igual a data final.",
+    path: ["dateFrom"],
+  });
+
 const prospectingSearchSchema = z.object({
   keyword: z.string().min(1),
   state: z.string().min(2),
@@ -1512,9 +1522,9 @@ export function createApp() {
     }
   });
 
-  app.get("/api/inventory/sales-report", async (_request, response, next) => {
+  app.get("/api/inventory/sales-report", async (request, response, next) => {
     try {
-      response.json(await getInventorySalesReport());
+      response.json(await getInventorySalesReport(inventorySalesReportQuerySchema.parse(request.query)));
     } catch (error) {
       next(error);
     }

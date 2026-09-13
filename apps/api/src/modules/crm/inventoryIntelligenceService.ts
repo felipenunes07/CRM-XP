@@ -3185,7 +3185,7 @@ export async function getInventoryModels(): Promise<InventoryModelsResponse> {
   };
 }
 
-const INVENTORY_SALES_REPORT_MONTHS = 12;
+const DEFAULT_INVENTORY_SALES_REPORT_MONTHS = 6;
 const TELA_HINT_PATTERN = /\b(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)\b/;
 
 function deriveSalesCategory(text: string, inCatalog: boolean): InventorySalesCategory {
@@ -3206,13 +3206,48 @@ function deriveSalesCategory(text: string, inCatalog: boolean): InventorySalesCa
   return "OUTROS";
 }
 
-function buildSalesReportMonths(count = INVENTORY_SALES_REPORT_MONTHS) {
-  const months: string[] = [];
-  const now = new Date();
+function formatDateOnlyUtc(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
 
-  for (let offset = count - 1; offset >= 0; offset -= 1) {
-    const date = new Date(Date.UTC(now.getFullYear(), now.getMonth() - offset, 1));
-    months.push(date.toISOString().slice(0, 7));
+function parseDateOnlyUtc(value: string) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function resolveSalesReportPeriod(filters: { dateFrom?: string; dateTo?: string } = {}) {
+  const today = new Date();
+  const defaultDateTo = formatDateOnlyUtc(today);
+  const defaultDateFrom = formatDateOnlyUtc(
+    new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (DEFAULT_INVENTORY_SALES_REPORT_MONTHS - 1), 1)),
+  );
+  const dateFrom = filters.dateFrom ?? defaultDateFrom;
+  const dateTo = filters.dateTo ?? defaultDateTo;
+  const from = parseDateOnlyUtc(dateFrom);
+  const to = parseDateOnlyUtc(dateTo);
+  const rangeDays = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  const previousToDate = new Date(from);
+  previousToDate.setUTCDate(previousToDate.getUTCDate() - 1);
+  const previousFromDate = new Date(previousToDate);
+  previousFromDate.setUTCDate(previousFromDate.getUTCDate() - Math.max(rangeDays - 1, 0));
+
+  return {
+    dateFrom,
+    dateTo,
+    previousDateFrom: formatDateOnlyUtc(previousFromDate),
+    previousDateTo: formatDateOnlyUtc(previousToDate),
+  };
+}
+
+function buildSalesReportMonths(dateFrom: string, dateTo: string) {
+  const months: string[] = [];
+  const from = parseDateOnlyUtc(dateFrom);
+  const to = parseDateOnlyUtc(dateTo);
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+  const lastMonth = Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1);
+
+  while (cursor.getTime() <= lastMonth) {
+    months.push(cursor.toISOString().slice(0, 7));
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
 
   return months;
@@ -3228,7 +3263,7 @@ interface InventoryMonthlySalesRow {
   description: string | null;
 }
 
-async function loadMonthlySalesRows(monthsCount: number) {
+async function loadMonthlySalesRows(dateFrom: string, dateTo: string) {
   const result = await pool.query<InventoryMonthlySalesRow>(
     `
       SELECT
@@ -3241,24 +3276,58 @@ async function loadMonthlySalesRows(monthsCount: number) {
         MAX(oi.item_description) AS description
       FROM order_items oi
       JOIN orders o ON o.id = oi.order_id
-      WHERE o.order_date >= date_trunc('month', CURRENT_DATE) - ($1::int - 1) * INTERVAL '1 month'
+      WHERE o.order_date >= $1::date
+        AND o.order_date < $2::date + INTERVAL '1 day'
         AND oi.sku IS NOT NULL
         AND oi.sku <> ''
       GROUP BY oi.sku, to_char(date_trunc('month', o.order_date), 'YYYY-MM')
     `,
-    [monthsCount],
+    [dateFrom, dateTo],
   );
 
   return result.rows;
 }
 
-export async function getInventorySalesReport(): Promise<InventorySalesReportResponse> {
-  const [{ snapshot, items: snapshotItems }, salesRows] = await Promise.all([
+interface InventoryPreviousSalesRow {
+  sku: string;
+  units: string | number;
+  revenue: string | number;
+  description: string | null;
+}
+
+async function loadPreviousSalesRows(dateFrom: string, dateTo: string) {
+  const result = await pool.query<InventoryPreviousSalesRow>(
+    `
+      SELECT
+        oi.sku,
+        COALESCE(SUM(oi.quantity), 0)::numeric(14,2) AS units,
+        COALESCE(SUM(oi.line_total), 0)::numeric(14,2) AS revenue,
+        MAX(oi.item_description) AS description
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.order_date >= $1::date
+        AND o.order_date < $2::date + INTERVAL '1 day'
+        AND oi.sku IS NOT NULL
+        AND oi.sku <> ''
+      GROUP BY oi.sku
+    `,
+    [dateFrom, dateTo],
+  );
+
+  return result.rows;
+}
+
+export async function getInventorySalesReport(
+  filters: { dateFrom?: string; dateTo?: string } = {},
+): Promise<InventorySalesReportResponse> {
+  const period = resolveSalesReportPeriod(filters);
+  const [{ snapshot, items: snapshotItems }, salesRows, previousSalesRows] = await Promise.all([
     getInventorySnapshotWithItems(),
-    loadMonthlySalesRows(INVENTORY_SALES_REPORT_MONTHS),
+    loadMonthlySalesRows(period.dateFrom, period.dateTo),
+    loadPreviousSalesRows(period.previousDateFrom, period.previousDateTo),
   ]);
 
-  const months = buildSalesReportMonths();
+  const months = buildSalesReportMonths(period.dateFrom, period.dateTo);
   const monthIndex = new Map(months.map((month, index) => [month, index]));
   const bySku = new Map<string, InventorySalesReportItem>();
 
@@ -3287,6 +3356,8 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
       totalRevenue: 0,
       totalOrders: 0,
       lastSaleAt: null,
+      previousUnits: 0,
+      previousRevenue: 0,
       monthlyUnits: months.map(() => 0),
       monthlyRevenue: months.map(() => 0),
     });
@@ -3314,6 +3385,8 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
         totalRevenue: 0,
         totalOrders: 0,
         lastSaleAt: null,
+        previousUnits: 0,
+        previousRevenue: 0,
         monthlyUnits: months.map(() => 0),
         monthlyRevenue: months.map(() => 0),
       };
@@ -3337,12 +3410,46 @@ export async function getInventorySalesReport(): Promise<InventorySalesReportRes
     }
   }
 
+  for (const row of previousSalesRows) {
+    let entry = bySku.get(row.sku);
+    if (!entry) {
+      const description = normalizeText(String(row.description ?? "")) || row.sku;
+      const grouping = deriveInventoryGrouping(description);
+      const category = deriveSalesCategory(description, false);
+      entry = {
+        sku: row.sku,
+        modelKey: null,
+        modelLabel: cleanInventoryModelLabel(description),
+        brand: grouping.brand,
+        factory: deriveInventoryFactory(description, category),
+        family: grouping.family,
+        category,
+        quality: null,
+        color: null,
+        inCatalog: false,
+        stockUnits: 0,
+        totalUnits: 0,
+        totalRevenue: 0,
+        totalOrders: 0,
+        lastSaleAt: null,
+        previousUnits: 0,
+        previousRevenue: 0,
+        monthlyUnits: months.map(() => 0),
+        monthlyRevenue: months.map(() => 0),
+      };
+      bySku.set(row.sku, entry);
+    }
+    entry.previousUnits += toNumber(row.units);
+    entry.previousRevenue += toNumber(row.revenue);
+  }
+
   const items = [...bySku.values()]
-    .filter((item) => item.totalUnits > 0 || item.stockUnits > 0)
+    .filter((item) => item.totalUnits > 0 || item.previousUnits > 0 || item.stockUnits > 0)
     .sort((left, right) => right.totalUnits - left.totalUnits || sortLocale(left.modelLabel, right.modelLabel));
 
   return {
     snapshot,
+    period,
     months,
     items,
     filters: {
