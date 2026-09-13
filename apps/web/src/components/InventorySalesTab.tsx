@@ -617,6 +617,8 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                 <button
                   type="button"
                   className={period === "custom" ? "active" : ""}
+                  aria-expanded={isCustomRangeOpen}
+                  aria-controls="inventory-custom-range"
                   onClick={() => {
                     setPeriod("custom");
                     setIsCustomRangeOpen((isOpen) => !isOpen);
@@ -627,7 +629,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               </div>
 
               {period === "custom" && isCustomRangeOpen ? (
-                <div className="invsales-custom-range" aria-label="Período personalizado">
+                <div id="inventory-custom-range" className="invsales-custom-range" aria-label="Período personalizado">
                   <label>
                     <span>De</span>
                     <input
