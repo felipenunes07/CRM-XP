@@ -36,6 +36,7 @@ import "./TarefasPage.css";
 import { TaskDetailsDialog } from "./TaskDetailsDialog";
 import { TaskPriorityPicker } from "./TaskPriorityPicker";
 import { TaskStatusPicker } from "./TaskStatusPicker";
+import { personBelongsToList, taskBelongsToList } from "./tarefasPage.helpers";
 import "./TarefasWorkspace.css";
 
 /**
@@ -700,24 +701,19 @@ export default function TarefasPage() {
   };
 
   const listTasks = useMemo(() => {
-    if (manager && adminScope === "all") return tasks;
-    return tasks.filter((task) =>
-      listScope === "received"
-        ? assignedTo(task, currentUserId ?? "")
-        : !assignedTo(task, currentUserId ?? "") && task.created_by_user_id === currentUserId,
-    );
+    const context = { manager, adminScope, listScope, currentUserId: currentUserId ?? "" };
+    return tasks.filter((task) => taskBelongsToList({
+      personIds: taskPeople(task),
+      createdByUserId: task.created_by_user_id,
+    }, context));
   }, [adminScope, currentUserId, listScope, manager, tasks]);
   const listPeople = useMemo(() => {
-    if (manager && adminScope === "all") return displayPeople;
-    if (listScope === "received") return displayPeople.filter((person) => person.id === currentUserId);
-    // A lista do quadro respeita quem foi ocultado em "Equipe". O seletor de
-    // nova tarefa continua usando assignablePeople para permitir atribuições.
-    const coworkers = people.filter(
-      (person) => person.id !== TEAM_PERSON_ID && person.id !== currentUserId,
-    );
-    return assignedPeopleFilter === "with_tasks"
-      ? coworkers.filter((person) => listTasks.some((task) => assignedTo(task, person.id)))
-      : coworkers;
+    const source = manager && adminScope === "all" ? displayPeople : people;
+    const context = { manager, adminScope, listScope, currentUserId: currentUserId ?? "" };
+    const matchingPeople = source.filter((person) => personBelongsToList(person.id, context));
+    return listScope === "created" && assignedPeopleFilter === "with_tasks"
+      ? matchingPeople.filter((person) => listTasks.some((task) => assignedTo(task, person.id)))
+      : matchingPeople;
   }, [adminScope, assignedPeopleFilter, currentUserId, displayPeople, listScope, listTasks, manager, people]);
   const pending = useMemo(() => listTasks.filter((t) => t.status !== "done"), [listTasks]);
   const overdue = useMemo(() => pending.filter(isLate), [pending]);
@@ -743,7 +739,7 @@ export default function TarefasPage() {
   };
 
   const visibleFor = (person: Person) => {
-    const own = tasks.filter((t) => assignedTo(t, person.id));
+    const own = listTasks.filter((t) => assignedTo(t, person.id));
     const open = own.filter((t) => effectiveStatus(t) !== "done");
     const byFilter =
       filter === "today"

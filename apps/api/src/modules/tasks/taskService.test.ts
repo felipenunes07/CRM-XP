@@ -17,7 +17,7 @@ vi.mock("../../db/client.js", () => ({
 vi.mock("../whatsapp/evolutionService.js", () => ({ sendWhatsappInstanceTextMessage: sendEvolution }));
 vi.mock("../whatsapp/uazapiService.js", () => ({ sendUazapiTextMessage: sendUazapi }));
 
-import { getTaskBoard, mutateTask, setTaskPersonVisible } from "./taskService.js";
+import { getTaskBoard, mutateTask, setTaskHiddenPeople, setTaskPersonVisible } from "./taskService.js";
 import type { JwtUser } from "../platform/authService.js";
 
 const seller: JwtUser = {
@@ -93,11 +93,24 @@ describe("taskService", () => {
     expect(poolQuery.mock.calls[1]?.[1]).toEqual([JSON.stringify(["team"])]);
   });
 
+  it("persists bringing Time back to the board", async () => {
+    poolQuery.mockResolvedValueOnce({ rows: [] });
+
+    await setTaskHiddenPeople([]);
+
+    expect(poolQuery).toHaveBeenCalledWith(
+      expect.stringContaining("VALUES ('hidden_people', $1::jsonb)"),
+      [JSON.stringify([])],
+    );
+  });
+
   it("allows a regular user to create a private task and records who assigned it", async () => {
     clientQuery
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ id: admin.id }] })
       .mockResolvedValueOnce({ rows: [{ ...taskRow, assignee_user_id: admin.id, created_by_user_id: seller.id }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
 
@@ -151,7 +164,7 @@ describe("taskService", () => {
       seller.id,
       "completed",
       taskRow.title,
-      JSON.stringify({ from: "todo", to: "done" }),
+      JSON.stringify({ from: "todo", to: "done", individual: false }),
     ]);
     expect(clientQuery).toHaveBeenCalledWith("COMMIT");
   });
@@ -253,7 +266,10 @@ describe("taskService", () => {
   it("saves notes, checklist and priority together for an administrator", async () => {
     clientQuery.mockResolvedValue({ rows: [] }).mockResolvedValueOnce({ rows: [] }).mockResolvedValueOnce({ rows: [taskRow] });
     await mutateTask({ action: "details", id: taskRow.id, version: 1, priority: "high", notes: "Acompanhar", checklist: [] }, admin);
-    expect(clientQuery).toHaveBeenCalledWith(expect.stringContaining("checklist = $2::jsonb"), ["Acompanhar", "[]", taskRow.id, "high"]);
+    expect(clientQuery).toHaveBeenCalledWith(
+      expect.stringContaining("checklist = $2::jsonb"),
+      ["Acompanhar", "[]", "[]", "high", taskRow.id],
+    );
     expect(clientQuery).toHaveBeenCalledWith("COMMIT");
   });
 
