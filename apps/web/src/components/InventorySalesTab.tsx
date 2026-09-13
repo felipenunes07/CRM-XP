@@ -168,6 +168,7 @@ function DeltaPill({ current, previous, periodLabel }: { current: number; previo
 export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: string) => void }) {
   const { token } = useAuth();
   const [period, setPeriod] = useState<SalesPeriodMode>(6);
+  const [isCustomRangeOpen, setIsCustomRangeOpen] = useState(false);
   const [appliedRange, setAppliedRange] = useState<SalesDateRange>(() => getInventorySalesPresetRange(6));
   const [customDateFrom, setCustomDateFrom] = useState(appliedRange.dateFrom);
   const [customDateTo, setCustomDateTo] = useState(appliedRange.dateTo);
@@ -570,6 +571,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     report.period.dateFrom === appliedRange.dateFrom && report.period.dateTo === appliedRange.dateTo;
 
   function applyCustomRange() {
+    setIsCustomRangeOpen(false);
     resetPagination();
     if (customDateFrom === appliedRange.dateFrom && customDateTo === appliedRange.dateTo) {
       void reportQuery.refetch();
@@ -602,6 +604,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                     onClick={() => {
                       const nextRange = getInventorySalesPresetRange(value);
                       setPeriod(value);
+                      setIsCustomRangeOpen(false);
                       setAppliedRange(nextRange);
                       setCustomDateFrom(nextRange.dateFrom);
                       setCustomDateTo(nextRange.dateTo);
@@ -614,13 +617,16 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                 <button
                   type="button"
                   className={period === "custom" ? "active" : ""}
-                  onClick={() => setPeriod("custom")}
+                  onClick={() => {
+                    setPeriod("custom");
+                    setIsCustomRangeOpen((isOpen) => !isOpen);
+                  }}
                 >
                   <CalendarClock size={15} /> Personalizado
                 </button>
               </div>
 
-              {period === "custom" ? (
+              {period === "custom" && isCustomRangeOpen ? (
                 <div className="invsales-custom-range" aria-label="Período personalizado">
                   <label>
                     <span>De</span>
