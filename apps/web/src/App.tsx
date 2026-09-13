@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PublicOnlyRoute, ProtectedRoute } from "./components/ProtectedRoute";
+import { useAuth } from "./hooks/useAuth";
 import { usePermissions } from "./hooks/usePermissions";
 import { useUiLanguage } from "./i18n";
 
@@ -65,8 +66,10 @@ function RouteLoadingFallback() {
 }
 
 function PermissionElement({ permission, children }: { permission: string; children: React.ReactNode }) {
+  const { user } = useAuth();
   const { canAccess } = usePermissions();
-  if (!canAccess(permission)) {
+  const isTaskRole = permission === "tasks.view" && user?.appRole === "tarefas";
+  if (!canAccess(permission) && !isTaskRole) {
     return <Navigate to="/acesso-negado" replace />;
   }
   return <>{children}</>;
@@ -93,8 +96,13 @@ export function defaultAccessiblePath(canAccess: (permission: string) => boolean
 }
 
 function DefaultLandingRoute() {
+  const { user } = useAuth();
   const { canAccess } = usePermissions();
   const defaultPath = defaultAccessiblePath(canAccess);
+
+  if (user?.appRole === "tarefas") {
+    return <Navigate to="/tarefas" replace />;
+  }
 
   // The dashboard already lives at "/". Redirecting there from this same
   // route leaves the outlet empty because React Router never mounts the page.
