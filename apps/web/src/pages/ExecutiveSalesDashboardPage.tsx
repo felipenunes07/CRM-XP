@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  ArrowLeft,
   BatteryCharging,
   BarChart3,
   Boxes,
@@ -143,6 +144,10 @@ function ExecutiveSidebar({ isLive }: { isLive: boolean }) {
           <LayoutDashboard aria-hidden="true" />
           <span>Painel</span>
         </div>
+        <Link to="/" className="executive-return-link">
+          <ArrowLeft aria-hidden="true" />
+          <span>Voltar ao CRM</span>
+        </Link>
       </nav>
 
       <div

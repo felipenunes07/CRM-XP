@@ -113,6 +113,24 @@ function DefaultLandingRoute() {
   return <Navigate to={defaultPath} replace />;
 }
 
+function ExecutiveSalesRoute() {
+  const { user } = useAuth();
+  const { canAccess } = usePermissions();
+  const canOpenTasks = user?.appRole === "tarefas" || canAccess("tasks.view");
+
+  // This report is often left open on shared TVs. When a task-only user
+  // restores that URL, send them to their actual workspace instead.
+  if (!canAccess("dashboard.view") && canOpenTasks) {
+    return <Navigate to="/tarefas" replace />;
+  }
+
+  if (!canAccess("reports.executive.view")) {
+    return <Navigate to="/acesso-negado" replace />;
+  }
+
+  return <ExecutiveSalesDashboardPage />;
+}
+
 export default function App() {
   const { tx } = useUiLanguage();
 
@@ -120,8 +138,8 @@ export default function App() {
     <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>
       <Routes>
         <Route path="/login" element={<PublicOnlyRoute><LoginPage /></PublicOnlyRoute>} />
-        <Route path="/relatorio-executivo" element={<PermissionElement permission="reports.executive.view"><ExecutiveSalesDashboardPage /></PermissionElement>} />
         <Route element={<ProtectedRoute />}>
+          <Route path="/relatorio-executivo" element={<ExecutiveSalesRoute />} />
           <Route path="/tarefas/tela" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />
           <Route element={<AppShell />}>
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
