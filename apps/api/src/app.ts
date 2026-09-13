@@ -816,7 +816,19 @@ export function createApp() {
         return;
       }
 
-      const file = await fsPromises.readFile(path.join(profileAvatarDir, fileName));
+      let file: Buffer;
+      try {
+        file = await fsPromises.readFile(path.join(profileAvatarDir, fileName));
+      } catch (error) {
+        // Em deploys novos o banco pode apontar para uma foto que ficou no
+        // volume do servidor anterior. Nessa situação, preserve a foto já
+        // salva em vez de quebrar o avatar para todos os usuários.
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          response.redirect(302, sourceUrl);
+          return;
+        }
+        throw error;
+      }
       const extension = path.extname(fileName).toLowerCase();
       const contentType = extension === ".png"
         ? "image/png"
