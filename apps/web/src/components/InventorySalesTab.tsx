@@ -20,9 +20,11 @@ import { Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, 
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
+import { exportInventorySalesWorkbook } from "../lib/inventorySalesExport";
 import "./inventorySales.css";
 
 type SalesPeriod = 1 | 3 | 6 | 12;
+type SalesPeriodMode = SalesPeriod | "custom";
 type SalesMetric = "units" | "revenue";
 type SalesGroupBy = "modelo" | "marca" | "fabrica" | "qualidade" | "tipo" | "familia";
 type SalesCategoryFilter = "all" | InventorySalesCategory;
@@ -72,6 +74,25 @@ function formatMonthLabel(month: string) {
   return `${MONTH_NAMES[index] ?? monthPart}/${(year ?? "").slice(2)}`;
 }
 
+interface SalesDateRange {
+  dateFrom: string;
+  dateTo: string;
+}
+
+function formatLocalDateInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getInventorySalesPresetRange(months: SalesPeriod, today = new Date()): SalesDateRange {
+  return {
+    dateFrom: formatLocalDateInput(new Date(today.getFullYear(), today.getMonth() - (months - 1), 1)),
+    dateTo: formatLocalDateInput(today),
+  };
+}
+
 function sumRange(values: number[], start: number, end?: number) {
   const stop = end ?? values.length;
   let total = 0;
@@ -97,6 +118,8 @@ interface SalesGroup {
   lastSaleAt: string | null;
   monthlyUnits: number[];
   monthlyRevenue: number[];
+  previousUnits: number;
+  previousRevenue: number;
   items: InventorySalesReportItem[];
 }
 
@@ -142,37 +165,12 @@ function DeltaPill({ current, previous, periodLabel }: { current: number; previo
   );
 }
 
-function exportGroupsCsv(groups: SalesGroup[], groupLabel: string, period: SalesPeriod) {
-  const headers = [groupLabel, "Pecas vendidas", "Faturamento", "Preco medio", "Estoque hoje", "Ultima venda", "SKUs"];
-  const lines = [
-    "﻿" + headers.join(";"),
-    ...groups.map((group) =>
-      [
-        group.label,
-        group.units,
-        group.revenue.toFixed(2).replace(".", ","),
-        group.units > 0 ? (group.revenue / group.units).toFixed(2).replace(".", ",") : "",
-        group.stockUnits,
-        group.lastSaleAt ?? "",
-        group.skuCount,
-      ]
-        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-        .join(";"),
-    ),
-  ];
-
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `vendas_por_${groupLabel.toLowerCase()}_${period}m_${new Date().toISOString().split("T")[0]}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: string) => void }) {
   const { token } = useAuth();
-  const [period, setPeriod] = useState<SalesPeriod>(6);
+  const [period, setPeriod] = useState<SalesPeriodMode>(6);
+  const [appliedRange, setAppliedRange] = useState<SalesDateRange>(() => getInventorySalesPresetRange(6));
+  const [customDateFrom, setCustomDateFrom] = useState(appliedRange.dateFrom);
+  const [customDateTo, setCustomDateTo] = useState(appliedRange.dateTo);
   const [metric, setMetric] = useState<SalesMetric>("units");
   const [groupBy, setGroupBy] = useState<SalesGroupBy>("marca");
   const [categoryFilter, setCategoryFilter] = useState<SalesCategoryFilter>("all");
@@ -186,19 +184,17 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const [visibleCount, setVisibleCount] = useState(TABLE_PAGE_SIZE);
 
   const reportQuery = useQuery({
-    queryKey: ["inventory-sales-report"],
-    queryFn: () => api.inventorySalesReport(token!),
+    queryKey: ["inventory-sales-report", appliedRange.dateFrom, appliedRange.dateTo],
+    queryFn: () => api.inventorySalesReport(token!, appliedRange),
     enabled: Boolean(token),
     staleTime: 5 * 60 * 1000,
+    placeholderData: (previousData) => previousData,
   });
 
   const report: InventorySalesReportResponse | undefined = reportQuery.data;
   const months = useMemo(() => report?.months ?? [], [report?.months]);
-  const windowStart = Math.max(months.length - period, 0);
+  const windowStart = 0;
   const windowMonths = useMemo(() => months.slice(windowStart), [months, windowStart]);
-  /* janela anterior de mesmo tamanho, quando os 12m buscados comportam */
-  const previousStart = windowStart - period;
-  const hasPreviousWindow = previousStart >= 0;
 
   const metricLabel = metric === "revenue" ? "faturamento" : "pecas vendidas";
   const groupLabel = groupByOptions.find((option) => option.value === groupBy)?.label ?? "Grupo";
@@ -294,11 +290,15 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
         lastSaleAt: null,
         monthlyUnits: months.map(() => 0),
         monthlyRevenue: months.map(() => 0),
+        previousUnits: 0,
+        previousRevenue: 0,
         items: [],
       };
 
       current.units += sumRange(item.monthlyUnits, windowStart);
       current.revenue += sumRange(item.monthlyRevenue, windowStart);
+      current.previousUnits += item.previousUnits;
+      current.previousRevenue += item.previousRevenue;
       current.stockUnits += item.stockUnits;
       current.skuCount += 1;
       current.items.push(item);
@@ -330,10 +330,8 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     for (const group of groups) {
       units += group.units;
       revenue += group.revenue;
-      if (hasPreviousWindow) {
-        previousUnits += sumRange(group.monthlyUnits, previousStart, windowStart);
-        previousRevenue += sumRange(group.monthlyRevenue, previousStart, windowStart);
-      }
+      previousUnits += group.previousUnits;
+      previousRevenue += group.previousRevenue;
       if (group.units > 0) {
         withSales += 1;
       } else if (group.stockUnits > 0) {
@@ -347,15 +345,15 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     return {
       units,
       revenue,
-      previousUnits: hasPreviousWindow ? previousUnits : null,
-      previousRevenue: hasPreviousWindow ? previousRevenue : null,
+      previousUnits,
+      previousRevenue,
       withSales,
       stockedNoSales,
       monthlyTotals,
       avgPrice: units > 0 ? revenue / units : 0,
-      previousAvgPrice: hasPreviousWindow && previousUnits > 0 ? previousRevenue / previousUnits : null,
+      previousAvgPrice: previousUnits > 0 ? previousRevenue / previousUnits : null,
     };
-  }, [groups, hasPreviousWindow, previousStart, windowMonths, windowStart]);
+  }, [groups, windowMonths, windowStart]);
 
   const rankedGroups = useMemo(() => {
     return [...groups].sort((left, right) =>
@@ -439,7 +437,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
         text: (
           <>
             As vendas {delta >= 0 ? "cresceram" : "cairam"} <strong>{formatPercent(Math.abs(delta))}</strong> em relacao
-            aos {period} meses anteriores ({formatNumber(totals.previousUnits)} → {formatNumber(totals.units)} pecas).
+            ao periodo anterior equivalente ({formatNumber(totals.previousUnits)} → {formatNumber(totals.units)} pecas).
           </>
         ),
       });
@@ -479,7 +477,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     }
 
     return result;
-  }, [groupLabel, period, rankedGroups, totals, windowMonths]);
+  }, [groupLabel, rankedGroups, totals, windowMonths]);
 
   const sortedGroups = useMemo(() => {
     const sorted = [...groups];
@@ -561,10 +559,12 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   }
 
   const visibleGroups = sortedGroups.slice(0, visibleCount);
-  const periodCompareLabel = `${period}m anteriores`;
-  const windowRangeLabel = windowMonths.length
-    ? `${formatMonthLabel(windowMonths[0]!)} a ${formatMonthLabel(windowMonths[windowMonths.length - 1]!)}`
-    : "";
+  const periodCompareLabel = "periodo anterior equivalente";
+  const windowRangeLabel = `${formatDate(report.period.dateFrom)} a ${formatDate(report.period.dateTo)}`;
+  const todayInput = formatLocalDateInput(new Date());
+  const customRangeIsValid = Boolean(
+    customDateFrom && customDateTo && customDateFrom <= customDateTo && customDateTo <= todayInput,
+  );
 
   const insightIcons = {
     top: <Sparkles size={15} />,
@@ -578,22 +578,70 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
       {/* ── filtros: uma barra que governa tudo abaixo ── */}
       <section className="panel invsales-filterbar">
         <div className="invsales-filterbar-row">
-          <div className="invsales-control">
-            <span className="invsales-control-label">Periodo</span>
-            <div className="invsales-seg" role="group" aria-label="Periodo">
-              {([1, 3, 6, 12] as const).map((value) => (
+          <div className="invsales-control invsales-period-control">
+            <span className="invsales-control-label">Período</span>
+            <div className="invsales-period-picker">
+              <div className="invsales-seg" role="group" aria-label="Período">
+                {([1, 3, 6, 12] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={period === value ? "active" : ""}
+                    onClick={() => {
+                      const nextRange = getInventorySalesPresetRange(value);
+                      setPeriod(value);
+                      setAppliedRange(nextRange);
+                      setCustomDateFrom(nextRange.dateFrom);
+                      setCustomDateTo(nextRange.dateTo);
+                      resetPagination();
+                    }}
+                  >
+                    {value} {value === 1 ? "mês" : "meses"}
+                  </button>
+                ))}
                 <button
-                  key={value}
                   type="button"
-                  className={period === value ? "active" : ""}
-                  onClick={() => {
-                    setPeriod(value);
-                    resetPagination();
-                  }}
+                  className={period === "custom" ? "active" : ""}
+                  onClick={() => setPeriod("custom")}
                 >
-                  {value} meses
+                  <CalendarClock size={15} /> Personalizado
                 </button>
-              ))}
+              </div>
+
+              {period === "custom" ? (
+                <div className="invsales-custom-range" aria-label="Período personalizado">
+                  <label>
+                    <span>De</span>
+                    <input
+                      type="date"
+                      value={customDateFrom}
+                      max={customDateTo || todayInput}
+                      onChange={(event) => setCustomDateFrom(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Até</span>
+                    <input
+                      type="date"
+                      value={customDateTo}
+                      min={customDateFrom}
+                      max={todayInput}
+                      onChange={(event) => setCustomDateTo(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="invsales-apply-range"
+                    disabled={!customRangeIsValid}
+                    onClick={() => {
+                      setAppliedRange({ dateFrom: customDateFrom, dateTo: customDateTo });
+                      resetPagination();
+                    }}
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -954,9 +1002,25 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
           <button
             type="button"
             className="ghost-button"
-            onClick={() => exportGroupsCsv(sortedGroups, groupLabel, period)}
+            onClick={() =>
+              void exportInventorySalesWorkbook({
+                groups: sortedGroups,
+                groupLabel,
+                dateFrom: report.period.dateFrom,
+                dateTo: report.period.dateTo,
+                filters: [
+                  ["Métrica", metricLabel],
+                  ["Tipo de produto", categoryFilter === "all" ? "Todos" : categoryLabel(categoryFilter)],
+                  ["Marca", brandFilter || "Todas"],
+                  ["Qualidade", qualityFilter || "Todas"],
+                  ["Fábrica", factoryFilter || "Todas"],
+                  ["Família", familyFilter || "Todas"],
+                  ["Busca", search.trim() || "Nenhuma"],
+                ],
+              })
+            }
           >
-            <Download size={16} /> Baixar CSV
+            <Download size={16} /> Baixar Excel
           </button>
         </div>
 

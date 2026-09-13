@@ -1061,6 +1061,7 @@ export function InventoryPage() {
         queryClient.invalidateQueries({ queryKey: ["inventory-buying"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-restock"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-stale"] }),
+        queryClient.invalidateQueries({ queryKey: ["inventory-sales-report"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-models"] }),
         queryClient.invalidateQueries({ queryKey: ["inventory-model-detail"] }),
       ]);

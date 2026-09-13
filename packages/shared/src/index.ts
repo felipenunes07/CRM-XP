@@ -1467,12 +1467,20 @@ export interface InventorySalesReportItem {
   totalRevenue: number;
   totalOrders: number;
   lastSaleAt: string | null;
+  previousUnits: number;
+  previousRevenue: number;
   monthlyUnits: number[];
   monthlyRevenue: number[];
 }
 
 export interface InventorySalesReportResponse {
   snapshot: InventorySnapshotMeta | null;
+  period: {
+    dateFrom: string;
+    dateTo: string;
+    previousDateFrom: string;
+    previousDateTo: string;
+  };
   months: string[];
   items: InventorySalesReportItem[];
   filters: {
