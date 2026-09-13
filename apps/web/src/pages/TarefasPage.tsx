@@ -24,6 +24,7 @@ import {
   NotebookPen,
   Plus,
   RefreshCw,
+  CornerUpLeft,
   Search,
   Send,
   Trash2,
@@ -58,7 +59,7 @@ type Person = {
 };
 type ChecklistItem = { id: string; text: string; done: boolean };
 type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
-type TaskReturn = { id: string; author_name: string; author_photo: string | null; created_at: string };
+type TaskReturn = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; created_at: string };
 type Task = {
   id: string;
   title: string;
@@ -340,14 +341,24 @@ function TaskCreator({ task }: { task: Task }) {
 function TaskReturnTrail({ task }: { task: Task }) {
   if (!task.return_history?.length) return null;
   return (
-    <span className="tarefas-return-trail" title={`${task.return_history.length} devolução(ões) da tarefa`}>
+    <aside className="tarefas-return-trail" aria-label={`${task.return_history.length} devolução(ões) da tarefa`}>
       {task.return_history.map((item, index) => (
-        <span className="tarefas-return-event" key={item.id}>
-          {item.author_photo ? <img src={item.author_photo} alt="" /> : <b>{item.author_name.slice(0, 2).toUpperCase()}</b>}
-          <small>{index === 0 ? "Devolvida" : "Devolvida novamente"} por {item.author_name}</small>
-        </span>
+        <div className="tarefas-return-event" key={item.id}>
+          <span className="tarefas-return-icon"><CornerUpLeft size={13} /></span>
+          <Avatar person={{
+            id: item.author_user_id ?? item.id,
+            name: item.author_name,
+            photo: item.author_photo,
+            avatar_proxy_url: item.author_user_id ? `/api/tasks/avatar/${item.author_user_id}` : null,
+            position: 0,
+          }} />
+          <span className="tarefas-return-copy">
+            <strong>{item.author_name} {index === 0 ? "devolveu esta tarefa" : "devolveu novamente"}</strong>
+            <small>Retornou para você em {new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.created_at))}</small>
+          </span>
+        </div>
       ))}
-    </span>
+    </aside>
   );
 }
 

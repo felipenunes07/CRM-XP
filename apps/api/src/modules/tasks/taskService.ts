@@ -11,7 +11,7 @@ export type TaskStatus = "todo" | "doing" | "review" | "done";
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type TaskChecklistItem = { id: string; text: string; done: boolean };
 export type TaskComment = { id: string; body: string; author_user_id: string; author_name: string; author_photo: string | null; created_at: string };
-export type TaskReturn = { id: string; author_name: string; author_photo: string | null; created_at: string };
+export type TaskReturn = { id: string; author_user_id: string | null; author_name: string; author_photo: string | null; created_at: string };
 
 export interface TaskMutationInput {
   action: "create" | "edit" | "move" | "status" | "delete" | "notify" | "details" | "priority" | "return" | "comment";
@@ -267,7 +267,7 @@ export async function getTaskBoard(user: JwtUser, scope: "all" | "mine" = "all")
               ) ORDER BY c.created_at ASC) FROM task_comments c
               LEFT JOIN profiles p ON p.id = c.author_user_id WHERE c.task_id = t.id), '[]'::jsonb) AS comments,
               COALESCE((SELECT jsonb_agg(jsonb_build_object(
-                'id', l.id, 'author_name', COALESCE(p.full_name, p.email, 'Usuário'),
+                'id', l.id, 'author_user_id', l.actor_user_id, 'author_name', COALESCE(p.full_name, p.email, 'Usuário'),
                 'author_photo', p.profile_avatar_url, 'created_at', l.created_at::text
               ) ORDER BY l.created_at ASC) FROM task_audit_logs l
               LEFT JOIN profiles p ON p.id = l.actor_user_id
