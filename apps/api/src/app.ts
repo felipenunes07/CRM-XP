@@ -153,6 +153,12 @@ import {
   setTaskHiddenPeople,
   type TaskMutationInput,
 } from "./modules/tasks/taskService.js";
+import {
+  TASK_AUTO_MESSAGE_KINDS,
+  getTaskAutoMessagesOverview,
+  setTaskAutoMessageEnabled,
+  setTaskReminderPaused,
+} from "./modules/tasks/taskReminderService.js";
 import { enqueueHistoryImportJob, enqueueOlistSyncJob } from "./modules/platform/jobs.js";
 import { runPrimarySync } from "./modules/platform/syncService.js";
 import {
@@ -1152,6 +1158,38 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  // Mensagens automáticas das tarefas: só administradores veem e desligam.
+  const requireTaskAdmin: express.RequestHandler = (request, _response, next) => {
+    next(request.user?.appRole === "admin" || request.user?.role === "ADMIN"
+      ? undefined
+      : new HttpError(403, "Somente administradores podem gerenciar mensagens automaticas"));
+  };
+
+  app.get("/api/tasks/auto-messages", requireTaskAdmin, async (_request, response, next) => {
+    try {
+      response.json(await getTaskAutoMessagesOverview());
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/tasks/auto-messages/settings", requireTaskAdmin, async (request, response, next) => {
+    try {
+      const { kind, enabled } = z.object({ kind: z.enum(TASK_AUTO_MESSAGE_KINDS), enabled: z.boolean() }).parse(request.body);
+      response.json({ settings: await setTaskAutoMessageEnabled(kind, enabled) });
+    } catch (error) { next(error); }
+  });
+
+  app.post("/api/tasks/auto-messages/pause", requireTaskAdmin, async (request, response, next) => {
+    try {
+      const { taskId, userId, paused } = z.object({
+        taskId: z.string().uuid(),
+        userId: z.string().uuid(),
+        paused: z.boolean(),
+      }).parse(request.body);
+      await setTaskReminderPaused(taskId, userId, paused);
+      response.status(204).end();
+    } catch (error) { next(error); }
   });
 
   app.get("/api/prospecting/config", requireRole(["ADMIN", "MANAGER", "SELLER"]), async (_request, response, next) => {

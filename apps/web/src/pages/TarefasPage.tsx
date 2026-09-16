@@ -20,6 +20,7 @@ import {
   GripVertical,
   History,
   ListTodo,
+  MessageSquareText,
   Loader2,
   NotebookPen,
   Plus,
@@ -34,6 +35,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { API_BASE_URL, api } from "../lib/api";
 import "./TarefasPage.css";
+import { TaskAutoMessagesPanel } from "./TaskAutoMessagesPanel";
 import { TaskDetailsDialog } from "./TaskDetailsDialog";
 import { TaskPriorityPicker } from "./TaskPriorityPicker";
 import { TaskStatusPicker } from "./TaskStatusPicker";
@@ -493,7 +495,7 @@ export default function TarefasPage() {
     try { return localStorage.getItem(`tarefas:cores-cards:${user?.id ?? "anon"}`) === "1"; } catch { return false; }
   });
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico">("tarefas");
+  const [tab, setTab] = useState<"tarefas" | "quadro" | "calendario" | "historico" | "mensagens">("tarefas");
   const [listScope, setListScope] = useState<"received" | "created">("received");
   const [assignedPeopleFilter, setAssignedPeopleFilter] = useState<"all" | "with_tasks">("all");
   const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
@@ -1005,6 +1007,16 @@ export default function TarefasPage() {
           >
             <History size={13} /> Histórico
           </button>
+          {manager && (
+            <button
+              type="button"
+              className="tarefas-tab"
+              data-on={tab === "mensagens" ? "" : undefined}
+              onClick={() => setTab("mensagens")}
+            >
+              <MessageSquareText size={13} /> Mensagens automáticas
+            </button>
+          )}
         </div>
         {tab === "tarefas" && listScope === "created" && !(manager && adminScope === "all") && (
           <div className="tarefas-scope" aria-label="Funcionários exibidos">
@@ -1018,7 +1030,7 @@ export default function TarefasPage() {
             <button type="button" data-on={adminScope === "all" ? "" : undefined} onClick={() => setAdminScope("all")}>Todas da equipe</button>
           </div>
         )}
-        {tab !== "historico" && (
+        {tab !== "historico" && tab !== "mensagens" && (
           <div className="tarefas-chips">
             <button
               type="button"
@@ -1046,14 +1058,16 @@ export default function TarefasPage() {
             </button>
           </div>
         )}
-        <label className="tarefas-search">
-          <Search size={14} />
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar tarefa ou pessoa"
-          />
-        </label>
+        {tab !== "mensagens" && (
+          <label className="tarefas-search">
+            <Search size={14} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar tarefa ou pessoa"
+            />
+          </label>
+        )}
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
         </button>
@@ -1095,7 +1109,24 @@ export default function TarefasPage() {
         </div>
       )}
 
-      {tab === "historico" ? (
+      {tab === "mensagens" && manager ? (
+        <TaskAutoMessagesPanel
+          request={(path, init) => tarefasRequest(token!, path, init)}
+          renderAvatar={(person) => {
+            const known = boardPeople.find((p) => p.id === person.id);
+            return <Avatar person={{ ...person, photo: person.photo ?? known?.photo ?? null, avatar_proxy_url: known?.avatar_proxy_url ?? `/api/tasks/avatar/${person.id}`, position: 0 }} />;
+          }}
+          colorFor={(person) => personColor({ ...person, position: 0 })}
+          rankFor={(personId) => {
+            const person = boardPeople.find((p) => p.id === personId);
+            return person ? rank(person) : Number.MAX_SAFE_INTEGER;
+          }}
+          onOpenTask={(taskId) => {
+            const task = boardQuery.data?.tasks.find((item) => item.id === taskId);
+            if (task) openDetails(task);
+          }}
+        />
+      ) : tab === "historico" ? (
         <div className="tarefas-sheet">
           <div className="tarefas-summary">
             <span>
