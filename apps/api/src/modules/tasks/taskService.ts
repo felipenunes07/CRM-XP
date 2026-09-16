@@ -409,14 +409,15 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
         priority,
       });
       const recipients = assigned.audience === "user"
-        ? await client.query<{ full_name: string; whatsapp_phone: string | null }>(
-          "SELECT full_name, whatsapp_phone FROM profiles WHERE id = ANY($1::uuid[])",
+        ? await client.query<{ id: string; full_name: string; whatsapp_phone: string | null }>(
+          "SELECT id, full_name, whatsapp_phone FROM profiles WHERE id = ANY($1::uuid[])",
           [assigned.assigneeUserIds],
         )
-        : { rows: [] as { full_name: string; whatsapp_phone: string | null }[] };
+        : { rows: [] as { id: string; full_name: string; whatsapp_phone: string | null }[] };
       await client.query("COMMIT");
       for (const recipient of recipients.rows) {
         void sendTaskAssignmentNotification({
+          recipientUserId: recipient.id,
           recipientName: recipient.full_name,
           recipientPhone: recipient.whatsapp_phone,
           taskTitle: task.title,
@@ -626,7 +627,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
             "SELECT full_name, whatsapp_phone FROM profiles WHERE id = $1", [current.created_by_user_id],
           );
           const person = creator.rows[0];
-          if (person) void sendTaskReviewNotification({ creatorName: person.full_name, creatorPhone: person.whatsapp_phone, taskTitle: current.title, taskId: id });
+          if (person) void sendTaskReviewNotification({ creatorUserId: current.created_by_user_id, creatorName: person.full_name, creatorPhone: person.whatsapp_phone, taskTitle: current.title, taskId: id });
         }
       } else await client.query(
         `UPDATE tasks
@@ -658,6 +659,7 @@ export async function mutateTask(input: TaskMutationInput, user: JwtUser) {
       const creator = creatorResult.rows[0];
       if (creator) {
         sendAfterCommit = () => void sendTaskReturnNotification({
+          recipientUserId: current.created_by_user_id,
           recipientName: creator.full_name,
           recipientPhone: creator.whatsapp_phone,
           taskTitle: current.title,

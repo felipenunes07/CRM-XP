@@ -4725,5 +4725,25 @@ export const migrations = [
     bytes BYTEA NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+  `,
+  `
+  -- Pausa a cobrança automática de atraso para um responsável específico.
+  ALTER TABLE task_assignees ADD COLUMN IF NOT EXISTS reminders_paused BOOLEAN NOT NULL DEFAULT false;
+  `,
+  `
+  -- Histórico dos avisos automáticos de tarefas (enviados, com falha ou barrados por estarem desligados).
+  CREATE TABLE IF NOT EXISTS task_auto_message_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    kind TEXT NOT NULL CHECK (kind IN ('assignment', 'review', 'return', 'overdue')),
+    status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped')),
+    task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+    task_title TEXT NOT NULL,
+    recipient_user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    recipient_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS task_auto_message_log_created_idx ON task_auto_message_log (created_at DESC);
   `
 ];

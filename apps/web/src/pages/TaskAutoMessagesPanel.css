@@ -1,0 +1,276 @@
+/* Aba "Mensagens automáticas" do quadro de tarefas — mesma linguagem da lista. */
+.automsg { display: grid; gap: 14px; }
+
+/* Chave liga/desliga */
+.automsg-switch {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #d4d8df;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.automsg-switch span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 140ms ease;
+}
+.automsg-switch[data-on] { background: #2956d7; }
+.automsg-switch[data-on] span { transform: translateX(16px); }
+.automsg-switch:disabled { cursor: not-allowed; opacity: 0.4; }
+.automsg-switch:focus-visible { outline: 2px solid #7499f1; outline-offset: 2px; }
+
+.automsg-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #3564cc;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.automsg-link:hover { text-decoration: underline; }
+
+/* Lista de automações: uma linha por tipo */
+.automsg-rules {
+  overflow: hidden;
+  border: 1px solid #e5eaf2;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 7px 22px rgba(35, 53, 84, 0.045);
+}
+.automsg-sheet-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 11px 18px;
+  background: #f7f9fc;
+  border-bottom: 1px solid #eef1f5;
+}
+.automsg-sheet-title > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #172554;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.automsg-sheet-title small { color: #64748b; font-size: 11.5px; }
+.automsg-sheet-title b { color: #17803d; }
+
+.automsg-rule {
+  --kind: #2956d7;
+  display: grid;
+  grid-template-columns: 30px minmax(180px, 1fr) minmax(170px, auto) 84px 74px 36px;
+  gap: 14px;
+  align-items: center;
+  min-height: 50px;
+  padding: 6px 18px;
+  border-bottom: 1px solid #eef1f5;
+  box-shadow: inset 3px 0 var(--kind);
+  transition: background 130ms ease;
+}
+.automsg-rule:last-child { border-bottom: 0; }
+.automsg-rule:hover { background: #f8faff; }
+.automsg-rule[data-off] { box-shadow: inset 3px 0 #cbd2dc; background: #fafbfc; }
+.automsg-rule[data-off] .automsg-rule-icon,
+.automsg-rule[data-off] .automsg-rule-name,
+.automsg-rule[data-off] .automsg-rule-stats { opacity: 0.45; filter: grayscale(1); }
+.automsg-rule-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--kind);
+  background: color-mix(in srgb, var(--kind) 10%, #fff);
+}
+.automsg-rule-name { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.automsg-rule-name strong { flex: none; color: #0a0a0a; font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+.automsg-rule-name small { min-width: 0; color: #64748b; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.automsg-rule-stats { display: flex; gap: 12px; justify-content: flex-end; color: #475569; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.automsg-rule-stats > span { display: inline-flex; align-items: center; gap: 4px; }
+.automsg-rule-stats .is-soft { color: #94a3b8; font-weight: 500; }
+.automsg-onoff { justify-self: end; font-size: 11px; font-weight: 700; }
+.automsg-onoff.is-on { color: #17803d; }
+.automsg-onoff.is-off { color: #c8321f; }
+
+/* Abas */
+.automsg .tarefas-toolbar.automsg-toolbar { margin: 6px 0 0; padding-bottom: 12px; }
+.automsg-tabcount {
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.automsg-tabcount.is-waiting { color: #2148b6; background: #e4ebfd; }
+.automsg-tabcount.is-sent { color: #17803d; background: #e3f5ea; }
+.automsg-tabcount.is-paused { color: #c8321f; background: #fde8e5; }
+
+.automsg-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 14px;
+  border: 1px solid #f9d78b;
+  border-radius: 10px;
+  background: #fff8e7;
+  color: #8a5a00;
+  font-size: 12.5px;
+}
+
+/* Selos */
+.automsg-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.automsg-state.is-sent { color: #17803d; background: #e3f5ea; }
+.automsg-state.is-failed { color: #c8321f; background: #fde8e5; }
+.automsg-state.is-paused { color: #b45309; background: #fff1dc; }
+.automsg-state.is-muted { color: #64748b; background: #f1f4f8; }
+.automsg-kindtag {
+  --kind: #2956d7;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: var(--kind);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Colunas de cada aba (vence o grid padrão do quadro) */
+.tarefas-sheet .tarefas-row.automsg-waiting { grid-template-columns: minmax(260px, 1fr) 110px 150px minmax(170px, 0.45fr) 56px; }
+.tarefas-sheet .tarefas-row.automsg-sent { grid-template-columns: 56px 170px minmax(150px, 0.45fr) minmax(240px, 1fr) minmax(130px, 0.35fr); }
+.tarefas-sheet .tarefas-row.automsg-paused { grid-template-columns: minmax(150px, 0.4fr) minmax(240px, 1fr) 110px minmax(180px, 0.4fr) 56px; }
+.tarefas-sheet .tarefas-row > .automsg-switch { justify-self: center; }
+.tarefas-sheet .tarefas-group.automsg-waiting > .automsg-switch { margin-right: 10px; }
+.tarefas-sheet .tarefas-head.automsg-sent > span:first-child,
+.tarefas-sheet .tarefas-head.automsg-paused > span:first-child { padding-left: 0; }
+.tarefas-sheet .tarefas-dayhead { margin-top: 14px; padding: 8px; background: none; border-bottom: 1px solid #e8ecf2; font-size: 13px; }
+.tarefas-sheet .tarefas-dayhead::first-letter { text-transform: uppercase; }
+.tarefas-sheet .automsg-sent .tarefas-title,
+.tarefas-sheet .automsg-paused .tarefas-title { font-size: 14px; }
+
+.tarefas-sheet .automsg-waiting.tarefas-group .tarefas-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 10px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--person-color, #dce5f3);
+}
+.automsg-task { gap: 10px; }
+.automsg-task-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.automsg-when { display: grid; gap: 1px; min-width: 0; }
+.automsg-when strong { display: inline-flex; align-items: center; gap: 5px; color: #2148b6; font-size: 12.5px; font-weight: 700; }
+.automsg-when small { color: #8190a5; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tarefas-row[data-muted] > :not(.automsg-switch) { opacity: 0.5; }
+
+.automsg-time { color: #0f172a; font-size: 12.5px; font-weight: 700; }
+.automsg-result { display: grid; gap: 2px; }
+.automsg-result small { color: #c8321f; font-size: 10.5px; }
+.automsg-repeat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #64748b;
+  font-size: 11px;
+}
+.automsg-repeat .automsg-switch { transform: scale(0.85); }
+
+/* Prévia estilo WhatsApp */
+.automsg-preview-row { padding: 4px 18px 14px 66px; border-bottom: 1px solid #eef1f5; background: #fbfcfe; }
+.automsg-chat {
+  display: grid;
+  gap: 8px;
+  max-width: 460px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #efeae2;
+  border: 1px solid #e2dbd0;
+}
+.automsg-chat-head { display: flex; align-items: center; gap: 8px; }
+.automsg-chat-head > span:last-child { display: grid; line-height: 1.2; }
+.automsg-chat-head strong { font-size: 12px; color: #0a0a0a; }
+.automsg-chat-head small { font-size: 10.5px; color: #64748b; }
+.automsg-chat-head .tarefas-avatar { width: 28px; height: 28px; }
+.automsg-chat-dot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+}
+.automsg-bubble {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 2px 10px 10px 10px;
+  background: #fff;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+  color: #111b21;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 1100px) {
+  .automsg-rule { grid-template-columns: 30px minmax(0, 1fr) auto 74px 36px; }
+  .automsg-rule-stats { display: none; }
+  .automsg-rule-name small { display: none; }
+}
+@media (max-width: 820px) {
+  .tarefas-sheet .tarefas-row.automsg-waiting,
+  .tarefas-sheet .tarefas-row.automsg-sent,
+  .tarefas-sheet .tarefas-row.automsg-paused { grid-template-columns: minmax(0, 1fr) auto; }
+  .tarefas-sheet .tarefas-row.tarefas-head.automsg-waiting,
+  .tarefas-sheet .tarefas-row.tarefas-head.automsg-sent,
+  .tarefas-sheet .tarefas-row.tarefas-head.automsg-paused,
+  .automsg-waiting.tarefas-group > span:empty,
+  .automsg-waiting > .task-priority-picker,
+  .automsg-waiting > :nth-child(2) { display: none; }
+  .tarefas-sheet .tarefas-row.automsg-waiting > .automsg-task { grid-column: 1; grid-row: 1; padding-left: 0; }
+  .tarefas-sheet .tarefas-row.automsg-waiting > .automsg-switch { grid-column: 2; grid-row: 1; }
+  .automsg-waiting > .tarefas-due { grid-column: 1; }
+  .automsg-sent > .tarefas-titlewrap,
+  .automsg-paused > .tarefas-titlewrap { grid-column: 1 / -1; }
+  .automsg-rule { grid-template-columns: 30px minmax(0, 1fr) 36px; }
+  .automsg-rule > .automsg-link,
+  .automsg-onoff { display: none; }
+  .automsg-preview-row { padding: 4px 14px 14px; }
+}
