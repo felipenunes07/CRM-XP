@@ -217,7 +217,9 @@ export async function sendOverdueTaskReminders() {
        SELECT ta.task_id, ta.user_id
        FROM task_assignees ta
        JOIN tasks t ON t.id = ta.task_id
-       WHERE t.deleted_at IS NULL AND ta.status <> 'done' AND NOT ta.reminders_paused
+       -- A tarefa finalizada pelo criador/admin não muda o status de cada responsável;
+       -- por isso o status da tarefa também precisa ser conferido.
+       WHERE t.deleted_at IS NULL AND t.status <> 'done' AND ta.status <> 'done' AND NOT ta.reminders_paused
          AND (t.due_date < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
               OR (t.due_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
                   AND t.due_time IS NOT NULL AND t.due_time < (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::time))

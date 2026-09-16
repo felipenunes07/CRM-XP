@@ -45,7 +45,7 @@ const base: AutoMessagesOverview = {
     reminder,
     { ...reminder, user_id: "44444444-4444-4444-8444-444444444444", recipient_name: "Ana", paused: true },
     { ...reminder, task_id: "55555555-5555-4555-8555-555555555555", title: "Tarefa distante", next_send_at: new Date(now + 30 * 86_400_000).toISOString() },
-    { ...reminder, task_id: "66666666-6666-4666-8666-666666666666", title: "Cobrada hoje", sent_today: true },
+    { ...reminder, task_id: "66666666-6666-4666-8666-666666666666", title: "Cobrada hoje", sent_today: true, next_send_at: new Date(now + 86_400_000).toISOString() },
   ],
   history: [
     {
@@ -77,7 +77,7 @@ describe("TaskAutoMessagesPanel", () => {
 
   it("separates waiting, sent and paused counts", () => {
     const html = render(base);
-    expect(html).toMatch(/Aguardando envio.{0,20}<b class="automsg-tabcount is-waiting">2<\/b>/);
+    expect(html).toMatch(/Aguardando envio.{0,20}<b class="automsg-tabcount is-waiting">3<\/b>/);
     expect(html).toMatch(/Enviadas.{0,20}<b class="automsg-tabcount is-sent">1<\/b>/);
     expect(html).toMatch(/Pausadas.{0,20}<b class="automsg-tabcount is-paused">1<\/b>/);
   });
@@ -88,7 +88,7 @@ describe("TaskAutoMessagesPanel", () => {
     expect(html).toContain('aria-label="Pausar cobrança de Pedro: Conferir estoque"');
     expect(html).toContain('alt="Pedro" src="https://example.com/pedro.jpg"');
     expect(html).not.toContain("Tarefa distante");
-    expect(html).not.toContain("Pausar cobrança de Pedro: Cobrada hoje");
+    expect(html).toContain("hoje já foi enviada · repete");
     expect(html).not.toContain("Pausar cobrança de Ana");
   });
 

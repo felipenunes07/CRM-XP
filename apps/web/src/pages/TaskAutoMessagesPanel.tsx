@@ -118,7 +118,7 @@ function relativeDay(date: Date, now: number, format = weekdayFormat) {
 function describeWhen(item: ScheduledReminder, intervalMinutes: number, now: number) {
   const at = new Date(item.next_send_at);
   if (at.getTime() <= now) return { label: "Em instantes", hint: `na próxima verificação (até ${intervalMinutes} min)` };
-  return { label: `${relativeDay(at, now)}, ${timeFormat.format(at)}`, hint: item.is_overdue ? "próxima cobrança diária" : "quando a tarefa vencer" };
+  return { label: `${relativeDay(at, now)}, ${timeFormat.format(at)}`, hint: item.sent_today ? "hoje já foi enviada · repete" : item.is_overdue ? "próxima cobrança diária" : "quando a tarefa vencer" };
 }
 
 function shortDue(item: ScheduledReminder) {
@@ -220,8 +220,8 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
   const buckets = useMemo(() => {
     const scheduled = data?.scheduled ?? [];
     return {
-      // Aguardando: ainda não saiu hoje e nada impede o envio.
-      waiting: scheduled.filter((item) => !item.paused && item.has_whatsapp && !item.sent_today),
+      // Aguardando: a próxima cobrança ainda vai sair (inclui quem já recebeu a de hoje).
+      waiting: scheduled.filter((item) => !item.paused && item.has_whatsapp),
       paused: scheduled.filter((item) => item.paused || !item.has_whatsapp),
       sent: data?.history ?? [],
       byKey: new Map(scheduled.map((item) => [reminderKey(item), item])),

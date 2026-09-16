@@ -81,12 +81,13 @@ describe("taskReminderService", () => {
     expect(poolQuery).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE task_assignees"));
   });
 
-  it("leaves paused assignees out of the overdue run", async () => {
+  it("leaves paused assignees and finished tasks out of the overdue run", async () => {
     routeQueries({}, (sql) => (sql.includes("UPDATE task_assignees")
       ? { rows: [{ task_id: "t1", user_id: "u1", title: "Conferir estoque", due_date: "2026-09-10", full_name: "Pedro", whatsapp_phone: "5511999990000" }] }
       : { rows: [] }));
     await expect(sendOverdueTaskReminders()).resolves.toEqual({ sent: 1 });
     expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("NOT ta.reminders_paused"));
+    expect(poolQuery).toHaveBeenCalledWith(expect.stringContaining("t.status <> 'done' AND ta.status <> 'done'"));
     expect(sendUazapi).toHaveBeenCalledWith(expect.anything(), "5511999990000", expect.stringContaining("venceu em *10/09/2026*"));
     expect(poolQuery).toHaveBeenCalledWith(
       expect.stringContaining("INSERT INTO task_auto_message_log"),
