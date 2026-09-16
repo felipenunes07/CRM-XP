@@ -173,11 +173,13 @@
 }
 
 /* Colunas de cada aba (vence o grid padrão do quadro) */
-.tarefas-sheet .tarefas-row.automsg-waiting { grid-template-columns: minmax(260px, 1fr) 110px 150px minmax(170px, 0.45fr) 56px; }
-.tarefas-sheet .tarefas-row.automsg-sent { grid-template-columns: 56px 170px minmax(150px, 0.45fr) minmax(240px, 1fr) minmax(130px, 0.35fr); }
-.tarefas-sheet .tarefas-row.automsg-paused { grid-template-columns: minmax(150px, 0.4fr) minmax(240px, 1fr) 110px minmax(180px, 0.4fr) 56px; }
+.tarefas-sheet .tarefas-row.automsg-waiting { grid-template-columns: minmax(240px, 1fr) minmax(140px, 0.32fr) 104px 140px minmax(160px, 0.4fr) 56px; }
+.tarefas-sheet .tarefas-row.automsg-sent { grid-template-columns: 56px 164px minmax(140px, 0.4fr) minmax(220px, 1fr) minmax(140px, 0.36fr) minmax(130px, 0.32fr); }
+.tarefas-sheet .tarefas-row.automsg-paused { grid-template-columns: minmax(140px, 0.4fr) minmax(220px, 1fr) minmax(140px, 0.36fr) 110px minmax(180px, 0.4fr) 56px; }
+.tarefas-sheet .automsg-waiting .tarefas-assignee .tarefas-avatar,
+.tarefas-sheet .automsg-sent .tarefas-assignee .tarefas-avatar,
+.tarefas-sheet .automsg-paused .tarefas-assignee .tarefas-avatar { width: 26px; height: 26px; box-shadow: 0 0 0 2px #fff, 0 0 0 3px #dce5f3; }
 .tarefas-sheet .tarefas-row > .automsg-switch { justify-self: center; }
-.tarefas-sheet .tarefas-group.automsg-waiting > .automsg-switch { margin-right: 10px; }
 .tarefas-sheet .tarefas-head.automsg-sent > span:first-child,
 .tarefas-sheet .tarefas-head.automsg-paused > span:first-child { padding-left: 0; }
 .tarefas-sheet .tarefas-dayhead { margin-top: 14px; padding: 8px; background: none; border-bottom: 1px solid #e8ecf2; font-size: 13px; }
@@ -263,7 +265,10 @@
   .tarefas-sheet .tarefas-row.tarefas-head.automsg-paused,
   .automsg-waiting.tarefas-group > span:empty,
   .automsg-waiting > .task-priority-picker,
-  .automsg-waiting > :nth-child(2) { display: none; }
+  .automsg-waiting > :nth-child(2),
+  .automsg-waiting > :nth-child(3),
+  .automsg-sent > .tarefas-assignee:nth-child(5),
+  .automsg-paused > .tarefas-assignee:nth-child(3) { display: none; }
   .tarefas-sheet .tarefas-row.automsg-waiting > .automsg-task { grid-column: 1; grid-row: 1; padding-left: 0; }
   .tarefas-sheet .tarefas-row.automsg-waiting > .automsg-switch { grid-column: 2; grid-row: 1; }
   .automsg-waiting > .tarefas-due { grid-column: 1; }

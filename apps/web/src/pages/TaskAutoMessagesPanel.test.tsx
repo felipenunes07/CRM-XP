@@ -14,6 +14,9 @@ const reminder = {
   status: "doing" as const,
   recipient_name: "Pedro",
   recipient_photo: "https://example.com/pedro.jpg",
+  creator_id: "22222222-2222-4222-8222-222222222222",
+  creator_name: "Lili",
+  creator_photo: "https://example.com/lili.jpg",
   has_whatsapp: true,
   paused: false,
   is_overdue: true,
@@ -57,6 +60,9 @@ const base: AutoMessagesOverview = {
       recipient_user_id: reminder.user_id,
       recipient_name: "Pedro",
       recipient_photo: null,
+      creator_id: null,
+      creator_name: "Lili",
+      creator_photo: null,
       message: "m",
       error: null,
       created_at: new Date(now - 60_000).toISOString(),
@@ -90,6 +96,10 @@ describe("TaskAutoMessagesPanel", () => {
     expect(html).not.toContain("Tarefa distante");
     expect(html).toContain("hoje já foi enviada · repete");
     expect(html).not.toContain("Pausar cobrança de Ana");
+    expect(html).toContain('title="Criada por Lili"');
+    expect(html).not.toContain("Pausar todas");
+    // Uma chave por tarefa visível em 7 dias (2) + quatro chaves das automações.
+    expect(html.match(/role="switch"/g)).toHaveLength(6);
   });
 
   it("warns when overdue reminders or the Lili WhatsApp are off", () => {

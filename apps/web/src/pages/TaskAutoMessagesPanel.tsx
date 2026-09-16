@@ -43,6 +43,9 @@ type ScheduledReminder = {
   status: TaskStatus;
   recipient_name: string;
   recipient_photo: string | null;
+  creator_id: string | null;
+  creator_name: string | null;
+  creator_photo: string | null;
   has_whatsapp: boolean;
   paused: boolean;
   is_overdue: boolean;
@@ -60,6 +63,9 @@ type HistoryEntry = {
   recipient_user_id: string | null;
   recipient_name: string;
   recipient_photo: string | null;
+  creator_id: string | null;
+  creator_name: string | null;
+  creator_photo: string | null;
   message: string;
   error: string | null;
   created_at: string;
@@ -283,6 +289,15 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
     ) : (
       <span className="tarefas-title">{title}</span>
     );
+  const creatorCell = (item: { creator_id: string | null; creator_name: string | null; creator_photo: string | null }) =>
+    item.creator_name ? (
+      <span className="tarefas-assignee" title={`Criada por ${item.creator_name}`}>
+        {renderAvatar({ id: item.creator_id ?? item.creator_name, name: item.creator_name, photo: item.creator_photo })}
+        <span>{item.creator_name}</span>
+      </span>
+    ) : (
+      <span className="tarefas-muted">—</span>
+    );
   const messageToggle = (key: string) => (
     <button type="button" className="automsg-link" onClick={() => setOpenMessage(openMessage === key ? null : key)}>
       <MessageSquareText size={12} /> {openMessage === key ? "Ocultar" : "Ver mensagem"}
@@ -391,6 +406,7 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
           )}
           <div className="tarefas-row tarefas-head automsg-waiting">
             <span><FileText size={16} /> Tarefa</span>
+            <span><UserRound size={16} /> Criada por</span>
             <span><Flag size={16} /> Prioridade</span>
             <span><CalendarDays size={16} /> Vencimento</span>
             <span><Send size={16} /> Envio previsto</span>
@@ -416,13 +432,6 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
                     <strong style={{ color }}>{person.name}</strong>
                     <span className="tarefas-count">{items.length}</span>
                   </span>
-                  <span /><span /><span />
-                  <Switch
-                    on
-                    disabled={togglePause.isPending}
-                    label={`Pausar todas as cobranças de ${person.name}`}
-                    onChange={() => togglePause.mutate({ items, paused: true })}
-                  />
                 </div>
                 {!isCollapsed && items.map((item) => {
                   const key = `w:${reminderKey(item)}`;
@@ -437,6 +446,7 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
                             <span className="tarefas-task-meta">{messageToggle(key)}</span>
                           </span>
                         </span>
+                        {creatorCell(item)}
                         <TaskPriorityPicker value={item.priority ?? "normal"} label={`Prioridade de ${item.title}`} />
                         <span className={`tarefas-due${item.is_overdue ? " is-late" : ""}`}>
                           {item.is_overdue ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
@@ -471,6 +481,7 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
             <span><Zap size={16} /> Automação</span>
             <span><UserRound size={16} /> Para</span>
             <span><FileText size={16} /> Tarefa</span>
+            <span><UserRound size={16} /> Criada por</span>
             <span><CircleCheck size={16} /> Resultado</span>
           </div>
           {sentByDay.length === 0 && <p className="tarefas-empty">Nenhuma mensagem automática registrada nos últimos 7 dias.</p>}
@@ -498,13 +509,13 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
                         <span className="tarefas-task-meta">
                           {messageToggle(key)}
                           {repeat && !repeat.paused && (
-                            <span className="automsg-repeat">
-                              <Hourglass size={11} /> repete {relativeDay(new Date(repeat.next_send_at), now).toLowerCase()}
-                              <Switch on label={`Parar de cobrar ${entry.recipient_name}: ${entry.task_title}`} onChange={() => togglePause.mutate({ items: [repeat], paused: true })} />
+                            <span className="automsg-repeat" title="Para parar, desligue a chave na aba Aguardando envio">
+                              <Hourglass size={11} /> próxima: {relativeDay(new Date(repeat.next_send_at), now).toLowerCase()}
                             </span>
                           )}
                         </span>
                       </span>
+                      {creatorCell(entry)}
                       <span className="automsg-result">
                         <span className={`automsg-state ${result.tone}`}>{result.icon} {result.label}</span>
                         {entry.status !== "sent" && entry.error && <small>{entry.error}</small>}
@@ -526,6 +537,7 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
           <div className="tarefas-row tarefas-head automsg-paused">
             <span><UserRound size={16} /> Para</span>
             <span><FileText size={16} /> Tarefa</span>
+            <span><UserRound size={16} /> Criada por</span>
             <span><CalendarDays size={16} /> Vencimento</span>
             <span><PauseCircle size={16} /> Motivo</span>
             <span><ToggleRight size={16} /> Religar</span>
@@ -545,6 +557,7 @@ export function TaskAutoMessagesPanel({ request, renderAvatar, colorFor, rankFor
                       {taskTitle(item.task_id, item.title)}
                       <span className="tarefas-task-meta">{messageToggle(key)}</span>
                     </span>
+                    {creatorCell(item)}
                     <span className={`tarefas-due${item.is_overdue ? " is-late" : ""}`}>
                       {item.is_overdue ? <AlertTriangle size={13} /> : <Clock3 size={13} />}
                       {shortDue(item)}

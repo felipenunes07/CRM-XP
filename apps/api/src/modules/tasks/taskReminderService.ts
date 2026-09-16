@@ -261,6 +261,9 @@ type ScheduledReminderRow = {
   status: string;
   full_name: string;
   profile_avatar_url: string | null;
+  creator_id: string | null;
+  creator_name: string | null;
+  creator_photo: string | null;
   whatsapp_phone: string | null;
   reminders_paused: boolean;
   is_overdue: boolean;
@@ -277,6 +280,9 @@ type HistoryRow = {
   recipient_user_id: string | null;
   recipient_name: string;
   recipient_photo: string | null;
+  creator_id: string | null;
+  creator_name: string | null;
+  creator_photo: string | null;
   message: string;
   error: string | null;
   created_at: Date | string;
@@ -297,16 +303,19 @@ export async function getTaskAutoMessagesOverview() {
        ), pending AS (
          SELECT ta.task_id, ta.user_id, t.title, t.due_date, t.due_time, t.priority, ta.status,
                 p.full_name, p.profile_avatar_url, p.whatsapp_phone, ta.reminders_paused, ta.reminded_on, c.now_local,
+                t.created_by_user_id AS creator_id, cr.full_name AS creator_name, cr.profile_avatar_url AS creator_photo,
                 (t.due_date < c.now_local::date
                  OR (t.due_date = c.now_local::date AND t.due_time IS NOT NULL AND t.due_time < c.now_local::time)) AS is_overdue
          FROM task_assignees ta
          JOIN tasks t ON t.id = ta.task_id
          JOIN profiles p ON p.id = ta.user_id
+         LEFT JOIN profiles cr ON cr.id = t.created_by_user_id
          CROSS JOIN clock c
          WHERE t.deleted_at IS NULL AND t.status <> 'done' AND ta.status <> 'done'
        )
        SELECT task_id, user_id, title, due_date::text, due_time::text, priority, status,
               full_name, profile_avatar_url, whatsapp_phone, reminders_paused, is_overdue,
+              creator_id, creator_name, creator_photo,
               (is_overdue AND reminded_on >= now_local::date) AS sent_today,
               (CASE
                  WHEN is_overdue AND (reminded_on IS NULL OR reminded_on < now_local::date) THEN now_local
@@ -320,9 +329,12 @@ export async function getTaskAutoMessagesOverview() {
     ),
     pool.query<HistoryRow>(
       `SELECT l.id, l.kind, l.status, l.task_id, l.task_title, l.recipient_user_id, l.recipient_name,
-              p.profile_avatar_url AS recipient_photo, l.message, l.error, l.created_at
+              p.profile_avatar_url AS recipient_photo, l.message, l.error, l.created_at,
+              t.created_by_user_id AS creator_id, cr.full_name AS creator_name, cr.profile_avatar_url AS creator_photo
        FROM task_auto_message_log l
        LEFT JOIN profiles p ON p.id = l.recipient_user_id
+       LEFT JOIN tasks t ON t.id = l.task_id
+       LEFT JOIN profiles cr ON cr.id = t.created_by_user_id
        WHERE l.created_at >= NOW() - INTERVAL '7 days'
        ORDER BY l.created_at DESC
        LIMIT 300`,
@@ -348,6 +360,9 @@ export async function getTaskAutoMessagesOverview() {
       status: row.status,
       recipient_name: row.full_name,
       recipient_photo: row.profile_avatar_url,
+      creator_id: row.creator_id,
+      creator_name: row.creator_name,
+      creator_photo: row.creator_photo,
       has_whatsapp: Boolean(row.whatsapp_phone?.replace(/\D/g, "")),
       paused: row.reminders_paused,
       is_overdue: row.is_overdue,
