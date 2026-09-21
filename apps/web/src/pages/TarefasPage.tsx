@@ -982,7 +982,59 @@ export default function TarefasPage() {
       <div className="tarefas-page-heading">
         <div className="tarefas-page-mark"><ListTodo size={24} /></div>
         <div><p>Workspace <ChevronRight size={13} /> Tarefas</p><h1>{manager && adminScope === "all" ? "Tarefas da equipe" : listScope === "received" ? "Minhas tarefas" : "Tarefas atribuídas por mim"}</h1></div>
-        <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : listScope === "received" ? "Somente suas tarefas" : "Tarefas que você criou para outras pessoas"}</span>
+        <div className="tarefas-page-side">
+          <span className="tarefas-page-caption"><Users size={16} /> {manager && adminScope === "all" ? "Visão da equipe" : listScope === "received" ? "Somente suas tarefas" : "Tarefas que você criou para outras pessoas"}</span>
+          <div className="tarefas-notifications">
+            <button
+              type="button"
+              className={`tarefas-bell${unreadNotifications.length ? " has-unread" : ""}`}
+              onClick={() => {
+                setNotificationsOpen((current) => !current);
+                if (!notificationsOpen && unreadNotifications.length) markNotificationsRead();
+              }}
+              aria-label={`Notificações${unreadNotifications.length ? `: ${unreadNotifications.length} não lida(s)` : ""}`}
+              aria-expanded={notificationsOpen}
+              title="Notificações das tarefas"
+            >
+              {unreadNotifications.length ? <BellRing size={17} /> : <Bell size={17} />}
+              {unreadNotifications.length ? <b>{unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}</b> : null}
+            </button>
+            {notificationsOpen ? (
+              <aside className="tarefas-notification-panel" aria-label="Notificações das tarefas">
+                <div className="tarefas-notification-head">
+                  <div><BellRing size={15} /><span><strong>Notificações</strong><small>Novidades que envolvem você</small></span></div>
+                  <button type="button" onClick={() => { markNotificationsRead(); setNotificationsOpen(false); }}>Fechar</button>
+                </div>
+                {notifications.length ? (
+                  <div className="tarefas-notification-list">
+                    {notifications.slice(0, 30).map((item) => (
+                      <button
+                        type="button"
+                        key={item.id}
+                        className={Date.parse(item.createdAt) > notificationsReadAt ? "is-unread" : undefined}
+                        onClick={() => {
+                          const task = tasks.find((candidate) => candidate.id === item.taskId);
+                          if (task) openDetails(task);
+                          markNotificationsRead();
+                          setNotificationsOpen(false);
+                        }}
+                      >
+                        <Avatar person={{
+                          id: item.authorUserId ?? item.id,
+                          name: item.authorName,
+                          photo: item.authorPhoto ?? personById(item.authorUserId ?? "").photo,
+                          avatar_proxy_url: item.authorUserId ? `/api/tasks/avatar/${item.authorUserId}` : null,
+                          position: 0,
+                        }} />
+                        <span><strong>{item.taskTitle}</strong><small>{item.message}</small><time>{formatAuditTime(item.createdAt)}</time></span>
+                      </button>
+                    ))}
+                  </div>
+                ) : <p className="tarefas-notification-empty">Nenhuma novidade nas suas tarefas.</p>}
+              </aside>
+            ) : null}
+          </div>
+        </div>
       </div>
       <header className="tarefas-toolbar">
         <div className="tarefas-tabs">
@@ -1087,50 +1139,6 @@ export default function TarefasPage() {
             />
           </label>
         )}
-        <div className="tarefas-notifications">
-          <button
-            type="button"
-            className={`tarefas-bell${unreadNotifications.length ? " has-unread" : ""}`}
-            onClick={() => {
-              setNotificationsOpen((current) => !current);
-              if (!notificationsOpen && unreadNotifications.length) markNotificationsRead();
-            }}
-            aria-label={`Notificações${unreadNotifications.length ? `: ${unreadNotifications.length} não lida(s)` : ""}`}
-            aria-expanded={notificationsOpen}
-            title="Notificações das tarefas"
-          >
-            {unreadNotifications.length ? <BellRing size={17} /> : <Bell size={17} />}
-            {unreadNotifications.length ? <b>{unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}</b> : null}
-          </button>
-          {notificationsOpen ? (
-            <aside className="tarefas-notification-panel" aria-label="Notificações das tarefas">
-              <div className="tarefas-notification-head">
-                <strong>Notificações</strong>
-                <button type="button" onClick={() => { markNotificationsRead(); setNotificationsOpen(false); }}>Fechar</button>
-              </div>
-              {notifications.length ? (
-                <div className="tarefas-notification-list">
-                  {notifications.slice(0, 30).map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      className={Date.parse(item.createdAt) > notificationsReadAt ? "is-unread" : undefined}
-                      onClick={() => {
-                        const task = tasks.find((candidate) => candidate.id === item.taskId);
-                        if (task) openDetails(task);
-                        markNotificationsRead();
-                        setNotificationsOpen(false);
-                      }}
-                    >
-                      <Bell size={14} />
-                      <span><strong>{item.taskTitle}</strong><small>{item.message} · {formatAuditTime(item.createdAt)}</small></span>
-                    </button>
-                  ))}
-                </div>
-              ) : <p className="tarefas-notification-empty">Nenhuma novidade nas suas tarefas.</p>}
-            </aside>
-          ) : null}
-        </div>
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
         </button>

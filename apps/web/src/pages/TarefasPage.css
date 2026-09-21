@@ -120,14 +120,14 @@
   height: 30px;
   padding: 0;
   border: 1px solid #e0e5ef;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #fff;
   color: #4b5563;
   display: grid;
   place-items: center;
   cursor: pointer;
 }
-.tarefas-bell:hover, .tarefas-bell.has-unread { border-color: #a9bdf0; background: #f3f6ff; color: #2956d7; }
+.tarefas-bell:hover, .tarefas-bell.has-unread { border-color: #a9bdf0; background: #f3f6ff; color: #2956d7; box-shadow: 0 3px 10px rgba(41, 86, 215, .1); }
 .tarefas-bell b {
   position: absolute;
   top: -7px;
@@ -148,24 +148,29 @@
   z-index: 45;
   top: 38px;
   right: 0;
-  width: min(390px, calc(100vw - 32px));
+  width: min(410px, calc(100vw - 28px));
   max-height: min(520px, calc(100vh - 110px));
   overflow: auto;
   border: 1px solid #dce4f1;
-  border-radius: 12px;
+  border-radius: 14px;
   background: #fff;
-  box-shadow: 0 16px 38px rgba(15, 23, 42, .18);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .18);
 }
-.tarefas-notification-head { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #edf0f5; color:#1e293b; }
+.tarefas-notification-head { display:flex; align-items:center; justify-content:space-between; padding:13px 15px; border-bottom:1px solid #edf0f5; color:#1e293b; }
+.tarefas-notification-head > div { display:flex; align-items:center; gap:9px; color:#2956d7; }
+.tarefas-notification-head span { display:grid; gap:1px; color:#1e293b; }
+.tarefas-notification-head strong { font-size:13px; }
+.tarefas-notification-head small { font-size:10.5px; color:#8b94a3; font-weight:500; }
 .tarefas-notification-head button { border:0; background:none; color:#4365a8; font-size:12px; font-weight:650; cursor:pointer; }
 .tarefas-notification-list { display:grid; }
-.tarefas-notification-list > button { border:0; border-bottom:1px solid #edf0f5; background:#fff; padding:11px 13px; display:grid; grid-template-columns:auto minmax(0, 1fr); gap:9px; text-align:left; color:#64748b; cursor:pointer; }
+.tarefas-notification-list > button { border:0; border-bottom:1px solid #edf0f5; background:#fff; padding:11px 14px; display:grid; grid-template-columns:auto minmax(0, 1fr); gap:10px; text-align:left; color:#64748b; cursor:pointer; }
 .tarefas-notification-list > button:hover { background:#f7faff; }
 .tarefas-notification-list > button.is-unread { background:#f1f5ff; color:#2956d7; }
-.tarefas-notification-list > button > svg { margin-top:2px; }
-.tarefas-notification-list span { display:grid; gap:3px; min-width:0; }
+.tarefas-notification-list .tarefas-avatar { width:32px; height:32px; margin-top:1px; font-size:10px; box-shadow:0 0 0 2px #fff, 0 0 0 3px #dce5f7; }
+.tarefas-notification-list > button > span:not(.tarefas-avatar) { display:grid; gap:3px; min-width:0; }
 .tarefas-notification-list strong { color:#243b67; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .tarefas-notification-list small { color:#64748b; font-size:11px; line-height:1.35; }
+.tarefas-notification-list time { color:#9aa6b8; font-size:10px; font-variant-numeric:tabular-nums; }
 .tarefas-notification-empty { margin:0; padding:25px 14px; color:#94a3b8; font-size:12px; text-align:center; }
 .tarefas-card-colors-toggle[data-on] { border-color: #b8c8f2; background: #edf3ff; color: #2956d7; font-weight: 650; }
 .tarefas-scope {
