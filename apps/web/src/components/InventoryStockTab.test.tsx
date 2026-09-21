@@ -156,6 +156,8 @@ describe("InventoryStockTab", () => {
     expect(markup).toContain("DOCs");
     expect(markup).toContain("Baterias");
     expect(markup).toContain("iPhone 13 OLED");
+    expect(markup).toContain("Qualidade: OLED");
+    expect(markup).toContain("Qualidade: Sem qualidade");
     expect(markup).toContain("DOC de Carga iPhone 13");
     expect(markup).toContain("Bateria iPhone 13");
     expect(markup).not.toContain("Samsung A15 Incell");

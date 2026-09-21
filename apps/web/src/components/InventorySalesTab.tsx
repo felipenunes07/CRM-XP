@@ -255,8 +255,9 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
       let category: InventorySalesCategory | null = null;
 
       if (groupBy === "modelo") {
-        key = `${item.category}::${item.modelLabel}`;
-        label = item.modelLabel;
+        const quality = item.quality?.trim() || "Sem qualidade";
+        key = JSON.stringify([item.category, item.brand, item.modelLabel, quality]);
+        label = `${item.modelLabel} · Qualidade: ${quality}`;
         sublabel = `${categoryLabel(item.category)} · ${item.brand}`;
         category = item.category;
       } else if (groupBy === "marca") {
@@ -401,7 +402,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
         const value =
           metric === "revenue" ? group.monthlyRevenue[windowStart + index] ?? 0 : group.monthlyUnits[windowStart + index] ?? 0;
         if (topKeys.has(group.key)) {
-          point[group.label] = Math.round(value * 100) / 100;
+          point[group.key] = Math.round(value * 100) / 100;
         } else {
           others += value;
         }
@@ -905,7 +906,8 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                     {topSeries.map((series) => (
                       <Bar
                         key={series.key}
-                        dataKey={series.label}
+                        dataKey={series.key}
+                        name={series.label}
                         stackId="sales"
                         fill={series.color}
                         stroke="#fff"

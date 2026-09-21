@@ -1043,8 +1043,13 @@ export function InventoryPage() {
   const modelsQuery = useQuery({
     queryKey: ["inventory-models"],
     queryFn: () => api.inventoryModels(token!),
-    enabled: Boolean(token && (activeView === "models" || activeView === "screens")),
+    enabled: Boolean(token && (activeView === "models" || activeView === "screens" || activeView === "restock")),
   });
+
+  const restockQualities = useMemo(
+    () => new Map((modelsQuery.data?.items ?? []).map((item) => [item.modelKey, item.qualityLabels])),
+    [modelsQuery.data?.items],
+  );
 
   const detailQuery = useQuery({
     queryKey: ["inventory-model-detail", selectedModelKey],
@@ -1485,7 +1490,7 @@ export function InventoryPage() {
                             <div className="inventory-stale-model-cell">
                               <strong>{item.sku}</strong>
                               <span>
-                                {item.modelLabel} · {item.brand} · {item.family}
+                                {item.modelLabel} · {item.brand} · {item.family} · Qualidade: {item.qualityLabels.join(", ") || "Sem qualidade"}
                               </span>
                             </div>
                           </td>
@@ -1618,7 +1623,7 @@ export function InventoryPage() {
                             <div className="inventory-stale-model-cell">
                               <strong>{item.sku}</strong>
                               <span>
-                                {item.modelLabel} · {item.brand} · {item.family}
+                                {item.modelLabel} · {item.brand} · {item.family} · Qualidade: {restockQualities.get(item.modelKey)?.join(", ") || (modelsQuery.isLoading ? "Carregando..." : modelsQuery.isError ? "Indisponível" : "Sem qualidade")}
                               </span>
                             </div>
                           </td>
@@ -1764,8 +1769,7 @@ export function InventoryPage() {
                               <strong>{item.modelLabel}</strong>
                               <span>
                                 {item.brand} · {item.family}
-                                {item.color ? ` · ${item.color}` : ""}
-                                {item.quality ? ` · ${item.quality}` : ""}
+                                {item.color ? ` · ${item.color}` : ""} · Qualidade: {item.quality || "Sem qualidade"}
                               </span>
                             </div>
                           </td>
@@ -1999,7 +2003,7 @@ export function InventoryPage() {
                             <div>
                               <strong>{item.modelLabel}</strong>
                               <span>
-                                {item.sku} · {item.brand} · {item.qualityLabels.slice(0, 2).join(", ") || "Sem qualidade"}
+                                {item.sku} · {item.brand} · Qualidade: {item.qualityLabels.join(", ") || "Sem qualidade"}
                               </span>
                             </div>
                             <ChevronRight size={16} aria-hidden="true" />

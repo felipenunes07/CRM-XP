@@ -446,6 +446,7 @@ export function InventoryStockTab({
                       <td>
                         <div className="invsales-cell-main">
                           <strong><ChevronRight className={isSelected ? "expanded" : ""} size={14} /> {item.modelLabel}</strong>
+                          <small>Qualidade: {item.qualityLabels.join(", ") || "Sem qualidade"}</small>
                         </div>
                       </td>
                       <td><span className={`invstock-type ${item.productKind.toLowerCase()}`}>{productKindLabel(item.productKind)}</span></td>
