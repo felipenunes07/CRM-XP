@@ -2,6 +2,7 @@ export type TaskNotificationEvent = {
   id: string;
   author_user_id: string | null;
   author_name: string;
+  author_photo?: string | null;
   action: string;
   details: Record<string, unknown>;
   created_at: string;
@@ -20,6 +21,9 @@ export type TaskNotification = {
   id: string;
   taskId: string;
   taskTitle: string;
+  authorUserId: string | null;
+  authorName: string;
+  authorPhoto: string | null;
   message: string;
   createdAt: string;
 };
@@ -55,6 +59,9 @@ export function taskNotifications(tasks: TaskNotificationSource[], currentUserId
         id: event.id,
         taskId: task.id,
         taskTitle: task.title,
+        authorUserId: event.author_user_id,
+        authorName: event.author_name,
+        authorPhoto: event.author_photo ?? null,
         message: `${event.author_name} ${messageFor(event)}`,
         createdAt: event.created_at,
       }];
