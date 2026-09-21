@@ -113,6 +113,60 @@
   gap: 7px;
   cursor: pointer;
 }
+.tarefas-notifications { position: relative; }
+.tarefas-bell {
+  position: relative;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e0e5ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #4b5563;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.tarefas-bell:hover, .tarefas-bell.has-unread { border-color: #a9bdf0; background: #f3f6ff; color: #2956d7; }
+.tarefas-bell b {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid #f7f7f8;
+  border-radius: 999px;
+  background: #e53e3e;
+  color: #fff;
+  font-size: 10px;
+  line-height: 13px;
+  font-weight: 800;
+}
+.tarefas-notification-panel {
+  position: absolute;
+  z-index: 45;
+  top: 38px;
+  right: 0;
+  width: min(390px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 110px));
+  overflow: auto;
+  border: 1px solid #dce4f1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, .18);
+}
+.tarefas-notification-head { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid #edf0f5; color:#1e293b; }
+.tarefas-notification-head button { border:0; background:none; color:#4365a8; font-size:12px; font-weight:650; cursor:pointer; }
+.tarefas-notification-list { display:grid; }
+.tarefas-notification-list > button { border:0; border-bottom:1px solid #edf0f5; background:#fff; padding:11px 13px; display:grid; grid-template-columns:auto minmax(0, 1fr); gap:9px; text-align:left; color:#64748b; cursor:pointer; }
+.tarefas-notification-list > button:hover { background:#f7faff; }
+.tarefas-notification-list > button.is-unread { background:#f1f5ff; color:#2956d7; }
+.tarefas-notification-list > button > svg { margin-top:2px; }
+.tarefas-notification-list span { display:grid; gap:3px; min-width:0; }
+.tarefas-notification-list strong { color:#243b67; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tarefas-notification-list small { color:#64748b; font-size:11px; line-height:1.35; }
+.tarefas-notification-empty { margin:0; padding:25px 14px; color:#94a3b8; font-size:12px; text-align:center; }
 .tarefas-card-colors-toggle[data-on] { border-color: #b8c8f2; background: #edf3ff; color: #2956d7; font-weight: 650; }
 .tarefas-scope {
   display: inline-flex;

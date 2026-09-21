@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEven
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Bell,
+  BellRing,
   Check,
   CalendarDays,
   ChevronLeft,
@@ -39,6 +41,8 @@ import { TaskAutoMessagesPanel } from "./TaskAutoMessagesPanel";
 import { TaskDetailsDialog } from "./TaskDetailsDialog";
 import { TaskPriorityPicker } from "./TaskPriorityPicker";
 import { TaskStatusPicker } from "./TaskStatusPicker";
+import { effectiveTaskStatus } from "./taskStatus";
+import { taskNotifications } from "./taskNotifications";
 import { personBelongsToList, taskBelongsToList } from "./tarefasPage.helpers";
 import "./TarefasWorkspace.css";
 
@@ -515,6 +519,10 @@ export default function TarefasPage() {
   const [confirmDelete, setConfirmDelete] = useState("");
   const [confirmNotify, setConfirmNotify] = useState("");
   const [notice, setNotice] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationsReadAt, setNotificationsReadAt] = useState(() => {
+    try { return Number(localStorage.getItem(`tarefas:notificacoes-lidas:${user?.id ?? "anon"}`)) || 0; } catch { return 0; }
+  });
   const [teamOpen, setTeamOpen] = useState(false);
   const [order, setOrder] = useState<string[]>(() => readIds(ORDER_KEY));
   const [hidden, setHidden] = useState<string[]>([]);
@@ -523,6 +531,9 @@ export default function TarefasPage() {
   const [draggingPersonId, setDraggingPersonId] = useState<string | null>(null);
 
   useEffect(() => writeIds(ORDER_KEY, order), [order]);
+  useEffect(() => {
+    try { setNotificationsReadAt(Number(localStorage.getItem(`tarefas:notificacoes-lidas:${user?.id ?? "anon"}`)) || 0); } catch { setNotificationsReadAt(0); }
+  }, [user?.id]);
   const toggleCardColors = () => setCardColors(current => {
     const next = !current;
     try { localStorage.setItem(`tarefas:cores-cards:${user?.id ?? "anon"}`, next ? "1" : "0"); } catch { /* preferência apenas nesta sessão */ }
@@ -614,12 +625,19 @@ export default function TarefasPage() {
   const orderedPeople = [...boardPeople].sort((a, b) => rank(a) - rank(b));
   const taskPeople = (task: Task) => task.person_ids?.length ? task.person_ids : [task.person_id];
   const assignedTo = (task: Task, personId: string) => taskPeople(task).includes(personId);
-  const effectiveStatus = (task: Task) => task.my_status ?? task.status;
+  const effectiveStatus = effectiveTaskStatus;
   const taskColorClass = (task: Task) =>
     isLate(task) ? "is-late-card" : task.return_history?.length ? "is-returned-card" : `is-${effectiveStatus(task)}-card`;
   const tasks = (boardQuery.data?.tasks ?? []).filter((t) => taskPeople(t).some((id) => !hidden.includes(id) && !orderedPeople.find((p) => p.id === id)?.hidden));
   const auditLogs = boardQuery.data?.audit_logs ?? [];
   const manager = boardQuery.data?.role === "manager";
+  const notifications = taskNotifications(tasks, boardQuery.data?.current_user_id ?? user?.id ?? "");
+  const unreadNotifications = notifications.filter((item) => Date.parse(item.createdAt) > notificationsReadAt);
+  const markNotificationsRead = () => {
+    const now = Date.now();
+    setNotificationsReadAt(now);
+    try { localStorage.setItem(`tarefas:notificacoes-lidas:${user?.id ?? "anon"}`, String(now)); } catch { /* leitura permanece nesta sessão */ }
+  };
 
   const openTeamSettings = () => {
     setHidden(boardPeople.filter((person) => person.hidden).map((person) => person.id));
@@ -842,9 +860,10 @@ export default function TarefasPage() {
   const toggleStatus = (task: Task) => void changeStatus(task, effectiveStatus(task) === "done" ? "doing" : "done");
   const canChangeStatus = (task: Task) =>
     manager ||
-    (task.status === "review" && task.created_by_user_id === boardQuery.data?.current_user_id) ||
-    (effectiveStatus(task) !== "done" &&
-      (task.person_id === TEAM_PERSON_ID || assignedTo(task, boardQuery.data?.current_user_id ?? "")));
+    (task.status === "review"
+      ? task.created_by_user_id === boardQuery.data?.current_user_id
+      : effectiveStatus(task) !== "done" &&
+        (task.person_id === TEAM_PERSON_ID || assignedTo(task, boardQuery.data?.current_user_id ?? "")));
   const allowedStatuses = (task: Task): Task["status"][] | undefined => {
     if (manager) return undefined;
     return task.status === "review" ? ["done"] : ["todo", "doing", "done"];
@@ -1068,6 +1087,50 @@ export default function TarefasPage() {
             />
           </label>
         )}
+        <div className="tarefas-notifications">
+          <button
+            type="button"
+            className={`tarefas-bell${unreadNotifications.length ? " has-unread" : ""}`}
+            onClick={() => {
+              setNotificationsOpen((current) => !current);
+              if (!notificationsOpen && unreadNotifications.length) markNotificationsRead();
+            }}
+            aria-label={`Notificações${unreadNotifications.length ? `: ${unreadNotifications.length} não lida(s)` : ""}`}
+            aria-expanded={notificationsOpen}
+            title="Notificações das tarefas"
+          >
+            {unreadNotifications.length ? <BellRing size={17} /> : <Bell size={17} />}
+            {unreadNotifications.length ? <b>{unreadNotifications.length > 9 ? "9+" : unreadNotifications.length}</b> : null}
+          </button>
+          {notificationsOpen ? (
+            <aside className="tarefas-notification-panel" aria-label="Notificações das tarefas">
+              <div className="tarefas-notification-head">
+                <strong>Notificações</strong>
+                <button type="button" onClick={() => { markNotificationsRead(); setNotificationsOpen(false); }}>Fechar</button>
+              </div>
+              {notifications.length ? (
+                <div className="tarefas-notification-list">
+                  {notifications.slice(0, 30).map((item) => (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={Date.parse(item.createdAt) > notificationsReadAt ? "is-unread" : undefined}
+                      onClick={() => {
+                        const task = tasks.find((candidate) => candidate.id === item.taskId);
+                        if (task) openDetails(task);
+                        markNotificationsRead();
+                        setNotificationsOpen(false);
+                      }}
+                    >
+                      <Bell size={14} />
+                      <span><strong>{item.taskTitle}</strong><small>{item.message} · {formatAuditTime(item.createdAt)}</small></span>
+                    </button>
+                  ))}
+                </div>
+              ) : <p className="tarefas-notification-empty">Nenhuma novidade nas suas tarefas.</p>}
+            </aside>
+          ) : null}
+        </div>
         <button type="button" className="tarefas-refresh" onClick={() => openNew("")}>
           <Plus size={14} /> Nova tarefa
         </button>
