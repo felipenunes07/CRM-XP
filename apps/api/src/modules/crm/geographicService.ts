@@ -36,6 +36,35 @@ const LOCATION_SALES_CTE = `
   )
 `;
 
+function locationSalesCte(model: string | null, quality: string | null) {
+  if (!model && !quality) return LOCATION_SALES_CTE;
+  return LOCATION_SALES_CTE.replace(
+    "JOIN order_items oi ON oi.order_id = o.id",
+    `JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN LATERAL (
+      SELECT isi.model, isi.quality
+      FROM inventory_snapshot_items isi
+      JOIN inventory_snapshots ins ON ins.id = isi.snapshot_id
+      WHERE isi.sku = oi.sku
+      ORDER BY ins.is_active DESC, ins.imported_at DESC
+      LIMIT 1
+    ) product ON TRUE
+    WHERE ($1::text IS NULL OR UPPER(COALESCE(product.model, oi.item_description)) LIKE '%' || $1 || '%' ESCAPE '\\')
+      AND ($2::text IS NULL OR UPPER(COALESCE(product.quality, '')) = $2)`,
+  );
+}
+
+export async function getGeographicModelQualities(): Promise<string[]> {
+  const result = await pool.query(`
+    SELECT DISTINCT BTRIM(isi.quality) AS quality
+    FROM inventory_snapshot_items isi
+    JOIN inventory_snapshots ins ON ins.id = isi.snapshot_id AND ins.is_active = TRUE
+    WHERE NULLIF(BTRIM(isi.quality), '') IS NOT NULL
+    ORDER BY quality
+  `);
+  return result.rows.map((row) => String(row.quality));
+}
+
 function toNumber(value: unknown) {
   return Number(value ?? 0);
 }
@@ -172,11 +201,15 @@ export async function getGeographicStats() {
   }));
 }
 
-export async function getGeographicSalesStats(): Promise<GeographicSalesResponse> {
+export async function getGeographicSalesStats(filters: { model?: string; quality?: string } = {}): Promise<GeographicSalesResponse> {
+  const model = filters.model?.trim().toUpperCase().replace(/[\\%_]/g, "\\$&") || null;
+  const quality = filters.quality?.trim().toUpperCase() || null;
+  const cte = locationSalesCte(model, quality);
+  const params = model || quality ? [model, quality] : [];
   const [stateResult, cityResult, customerResult] = await Promise.all([
     pool.query(
       `
-        ${LOCATION_SALES_CTE}
+        ${cte}
         SELECT
           location_sales.state AS state,
           COUNT(DISTINCT location_sales.customer_id)::int AS customer_count,
@@ -192,10 +225,11 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
         GROUP BY location_sales.state
         ORDER BY total_pieces DESC, total_revenue DESC, location_sales.state ASC
       `,
+      params,
     ),
     pool.query(
       `
-        ${LOCATION_SALES_CTE}
+        ${cte}
         SELECT
           location_sales.state AS state,
           location_sales.city AS city,
@@ -212,10 +246,11 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
         GROUP BY location_sales.state, location_sales.city
         ORDER BY total_pieces DESC, total_revenue DESC, location_sales.city ASC
       `,
+      params,
     ),
     pool.query(
       `
-        ${LOCATION_SALES_CTE}
+        ${cte}
         SELECT
           location_sales.customer_id,
           COALESCE(NULLIF(MAX(cs.customer_code), ''), MAX(c.customer_code), '') AS customer_code,
@@ -237,6 +272,7 @@ export async function getGeographicSalesStats(): Promise<GeographicSalesResponse
           COALESCE(location_sales.city, 'Sem cidade')
         ORDER BY total_pieces DESC, total_revenue DESC, display_name ASC
       `,
+      params,
     ),
   ]);
 

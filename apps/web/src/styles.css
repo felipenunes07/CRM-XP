@@ -13968,6 +13968,36 @@ button.attendants-ranking-row:hover {
   gap: 0.45rem;
 }
 
+.region-model-filter form {
+  display: flex;
+  align-items: end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.region-model-filter .region-search:first-child {
+  flex: 1 1 260px;
+}
+
+.region-model-filter .region-search:nth-child(2) {
+  flex: 0 1 220px;
+}
+
+.region-model-filter .accent-button {
+  min-height: 52px;
+}
+
+.region-model-filter p {
+  margin: 0.75rem 0 0;
+}
+
+.region-model-leaders {
+  display: flex;
+  gap: 0.5rem 1.5rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
 .region-search span {
   color: var(--muted);
   font-size: 0.78rem;
@@ -13976,7 +14006,8 @@ button.attendants-ranking-row:hover {
   text-transform: uppercase;
 }
 
-.region-search input {
+.region-search input,
+.region-search select {
   width: 100%;
   min-height: 52px;
   border-radius: 16px;
@@ -13985,7 +14016,8 @@ button.attendants-ranking-row:hover {
   padding: 0.92rem 1rem;
 }
 
-.region-search input:focus {
+.region-search input:focus,
+.region-search select:focus {
   outline: 2px solid rgba(95, 140, 255, 0.18);
   border-color: rgba(41, 86, 215, 0.18);
 }

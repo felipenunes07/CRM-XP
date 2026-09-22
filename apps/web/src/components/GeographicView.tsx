@@ -233,22 +233,31 @@ export function GeographicView() {
   const [selectedCityKey, setSelectedCityKey] = useState("");
   const [search, setSearch] = useState("");
   const [selectedSeller, setSelectedSeller] = useState("");
+  const [modelInput, setModelInput] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedQuality, setSelectedQuality] = useState("");
   const [hoveredState, setHoveredState] = useState("");
   const [mapMode, setMapMode] = useState<"volume" | "health">("volume");
   const [detailView, setDetailView] = useState<"customers" | "cities" | "models">("cities");
 
   const geographicQuery = useQuery({
-    queryKey: ["geographic-sales-overview"],
-    queryFn: () => api.getGeographicSalesStats(token!),
+    queryKey: ["geographic-sales-overview", selectedModel, selectedQuality],
+    queryFn: () => api.getGeographicSalesStats(token!, { model: selectedModel, quality: selectedQuality }),
+    enabled: Boolean(token),
+  });
+
+  const qualitiesQuery = useQuery({
+    queryKey: ["geographic-model-qualities"],
+    queryFn: () => api.getGeographicModelQualities(token!),
     enabled: Boolean(token),
   });
 
   const sourceGeographicData = geographicQuery.data ?? EMPTY_GEOGRAPHIC_RESPONSE;
-  const sellerOptions = useMemo(
-    () => [...new Set(sourceGeographicData.customerStats.map((item) => item.sellerName?.trim()).filter(Boolean) as string[])]
-      .sort((left, right) => left.localeCompare(right, "pt-BR")),
-    [sourceGeographicData.customerStats],
-  );
+  const sellerOptions = useMemo(() => {
+    const names = sourceGeographicData.customerStats.map((item) => item.sellerName?.trim()).filter(Boolean) as string[];
+    if (selectedSeller && selectedSeller !== UNASSIGNED_SELLER) names.push(selectedSeller);
+    return [...new Set(names)].sort((left, right) => left.localeCompare(right, "pt-BR"));
+  }, [selectedSeller, sourceGeographicData.customerStats]);
   const hasUnassignedCustomers = sourceGeographicData.customerStats.some((item) => !item.sellerName?.trim());
   const geographicData = useMemo(
     () => filterGeographicDataBySeller(sourceGeographicData, selectedSeller),
@@ -379,6 +388,7 @@ export function GeographicView() {
   const tableRows = filteredCustomers;
   const cityFilterRows = useMemo(() => filteredCities.slice(0, 36), [filteredCities]);
   const topState = geographicData.stateStats[0] ?? null;
+  const topCity = geographicData.cityStats[0] ?? null;
   const activeStateCode = hoveredState || selectedState || topState?.state || "";
   const activeStateStat = activeStateCode
     ? stateStatsByUf.get(activeStateCode) ?? createEmptyStateStat(activeStateCode)
@@ -399,7 +409,7 @@ export function GeographicView() {
         .join(" ")
     : "";
   const maxStatePieces = Math.max(...geographicData.stateStats.map((item) => item.totalPieces), 1);
-  const hasFilters = Boolean(selectedState || selectedCityKey || selectedSeller || search.trim());
+  const hasFilters = Boolean(selectedState || selectedCityKey || selectedSeller || selectedModel || selectedQuality || search.trim());
 
   function handleStateToggle(state: string) {
     setSelectedCityKey("");
@@ -425,6 +435,9 @@ export function GeographicView() {
     setSelectedCityKey("");
     setSearch("");
     setSelectedSeller("");
+    setModelInput("");
+    setSelectedModel("");
+    setSelectedQuality("");
     setDetailView("cities");
   }
 
@@ -508,7 +521,7 @@ export function GeographicView() {
     return <div className="page-error">{tx("Falha ao carregar os dados geograficos.", "Failed to load geographic data.")}</div>;
   }
 
-  if (!sourceGeographicData.stateStats.length) {
+  if (!sourceGeographicData.stateStats.length && !selectedModel && !selectedQuality) {
     return (
       <section className="panel empty-panel">
         <div className="empty-state">
@@ -523,6 +536,54 @@ export function GeographicView() {
 
   return (
     <div className="region-view">
+      <section className="panel region-model-filter">
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          setSelectedModel(modelInput.trim());
+          setSelectedState("");
+          setSelectedCityKey("");
+          setDetailView("cities");
+        }}>
+          <label className="region-search">
+            <span>{tx("Pesquisar modelo vendido", "Search sold model")}</span>
+            <input
+              value={modelInput}
+              onChange={(event) => setModelInput(event.target.value)}
+              placeholder={tx("Ex.: K40s ou A10", "E.g. K40s or A10")}
+            />
+          </label>
+          <label className="region-search">
+            <span>{tx("Qualidade cadastrada do SKU", "SKU catalog quality")}</span>
+            <select value={selectedQuality} onChange={(event) => {
+              setSelectedQuality(event.target.value);
+              setSelectedState("");
+              setSelectedCityKey("");
+            }}>
+              <option value="">{tx("Todas as qualidades", "All qualities")}</option>
+              {(qualitiesQuery.data ?? []).map((quality) => <option key={quality} value={quality}>{quality}</option>)}
+            </select>
+          </label>
+          <button type="submit" className="accent-button">{tx("Ver no mapa", "Show on map")}</button>
+        </form>
+        <p className="muted">
+          {selectedModel
+            ? tx(`Vendas de modelos que contêm “${selectedModel}”${selectedQuality ? `, qualidade ${selectedQuality}` : ""}.`, `Sales of models containing “${selectedModel}”${selectedQuality ? `, quality ${selectedQuality}` : ""}.`)
+            : selectedQuality
+              ? tx(`Vendas de produtos com qualidade ${selectedQuality}.`, `Sales of products with quality ${selectedQuality}.`)
+              : tx("Digite um modelo para ver onde ele vende mais. O mapa considera todo o histórico de vendas.", "Enter a model to see where it sells most. The map uses all sales history.")}
+        </p>
+        {selectedQuality ? <p className="muted">{tx("O filtro de qualidade considera vendas com SKU associado ao cadastro de produtos.", "The quality filter includes sales with a SKU linked to the product catalog.")}</p> : null}
+      </section>
+      {(selectedModel || selectedQuality) && !sourceGeographicData.stateStats.length ? (
+        <div className="panel empty-state">{tx("Nenhuma venda encontrada para esse modelo e qualidade.", "No sales found for this model and quality.")}</div>
+      ) : null}
+      {(selectedModel || selectedQuality) && topState ? (
+        <section className="panel region-model-leaders">
+          <strong>{tx("Onde vendeu mais", "Where it sold most")}</strong>
+          <span>{tx("Estado líder", "Top state")}: {BRAZIL_STATE_LABEL_BY_UF[topState.state] ?? topState.state} ({topState.state}) — {formatNumber(topState.totalPieces)} {tx("peças", "pieces")}</span>
+          {topCity ? <span>{tx("Cidade líder", "Top city")}: {topCity.city} / {topCity.state} — {formatNumber(topCity.totalPieces)} {tx("peças", "pieces")}</span> : null}
+        </section>
+      ) : null}
       <section className="panel" style={{ display: "flex", alignItems: "end", gap: 16, flexWrap: "wrap" }}>
         <label className="region-search" style={{ margin: 0, minWidth: 260, flex: "0 1 360px" }}>
           <span>{tx("Filtrar por vendedora", "Filter by seller")}</span>
