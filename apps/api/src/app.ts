@@ -111,6 +111,7 @@ import {
   syncGeographicData,
   getGeographicStats,
   getGeographicSalesStats,
+  getGeographicModelQualities,
   getCitiesByState,
   getGeographicModelSales,
 } from "./modules/crm/geographicService.js";
@@ -1617,9 +1618,19 @@ export function createApp() {
     }
   });
 
-  app.get("/api/geographic/sales", async (_request, response, next) => {
+  app.get("/api/geographic/sales", async (request, response, next) => {
     try {
-      response.json(await getGeographicSalesStats());
+      const model = typeof request.query.model === "string" ? request.query.model.slice(0, 100) : undefined;
+      const quality = typeof request.query.quality === "string" ? request.query.quality.slice(0, 50) : undefined;
+      response.json(await getGeographicSalesStats({ model, quality }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/geographic/model-qualities", async (_request, response, next) => {
+    try {
+      response.json(await getGeographicModelQualities());
     } catch (error) {
       next(error);
     }

@@ -630,8 +630,15 @@ export const api = {
       method: "POST",
     }, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
-  getGeographicSalesStats(token: string) {
-    return request<GeographicSalesResponse>("/api/geographic/sales", {}, token);
+  getGeographicSalesStats(token: string, filters: { model?: string; quality?: string } = {}) {
+    const params = new URLSearchParams();
+    if (filters.model) params.set("model", filters.model);
+    if (filters.quality) params.set("quality", filters.quality);
+    const query = params.size ? `?${params.toString()}` : "";
+    return request<GeographicSalesResponse>(`/api/geographic/sales${query}`, {}, token);
+  },
+  getGeographicModelQualities(token: string) {
+    return request<string[]>("/api/geographic/model-qualities", {}, token);
   },
   getGeographicModelSales(token: string, options: { state?: string; city?: string; year?: number }) {
     const params = new URLSearchParams();
