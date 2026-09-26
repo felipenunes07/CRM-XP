@@ -115,6 +115,12 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   WORKER_CREDIT_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
+  // Escuta a pasta do Dropbox (longpoll) e reprocessa a planilha de saldo
+  // segundos depois que ela e salva, sem esperar o ciclo acima.
+  WORKER_CREDIT_WATCH_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   WORKER_DEFECT_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

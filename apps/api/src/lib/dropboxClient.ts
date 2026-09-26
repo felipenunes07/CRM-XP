@@ -105,6 +105,80 @@ export async function downloadFileByPath(dropboxPath: string) {
   }
 }
 
+export interface DropboxFolderWatcher {
+  close(): void;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Fica "escutando" a pasta via longpoll do Dropbox: a conexao fica aberta e o
+ * Dropbox responde em segundos quando algum arquivo muda. Como o Excel/Dropbox
+ * podem gerar varios eventos seguidos ao salvar um arquivo grande, esperamos
+ * `debounceMs` sem mudancas antes de chamar `onChange`.
+ */
+export function watchDropboxFolder(
+  folderPath: string,
+  onChange: () => Promise<void> | void,
+  options: { debounceMs?: number } = {},
+): DropboxFolderWatcher {
+  const debounceMs = options.debounceMs ?? 20_000;
+  let closed = false;
+  let debounceTimer: NodeJS.Timeout | null = null;
+
+  const scheduleChange = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      void Promise.resolve(onChange()).catch((error) => {
+        logger.error("dropbox watcher onChange failed", { folderPath, error: String(error) });
+      });
+    }, debounceMs);
+  };
+
+  const loop = async () => {
+    let cursor: string | null = null;
+    while (!closed) {
+      try {
+        if (!cursor) {
+          cursor = (await dbx.filesListFolderGetLatestCursor({ path: folderPath })).result.cursor;
+        }
+        const poll = await dbx.filesListFolderLongpoll({ cursor, timeout: 480 });
+        if (poll.result.changes) {
+          // Consome as mudancas para o proximo longpoll esperar a PROXIMA.
+          let page = await dbx.filesListFolderContinue({ cursor });
+          cursor = page.result.cursor;
+          while (page.result.has_more) {
+            page = await dbx.filesListFolderContinue({ cursor });
+            cursor = page.result.cursor;
+          }
+          logger.info("dropbox folder changed", { folderPath });
+          scheduleChange();
+        }
+        if (poll.result.backoff) {
+          await sleep(poll.result.backoff * 1000);
+        }
+      } catch (error) {
+        logger.warn("dropbox longpoll failed, retrying", { folderPath, error: String(error) });
+        cursor = null;
+        await sleep(30_000);
+      }
+    }
+  };
+
+  void loop();
+  logger.info("dropbox folder watcher started", { folderPath, debounceMs });
+
+  return {
+    close() {
+      closed = true;
+      if (debounceTimer) clearTimeout(debounceTimer);
+    },
+  };
+}
+
 export async function cleanupTempFile(filePath: string) {
   try {
     const dir = path.dirname(filePath);

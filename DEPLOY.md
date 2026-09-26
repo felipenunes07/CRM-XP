@@ -78,7 +78,9 @@ Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minu
 Le a planilha de saldo (abas RESUMO, OUT e PAG) e manda ao grupo do financeiro:
 
 - todo dia as `BILLING_ALERT_HOUR` (9h): quem estourou o limite (coluna G `CREDITO` e H `CREDITO INTERNO`), quem tem pedido com prazo vencido (data do pedido + coluna I `PRAZO`; pagamentos abatem os pedidos mais antigos), quem esta perto do limite e quem deve sem prazo cadastrado;
-- durante o dia, ate `BILLING_ALERT_INSTANT_UNTIL_HOUR`, avisa na hora so os alertas novos sempre que a planilha e reprocessada.
+- durante o dia, ate `BILLING_ALERT_INSTANT_UNTIL_HOUR`, avisa na hora so os alertas novos sempre que a planilha e reprocessada (passou do limite, pedido novo para cliente acima do credito, chegou perto do limite, prazo venceu, lancamento com COD que nao existe no RESUMO).
+
+O worker escuta a pasta `DROPBOX_CUSTOMER_CREDIT_PATH` pelo longpoll do Dropbox (`WORKER_CREDIT_WATCH_ENABLED=true`, padrao): assim que a planilha salva chega no Dropbox, ele reprocessa (~1-2 min para o arquivo de 60MB) e o alerta sai em seguida. O ciclo de `WORKER_CREDIT_SYNC_INTERVAL_MINUTES` continua como rede de seguranca. O lancamento so e visto depois que a planilha e **salva** e termina de sincronizar no Dropbox.
 
 Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado:
 

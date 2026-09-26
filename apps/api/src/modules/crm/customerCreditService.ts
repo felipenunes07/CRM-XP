@@ -174,6 +174,26 @@ interface SnapshotMetaRecord {
 
 let activeSnapshotPromise: Promise<CustomerCreditSnapshotMeta | null> | null = null;
 
+type SnapshotChangedListener = (snapshot: CustomerCreditSnapshotMeta) => void | Promise<void>;
+const snapshotChangedListeners = new Set<SnapshotChangedListener>();
+
+/**
+ * Avisa quando uma versao NOVA da planilha de saldo foi importada (ex.: o
+ * alerta de cobranca reage na hora a um lancamento feito durante o dia).
+ */
+export function onCustomerCreditSnapshotChanged(listener: SnapshotChangedListener) {
+  snapshotChangedListeners.add(listener);
+  return () => snapshotChangedListeners.delete(listener);
+}
+
+function notifySnapshotChanged(snapshot: CustomerCreditSnapshotMeta) {
+  for (const listener of snapshotChangedListeners) {
+    void Promise.resolve(listener(snapshot)).catch((error) => {
+      logger.error("customer credit snapshot listener failed", { error: String(error) });
+    });
+  }
+}
+
 function chunkArray<T>(items: T[], size: number) {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -1498,6 +1518,7 @@ async function refreshSnapshotInternal(forceRefresh = false) {
     const payments = resolveParsedCreditPayments(workbook.payments, matches);
 
     const snapshot = await persistSnapshot(workbook, rows, orders, payments);
+    notifySnapshotChanged(snapshot);
     return snapshot;
   } finally {
     if (latestWorkbook?.isTemp) {

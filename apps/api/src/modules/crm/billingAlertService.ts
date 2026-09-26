@@ -26,6 +26,7 @@ import {
   type BillingPaymentInput,
   type BillingUnmatchedEntry,
 } from "./billingAlertEngine.js";
+import { onCustomerCreditSnapshotChanged } from "./customerCreditService.js";
 import { sendToGroup } from "./offboardingAlertService.js";
 
 const BILLING_DAILY_CURSOR_KEY = "billing_alert_daily_date";
@@ -421,8 +422,13 @@ export function startBillingAlertScheduler() {
   }
 
   let running = false;
-  const check = async () => {
-    if (running) return;
+  let rerunRequested = false;
+  const check = async (): Promise<void> => {
+    if (running) {
+      // Chegou planilha nova no meio de uma checagem: roda de novo ao terminar.
+      rerunRequested = true;
+      return;
+    }
     running = true;
     try {
       const now = getLocalParts(env.BILLING_ALERT_TIMEZONE);
@@ -440,9 +446,16 @@ export function startBillingAlertScheduler() {
       logger.error("billing alert check failed", { error: String(error) });
     } finally {
       running = false;
+      if (rerunRequested) {
+        rerunRequested = false;
+        void check();
+      }
     }
   };
 
+  // Planilha de saldo reimportada (lancamento feito durante o dia): checa na
+  // hora, sem esperar o proximo ciclo.
+  const unsubscribe = onCustomerCreditSnapshotChanged(() => check());
   const interval = setInterval(check, CHECK_INTERVAL_MS);
   void check();
 
@@ -455,6 +468,7 @@ export function startBillingAlertScheduler() {
   return {
     async close() {
       clearInterval(interval);
+      unsubscribe();
     },
   };
 }
