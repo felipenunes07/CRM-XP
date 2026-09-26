@@ -24,6 +24,7 @@ import {
   type BillingCustomerInput,
   type BillingOrderInput,
   type BillingPaymentInput,
+  type BillingUnmatchedEntry,
 } from "./billingAlertEngine.js";
 import { sendToGroup } from "./offboardingAlertService.js";
 
@@ -32,6 +33,7 @@ const BILLING_STATE_CURSOR_KEY = "billing_alert_state";
 const BILLING_LOCK_NS = 724021;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const SEND_DELAY_MS = 1500;
+const UNMATCHED_LOOKBACK_DAYS = 60;
 
 interface BillingAlertState {
   dateKey: string;
@@ -164,11 +166,57 @@ async function loadBillingInputs(snapshotId: string) {
   return { customers, orders, payments };
 }
 
+/**
+ * Lancamentos recentes cujo COD nao existe no RESUMO (ex.: OEM382, CL80, OUT).
+ * Codigos com "|" ficam de fora: e a convencao da planilha para caixas
+ * fechadas / pendencias (CL034 |, KH41 |), que o RESUMO soma pela aba DADOS.
+ */
+async function loadUnmatchedEntries(snapshotId: string, dateKey: string): Promise<BillingUnmatchedEntry[]> {
+  const result = await pool.query(
+    `
+      WITH known AS (
+        SELECT DISTINCT customer_code FROM customer_credit_snapshot_rows WHERE snapshot_id = $1
+      )
+      SELECT 'PAG' AS source, payment_key AS entry_key, customer_code, payment_date::text AS entry_date,
+             amount, CONCAT_WS(' ', NULLIF(payment_type, ''), NULLIF(observation, '')) AS reference
+      FROM customer_credit_payment_entries
+      WHERE snapshot_id = $1
+        AND payment_date >= $2::date - $3::int
+        AND customer_code NOT LIKE '%|%'
+        AND customer_code NOT IN (SELECT customer_code FROM known)
+      UNION ALL
+      SELECT 'OUT', order_key, customer_code, order_date::text, total_amount,
+             CASE WHEN order_number <> '' THEN 'pedido ' || order_number ELSE '' END
+      FROM customer_credit_order_entries
+      WHERE snapshot_id = $1
+        AND order_date >= $2::date - $3::int
+        AND customer_code NOT LIKE '%|%'
+        AND customer_code NOT IN (SELECT customer_code FROM known)
+    `,
+    [snapshotId, dateKey, UNMATCHED_LOOKBACK_DAYS],
+  );
+
+  return result.rows
+    .filter((row) => Math.abs(Number(row.amount ?? 0)) >= 0.01)
+    .map((row) => ({
+      source: row.source === "OUT" ? "OUT" : "PAG",
+      entryKey: String(row.entry_key),
+      customerCode: String(row.customer_code),
+      entryDate: row.entry_date ? String(row.entry_date) : null,
+      amount: Number(row.amount ?? 0),
+      reference: String(row.reference ?? "").trim(),
+    }));
+}
+
 async function buildReportForSnapshot(snapshotId: string, dateKey: string) {
-  const { customers, orders, payments } = await loadBillingInputs(snapshotId);
+  const [{ customers, orders, payments }, unmatchedEntries] = await Promise.all([
+    loadBillingInputs(snapshotId),
+    loadUnmatchedEntries(snapshotId, dateKey),
+  ]);
   return buildBillingAlertReport(customers, orders, payments, {
     today: dateKey,
     nearLimitRatio: env.BILLING_ALERT_NEAR_LIMIT_PERCENT / 100,
+    unmatchedEntries,
   });
 }
 

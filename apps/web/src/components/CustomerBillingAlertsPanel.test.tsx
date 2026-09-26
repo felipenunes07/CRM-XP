@@ -40,6 +40,9 @@ const report: BillingAlertReport = {
   nearLimit: [],
   missingPaymentTerm: [],
   ignored: [],
+  unmatchedEntries: [
+    { source: "PAG", entryKey: "k1", customerCode: "OEM382", entryDate: "2026-07-30", amount: 60_000, reference: "TRF" },
+  ],
 };
 
 function render(overrides: Partial<Parameters<typeof CustomerBillingAlertsView>[0]> = {}) {
@@ -70,6 +73,8 @@ describe("CustomerBillingAlertsView", () => {
     expect(html).toContain("Leomar");
     expect(html).toContain("200%");
     expect(html).toContain("Enviar agora ao grupo");
+    expect(html).toContain("OEM382");
+    expect(html).toContain("não existe no RESUMO");
   });
 
   it("esconde o envio de quem nao gerencia o financeiro e mostra a previa", () => {

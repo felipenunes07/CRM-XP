@@ -173,8 +173,18 @@ export interface BillingCustomerResult {
   missingPaymentTerm: boolean;
 }
 
+export interface BillingUnmatchedEntry {
+  source: "OUT" | "PAG";
+  entryKey: string;
+  customerCode: string;
+  entryDate: string | null;
+  amount: number;
+  reference: string;
+}
+
 export interface BillingAlertReport {
   today: string;
+  unmatchedEntries?: BillingUnmatchedEntry[];
   overLimit: BillingCustomerResult[];
   overCredit: BillingCustomerResult[];
   overdue: BillingCustomerResult[];

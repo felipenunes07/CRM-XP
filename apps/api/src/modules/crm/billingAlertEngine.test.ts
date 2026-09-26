@@ -150,12 +150,56 @@ describe("buildBillingAlertReport", () => {
     expect(leomar.oldestOverdueDays).toBe(57);
   });
 
-  it("gera chaves estaveis por limite e por pedido vencido", () => {
+  it("gera chaves estaveis por limite, por pedido de quem passou do credito e por pedido vencido", () => {
     expect([...collectAlertKeys(report)].sort()).toEqual([
       "limit:CL034:OVER_LIMIT",
       "limit:CL115:OVER_CREDIT",
+      "order:CL034:CL034|2026-07-01|1",
+      "order:CL115:CL115|2026-09-20|2",
       "overdue:CL034:CL034|2026-07-01|1",
     ]);
+  });
+
+  it("avisa na hora quando lancam pedido novo para cliente que ja passou do limite", () => {
+    const withNewOrder = buildBillingAlertReport(
+      customers.map((entry) => (entry.customerCode === "CL034" ? { ...entry, debtAmount: 612_768 } : entry)),
+      [...orders, order("CL034", "43300", "2026-09-26", 12_000)],
+      payments,
+      { today: TODAY },
+    );
+    const previous = collectAlertKeys(report);
+    const newKeys = new Set([...collectAlertKeys(withNewOrder)].filter((key) => !previous.has(key)));
+
+    expect([...newKeys]).toEqual(["order:CL034:CL034|2026-09-26|43300"]);
+    const [message] = buildNewAlertsMessages(withNewOrder, newKeys);
+    expect(message).toContain("Pedido novo para cliente acima do crédito");
+    expect(message).toContain("pedido 43300 de 26/09/2026");
+    expect(message).toContain("agora deve R$");
+  });
+
+  it("avisa quando o cliente chega perto do limite", () => {
+    const near = buildBillingAlertReport(
+      [customer({ customerCode: "CL600", displayName: "Quase", debtAmount: 42_000, creditLimit: 50_000, paymentTerm: 20 })],
+      [order("CL600", "9", "2026-09-25", 42_000)],
+      [],
+      { today: TODAY },
+    );
+    const keys = collectAlertKeys(near);
+    expect([...keys]).toEqual(["limit:CL600:NEAR_LIMIT"]);
+    expect(buildNewAlertsMessages(near, keys)[0]).toContain("Chegou perto do limite");
+  });
+
+  it("lista lancamento com codigo que nao existe no RESUMO", () => {
+    const withTypo = buildBillingAlertReport(customers, orders, payments, {
+      today: TODAY,
+      unmatchedEntries: [
+        { source: "PAG", entryKey: "OEM382|2026-07-30|1", customerCode: "OEM382", entryDate: "2026-07-30", amount: 60_000, reference: "TRF" },
+      ],
+    });
+    const daily = buildDailyReportMessages(withTypo).join("\n");
+    expect(daily).toContain("CÓDIGO INVÁLIDO");
+    expect(daily).toContain("Pagamento com código *OEM382* de 30/07/2026 (TRF): R$");
+    expect(collectAlertKeys(withTypo).has("unmatched:PAG:OEM382|2026-07-30|1")).toBe(true);
   });
 
   it("monta o relatorio diario com todas as secoes", () => {

@@ -168,3 +168,24 @@
     min-width: 620px;
   }
 }
+
+.billing-unmatched {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--bf-warning, #b57d14);
+  border-radius: var(--bf-radius, 10px);
+  background: var(--bf-warning-soft, rgba(181, 125, 20, 0.1));
+  font-size: 0.85rem;
+}
+
+.billing-unmatched span {
+  color: var(--bf-muted, #6b7688);
+}
+
+.billing-unmatched ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+}

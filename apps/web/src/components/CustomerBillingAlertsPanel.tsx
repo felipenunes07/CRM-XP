@@ -205,6 +205,24 @@ export function CustomerBillingAlertsView({
         <div className="billing-empty">Nenhum cliente nessa situação.</div>
       )}
 
+      {report.unmatchedEntries?.length ? (
+        <div className="billing-unmatched">
+          <strong>
+            {formatNumber(report.unmatchedEntries.length)} lançamento(s) recente(s) com código que não existe no RESUMO
+          </strong>
+          <span>Não contam para nenhum cliente — nem aqui nem na planilha. Corrigir o COD na aba OUT/PAG.</span>
+          <ul>
+            {report.unmatchedEntries.map((entry) => (
+              <li key={`${entry.source}-${entry.entryKey}`}>
+                {entry.source === "PAG" ? "Pagamento" : "Pedido"} <strong>{entry.customerCode}</strong> de{" "}
+                {formatDate(entry.entryDate)}
+                {entry.reference ? ` (${entry.reference})` : ""}: {formatCurrency(entry.amount)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {preview ? (
         <div className="billing-preview">
           <span className="label-block-title">Mensagem para o grupo ({preview.length} parte(s))</span>

@@ -84,10 +84,26 @@ export interface BillingAlertOptions {
   minPendingAmount?: number;
   /** Status da coluna J que ficam fora do alerta. */
   ignoredStatuses?: string[];
+  /**
+   * Lancamentos recentes (OUT/PAG) com codigo que nao existe no RESUMO. Nao
+   * entram no saldo de ninguem — nem no CRM nem na planilha — entao precisam
+   * ser corrigidos (ex.: OEM382 no lugar de CL382).
+   */
+  unmatchedEntries?: BillingUnmatchedEntry[];
+}
+
+export interface BillingUnmatchedEntry {
+  source: "OUT" | "PAG";
+  entryKey: string;
+  customerCode: string;
+  entryDate: string | null;
+  amount: number;
+  reference: string;
 }
 
 export interface BillingAlertReport {
   today: string;
+  unmatchedEntries: BillingUnmatchedEntry[];
   overLimit: BillingCustomerResult[];
   overCredit: BillingCustomerResult[];
   overdue: BillingCustomerResult[];
@@ -247,6 +263,9 @@ export function buildBillingAlertReport(
 
   const report: BillingAlertReport = {
     today: options.today,
+    unmatchedEntries: [...(options.unmatchedEntries ?? [])].sort((left, right) =>
+      String(right.entryDate ?? "").localeCompare(String(left.entryDate ?? "")),
+    ),
     overLimit: [],
     overCredit: [],
     overdue: [],
@@ -336,11 +355,19 @@ export function collectAlertKeys(report: BillingAlertReport) {
   const keys = new Set<string>();
   for (const customer of report.overLimit) keys.add(`limit:${customer.customerCode}:OVER_LIMIT`);
   for (const customer of report.overCredit) keys.add(`limit:${customer.customerCode}:OVER_CREDIT`);
+  for (const customer of report.nearLimit) keys.add(`limit:${customer.customerCode}:NEAR_LIMIT`);
+  // Cada pedido em aberto de quem ja passou do credito: um pedido NOVO lancado
+  // para esse cliente gera chave nova e vira aviso na hora ("liberou o pedido
+  // mas a Isa so ia ver amanha").
+  for (const customer of [...report.overLimit, ...report.overCredit]) {
+    for (const order of customer.pendingOrders) keys.add(`order:${customer.customerCode}:${order.orderKey}`);
+  }
   for (const customer of report.overdue) {
     for (const order of customer.pendingOrders) {
       if (order.overdue) keys.add(`overdue:${customer.customerCode}:${order.orderKey}`);
     }
   }
+  for (const entry of report.unmatchedEntries) keys.add(`unmatched:${entry.source}:${entry.entryKey}`);
   return keys;
 }
 
@@ -439,7 +466,10 @@ export function buildDailyReportMessages(report: BillingAlertReport, options: { 
     `⏰ Pedido com prazo vencido: ${report.overdue.length}`,
     `🟡 Perto do limite: ${report.nearLimit.length}`,
     `📋 Devendo sem prazo cadastrado: ${report.missingPaymentTerm.length}`,
-  ].join("\n");
+    report.unmatchedEntries.length ? `⚠️ Lançamentos com código inválido: ${report.unmatchedEntries.length}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const blocks = [
     header,
@@ -460,29 +490,58 @@ export function buildDailyReportMessages(report: BillingAlertReport, options: { 
           .filter(Boolean)
           .join("\n")
       : null,
+    section(
+      "⚠️ *CÓDIGO INVÁLIDO* — lançamentos recentes com código que não existe no RESUMO (não contam para nenhum cliente). Corrigir o COD na planilha:",
+      report.unmatchedEntries.map(describeUnmatchedLine),
+    ),
   ].filter((block): block is string => Boolean(block));
 
   return splitIntoMessages(blocks);
 }
 
+export function describeUnmatchedLine(entry: BillingUnmatchedEntry) {
+  const kind = entry.source === "PAG" ? "Pagamento" : "Pedido";
+  const reference = entry.reference ? ` (${entry.reference})` : "";
+  return `• ${kind} com código *${entry.customerCode}* de ${formatBrDate(entry.entryDate)}${reference}: ${formatBrl(entry.amount)}`;
+}
+
 export function buildNewAlertsMessages(report: BillingAlertReport, newKeys: Set<string>) {
-  const isNew = (prefix: string, customer: BillingCustomerResult) =>
-    [...newKeys].some((key) => key.startsWith(`${prefix}:${customer.customerCode}:`));
+  const has = (key: string) => newKeys.has(key);
 
-  const overLimit = report.overLimit.filter((customer) => isNew("limit", customer));
-  const overCredit = report.overCredit.filter((customer) => isNew("limit", customer));
-  const overdue = report.overdue.filter((customer) => isNew("overdue", customer));
+  const overLimit = report.overLimit.filter((customer) => has(`limit:${customer.customerCode}:OVER_LIMIT`));
+  const overCredit = report.overCredit.filter((customer) => has(`limit:${customer.customerCode}:OVER_CREDIT`));
+  const nearLimit = report.nearLimit.filter((customer) => has(`limit:${customer.customerCode}:NEAR_LIMIT`));
+  const alreadyListed = new Set([...overLimit, ...overCredit].map((customer) => customer.customerCode));
 
-  if (!overLimit.length && !overCredit.length && !overdue.length) {
+  // Cliente que JA estava acima do credito e recebeu pedido novo agora.
+  const newOrderLines = [...report.overLimit, ...report.overCredit]
+    .filter((customer) => !alreadyListed.has(customer.customerCode))
+    .flatMap((customer) =>
+      customer.pendingOrders
+        .filter((order) => has(`order:${customer.customerCode}:${order.orderKey}`))
+        .map(
+          (order) =>
+            `• ${customerLabel(customer)} — pedido ${order.orderNumber || "s/ nº"} de ${formatBrDate(order.orderDate)}, ${formatBrl(order.totalAmount)} | agora deve ${formatBrl(customer.debtAmount)} (${limitDescription(customer)})`,
+        ),
+    );
+
+  const overdue = report.overdue.filter((customer) =>
+    customer.pendingOrders.some((order) => order.overdue && has(`overdue:${customer.customerCode}:${order.orderKey}`)),
+  );
+  const unmatched = report.unmatchedEntries.filter((entry) => has(`unmatched:${entry.source}:${entry.entryKey}`));
+
+  const blocks = [
+    section("🔴 Estourou o limite", overLimit.map(describeLimitLine)),
+    section("🟠 Passou do crédito", overCredit.map(describeLimitLine)),
+    section("🛒 Pedido novo para cliente acima do crédito", newOrderLines),
+    section("⏰ Prazo vencido", overdue.map(describeOverdueLine)),
+    section("🟡 Chegou perto do limite", nearLimit.map(describeLimitLine)),
+    section("⚠️ Lançamento com código que não existe no RESUMO — não conta para nenhum cliente", unmatched.map(describeUnmatchedLine)),
+  ].filter((block): block is string => Boolean(block));
+
+  if (!blocks.length) {
     return [];
   }
 
-  const blocks = [
-    "🚨 *Novo alerta de cobrança* (planilha atualizada agora)",
-    section("🔴 Estourou o limite", overLimit.map(describeLimitLine)),
-    section("🟠 Passou do crédito", overCredit.map(describeLimitLine)),
-    section("⏰ Prazo vencido", overdue.map(describeOverdueLine)),
-  ].filter((block): block is string => Boolean(block));
-
-  return splitIntoMessages(blocks);
+  return splitIntoMessages(["🚨 *Novo alerta de cobrança* (planilha atualizada agora)", ...blocks]);
 }
