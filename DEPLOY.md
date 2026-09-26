@@ -92,7 +92,10 @@ BILLING_ALERT_NEAR_LIMIT_PERCENT=80
 BILLING_ALERT_INSTANT_ENABLED=true
 BILLING_ALERT_INSTANT_UNTIL_HOUR=20
 BILLING_ALERT_INSTANCE_ID=              # vazio = mesma instancia do alerta de Saida da Base
+BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=5511888888888"
 ```
+
+As mensagens saem por vendedora: cada uma e marcada (@) com os clientes dela. A vendedora do cliente e o VENDEDOR do pedido mais recente na aba OUT (ou a ultima atendente do CRM); o numero marcado e o da instancia de WhatsApp dela no CRM, ou o de `BILLING_ALERT_SELLER_PHONES`. Esse numero precisa estar no grupo do financeiro.
 
 A tela Clientes > Financeiro mostra o mesmo relatorio, com "Ver mensagem" (previa) e "Enviar agora ao grupo" (permissao `finance.manage`).
 

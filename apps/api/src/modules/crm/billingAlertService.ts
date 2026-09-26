@@ -17,8 +17,6 @@ import { logger } from "../../lib/logger.js";
 import { safeNumber } from "../../lib/normalize.js";
 import {
   buildBillingAlertReport,
-  buildDailyReportMessages,
-  buildNewAlertsMessages,
   collectAlertKeys,
   type BillingAlertReport,
   type BillingCustomerInput,
@@ -26,6 +24,13 @@ import {
   type BillingPaymentInput,
   type BillingUnmatchedEntry,
 } from "./billingAlertEngine.js";
+import {
+  buildDailyReportMessages,
+  buildNewAlertsMessages,
+  normalizeSellerName,
+  type BillingOutgoingMessage,
+  type SellerPhoneDirectory,
+} from "./billingAlertMessages.js";
 import { onCustomerCreditSnapshotChanged } from "./customerCreditService.js";
 import { sendToGroup } from "./offboardingAlertService.js";
 
@@ -44,7 +49,7 @@ interface BillingAlertState {
 
 export interface BillingAlertRunResult {
   report: BillingAlertReport | null;
-  messages: string[];
+  messages: BillingOutgoingMessage[];
   sent: boolean;
   reason?: string;
 }
@@ -104,10 +109,27 @@ async function loadBillingInputs(snapshotId: string) {
           SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
           WHERE UPPER(BTRIM(entry.key)) = 'STATUS'
           LIMIT 1
-        ) AS customer_status
+        ) AS customer_status,
+        -- Vendedora: VENDEDOR do pedido mais recente na OUT; sem isso, a
+        -- ultima atendente registrada no CRM.
+        COALESCE(
+          (
+            SELECT NULLIF(BTRIM(order_entry.seller), '')
+            FROM customer_credit_order_entries order_entry
+            WHERE order_entry.snapshot_id = snapshot_row.snapshot_id
+              AND order_entry.customer_code = snapshot_row.customer_code
+              AND NULLIF(BTRIM(order_entry.seller), '') IS NOT NULL
+              AND LOWER(BTRIM(order_entry.seller)) <> 'resumo'
+            ORDER BY order_entry.order_date DESC NULLS LAST
+            LIMIT 1
+          ),
+          NULLIF(BTRIM(customer.last_attendant), '')
+        ) AS seller
       FROM customer_credit_snapshot_rows snapshot_row
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = snapshot_row.customer_id
+      LEFT JOIN customers customer
+        ON customer.id = snapshot_row.customer_id
       WHERE snapshot_row.snapshot_id = $1
         AND snapshot_row.balance_amount < 0
         AND COALESCE(snapshot_row.customer_display_name, '') NOT ILIKE '%shop online%'
@@ -125,6 +147,7 @@ async function loadBillingInputs(snapshotId: string) {
     internalCreditLimit: row.internal_credit_limit ? safeNumber(row.internal_credit_limit) : null,
     paymentTerm: row.payment_term === null || row.payment_term === undefined ? null : Number(row.payment_term),
     status: row.customer_status ? String(row.customer_status).trim() || null : null,
+    seller: row.seller ? String(row.seller) : null,
   }));
 
   const codes = customers.map((customer) => customer.customerCode);
@@ -233,10 +256,52 @@ function canSend() {
   return env.BILLING_ALERT_ENABLED && Boolean(env.BILLING_ALERT_GROUP_JID.trim());
 }
 
-async function sendMessages(messages: string[]) {
+function digitsOnly(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+/**
+ * Numero de WhatsApp de cada vendedora para marcar (@) no grupo.
+ * 1. BILLING_ALERT_SELLER_PHONES ("Thais=5511999999999;Suelen=...") manda;
+ * 2. senao, o numero da instancia de WhatsApp dela conectada no CRM (mesma
+ *    regra de nome da pagina de Atendentes).
+ */
+export async function loadSellerPhoneDirectory(): Promise<SellerPhoneDirectory> {
+  const directory: SellerPhoneDirectory = new Map();
+
+  const result = await pool.query(
+    `
+      SELECT assigned_user_name, display_label, instance_name, phone_number
+      FROM whatsapp_instances
+      WHERE UPPER(COALESCE(status, 'ACTIVE')) = 'ACTIVE'
+        AND NULLIF(BTRIM(phone_number), '') IS NOT NULL
+      ORDER BY updated_at DESC NULLS LAST
+    `,
+  );
+  for (const row of result.rows) {
+    const phone = digitsOnly(String(row.phone_number ?? ""));
+    if (phone.length < 10) continue;
+    const label = normalizeSellerName(
+      [row.assigned_user_name, row.display_label, row.instance_name].filter(Boolean).join(" "),
+    );
+    for (const word of label.split(/[^a-z0-9]+/).filter((part) => part.length >= 3)) {
+      if (!directory.has(word)) directory.set(word, phone);
+    }
+  }
+
+  for (const entry of env.BILLING_ALERT_SELLER_PHONES.split(/[;,]/)) {
+    const [name, phone] = entry.split("=").map((part) => part?.trim() ?? "");
+    if (name && phone && digitsOnly(phone).length >= 10) directory.set(normalizeSellerName(name), digitsOnly(phone));
+  }
+
+  return directory;
+}
+
+async function sendMessages(messages: BillingOutgoingMessage[]) {
   const groupJid = env.BILLING_ALERT_GROUP_JID.trim();
   for (let index = 0; index < messages.length; index += 1) {
-    await sendToGroup(groupJid, messages[index]!, env.BILLING_ALERT_INSTANCE_ID);
+    const message = messages[index]!;
+    await sendToGroup(groupJid, message.text, env.BILLING_ALERT_INSTANCE_ID, message.mentions);
     if (index < messages.length - 1) {
       await sleep(SEND_DELAY_MS);
     }
@@ -316,7 +381,7 @@ export async function runDailyBillingReport(
   }
 
   const report = await buildReportForSnapshot(snapshotId, dateKey);
-  const messages = buildDailyReportMessages(report);
+  const messages = buildDailyReportMessages(report, await loadSellerPhoneDirectory());
 
   if (options.dryRun || !canSend()) {
     return {
@@ -393,7 +458,7 @@ export async function checkNewBillingAlerts(): Promise<BillingAlertRunResult> {
       BILLING_STATE_CURSOR_KEY,
       JSON.stringify({ dateKey, snapshotId, keys: [...currentKeys] } satisfies BillingAlertState),
     );
-    return { report, messages: buildNewAlertsMessages(report, newKeys) };
+    return { report, messages: buildNewAlertsMessages(report, newKeys, await loadSellerPhoneDirectory()) };
   });
 
   if (!decision) {

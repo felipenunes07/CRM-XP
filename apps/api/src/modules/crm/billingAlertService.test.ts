@@ -48,6 +48,7 @@ async function query(sql: string, params: unknown[] = []) {
           payment_term: 30,
           internal_credit_limit: " R$ 500,000.00 ",
           customer_status: null,
+          seller: "Suelen",
         },
       ],
     };
@@ -57,6 +58,9 @@ async function query(sql: string, params: unknown[] = []) {
   }
   if (sql.includes("FROM customer_credit_payment_entries") && sql.includes("GROUP BY")) return { rows: [] };
   if (sql.includes("WITH known AS")) return { rows: [] };
+  if (sql.includes("FROM whatsapp_instances")) {
+    return { rows: [{ assigned_user_name: "Suelen", display_label: "XP Suelen", instance_name: "suelen", phone_number: "+55 (11) 91111-1111" }] };
+  }
   return { rows: [] };
 }
 
@@ -77,15 +81,18 @@ vi.mock("../../lib/env.js", () => ({
     BILLING_ALERT_NEAR_LIMIT_PERCENT: 80,
     BILLING_ALERT_INSTANT_ENABLED: true,
     BILLING_ALERT_INSTANT_UNTIL_HOUR: 23,
+    BILLING_ALERT_SELLER_PHONES: "",
   },
 }));
 
 vi.mock("../../lib/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const sent: string[] = [];
+const sentMentions: string[][] = [];
 vi.mock("./offboardingAlertService.js", () => ({
-  sendToGroup: async (_jid: string, text: string) => {
+  sendToGroup: async (_jid: string, text: string, _instanceId: string, mentions: string[] = []) => {
     sent.push(text);
+    sentMentions.push(mentions);
   },
 }));
 
@@ -103,8 +110,15 @@ async function flush() {
   for (let index = 0; index < 20; index += 1) await new Promise((resolve) => setTimeout(resolve, 5));
 }
 
+// As mensagens saem com 1,5 s de intervalo (anti rate-limit do WhatsApp).
+async function waitFor(condition: () => boolean, timeoutMs = 8000) {
+  const start = Date.now();
+  while (!condition() && Date.now() - start < timeoutMs) await new Promise((resolve) => setTimeout(resolve, 50));
+}
+
 beforeEach(() => {
   sent.length = 0;
+  sentMentions.length = 0;
   db.cursors.clear();
   db.activeSnapshotId = "snap-manha";
   db.orders.set("snap-manha", leomarOrders());
@@ -117,24 +131,30 @@ beforeEach(() => {
 });
 
 describe("alerta de cobranca durante o dia", () => {
-  it("manda o relatorio da manha e, quando lancam pedido novo, avisa na hora", async () => {
+  it("manda o relatorio da manha e, quando lancam pedido novo, avisa na hora", { timeout: 20_000 }, async () => {
     const scheduler = startBillingAlertScheduler();
-    await flush();
+    await waitFor(() => sent.some((text) => text.includes("Leomar")));
 
     // 1) Relatorio do dia saiu.
-    expect(sent.join("\n")).toContain("Cobrança —");
+    expect(sent.join("\n")).toContain("COBRANÇA DO DIA");
     expect(sent.join("\n")).toContain("Leomar");
+    // A mensagem do Leomar marca a Suelen (vendedora dele) pelo numero da instancia dela.
+    const suelenIndex = sent.findIndex((text) => text.includes("*Suelen*"));
+    expect(sent[suelenIndex]).toContain("@5511911111111");
+    expect(sentMentions[suelenIndex]).toEqual(["5511911111111"]);
     const afterMorning = sent.length;
 
     // 2) Financeiro lanca um pedido e salva a planilha -> nova importacao.
     db.activeSnapshotId = "snap-tarde";
     await snapshotListener?.();
+    await waitFor(() => sent.some((text) => text.includes("pedido 43300")));
     await flush();
 
     const instant = sent.slice(afterMorning).join("\n");
-    expect(instant).toContain("Novo alerta de cobrança");
-    expect(instant).toContain("Pedido novo para cliente acima do crédito");
+    expect(instant).toContain("Alerta de cobrança");
+    expect(instant).toContain("Pedido novo lançado para cliente que já passou do crédito");
     expect(instant).toContain("pedido 43300");
+    expect(sentMentions.slice(afterMorning).flat()).toEqual(["5511911111111"]);
 
     // 3) Mesma planilha de novo (nada mudou): nao repete o aviso.
     const beforeRepeat = sent.length;

@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   allocatePaymentsFifo,
   buildBillingAlertReport,
-  buildDailyReportMessages,
-  buildNewAlertsMessages,
   classifyLimit,
   collectAlertKeys,
-  splitIntoMessages,
   type BillingCustomerInput,
   type BillingOrderInput,
 } from "./billingAlertEngine.js";
@@ -160,7 +157,7 @@ describe("buildBillingAlertReport", () => {
     ]);
   });
 
-  it("avisa na hora quando lancam pedido novo para cliente que ja passou do limite", () => {
+  it("pedido novo para cliente que ja passou do limite gera chave nova", () => {
     const withNewOrder = buildBillingAlertReport(
       customers.map((entry) => (entry.customerCode === "CL034" ? { ...entry, debtAmount: 612_768 } : entry)),
       [...orders, order("CL034", "43300", "2026-09-26", 12_000)],
@@ -168,66 +165,32 @@ describe("buildBillingAlertReport", () => {
       { today: TODAY },
     );
     const previous = collectAlertKeys(report);
-    const newKeys = new Set([...collectAlertKeys(withNewOrder)].filter((key) => !previous.has(key)));
-
-    expect([...newKeys]).toEqual(["order:CL034:CL034|2026-09-26|43300"]);
-    const [message] = buildNewAlertsMessages(withNewOrder, newKeys);
-    expect(message).toContain("Pedido novo para cliente acima do crédito");
-    expect(message).toContain("pedido 43300 de 26/09/2026");
-    expect(message).toContain("agora deve R$");
+    const newKeys = [...collectAlertKeys(withNewOrder)].filter((key) => !previous.has(key));
+    expect(newKeys).toEqual(["order:CL034:CL034|2026-09-26|43300"]);
   });
 
-  it("avisa quando o cliente chega perto do limite", () => {
+  it("cliente que chega perto do limite gera chave", () => {
     const near = buildBillingAlertReport(
       [customer({ customerCode: "CL600", displayName: "Quase", debtAmount: 42_000, creditLimit: 50_000, paymentTerm: 20 })],
       [order("CL600", "9", "2026-09-25", 42_000)],
       [],
       { today: TODAY },
     );
-    const keys = collectAlertKeys(near);
-    expect([...keys]).toEqual(["limit:CL600:NEAR_LIMIT"]);
-    expect(buildNewAlertsMessages(near, keys)[0]).toContain("Chegou perto do limite");
+    expect([...collectAlertKeys(near)]).toEqual(["limit:CL600:NEAR_LIMIT"]);
   });
 
-  it("lista lancamento com codigo que nao existe no RESUMO", () => {
+  it("lancamento com codigo que nao existe no RESUMO gera chave", () => {
     const withTypo = buildBillingAlertReport(customers, orders, payments, {
       today: TODAY,
       unmatchedEntries: [
         { source: "PAG", entryKey: "OEM382|2026-07-30|1", customerCode: "OEM382", entryDate: "2026-07-30", amount: 60_000, reference: "TRF" },
       ],
     });
-    const daily = buildDailyReportMessages(withTypo).join("\n");
-    expect(daily).toContain("CÓDIGO INVÁLIDO");
-    expect(daily).toContain("Pagamento com código *OEM382* de 30/07/2026 (TRF): R$");
     expect(collectAlertKeys(withTypo).has("unmatched:PAG:OEM382|2026-07-30|1")).toBe(true);
   });
 
-  it("monta o relatorio diario com todas as secoes", () => {
-    const text = buildDailyReportMessages(report).join("\n\n");
-    expect(text).toContain("Cobrança — 26/09/2026");
-    expect(text).toContain("*CL034* Leomar — deve R$");
-    expect(text).toContain("ESTOUROU O LIMITE");
-    expect(text).toContain("ACIMA DO CRÉDITO");
-    expect(text).toContain("PRAZO VENCIDO");
-    expect(text).toContain("SEM PRAZO CADASTRADO");
-    expect(text).not.toContain("Calote");
-  });
-
-  it("alerta na hora apenas o que e novo", () => {
-    const messages = buildNewAlertsMessages(report, new Set(["limit:CL115:OVER_CREDIT"]));
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("Vitinho");
-    expect(messages[0]).not.toContain("Leomar");
-    expect(buildNewAlertsMessages(report, new Set())).toEqual([]);
-  });
-});
-
-describe("splitIntoMessages", () => {
-  it("quebra blocos grandes sem cortar linhas", () => {
-    const lines = Array.from({ length: 50 }, (_, index) => `linha ${index} ${"x".repeat(80)}`);
-    const messages = splitIntoMessages(["cabecalho", lines.join("\n")], 1000);
-    expect(messages.length).toBeGreaterThan(1);
-    expect(messages.every((message) => message.length <= 1000)).toBe(true);
-    expect(messages.join("\n")).toContain("linha 49");
+  it("guarda a vendedora de cada cliente", () => {
+    const withSeller = buildBillingAlertReport([{ ...customers[0]!, seller: "Suelen" }], orders, payments, { today: TODAY });
+    expect(withSeller.overLimit[0]?.seller).toBe("Suelen");
   });
 });

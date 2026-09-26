@@ -141,6 +141,7 @@ export async function sendToGroup(
   destinationJid: string,
   messageText: string,
   instanceId = env.OFFBOARDING_ALERT_INSTANCE_ID,
+  mentions: string[] = [],
 ) {
   const explicitId = instanceId.trim();
   const instanceResult = await pool.query(
@@ -161,6 +162,7 @@ export async function sendToGroup(
       { baseUrl: String(instance.uazapi_base_url), token: String(instance.uazapi_token) },
       destinationJid,
       messageText,
+      mentions,
     );
   }
 
@@ -173,11 +175,12 @@ export async function sendToGroup(
       },
       destinationJid,
       messageText,
+      mentions,
     );
   }
 
   // Sem instancia no banco: cai no sender global do .env (Evolution).
-  return sendWhatsappTextMessage(destinationJid, messageText);
+  return sendWhatsappTextMessage(destinationJid, messageText, mentions);
 }
 
 function formatBrDate(isoDate: string | null): string {

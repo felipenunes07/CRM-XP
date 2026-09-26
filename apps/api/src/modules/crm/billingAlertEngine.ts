@@ -29,6 +29,8 @@ export interface BillingCustomerInput {
   paymentTerm: number | null;
   /** RESUMO coluna J (GOLPE, DESATIVADO, PENDENCIA...). */
   status: string | null;
+  /** Vendedora que atende o cliente (VENDEDOR do pedido mais recente na OUT). */
+  seller?: string | null;
 }
 
 export interface BillingOrderInput {
@@ -61,6 +63,7 @@ export interface BillingCustomerResult {
   customerId: string | null;
   displayName: string;
   status: string | null;
+  seller: string | null;
   debtAmount: number;
   creditLimit: number | null;
   internalCreditLimit: number | null;
@@ -304,6 +307,7 @@ export function buildBillingAlertReport(
       customerId: customer.customerId,
       displayName: customer.displayName,
       status: customer.status,
+      seller: customer.seller ?? null,
       debtAmount: roundMoney(customer.debtAmount),
       creditLimit: positiveOrNull(customer.creditLimit),
       internalCreditLimit: positiveOrNull(customer.internalCreditLimit),
@@ -371,177 +375,3 @@ export function collectAlertKeys(report: BillingAlertReport) {
   return keys;
 }
 
-// ---------------------------------------------------------------------------
-// Mensagens de WhatsApp
-// ---------------------------------------------------------------------------
-
-const WHATSAPP_MESSAGE_MAX_CHARS = 3500;
-
-export function formatBrl(value: number) {
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
-}
-
-export function formatBrDate(isoDate: string | null) {
-  if (!isoDate) return "—";
-  const [year, month, day] = isoDate.slice(0, 10).split("-");
-  return `${day}/${month}/${year}`;
-}
-
-function customerLabel(customer: BillingCustomerResult) {
-  return `*${customer.customerCode}* ${customer.displayName}`;
-}
-
-function limitDescription(customer: BillingCustomerResult) {
-  const parts: string[] = [];
-  if (customer.creditLimit) parts.push(`crédito ${formatBrl(customer.creditLimit)}`);
-  if (customer.internalCreditLimit) parts.push(`interno ${formatBrl(customer.internalCreditLimit)}`);
-  return parts.join(" / ");
-}
-
-export function describeLimitLine(customer: BillingCustomerResult) {
-  const usage = customer.limitUsage !== null ? ` (${Math.round(customer.limitUsage * 100)}%)` : "";
-  return `• ${customerLabel(customer)} — deve ${formatBrl(customer.debtAmount)}${usage} | ${limitDescription(customer)}`;
-}
-
-export function describeOverdueLine(customer: BillingCustomerResult) {
-  const overdueOrders = customer.pendingOrders.filter((order) => order.overdue);
-  const oldest = overdueOrders[0];
-  const orderInfo = oldest
-    ? ` | mais antigo: pedido ${oldest.orderNumber || "s/ nº"} de ${formatBrDate(oldest.orderDate)}, venceu ${formatBrDate(oldest.dueDate)}`
-    : "";
-  const count = overdueOrders.length > 1 ? ` em ${overdueOrders.length} pedidos` : "";
-  return `• ${customerLabel(customer)} — ${formatBrl(customer.overdueAmount)} vencido${count} há ${customer.oldestOverdueDays} dia(s) (prazo ${customer.paymentTerm}d)${orderInfo}`;
-}
-
-function section(title: string, lines: string[]) {
-  return lines.length ? [`${title}`, ...lines].join("\n") : null;
-}
-
-/** Quebra o texto em mensagens que cabem no WhatsApp sem cortar linhas. */
-export function splitIntoMessages(blocks: string[], maxChars = WHATSAPP_MESSAGE_MAX_CHARS) {
-  const messages: string[] = [];
-  let current = "";
-
-  const push = (text: string) => {
-    if (!current) {
-      current = text;
-    } else if (current.length + 2 + text.length <= maxChars) {
-      current = `${current}\n\n${text}`;
-    } else {
-      messages.push(current);
-      current = text;
-    }
-  };
-
-  for (const block of blocks) {
-    if (block.length <= maxChars) {
-      push(block);
-      continue;
-    }
-    // Bloco grande demais: quebra por linha.
-    let chunk = "";
-    for (const line of block.split("\n")) {
-      if (chunk && chunk.length + 1 + line.length > maxChars) {
-        push(chunk);
-        chunk = line;
-      } else {
-        chunk = chunk ? `${chunk}\n${line}` : line;
-      }
-    }
-    if (chunk) push(chunk);
-  }
-
-  if (current) messages.push(current);
-  return messages;
-}
-
-export function buildDailyReportMessages(report: BillingAlertReport, options: { missingTermPreview?: number } = {}) {
-  const missingTermPreview = options.missingTermPreview ?? 10;
-  const missingTermTotal = report.missingPaymentTerm.reduce((sum, customer) => sum + customer.debtAmount, 0);
-
-  const header = [
-    `💰 *Cobrança — ${formatBrDate(report.today)}*`,
-    `🔴 Estourou o limite: ${report.overLimit.length}`,
-    `🟠 Acima do crédito (dentro do interno): ${report.overCredit.length}`,
-    `⏰ Pedido com prazo vencido: ${report.overdue.length}`,
-    `🟡 Perto do limite: ${report.nearLimit.length}`,
-    `📋 Devendo sem prazo cadastrado: ${report.missingPaymentTerm.length}`,
-    report.unmatchedEntries.length ? `⚠️ Lançamentos com código inválido: ${report.unmatchedEntries.length}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const blocks = [
-    header,
-    section("🔴 *ESTOUROU O LIMITE* (acima do crédito e do crédito interno)", report.overLimit.map(describeLimitLine)),
-    section("🟠 *ACIMA DO CRÉDITO* (ainda dentro do crédito interno)", report.overCredit.map(describeLimitLine)),
-    section("⏰ *PRAZO VENCIDO* (pagamentos abatem os pedidos mais antigos)", report.overdue.map(describeOverdueLine)),
-    section("🟡 *PERTO DO LIMITE* — avisar antes do próximo pedido", report.nearLimit.map(describeLimitLine)),
-    report.missingPaymentTerm.length
-      ? [
-          `📋 *SEM PRAZO CADASTRADO* — ${report.missingPaymentTerm.length} clientes devendo ${formatBrl(missingTermTotal)}. Preencher a coluna PRAZO no RESUMO para entrarem na cobrança por prazo.`,
-          ...report.missingPaymentTerm
-            .slice(0, missingTermPreview)
-            .map((customer) => `• ${customerLabel(customer)} — deve ${formatBrl(customer.debtAmount)}`),
-          report.missingPaymentTerm.length > missingTermPreview
-            ? `…e mais ${report.missingPaymentTerm.length - missingTermPreview}. Lista completa no CRM (Financeiro › Cobrança).`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : null,
-    section(
-      "⚠️ *CÓDIGO INVÁLIDO* — lançamentos recentes com código que não existe no RESUMO (não contam para nenhum cliente). Corrigir o COD na planilha:",
-      report.unmatchedEntries.map(describeUnmatchedLine),
-    ),
-  ].filter((block): block is string => Boolean(block));
-
-  return splitIntoMessages(blocks);
-}
-
-export function describeUnmatchedLine(entry: BillingUnmatchedEntry) {
-  const kind = entry.source === "PAG" ? "Pagamento" : "Pedido";
-  const reference = entry.reference ? ` (${entry.reference})` : "";
-  return `• ${kind} com código *${entry.customerCode}* de ${formatBrDate(entry.entryDate)}${reference}: ${formatBrl(entry.amount)}`;
-}
-
-export function buildNewAlertsMessages(report: BillingAlertReport, newKeys: Set<string>) {
-  const has = (key: string) => newKeys.has(key);
-
-  const overLimit = report.overLimit.filter((customer) => has(`limit:${customer.customerCode}:OVER_LIMIT`));
-  const overCredit = report.overCredit.filter((customer) => has(`limit:${customer.customerCode}:OVER_CREDIT`));
-  const nearLimit = report.nearLimit.filter((customer) => has(`limit:${customer.customerCode}:NEAR_LIMIT`));
-  const alreadyListed = new Set([...overLimit, ...overCredit].map((customer) => customer.customerCode));
-
-  // Cliente que JA estava acima do credito e recebeu pedido novo agora.
-  const newOrderLines = [...report.overLimit, ...report.overCredit]
-    .filter((customer) => !alreadyListed.has(customer.customerCode))
-    .flatMap((customer) =>
-      customer.pendingOrders
-        .filter((order) => has(`order:${customer.customerCode}:${order.orderKey}`))
-        .map(
-          (order) =>
-            `• ${customerLabel(customer)} — pedido ${order.orderNumber || "s/ nº"} de ${formatBrDate(order.orderDate)}, ${formatBrl(order.totalAmount)} | agora deve ${formatBrl(customer.debtAmount)} (${limitDescription(customer)})`,
-        ),
-    );
-
-  const overdue = report.overdue.filter((customer) =>
-    customer.pendingOrders.some((order) => order.overdue && has(`overdue:${customer.customerCode}:${order.orderKey}`)),
-  );
-  const unmatched = report.unmatchedEntries.filter((entry) => has(`unmatched:${entry.source}:${entry.entryKey}`));
-
-  const blocks = [
-    section("🔴 Estourou o limite", overLimit.map(describeLimitLine)),
-    section("🟠 Passou do crédito", overCredit.map(describeLimitLine)),
-    section("🛒 Pedido novo para cliente acima do crédito", newOrderLines),
-    section("⏰ Prazo vencido", overdue.map(describeOverdueLine)),
-    section("🟡 Chegou perto do limite", nearLimit.map(describeLimitLine)),
-    section("⚠️ Lançamento com código que não existe no RESUMO — não conta para nenhum cliente", unmatched.map(describeUnmatchedLine)),
-  ].filter((block): block is string => Boolean(block));
-
-  if (!blocks.length) {
-    return [];
-  }
-
-  return splitIntoMessages(["🚨 *Novo alerta de cobrança* (planilha atualizada agora)", ...blocks]);
-}

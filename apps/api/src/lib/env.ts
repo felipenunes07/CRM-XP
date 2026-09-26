@@ -285,6 +285,9 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   BILLING_ALERT_INSTANT_UNTIL_HOUR: z.coerce.number().int().min(0).max(23).default(20),
+  // Numero para marcar (@) cada vendedora no grupo, quando nao for o da
+  // instancia dela no CRM. Formato: "Thais=5511999999999;Suelen=5511888888888".
+  BILLING_ALERT_SELLER_PHONES: z.string().default(""),
   // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
   // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
   // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que

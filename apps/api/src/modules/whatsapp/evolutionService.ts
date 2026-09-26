@@ -25,7 +25,7 @@ function buildEvolutionUrl(path: string) {
   return `${env.EVOLUTION_API_BASE_URL.replace(/\/+$/, "")}${path}`;
 }
 
-export async function sendWhatsappTextMessage(destinationJid: string, messageText: string) {
+export async function sendWhatsappTextMessage(destinationJid: string, messageText: string, mentions: string[] = []) {
   ensureEvolutionConfigured();
 
   return sendWhatsappInstanceTextMessage(
@@ -36,6 +36,7 @@ export async function sendWhatsappTextMessage(destinationJid: string, messageTex
     },
     destinationJid,
     messageText,
+    mentions,
   );
 }
 
@@ -43,11 +44,14 @@ export async function sendWhatsappInstanceTextMessage(
   instance: EvolutionInstanceConfig,
   destinationJid: string,
   messageText: string,
+  mentions: string[] = [],
 ) {
   return requestEvolution(instance.evolutionBaseUrl, instance.evolutionApiKey, `/message/sendText/${encodeURIComponent(instance.instanceName)}`, "POST", {
     number: formatEvolutionSendTextTarget(destinationJid),
     text: messageText,
     linkPreview: true,
+    // Numeros marcados (@) em grupo; o texto precisa conter "@<numero>".
+    ...(mentions.length ? { mentioned: mentions } : {}),
   });
 }
 

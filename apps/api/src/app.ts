@@ -1485,7 +1485,7 @@ export function createApp() {
     async (_request, response, next) => {
       try {
         const result = await runDailyBillingReport({ dryRun: true });
-        response.json({ messages: result.messages, reason: result.reason });
+        response.json({ messages: result.messages.map((message) => message.text), reason: result.reason });
       } catch (error) {
         next(error);
       }
