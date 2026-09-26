@@ -16,6 +16,7 @@ import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWa
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
 import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
+import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js";
 import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationService.js";
 
 async function main() {
@@ -24,6 +25,7 @@ async function main() {
   const whatsappWorker = startWhatsappDispatchWorker();
   const automationScheduler = startMessageAutomationScheduler();
   const offboardingScheduler = startDailyOffboardingScheduler();
+  const billingAlertScheduler = startBillingAlertScheduler();
   const lifecycleScheduler = startDailyLifecycleScheduler();
   const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
 
@@ -224,6 +226,7 @@ async function main() {
     await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
     await offboardingScheduler.close();
+    await billingAlertScheduler.close();
     await lifecycleScheduler.close();
     await customerDefectSyncScheduler.close();
     await worker.close();

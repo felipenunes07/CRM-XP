@@ -16,6 +16,7 @@ import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActiv
 import { configureUazapiWebhook } from "./modules/whatsapp/uazapiService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
+import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js";
 import { startDailyCustomerDefectSyncScheduler } from "./modules/crm/customerDefectService.js";
 import { runConversationIntelligence } from "./modules/events/conversationAi.js";
 import { cacheActiveWhatsappInstanceAvatars } from "./modules/whatsapp/whatsappAvatarCache.js";
@@ -73,6 +74,7 @@ async function main() {
   // mesmo se o container worker estiver fora. A trava diaria (claimDailyOffboardingRun)
   // garante que so um processo envia por dia.
   const offboardingScheduler = startDailyOffboardingScheduler();
+  const billingAlertScheduler = startBillingAlertScheduler();
   const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
   const taskReminderScheduler = startTaskOverdueReminderScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
@@ -181,6 +183,7 @@ async function main() {
       await rebuildScheduler.close();
       await payloadCleanupScheduler.close();
       await offboardingScheduler.close();
+      await billingAlertScheduler.close();
       await customerDefectSyncScheduler.close();
       if (whatsappWorker && typeof whatsappWorker.close === "function") {
         await whatsappWorker.close();

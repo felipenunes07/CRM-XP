@@ -1,0 +1,170 @@
+/* Painel de cobranca na pagina Financeiro de Clientes (dentro de .bankfin). */
+
+.billing-alerts-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.billing-send-result {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--bf-radius, 10px);
+  background: var(--bf-accent-soft, rgba(41, 86, 215, 0.08));
+  font-size: 0.85rem;
+}
+
+.billing-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.billing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--bf-line-strong, #d3d9e6);
+  border-radius: 999px;
+  background: var(--bf-surface, #fff);
+  color: var(--bf-navy, #0b2447);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.billing-chip strong {
+  font-size: 0.95rem;
+}
+
+.billing-chip.danger strong {
+  color: var(--bf-danger, #c53a35);
+}
+
+.billing-chip.warning strong,
+.billing-chip.attention strong {
+  color: var(--bf-warning, #b57d14);
+}
+
+.billing-chip.active {
+  border-color: var(--bf-navy, #0b2447);
+  background: var(--bf-navy, #0b2447);
+  color: #fff;
+}
+
+.billing-chip.active strong {
+  color: #fff;
+}
+
+.billing-hint {
+  margin: 0 0 0.6rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.82rem;
+}
+
+.billing-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--bf-line, #e4e8f0);
+  border-radius: var(--bf-radius, 10px);
+}
+
+.billing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.billing-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.55rem 0.7rem;
+  background: var(--bf-surface-soft, #f6f8fb);
+  color: var(--bf-muted, #6b7688);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.billing-table td {
+  padding: 0.55rem 0.7rem;
+  border-top: 1px solid var(--bf-line, #e4e8f0);
+  vertical-align: top;
+}
+
+.billing-table .is-right {
+  text-align: right;
+}
+
+.billing-table .is-money {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.billing-link:hover {
+  color: var(--bf-accent, #2956d7);
+  text-decoration: underline;
+}
+
+.billing-status {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  background: var(--bf-warning-soft, rgba(181, 125, 20, 0.1));
+  color: var(--bf-warning, #b57d14);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.billing-sub {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.78rem;
+}
+
+.billing-empty {
+  padding: 1rem;
+  color: var(--bf-muted, #6b7688);
+  text-align: center;
+}
+
+.billing-preview {
+  margin-top: 0.9rem;
+}
+
+.billing-preview pre {
+  margin: 0.4rem 0 0;
+  padding: 0.75rem;
+  border-radius: var(--bf-radius, 10px);
+  background: var(--bf-surface-soft, #f6f8fb);
+  font-family: inherit;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .billing-table {
+    min-width: 620px;
+  }
+}

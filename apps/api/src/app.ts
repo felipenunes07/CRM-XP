@@ -27,6 +27,7 @@ import {
   refreshCustomerCreditOverview,
   updateCustomerCreditSettings,
 } from "./modules/crm/customerCreditService.js";
+import { getBillingAlertReport, runDailyBillingReport } from "./modules/crm/billingAlertService.js";
 import { getCustomerAnalytics } from "./modules/crm/customerAnalyticsService.js";
 import {
   getCustomerDefectCustomerDetail,
@@ -1463,6 +1464,46 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.get(
+    "/api/customer-credit/billing-alerts",
+    requirePermission("finance.customers.view"),
+    async (_request, response, next) => {
+      try {
+        const report = await getBillingAlertReport();
+        // A lista completa de devedores so serve ao motor; a tela usa os grupos.
+        response.json({ report: report ? { ...report, customers: undefined } : null });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.get(
+    "/api/customer-credit/billing-alerts/preview",
+    requirePermission("finance.customers.view"),
+    async (_request, response, next) => {
+      try {
+        const result = await runDailyBillingReport({ dryRun: true });
+        response.json({ messages: result.messages, reason: result.reason });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  app.post(
+    "/api/customer-credit/billing-alerts/send",
+    requirePermission("finance.manage"),
+    async (_request, response, next) => {
+      try {
+        const result = await runDailyBillingReport({ force: true });
+        response.json({ sent: result.sent, messages: result.messages.length, reason: result.reason });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.get("/api/customer-credit/opportunities", async (_request, response, next) => {
     try {

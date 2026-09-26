@@ -134,10 +134,15 @@ async function claimManualOffboardingCustomerSends(
  * provedor dela (UAZAPI ou Evolution) — mesmo padrao do auto-reply. Prioridade:
  * OFFBOARDING_ALERT_INSTANCE_ID (se setado) → instancia UAZAPI ativa (a conta
  * conectada que ja esta no grupo) → is_default → mais antiga → fallback para o
- * sender global da Evolution (.env).
+ * sender global da Evolution (.env). Tambem usado pelo alerta de cobranca, que
+ * passa a propria instancia configurada.
  */
-async function sendToGroup(destinationJid: string, messageText: string) {
-  const explicitId = env.OFFBOARDING_ALERT_INSTANCE_ID.trim();
+export async function sendToGroup(
+  destinationJid: string,
+  messageText: string,
+  instanceId = env.OFFBOARDING_ALERT_INSTANCE_ID,
+) {
+  const explicitId = instanceId.trim();
   const instanceResult = await pool.query(
     explicitId
       ? `SELECT provider, instance_name, evolution_base_url, evolution_api_key, uazapi_base_url, uazapi_token, display_label

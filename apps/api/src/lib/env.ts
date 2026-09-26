@@ -260,6 +260,25 @@ const envSchema = z.object({
   // (is_default) ativa do banco, qualquer provedor (UAZAPI/Evolution). Preencha
   // com o id de uma whatsapp_instances para fixar um remetente especifico.
   OFFBOARDING_ALERT_INSTANCE_ID: z.string().default(""),
+  // Alerta de cobranca (financeiro): todo dia no horario abaixo manda ao grupo
+  // do financeiro quem passou do limite (CREDITO / CREDITO INTERNO) e quem tem
+  // pedido com prazo vencido; durante o dia, quando a planilha de saldo muda,
+  // avisa na hora apenas os alertas novos. Desligado por padrao — ligue
+  // BILLING_ALERT_ENABLED=true e defina BILLING_ALERT_GROUP_JID.
+  BILLING_ALERT_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  BILLING_ALERT_GROUP_JID: z.string().default(""),
+  BILLING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(9),
+  BILLING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
+  BILLING_ALERT_INSTANCE_ID: z.string().default(""),
+  BILLING_ALERT_NEAR_LIMIT_PERCENT: z.coerce.number().min(1).max(100).default(80),
+  BILLING_ALERT_INSTANT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  BILLING_ALERT_INSTANT_UNTIL_HOUR: z.coerce.number().int().min(0).max(23).default(20),
   // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
   // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
   // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que

@@ -73,6 +73,27 @@ No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use cami
 
 Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minutos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
 
+### Alerta de cobranca (financeiro)
+
+Le a planilha de saldo (abas RESUMO, OUT e PAG) e manda ao grupo do financeiro:
+
+- todo dia as `BILLING_ALERT_HOUR` (9h): quem estourou o limite (coluna G `CREDITO` e H `CREDITO INTERNO`), quem tem pedido com prazo vencido (data do pedido + coluna I `PRAZO`; pagamentos abatem os pedidos mais antigos), quem esta perto do limite e quem deve sem prazo cadastrado;
+- durante o dia, ate `BILLING_ALERT_INSTANT_UNTIL_HOUR`, avisa na hora so os alertas novos sempre que a planilha e reprocessada.
+
+Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado:
+
+```env
+BILLING_ALERT_ENABLED=true
+BILLING_ALERT_GROUP_JID=1203...@g.us   # grupo do financeiro
+BILLING_ALERT_HOUR=9
+BILLING_ALERT_NEAR_LIMIT_PERCENT=80
+BILLING_ALERT_INSTANT_ENABLED=true
+BILLING_ALERT_INSTANT_UNTIL_HOUR=20
+BILLING_ALERT_INSTANCE_ID=              # vazio = mesma instancia do alerta de Saida da Base
+```
+
+A tela Clientes > Financeiro mostra o mesmo relatorio, com "Ver mensagem" (previa) e "Enviar agora ao grupo" (permissao `finance.manage`).
+
 Depois que o backend estiver no ar, teste:
 
 ```text
