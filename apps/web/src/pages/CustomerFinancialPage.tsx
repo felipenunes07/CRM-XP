@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { CustomerBillingAlertsPanel } from "../components/CustomerBillingAlertsPanel";
 import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -43,6 +44,7 @@ interface CustomerFinancialPageViewProps {
   onSearchChange: (value: string) => void;
   onSelectCustomer: (customerId: string) => void;
   onRefresh: () => void;
+  showBillingAlerts?: boolean;
 }
 
 function filterCreditRows(rows: CustomerCreditRow[], search: string) {
@@ -162,6 +164,7 @@ export function CustomerFinancialPageView({
   onSearchChange,
   onSelectCustomer,
   onRefresh,
+  showBillingAlerts = false,
 }: CustomerFinancialPageViewProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
@@ -235,6 +238,8 @@ export function CustomerFinancialPageView({
         {refreshError ? <div className="inline-error">Nao foi possivel atualizar o arquivo agora.</div> : null}
         {exportError ? <div className="inline-error">Nao foi possivel gerar o Excel. Tente novamente.</div> : null}
       </section>
+
+      {showBillingAlerts ? <CustomerBillingAlertsPanel onSelectCustomer={onSelectCustomer} /> : null}
 
       <div className="customer-financial-workspace">
         <aside className="panel customer-financial-selector-panel">
@@ -421,6 +426,7 @@ export function CustomerFinancialPage() {
       onSearchChange={setSearch}
       onSelectCustomer={setSelectedCustomerId}
       onRefresh={() => refreshCreditMutation.mutate()}
+      showBillingAlerts
     />
   );
 }

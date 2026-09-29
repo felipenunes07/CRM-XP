@@ -142,6 +142,57 @@ export interface UserPermissionOverride {
   allowed: boolean;
 }
 
+export type BillingLimitLevel = "OVER_LIMIT" | "OVER_CREDIT" | "NEAR_LIMIT" | "OK" | "NO_LIMIT";
+
+export interface BillingPendingOrder {
+  orderKey: string;
+  orderNumber: string;
+  orderDate: string | null;
+  dueDate: string | null;
+  totalAmount: number;
+  pendingAmount: number;
+  daysOverdue: number | null;
+  overdue: boolean;
+}
+
+export interface BillingCustomerResult {
+  customerCode: string;
+  customerId: string | null;
+  displayName: string;
+  status: string | null;
+  debtAmount: number;
+  creditLimit: number | null;
+  internalCreditLimit: number | null;
+  paymentTerm: number | null;
+  limitLevel: BillingLimitLevel;
+  limitUsage: number | null;
+  pendingOrders: BillingPendingOrder[];
+  overdueAmount: number;
+  oldestOverdueDays: number | null;
+  hasOverdue: boolean;
+  missingPaymentTerm: boolean;
+}
+
+export interface BillingUnmatchedEntry {
+  source: "OUT" | "PAG";
+  entryKey: string;
+  customerCode: string;
+  entryDate: string | null;
+  amount: number;
+  reference: string;
+}
+
+export interface BillingAlertReport {
+  today: string;
+  unmatchedEntries?: BillingUnmatchedEntry[];
+  overLimit: BillingCustomerResult[];
+  overCredit: BillingCustomerResult[];
+  overdue: BillingCustomerResult[];
+  nearLimit: BillingCustomerResult[];
+  missingPaymentTerm: BillingCustomerResult[];
+  ignored: BillingCustomerResult[];
+}
+
 export interface OffboardingCustomer {
   customerId: string;
   customerCode: string;
@@ -665,6 +716,33 @@ export const api = {
     return request<CustomerCreditOverviewResponse>("/api/customer-credit/refresh", {
       method: "POST",
     }, token, false, CREDIT_REQUEST_TIMEOUT_MS);
+  },
+  customerBillingAlerts(token: string) {
+    return request<{ report: BillingAlertReport | null }>(
+      "/api/customer-credit/billing-alerts",
+      {},
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
+  },
+  previewCustomerBillingAlerts(token: string) {
+    return request<{ messages: string[]; reason?: string }>(
+      "/api/customer-credit/billing-alerts/preview",
+      {},
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
+  },
+  sendCustomerBillingAlerts(token: string) {
+    return request<{ sent: boolean; messages: number; reason?: string }>(
+      "/api/customer-credit/billing-alerts/send",
+      { method: "POST" },
+      token,
+      false,
+      CREDIT_REQUEST_TIMEOUT_MS,
+    );
   },
   customerCreditOpportunities(token: string) {
     return request<CustomerOpportunityQueueResponse>("/api/customer-credit/opportunities", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);

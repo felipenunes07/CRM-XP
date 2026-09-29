@@ -39,10 +39,13 @@ export async function sendUazapiTextMessage(
   config: UazapiInstanceConfig,
   destinationJid: string,
   messageText: string,
+  mentions: string[] = [],
 ) {
   return requestUazapi(config, "/send/text", "POST", {
     number: formatUazapiDestination(destinationJid),
     text: messageText,
+    // Numeros marcados (@) em grupo; o texto precisa conter "@<numero>".
+    ...(mentions.length ? { mentions: mentions.join(",") } : {}),
   });
 }
 

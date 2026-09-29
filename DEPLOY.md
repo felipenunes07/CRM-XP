@@ -73,6 +73,32 @@ No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use cami
 
 Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minutos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
 
+### Alerta de cobranca (financeiro)
+
+Le a planilha de saldo (abas RESUMO, OUT e PAG) e manda ao grupo do financeiro:
+
+- todo dia as `BILLING_ALERT_HOUR` (9h): quem estourou o limite (coluna G `CREDITO` e H `CREDITO INTERNO`), quem tem pedido com prazo vencido (data do pedido + coluna I `PRAZO`; pagamentos abatem os pedidos mais antigos), quem esta perto do limite e quem deve sem prazo cadastrado;
+- durante o dia, ate `BILLING_ALERT_INSTANT_UNTIL_HOUR`, avisa na hora so os alertas novos sempre que a planilha e reprocessada (passou do limite, pedido novo para cliente acima do credito, chegou perto do limite, prazo venceu, lancamento com COD que nao existe no RESUMO).
+
+O worker escuta a pasta `DROPBOX_CUSTOMER_CREDIT_PATH` pelo longpoll do Dropbox (`WORKER_CREDIT_WATCH_ENABLED=true`, padrao): assim que a planilha salva chega no Dropbox, ele reprocessa (~1-2 min para o arquivo de 60MB) e o alerta sai em seguida. O ciclo de `WORKER_CREDIT_SYNC_INTERVAL_MINUTES` continua como rede de seguranca. O lancamento so e visto depois que a planilha e **salva** e termina de sincronizar no Dropbox.
+
+Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado:
+
+```env
+BILLING_ALERT_ENABLED=true
+BILLING_ALERT_GROUP_JID=1203...@g.us   # grupo do financeiro
+BILLING_ALERT_HOUR=9
+BILLING_ALERT_NEAR_LIMIT_PERCENT=80
+BILLING_ALERT_INSTANT_ENABLED=true
+BILLING_ALERT_INSTANT_UNTIL_HOUR=20
+BILLING_ALERT_INSTANCE_ID=              # vazio = mesma instancia do alerta de Saida da Base
+BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=5511888888888"
+```
+
+As mensagens saem por vendedora: cada uma e marcada (@) com os clientes dela. A vendedora do cliente e o VENDEDOR do pedido mais recente na aba OUT (ou a ultima atendente do CRM); o numero marcado e o da instancia de WhatsApp dela no CRM, ou o de `BILLING_ALERT_SELLER_PHONES`. Esse numero precisa estar no grupo do financeiro.
+
+A tela Clientes > Financeiro mostra o mesmo relatorio, com "Ver mensagem" (previa) e "Enviar agora ao grupo" (permissao `finance.manage`).
+
 Depois que o backend estiver no ar, teste:
 
 ```text

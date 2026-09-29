@@ -14,8 +14,10 @@ import { runConversationIntelligence } from "./modules/events/conversationAi.js"
 import { refreshWhatsappActivityRollups } from "./modules/whatsapp/whatsappActivityRollupService.js";
 import { runWhatsappWebhookWatchdog } from "./modules/whatsapp/whatsappWebhookWatchdog.js";
 import type { RecurringJobHandle } from "./modules/platform/scheduledJobs.js";
+import { watchDropboxFolder, type DropboxFolderWatcher } from "./lib/dropboxClient.js";
 import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
+import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js";
 import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationService.js";
 
 async function main() {
@@ -24,10 +26,12 @@ async function main() {
   const whatsappWorker = startWhatsappDispatchWorker();
   const automationScheduler = startMessageAutomationScheduler();
   const offboardingScheduler = startDailyOffboardingScheduler();
+  const billingAlertScheduler = startBillingAlertScheduler();
   const lifecycleScheduler = startDailyLifecycleScheduler();
   const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
 
   const intervals: NodeJS.Timeout[] = [];
+  const folderWatchers: DropboxFolderWatcher[] = [];
   const recurringJobs: RecurringJobHandle[] = [];
 
   // 1. Primary sales sync
@@ -91,6 +95,19 @@ async function main() {
         env.WORKER_CREDIT_SYNC_INTERVAL_MINUTES * 60 * 1000,
       )
     );
+
+    // Alem do ciclo acima, escuta a pasta do Dropbox: quando o financeiro salva
+    // a planilha (lancou venda/pagamento), reprocessa em segundos e o alerta de
+    // cobranca reage na hora. O ciclo de minutos continua como rede de seguranca.
+    const hasDropbox = Boolean(env.DROPBOX_ACCESS_TOKEN || (env.DROPBOX_REFRESH_TOKEN && env.DROPBOX_APP_KEY));
+    if (hasDropbox && env.WORKER_CREDIT_WATCH_ENABLED) {
+      folderWatchers.push(
+        watchDropboxFolder(env.DROPBOX_CUSTOMER_CREDIT_PATH, async () => {
+          logger.info("credit workbook changed in Dropbox, refreshing now");
+          await refreshCustomerCreditOverview();
+        }),
+      );
+    }
   }
 
   // 5. Sentiment Aggregation
@@ -221,9 +238,11 @@ async function main() {
 
   const shutdown = async () => {
     intervals.forEach(clearInterval);
+    folderWatchers.forEach((watcher) => watcher.close());
     await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
     await offboardingScheduler.close();
+    await billingAlertScheduler.close();
     await lifecycleScheduler.close();
     await customerDefectSyncScheduler.close();
     await worker.close();

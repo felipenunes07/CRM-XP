@@ -13,7 +13,6 @@ import {
   Search,
   Sparkles,
   Target,
-  TrendingUp,
   UserPlus,
   Users,
   X,
@@ -666,9 +665,9 @@ export function AttendantsPage() {
                 <small>{formatNumber(selectedItem.currentPeriod.pieces)} de {formatNumber(data.summary.currentPeriodPieces)}</small>
               </div>
               <div>
-                <span>Participação na receita</span>
-                <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.revenue, data.summary.currentPeriodRevenue))}</strong>
-                <small>{formatCurrency(selectedItem.currentPeriod.revenue)}</small>
+                <span>Participação nas vendas</span>
+                <strong>{formatPercent(safeDivide(selectedItem.currentPeriod.orders, data.summary.currentPeriodOrders))}</strong>
+                <small>{formatNumber(selectedItem.currentPeriod.orders)} vendas fechadas</small>
               </div>
               <div>
                 <span>Posição no time</span>
@@ -680,11 +679,11 @@ export function AttendantsPage() {
 
           <section className="attendant-metrics-grid attendant-impact-metrics">
             <MetricTile
-              label="Receita gerada"
-              value={formatCurrency(selectedItem.currentPeriod.revenue)}
-              detail={`${formatPercent(safeDivide(selectedItem.currentPeriod.revenue, data.summary.currentPeriodRevenue))} da receita do time`}
-              growth={selectedItem.growth.revenue}
-              icon={<TrendingUp size={17} />}
+              label="Vendas fechadas"
+              value={formatNumber(selectedItem.currentPeriod.orders)}
+              detail={`${formatPercent(safeDivide(selectedItem.currentPeriod.orders, data.summary.currentPeriodOrders))} das vendas do time`}
+              growth={selectedItem.growth.orders}
+              icon={<Target size={17} />}
             />
             <MetricTile
               label="Telas vendidas"
@@ -701,9 +700,9 @@ export function AttendantsPage() {
               icon={<Users size={17} />}
             />
             <MetricTile
-              label="Receita recuperada"
-              value={formatCurrency(selectedItem.currentRecoveredRevenue)}
-              detail={`${formatNumber(selectedItem.currentRecoveredCustomers)} clientes reativados`}
+              label="Clientes reativados"
+              value={formatNumber(selectedItem.currentRecoveredCustomers)}
+              detail="voltaram a comprar no mês"
               icon={<RotateCcw size={17} />}
             />
           </section>
@@ -734,10 +733,10 @@ export function AttendantsPage() {
         </>
       ) : (
         <section className="attendant-metrics-grid attendants-team-metrics attendant-impact-metrics">
-          <MetricTile label="Receita do time" value={formatCurrency(data.summary.currentPeriodRevenue)} detail={`${formatNumber(data.summary.currentPeriodCustomers)} clientes compradores`} growth={data.summary.revenueGrowthRatio} icon={<TrendingUp size={17} />} />
+          <MetricTile label="Clientes compradores" value={formatNumber(data.summary.currentPeriodCustomers)} detail="clientes com compras no mês" icon={<Users size={17} />} />
           <MetricTile label="Telas vendidas" value={formatNumber(data.summary.currentPeriodPieces)} detail={`${formatNumber(data.summary.currentPeriodOrders)} vendas no mês`} icon={<Sparkles size={17} />} />
           <MetricTile label="Aquisição" value={formatNumber(teamTotals.newCustomers)} detail="novos clientes no mês" icon={<UserPlus size={17} />} />
-          <MetricTile label="Receita recuperada" value={formatCurrency(teamTotals.recoveredRevenue)} detail={`${formatNumber(teamTotals.recoveredCustomers)} clientes reativados`} icon={<RotateCcw size={17} />} />
+          <MetricTile label="Clientes reativados" value={formatNumber(teamTotals.recoveredCustomers)} detail="voltaram a comprar no mês" icon={<RotateCcw size={17} />} />
         </section>
       )}
 
