@@ -86,12 +86,12 @@ Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado
 
 ```env
 BILLING_ALERT_ENABLED=true
-BILLING_ALERT_GROUP_JID=1203...@g.us   # grupo do financeiro
+BILLING_ALERT_GROUP_JID=120363410602450990@g.us   # "XP - CRM Financeiro" (ja e o padrao)
 BILLING_ALERT_HOUR=9
 BILLING_ALERT_NEAR_LIMIT_PERCENT=80
 BILLING_ALERT_INSTANT_ENABLED=true
 BILLING_ALERT_INSTANT_UNTIL_HOUR=20
-BILLING_ALERT_INSTANCE_ID=              # vazio = mesma instancia do alerta de Saida da Base
+BILLING_ALERT_INSTANCE_ID=Lili          # quem envia: nome ou id da instancia (Lili Assistente esta no grupo)
 BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=5511888888888"
 BILLING_ALERT_NO_CREDIT_ENABLED=true     # cobrar quem deve e nao tem credito (CREDITO e CREDITO INTERNO vazios)
 BILLING_ALERT_NO_CREDIT_MIN_DEBT=1       # a partir de quanto (padrao: qualquer valor)

@@ -275,10 +275,13 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  BILLING_ALERT_GROUP_JID: z.string().default(""),
+  // Grupo "XP - CRM Financeiro" (a Lili Assistente esta nele).
+  BILLING_ALERT_GROUP_JID: z.string().default("120363410602450990@g.us"),
   BILLING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   BILLING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
-  BILLING_ALERT_INSTANCE_ID: z.string().default(""),
+  // Quem envia: id da whatsapp_instances OU nome da instancia. "Lili" = Lili
+  // Assistente, que esta no grupo "XP - CRM Financeiro".
+  BILLING_ALERT_INSTANCE_ID: z.string().default("Lili"),
   BILLING_ALERT_NEAR_LIMIT_PERCENT: z.coerce.number().min(1).max(100).default(80),
   BILLING_ALERT_INSTANT_ENABLED: z
     .enum(["true", "false"])
