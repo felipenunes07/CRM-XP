@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
-import type { CustomerListItem } from "@olist-crm/shared";
+import type { CustomerListItem, CustomerNote } from "@olist-crm/shared";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
+import { CustomerNoteOutcomeBadge } from "./CustomerNotesPanel";
 import { InfoHint } from "./InfoHint";
-import { formatCurrency, formatDate, formatDaysSince, getFormattingLocale, statusLabel } from "../lib/format";
+import { formatCurrency, formatDate, formatDateTime, formatDaysSince, getFormattingLocale, statusLabel } from "../lib/format";
 import { useUiLanguage } from "../i18n";
 
 type SortableColumnId =
@@ -17,7 +18,7 @@ type SortableColumnId =
   | "avgDaysBetweenOrders"
   | "priorityScore";
 
-type ColumnId = SortableColumnId | "status" | "labels" | "insight";
+type ColumnId = SortableColumnId | "status" | "latestNote" | "labels" | "insight";
 type SortDirection = "asc" | "desc";
 
 type TableColumn = {
@@ -46,6 +47,12 @@ const columns: TableColumn[] = [
     label: "Status",
     width: 120,
     minWidth: 110,
+  },
+  {
+    id: "latestNote",
+    label: "Ultimo retorno",
+    width: 260,
+    minWidth: 200,
   },
   {
     id: "lastPurchaseAt",
@@ -174,16 +181,39 @@ function compareValues(left: number | string | null, right: number | string | nu
   return direction === "asc" ? leftNumber - rightNumber : rightNumber - leftNumber;
 }
 
+function LatestNoteCell({ note, onOpen }: { note?: CustomerNote; onOpen: () => void }) {
+  if (!note) {
+    return (
+      <button type="button" className="customer-latest-note-cell is-empty" onClick={onOpen}>
+        + Registrar retorno
+      </button>
+    );
+  }
+
+  return (
+    <button type="button" className="customer-latest-note-cell" onClick={onOpen} title={note.body}>
+      <CustomerNoteOutcomeBadge outcome={note.outcome} />
+      <span className="customer-latest-note-text">{note.body}</span>
+      <small>{note.authorName} · {formatDateTime(note.createdAt)}</small>
+    </button>
+  );
+}
+
 export function CustomerTable({
   customers,
   selectable = false,
   selectedIds = [],
   onSelectedIdsChange,
+  latestNotes,
+  onOpenNotes,
 }: {
   customers: CustomerListItem[];
   selectable?: boolean;
   selectedIds?: string[];
   onSelectedIdsChange?: (ids: string[]) => void;
+  // Quando informado, mostra a coluna "Ultimo retorno" com a observacao mais recente.
+  latestNotes?: Map<string, CustomerNote>;
+  onOpenNotes?: (customer: CustomerListItem) => void;
 }) {
   const { tx } = useUiLanguage();
   const [sortState, setSortState] = useState<{ columnId: SortableColumnId; direction: SortDirection } | null>(null);
@@ -191,15 +221,18 @@ export function CustomerTable({
   const resizeStateRef = useRef<{ columnId: ColumnId; startX: number; startWidth: number } | null>(null);
   const locale = getFormattingLocale();
 
+  const showNotes = Boolean(latestNotes);
   const localizedColumns = useMemo<TableColumn[]>(
     () =>
-      columns.map((column) => ({
+      columns.filter((column) => showNotes || column.id !== "latestNote").map((column) => ({
         ...column,
         label:
           column.id === "customer"
             ? tx("Cliente", "客户")
             : column.id === "status"
               ? tx("Status", "状态")
+              : column.id === "latestNote"
+              ? tx("Ultimo retorno", "最近反馈")
               : column.id === "lastPurchaseAt"
                 ? tx("Ultima compra", "最近购买")
                 : column.id === "daysSinceLastPurchase"
@@ -229,7 +262,7 @@ export function CustomerTable({
                 )
               : undefined,
       })),
-    [tx],
+    [tx, showNotes],
   );
 
   useEffect(() => {
@@ -442,6 +475,11 @@ export function CustomerTable({
                   <td>
                     <span className={`status-badge status-${customer.status.toLowerCase()}`}>{statusLabel(customer.status)}</span>
                   </td>
+                  {showNotes ? (
+                    <td>
+                      <LatestNoteCell note={latestNotes?.get(customer.id)} onOpen={() => onOpenNotes?.(customer)} />
+                    </td>
+                  ) : null}
                   <td>{formatDate(customer.lastPurchaseAt)}</td>
                   <td>{formatDaysSince(customer.daysSinceLastPurchase)}</td>
                   <td>{customer.totalOrders}</td>

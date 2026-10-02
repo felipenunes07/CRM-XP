@@ -4,6 +4,7 @@ import { promises as fsPromises } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { CUSTOMER_NOTE_OUTCOMES } from "@olist-crm/shared";
 import type { CustomerStatus, EventType, EventSeverity } from "@olist-crm/shared";
 import { env, webOrigins } from "./lib/env.js";
 import { HttpError } from "./lib/httpError.js";
@@ -21,6 +22,12 @@ import {
   updateCustomerLabels,
   bulkAssignLabelToCustomers,
 } from "./modules/crm/customerService.js";
+import {
+  createCustomerNote,
+  deleteCustomerNote,
+  listCustomerNotes,
+  listLatestCustomerNotes,
+} from "./modules/crm/customerNoteService.js";
 import {
   getCustomerCreditDetail,
   getCustomerCreditOverview,
@@ -454,6 +461,11 @@ const manualSyncSchema = z.object({
 const customerLabelUpdateSchema = z.object({
   labels: z.array(z.string().min(1)).optional(),
   internalNotes: z.string().optional(),
+});
+
+const customerNoteSchema = z.object({
+  body: z.string().trim().min(1, "Escreva a observação antes de salvar").max(4000),
+  outcome: z.enum(CUSTOMER_NOTE_OUTCOMES).nullable().optional(),
 });
 
 const createCustomerLabelSchema = z.object({
@@ -1723,6 +1735,41 @@ export function createApp() {
         throw new HttpError(404, "Cliente não encontrado");
       }
       response.json(customer);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customers/:id/notes", async (request, response, next) => {
+    try {
+      response.json(await listCustomerNotes(String(request.params.id)));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/customers/:id/notes", async (request, response, next) => {
+    try {
+      response
+        .status(201)
+        .json(await createCustomerNote(String(request.params.id), customerNoteSchema.parse(request.body), request.user!));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/customers/:id/notes/:noteId", async (request, response, next) => {
+    try {
+      await deleteCustomerNote(String(request.params.id), String(request.params.noteId), request.user!);
+      response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-notes/latest", async (_request, response, next) => {
+    try {
+      response.json(await listLatestCustomerNotes());
     } catch (error) {
       next(error);
     }

@@ -1,4 +1,4 @@
-import type { CustomerCreditRow, CustomerDefectRow, CustomerDefectSnapshotMeta } from "@olist-crm/shared";
+import type { CustomerCreditRow, CustomerDefectRow, CustomerDefectSnapshotMeta, CustomerListItem, CustomerNote } from "@olist-crm/shared";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Download, Repeat, Search, Send, SlidersHorizontal, Users, X } from "lucide-react";
@@ -13,6 +13,7 @@ import { CustomerCreditTable } from "../components/CustomerCreditTable";
 import { CustomerCreditExecutiveSummary } from "../components/CustomerCreditExecutiveSummary";
 import { CustomerDefectsTable } from "../components/CustomerDefectsTable";
 import { CustomerDefectProductsPanel } from "../components/CustomerDefectProductsPanel";
+import { CustomerNotesDrawer } from "../components/CustomerNotesDrawer";
 import { CustomerTable } from "../components/CustomerTable";
 import { StatCard } from "../components/StatCard";
 import { GeographicView } from "../components/GeographicView";
@@ -356,6 +357,7 @@ export function CustomersPage() {
   const [selectedDefectProductYear, setSelectedDefectProductYear] = useState<number | null>(null);
   const [creditPage, setCreditPage] = useState(1);
   const [showUnmatchedCredit, setShowUnmatchedCredit] = useState(false);
+  const [notesCustomer, setNotesCustomer] = useState<CustomerListItem | null>(null);
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
@@ -489,6 +491,16 @@ export function CustomersPage() {
     queryFn: () => api.customers(token!, customerQueryParams),
     enabled: Boolean(token && state.activeView === "portfolio"),
   });
+
+  const latestNotesQuery = useQuery({
+    queryKey: ["customer-notes-latest"],
+    queryFn: () => api.latestCustomerNotes(token!),
+    enabled: Boolean(token && state.activeView === "portfolio"),
+  });
+  const latestNotesByCustomer = useMemo(
+    () => new Map<string, CustomerNote>((latestNotesQuery.data ?? []).map((note) => [note.customerId, note])),
+    [latestNotesQuery.data],
+  );
 
   const docInsightsQuery = useQuery({
     queryKey: ["customer-doc-insights"],
@@ -1103,7 +1115,10 @@ export function CustomersPage() {
           </div>
           {customersQuery.isLoading ? <div className="page-loading">Carregando clientes...</div> : null}
           {customersQuery.isError ? <div className="page-error">Falha ao carregar a carteira.</div> : null}
-          {customersQuery.data ? <CustomerTable customers={customersQuery.data} /> : null}
+          {customersQuery.data ? (
+            <CustomerTable customers={customersQuery.data} latestNotes={latestNotesByCustomer} onOpenNotes={setNotesCustomer} />
+          ) : null}
+          <CustomerNotesDrawer customer={notesCustomer} onClose={() => setNotesCustomer(null)} />
         </>
       ) : state.activeView === "docInsights" ? (
         <>

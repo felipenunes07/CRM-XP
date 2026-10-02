@@ -17,6 +17,8 @@ import type {
   CustomerDefectProductsResponse,
   CustomerDocInsightsResponse,
   CustomerLabel,
+  CustomerNote,
+  CustomerNoteOutcome,
   CustomerListItem,
   DashboardMetrics,
   ExecutiveDashboardMetrics,
@@ -856,6 +858,23 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }, token);
+  },
+  customerNotes(token: string, id: string) {
+    return request<CustomerNote[]>(`/api/customers/${id}/notes`, {}, token);
+  },
+  createCustomerNote(token: string, id: string, input: { body: string; outcome: CustomerNoteOutcome | null }) {
+    return request<CustomerNote>(`/api/customers/${id}/notes`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token);
+  },
+  deleteCustomerNote(token: string, id: string, noteId: string) {
+    return request<void>(`/api/customers/${id}/notes/${noteId}`, {
+      method: "DELETE",
+    }, token);
+  },
+  latestCustomerNotes(token: string) {
+    return request<CustomerNote[]>("/api/customer-notes/latest", {}, token);
   },
   updateCustomerAmbassador(token: string, id: string, isAmbassador: boolean) {
     return request<CustomerDetail>(`/api/customers/${id}/ambassador`, {
