@@ -177,6 +177,9 @@ export function CustomerFinancialPageView({
   const selectedRow = linkedRows.find((row) => row.customerId === selectedCustomerId) ?? null;
   const creditRow = detail?.row ?? selectedRow;
   const orders = detail?.orders ?? [];
+  // Venda mais recente da aba OUT (vem ordenada da mais nova) e quem fez.
+  const lastSale = orders.find((order) => order.orderDate && order.totalAmount > 0) ?? null;
+  const lastSaleSeller = lastSale?.seller && lastSale.seller.toLowerCase() !== "resumo" ? lastSale.seller : null;
   const payments = detail?.payments ?? [];
   const snapshot = detail?.snapshot ?? overview?.snapshot ?? null;
   const orderTotal = orders.reduce((sum, order) => sum + order.totalAmount, 0);
@@ -336,7 +339,15 @@ export function CustomerFinancialPageView({
                     value={usage === null ? "Sem limite" : `${usage.toFixed(0)}%`}
                     helper={creditRow.paymentTerm ? `Prazo ${creditRow.paymentTerm} dias` : undefined}
                   />
-                  <FinancialMetric label="Ultimo pedido" value={formatDate(creditRow.lastOrderDate)} helper={formatDaysSince(creditRow.daysSinceLastOrder)} />
+                  <FinancialMetric
+                    label="Última venda"
+                    value={formatDate(lastSale?.orderDate ?? creditRow.lastOrderDate)}
+                    helper={
+                      lastSale
+                        ? [lastSaleSeller ? `por ${lastSaleSeller}` : null, formatDaysSince(calculateDaysSince(lastSale.orderDate))].filter(Boolean).join(" · ")
+                        : formatDaysSince(creditRow.daysSinceLastOrder)
+                    }
+                  />
                   <FinancialMetric label="Ultimo pagamento" value={formatDate(creditRow.lastPaymentDate)} helper={formatDaysSince(daysSinceLastPayment)} />
                   <FinancialMetric label="Pedidos no snapshot" value={formatNumber(orders.length)} helper={formatCurrency(orderTotal)} />
                   <FinancialMetric label="Pagamentos no snapshot" value={formatNumber(payments.length)} helper={formatCurrency(paymentTotal)} />

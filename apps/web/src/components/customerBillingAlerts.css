@@ -189,3 +189,50 @@
   margin: 0.3rem 0 0;
   padding-left: 1.1rem;
 }
+
+.billing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin: 0 0 0.75rem;
+}
+
+.billing-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.billing-filters select {
+  min-width: 160px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--bf-line-strong, #d3d9e6);
+  border-radius: 8px;
+  background: var(--bf-surface, #fff);
+  color: var(--bf-navy, #0b2447);
+  font-size: 0.85rem;
+}
+
+.billing-filter-count {
+  padding-bottom: 0.45rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.8rem;
+}
+
+.billing-last-sale {
+  white-space: nowrap;
+}
+
+.billing-seller {
+  margin-left: 0.3rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bf-accent-soft, rgba(41, 86, 215, 0.08));
+  color: var(--bf-accent, #2956d7);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

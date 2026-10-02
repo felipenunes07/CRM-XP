@@ -14,8 +14,8 @@ import {
 
 const TODAY = "2026-09-26";
 
-function order(customerCode: string, orderNumber: string, orderDate: string, totalAmount: number): BillingOrderInput {
-  return { customerCode, orderKey: `${customerCode}|${orderDate}|${orderNumber}`, orderNumber, orderDate, totalAmount };
+function order(customerCode: string, orderNumber: string, orderDate: string, totalAmount: number, seller: string | null = null): BillingOrderInput {
+  return { customerCode, orderKey: `${customerCode}|${orderDate}|${orderNumber}`, orderNumber, orderDate, totalAmount, seller };
 }
 
 function customer(overrides: Partial<BillingCustomerInput> & { customerCode: string }): BillingCustomerInput {
@@ -115,7 +115,7 @@ describe("relatorio diario por vendedora", () => {
         // Sem credito E com prazo vencido: continua com o cartao completo.
         customer({ customerCode: "CL902", displayName: "Vencido", seller: "Thais", debtAmount: 2_000, paymentTerm: 10 }),
       ],
-      [order("KH76", "40500", "2026-05-14", 45_171), order("CL902", "41000", "2026-09-01", 2_000)],
+      [order("KH76", "40500", "2026-05-14", 45_171, "Thais"), order("CL902", "41000", "2026-09-01", 2_000)],
       [],
       { today: TODAY },
     );
@@ -130,7 +130,7 @@ describe("relatorio diario por vendedora", () => {
       [
         "⚪ *Devendo sem crédito liberado* — 3 clientes · R$ 46.207",
         "_Cobrar o valor todo; próximo pedido só com pagamento._",
-        "• KH76 · Ln129 — R$ 45.171",
+        "• KH76 · Ln129 — R$ 45.171 · últ. venda 14/05 (Thais)",
         "• CL901 · Medio — R$ 999",
         "• CL900 · Pequeno — R$ 37",
       ].join("\n"),
@@ -194,6 +194,49 @@ describe("aviso na hora", () => {
 
   it("nada novo, nada enviado", () => {
     expect(buildNewAlertsMessages(report, new Set(), phones)).toEqual([]);
+  });
+});
+
+describe("ultima venda e quem liberou", () => {
+  it("mostra no cartao a data da ultima venda e a vendedora que fez", () => {
+    const report = buildBillingAlertReport(
+      [customer({ customerCode: "CL034", displayName: "Leomar", seller: "Suelen", debtAmount: 612_768, creditLimit: 300_000, internalCreditLimit: 500_000, paymentTerm: 30 })],
+      [order("CL034", "41000", "2026-07-01", 600_768, "Suelen"), order("CL034", "43300", "2026-09-25", 12_000, "Thais")],
+      [],
+      { today: TODAY },
+    );
+    expect(report.overLimit[0]?.lastSale).toEqual({ orderNumber: "43300", orderDate: "2026-09-25", totalAmount: 12_000, seller: "Thais" });
+    const text = buildDailyReportMessages(report, phones).map((message) => message.text).join("\n");
+    expect(text).toContain("🛒 Última venda: 25/09 por Thais (R$ 12.000)");
+  });
+
+  it("aviso de pedido novo diz quem vendeu", () => {
+    const before = buildBillingAlertReport(
+      [customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 45_171 })],
+      [order("KH76", "40500", "2026-05-14", 45_171, "Thais")],
+      [],
+      { today: TODAY },
+    );
+    const after = buildBillingAlertReport(
+      [customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 50_171 })],
+      [order("KH76", "40500", "2026-05-14", 45_171, "Thais"), order("KH76", "43500", TODAY, 5_000, "Amanda")],
+      [],
+      { today: TODAY },
+    );
+    const previous = collectAlertKeys(before);
+    const newKeys = new Set([...collectAlertKeys(after)].filter((key) => !previous.has(key)));
+    const text = buildNewAlertsMessages(after, newKeys, phones).map((message) => message.text).join("\n");
+    expect(text).toContain("pedido 43500, R$ 5.000, vendido por *Amanda*");
+  });
+
+  it("linha de historico (Resumo) nao conta como vendedora", () => {
+    const report = buildBillingAlertReport(
+      [customer({ customerCode: "CL900", debtAmount: 500 })],
+      [order("CL900", "0", "2026-01-01", 500, "Resumo")],
+      [],
+      { today: TODAY },
+    );
+    expect(report.noCredit[0]?.lastSale?.seller).toBeNull();
   });
 });
 

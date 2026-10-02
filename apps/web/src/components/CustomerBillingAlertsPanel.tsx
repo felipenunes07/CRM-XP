@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Eye, Send } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { api, type BillingAlertReport, type BillingCustomerResult } from "../lib/api";
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
@@ -22,6 +22,56 @@ function limitText(customer: BillingCustomerResult) {
   if (customer.creditLimit) parts.push(`Crédito ${formatCurrency(customer.creditLimit)}`);
   if (customer.internalCreditLimit) parts.push(`Interno ${formatCurrency(customer.internalCreditLimit)}`);
   return parts.join(" · ") || "Sem limite";
+}
+
+export type BillingSort = "amount" | "recentSale";
+export type BillingSalePeriod = "all" | "7" | "30";
+
+export interface BillingRowFilters {
+  sort: BillingSort;
+  seller: string;
+  period: BillingSalePeriod;
+  today: string;
+}
+
+function daysBetween(fromIso: string, toIso: string) {
+  return Math.round((Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) / 86_400_000);
+}
+
+/**
+ * Filtra por vendedora da ultima venda e por quao recente ela foi, e ordena por
+ * valor (padrao do relatorio) ou pela venda mais recente — para ver quem esta
+ * liberando venda agora para cliente sem credito / acima do limite.
+ */
+export function filterAndSortBillingRows(rows: BillingCustomerResult[], filters: BillingRowFilters) {
+  const filtered = rows.filter((customer) => {
+    const sale = customer.lastSale;
+    if (filters.seller && (sale?.seller ?? "") !== filters.seller) return false;
+    if (filters.period !== "all") {
+      if (!sale?.orderDate) return false;
+      if (daysBetween(sale.orderDate, filters.today) > Number(filters.period)) return false;
+    }
+    return true;
+  });
+  if (filters.sort === "recentSale") {
+    return [...filtered].sort((left, right) =>
+      String(right.lastSale?.orderDate ?? "").localeCompare(String(left.lastSale?.orderDate ?? "")),
+    );
+  }
+  return filtered;
+}
+
+function LastSaleCell({ customer }: { customer: BillingCustomerResult }) {
+  const sale = customer.lastSale;
+  if (!sale?.orderDate) return <td className="billing-last-sale">—</td>;
+  return (
+    <td className="billing-last-sale">
+      <strong>{formatDate(sale.orderDate)}</strong> {sale.seller ? <span className="billing-seller">{sale.seller}</span> : null}
+      <span className="billing-sub">
+        Pedido {sale.orderNumber || "s/ nº"} · {formatCurrency(sale.totalAmount)}
+      </span>
+    </td>
+  );
 }
 
 function BillingRow({
@@ -84,6 +134,7 @@ function BillingRow({
           </td>
         </>
       )}
+      <LastSaleCell customer={customer} />
     </tr>
   );
 }
@@ -114,13 +165,29 @@ export function CustomerBillingAlertsView({
   onSelectCustomer: (customerId: string) => void;
 }) {
   const [activeGroup, setActiveGroup] = useState<BillingGroupKey>("overLimit");
+  const [sort, setSort] = useState<BillingSort>("amount");
+  const [sellerFilter, setSellerFilter] = useState("");
+  const [period, setPeriod] = useState<BillingSalePeriod>("all");
+
+  const sellers = useMemo(() => {
+    if (!report) return [];
+    const names = new Set<string>();
+    for (const entry of GROUPS) {
+      for (const customer of report[entry.key] ?? []) {
+        if (customer.lastSale?.seller) names.add(customer.lastSale.seller);
+      }
+    }
+    return [...names].sort((left, right) => left.localeCompare(right, "pt-BR"));
+  }, [report]);
 
   if (isLoading) return <div className="page-loading">Calculando cobrança...</div>;
   if (isError) return <div className="page-error">Falha ao calcular a cobrança.</div>;
   if (!report) return null;
 
   const group = GROUPS.find((entry) => entry.key === activeGroup)!;
-  const rows = report[activeGroup] ?? [];
+  const allRows = report[activeGroup] ?? [];
+  const rows = filterAndSortBillingRows(allRows, { sort, seller: sellerFilter, period, today: report.today });
+  const isFiltered = Boolean(sellerFilter) || period !== "all";
 
   return (
     <section className="panel billing-alerts-panel">
@@ -169,6 +236,40 @@ export function CustomerBillingAlertsView({
 
       <p className="billing-hint">{group.hint}</p>
 
+      <div className="billing-filters">
+        <label>
+          Ordenar
+          <select value={sort} onChange={(event) => setSort(event.target.value as BillingSort)}>
+            <option value="amount">Maior valor</option>
+            <option value="recentSale">Venda mais recente</option>
+          </select>
+        </label>
+        <label>
+          Quem vendeu
+          <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)}>
+            <option value="">Todas</option>
+            {sellers.map((seller) => (
+              <option key={seller} value={seller}>
+                {seller}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Última venda
+          <select value={period} onChange={(event) => setPeriod(event.target.value as BillingSalePeriod)}>
+            <option value="all">Qualquer data</option>
+            <option value="7">Últimos 7 dias</option>
+            <option value="30">Últimos 30 dias</option>
+          </select>
+        </label>
+        {isFiltered ? (
+          <span className="billing-filter-count">
+            {formatNumber(rows.length)} de {formatNumber(allRows.length)} clientes
+          </span>
+        ) : null}
+      </div>
+
       {rows.length ? (
         <div className="billing-table-wrap">
           <table className="billing-table">
@@ -194,6 +295,7 @@ export function CustomerBillingAlertsView({
                     <th>Prazo</th>
                   </>
                 )}
+                <th>Última venda</th>
               </tr>
             </thead>
             <tbody>
@@ -209,7 +311,9 @@ export function CustomerBillingAlertsView({
           </table>
         </div>
       ) : (
-        <div className="billing-empty">Nenhum cliente nessa situação.</div>
+        <div className="billing-empty">
+          {isFiltered ? "Nenhum cliente com esse filtro." : "Nenhum cliente nessa situação."}
+        </div>
       )}
 
       {report.unmatchedEntries?.length ? (

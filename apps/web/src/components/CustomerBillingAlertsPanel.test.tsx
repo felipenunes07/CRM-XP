@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BillingAlertReport, BillingCustomerResult } from "../lib/api";
-import { CustomerBillingAlertsView } from "./CustomerBillingAlertsPanel";
+import { CustomerBillingAlertsView, filterAndSortBillingRows } from "./CustomerBillingAlertsPanel";
 
 const leomar: BillingCustomerResult = {
   customerCode: "CL034",
@@ -84,9 +84,42 @@ describe("CustomerBillingAlertsView", () => {
     expect(html).toContain("Sem crédito");
   });
 
+  it("mostra a coluna de ultima venda com quem vendeu e os filtros", () => {
+    const html = render({
+      report: { ...report, overLimit: [{ ...leomar, lastSale: { orderNumber: "43300", orderDate: "2026-09-25", totalAmount: 12_000, seller: "Thais" } }] },
+    });
+    expect(html).toContain("Última venda");
+    expect(html).toContain("Thais");
+    expect(html).toContain("Venda mais recente");
+    expect(html).toContain("Quem vendeu");
+    expect(html).toContain("Últimos 7 dias");
+  });
+
   it("esconde o envio de quem nao gerencia o financeiro e mostra a previa", () => {
     const html = render({ canSend: false, preview: ["💰 *Cobrança — 25/09/2026*"] });
     expect(html).not.toContain("Enviar agora ao grupo");
     expect(html).toContain("Cobrança — 25/09/2026");
+  });
+});
+
+describe("filterAndSortBillingRows", () => {
+  const base = { ...leomar };
+  const rows = [
+    { ...base, customerCode: "A", debtAmount: 900, lastSale: { orderNumber: "1", orderDate: "2026-06-01", totalAmount: 100, seller: "Suelen" } },
+    { ...base, customerCode: "B", debtAmount: 500, lastSale: { orderNumber: "2", orderDate: "2026-09-29", totalAmount: 100, seller: "Thais" } },
+    { ...base, customerCode: "C", debtAmount: 300, lastSale: { orderNumber: "3", orderDate: "2026-09-20", totalAmount: 100, seller: "Thais" } },
+    { ...base, customerCode: "D", debtAmount: 100, lastSale: null },
+  ];
+  const today = "2026-10-02";
+
+  it("mantem a ordem por valor e ordena pela venda mais recente", () => {
+    expect(filterAndSortBillingRows(rows, { sort: "amount", seller: "", period: "all", today }).map((row) => row.customerCode)).toEqual(["A", "B", "C", "D"]);
+    expect(filterAndSortBillingRows(rows, { sort: "recentSale", seller: "", period: "all", today }).map((row) => row.customerCode)).toEqual(["B", "C", "A", "D"]);
+  });
+
+  it("filtra por quem vendeu e por periodo da ultima venda", () => {
+    expect(filterAndSortBillingRows(rows, { sort: "amount", seller: "Thais", period: "all", today }).map((row) => row.customerCode)).toEqual(["B", "C"]);
+    expect(filterAndSortBillingRows(rows, { sort: "amount", seller: "", period: "7", today }).map((row) => row.customerCode)).toEqual(["B"]);
+    expect(filterAndSortBillingRows(rows, { sort: "amount", seller: "", period: "30", today }).map((row) => row.customerCode)).toEqual(["B", "C"]);
   });
 });
