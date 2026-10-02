@@ -106,6 +106,37 @@ describe("relatorio diario por vendedora", () => {
     expect(text).toContain("🟡 Já está no limite (100% do crédito) — não cabe mais pedido");
   });
 
+  it("lista quem deve qualquer valor sem credito, uma linha cada, do maior para o menor", () => {
+    const withNoCredit = buildBillingAlertReport(
+      [
+        customer({ customerCode: "CL900", displayName: "Pequeno", seller: "Thais", debtAmount: 37 }),
+        customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 45_171 }),
+        customer({ customerCode: "CL901", displayName: "Medio", seller: "Thais", debtAmount: 999 }),
+        // Sem credito E com prazo vencido: continua com o cartao completo.
+        customer({ customerCode: "CL902", displayName: "Vencido", seller: "Thais", debtAmount: 2_000, paymentTerm: 10 }),
+      ],
+      [order("KH76", "40500", "2026-05-14", 45_171), order("CL902", "41000", "2026-09-01", 2_000)],
+      [],
+      { today: TODAY },
+    );
+    const msgs = buildDailyReportMessages(withNoCredit, phones);
+    expect(msgs[0]!.text).toContain("⚪ Devendo sem crédito: 4 clientes · R$ 48.207");
+    expect(msgs[0]!.text).toContain("⚪ deve, mas não tem crédito liberado na planilha");
+
+    const thais = msgs.find((message) => message.text.includes("*Thais*"))!;
+    expect(thais.mentions).toEqual(["5511922222222"]);
+    expect(thais.text).toContain("1. *CL902 · Vencido*\nDeve R$ 2.000\n⚪ Deve sem ter crédito liberado\n⏰ R$ 2.000 vencido");
+    expect(thais.text).toContain(
+      [
+        "⚪ *Devendo sem crédito liberado* — 3 clientes · R$ 46.207",
+        "_Cobrar o valor todo; próximo pedido só com pagamento._",
+        "• KH76 · Ln129 — R$ 45.171",
+        "• CL901 · Medio — R$ 999",
+        "• CL900 · Pequeno — R$ 37",
+      ].join("\n"),
+    );
+  });
+
   it("vendedora sem WhatsApp no CRM aparece pelo nome, sem marcar", () => {
     const iza = messages.find((message) => message.text.includes("*Iza*"))!;
     expect(iza.text).toContain("sem WhatsApp cadastrado");
@@ -139,6 +170,26 @@ describe("aviso na hora", () => {
     expect(suelen.text).toContain("*CL034 · Leomar*");
     expect(suelen.text).toContain("👉 Cobrar");
     expect(messages).toHaveLength(2);
+  });
+
+  it("pedido novo de cliente sem credito avisa na hora", () => {
+    const before = buildBillingAlertReport(
+      [customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 45_171 })],
+      [order("KH76", "40500", "2026-05-14", 45_171)],
+      [],
+      { today: TODAY },
+    );
+    const after = buildBillingAlertReport(
+      [customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 50_171 })],
+      [order("KH76", "40500", "2026-05-14", 45_171), order("KH76", "43500", TODAY, 5_000)],
+      [],
+      { today: TODAY },
+    );
+    const previous = collectAlertKeys(before);
+    const newKeys = new Set([...collectAlertKeys(after)].filter((key) => !previous.has(key)));
+    const text = buildNewAlertsMessages(after, newKeys, phones).map((message) => message.text).join("\n");
+    expect(text).toContain("🛒 *Pedido novo lançado para cliente sem crédito liberado* — pedido 43500, R$ 5.000");
+    expect(text).toContain("@5511922222222");
   });
 
   it("nada novo, nada enviado", () => {

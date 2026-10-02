@@ -8,6 +8,24 @@ import { formatCurrency } from "../lib/format";
 import { customerCreditRiskLabel } from "../lib/customerCredit";
 import "./customerCreditBank.css";
 
+/**
+ * Le valor digitado do jeito brasileiro: "300.000", "300000", "1.500,50",
+ * "R$ 50.000,00". Ponto seguido de 3 digitos e separador de milhar.
+ * Vazio = null (remove o ajuste: sem credito). undefined = invalido.
+ */
+export function parseBrazilianAmount(input: string): number | null | undefined {
+  const cleaned = input.replace(/[^\d.,]/g, "");
+  if (!cleaned) return null;
+  let normalized = cleaned;
+  if (cleaned.includes(",")) {
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    normalized = cleaned.replace(/\./g, "");
+  }
+  const value = Number(normalized);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 interface EditCustomerCreditModalProps {
   row: CustomerCreditRow | null;
   isOpen: boolean;
@@ -19,6 +37,7 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
   const queryClient = useQueryClient();
 
   const [creditLimitInput, setCreditLimitInput] = useState("");
+  const [internalCreditInput, setInternalCreditInput] = useState("");
   const [paymentTermInput, setPaymentTermInput] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -29,7 +48,8 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
   if (activeRowId !== prevRowId) {
     setPrevRowId(activeRowId);
     if (row) {
-      setCreditLimitInput(String(row.creditLimit ?? 0));
+      setCreditLimitInput(row.creditLimit ? String(row.creditLimit) : "");
+      setInternalCreditInput(row.internalCreditLimit ? String(row.internalCreditLimit) : "");
       setPaymentTermInput(row.paymentTerm ? String(row.paymentTerm) : "");
       setErrorMsg(null);
     }
@@ -41,11 +61,17 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
         throw new Error("Cliente sem vínculo de cadastro para salvar ajustes.");
       }
 
-      const limitNum = parseFloat(creditLimitInput.replace(/[^\d.,]/g, "").replace(",", "."));
+      const limitNum = parseBrazilianAmount(creditLimitInput);
+      const internalNum = parseBrazilianAmount(internalCreditInput);
       const termNum = parseInt(paymentTermInput.replace(/\D/g, ""), 10);
+      if (limitNum === undefined || internalNum === undefined) {
+        throw new Error("Valor de crédito inválido. Use, por exemplo, 300.000 ou 300000.");
+      }
 
-      const updateData: { creditLimit?: number; paymentTerm?: number } = {};
-      if (!isNaN(limitNum)) updateData.creditLimit = limitNum;
+      const updateData: { creditLimit?: number | null; internalCreditLimit?: number | null; paymentTerm?: number } = {
+        creditLimit: limitNum,
+        internalCreditLimit: internalNum,
+      };
       if (!isNaN(termNum)) updateData.paymentTerm = termNum;
 
       return api.updateCustomerCreditSettings(token, row.customerId, updateData);
@@ -54,6 +80,7 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
       queryClient.invalidateQueries({ queryKey: ["customer-credit-overview"] });
       queryClient.invalidateQueries({ queryKey: ["customer-credit-detail"] });
       queryClient.invalidateQueries({ queryKey: ["customers-list"] });
+      queryClient.invalidateQueries({ queryKey: ["customer-billing-alerts"] });
       onClose();
     },
     onError: (err: Error) => {
@@ -74,7 +101,7 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
       >
         <header className="bankfin-modal-head">
           <div>
-            <h3>Limite e prazo</h3>
+            <h3>Crédito e prazo</h3>
             <p>
               {row.customerDisplayName} · {row.customerCode || "Sem código"}
             </p>
@@ -116,7 +143,26 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
                   placeholder="0,00"
                 />
               </div>
-              <small>Limite atual: {formatCurrency(row.creditLimit)}</small>
+              <small>Atual: {row.creditLimit ? formatCurrency(row.creditLimit) : "sem crédito"}. Vazio = sem crédito.</small>
+            </div>
+
+            <div className="bankfin-field">
+              <label htmlFor="bankfin-internal-input">Crédito interno (teto tolerado)</label>
+              <div className="bankfin-input-wrap">
+                <span className="bankfin-input-prefix">R$</span>
+                <input
+                  id="bankfin-internal-input"
+                  className="has-prefix"
+                  type="text"
+                  inputMode="decimal"
+                  value={internalCreditInput}
+                  onChange={(event) => setInternalCreditInput(event.target.value)}
+                  placeholder="Vazio = sem crédito interno"
+                />
+              </div>
+              <small>
+                Atual: {row.internalCreditLimit ? formatCurrency(row.internalCreditLimit) : "sem crédito interno"}
+              </small>
             </div>
 
             <div className="bankfin-field">
@@ -132,6 +178,7 @@ export function EditCustomerCreditModal({ row, isOpen, onClose }: EditCustomerCr
               />
               <small>Prazo atual: {row.paymentTerm ? `${row.paymentTerm} dias` : "Sem prazo"}</small>
             </div>
+            <p className="bankfin-modal-note">Ao salvar, o grupo do financeiro recebe o aviso da alteração.</p>
           </div>
 
           <footer className="bankfin-modal-foot">

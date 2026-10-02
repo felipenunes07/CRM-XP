@@ -275,10 +275,13 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
+  // Grupo dos alertas de COBRANCA (passou do prazo / do credito). Vazio = nao envia.
   BILLING_ALERT_GROUP_JID: z.string().default(""),
   BILLING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   BILLING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
-  BILLING_ALERT_INSTANCE_ID: z.string().default(""),
+  // Quem envia: id da whatsapp_instances OU nome da instancia. "Lili" = Lili
+  // Assistente, que esta no grupo "XP - CRM Financeiro".
+  BILLING_ALERT_INSTANCE_ID: z.string().default("Lili"),
   BILLING_ALERT_NEAR_LIMIT_PERCENT: z.coerce.number().min(1).max(100).default(80),
   BILLING_ALERT_INSTANT_ENABLED: z
     .enum(["true", "false"])
@@ -288,6 +291,21 @@ const envSchema = z.object({
   // Numero para marcar (@) cada vendedora no grupo, quando nao for o da
   // instancia dela no CRM. Formato: "Thais=5511999999999;Suelen=5511888888888".
   BILLING_ALERT_SELLER_PHONES: z.string().default(""),
+  // Cobrar tambem quem deve e NAO tem credito cadastrado (nem CREDITO nem
+  // CREDITO INTERNO), qualquer valor a partir de BILLING_ALERT_NO_CREDIT_MIN_DEBT
+  // (padrao R$ 1), do maior para o menor.
+  BILLING_ALERT_NO_CREDIT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  BILLING_ALERT_NO_CREDIT_MIN_DEBT: z.coerce.number().min(0).default(1),
+  // Aviso no grupo do financeiro quando alguem altera credito, credito interno
+  // ou prazo de um cliente pelo CRM. Padrao: grupo "XP - CRM Financeiro".
+  CREDIT_CHANGE_ALERT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  CREDIT_CHANGE_ALERT_GROUP_JID: z.string().default("120363410602450990@g.us"),
   // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
   // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
   // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que

@@ -228,6 +228,34 @@ describe("CustomerFinancialPageView", () => {
     expect(markup).toContain("6.193,17");
     expect(markup).toContain("Pagamentos");
     expect(markup).toContain("Trocas");
+    // Sem permissao de gestao financeira, nao aparece a edicao de credito.
+    expect(markup).not.toContain("Editar crédito");
+  });
+
+  it("mostra Editar credito para quem pode alterar o credito", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <CustomerFinancialPageView
+          overview={overview}
+          detail={detail}
+          selectedCustomerId="customer-1"
+          search=""
+          isOverviewLoading={false}
+          isOverviewError={false}
+          isDetailLoading={false}
+          isDetailError={false}
+          canRefreshCredit
+          isRefreshing={false}
+          refreshError={false}
+          onSearchChange={() => undefined}
+          onSelectCustomer={() => undefined}
+          onRefresh={() => undefined}
+          onEditCredit={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Editar crédito");
   });
 
   it("renders a dedicated financial dossier with a return path and side-by-side ledgers", () => {

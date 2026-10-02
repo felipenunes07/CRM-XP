@@ -4765,5 +4765,24 @@ export const migrations = [
   FROM customers c
   WHERE trim(c.internal_notes) <> ''
     AND NOT EXISTS (SELECT 1 FROM customer_notes n WHERE n.customer_id = c.id);
+  `,
   `
+  -- Credito interno editavel no CRM (coluna H da RESUMO) e historico de
+  -- alteracoes de credito/prazo, avisadas no grupo do financeiro.
+  ALTER TABLE customer_credit_overrides ADD COLUMN IF NOT EXISTS internal_credit_limit NUMERIC(14, 2);
+
+  CREATE TABLE IF NOT EXISTS customer_credit_change_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    customer_code TEXT,
+    before_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_values JSONB NOT NULL DEFAULT '{}'::jsonb,
+    changed_by_user_id TEXT,
+    changed_by_name TEXT,
+    notified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_customer_credit_change_log_customer
+    ON customer_credit_change_log (customer_id, created_at DESC);
+  `,
 ];

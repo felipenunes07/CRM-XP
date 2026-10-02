@@ -6,11 +6,17 @@ const {
   refreshCustomerCreditOverviewMock,
   getCustomerCreditDetailMock,
   updateCustomerCreditSettingsMock,
+  notifyCustomerCreditChangeMock,
 } = vi.hoisted(() => ({
   getCustomerCreditOverviewMock: vi.fn(),
   refreshCustomerCreditOverviewMock: vi.fn(),
   getCustomerCreditDetailMock: vi.fn(),
   updateCustomerCreditSettingsMock: vi.fn(),
+  notifyCustomerCreditChangeMock: vi.fn(),
+}));
+
+vi.mock("./modules/crm/creditChangeAlertService.js", () => ({
+  notifyCustomerCreditChange: notifyCustomerCreditChangeMock,
 }));
 
 vi.mock("./modules/crm/customerCreditService.js", async () => {
@@ -195,6 +201,15 @@ describe("customer credit routes", () => {
   });
 
   it("updates manual credit settings for the customer", async () => {
+    getCustomerCreditDetailMock.mockResolvedValue({
+      snapshot: null,
+      row: { customerId: "customer-1", creditLimit: 50000, paymentTerm: 20 },
+      orders: [],
+      payments: [],
+      totalOrders: 0,
+      totalPayments: 0,
+    });
+    notifyCustomerCreditChangeMock.mockResolvedValue({ changed: true, notified: true });
     updateCustomerCreditSettingsMock.mockResolvedValue({
       snapshot: null,
       row: {
@@ -219,5 +234,14 @@ describe("customer credit routes", () => {
       { creditLimit: 80000, paymentTerm: 30 },
       expect.objectContaining({ id: "user-1", role: "ADMIN" }),
     );
+    // Avisa o grupo do financeiro com o antes e o depois.
+    expect(notifyCustomerCreditChangeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: "customer-1",
+        before: expect.objectContaining({ creditLimit: 50000, paymentTerm: 20 }),
+        after: expect.objectContaining({ creditLimit: 80000, paymentTerm: 30 }),
+      }),
+    );
+    expect(response.body.creditChange).toEqual({ changed: true, notified: true });
   });
 });

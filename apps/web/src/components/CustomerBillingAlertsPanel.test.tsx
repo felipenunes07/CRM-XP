@@ -77,6 +77,13 @@ describe("CustomerBillingAlertsView", () => {
     expect(html).toContain("não existe no RESUMO");
   });
 
+  it("tem a opcao de quem deve e nao tem credito", () => {
+    const html = render({
+      report: { ...report, noCredit: [{ ...leomar, customerCode: "KH76", displayName: "Ln129", creditLimit: null, internalCreditLimit: null, limitLevel: "NO_LIMIT", limitUsage: null }] },
+    });
+    expect(html).toContain("Sem crédito");
+  });
+
   it("esconde o envio de quem nao gerencia o financeiro e mostra a previa", () => {
     const html = render({ canSend: false, preview: ["💰 *Cobrança — 25/09/2026*"] });
     expect(html).not.toContain("Enviar agora ao grupo");

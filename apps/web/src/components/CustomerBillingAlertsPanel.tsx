@@ -6,12 +6,13 @@ import { api, type BillingAlertReport, type BillingCustomerResult } from "../lib
 import { formatCurrency, formatDate, formatNumber } from "../lib/format";
 import "./customerBillingAlerts.css";
 
-type BillingGroupKey = "overLimit" | "overCredit" | "overdue" | "nearLimit" | "missingPaymentTerm";
+type BillingGroupKey = "overLimit" | "overCredit" | "overdue" | "noCredit" | "nearLimit" | "missingPaymentTerm";
 
 const GROUPS: Array<{ key: BillingGroupKey; label: string; tone: string; hint: string }> = [
   { key: "overLimit", label: "Estourou o limite", tone: "danger", hint: "Deve mais que o crédito e o crédito interno." },
   { key: "overCredit", label: "Acima do crédito", tone: "warning", hint: "Passou do crédito, mas ainda dentro do crédito interno." },
   { key: "overdue", label: "Prazo vencido", tone: "danger", hint: "Pedidos com saldo em aberto depois de data do pedido + prazo. Os pagamentos abatem os pedidos mais antigos." },
+  { key: "noCredit", label: "Sem crédito", tone: "warning", hint: "Devendo sem nenhum crédito liberado na planilha (CREDITO e CREDITO INTERNO vazios), qualquer valor (do maior para o menor). Cobrar o valor todo; próximo pedido só com pagamento." },
   { key: "nearLimit", label: "Perto do limite", tone: "attention", hint: "Usando 80% ou mais do crédito. Avisar antes do próximo pedido." },
   { key: "missingPaymentTerm", label: "Sem prazo", tone: "neutral", hint: "Devendo sem PRAZO na coluna I do RESUMO — não entram na cobrança por prazo até preencher." },
 ];
@@ -74,7 +75,13 @@ function BillingRow({
         <>
           <td className="is-right">{usage === null ? "—" : `${usage}%`}</td>
           <td>{limitText(customer)}</td>
-          <td>{customer.hasOverdue ? `Vencido ${formatCurrency(customer.overdueAmount)}` : "Em dia"}</td>
+          <td>
+            {customer.hasOverdue
+              ? `Vencido ${formatCurrency(customer.overdueAmount)}`
+              : group === "noCredit"
+                ? "Cobrar o valor todo"
+                : "Em dia"}
+          </td>
         </>
       )}
     </tr>
@@ -113,7 +120,7 @@ export function CustomerBillingAlertsView({
   if (!report) return null;
 
   const group = GROUPS.find((entry) => entry.key === activeGroup)!;
-  const rows = report[activeGroup];
+  const rows = report[activeGroup] ?? [];
 
   return (
     <section className="panel billing-alerts-panel">
@@ -154,7 +161,7 @@ export function CustomerBillingAlertsView({
             className={`billing-chip ${entry.tone} ${entry.key === activeGroup ? "active" : ""}`}
             onClick={() => setActiveGroup(entry.key)}
           >
-            <strong>{formatNumber(report[entry.key].length)}</strong>
+            <strong>{formatNumber((report[entry.key] ?? []).length)}</strong>
             {entry.label}
           </button>
         ))}

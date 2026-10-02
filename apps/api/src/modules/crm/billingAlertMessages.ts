@@ -61,14 +61,21 @@ function excessOverCredit(customer: BillingCustomerResult) {
 
 /** Valor principal a cobrar: o vencido, ou o que passou do credito. */
 export function amountToCharge(customer: BillingCustomerResult) {
+  // Sem credito cadastrado: tudo que deve e para cobrar.
+  if (isNoCredit(customer)) return customer.debtAmount;
   return Math.max(customer.overdueAmount, excessOverCredit(customer));
+}
+
+function isNoCredit(customer: BillingCustomerResult) {
+  return customer.limitLevel === "NO_LIMIT" && customer.debtAmount > 0;
 }
 
 function priority(customer: BillingCustomerResult) {
   if (customer.limitLevel === "OVER_LIMIT") return 0;
   if (customer.hasOverdue) return 1;
   if (customer.limitLevel === "OVER_CREDIT") return 2;
-  return 3;
+  if (isNoCredit(customer)) return 3;
+  return 4;
 }
 
 function compareCustomers(left: BillingCustomerResult, right: BillingCustomerResult) {
@@ -94,6 +101,8 @@ function statusLines(customer: BillingCustomerResult, today: string) {
     lines.push(`🔴 Estourou o limite${usageText(customer)}`);
   } else if (customer.limitLevel === "OVER_CREDIT") {
     lines.push(`🟠 Passou do crédito, ainda dentro do interno${usageText(customer)}`);
+  } else if (isNoCredit(customer)) {
+    lines.push("⚪ Deve sem ter crédito liberado");
   } else if (customer.limitLevel === "NEAR_LIMIT") {
     const available = Math.max(0, softLimit(customer) - customer.debtAmount);
     lines.push(
@@ -116,7 +125,15 @@ function statusLines(customer: BillingCustomerResult, today: string) {
 }
 
 function actionLine(customer: BillingCustomerResult) {
-  const holdOrders = customer.limitLevel === "OVER_LIMIT" ? " Segurar novos pedidos até pagar." : "";
+  const holdOrders =
+    customer.limitLevel === "OVER_LIMIT"
+      ? " Segurar novos pedidos até pagar."
+      : isNoCredit(customer)
+        ? " Sem crédito: próximo pedido só com pagamento."
+        : "";
+  if (isNoCredit(customer) && !customer.hasOverdue) {
+    return `👉 Cobrar ${formatBrl(customer.debtAmount)}.${holdOrders}`;
+  }
   if (customer.hasOverdue) {
     return `👉 Cobrar ${formatBrl(customer.overdueAmount)} vencido.${holdOrders}`;
   }
@@ -258,7 +275,10 @@ export function buildDailyReportMessages(
   phones: SellerPhoneDirectory = new Map(),
   options: { missingTermPreview?: number } = {},
 ): BillingOutgoingMessage[] {
-  const toCharge = [...new Set([...report.overLimit, ...report.overCredit, ...report.overdue, ...report.nearLimit])];
+  const toCharge = [
+    ...new Set([...report.overLimit, ...report.overCredit, ...report.overdue, ...report.noCredit, ...report.nearLimit]),
+  ];
+  const noCreditTotal = report.noCredit.reduce((sum, customer) => sum + customer.debtAmount, 0);
   const groups = groupBySeller(toCharge, phones);
   const overdueTotal = report.overdue.reduce((sum, customer) => sum + customer.overdueAmount, 0);
 
@@ -270,12 +290,14 @@ export function buildDailyReportMessages(
     `🔴 Estourou o limite: ${plural(report.overLimit.length, "cliente", "clientes")}`,
     `🟠 Passou do crédito: ${plural(report.overCredit.length, "cliente", "clientes")}`,
     `⏰ Pagamento vencido: ${plural(report.overdue.length, "cliente", "clientes")} · ${formatBrl(overdueTotal)}`,
+    `⚪ Devendo sem crédito: ${plural(report.noCredit.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
     `🟡 Perto do limite: ${plural(report.nearLimit.length, "cliente", "clientes")}`,
     "",
     "_Como ler:_",
     "🔴 deve mais que o crédito e o crédito interno",
     "🟠 passou do crédito, mas ainda está dentro do interno",
     "⏰ pedido não pago depois do prazo (cada pagamento quita primeiro os pedidos mais antigos)",
+    "⚪ deve, mas não tem crédito liberado na planilha",
     "🟡 já usou 80% ou mais do crédito",
   ].join("\n");
 
@@ -284,8 +306,23 @@ export function buildDailyReportMessages(
   for (const group of groups) {
     const total = group.customers.reduce((sum, customer) => sum + amountToCharge(customer), 0);
     const title = `${plural(group.customers.length, "cliente", "clientes")} para acompanhar · cobrar ${formatBrl(total)}`;
-    const cards = group.customers.map((customer, index) => `${index + 1}. ${customerCard(customer, report.today)}`);
-    messages.push(...sellerMessages(group, title, cards));
+    // Quem so deve sem credito (sem vencido nem limite) vira uma linha cada, do
+    // maior para o menor, no fim — sao centenas e o cartao completo lotaria o grupo.
+    const onlyNoCredit = group.customers.filter((customer) => isNoCredit(customer) && !customer.hasOverdue);
+    const withCard = group.customers.filter((customer) => !onlyNoCredit.includes(customer));
+    const blocks = withCard.map((customer, index) => `${index + 1}. ${customerCard(customer, report.today)}`);
+    if (onlyNoCredit.length) {
+      const sorted = [...onlyNoCredit].sort((left, right) => right.debtAmount - left.debtAmount);
+      const noCreditTotal = sorted.reduce((sum, customer) => sum + customer.debtAmount, 0);
+      blocks.push(
+        [
+          `⚪ *Devendo sem crédito liberado* — ${plural(sorted.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
+          "_Cobrar o valor todo; próximo pedido só com pagamento._",
+          ...sorted.map((customer) => `• ${customer.customerCode} · ${customer.displayName} — ${formatBrl(customer.debtAmount)}`),
+        ].join("\n"),
+      );
+    }
+    messages.push(...sellerMessages(group, title, blocks));
   }
 
   const finance = financeBlocks(report, options.missingTermPreview ?? 10);
@@ -321,13 +358,17 @@ export function buildNewAlertsMessages(
   for (const customer of report.overCredit) {
     if (has(`limit:${customer.customerCode}:OVER_CREDIT`)) addEvent(customer, "🟠 *Acabou de passar do crédito*");
   }
-  for (const customer of [...report.overLimit, ...report.overCredit]) {
+  for (const customer of report.noCredit) {
+    if (has(`limit:${customer.customerCode}:NO_CREDIT`)) addEvent(customer, "⚪ *Passou a dever sem ter crédito liberado*");
+  }
+  for (const customer of [...report.overLimit, ...report.overCredit, ...report.noCredit]) {
     if (cards.has(customer)) continue;
+    const who = isNoCredit(customer) ? "cliente sem crédito liberado" : "cliente que já passou do crédito";
     for (const order of customer.pendingOrders) {
       if (has(`order:${customer.customerCode}:${order.orderKey}`)) {
         addEvent(
           customer,
-          `🛒 *Pedido novo lançado para cliente que já passou do crédito* — pedido ${order.orderNumber || "s/ nº"}, ${formatBrl(order.totalAmount)}`,
+          `🛒 *Pedido novo lançado para ${who}* — pedido ${order.orderNumber || "s/ nº"}, ${formatBrl(order.totalAmount)}`,
         );
       }
     }

@@ -147,7 +147,10 @@ export async function sendToGroup(
   const instanceResult = await pool.query(
     explicitId
       ? `SELECT provider, instance_name, evolution_base_url, evolution_api_key, uazapi_base_url, uazapi_token, display_label
-           FROM whatsapp_instances WHERE id = $1 AND status = 'ACTIVE'`
+           FROM whatsapp_instances
+          WHERE (id::text = $1 OR LOWER(instance_name) = LOWER($1) OR LOWER(COALESCE(display_label, '')) = LOWER($1))
+            AND status = 'ACTIVE'
+          LIMIT 1`
       : `SELECT provider, instance_name, evolution_base_url, evolution_api_key, uazapi_base_url, uazapi_token, display_label
            FROM whatsapp_instances WHERE status = 'ACTIVE'
           ORDER BY (provider = 'UAZAPI') DESC, is_default DESC, created_at ASC
@@ -172,6 +175,22 @@ export async function sendToGroup(
         instanceName: String(instance.instance_name),
         evolutionBaseUrl: String(instance.evolution_base_url),
         evolutionApiKey: String(instance.evolution_api_key),
+      },
+      destinationJid,
+      messageText,
+      mentions,
+    );
+  }
+
+  // Instancia pedida pelo NOME (ex.: "Lili") que nao esta cadastrada no CRM:
+  // envia por ela na Evolution configurada no .env.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(explicitId);
+  if (explicitId && !isUuid && env.EVOLUTION_API_BASE_URL && env.EVOLUTION_API_KEY) {
+    return sendWhatsappInstanceTextMessage(
+      {
+        instanceName: explicitId,
+        evolutionBaseUrl: env.EVOLUTION_API_BASE_URL,
+        evolutionApiKey: env.EVOLUTION_API_KEY,
       },
       destinationJid,
       messageText,
