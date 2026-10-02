@@ -58,13 +58,15 @@ const report = buildBillingAlertReport(customers, orders, [], {
   ],
 });
 
-describe("relatorio diario por vendedora", () => {
+describe("relatorio diario por vendedora (curto)", () => {
   const messages = buildDailyReportMessages(report, phones);
-  const all = messages.map((message) => message.text).join("\n\n");
 
-  it("comeca com o resumo e a legenda", () => {
-    expect(messages[0]!.text).toContain("COBRANÇA DO DIA — 26/09/2026");
-    expect(messages[0]!.text).toContain("Como ler");
+  it("comeca com um resumo curto e aponta para o CRM", () => {
+    const header = messages[0]!.text;
+    expect(header).toContain("COBRANÇA DO DIA — 26/09/2026");
+    expect(header).toContain("🔴 Estourou o limite: 1 · 🟠 Passou do crédito: 1");
+    expect(header).toContain("Lista completa e filtros: CRM › Financeiro › Quem cobrar hoje");
+    expect(header.split("\n").length).toBeLessThanOrEqual(8);
     expect(messages[0]!.mentions).toEqual([]);
   });
 
@@ -81,73 +83,75 @@ describe("relatorio diario por vendedora", () => {
     expect(thais.text).toContain("Quase");
   });
 
-  it("cada cliente vem com a situacao e o que fazer", () => {
-    expect(all).toContain("*CL034 · Leomar*");
-    expect(all).toContain("Deve R$ 600.768 · crédito R$ 300.000 / interno R$ 500.000");
-    expect(all).toContain("🔴 Estourou o limite (200% do crédito)");
-    expect(all).toContain("⏰ R$ 600.768 vencido — atrasado há 57 dias, venceu 31/07 (prazo 30 dias)");
-    expect(all).toContain("👉 Cobrar R$ 600.768 vencido. Segurar novos pedidos até pagar.");
-    expect(all).toContain("👉 Pedir pagamento de R$ 20.000 para voltar ao crédito.");
-    expect(all).toContain("🟡 Perto do limite (84% do crédito) — cabe só mais R$ 8.000");
+  it("cada cliente urgente vira uma linha so", () => {
+    const suelen = messages.find((message) => message.text.includes("*Suelen*"))!;
+    expect(suelen.text).toContain("1. 🔴⏰ *CL034* Leomar — deve R$ 600.768 (200%) · vencido R$ 600.768 há 57d · venda 01/07");
+    const thais = messages.find((message) => message.text.includes("*Thais*"))!;
+    expect(thais.text).toContain("🟠 *CL115* Vitinho — deve R$ 120.000 (120%)");
+    expect(thais.text).toContain("🟡 *CL600* Quase — deve R$ 42.000 (84%)");
   });
 
-  it("atraso de outro ano mostra o ano e cliente no teto diz que nao cabe mais", () => {
-    const old = buildBillingAlertReport(
-      [
-        customer({ customerCode: "CL041", displayName: "Davi", seller: "Suelen", debtAmount: 4_396, creditLimit: 20_000, paymentTerm: 20 }),
-        customer({ customerCode: "CL395", displayName: "Cabeca", seller: "Thais", debtAmount: 15_000, creditLimit: 15_000, paymentTerm: 15 }),
-      ],
-      [order("CL041", "28167", "2025-03-17", 4_396), order("CL395", "43000", "2026-09-20", 15_000)],
+  it("mostra so os 10 mais urgentes e manda o resto para o CRM", () => {
+    const many = buildBillingAlertReport(
+      Array.from({ length: 14 }, (_, index) =>
+        customer({ customerCode: `CL${100 + index}`, seller: "Thais", debtAmount: 20_000 + index, creditLimit: 10_000, paymentTerm: 20 }),
+      ),
+      [],
       [],
       { today: TODAY },
     );
-    const text = buildDailyReportMessages(old, phones).map((message) => message.text).join("\n");
-    expect(text).toContain("venceu 06/04/2025");
-    expect(text).toContain("🟡 Já está no limite (100% do crédito) — não cabe mais pedido");
+    const thais = buildDailyReportMessages(many, phones).find((message) => message.text.includes("*Thais*"))!;
+    expect(thais.text).toContain("10. ");
+    expect(thais.text).not.toContain("11. ");
+    expect(thais.text).toContain("…e mais 4 no CRM");
   });
 
-  it("lista quem deve qualquer valor sem credito, uma linha cada, do maior para o menor", () => {
+  it("sem credito: so o total e quem vendeu sem credito nos ultimos 7 dias", () => {
     const withNoCredit = buildBillingAlertReport(
       [
-        customer({ customerCode: "CL900", displayName: "Pequeno", seller: "Thais", debtAmount: 37 }),
+        customer({ customerCode: "CL900", displayName: "Antigo", seller: "Thais", debtAmount: 37 }),
         customer({ customerCode: "KH76", displayName: "Ln129", seller: "Thais", debtAmount: 45_171 }),
-        customer({ customerCode: "CL901", displayName: "Medio", seller: "Thais", debtAmount: 999 }),
-        // Sem credito E com prazo vencido: continua com o cartao completo.
-        customer({ customerCode: "CL902", displayName: "Vencido", seller: "Thais", debtAmount: 2_000, paymentTerm: 10 }),
+        customer({ customerCode: "CL901", displayName: "Recente", seller: "Thais", debtAmount: 999 }),
       ],
-      [order("KH76", "40500", "2026-05-14", 45_171, "Thais"), order("CL902", "41000", "2026-09-01", 2_000)],
+      [order("KH76", "40500", "2026-05-14", 45_171, "Thais"), order("CL901", "43400", "2026-09-24", 999, "Thais")],
       [],
       { today: TODAY },
     );
     const msgs = buildDailyReportMessages(withNoCredit, phones);
-    expect(msgs[0]!.text).toContain("⚪ Devendo sem crédito: 4 clientes · R$ 48.207");
-    expect(msgs[0]!.text).toContain("⚪ deve, mas não tem crédito liberado na planilha");
-
+    expect(msgs[0]!.text).toContain("⚪ Sem crédito: 3 clientes · R$ 46.207");
     const thais = msgs.find((message) => message.text.includes("*Thais*"))!;
-    expect(thais.mentions).toEqual(["5511922222222"]);
-    expect(thais.text).toContain("1. *CL902 · Vencido*\nDeve R$ 2.000\n⚪ Deve sem ter crédito liberado\n⏰ R$ 2.000 vencido");
-    expect(thais.text).toContain(
-      [
-        "⚪ *Devendo sem crédito liberado* — 3 clientes · R$ 46.207",
-        "_Cobrar o valor todo; próximo pedido só com pagamento._",
-        "• KH76 · Ln129 — R$ 45.171 · últ. venda 14/05 (Thais)",
-        "• CL901 · Medio — R$ 999",
-        "• CL900 · Pequeno — R$ 37",
-      ].join("\n"),
-    );
+    expect(thais.text).toContain("⚪ *Sem crédito:* 3 clientes · R$ 46.207");
+    expect(thais.text).toContain("🛒 Venderam sem crédito nos últimos 7 dias:\n• *CL901* Recente — deve R$ 999 · venda 24/09 R$ 999");
+    // Divida antiga sem venda recente nao entra na mensagem (fica no CRM).
+    expect(thais.text).not.toContain("KH76");
+    expect(thais.text).not.toContain("CL900");
   });
 
-  it("vendedora sem WhatsApp no CRM aparece pelo nome, sem marcar", () => {
-    const iza = messages.find((message) => message.text.includes("*Iza*"))!;
-    expect(iza.text).toContain("sem WhatsApp cadastrado");
-    expect(iza.mentions).toEqual([]);
+  it("vendedora sem WhatsApp no CRM vai num resumo unico para o financeiro", () => {
+    expect(messages.find((message) => message.text.startsWith("👤 *Iza*"))).toBeUndefined();
+    const finance = messages.at(-1)!;
+    expect(finance.mentions).toEqual([]);
+    expect(finance.text).toContain("Para o financeiro");
+    expect(finance.text).toContain("• *Iza* — 1 cliente");
+    expect(finance.text).toContain("⏰ *CL700* Atrasado");
+    expect(finance.text).toContain("• *Sem vendedora definida* — 1 cliente");
   });
 
   it("termina com o que e do financeiro", () => {
     const last = messages.at(-1)!;
-    expect(last.text).toContain("Para o financeiro");
     expect(last.text).toContain("Sem prazo cadastrado");
     expect(last.text).toContain("*OEM382*");
+  });
+
+  it("atraso de outro ano mostra o ano na data da venda", () => {
+    const old = buildBillingAlertReport(
+      [customer({ customerCode: "CL041", displayName: "Davi", seller: "Suelen", debtAmount: 4_396, creditLimit: 20_000, paymentTerm: 20 })],
+      [order("CL041", "28167", "2025-03-17", 4_396)],
+      [],
+      { today: TODAY },
+    );
+    const text = buildDailyReportMessages(old, phones).map((message) => message.text).join("\n");
+    expect(text).toContain("venda 17/03/2025");
   });
 });
 
@@ -198,7 +202,7 @@ describe("aviso na hora", () => {
 });
 
 describe("ultima venda e quem liberou", () => {
-  it("mostra no cartao a data da ultima venda e a vendedora que fez", () => {
+  it("guarda a ultima venda e mostra a data na linha do cliente", () => {
     const report = buildBillingAlertReport(
       [customer({ customerCode: "CL034", displayName: "Leomar", seller: "Suelen", debtAmount: 612_768, creditLimit: 300_000, internalCreditLimit: 500_000, paymentTerm: 30 })],
       [order("CL034", "41000", "2026-07-01", 600_768, "Suelen"), order("CL034", "43300", "2026-09-25", 12_000, "Thais")],
@@ -207,7 +211,7 @@ describe("ultima venda e quem liberou", () => {
     );
     expect(report.overLimit[0]?.lastSale).toEqual({ orderNumber: "43300", orderDate: "2026-09-25", totalAmount: 12_000, seller: "Thais" });
     const text = buildDailyReportMessages(report, phones).map((message) => message.text).join("\n");
-    expect(text).toContain("🛒 Última venda: 25/09 por Thais (R$ 12.000)");
+    expect(text).toContain("🔴⏰ *CL034* Leomar — deve R$ 612.768 (204%) · vencido R$ 600.768 há 57d · venda 25/09");
   });
 
   it("aviso de pedido novo diz quem vendeu", () => {
