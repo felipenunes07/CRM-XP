@@ -296,6 +296,13 @@ const envSchema = z.object({
     .default("true")
     .transform((value) => value === "true"),
   BILLING_ALERT_NO_CREDIT_MIN_DEBT: z.coerce.number().min(0).default(1),
+  // Aviso no grupo do financeiro quando alguem altera credito, credito interno
+  // ou prazo de um cliente pelo CRM. Grupo vazio = usa BILLING_ALERT_GROUP_JID.
+  CREDIT_CHANGE_ALERT_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  CREDIT_CHANGE_ALERT_GROUP_JID: z.string().default(""),
   // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
   // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
   // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que

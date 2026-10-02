@@ -1539,6 +1539,15 @@ export async function ensureCustomerCreditSnapshot(forceRefresh = false): Promis
   return activeSnapshotPromise;
 }
 
+/** CREDITO INTERNO ajustado no CRM, ou a coluna H da RESUMO. */
+function resolveInternalCreditLimit(row: Record<string, unknown>) {
+  if (row.internal_credit_override !== null && row.internal_credit_override !== undefined) {
+    return Number(row.internal_credit_override);
+  }
+  const raw = safeNumber(row.internal_credit_raw);
+  return raw > 0 ? raw : null;
+}
+
 function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
   const balanceAmount = Number(row.balance_amount ?? 0);
   const creditLimit = Number(row.credit_limit ?? 0);
@@ -1603,6 +1612,9 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
     hasNoOrder: Boolean(row.has_no_order),
     hasNegativeCredit: Boolean(row.has_negative_credit),
     hasDebtWithoutCredit,
+    internalCreditLimit: resolveInternalCreditLimit(row),
+    internalCreditLimitSource:
+      row.internal_credit_override === null || row.internal_credit_override === undefined ? "SPREADSHEET" : "MANUAL",
     creditLimitSource: creditLimitIsManual ? "MANUAL" : "SPREADSHEET",
     paymentTermSource: paymentTermIsManual ? "MANUAL" : "SPREADSHEET",
     manualOverrideUpdatedAt: row.manual_override_updated_at
@@ -1751,6 +1763,12 @@ async function loadOverviewRows(snapshotId: string) {
         has_debt_without_credit,
         override.credit_limit IS NOT NULL AS credit_limit_is_manual,
         override.payment_term IS NOT NULL AS payment_term_is_manual,
+        override.internal_credit_limit AS internal_credit_override,
+        (
+          SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
+          WHERE UPPER(BTRIM(entry.key)) = 'CREDITO INTERNO'
+          LIMIT 1
+        ) AS internal_credit_raw,
         override.updated_at AS manual_override_updated_at,
         override.updated_by_name AS manual_override_updated_by_name
       FROM customer_credit_snapshot_rows snapshot_row
@@ -1957,6 +1975,12 @@ export async function getCustomerCreditDetail(
           has_debt_without_credit,
           override.credit_limit IS NOT NULL AS credit_limit_is_manual,
           override.payment_term IS NOT NULL AS payment_term_is_manual,
+        override.internal_credit_limit AS internal_credit_override,
+        (
+          SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
+          WHERE UPPER(BTRIM(entry.key)) = 'CREDITO INTERNO'
+          LIMIT 1
+        ) AS internal_credit_raw,
           override.updated_at AS manual_override_updated_at,
           override.updated_by_name AS manual_override_updated_by_name
         FROM customer_credit_snapshot_rows snapshot_row
@@ -2063,6 +2087,7 @@ export async function updateCustomerCreditSettings(
 
   const hasCreditLimit = Object.prototype.hasOwnProperty.call(input, "creditLimit");
   const hasPaymentTerm = Object.prototype.hasOwnProperty.call(input, "paymentTerm");
+  const hasInternalCreditLimit = Object.prototype.hasOwnProperty.call(input, "internalCreditLimit");
 
   await pool.query(
     `
@@ -2070,11 +2095,12 @@ export async function updateCustomerCreditSettings(
         customer_id,
         credit_limit,
         payment_term,
+        internal_credit_limit,
         updated_by_user_id,
         updated_by_name,
         updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      VALUES ($1, $2, $3, $8, $4, $5, NOW())
       ON CONFLICT (customer_id) DO UPDATE SET
         credit_limit = CASE
           WHEN $6::boolean THEN EXCLUDED.credit_limit
@@ -2083,6 +2109,10 @@ export async function updateCustomerCreditSettings(
         payment_term = CASE
           WHEN $7::boolean THEN EXCLUDED.payment_term
           ELSE customer_credit_overrides.payment_term
+        END,
+        internal_credit_limit = CASE
+          WHEN $9::boolean THEN EXCLUDED.internal_credit_limit
+          ELSE customer_credit_overrides.internal_credit_limit
         END,
         updated_by_user_id = EXCLUDED.updated_by_user_id,
         updated_by_name = EXCLUDED.updated_by_name,
@@ -2096,6 +2126,8 @@ export async function updateCustomerCreditSettings(
       user.name,
       hasCreditLimit,
       hasPaymentTerm,
+      hasInternalCreditLimit ? input.internalCreditLimit ?? null : null,
+      hasInternalCreditLimit,
     ],
   );
 
@@ -2105,6 +2137,7 @@ export async function updateCustomerCreditSettings(
       WHERE customer_id = $1
         AND credit_limit IS NULL
         AND payment_term IS NULL
+        AND internal_credit_limit IS NULL
     `,
     [customerId],
   );

@@ -984,6 +984,9 @@ export interface CustomerCreditRow {
   hasNoOrder: boolean;
   hasNegativeCredit: boolean;
   hasDebtWithoutCredit: boolean;
+  /** CREDITO INTERNO (coluna H da RESUMO) ou o ajustado no CRM. */
+  internalCreditLimit?: number | null;
+  internalCreditLimitSource?: "SPREADSHEET" | "MANUAL";
   creditLimitSource?: "SPREADSHEET" | "MANUAL";
   paymentTermSource?: "SPREADSHEET" | "MANUAL";
   manualOverrideUpdatedAt?: string | null;
@@ -992,6 +995,7 @@ export interface CustomerCreditRow {
 
 export interface CustomerCreditSettingsUpdate {
   creditLimit?: number | null;
+  internalCreditLimit?: number | null;
   paymentTerm?: number | null;
 }
 

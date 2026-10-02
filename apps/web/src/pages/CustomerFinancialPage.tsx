@@ -4,10 +4,11 @@ import type {
   CustomerCreditRow,
 } from "@olist-crm/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, ExternalLink, RefreshCw, Search } from "lucide-react";
+import { Download, ExternalLink, Pencil, RefreshCw, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CustomerBillingAlertsPanel } from "../components/CustomerBillingAlertsPanel";
+import { EditCustomerCreditModal } from "../components/EditCustomerCreditModal";
 import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -45,6 +46,8 @@ interface CustomerFinancialPageViewProps {
   onSelectCustomer: (customerId: string) => void;
   onRefresh: () => void;
   showBillingAlerts?: boolean;
+  /** Abre a edicao de credito/prazo (so para quem tem "Gestao financeira"). */
+  onEditCredit?: (row: CustomerCreditRow) => void;
 }
 
 function filterCreditRows(rows: CustomerCreditRow[], search: string) {
@@ -165,6 +168,7 @@ export function CustomerFinancialPageView({
   onSelectCustomer,
   onRefresh,
   showBillingAlerts = false,
+  onEditCredit,
 }: CustomerFinancialPageViewProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
@@ -302,6 +306,12 @@ export function CustomerFinancialPageView({
                     <span className={`tag credit-badge ${customerCreditRiskClassName(creditRow.riskLevel)}`}>
                       {customerCreditRiskLabel(creditRow.riskLevel)}
                     </span>
+                    {onEditCredit ? (
+                      <button type="button" className="primary-button small" onClick={() => onEditCredit(creditRow)}>
+                        <Pencil size={14} />
+                        Editar crédito
+                      </button>
+                    ) : null}
                     <Link className="ghost-button small" to={`/clientes/financeiro/${creditRow.customerId}`}>
                       <ExternalLink size={14} />
                       Abrir dossiê financeiro
@@ -374,6 +384,8 @@ export function CustomerFinancialPage() {
   const [search, setSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const canRefreshCredit = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const canEditCredit = user?.role === "ADMIN" || Boolean(user?.permissions?.includes("finance.manage"));
+  const [editingCreditRow, setEditingCreditRow] = useState<CustomerCreditRow | null>(null);
 
   const overviewQuery = useQuery({
     queryKey: ["customer-credit-overview"],
@@ -411,6 +423,7 @@ export function CustomerFinancialPage() {
   });
 
   return (
+    <>
     <CustomerFinancialPageView
       overview={overviewQuery.data ?? null}
       detail={detailQuery.data ?? null}
@@ -427,6 +440,13 @@ export function CustomerFinancialPage() {
       onSelectCustomer={setSelectedCustomerId}
       onRefresh={() => refreshCreditMutation.mutate()}
       showBillingAlerts
+      onEditCredit={canEditCredit ? setEditingCreditRow : undefined}
     />
+    <EditCustomerCreditModal
+      row={editingCreditRow}
+      isOpen={Boolean(editingCreditRow)}
+      onClose={() => setEditingCreditRow(null)}
+    />
+    </>
   );
 }

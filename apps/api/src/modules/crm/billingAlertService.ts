@@ -100,10 +100,14 @@ async function loadBillingInputs(snapshotId: string) {
         snapshot_row.balance_amount,
         COALESCE(override.credit_limit, snapshot_row.credit_limit) AS credit_limit,
         COALESCE(override.payment_term, snapshot_row.payment_term) AS payment_term,
-        (
-          SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
-          WHERE UPPER(BTRIM(entry.key)) = 'CREDITO INTERNO'
-          LIMIT 1
+        -- Credito interno ajustado no CRM vale mais que a coluna H da planilha.
+        COALESCE(
+          override.internal_credit_limit::text,
+          (
+            SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
+            WHERE UPPER(BTRIM(entry.key)) = 'CREDITO INTERNO'
+            LIMIT 1
+          )
         ) AS internal_credit_limit,
         (
           SELECT entry.value FROM jsonb_each_text(snapshot_row.raw_payload) AS entry

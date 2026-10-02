@@ -1863,3 +1863,9 @@
   flex-shrink: 0;
   align-self: center;
 }
+
+.bankfin-modal-note {
+  margin: 0.25rem 0 0;
+  color: var(--bf-muted);
+  font-size: 0.8rem;
+}

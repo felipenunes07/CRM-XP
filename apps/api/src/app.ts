@@ -28,6 +28,7 @@ import {
   updateCustomerCreditSettings,
 } from "./modules/crm/customerCreditService.js";
 import { getBillingAlertReport, runDailyBillingReport } from "./modules/crm/billingAlertService.js";
+import { notifyCustomerCreditChange } from "./modules/crm/creditChangeAlertService.js";
 import { getCustomerAnalytics } from "./modules/crm/customerAnalyticsService.js";
 import {
   getCustomerDefectCustomerDetail,
@@ -304,11 +305,13 @@ const customerCreditDetailQuerySchema = z.object({
 const customerCreditSettingsSchema = z
   .object({
     creditLimit: z.number().min(0).max(1_000_000_000).nullable().optional(),
+    internalCreditLimit: z.number().min(0).max(1_000_000_000).nullable().optional(),
     paymentTerm: z.number().int().min(1).max(365).nullable().optional(),
   })
   .refine(
     (value) =>
       Object.prototype.hasOwnProperty.call(value, "creditLimit") ||
+      Object.prototype.hasOwnProperty.call(value, "internalCreditLimit") ||
       Object.prototype.hasOwnProperty.call(value, "paymentTerm"),
     "Informe o limite ou o prazo para atualizar",
   );
@@ -1679,16 +1682,22 @@ export function createApp() {
 
   app.patch(
     "/api/customers/:id/credit-settings",
-    requireRole(["ADMIN", "MANAGER"]),
+    // So quem tem "Gestao financeira" (financeiro e admin) altera credito/prazo.
+    requirePermission("finance.manage"),
     async (request, response, next) => {
       try {
-        response.json(
-          await updateCustomerCreditSettings(
-            String(request.params.id),
-            customerCreditSettingsSchema.parse(request.body),
-            request.user!,
-          ),
-        );
+        const customerId = String(request.params.id);
+        const input = customerCreditSettingsSchema.parse(request.body);
+        const before = (await getCustomerCreditDetail(customerId)).row;
+        const detail = await updateCustomerCreditSettings(customerId, input, request.user!);
+        // Registra e avisa o grupo do financeiro; falha no aviso nao desfaz o salvamento.
+        const creditChange = await notifyCustomerCreditChange({
+          customerId,
+          before,
+          after: detail.row,
+          user: request.user!,
+        });
+        response.json({ ...detail, creditChange });
       } catch (error) {
         next(error);
       }
