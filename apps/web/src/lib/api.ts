@@ -173,6 +173,8 @@ export interface BillingCustomerResult {
   oldestOverdueDays: number | null;
   hasOverdue: boolean;
   missingPaymentTerm: boolean;
+  /** Venda mais recente e quem fez (VENDEDOR da aba OUT). */
+  lastSale?: { orderNumber: string; orderDate: string | null; totalAmount: number; seller: string | null } | null;
 }
 
 export interface BillingUnmatchedEntry {

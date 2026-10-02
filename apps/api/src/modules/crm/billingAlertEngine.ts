@@ -39,6 +39,15 @@ export interface BillingOrderInput {
   orderNumber: string;
   orderDate: string | null;
   totalAmount: number;
+  /** VENDEDOR da aba OUT: quem fez/liberou a venda. */
+  seller?: string | null;
+}
+
+export interface BillingLastSale {
+  orderNumber: string;
+  orderDate: string | null;
+  totalAmount: number;
+  seller: string | null;
 }
 
 export interface BillingPaymentInput {
@@ -56,6 +65,8 @@ export interface BillingPendingOrder {
   /** Positivo = dias apos o vencimento; negativo = dias que faltam. */
   daysOverdue: number | null;
   overdue: boolean;
+  /** Quem fez a venda (VENDEDOR da aba OUT). */
+  seller: string | null;
 }
 
 export interface BillingCustomerResult {
@@ -76,6 +87,8 @@ export interface BillingCustomerResult {
   oldestOverdueDays: number | null;
   hasOverdue: boolean;
   missingPaymentTerm: boolean;
+  /** Venda mais recente do cliente e quem fez (para saber quem liberou). */
+  lastSale: BillingLastSale | null;
 }
 
 export interface BillingAlertOptions {
@@ -186,6 +199,24 @@ export function classifyLimit(
   return { level: "OK", usage };
 }
 
+function cleanSeller(value: string | null | undefined) {
+  const seller = (value ?? "").trim();
+  // "Resumo" e a linha de HISTORICO consolidado, nao uma vendedora.
+  return seller && seller.toLowerCase() !== "resumo" ? seller : null;
+}
+
+/** Venda mais recente (com valor) e quem a fez. */
+export function findLastSale(orders: BillingOrderInput[]): BillingLastSale | null {
+  const sales = orders.filter((order) => order.totalAmount > 0 && order.orderDate);
+  if (!sales.length) return null;
+  const last = [...sales].sort(compareOrders).at(-1)!;
+  // Mesmo dia pode ter frete/outra nota sem vendedor: usa quem vendeu naquele dia.
+  const seller =
+    cleanSeller(last.seller) ??
+    cleanSeller([...sales].reverse().find((order) => order.orderDate === last.orderDate && cleanSeller(order.seller))?.seller);
+  return { orderNumber: last.orderNumber, orderDate: last.orderDate, totalAmount: roundMoney(last.totalAmount), seller };
+}
+
 function compareOrders(left: BillingOrderInput, right: BillingOrderInput) {
   // Pedido sem data vai para o inicio: e o mais antigo que conseguimos supor.
   const leftDate = left.orderDate ?? "";
@@ -237,6 +268,7 @@ export function allocatePaymentsFifo(
       pendingAmount,
       daysOverdue,
       overdue: daysOverdue !== null && daysOverdue > 0,
+      seller: cleanSeller(order.seller),
     });
   }
 
@@ -333,6 +365,7 @@ export function buildBillingAlertReport(
         : null,
       hasOverdue: overdueOrders.length > 0,
       missingPaymentTerm: paymentTerm === null,
+      lastSale: findLastSale(ordersByCode.get(customer.customerCode) ?? []),
     };
 
     report.customers.push(result);

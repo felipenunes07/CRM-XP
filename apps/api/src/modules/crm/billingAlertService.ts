@@ -162,7 +162,7 @@ async function loadBillingInputs(snapshotId: string) {
   const [ordersResult, paymentsResult] = await Promise.all([
     pool.query(
       `
-        SELECT customer_code, order_key, order_number, order_date::text AS order_date, total_amount
+        SELECT customer_code, order_key, order_number, order_date::text AS order_date, total_amount, seller
         FROM customer_credit_order_entries
         WHERE snapshot_id = $1 AND customer_code = ANY($2::text[])
       `,
@@ -185,6 +185,7 @@ async function loadBillingInputs(snapshotId: string) {
     orderNumber: String(row.order_number ?? ""),
     orderDate: row.order_date ? String(row.order_date) : null,
     totalAmount: Number(row.total_amount ?? 0),
+    seller: row.seller ? String(row.seller) : null,
   }));
   const payments: BillingPaymentInput[] = paymentsResult.rows.map((row) => ({
     customerCode: String(row.customer_code),

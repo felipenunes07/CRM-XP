@@ -143,6 +143,14 @@ function actionLine(customer: BillingCustomerResult) {
   return "👉 Avisar o cliente antes do próximo pedido.";
 }
 
+/** "🛒 Última venda: 25/09 por Thais (R$ 12.000)" — para saber quem liberou. */
+export function lastSaleLine(customer: BillingCustomerResult, today: string) {
+  const sale = customer.lastSale;
+  if (!sale?.orderDate) return null;
+  const who = sale.seller ? ` por ${sale.seller}` : "";
+  return `🛒 Última venda: ${formatShortDate(sale.orderDate, today)}${who} (${formatBrl(sale.totalAmount)})`;
+}
+
 export function customerCard(customer: BillingCustomerResult, today: string, headline?: string) {
   const limit = limitText(customer);
   return [
@@ -150,6 +158,7 @@ export function customerCard(customer: BillingCustomerResult, today: string, hea
     `*${customer.customerCode} · ${customer.displayName}*`,
     `Deve ${formatBrl(customer.debtAmount)}${limit ? ` · ${limit}` : ""}`,
     ...statusLines(customer, today),
+    lastSaleLine(customer, today),
     actionLine(customer),
   ]
     .filter((line): line is string => Boolean(line))
@@ -318,7 +327,13 @@ export function buildDailyReportMessages(
         [
           `⚪ *Devendo sem crédito liberado* — ${plural(sorted.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
           "_Cobrar o valor todo; próximo pedido só com pagamento._",
-          ...sorted.map((customer) => `• ${customer.customerCode} · ${customer.displayName} — ${formatBrl(customer.debtAmount)}`),
+          ...sorted.map((customer) => {
+            const sale = customer.lastSale;
+            const saleInfo = sale?.orderDate
+              ? ` · últ. venda ${formatShortDate(sale.orderDate, report.today)}${sale.seller ? ` (${sale.seller})` : ""}`
+              : "";
+            return `• ${customer.customerCode} · ${customer.displayName} — ${formatBrl(customer.debtAmount)}${saleInfo}`;
+          }),
         ].join("\n"),
       );
     }
@@ -368,7 +383,7 @@ export function buildNewAlertsMessages(
       if (has(`order:${customer.customerCode}:${order.orderKey}`)) {
         addEvent(
           customer,
-          `🛒 *Pedido novo lançado para ${who}* — pedido ${order.orderNumber || "s/ nº"}, ${formatBrl(order.totalAmount)}`,
+          `🛒 *Pedido novo lançado para ${who}* — pedido ${order.orderNumber || "s/ nº"}, ${formatBrl(order.totalAmount)}${order.seller ? `, vendido por *${order.seller}*` : ""}`,
         );
       }
     }
