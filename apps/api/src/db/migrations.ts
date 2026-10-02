@@ -4745,5 +4745,25 @@ export const migrations = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
   CREATE INDEX IF NOT EXISTS task_auto_message_log_created_idx ON task_auto_message_log (created_at DESC);
+  `,
+  `
+  -- Histórico de observações por cliente (feedback das ligações das atendentes).
+  CREATE TABLE IF NOT EXISTS customer_notes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    body TEXT NOT NULL CHECK (char_length(trim(body)) BETWEEN 1 AND 4000),
+    outcome TEXT CHECK (outcome IN ('no_answer', 'callback', 'will_buy', 'not_interested', 'other_supplier', 'wrong_contact')),
+    author_user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    author_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS customer_notes_customer_created_idx ON customer_notes (customer_id, created_at DESC);
+
+  -- A observação única que existia vira o primeiro item do histórico.
+  INSERT INTO customer_notes (customer_id, body, author_name, created_at)
+  SELECT c.id, LEFT(trim(c.internal_notes), 4000), 'Observação anterior', c.updated_at
+  FROM customers c
+  WHERE trim(c.internal_notes) <> ''
+    AND NOT EXISTS (SELECT 1 FROM customer_notes n WHERE n.customer_id = c.id);
   `
 ];

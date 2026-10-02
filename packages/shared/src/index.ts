@@ -10,6 +10,36 @@ export interface CustomerLabel {
   color: string;
 }
 
+// Resultado do contato registrado pela atendente junto da observação.
+export const CUSTOMER_NOTE_OUTCOMES = [
+  "no_answer",
+  "callback",
+  "will_buy",
+  "not_interested",
+  "other_supplier",
+  "wrong_contact",
+] as const;
+export type CustomerNoteOutcome = (typeof CUSTOMER_NOTE_OUTCOMES)[number];
+
+export const CUSTOMER_NOTE_OUTCOME_LABELS: Record<CustomerNoteOutcome, string> = {
+  no_answer: "Não respondeu",
+  callback: "Pediu retorno",
+  will_buy: "Vai comprar",
+  not_interested: "Sem interesse",
+  other_supplier: "Comprando de outro",
+  wrong_contact: "Contato errado",
+};
+
+export interface CustomerNote {
+  id: string;
+  customerId: string;
+  body: string;
+  outcome: CustomerNoteOutcome | null;
+  authorUserId: string | null;
+  authorName: string;
+  createdAt: string;
+}
+
 export type InsightTag =
   | "alto_valor"
   | "reativacao"

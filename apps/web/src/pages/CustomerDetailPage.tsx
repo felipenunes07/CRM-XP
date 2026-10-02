@@ -1,6 +1,6 @@
 import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerDetail, InsightTag } from "@olist-crm/shared";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { CustomerDetailNavigation } from "../components/CustomerDetailNavigation";
+import { CustomerNotesPanel } from "../components/CustomerNotesPanel";
 import { CustomerRecentOrders } from "../components/CustomerRecentOrders";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
@@ -286,19 +287,12 @@ interface CustomerRecordWorkspaceProps {
   labelSearch: string;
   labelMessage: string;
   canCreateLabel: boolean;
-  internalNotes: string;
-  notesMessage: string;
-  notesDirty: boolean;
   labelsSaving: boolean;
   labelsError: boolean;
-  notesSaving: boolean;
-  notesError: boolean;
   onLabelSearchChange: (value: string) => void;
   onAddExistingLabel: (labelName: string) => void;
   onCreateLabel: () => void;
   onRemoveLabel: (labelName: string) => void;
-  onNotesChange: (value: string) => void;
-  onSaveNotes: (event: FormEvent) => void;
 }
 
 export function CustomerRecordWorkspace({
@@ -307,19 +301,12 @@ export function CustomerRecordWorkspace({
   labelSearch,
   labelMessage,
   canCreateLabel,
-  internalNotes,
-  notesMessage,
-  notesDirty,
   labelsSaving,
   labelsError,
-  notesSaving,
-  notesError,
   onLabelSearchChange,
   onAddExistingLabel,
   onCreateLabel,
   onRemoveLabel,
-  onNotesChange,
-  onSaveNotes,
 }: CustomerRecordWorkspaceProps) {
   return (
     <aside className="customer-record-card" aria-label="Organização comercial do cliente">
@@ -329,8 +316,8 @@ export function CustomerRecordWorkspace({
         </div>
         <div>
           <p className="eyebrow">Organização comercial</p>
-          <h2>Rótulos e observação</h2>
-          <p>Deixe aqui o contexto que a equipe precisa encontrar rapidamente.</p>
+          <h2>Rótulos</h2>
+          <p>Classifique o cliente para a equipe encontrar e filtrar rapidamente.</p>
         </div>
       </header>
 
@@ -419,44 +406,6 @@ export function CustomerRecordWorkspace({
         </div>
       </section>
 
-      <form className="customer-record-section customer-note-form" onSubmit={onSaveNotes}>
-        <div className="customer-record-section-title">
-          <div>
-            <span className="customer-record-kicker"><NotebookPen size={15} /> Contexto da equipe</span>
-            <h3>Observação interna</h3>
-          </div>
-          {notesDirty ? <span className="customer-unsaved-badge">Não salvo</span> : null}
-        </div>
-
-        <label htmlFor="customer-internal-notes" className="sr-only">Observação interna do cliente</label>
-        <textarea
-          id="customer-internal-notes"
-          rows={7}
-          value={internalNotes}
-          onChange={(event) => onNotesChange(event.target.value)}
-          onKeyDown={(event) => {
-            if ((event.ctrlKey || event.metaKey) && event.key === "Enter" && notesDirty && !notesSaving) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder="Ex.: prefere contato à tarde, pediu retorno sobre um modelo, condição combinada ou contexto importante para a próxima conversa."
-        />
-        <div className="customer-note-footer">
-          <span className="customer-record-helper">Ctrl + Enter para salvar</span>
-          <button type="submit" className="primary-button" disabled={notesSaving || !notesDirty}>
-            {notesSaving ? <LoaderCircle className="spinner-small" size={16} /> : <Check size={16} />}
-            {notesSaving ? "Salvando..." : notesDirty ? "Salvar observação" : "Observação salva"}
-          </button>
-        </div>
-        <div className="customer-record-status" aria-live="polite">
-          {notesError ? (
-            <span className="is-error">Não foi possível salvar a observação.</span>
-          ) : notesMessage ? (
-            <><CheckCircle2 size={15} /> {notesMessage}</>
-          ) : null}
-        </div>
-      </form>
     </aside>
   );
 }
@@ -467,9 +416,7 @@ export function CustomerDetailPage() {
   const queryClient = useQueryClient();
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [labelSearch, setLabelSearch] = useState("");
-  const [internalNotes, setInternalNotes] = useState("");
   const [labelMessage, setLabelMessage] = useState("");
-  const [notesMessage, setNotesMessage] = useState("");
   const [ambassadorMessage, setAmbassadorMessage] = useState("");
   const [chartMetric, setChartMetric] = useState<ChartMetric>("revenue");
   const [trendWindow, setTrendWindow] = useState<TrendWindow>(12);
@@ -506,7 +453,6 @@ export function CustomerDetailPage() {
     }
 
     setSelectedLabels(customer.labels.map((label) => label.name));
-    setInternalNotes(customer.internalNotes);
   }, [customer]);
 
   const saveLabelsMutation = useMutation({
@@ -520,15 +466,6 @@ export function CustomerDetailPage() {
     onError: () => {
       setSelectedLabels(customer?.labels.map((label) => label.name) ?? []);
       setLabelMessage("Nao foi possivel salvar. Os rotulos anteriores foram restaurados.");
-    },
-  });
-
-  const saveNotesMutation = useMutation({
-    mutationFn: (input: { internalNotes: string }) => api.updateCustomerLabels(token!, id!, input),
-    onSuccess: (updatedCustomer) => {
-      queryClient.setQueryData(["customer", updatedCustomer.id], updatedCustomer);
-      void queryClient.invalidateQueries({ queryKey: ["customers"] });
-      setNotesMessage("Observacao salva com sucesso.");
     },
   });
 
@@ -596,13 +533,6 @@ export function CustomerDetailPage() {
     setLabelMessage("");
   }
 
-  function handleSaveNotes(event: FormEvent) {
-    event.preventDefault();
-    saveNotesMutation.mutate({
-      internalNotes,
-    });
-  }
-
   async function handleCopySummary() {
     if (!customer) {
       return;
@@ -645,7 +575,6 @@ export function CustomerDetailPage() {
       !knownLabels.some((labelName) => labelName.toLocaleLowerCase("pt-BR") === normalizedLabelSearch) &&
       !selectedLabels.some((labelName) => labelName.toLocaleLowerCase("pt-BR") === normalizedLabelSearch),
   );
-  const notesDirty = internalNotes !== customer.internalNotes;
   const locationLabel = [customer.city, customer.state].filter(Boolean).join(" / ") || "Não informado";
   const topProducts = customer.topProducts.slice(0, 5);
   const analysisMetrics = [
@@ -729,6 +658,7 @@ export function CustomerDetailPage() {
 
       <section className="customer-profile-orders-layout">
         <div className="customer-orders-main">
+          <CustomerNotesPanel customerId={customer.id} />
           <CustomerRecentOrders orders={customer.recentOrders} initialLimit={4} />
 
           <details className="customer-analysis-panel">
@@ -814,19 +744,12 @@ export function CustomerDetailPage() {
             labelSearch={labelSearch}
             labelMessage={labelMessage}
             canCreateLabel={canCreateLabel}
-            internalNotes={internalNotes}
-            notesMessage={notesMessage}
-            notesDirty={notesDirty}
             labelsSaving={saveLabelsMutation.isPending}
             labelsError={saveLabelsMutation.isError}
-            notesSaving={saveNotesMutation.isPending}
-            notesError={saveNotesMutation.isError}
             onLabelSearchChange={(value) => { setLabelSearch(value); setLabelMessage(""); }}
             onAddExistingLabel={addExistingLabel}
             onCreateLabel={addNewLabel}
             onRemoveLabel={removeLabel}
-            onNotesChange={(value) => { setInternalNotes(value); setNotesMessage(""); }}
-            onSaveNotes={handleSaveNotes}
           />
         </div>
       </section>
