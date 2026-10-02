@@ -189,6 +189,8 @@ export interface BillingAlertReport {
   overCredit: BillingCustomerResult[];
   overdue: BillingCustomerResult[];
   nearLimit: BillingCustomerResult[];
+  /** Devendo sem nenhum credito cadastrado (CREDITO e CREDITO INTERNO vazios). */
+  noCredit?: BillingCustomerResult[];
   missingPaymentTerm: BillingCustomerResult[];
   ignored: BillingCustomerResult[];
 }

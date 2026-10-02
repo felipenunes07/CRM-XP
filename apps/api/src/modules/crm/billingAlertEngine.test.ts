@@ -151,10 +151,35 @@ describe("buildBillingAlertReport", () => {
     expect([...collectAlertKeys(report)].sort()).toEqual([
       "limit:CL034:OVER_LIMIT",
       "limit:CL115:OVER_CREDIT",
+      "limit:CL300:NO_CREDIT",
       "order:CL034:CL034|2026-07-01|1",
       "order:CL115:CL115|2026-09-20|2",
+      "order:CL300:CL300|2026-03-01|5",
       "overdue:CL034:CL034|2026-07-01|1",
     ]);
+  });
+
+  it("separa quem deve qualquer valor sem ter credito nenhum, do maior para o menor", () => {
+    const report = buildBillingAlertReport(
+      [
+        customer({ customerCode: "CL801", debtAmount: 37 }),
+        customer({ customerCode: "CL800", debtAmount: 45_171 }),
+        customer({ customerCode: "CL804", debtAmount: 999 }),
+        customer({ customerCode: "CL805", debtAmount: 0.4 }),
+        customer({ customerCode: "CL802", debtAmount: 5_000, internalCreditLimit: 150_000 }),
+        customer({ customerCode: "CL803", debtAmount: 20_000, status: "GOLPE" }),
+      ],
+      [],
+      [],
+      { today: TODAY },
+    );
+    expect(report.noCredit.map((entry) => entry.customerCode)).toEqual(["CL800", "CL804", "CL801"]);
+  });
+
+  it("a opcao de devendo sem credito pode ser desligada ou ter outro corte", () => {
+    const owing = [customer({ customerCode: "CL800", debtAmount: 500 })];
+    expect(buildBillingAlertReport(owing, [], [], { today: TODAY, noCreditMinDebt: null }).noCredit).toEqual([]);
+    expect(buildBillingAlertReport(owing, [], [], { today: TODAY, noCreditMinDebt: 100 }).noCredit).toHaveLength(1);
   });
 
   it("pedido novo para cliente que ja passou do limite gera chave nova", () => {

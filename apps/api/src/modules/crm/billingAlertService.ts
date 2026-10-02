@@ -240,6 +240,7 @@ async function buildReportForSnapshot(snapshotId: string, dateKey: string) {
   return buildBillingAlertReport(customers, orders, payments, {
     today: dateKey,
     nearLimitRatio: env.BILLING_ALERT_NEAR_LIMIT_PERCENT / 100,
+    noCreditMinDebt: env.BILLING_ALERT_NO_CREDIT_ENABLED ? env.BILLING_ALERT_NO_CREDIT_MIN_DEBT : null,
     unmatchedEntries,
   });
 }

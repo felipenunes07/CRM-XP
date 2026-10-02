@@ -88,6 +88,12 @@ export interface BillingAlertOptions {
   /** Status da coluna J que ficam fora do alerta. */
   ignoredStatuses?: string[];
   /**
+   * Cliente devendo sem NENHUM credito cadastrado (nem CREDITO nem CREDITO
+   * INTERNO) entra em "devendo sem credito" a partir deste valor (padrao
+   * R$ 1: qualquer divida). null desliga.
+   */
+  noCreditMinDebt?: number | null;
+  /**
    * Lancamentos recentes (OUT/PAG) com codigo que nao existe no RESUMO. Nao
    * entram no saldo de ninguem — nem no CRM nem na planilha — entao precisam
    * ser corrigidos (ex.: OEM382 no lugar de CL382).
@@ -111,6 +117,8 @@ export interface BillingAlertReport {
   overCredit: BillingCustomerResult[];
   overdue: BillingCustomerResult[];
   nearLimit: BillingCustomerResult[];
+  /** Devendo sem nenhum credito cadastrado (acima de noCreditMinDebt). */
+  noCredit: BillingCustomerResult[];
   missingPaymentTerm: BillingCustomerResult[];
   ignored: BillingCustomerResult[];
   customers: BillingCustomerResult[];
@@ -119,6 +127,7 @@ export interface BillingAlertReport {
 export const DEFAULT_NEAR_LIMIT_RATIO = 0.8;
 export const DEFAULT_MIN_PENDING_AMOUNT = 1;
 export const DEFAULT_IGNORED_STATUSES = ["GOLPE", "DESATIVADO"];
+export const DEFAULT_NO_CREDIT_MIN_DEBT = 1;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -257,6 +266,8 @@ export function buildBillingAlertReport(
   const nearLimitRatio = options.nearLimitRatio ?? DEFAULT_NEAR_LIMIT_RATIO;
   const minPendingAmount = options.minPendingAmount ?? DEFAULT_MIN_PENDING_AMOUNT;
   const ignoredStatuses = new Set((options.ignoredStatuses ?? DEFAULT_IGNORED_STATUSES).map(normalizeStatus));
+  const noCreditMinDebt =
+    options.noCreditMinDebt === undefined ? DEFAULT_NO_CREDIT_MIN_DEBT : options.noCreditMinDebt;
 
   const ordersByCode = groupBy(orders, (order) => order.customerCode);
   const paidByCode = new Map<string, number>();
@@ -273,6 +284,7 @@ export function buildBillingAlertReport(
     overCredit: [],
     overdue: [],
     nearLimit: [],
+    noCredit: [],
     missingPaymentTerm: [],
     ignored: [],
     customers: [],
@@ -333,6 +345,9 @@ export function buildBillingAlertReport(
     if (level === "OVER_LIMIT") report.overLimit.push(result);
     else if (level === "OVER_CREDIT") report.overCredit.push(result);
     else if (level === "NEAR_LIMIT") report.nearLimit.push(result);
+    else if (level === "NO_LIMIT" && noCreditMinDebt !== null && result.debtAmount >= noCreditMinDebt) {
+      report.noCredit.push(result);
+    }
 
     if (result.hasOverdue) report.overdue.push(result);
     if (result.missingPaymentTerm) report.missingPaymentTerm.push(result);
@@ -342,6 +357,7 @@ export function buildBillingAlertReport(
   report.overLimit.sort(byDebt);
   report.overCredit.sort(byDebt);
   report.nearLimit.sort((left, right) => (right.limitUsage ?? 0) - (left.limitUsage ?? 0));
+  report.noCredit.sort(byDebt);
   report.overdue.sort(
     (left, right) => (right.oldestOverdueDays ?? 0) - (left.oldestOverdueDays ?? 0) || right.overdueAmount - left.overdueAmount,
   );
@@ -360,10 +376,11 @@ export function collectAlertKeys(report: BillingAlertReport) {
   for (const customer of report.overLimit) keys.add(`limit:${customer.customerCode}:OVER_LIMIT`);
   for (const customer of report.overCredit) keys.add(`limit:${customer.customerCode}:OVER_CREDIT`);
   for (const customer of report.nearLimit) keys.add(`limit:${customer.customerCode}:NEAR_LIMIT`);
+  for (const customer of report.noCredit) keys.add(`limit:${customer.customerCode}:NO_CREDIT`);
   // Cada pedido em aberto de quem ja passou do credito: um pedido NOVO lancado
   // para esse cliente gera chave nova e vira aviso na hora ("liberou o pedido
-  // mas a Isa so ia ver amanha").
-  for (const customer of [...report.overLimit, ...report.overCredit]) {
+  // mas a Isa so ia ver amanha"). Vale tambem para quem deve sem ter credito.
+  for (const customer of [...report.overLimit, ...report.overCredit, ...report.noCredit]) {
     for (const order of customer.pendingOrders) keys.add(`order:${customer.customerCode}:${order.orderKey}`);
   }
   for (const customer of report.overdue) {
