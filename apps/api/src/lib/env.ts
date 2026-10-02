@@ -275,8 +275,8 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  // Grupo "XP - CRM Financeiro" (a Lili Assistente esta nele).
-  BILLING_ALERT_GROUP_JID: z.string().default("120363410602450990@g.us"),
+  // Grupo dos alertas de COBRANCA (passou do prazo / do credito). Vazio = nao envia.
+  BILLING_ALERT_GROUP_JID: z.string().default(""),
   BILLING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   BILLING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
   // Quem envia: id da whatsapp_instances OU nome da instancia. "Lili" = Lili
@@ -300,12 +300,12 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   BILLING_ALERT_NO_CREDIT_MIN_DEBT: z.coerce.number().min(0).default(1),
   // Aviso no grupo do financeiro quando alguem altera credito, credito interno
-  // ou prazo de um cliente pelo CRM. Grupo vazio = usa BILLING_ALERT_GROUP_JID.
+  // ou prazo de um cliente pelo CRM. Padrao: grupo "XP - CRM Financeiro".
   CREDIT_CHANGE_ALERT_ENABLED: z
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
-  CREDIT_CHANGE_ALERT_GROUP_JID: z.string().default(""),
+  CREDIT_CHANGE_ALERT_GROUP_JID: z.string().default("120363410602450990@g.us"),
   // Automacao de carteira ("regua de relacionamento"): manda o template do estagio
   // direto pro cliente quando ele cruza Atencao 1/2, Inativo, Inativo +30. Comeca
   // DESLIGADA. Mesmo ligada, LIFECYCLE_SIMULATION_ONLY=true so registra o que

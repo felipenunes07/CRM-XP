@@ -86,7 +86,7 @@ Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado
 
 ```env
 BILLING_ALERT_ENABLED=true
-BILLING_ALERT_GROUP_JID=120363410602450990@g.us   # "XP - CRM Financeiro" (ja e o padrao)
+BILLING_ALERT_GROUP_JID=                 # grupo dos alertas de cobranca (prazo/credito) — preencher
 BILLING_ALERT_HOUR=9
 BILLING_ALERT_NEAR_LIMIT_PERCENT=80
 BILLING_ALERT_INSTANT_ENABLED=true
@@ -96,7 +96,7 @@ BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=
 BILLING_ALERT_NO_CREDIT_ENABLED=true     # cobrar quem deve e nao tem credito (CREDITO e CREDITO INTERNO vazios)
 BILLING_ALERT_NO_CREDIT_MIN_DEBT=1       # a partir de quanto (padrao: qualquer valor)
 CREDIT_CHANGE_ALERT_ENABLED=true         # avisa o grupo quando alguem altera credito/credito interno/prazo no CRM
-CREDIT_CHANGE_ALERT_GROUP_JID=           # vazio = mesmo grupo de BILLING_ALERT_GROUP_JID
+CREDIT_CHANGE_ALERT_GROUP_JID=120363410602450990@g.us  # "XP - CRM Financeiro" (padrao)
 ```
 
 As mensagens saem por vendedora: cada uma e marcada (@) com os clientes dela. A vendedora do cliente e o VENDEDOR do pedido mais recente na aba OUT (ou a ultima atendente do CRM); o numero marcado e o da instancia de WhatsApp dela no CRM, ou o de `BILLING_ALERT_SELLER_PHONES`. Esse numero precisa estar no grupo do financeiro.
