@@ -39,7 +39,8 @@ export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
-  { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
+  // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)
+  // { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
   { to: "/clientes", icon: Users, labelPt: "Clientes" },
@@ -90,7 +91,8 @@ const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
-  { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
+  // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)
+  // { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
   { to: "/atendentes", icon: TrendingUp, labelPt: "Atendentes" },
   {
