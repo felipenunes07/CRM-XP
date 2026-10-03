@@ -606,3 +606,10 @@ button.growth-kpi.is-active {
 .growth-focus-flat .growth-streak-card:hover {
   border-color: rgba(100, 116, 139, 0.45);
 }
+
+.growth-product-sub {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}

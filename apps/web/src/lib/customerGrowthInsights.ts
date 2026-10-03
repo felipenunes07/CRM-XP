@@ -23,6 +23,9 @@ export interface ProductInsight {
   metric: CustomerGrowthMetric;
   monthlyTotals: number[];
   summary: GrowthSummary;
+  // Clientes distintos que compraram o produto em cada mes (mesma conta do relatorio executivo).
+  monthlyBuyers: number[];
+  // Media de clientes por mes na metade anterior e na metade recente (a partir do primeiro mes com venda).
   previousBuyers: number;
   recentBuyers: number;
   growingCount: number;
@@ -87,8 +90,11 @@ export function computeGrowthInsights(data: CustomerGrowthResponse): GrowthInsig
 
   const products = INSIGHT_PRODUCTS.map<ProductInsight>((metric) => {
     const monthlyTotals = data.months.map((_, index) => sum(customers.map((customer) => customer.series[metric][index] ?? 0)));
-    const buyersIn = (from: number, to: number) =>
-      customers.filter((customer) => customer.series[metric].slice(from, to).some((value) => value > 0)).length;
+    const monthlyBuyers = data.months.map(
+      (_, index) => customers.filter((customer) => (customer.series[metric][index] ?? 0) > 0).length,
+    );
+    // Mesma divisao da media de pecas: comeca no primeiro mes com venda do produto.
+    const buyersSummary = summarizeGrowth(monthlyBuyers);
 
     const perCustomer = customers
       .filter((customer) => customer.series[metric].some((value) => value > 0))
@@ -102,8 +108,9 @@ export function computeGrowthInsights(data: CustomerGrowthResponse): GrowthInsig
       metric,
       monthlyTotals,
       summary: summarizeGrowth(monthlyTotals),
-      previousBuyers: buyersIn(0, monthCount - half),
-      recentBuyers: buyersIn(monthCount - half, monthCount),
+      monthlyBuyers,
+      previousBuyers: Math.round(buyersSummary.previousAvg),
+      recentBuyers: Math.round(buyersSummary.recentAvg),
       growingCount: growing.length,
       fallingCount: falling.length,
       topGrower: best
