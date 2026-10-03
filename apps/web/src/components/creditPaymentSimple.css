@@ -1,0 +1,280 @@
+/* Aba Credito & Pagamento simplificada (dentro de .bankfin). */
+
+.credit-simple {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.credit-simple-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.82rem;
+}
+
+.credit-simple-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.credit-simple-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--bf-line, #e4e8f0);
+  border-radius: var(--bf-radius, 10px);
+  background: var(--bf-surface, #fff);
+  color: var(--bf-navy, #0b2447);
+  text-align: left;
+  cursor: pointer;
+}
+
+.credit-simple-card span {
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.credit-simple-card strong {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.credit-simple-card small {
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.78rem;
+}
+
+.credit-simple-card.danger strong {
+  color: var(--bf-danger, #c53a35);
+}
+
+.credit-simple-card.warning strong,
+.credit-simple-card.attention strong {
+  color: var(--bf-warning, #b57d14);
+}
+
+.credit-simple-card:hover {
+  border-color: var(--bf-line-strong, #d3d9e6);
+}
+
+.credit-simple-card.active {
+  border-color: var(--bf-navy, #0b2447);
+  box-shadow: inset 0 0 0 1px var(--bf-navy, #0b2447);
+}
+
+.credit-simple-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credit-simple-search {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--bf-line-strong, #d3d9e6);
+  border-radius: 8px;
+  background: var(--bf-surface, #fff);
+  color: var(--bf-muted, #6b7688);
+}
+
+.credit-simple-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--bf-navy, #0b2447);
+  font-size: 0.88rem;
+}
+
+.credit-simple-toolbar select {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--bf-line-strong, #d3d9e6);
+  border-radius: 8px;
+  background: var(--bf-surface, #fff);
+  color: var(--bf-navy, #0b2447);
+  font-size: 0.85rem;
+}
+
+.credit-simple-tablewrap {
+  overflow-x: auto;
+  border: 1px solid var(--bf-line, #e4e8f0);
+  border-radius: var(--bf-radius, 10px);
+  background: var(--bf-surface, #fff);
+}
+
+.credit-simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.credit-simple-table th {
+  padding: 0.6rem 0.7rem;
+  background: var(--bf-surface-soft, #f6f8fb);
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.credit-simple-table td {
+  padding: 0.6rem 0.7rem;
+  border-top: 1px solid var(--bf-line, #e4e8f0);
+  vertical-align: middle;
+}
+
+.credit-simple-table .is-right {
+  text-align: right;
+}
+
+.credit-simple-table .is-money {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.credit-simple-table .is-money small {
+  display: block;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.74rem;
+}
+
+.credit-simple-table .is-check {
+  width: 2rem;
+}
+
+.credit-simple-table .is-credit,
+.credit-simple-table .is-sale {
+  white-space: nowrap;
+}
+
+.credit-simple-table .is-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.credit-simple-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.credit-simple-badge {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.credit-simple-badge.danger {
+  background: var(--bf-danger-soft, rgba(197, 58, 53, 0.08));
+  color: var(--bf-danger, #c53a35);
+}
+
+.credit-simple-badge.warning,
+.credit-simple-badge.attention {
+  background: var(--bf-warning-soft, rgba(181, 125, 20, 0.1));
+  color: var(--bf-warning, #b57d14);
+}
+
+.credit-simple-badge.success {
+  background: var(--bf-success-soft, rgba(31, 122, 77, 0.08));
+  color: var(--bf-success, #1f7a4d);
+}
+
+.credit-simple-badge.muted {
+  background: var(--bf-surface-soft, #f6f8fb);
+  color: var(--bf-muted, #6b7688);
+}
+
+.credit-simple-seller {
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bf-accent-soft, rgba(41, 86, 215, 0.08));
+  color: var(--bf-accent, #2956d7);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.credit-simple-empty {
+  padding: 1.2rem;
+  color: var(--bf-muted, #6b7688);
+  text-align: center;
+}
+
+.credit-simple-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--bf-muted, #6b7688);
+  font-size: 0.82rem;
+}
+
+.credit-simple-pages {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.credit-simple-pages button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--bf-line-strong, #d3d9e6);
+  border-radius: 8px;
+  background: var(--bf-surface, #fff);
+  cursor: pointer;
+}
+
+.credit-simple-pages button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (max-width: 1100px) {
+  .credit-simple-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .credit-simple-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* O CSS global deixa todo input/select com 100% de largura e padding grande. */
+.credit-simple-toolbar select {
+  flex: 0 0 auto;
+  width: auto;
+  border-radius: 8px;
+}
+
+.credit-simple-search input {
+  width: auto;
+  border-radius: 0;
+}
+
+.credit-simple-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}

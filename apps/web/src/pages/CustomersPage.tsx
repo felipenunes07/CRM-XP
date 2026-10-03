@@ -1,16 +1,15 @@
 import type { CustomerCreditRow, CustomerDefectRow, CustomerDefectSnapshotMeta, CustomerListItem, CustomerNote } from "@olist-crm/shared";
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Download, Repeat, Search, Send, SlidersHorizontal, Users, X } from "lucide-react";
+import { Copy, Download, Repeat, Send, Users, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { exportCustomerFinancialWorkbook } from "../lib/customerFinancialExport";
 import { formatCurrency, formatDate, formatDateTime, formatNumber, formatPrecisePercent } from "../lib/format";
-import { getCustomerCreditDeadline, isOverdueCreditRow, creditNeedsCharge } from "../lib/customerCredit";
 import { CustomerDocInsightsTable } from "../components/CustomerDocInsightsTable";
-import { CustomerCreditTable } from "../components/CustomerCreditTable";
-import { CustomerCreditExecutiveSummary } from "../components/CustomerCreditExecutiveSummary";
+import { CreditPaymentSimpleView } from "../components/CreditPaymentSimpleView";
+import { EditCustomerCreditModal } from "../components/EditCustomerCreditModal";
 import { CustomerDefectsTable } from "../components/CustomerDefectsTable";
 import { CustomerDefectProductsPanel } from "../components/CustomerDefectProductsPanel";
 import { CustomerNotesDrawer } from "../components/CustomerNotesDrawer";
@@ -19,10 +18,6 @@ import { StatCard } from "../components/StatCard";
 import { GeographicView } from "../components/GeographicView";
 import {
   buildCustomersQueryParams,
-  type CreditKpiFilter,
-  type CreditQuickFilter,
-  type CreditSortBy,
-  type CustomerCreditFilters,
   type CustomerDefectFilters,
   type CustomerDefectSortKey,
   type CustomerPortfolioSortBy,
@@ -63,7 +58,6 @@ const viewTabs = [
   },
 ];
 
-const CREDIT_PAGE_SIZE = 50;
 
 function getDefectSnapshotTitle(snapshot: CustomerDefectSnapshotMeta | null | undefined) {
   const sourceCount = snapshot?.sourceFiles?.length ?? 0;
@@ -81,119 +75,6 @@ function getDefectSnapshotFilesLabel(snapshot: CustomerDefectSnapshotMeta | null
   }
 
   return files.map((sourceFile) => sourceFile.fileName.replace(/\.xlsx$/i, "")).join(" | ");
-}
-
-function applyCreditFilters(rows: CustomerCreditRow[], filters: CustomerCreditFilters) {
-  const search = filters.search.trim().toLowerCase();
-
-  return rows.filter((row) => {
-    if (search) {
-      const haystack = [
-        row.customerDisplayName,
-        row.sourceDisplayName,
-        row.customerCode,
-        row.observation,
-        row.flags.join(" "),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      if (!haystack.includes(search)) {
-        return false;
-      }
-    }
-
-    if (filters.riskLevel && row.riskLevel !== filters.riskLevel) {
-      return false;
-    }
-
-    if (filters.operationalState && row.operationalState !== filters.operationalState) {
-      return false;
-    }
-
-    if (filters.onlyWithCredit === "true" && row.creditLimit <= 0) {
-      return false;
-    }
-
-    if (filters.onlyUnusedCredit === "true" && row.operationalState !== "UNUSED_CREDIT") {
-      return false;
-    }
-
-    if (filters.onlyOverdue === "true" && !isOverdueCreditRow(row)) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function applyCreditKpiFilter(rows: CustomerCreditRow[], kpiFilter: CreditKpiFilter) {
-  if (!kpiFilter) return rows;
-
-  return rows.filter((row) => {
-    switch (kpiFilter) {
-      case "owing":
-        return row.debtAmount > 0;
-      case "credit_balance":
-        return row.creditBalanceAmount > 0;
-      case "unused_credit":
-        return row.operationalState === "UNUSED_CREDIT";
-      case "over_credit":
-        return row.hasOverCredit;
-      default:
-        return true;
-    }
-  });
-}
-
-function matchesCreditQuickFilter(row: CustomerCreditRow, quick: CreditQuickFilter) {
-  switch (quick) {
-    case "to_charge":
-      return creditNeedsCharge(row);
-    case "overdue":
-      return isOverdueCreditRow(row);
-    case "due_soon":
-      return getCustomerCreditDeadline(row).status === "due_soon";
-    case "opportunity":
-      return row.operationalState === "UNUSED_CREDIT";
-    case "ontrack":
-      return !row.hasOverCredit && !isOverdueCreditRow(row);
-    default:
-      return true;
-  }
-}
-
-function applyCreditQuickFilter(rows: CustomerCreditRow[], quick: CreditQuickFilter) {
-  if (!quick) return rows;
-  return rows.filter((row) => matchesCreditQuickFilter(row, quick));
-}
-
-function creditUrgencyScore(row: CustomerCreditRow) {
-  if (row.hasOverCredit) return 4;
-  if (isOverdueCreditRow(row)) return 3;
-  if (row.debtAmount > 0) return 2;
-  if (row.operationalState === "UNUSED_CREDIT") return 1;
-  return 0;
-}
-
-function sortCreditRows(rows: CustomerCreditRow[], sortBy: CreditSortBy) {
-  const copy = [...rows];
-  switch (sortBy) {
-    case "debt_desc":
-      return copy.sort((a, b) => b.debtAmount - a.debtAmount);
-    case "available_desc":
-      return copy.sort((a, b) => (b.availableCreditAmount ?? 0) - (a.availableCreditAmount ?? 0));
-    case "name":
-      return copy.sort((a, b) => a.customerDisplayName.localeCompare(b.customerDisplayName, "pt-BR"));
-    case "urgency":
-    default:
-      return copy.sort((a, b) => {
-        const diff = creditUrgencyScore(b) - creditUrgencyScore(a);
-        if (diff !== 0) return diff;
-        return b.debtAmount - a.debtAmount;
-      });
-  }
 }
 
 function applyDefectFilters(
@@ -355,8 +236,6 @@ export function CustomersPage() {
   const [defectDetailSort, setDefectDetailSort] = useState<"most_exchanged" | "recent">("most_exchanged");
   const [defectAnalysisTab, setDefectAnalysisTab] = useState<"customers" | "products">("customers");
   const [selectedDefectProductYear, setSelectedDefectProductYear] = useState<number | null>(null);
-  const [creditPage, setCreditPage] = useState(1);
-  const [showUnmatchedCredit, setShowUnmatchedCredit] = useState(false);
   const [notesCustomer, setNotesCustomer] = useState<CustomerListItem | null>(null);
   const customerQueryParams = buildCustomersQueryParams(state.portfolioFilters);
   const activeTab = viewTabs.find((tab) => tab.value === state.activeView) ?? viewTabs[0]!;
@@ -514,6 +393,13 @@ export function CustomersPage() {
     enabled: Boolean(token && state.activeView === "creditPayment"),
   });
 
+  // Mesmo calculo da cobranca do grupo: vencido por pedido, sem credito, limite.
+  const billingReportQuery = useQuery({
+    queryKey: ["customer-billing-alerts"],
+    queryFn: () => api.customerBillingAlerts(token!),
+    enabled: Boolean(token && state.activeView === "creditPayment"),
+  });
+
   const defectOverviewQuery = useQuery({
     queryKey: ["customer-defect-overview"],
     queryFn: () => api.customerDefectOverview(token!),
@@ -576,16 +462,19 @@ export function CustomersPage() {
 
   const navigate = useNavigate();
   const [selectedCreditCodes, setSelectedCreditCodes] = useState<Set<string>>(() => new Set());
-  const [showCreditFilters, setShowCreditFilters] = useState(false);
+  const canEditCredit = user?.role === "ADMIN" || Boolean(user?.permissions?.includes("finance.manage"));
+  const [editingCreditRow, setEditingCreditRow] = useState<CustomerCreditRow | null>(null);
+  const setCreditSelection = (codes: string[], selected: boolean) => {
+    setSelectedCreditCodes((current) => {
+      const next = new Set(current);
+      for (const code of codes) {
+        if (selected) next.add(code);
+        else next.delete(code);
+      }
+      return next;
+    });
+  };
   const [audienceModal, setAudienceModal] = useState<{ destination: "dispatch" | "automation"; name: string } | null>(null);
-
-  const activeAdvancedCreditFilters = [
-    state.creditFilters.riskLevel,
-    state.creditFilters.operationalState,
-    state.creditFilters.onlyWithCredit,
-    state.creditFilters.onlyUnusedCredit,
-    state.creditFilters.onlyOverdue,
-  ].filter((value) => value !== "").length;
 
   const toggleCreditCode = (code: string) => {
     setSelectedCreditCodes((current) => {
@@ -604,14 +493,6 @@ export function CustomersPage() {
       api.createSavedSegment(token!, { name: input.name, definition: { customerCodes: input.codes } }),
   });
 
-  const filteredLinkedCreditRows = useMemo(
-    () => applyCreditFilters(creditOverviewQuery.data?.linkedRows ?? [], state.creditFilters),
-    [creditOverviewQuery.data?.linkedRows, state.creditFilters],
-  );
-  const filteredUnmatchedCreditRows = useMemo(
-    () => applyCreditFilters(creditOverviewQuery.data?.unmatchedRows ?? [], state.creditFilters),
-    [creditOverviewQuery.data?.unmatchedRows, state.creditFilters],
-  );
 
   const availableDefectYears = useMemo(
     () => getDefectAvailableYears([...(defectOverviewQuery.data?.rows ?? []), ...(defectOverviewQuery.data?.unmatchedRows ?? [])]),
@@ -690,37 +571,16 @@ export function CustomersPage() {
     setSelectedDefectCode(customerCode);
   };
 
-  const kpiFilteredRows = useMemo(
-    () => applyCreditKpiFilter(filteredLinkedCreditRows, state.creditKpiFilter),
-    [filteredLinkedCreditRows, state.creditKpiFilter],
-  );
-
-  // Linhas finais exibidas: KPI + atalho de triagem + ordenacao
-  const displayedCreditRows = useMemo(
-    () => sortCreditRows(applyCreditQuickFilter(kpiFilteredRows, state.creditQuickFilter), state.creditSort),
-    [kpiFilteredRows, state.creditQuickFilter, state.creditSort],
-  );
-  const totalCreditPages = Math.max(1, Math.ceil(displayedCreditRows.length / CREDIT_PAGE_SIZE));
-  const currentCreditPage = Math.min(creditPage, totalCreditPages);
-  const visibleCreditRows = useMemo(
-    () =>
-      displayedCreditRows.slice(
-        (currentCreditPage - 1) * CREDIT_PAGE_SIZE,
-        currentCreditPage * CREDIT_PAGE_SIZE,
-      ),
-    [currentCreditPage, displayedCreditRows],
-  );
-
-  const downloadCreditExcel = async () => {
-    if (downloadingCreditExcel || !displayedCreditRows.length) return;
+  const downloadCreditExcel = async (rows: CustomerCreditRow[]) => {
+    if (downloadingCreditExcel || !rows.length) return;
 
     setDownloadingCreditExcel(true);
     setCreditExportError(false);
     try {
       await exportCustomerFinancialWorkbook({
-        rows: displayedCreditRows,
+        rows,
         snapshot: creditOverviewQuery.data?.snapshot ?? null,
-        search: state.creditFilters.search,
+        search: "",
       });
     } catch (error) {
       console.error("Falha ao exportar Credito & Pagamento para Excel:", error);
@@ -730,92 +590,15 @@ export function CustomersPage() {
     }
   };
 
-  useEffect(() => {
-    setCreditPage(1);
-  }, [state.creditFilters, state.creditKpiFilter, state.creditQuickFilter, state.creditSort]);
-
-  // Contagens dos atalhos de triagem (sobre a base filtrada por busca/avancados)
-  const quickFilterCounts = useMemo(
-    () => ({
-      to_charge: filteredLinkedCreditRows.filter((row) => creditNeedsCharge(row)).length,
-      overdue: filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
-      due_soon: filteredLinkedCreditRows.filter((row) => getCustomerCreditDeadline(row).status === "due_soon").length,
-      opportunity: filteredLinkedCreditRows.filter((row) => row.operationalState === "UNUSED_CREDIT").length,
-      ontrack: filteredLinkedCreditRows.filter((row) => !row.hasOverCredit && !isOverdueCreditRow(row)).length,
-    }),
-    [filteredLinkedCreditRows],
-  );
-
-  const filteredDebtAmount = useMemo(
-    () => filteredLinkedCreditRows.reduce((sum, row) => sum + row.debtAmount, 0),
-    [filteredLinkedCreditRows],
-  );
-  const filteredDebtCount = useMemo(
-    () => filteredLinkedCreditRows.filter((row) => row.debtAmount > 0).length,
-    [filteredLinkedCreditRows],
-  );
-
-  const filteredOverdueDebtAmount = useMemo(
-    () =>
-      filteredLinkedCreditRows
-        .filter((row) => isOverdueCreditRow(row))
-        .reduce((sum, row) => sum + row.debtAmount, 0),
-    [filteredLinkedCreditRows],
-  );
-
-  const filteredAvailableCreditAmount = useMemo(
-    () =>
-      filteredLinkedCreditRows
-        .filter((row) => row.operationalState === "UNUSED_CREDIT")
-        .reduce((sum, row) => sum + Math.max(0, row.availableCreditAmount ?? 0), 0),
-    [filteredLinkedCreditRows],
-  );
-  const filteredUnusedCreditCount = useMemo(
-    () => filteredLinkedCreditRows.filter((row) => row.operationalState === "UNUSED_CREDIT").length,
-    [filteredLinkedCreditRows],
-  );
-
-  const filteredTotalExcessAmount = useMemo(
-    () => filteredLinkedCreditRows.reduce((sum, row) => sum + Math.max(0, -(row.availableCreditAmount ?? 0)), 0),
-    [filteredLinkedCreditRows],
-  );
-  const filteredOverCreditCount = useMemo(
-    () => filteredLinkedCreditRows.filter((row) => row.operationalState === "OVER_CREDIT" || row.hasOverCredit).length,
-    [filteredLinkedCreditRows],
-  );
-  const filteredOverdueCount = useMemo(
-    () => filteredLinkedCreditRows.filter((row) => isOverdueCreditRow(row)).length,
-    [filteredLinkedCreditRows],
-  );
-
   // ── Selecao para montar publico de cobranca ──
   const selectedCreditRows = useMemo(
-    () => displayedCreditRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
-    [displayedCreditRows, selectedCreditCodes],
-  );
-  const selectedVisibleCreditRows = useMemo(
-    () => visibleCreditRows.filter((row) => selectedCreditCodes.has(row.customerCode)),
-    [selectedCreditCodes, visibleCreditRows],
+    () => (creditOverviewQuery.data?.linkedRows ?? []).filter((row) => selectedCreditCodes.has(row.customerCode)),
+    [creditOverviewQuery.data?.linkedRows, selectedCreditCodes],
   );
   const selectedCreditDebt = useMemo(
     () => selectedCreditRows.reduce((sum, row) => sum + Math.max(0, row.debtAmount), 0),
     [selectedCreditRows],
   );
-
-  const toggleAllVisibleCredit = (checked: boolean) => {
-    setSelectedCreditCodes((current) => {
-      const next = new Set(current);
-      for (const row of visibleCreditRows) {
-        if (!row.customerId) continue;
-        if (checked) {
-          next.add(row.customerCode);
-        } else {
-          next.delete(row.customerCode);
-        }
-      }
-      return next;
-    });
-  };
 
   const handleCopyCreditCodes = async () => {
     const codes = selectedCreditRows.map((row) => row.customerCode).join(", ");
@@ -993,110 +776,7 @@ export function CustomersPage() {
           <p className="panel-subcopy">
             Mapa com leitura espacial da carteira, ranking por cidade e filtros de estado para aproximar a experiencia do Power BI.
           </p>
-        ) : (
-          <div className="bankfin credit-filter-wrap">
-            <div className="credit-filter-bar">
-              <div className="credit-search-field">
-                <Search size={17} className="credit-search-icon" />
-                <input
-                  value={state.creditFilters.search}
-                  onChange={(event) =>
-                    dispatch({ type: "updateCreditFilter", key: "search", value: event.target.value })
-                  }
-                  placeholder="Buscar por nome, codigo ou observacao..."
-                />
-              </div>
-
-              <button
-                type="button"
-                className={`ghost-button credit-filter-toggle ${showCreditFilters ? "active" : ""}`}
-                onClick={() => setShowCreditFilters((value) => !value)}
-              >
-                <SlidersHorizontal size={16} />
-                Filtros
-                {activeAdvancedCreditFilters > 0 ? (
-                  <span className="credit-filter-count">{activeAdvancedCreditFilters}</span>
-                ) : null}
-              </button>
-            </div>
-
-            {showCreditFilters ? (
-              <div className="filters-grid credit-advanced-filters">
-                <label>
-                  Grau de risco
-                  <select
-                    value={state.creditFilters.riskLevel}
-                    onChange={(event) =>
-                      dispatch({ type: "updateCreditFilter", key: "riskLevel", value: event.target.value })
-                    }
-                  >
-                    <option value="">Todos</option>
-                    <option value="CRITICO">Critico</option>
-                    <option value="ATENCAO">Atencao</option>
-                    <option value="MONITORAR">Monitorar</option>
-                    <option value="OK">OK</option>
-                  </select>
-                </label>
-
-                <label>
-                  Situacao
-                  <select
-                    value={state.creditFilters.operationalState}
-                    onChange={(event) =>
-                      dispatch({ type: "updateCreditFilter", key: "operationalState", value: event.target.value })
-                    }
-                  >
-                    <option value="">Todas</option>
-                    <option value="OWES">Devendo</option>
-                    <option value="OVER_CREDIT">Ultrapassou credito</option>
-                    <option value="UNUSED_CREDIT">Credito sem uso</option>
-                    <option value="HAS_CREDIT_BALANCE">Saldo a favor</option>
-                    <option value="SETTLED">Quitado</option>
-                  </select>
-                </label>
-
-                <label>
-                  Com credito
-                  <select
-                    value={state.creditFilters.onlyWithCredit}
-                    onChange={(event) =>
-                      dispatch({ type: "updateCreditFilter", key: "onlyWithCredit", value: event.target.value })
-                    }
-                  >
-                    <option value="">Todos</option>
-                    <option value="true">So com credito</option>
-                  </select>
-                </label>
-
-                <label>
-                  Credito sem uso
-                  <select
-                    value={state.creditFilters.onlyUnusedCredit}
-                    onChange={(event) =>
-                      dispatch({ type: "updateCreditFilter", key: "onlyUnusedCredit", value: event.target.value })
-                    }
-                  >
-                    <option value="">Todos</option>
-                    <option value="true">So oportunidades</option>
-                  </select>
-                </label>
-
-                <label>
-                  Somente vencidos
-                  <select
-                    value={state.creditFilters.onlyOverdue}
-                    onChange={(event) =>
-                      dispatch({ type: "updateCreditFilter", key: "onlyOverdue", value: event.target.value })
-                    }
-                  >
-                    <option value="">Todos</option>
-                    <option value="true">So vencidos</option>
-                  </select>
-                </label>
-              </div>
-            ) : null}
-          </div>
-        )}
+        ) : null}
       </section>
 
       {state.activeView === "portfolio" ? (
@@ -1508,189 +1188,66 @@ export function CustomersPage() {
           ) : null}
           {creditOverviewQuery.isError ? <div className="page-error">Falha ao carregar o snapshot financeiro.</div> : null}
           {creditOverviewQuery.data ? (
-            <>
-              <CustomerCreditExecutiveSummary
-                rows={filteredLinkedCreditRows}
-                snapshot={creditOverviewQuery.data.snapshot}
-                linkedCount={creditOverviewQuery.data.summary.totalLinkedCustomers}
-                unmatchedCount={creditOverviewQuery.data.summary.totalUnmatchedRows}
-                quickFilter={state.creditQuickFilter}
-                kpiFilter={state.creditKpiFilter}
-                sort={state.creditSort}
-                quickCounts={quickFilterCounts}
-                debtAmount={filteredDebtAmount}
-                debtCount={filteredDebtCount}
-                overdueDebtAmount={filteredOverdueDebtAmount}
-                overdueCount={filteredOverdueCount}
-                availableCreditAmount={filteredAvailableCreditAmount}
-                unusedCreditCount={filteredUnusedCreditCount}
-                excessAmount={filteredTotalExcessAmount}
-                overCreditCount={filteredOverCreditCount}
-                hasActiveFilters={Boolean(
-                  state.creditKpiFilter ||
-                    state.creditQuickFilter ||
-                    Object.values(state.creditFilters).some((value) => value !== ""),
-                )}
-                canRefresh={canRefreshCredit}
-                isRefreshing={refreshCreditMutation.isPending}
-                refreshError={refreshCreditMutation.isError}
-                // Card e atalho recortam a mesma carteira: manter os dois ligados
-                // ao mesmo tempo produzia listas vazias sem explicação.
-                onQuickFilter={(value) => {
-                  dispatch({ type: "setCreditKpiFilter", value: "" });
-                  dispatch({ type: "setCreditQuickFilter", value });
-                }}
-                onKpiFilter={(value) => {
-                  dispatch({ type: "setCreditQuickFilter", value: "" });
-                  dispatch({ type: "setCreditKpiFilter", value });
-                }}
-                onSort={(value) => dispatch({ type: "setCreditSort", value })}
-                onClearFilters={() => dispatch({ type: "clearCreditFilters" })}
-                onRefresh={() => refreshCreditMutation.mutate()}
-              />
-
-              <div className="bankfin-listhead">
-                <h3>Clientes para acompanhar</h3>
-                <div className="bankfin-listhead-actions">
-                  <p>
-                    {formatNumber(displayedCreditRows.length ? (currentCreditPage - 1) * CREDIT_PAGE_SIZE + 1 : 0)}
-                    {"–"}
-                    {formatNumber(Math.min(currentCreditPage * CREDIT_PAGE_SIZE, displayedCreditRows.length))} de{" "}
-                    {formatNumber(displayedCreditRows.length)}
-                    {displayedCreditRows.length > 0 ? (
-                      <>
-                        {" · "}
-                        <button
-                          type="button"
-                          className="bankfin-linkbtn"
-                          onClick={() =>
-                            toggleAllVisibleCredit(selectedVisibleCreditRows.length !== visibleCreditRows.length)
-                          }
-                        >
-                          {selectedVisibleCreditRows.length === visibleCreditRows.length
-                            ? "desmarcar página"
-                            : "selecionar página"}
-                        </button>
-                      </>
-                    ) : null}
-                  </p>
-                  <button
-                    type="button"
-                    className="primary-button small"
-                    onClick={() => void downloadCreditExcel()}
-                    disabled={downloadingCreditExcel || !displayedCreditRows.length}
-                    title={`Exportar ${formatNumber(displayedCreditRows.length)} cliente(s) do filtro atual`}
-                  >
-                    <Download size={15} />
-                    {downloadingCreditExcel ? "Gerando Excel..." : "Baixar Excel"}
-                  </button>
-                </div>
-              </div>
-
-              {creditExportError ? (
-                <div className="inline-error">Nao foi possivel gerar o Excel. Tente novamente.</div>
-              ) : null}
-
-              {/* Barra de acao do publico de cobranca */}
-              {selectedCreditRows.length > 0 ? (
-                <div className="credit-audience-bar">
-                  <div className="credit-audience-info">
-                    <Users size={18} />
-                    <div>
-                      <strong>{formatNumber(selectedCreditRows.length)} clientes selecionados</strong>
-                      <span>{formatCurrency(selectedCreditDebt)} em aberto neste grupo</span>
+            <CreditPaymentSimpleView
+              rows={creditOverviewQuery.data.linkedRows}
+              report={billingReportQuery.data?.report ?? null}
+              isReportLoading={billingReportQuery.isLoading}
+              snapshot={creditOverviewQuery.data.snapshot}
+              selectedCodes={selectedCreditCodes}
+              onToggleRow={toggleCreditCode}
+              onSetSelection={setCreditSelection}
+              onExport={(rows) => void downloadCreditExcel(rows)}
+              isExporting={downloadingCreditExcel}
+              exportError={creditExportError}
+              onEditCredit={canEditCredit ? setEditingCreditRow : undefined}
+              canRefresh={canRefreshCredit}
+              isRefreshing={refreshCreditMutation.isPending}
+              onRefresh={() => refreshCreditMutation.mutate()}
+              selectionBar={
+                selectedCreditRows.length > 0 ? (
+                  <div className="credit-audience-bar">
+                    <div className="credit-audience-info">
+                      <Users size={18} />
+                      <div>
+                        <strong>{formatNumber(selectedCreditRows.length)} clientes selecionados</strong>
+                        <span>{formatCurrency(selectedCreditDebt)} em aberto neste grupo</span>
+                      </div>
+                    </div>
+                    <div className="credit-audience-actions">
+                      <button type="button" className="ghost-button small" onClick={handleCopyCreditCodes}>
+                        <Copy size={15} /> Copiar codigos
+                      </button>
+                      <button type="button" className="ghost-button small" onClick={() => setSelectedCreditCodes(new Set())}>
+                        Limpar selecao
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button small"
+                        onClick={() => openAudienceModal("automation")}
+                        disabled={createAudienceMutation.isPending}
+                      >
+                        <Repeat size={15} /> Cobranca automatica
+                      </button>
+                      <button
+                        type="button"
+                        className="primary-button small"
+                        onClick={() => openAudienceModal("dispatch")}
+                        disabled={createAudienceMutation.isPending}
+                      >
+                        <Send size={15} />
+                        Disparar cobranca agora
+                      </button>
                     </div>
                   </div>
-                  <div className="credit-audience-actions">
-                    <button type="button" className="ghost-button small" onClick={handleCopyCreditCodes}>
-                      <Copy size={15} /> Copiar codigos
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button small"
-                      onClick={() => setSelectedCreditCodes(new Set())}
-                    >
-                      Limpar selecao
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button small"
-                      onClick={() => openAudienceModal("automation")}
-                      disabled={createAudienceMutation.isPending}
-                    >
-                      <Repeat size={15} /> Cobranca automatica
-                    </button>
-                    <button
-                      type="button"
-                      className="primary-button small"
-                      onClick={() => openAudienceModal("dispatch")}
-                      disabled={createAudienceMutation.isPending}
-                    >
-                      <Send size={15} />
-                      Disparar cobranca agora
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Table */}
-              <CustomerCreditTable
-                rows={visibleCreditRows}
-                emptyMessage="Nenhum cliente bate com esse filtro."
-                onClearFilters={() => dispatch({ type: "clearCreditFilters" })}
-                selectable
-                selectedCodes={selectedCreditCodes}
-                onToggleRow={toggleCreditCode}
-                onToggleAll={toggleAllVisibleCredit}
-              />
-
-              {totalCreditPages > 1 ? (
-                <nav className="bankfin-pagination" aria-label="Paginas da carteira de credito">
-                  <button
-                    type="button"
-                    onClick={() => setCreditPage((page) => Math.max(1, page - 1))}
-                    disabled={currentCreditPage === 1}
-                  >
-                    Anterior
-                  </button>
-                  <span>
-                    Página {formatNumber(currentCreditPage)} de {formatNumber(totalCreditPages)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setCreditPage((page) => Math.min(totalCreditPages, page + 1))}
-                    disabled={currentCreditPage === totalCreditPages}
-                  >
-                    Próxima
-                  </button>
-                </nav>
-              ) : null}
-
-              {/* Unmatched */}
-              <details
-                className="panel customer-credit-unmatched-panel"
-                onToggle={(event) => setShowUnmatchedCredit(event.currentTarget.open)}
-              >
-                <summary>
-                  Nao vinculados ao CRM ({formatNumber(filteredUnmatchedCreditRows.length)}/
-                  {formatNumber(creditOverviewQuery.data.summary.totalUnmatchedRows)})
-                </summary>
-                {showUnmatchedCredit ? (
-                  <>
-                    <p className="panel-subcopy">
-                      Esses codigos existem no Excel diario, mas ainda nao encontraram correspondencia pelo{" "}
-                      <code>customer_code</code> do CRM. Eles ficam visiveis para revisao sem poluir a operacao principal.
-                    </p>
-                    <CustomerCreditTable
-                      rows={filteredUnmatchedCreditRows.slice(0, CREDIT_PAGE_SIZE)}
-                      linkedOnly={false}
-                      emptyMessage="Nenhum codigo nao vinculado bate com esse filtro."
-                    />
-                  </>
-                ) : null}
-              </details>
-            </>
+                ) : null
+              }
+            />
           ) : null}
+          <EditCustomerCreditModal
+            row={editingCreditRow}
+            isOpen={Boolean(editingCreditRow)}
+            onClose={() => setEditingCreditRow(null)}
+          />
         </div>
       )}
 
