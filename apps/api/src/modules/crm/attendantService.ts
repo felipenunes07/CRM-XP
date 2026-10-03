@@ -17,6 +17,7 @@ import type {
   TopProduct,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
+import { executiveSellerAvatarPublicUrl } from "../whatsapp/whatsappAvatarCache.js";
 
 export const FOCUSED_ATTENDANTS = ["Suelen", "Thais", "Amanda", "Lucas", "Tamires"] as const;
 export type AttendantWindowMonths = 3 | 6 | 12 | 24;
@@ -299,6 +300,7 @@ async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
       candidates AS (
         SELECT
           focused.name AS attendant,
+          wi.id::text AS instance_id,
           wi.instance_name,
           wi.display_label,
           wi.phone_number,
@@ -319,6 +321,7 @@ async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
       )
       SELECT DISTINCT ON (LOWER(attendant))
         attendant,
+        instance_id,
         instance_name,
         display_label,
         phone_number,
@@ -338,7 +341,14 @@ async function listAttendantIdentities(): Promise<AttendantIdentityRow[]> {
     instanceName: row.instance_name ? String(row.instance_name) : null,
     displayLabel: row.display_label ? String(row.display_label) : null,
     phoneNumber: row.phone_number ? String(row.phone_number) : null,
-    profilePictureUrl: row.profile_picture_url ? String(row.profile_picture_url) : null,
+    // O link do WhatsApp (pps.whatsapp.net) expira em poucos dias e a foto some.
+    // Usa a mesma URL estavel do Relatorio Executivo: o backend guarda a foto
+    // e renova sozinho na Evolution quando o link vence.
+    profilePictureUrl: row.instance_id
+      ? executiveSellerAvatarPublicUrl(String(row.instance_id))
+      : row.profile_picture_url
+        ? String(row.profile_picture_url)
+        : null,
   }));
 }
 
