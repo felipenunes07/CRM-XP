@@ -120,17 +120,17 @@ function ExecutiveSalesRoute() {
   const { canAccess } = usePermissions();
   const canOpenTasks = user?.appRole === "tarefas" || canAccess("tasks.view");
 
+  if (canAccess("reports.executive.view")) {
+    return <ExecutiveSalesDashboardPage />;
+  }
+
   // This report is often left open on shared TVs. When a task-only user
   // restores that URL, send them to their actual workspace instead.
-  if (!canAccess("dashboard.view") && canOpenTasks) {
+  if (canOpenTasks) {
     return <Navigate to="/tarefas" replace />;
   }
 
-  if (!canAccess("reports.executive.view")) {
-    return <Navigate to="/acesso-negado" replace />;
-  }
-
-  return <ExecutiveSalesDashboardPage />;
+  return <Navigate to="/acesso-negado" replace />;
 }
 
 export default function App() {
