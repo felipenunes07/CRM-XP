@@ -1200,7 +1200,7 @@ export function GeographicView() {
                     <tr>
                       <th>{tx("Cidade", "City")}</th>
                       <th>{tx("Clientes", "Customers")}</th>
-                      <th>{tx("Receita", "Revenue")}</th>
+                      <th>{tx("Pedidos", "Orders")}</th>
                       <th>{tx("Pecas", "Pieces")}</th>
                     </tr>
                   </thead>
@@ -1239,13 +1239,12 @@ export function GeographicView() {
                           </td>
                           <td>
                             <div className="region-table-number">
-                              <strong>{formatCurrency(row.totalRevenue)}</strong>
+                              <strong>{formatNumber(row.orderCount)}</strong>
                             </div>
                           </td>
                           <td>
                             <div className="region-table-number">
                               <strong>{formatNumber(row.totalPieces)}</strong>
-                              <span>{formatNumber(row.orderCount)} {tx("pedidos", "orders")}</span>
                             </div>
                           </td>
                         </tr>

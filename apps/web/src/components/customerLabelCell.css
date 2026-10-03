@@ -1,0 +1,122 @@
+/* Coluna "Rotulos" editavel da lista de clientes. */
+.customer-label-cell {
+  width: 100%;
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  padding: 0.3rem 0.45rem;
+  border: 1px dashed transparent;
+  border-radius: 10px;
+  color: inherit;
+  background: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.customer-label-cell:hover,
+.customer-label-cell.is-open {
+  border-color: rgba(41, 86, 215, 0.3);
+  background: rgba(41, 86, 215, 0.04);
+}
+
+.customer-label-cell-empty {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.customer-label-popover {
+  position: fixed;
+  z-index: 1000;
+  width: 260px;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
+}
+
+.customer-label-popover-search {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.customer-label-popover-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.customer-label-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  background: none;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.customer-label-option:hover {
+  background: rgba(41, 86, 215, 0.06);
+}
+
+.customer-label-option.is-checked {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.customer-label-option-dot {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.customer-label-option-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-label-create {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px dashed rgba(41, 86, 215, 0.4);
+  border-radius: 8px;
+  color: var(--accent);
+  background: rgba(41, 86, 215, 0.04);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.customer-label-popover-hint {
+  padding: 0.3rem 0.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.customer-label-popover-error {
+  color: var(--danger);
+  font-size: 0.75rem;
+}

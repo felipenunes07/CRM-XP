@@ -442,6 +442,18 @@ function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: num
   };
 }
 
+export type CustomerGrowthMetric = "pieces" | "screenXp" | "screenDe" | "screenVv" | "battery" | "dock" | "revenue";
+
+export interface CustomerGrowthResponse {
+  months: string[];
+  customers: Array<{
+    customerId: string;
+    customerCode: string;
+    displayName: string;
+    series: Record<CustomerGrowthMetric, number[]>;
+  }>;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -834,6 +846,9 @@ export const api = {
   },
   customerOpportunity(token: string, id: string) {
     return request<CustomerOpportunityDetail>(`/api/customers/${id}/opportunity`, {}, token);
+  },
+  customerGrowth(token: string, months: number) {
+    return request<CustomerGrowthResponse>(`/api/customer-growth?months=${months}`, {}, token);
   },
   customerLabels(token: string) {
     return request<CustomerLabel[]>("/api/customer-labels", {}, token);

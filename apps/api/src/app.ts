@@ -37,6 +37,7 @@ import {
 import { getBillingAlertReport, runDailyBillingReport } from "./modules/crm/billingAlertService.js";
 import { notifyCustomerCreditChange } from "./modules/crm/creditChangeAlertService.js";
 import { getCustomerAnalytics } from "./modules/crm/customerAnalyticsService.js";
+import { getCustomerGrowth } from "./modules/crm/customerGrowthService.js";
 import {
   getCustomerDefectCustomerDetail,
   getCustomerDefectOverview,
@@ -1762,6 +1763,15 @@ export function createApp() {
     try {
       await deleteCustomerNote(String(request.params.id), String(request.params.noteId), request.user!);
       response.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/customer-growth", requirePermission("commercial.customers.view"), async (request, response, next) => {
+    try {
+      const months = z.coerce.number().int().refine((value) => value === 6 || value === 12).catch(6).parse(request.query.months);
+      response.json(await getCustomerGrowth(months));
     } catch (error) {
       next(error);
     }

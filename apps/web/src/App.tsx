@@ -38,6 +38,7 @@ const AutomationsPage = lazy(async () => ({ default: (await import("./pages/Auto
 const SegmentsPage = lazy(async () => ({ default: (await import("./pages/SegmentsPage")).SegmentsPage }));
 const AgendaPage = lazy(async () => ({ default: (await import("./pages/AgendaPage")).AgendaPage }));
 const NewCustomersPage = lazy(async () => ({ default: (await import("./pages/NewCustomersPage")).NewCustomersPage }));
+const CustomerGrowthPage = lazy(async () => ({ default: (await import("./pages/CustomerGrowthPage")).CustomerGrowthPage }));
 const ReactivationPage = lazy(async () => ({ default: (await import("./pages/ReactivationPage")).ReactivationPage }));
 const IdeaBoardPage = lazy(async () => ({ default: (await import("./pages/IdeaBoardPage")).IdeaBoardPage }));
 const MessagesPage = lazy(async () => ({ default: (await import("./pages/MessagesPage")).MessagesPage }));
@@ -157,6 +158,7 @@ export default function App() {
             <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
             <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />
             <Route path="/clientes" element={<PermissionElement permission="commercial.customers.view"><CustomersPage /></PermissionElement>} />
+            <Route path="/clientes/crescimento" element={<PermissionElement permission="commercial.customers.view"><CustomerGrowthPage /></PermissionElement>} />
             <Route path="/clientes/financeiro" element={<PermissionElement permission="finance.customers.view"><CustomerFinancialPage /></PermissionElement>} />
             <Route path="/clientes/financeiro/:id" element={<PermissionElement permission="finance.customers.view"><CustomerFinancialDetailPage /></PermissionElement>} />
             <Route path="/estoque" element={<PermissionElement permission="reports.inventory.view"><InventoryPage /></PermissionElement>} />

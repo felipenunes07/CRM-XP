@@ -13533,7 +13533,7 @@ button.attendants-ranking-row:hover {
 
 .region-dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.95fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }

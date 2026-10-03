@@ -148,6 +148,7 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   viewer: [
     "tasks.view",
     "dashboard.view",
+    "commercial.customers.view",
     "reports.view",
     "reports.executive.view",
     "reports.attendants.view",
