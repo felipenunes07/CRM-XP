@@ -613,3 +613,184 @@ button.growth-kpi.is-active {
   font-size: 0.72rem;
   font-weight: 500;
 }
+
+/* ── Insights interativo ── */
+.growth-highlights-hint {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 500;
+  background: none !important;
+}
+
+.growth-highlight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.6rem;
+}
+
+.growth-highlight {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 0.25rem 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--growth-tone, var(--muted));
+  border-radius: 12px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.growth-highlight:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.growth-highlight-icon {
+  grid-row: 1 / span 2;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--growth-tone, var(--muted));
+  background: color-mix(in srgb, var(--growth-tone, var(--muted)) 12%, transparent);
+}
+
+.growth-highlight-body {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.growth-highlight-body strong {
+  margin-right: 0.3rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--growth-tone, var(--text));
+}
+
+.growth-highlight-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.growth-product-hit {
+  display: grid;
+  gap: 0.6rem;
+  cursor: pointer;
+  border-radius: 10px;
+  outline: none;
+}
+
+.growth-product-hit:focus-visible {
+  box-shadow: 0 0 0 3px rgba(41, 86, 215, 0.25);
+}
+
+.growth-product-card {
+  transition: box-shadow 0.15s ease;
+}
+
+.growth-product-card:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.growth-product-card.is-open {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--growth-tone, var(--muted)) 45%, transparent);
+}
+
+.growth-product-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.growth-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.growth-close:hover {
+  color: var(--text);
+}
+
+.growth-insight-card {
+  scroll-margin-top: 1rem;
+  transition: box-shadow 0.3s ease;
+}
+
+.growth-insight-card.is-flash {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--growth-tone, var(--accent)) 50%, transparent);
+}
+
+.growth-insight-card ul.is-expanded {
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.growth-insight-card li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name bars"
+    "detail detail";
+  gap: 0.2rem 0.75rem;
+}
+
+.growth-insight-card li > a {
+  grid-area: name;
+}
+
+.growth-insight-card li > small {
+  grid-area: detail;
+  text-align: left;
+  white-space: normal;
+}
+
+.growth-insight-bars {
+  grid-area: bars;
+  display: inline-flex;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.growth-insight-bars .growth-minibars {
+  width: 70px;
+  height: 24px;
+}
+
+.growth-insight-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -0.2rem 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.growth-insight-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--growth-tone);
+  margin-left: 0.3rem;
+}

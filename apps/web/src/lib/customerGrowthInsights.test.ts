@@ -63,6 +63,15 @@ describe("computeGrowthInsights", () => {
 
   it("detects customers moving from XP to DE screens", () => {
     expect(insights.xpToDe.customers.map((entry) => entry.customerId)).toEqual(["a"]);
+    expect(insights.xpToDe.customers[0]?.compareValues).toEqual([0, 0, 0, 5, 10, 20]);
+  });
+
+  it("does not call it a swap when DE barely covers the XP drop", () => {
+    const swap = computeGrowthInsights({
+      months,
+      customers: [customer("k", { screenXp: [1600, 1600, 1580, 500, 400, 380], screenDe: [0, 0, 0, 10, 20, 27] })],
+    });
+    expect(swap.xpToDe.total).toBe(0);
   });
 
   it("lists big customers that are falling", () => {
