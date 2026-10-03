@@ -27,22 +27,31 @@ function LabelTags({ labels }: { labels: CustomerLabel[] }) {
   );
 }
 
-const LABEL_COLORS = ["#2956d7", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#334155"];
+const LABEL_COLORS = [
+  "#2956d7", "#0ea5e9", "#0891b2", "#14b8a6",
+  "#16a34a", "#65a30d", "#ca8a04", "#f59e0b",
+  "#ea580c", "#dc2626", "#e11d48", "#db2777",
+  "#c026d3", "#7c3aed", "#4f46e5", "#334155",
+];
 
 function NewLabelModal({
   initialName,
-  existingNames,
+  existingLabels,
+  selectedNames,
   isSaving,
   error,
   onCancel,
   onCreate,
+  onToggleExisting,
 }: {
   initialName: string;
-  existingNames: string[];
+  existingLabels: CustomerLabel[];
+  selectedNames: string[];
   isSaving: boolean;
   error: string | null;
   onCancel: () => void;
   onCreate: (name: string, color: string) => void;
+  onToggleExisting: (name: string) => void;
 }) {
   const { tx } = useUiLanguage();
   const { canAccess } = usePermissions();
@@ -50,7 +59,8 @@ function NewLabelModal({
   const [color, setColor] = useState(LABEL_COLORS[0]!);
   const trimmed = name.trim();
   const normalized = trimmed.toLocaleLowerCase("pt-BR");
-  const isDuplicate = existingNames.some((existing) => existing.toLocaleLowerCase("pt-BR") === normalized);
+  const isDuplicate = existingLabels.some((label) => label.name.toLocaleLowerCase("pt-BR") === normalized);
+  const isCustomColor = !LABEL_COLORS.includes(color);
   const isReserved = normalized === AMBASSADOR_LABEL_NAME.toLocaleLowerCase("pt-BR");
   const canSubmit = trimmed.length > 0 && !isDuplicate && !isReserved && !isSaving;
 
@@ -112,6 +122,7 @@ function NewLabelModal({
                   type="button"
                   role="radio"
                   aria-checked={color === option}
+                  aria-label={option}
                   className={`customer-label-modal-swatch ${color === option ? "is-selected" : ""}`}
                   style={{ background: option }}
                   onClick={() => setColor(option)}
@@ -119,6 +130,14 @@ function NewLabelModal({
                   {color === option ? <Check size={14} /> : null}
                 </button>
               ))}
+              <label
+                className={`customer-label-modal-swatch customer-label-modal-custom ${isCustomColor ? "is-selected" : ""}`}
+                style={isCustomColor ? { background: color } : undefined}
+                title={tx("Outra cor", "其他颜色")}
+              >
+                {isCustomColor ? <Check size={14} /> : <Plus size={14} />}
+                <input type="color" value={color} onChange={(event) => setColor(event.target.value)} />
+              </label>
             </div>
           </div>
 
@@ -131,6 +150,37 @@ function NewLabelModal({
               {trimmed || tx("Nome do rotulo", "标签名称")}
             </span>
           </div>
+
+          {existingLabels.length ? (
+            <div className="customer-label-modal-field">
+              <span>{tx("Rotulos que ja existem", "已有标签")}</span>
+              <small className="customer-label-modal-hint">
+                {tx("Clique para marcar ou desmarcar neste cliente.", "点击为该客户添加或移除。")}
+              </small>
+              <div className="customer-label-modal-existing">
+                {existingLabels.map((label) => {
+                  const checked = selectedNames.includes(label.name);
+                  return (
+                    <button
+                      key={label.id}
+                      type="button"
+                      className={`tag customer-label-modal-existing-tag ${checked ? "is-checked" : ""}`}
+                      style={{
+                        background: checked ? label.color : `${label.color}14`,
+                        color: checked ? "#fff" : label.color,
+                        borderColor: `${label.color}55`,
+                      }}
+                      onClick={() => onToggleExisting(label.name)}
+                      disabled={isSaving}
+                    >
+                      {checked ? <Check size={12} /> : null}
+                      {label.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {error ? <span className="customer-label-popover-error">{error}</span> : null}
         </div>
@@ -162,15 +212,15 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
   const queryClient = useQueryClient();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [newLabelName, setNewLabelName] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   const labelsQuery = useQuery({
     queryKey: ["customer-labels"],
     queryFn: () => api.customerLabels(token!),
-    enabled: Boolean(token && open),
+    enabled: Boolean(token && (open || newLabelName !== null)),
   });
 
   const selectedNames = useMemo(() => customer.labels.map((label) => label.name), [customer.labels]);
@@ -185,7 +235,10 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     [labelsQuery.data, normalizedSearch],
   );
 
-  const existingNames = useMemo(() => (labelsQuery.data ?? []).map((label) => label.name), [labelsQuery.data]);
+  const existingLabels = useMemo(
+    () => (labelsQuery.data ?? []).filter((label) => label.name !== AMBASSADOR_LABEL_NAME),
+    [labelsQuery.data],
+  );
 
   const canCreate =
     normalizedSearch.length > 0 &&
@@ -373,11 +426,13 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
       {newLabelName !== null ? (
         <NewLabelModal
           initialName={newLabelName}
-          existingNames={existingNames}
+          existingLabels={existingLabels}
+          selectedNames={selectedNames}
           isSaving={createMutation.isPending || saveMutation.isPending}
           error={createMutation.isError ? tx("Nao foi possivel criar o rotulo.", "无法创建标签。") : null}
           onCancel={() => setNewLabelName(null)}
           onCreate={(name, color) => createMutation.mutate({ name, color })}
+          onToggleExisting={toggleLabel}
         />
       ) : null}
     </>

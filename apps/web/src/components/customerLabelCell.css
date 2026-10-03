@@ -173,3 +173,56 @@
   font-size: 0.82rem;
   font-weight: 600;
 }
+
+.customer-label-modal-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(1.9rem, 1fr));
+  gap: 0.5rem;
+}
+
+.customer-label-modal-custom {
+  position: relative;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.customer-label-modal-custom.is-selected {
+  color: #fff;
+}
+
+.customer-label-modal-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.customer-label-modal-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.customer-label-modal-existing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.customer-label-modal-existing-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-width: 1px;
+  border-style: solid;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
