@@ -397,7 +397,7 @@
 
 .credit-kpi-value {
   color: #0f172a;
-  font-size: clamp(1.45rem, 1.7vw, 1.95rem);
+  font-size: clamp(1.45rem, calc(1.7vw / var(--vz, 1)), 1.95rem);
   font-weight: 850;
   line-height: 1.1;
   letter-spacing: -0.025em;

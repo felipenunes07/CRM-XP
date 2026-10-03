@@ -7,6 +7,7 @@ import { CustomerNoteOutcomeBadge } from "./CustomerNotesPanel";
 import { InfoHint } from "./InfoHint";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, getFormattingLocale, statusLabel } from "../lib/format";
 import { useUiLanguage } from "../i18n";
+import { toLayoutPx } from "../lib/appZoom";
 
 type SortableColumnId =
   | "customer"
@@ -276,7 +277,7 @@ export function CustomerTable({
         return;
       }
 
-      const nextWidth = Math.max(activeColumn.minWidth, resizeStateRef.current.startWidth + event.clientX - resizeStateRef.current.startX);
+      const nextWidth = Math.max(activeColumn.minWidth, resizeStateRef.current.startWidth + toLayoutPx(event.clientX - resizeStateRef.current.startX));
       setColumnWidths((current) =>
         current[activeColumn.id] === nextWidth ? current : { ...current, [activeColumn.id]: nextWidth },
       );

@@ -23,6 +23,7 @@ import { MiniChatDrawer, type MiniChatMessage } from "../components/MiniChatDraw
 import { CampaignCreationProgress } from "../components/CampaignCreationProgress";
 import { CampaignTableSkeleton } from "../components/CampaignTableSkeleton";
 import { PurchaseSparkline } from "../components/PurchaseSparkline";
+import { toLayoutPx } from "../lib/appZoom";
 
 // Avatar de fallback gerado em SVG (data URI, sem rede). As fotos de perfil da
 // Evolution vêm do CDN do WhatsApp (pps.whatsapp.net) e EXPIRAM — depois de um
@@ -1146,7 +1147,7 @@ export function DisparadorPage() {
   } as const;
   const videoElementStyle = {
     width: isVerticalVideoPreview ? "min(100%, 320px)" : "100%",
-    height: isVerticalVideoPreview ? "min(62vh, 540px)" : "auto",
+    height: isVerticalVideoPreview ? "min(calc(62vh / var(--vz, 1)), 540px)" : "auto",
     maxHeight: "560px",
     aspectRatio: isVerticalVideoPreview ? "9 / 16" : "16 / 9",
     objectFit: "contain",
@@ -2703,7 +2704,7 @@ export function DisparadorPage() {
                                     style={{ cursor: "help", display: "inline-block" }}
                                     onMouseEnter={(e) => {
                                       setHoveredGroupId(group.id);
-                                      setTooltipPosition({ x: e.clientX - 100, y: e.clientY - 65 });
+                                      setTooltipPosition({ x: toLayoutPx(e.clientX) - 100, y: toLayoutPx(e.clientY) - 65 });
                                     }}
                                     onMouseLeave={() => setHoveredGroupId(null)}
                                   >

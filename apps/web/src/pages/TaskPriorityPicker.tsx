@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Check, ChevronDown, Flag, Loader2 } from "lucide-react";
 import "./TaskPriorityPicker.css";
+import { getAppZoom } from "../lib/appZoom";
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export const taskPriorityLabels = { urgent: "Urgente", high: "Alta", normal: "Normal", low: "Baixa" };
@@ -14,11 +15,15 @@ export function TaskPriorityPicker({ value = "normal", onChange, disabled, label
   const [error, setError] = useState("");
   function show() {
     const menu = popup.current;
-    const rect = trigger.current?.getBoundingClientRect();
-    if (!menu || !rect) return;
+    const screenRect = trigger.current?.getBoundingClientRect();
+    if (!menu || !screenRect) return;
+    const zoom = getAppZoom();
+    const rect = { left: screenRect.left / zoom, top: screenRect.top / zoom, bottom: screenRect.bottom / zoom };
+    const viewportWidth = innerWidth / zoom;
+    const viewportHeight = innerHeight / zoom;
     if (open) { menu.hidePopover(); return; }
-    menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 224))}px`;
-    menu.style.top = `${Math.max(8, rect.bottom + 270 > innerHeight ? rect.top - 270 : rect.bottom + 6)}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left, viewportWidth - 224))}px`;
+    menu.style.top = `${Math.max(8, rect.bottom + 270 > viewportHeight ? rect.top - 270 : rect.bottom + 6)}px`;
     menu.showPopover();
     menu.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
   }

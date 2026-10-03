@@ -45,6 +45,7 @@ import { effectiveTaskStatus } from "./taskStatus";
 import { taskNotifications } from "./taskNotifications";
 import { personBelongsToList, taskBelongsToList } from "./tarefasPage.helpers";
 import "./TarefasWorkspace.css";
+import { toLayoutPx } from "../lib/appZoom";
 
 /**
  * Quadro de tarefas da equipe dentro do CRM.
@@ -765,7 +766,7 @@ export default function TarefasPage() {
     const drag = kanbanDrag.current;
     const board = kanbanRef.current;
     if (!drag || !board || drag.pointerId !== event.pointerId) return;
-    board.scrollLeft = drag.startScrollLeft - (event.clientX - drag.startX);
+    board.scrollLeft = drag.startScrollLeft - toLayoutPx(event.clientX - drag.startX);
   };
   const endKanbanDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (kanbanDrag.current?.pointerId !== event.pointerId) return;

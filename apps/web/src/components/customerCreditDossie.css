@@ -347,7 +347,7 @@
 }
 
 .bankfin-ledger-scroll {
-  height: clamp(420px, calc(100vh - 400px), 820px);
+  height: clamp(420px, calc(calc(100vh / var(--vz, 1)) - 400px), 820px);
   overflow: auto;
 }
 

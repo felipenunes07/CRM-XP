@@ -1,6 +1,7 @@
 import { Users, UserCheck, UserMinus, UserX, Activity } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { getAppZoom } from "../lib/appZoom";
 
 export function StatCard({
   title,
@@ -44,11 +45,19 @@ export function StatCard({
   function showHoverDetail() {
     if (!hoverDetail || !cardRef.current) return;
 
-    const rect = cardRef.current.getBoundingClientRect();
-    const popoverWidth = Math.min(320, window.innerWidth - 32);
+    const zoom = getAppZoom();
+    const screenRect = cardRef.current.getBoundingClientRect();
+    const rect = {
+      left: screenRect.left / zoom,
+      top: screenRect.top / zoom,
+      bottom: screenRect.bottom / zoom,
+      width: screenRect.width / zoom,
+    };
+    const viewportWidth = window.innerWidth / zoom;
+    const popoverWidth = Math.min(320, viewportWidth - 32);
     const left = Math.min(
       Math.max(16, rect.left + rect.width / 2 - popoverWidth / 2),
-      window.innerWidth - popoverWidth - 16,
+      viewportWidth - popoverWidth - 16,
     );
     const placement = rect.top >= 300 ? "above" : "below";
 

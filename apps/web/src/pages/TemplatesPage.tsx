@@ -203,7 +203,7 @@ export function TemplatesPage() {
           background: radial-gradient(circle at 12% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
                       radial-gradient(circle at 88% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 45%),
                       #f8fafc;
-          min-height: calc(100vh - 100px);
+          min-height: calc(100vh / var(--vz, 1) - 100px);
           padding: 1.5rem;
         }
         .liquid-panel {
