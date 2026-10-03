@@ -185,12 +185,32 @@ export function InventoryStockTab({
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase("pt-BR"));
 
   const items = useMemo(() => data?.items ?? [], [data?.items]);
-  const brands = useMemo(() => uniqueSorted(items.map((item) => item.brand)), [items]);
-  const qualities = useMemo(() => uniqueSorted(items.flatMap((item) => item.qualityLabels)), [items]);
-  const factories = useMemo(
-    () => uniqueSorted(items.map((item) => item.factory)) as InventoryModelListItem["factory"][],
-    [items],
+  // Cada lista de opcoes respeita os outros filtros ativos, para que Fabrica, Marca e Qualidade se filtrem entre si.
+  const optionPool = useMemo(
+    () =>
+      items.filter((item) => {
+        if (kind !== "all" && item.productKind !== kind) return false;
+        if (onlyInStock && item.stockUnits <= 0) return false;
+        return true;
+      }),
+    [items, kind, onlyInStock],
   );
+  const factories = useMemo(() => {
+    const pool = optionPool.filter(
+      (item) => (!brand || item.brand === brand) && (!quality || item.qualityLabels.includes(quality)),
+    );
+    return uniqueSorted([...pool.map((item) => item.factory), factory]) as InventoryModelListItem["factory"][];
+  }, [brand, factory, optionPool, quality]);
+  const brands = useMemo(() => {
+    const pool = optionPool.filter(
+      (item) => (!factory || item.factory === factory) && (!quality || item.qualityLabels.includes(quality)),
+    );
+    return uniqueSorted([...pool.map((item) => item.brand), brand]);
+  }, [brand, factory, optionPool, quality]);
+  const qualities = useMemo(() => {
+    const pool = optionPool.filter((item) => (!factory || item.factory === factory) && (!brand || item.brand === brand));
+    return uniqueSorted([...pool.flatMap((item) => item.qualityLabels), quality]);
+  }, [brand, factory, optionPool, quality]);
   const kindCounts = useMemo(() => {
     const counts = new Map<InventoryProductKind, number>();
     for (const item of items) {

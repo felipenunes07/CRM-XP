@@ -165,6 +165,27 @@ describe("InventoryStockTab", () => {
     expect(markup).not.toContain("SKUs com saldo");
   });
 
+  it("only offers brand and quality options that still have matching stock", () => {
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <InventoryStockTab
+          data={inventoryData}
+          detail={undefined}
+          isDetailError={false}
+          isDetailLoading={false}
+          isError={false}
+          isLoading={false}
+          onSelectModel={vi.fn()}
+          selectedModelKey={null}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain('<option value="IPHONE">IPHONE</option>');
+    expect(markup).not.toContain('<option value="SAMSUNG">SAMSUNG</option>');
+    expect(markup).not.toContain('<option value="INCELL">INCELL</option>');
+  });
+
   it("shows a compact top-10 dropdown and keeps the full analysis on a separate route", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>

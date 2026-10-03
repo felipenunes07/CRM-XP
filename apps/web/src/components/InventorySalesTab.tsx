@@ -213,6 +213,28 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     return totals;
   }, [report?.items, windowStart]);
 
+  // Opcoes de Marca, Qualidade e Fabrica respeitam os outros filtros ativos.
+  const filterOptions = useMemo(() => {
+    const pool = (report?.items ?? []).filter((item) => categoryFilter === "all" || item.category === categoryFilter);
+    const brands = new Set<string>();
+    const qualities = new Set<string>();
+    const factories = new Set<string>();
+    for (const item of pool) {
+      const quality = item.quality ?? "SEM QUALIDADE";
+      const brandOk = !brandFilter || item.brand === brandFilter;
+      const qualityOk = !qualityFilter || quality === qualityFilter;
+      const factoryOk = !factoryFilter || item.factory === factoryFilter;
+      if (qualityOk && factoryOk) brands.add(item.brand);
+      if (brandOk && factoryOk) qualities.add(quality);
+      if (brandOk && qualityOk) factories.add(item.factory);
+    }
+    return {
+      brands: (report?.filters.brands ?? []).filter((value) => brands.has(value) || value === brandFilter),
+      qualities: (report?.filters.qualities ?? []).filter((value) => qualities.has(value) || value === qualityFilter),
+      factories: (report?.filters.factories ?? []).filter((value) => factories.has(value) || value === factoryFilter),
+    };
+  }, [brandFilter, categoryFilter, factoryFilter, qualityFilter, report?.filters, report?.items]);
+
   const filteredItems = useMemo(() => {
     const term = search.trim().toLowerCase();
 
@@ -745,7 +767,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               }}
             >
               <option value="">Todas</option>
-              {report.filters.brands.map((brand) => (
+              {filterOptions.brands.map((brand) => (
                 <option key={brand} value={brand}>
                   {brand}
                 </option>
@@ -763,7 +785,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               }}
             >
               <option value="">Todas</option>
-              {report.filters.qualities.map((quality) => (
+              {filterOptions.qualities.map((quality) => (
                 <option key={quality} value={quality}>
                   {quality}
                 </option>
@@ -781,7 +803,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               }}
             >
               <option value="">Todas</option>
-              {report.filters.factories.map((factory) => (
+              {filterOptions.factories.map((factory) => (
                 <option key={factory} value={factory}>
                   {factory}
                 </option>
