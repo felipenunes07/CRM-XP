@@ -20,6 +20,7 @@ import {
   Users,
   UserX,
 } from "lucide-react";
+import { ROLE_PERMISSION_TEMPLATES } from "@olist-crm/shared";
 import { useAuth, type AppRole } from "../hooks/useAuth";
 import { api, type AdminUser, type AdminUserInput, type PermissionDefinition, type UserPermissionOverride } from "../lib/api";
 import { navigationAccessFolders, navigationPermissionKeys } from "../lib/navigationPermissions";
@@ -102,6 +103,18 @@ function setFolderOverrides(
   value: OverrideChoice,
 ) {
   return permissionKeys.reduce((next, permissionKey) => setOverride(next, permissionKey, value), overrides);
+}
+
+function roleBasePermissions(role: AppRole, allPermissionKeys: string[]) {
+  return new Set(role === "admin" ? allPermissionKeys : ROLE_PERMISSION_TEMPLATES[role] ?? []);
+}
+
+function AccessStatus({ allowed }: { allowed: boolean }) {
+  return (
+    <em className={`admin-access-status ${allowed ? "is-allowed" : "is-blocked"}`}>
+      {allowed ? "Liberado" : "Bloqueado"}
+    </em>
+  );
 }
 
 function permissionGroups(permissions: PermissionDefinition[]) {
@@ -203,6 +216,15 @@ export function AdminUsersPage() {
     [permissions],
   );
   const selectedRole = roleOptions.find((role) => role.value === draft.role) ?? fallbackRole;
+  // O que o papel escolhido libera sozinho; extras/bloqueios individuais vencem.
+  const roleBase = useMemo(
+    () => roleBasePermissions(draft.role, permissions.map((permission) => permission.key)),
+    [draft.role, permissions],
+  );
+  const isAllowed = (permissionKey: string) => {
+    const override = draft.permissionOverrides.find((entry) => entry.permissionKey === permissionKey);
+    return override ? override.allowed : roleBase.has(permissionKey);
+  };
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
     const target = `${user.name} ${user.email} ${user.role}`.toLowerCase();
@@ -611,7 +633,7 @@ export function AdminUsersPage() {
                 <SlidersHorizontal size={18} />
                 <div>
                   <h3>Acessos do menu</h3>
-                  <p>Controle uma pasta inteira ou cada tela separadamente. Automatico segue a role base.</p>
+                  <p>Controle uma pasta inteira ou cada tela separadamente. Automatico segue a role base; a etiqueta mostra o acesso final.</p>
                 </div>
               </div>
               <div className="admin-override-summary">
@@ -665,7 +687,7 @@ export function AdminUsersPage() {
                         return (
                           <div key={item.permissionKey} className="admin-permission-row">
                             <span>
-                              <strong>{item.label}</strong>
+                              <strong>{item.label} <AccessStatus allowed={isAllowed(item.permissionKey)} /></strong>
                               <small>{permission?.description || item.path}</small>
                             </span>
                             <div className="admin-permission-toggle" role="group" aria-label={`Tela ${item.label}`}>
@@ -732,7 +754,7 @@ export function AdminUsersPage() {
                     return (
                       <div key={permission.key} className="admin-permission-row">
                         <span>
-                          <strong>{permission.name}</strong>
+                          <strong>{permission.name} <AccessStatus allowed={isAllowed(permission.key)} /></strong>
                           <small>{permission.description || permission.key}</small>
                         </span>
                         <div className="admin-permission-toggle" role="group" aria-label={`Permissao ${permission.name}`}>
