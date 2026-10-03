@@ -54,9 +54,14 @@ function ProductCard({ product, months }: { product: ProductInsight; months: str
           </dd>
         </div>
         <div>
-          <dt>{tx("Clientes comprando", "购买客户")}</dt>
+          <dt title={tx("Media de clientes que compraram por mes (metade anterior → metade recente)", "每月平均购买客户数")}>
+            {tx("Clientes por mes", "每月客户")}
+          </dt>
           <dd>
             {product.previousBuyers} → {product.recentBuyers}
+            <small className="growth-product-sub">
+              {tx(`${product.monthlyBuyers[product.monthlyBuyers.length - 1] ?? 0} em ${monthLabel(months[months.length - 1] ?? "")}`, "上月")}
+            </small>
           </dd>
         </div>
         <div>
@@ -154,7 +159,7 @@ export function GrowthInsightsView({ data }: { data: CustomerGrowthResponse }) {
     if (best && (best.summary.changePct ?? 0) > 0) {
       lines.push(
         tx(
-          `${PRODUCT_LABELS[best.metric].pt} e o produto que mais cresce (${formatPct(best.summary.changePct)}), com ${best.recentBuyers} clientes comprando.`,
+          `${PRODUCT_LABELS[best.metric].pt} e o produto que mais cresce (${formatPct(best.summary.changePct)}), com ${best.recentBuyers} clientes comprando por mes.`,
           `${PRODUCT_LABELS[best.metric].zh} 增长最快 (${formatPct(best.summary.changePct)})。`,
         ),
       );

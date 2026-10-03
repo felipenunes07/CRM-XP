@@ -41,6 +41,15 @@ describe("computeGrowthInsights", () => {
     expect(battery?.monthlyTotals).toEqual([2, 2, 3, 3, 4, 5]);
     expect(battery?.summary.trend).toBe("up");
     expect(battery?.recentBuyers).toBe(1);
+    expect(battery?.monthlyBuyers).toEqual([1, 1, 1, 1, 1, 1]);
+  });
+
+  it("counts buyers per month, not per period", () => {
+    const xp = insights.products.find((product) => product.metric === "screenXp");
+    // c para de comprar nos 2 ultimos meses: 3,3,3,3,2,2 clientes por mes.
+    expect(xp?.monthlyBuyers).toEqual([3, 3, 3, 3, 2, 2]);
+    expect(xp?.previousBuyers).toBe(3);
+    expect(xp?.recentBuyers).toBe(2);
   });
 
   it("finds customers that stopped buying in the last months", () => {
