@@ -569,3 +569,40 @@
   color: var(--muted);
   font-size: 0.74rem;
 }
+
+/* Cards de resumo clicaveis: escolhem o grupo da grade de graficos */
+button.growth-kpi {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+
+button.growth-kpi:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+button.growth-kpi.is-active {
+  background: color-mix(in srgb, var(--growth-tone, var(--muted)) 8%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--growth-tone, var(--muted)) 45%, transparent);
+}
+
+.growth-focus-down .growth-streak-card {
+  border-color: rgba(217, 83, 79, 0.2);
+  background: rgba(217, 83, 79, 0.05);
+}
+
+.growth-focus-down .growth-streak-card.is-open,
+.growth-focus-down .growth-streak-card:hover {
+  border-color: rgba(217, 83, 79, 0.45);
+}
+
+.growth-focus-flat .growth-streak-card {
+  border-color: rgba(100, 116, 139, 0.2);
+  background: rgba(100, 116, 139, 0.05);
+}
+
+.growth-focus-flat .growth-streak-card.is-open,
+.growth-focus-flat .growth-streak-card:hover {
+  border-color: rgba(100, 116, 139, 0.45);
+}

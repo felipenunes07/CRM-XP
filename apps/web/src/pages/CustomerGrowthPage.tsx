@@ -15,6 +15,8 @@ import { GrowthInsightsView } from "../components/GrowthInsightsView";
 import "./customerGrowth.css";
 
 type SortMode = "pct" | "volume";
+// Grupo mostrado na grade de graficos; escolhido clicando nos cards de resumo.
+type FocusGroup = "streak" | "up" | "down" | "stable";
 type Tone = GrowthTone;
 
 interface GrowthRow {
@@ -35,6 +37,7 @@ const METRIC_OPTIONS: Array<{ value: CustomerGrowthMetric; labelPt: string; labe
 ];
 
 const LIST_LIMIT = 15;
+const GRID_LIMIT = 12;
 const STREAK_MIN = 3;
 
 // Grafico mes a mes aberto ao clicar no cliente.
@@ -192,6 +195,8 @@ export function CustomerGrowthPage() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [view, setView] = useState<"customers" | "insights">("customers");
+  const [focus, setFocus] = useState<FocusGroup>("streak");
+  const [gridExpanded, setGridExpanded] = useState(false);
 
   const growthQuery = useQuery({
     queryKey: ["customer-growth", monthCount],
@@ -219,7 +224,7 @@ export function CustomerGrowthPage() {
       .filter((row) => row.values.some((value) => value > 0));
   }, [growthQuery.data, metric, search]);
 
-  const { growing, falling, streakers, stableCount } = useMemo(() => {
+  const { growing, falling, streakers, stable } = useMemo(() => {
     const byPct = (direction: 1 | -1) => (left: GrowthRow, right: GrowthRow) => {
       const leftPct = left.summary.changePct ?? direction * Number.POSITIVE_INFINITY;
       const rightPct = right.summary.changePct ?? direction * Number.POSITIVE_INFINITY;
@@ -244,11 +249,38 @@ export function CustomerGrowthPage() {
       streakers: rows
         .filter((row) => row.summary.upStreak >= STREAK_MIN)
         .sort((left, right) => right.summary.upStreak - left.summary.upStreak || right.summary.delta - left.summary.delta),
-      stableCount: rows.filter((row) => row.summary.trend === "stable" || row.summary.trend === "irregular").length,
+      stable: rows
+        .filter((row) => row.summary.trend === "stable" || row.summary.trend === "irregular")
+        .sort((left, right) => right.summary.recentAvg - left.summary.recentAvg),
     };
   }, [rows, sortMode]);
 
-  const openStreaker = streakers.slice(0, 12).find((row) => row.customerId === openId);
+  const focusConfig: Record<FocusGroup, { title: string; tone: Tone; rows: GrowthRow[]; Icon: typeof Flame }> = {
+    streak: { title: tx("Crescendo mes a mes", "逐月增长"), tone: "up", rows: streakers, Icon: Flame },
+    up: { title: tx("Em alta", "上升"), tone: "up", rows: growing, Icon: ArrowUpRight },
+    down: { title: tx("Em queda", "下降"), tone: "down", rows: falling, Icon: ArrowDownRight },
+    stable: { title: tx("Estaveis ou pontuais", "稳定或偶发"), tone: "flat", rows: stable, Icon: BarChart3 },
+  };
+  const focused = focusConfig[focus];
+  const FocusIcon = focused.Icon;
+  const gridRows = gridExpanded ? focused.rows : focused.rows.slice(0, GRID_LIMIT);
+  const openGridRow = gridRows.find((row) => row.customerId === openId);
+
+  function selectFocus(next: FocusGroup) {
+    setFocus(next);
+    setGridExpanded(false);
+  }
+
+  function cardCaption(row: GrowthRow) {
+    const lastMonth = `${formatPieces(row.values[row.values.length - 1] ?? 0)} ${tx("no ultimo mes", "上月")}`;
+    if (focus === "streak" || (focus === "up" && row.summary.upStreak >= 2)) {
+      return `${tx(`${row.summary.upStreak} meses seguidos subindo`, `连续 ${row.summary.upStreak} 个月上升`)} · ${lastMonth}`;
+    }
+    if (focus === "down" && row.summary.downStreak >= 2) {
+      return `${tx(`${row.summary.downStreak} meses seguidos caindo`, `连续 ${row.summary.downStreak} 个月下降`)} · ${lastMonth}`;
+    }
+    return `${formatPieces(row.summary.previousAvg)} → ${formatPieces(row.summary.recentAvg)} ${tx("pecas/mes", "件/月")} · ${lastMonth}`;
+  }
 
   return (
     <div className="page-stack customer-growth-page">
@@ -339,36 +371,46 @@ export function CustomerGrowthPage() {
 
       {growthQuery.data && view === "customers" ? (
         <>
-          <div className="growth-kpis">
-            <div className="growth-kpi tone-up">
-              <span>{tx("Em alta", "上升")}</span>
-              <strong>{growing.length}</strong>
-            </div>
-            <div className="growth-kpi tone-down">
-              <span>{tx("Em queda", "下降")}</span>
-              <strong>{falling.length}</strong>
-            </div>
-            <div className="growth-kpi">
-              <span title={tx("Inclui quem teve so um pico isolado de compra.", "包括只有一次性大额采购的客户。")}>{tx("Estaveis ou pontuais", "稳定或偶发")}</span>
-              <strong>{stableCount}</strong>
-            </div>
-            <div className="growth-kpi tone-streak">
-              <span>{tx(`Subindo ${STREAK_MIN}+ meses seguidos`, `连续上升 ${STREAK_MIN}+ 个月`)}</span>
-              <strong>{streakers.length}</strong>
-            </div>
+          <div className="growth-kpis" role="group" aria-label={tx("Escolher grupo dos graficos", "选择图表分组")}>
+            {(
+              [
+                { key: "up", tone: "tone-up", label: tx("Em alta", "上升"), count: growing.length },
+                { key: "down", tone: "tone-down", label: tx("Em queda", "下降"), count: falling.length },
+                {
+                  key: "stable",
+                  tone: "",
+                  label: tx("Estaveis ou pontuais", "稳定或偶发"),
+                  count: stable.length,
+                  title: tx("Inclui quem teve so um pico isolado de compra.", "包括只有一次性大额采购的客户。"),
+                },
+                { key: "streak", tone: "tone-streak", label: tx(`Subindo ${STREAK_MIN}+ meses seguidos`, `连续上升 ${STREAK_MIN}+ 个月`), count: streakers.length },
+              ] as Array<{ key: FocusGroup; tone: string; label: string; count: number; title?: string }>
+            ).map((kpi) => (
+              <button
+                key={kpi.key}
+                type="button"
+                className={`growth-kpi ${kpi.tone} ${focus === kpi.key ? "is-active" : ""}`}
+                aria-pressed={focus === kpi.key}
+                title={kpi.title ?? tx("Mostrar os graficos desse grupo", "显示该组图表")}
+                onClick={() => selectFocus(kpi.key)}
+              >
+                <span>{kpi.label}</span>
+                <strong>{kpi.count}</strong>
+              </button>
+            ))}
           </div>
 
-          {streakers.length ? (
-            <section className="panel growth-streaks">
-              <header className="growth-list-header">
-                <h3>
-                  <Flame size={18} />
-                  {tx("Crescendo mes a mes", "逐月增长")} · {metricLabel}
-                </h3>
-                <span>{streakers.length}</span>
-              </header>
+          <section className={`panel growth-streaks growth-focus-${focused.tone}`}>
+            <header className="growth-list-header">
+              <h3>
+                <FocusIcon size={18} />
+                {focused.title} · {metricLabel}
+              </h3>
+              <span>{focused.rows.length}</span>
+            </header>
+            {gridRows.length ? (
               <div className="growth-streak-grid">
-                {streakers.slice(0, 12).map((row) => (
+                {gridRows.map((row) => (
                   <div key={row.customerId} className={`growth-streak-card ${openId === row.customerId ? "is-open" : ""}`}>
                     <span className="growth-streak-top">
                       <Link to={`/clientes/${row.customerId}`} className="growth-streak-name" title={tx("Abrir ficha do cliente", "打开客户档案")}>
@@ -377,22 +419,26 @@ export function CustomerGrowthPage() {
                       </Link>
                       <ChartToggle isOpen={openId === row.customerId} onClick={() => toggleOpen(row.customerId)} />
                     </span>
-                    <MiniBars values={row.values} months={months} tone="up" />
-                    <small>
-                      {tx(`${row.summary.upStreak} meses seguidos subindo`, `连续 ${row.summary.upStreak} 个月上升`)} ·{" "}
-                      {formatPieces(row.values[row.values.length - 1] ?? 0)} {tx("no ultimo mes", "上月")}
-                    </small>
+                    <MiniBars values={row.values} months={months} tone={focused.tone} />
+                    <small>{cardCaption(row)}</small>
                   </div>
                 ))}
               </div>
-              {openStreaker ? (
-                <div className="growth-streak-chart">
-                  <strong>{openStreaker.displayName}</strong>
-                  <MonthlyChart row={openStreaker} months={months} tone="up" metricLabel={metricLabel} />
-                </div>
-              ) : null}
-            </section>
-          ) : null}
+            ) : (
+              <p className="growth-empty">{tx("Nenhum cliente nesse grupo para esse produto.", "该产品在此分组中没有客户。")}</p>
+            )}
+            {focused.rows.length > GRID_LIMIT ? (
+              <button type="button" className="growth-more" onClick={() => setGridExpanded((current) => !current)}>
+                {gridExpanded ? tx("Mostrar menos", "收起") : tx(`Ver todos (${focused.rows.length})`, `查看全部 (${focused.rows.length})`)}
+              </button>
+            ) : null}
+            {openGridRow ? (
+              <div className="growth-streak-chart">
+                <strong>{openGridRow.displayName}</strong>
+                <MonthlyChart row={openGridRow} months={months} tone={focused.tone} metricLabel={metricLabel} />
+              </div>
+            ) : null}
+          </section>
 
           <div className="growth-columns">
             <GrowthList
