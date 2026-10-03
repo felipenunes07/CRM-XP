@@ -442,7 +442,7 @@ function createRequestSignal(upstreamSignal?: AbortSignal | null, timeoutMs: num
   };
 }
 
-export type CustomerGrowthMetric = "pieces" | "screenXp" | "screenDe" | "screenVv" | "battery" | "dock" | "revenue";
+export type CustomerGrowthMetric = "pieces" | "screenXp" | "screenDe" | "screenVv" | "battery" | "dock";
 
 export interface CustomerGrowthResponse {
   months: string[];

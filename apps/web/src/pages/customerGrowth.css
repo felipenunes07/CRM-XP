@@ -157,6 +157,9 @@
 .growth-streak-card {
   display: grid;
   gap: 0.35rem;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   padding: 0.75rem 0.85rem;
   border: 1px solid rgba(47, 157, 103, 0.2);
   border-radius: 12px;
@@ -165,11 +168,12 @@
   text-decoration: none;
 }
 
+.growth-streak-card.is-open,
 .growth-streak-card:hover {
   border-color: rgba(47, 157, 103, 0.45);
 }
 
-.growth-streak-card div {
+.growth-streak-name {
   display: grid;
   min-width: 0;
 }
@@ -204,22 +208,48 @@
 }
 
 .growth-list li {
+  border-top: 1px solid var(--line);
+}
+
+.growth-row {
+  width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 7.5rem 4.2rem;
+  grid-template-columns: minmax(0, 1fr) auto 7.5rem 4.2rem 1rem;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.55rem 0.25rem;
-  border-top: 1px solid var(--line);
+  padding: 0.55rem 0.35rem;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.growth-row:hover {
+  background: rgba(41, 86, 215, 0.04);
+}
+
+.growth-row-chevron {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.growth-list li.is-open .growth-row-chevron {
+  transform: rotate(180deg);
+}
+
+.growth-list li.is-open .growth-row {
+  background: rgba(41, 86, 215, 0.05);
 }
 
 .growth-row-name {
   display: grid;
   min-width: 0;
-  color: inherit;
-  text-decoration: none;
 }
 
-.growth-row-name:hover strong {
+.growth-row:hover .growth-row-name strong {
   color: var(--accent);
 }
 
@@ -235,12 +265,55 @@
   font-size: 0.68rem;
 }
 
-.growth-sparkline polyline {
-  stroke: var(--growth-tone, var(--accent));
+.growth-minibars rect {
+  fill: var(--growth-tone, var(--accent));
+  opacity: 0.45;
 }
 
-.growth-sparkline circle {
-  fill: var(--growth-tone, var(--accent));
+.growth-minibars rect.is-last {
+  opacity: 1;
+}
+
+.growth-chart {
+  margin: 0.25rem 0 0.75rem;
+  padding: 0.75rem 0.75rem 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.growth-chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.growth-chart-header a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.growth-streak-chart {
+  margin-top: 0.75rem;
+}
+
+.growth-streak-chart > strong {
+  font-size: 0.9rem;
+}
+
+.growth-chips-label {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
 }
 
 .growth-badge {
@@ -282,12 +355,12 @@
 }
 
 @media (max-width: 560px) {
-  .growth-list li {
-    grid-template-columns: minmax(0, 1fr) auto;
+  .growth-row {
+    grid-template-columns: minmax(0, 1fr) auto 1rem;
   }
 
-  .growth-list li .growth-sparkline,
-  .growth-list li .growth-row-avg {
+  .growth-row .growth-minibars,
+  .growth-row .growth-row-avg {
     display: none;
   }
 
@@ -295,4 +368,192 @@
     min-width: 0;
     width: 100%;
   }
+}
+
+/* Abas Clientes / Insights. */
+.growth-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.growth-tabs {
+  display: inline-flex;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-soft);
+}
+
+.growth-tabs button {
+  padding: 0.45rem 1rem;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.growth-tabs button.is-active {
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* Aba Insights. */
+.growth-insights {
+  display: grid;
+  gap: 1rem;
+}
+
+.growth-highlights ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.customer-growth-page .tone-idea {
+  --growth-tone: var(--accent);
+}
+
+.growth-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 0.75rem;
+}
+
+.growth-product-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--growth-tone, var(--muted));
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.growth-product-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.growth-product-card .growth-minibars {
+  width: 100%;
+  height: 44px;
+}
+
+.growth-product-card dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+}
+
+.growth-product-card dt {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.growth-product-card dd {
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.growth-up-text {
+  color: var(--success);
+}
+
+.growth-down-text {
+  color: var(--danger);
+}
+
+.growth-product-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.growth-product-note a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.growth-product-note a:hover {
+  color: var(--accent);
+}
+
+.growth-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.growth-insight-description {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.growth-insight-card ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.growth-insight-card li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.growth-insight-card li a {
+  display: grid;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.growth-insight-card li a strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+}
+
+.growth-insight-card li a:hover strong {
+  color: var(--accent);
+}
+
+.growth-insight-card li a span,
+.growth-insight-card li small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.growth-insight-card li small {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.growth-insight-more {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
 }

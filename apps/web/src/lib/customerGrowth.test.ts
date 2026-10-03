@@ -27,8 +27,18 @@ describe("summarizeGrowth", () => {
     expect(summarizeGrowth([10, 11, 10, 10, 11, 10]).trend).toBe("stable");
   });
 
-  it("marks customers that started or stopped buying", () => {
-    expect(summarizeGrowth([0, 0, 0, 3, 0, 5]).trend).toBe("new");
+  it("starts counting from the first month the customer bought the product", () => {
+    // Comecou a comprar no 4o mes e caiu depois: deve aparecer em queda, nao como novo.
+    const falling = summarizeGrowth([0, 0, 0, 40, 20, 5]);
+    expect(falling.previousAvg).toBe(30);
+    expect(falling.recentAvg).toBe(5);
+    expect(falling.trend).toBe("down");
+
+    expect(summarizeGrowth([0, 0, 0, 10, 30, 60]).trend).toBe("up");
+  });
+
+  it("marks customers that only bought in the last month or stopped buying", () => {
+    expect(summarizeGrowth([0, 0, 0, 0, 0, 5]).trend).toBe("new");
     expect(summarizeGrowth([5, 4, 6, 0, 0, 0]).trend).toBe("stopped");
   });
 });
