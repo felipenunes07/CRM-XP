@@ -23645,25 +23645,32 @@ body:has(.whatsapp-monitor-page) .main-content {
   font-size: 0.88rem;
 }
 
-.admin-access-status {
+.admin-access-custom {
   display: inline-block;
   margin-left: 0.4rem;
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
+  background: #fff4e5;
+  color: #b45309;
   font-size: 0.68rem;
   font-style: normal;
   font-weight: 700;
   vertical-align: middle;
 }
 
-.admin-access-status.is-allowed {
-  background: #e7f6ee;
-  color: var(--success);
+.admin-permission-toggle button.active.is-allowed {
+  background: var(--success);
+  color: #fff;
 }
 
-.admin-access-status.is-blocked {
-  background: #f1f5f9;
-  color: var(--muted);
+.admin-permission-toggle button.active.is-blocked {
+  background: var(--danger);
+  color: #fff;
+}
+
+.admin-permission-toggle button.admin-permission-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .admin-permission-toggle {
