@@ -8,7 +8,6 @@ import { UiLanguageProvider } from "./i18n";
 import { isApiAuthError } from "./lib/api";
 import { applyAppZoom } from "./lib/appZoom";
 import "./styles.css";
-import "./liquidGlass.css";
 
 const shouldRetryRequest = (failureCount: number, error: unknown) => {
   if (isApiAuthError(error)) {
