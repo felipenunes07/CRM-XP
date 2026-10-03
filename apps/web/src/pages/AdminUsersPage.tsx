@@ -74,12 +74,6 @@ function draftFromUser(user: AdminUser): AdminUserInput {
   };
 }
 
-function overrideValue(overrides: UserPermissionOverride[], permissionKey: string) {
-  const override = overrides.find((entry) => entry.permissionKey === permissionKey);
-  if (!override) return "inherit";
-  return override.allowed ? "allow" : "deny";
-}
-
 function setOverride(
   overrides: UserPermissionOverride[],
   permissionKey: string,
@@ -90,30 +84,55 @@ function setOverride(
   return [...next, { permissionKey, allowed: value === "allow" }];
 }
 
-type OverrideChoice = "inherit" | "allow" | "deny";
-
-function folderOverrideValue(overrides: UserPermissionOverride[], permissionKeys: string[]): OverrideChoice | "mixed" {
-  const values = new Set(permissionKeys.map((permissionKey) => overrideValue(overrides, permissionKey)));
-  return values.size === 1 ? (Array.from(values)[0] as OverrideChoice) : "mixed";
-}
-
-function setFolderOverrides(
-  overrides: UserPermissionOverride[],
-  permissionKeys: string[],
-  value: OverrideChoice,
-) {
-  return permissionKeys.reduce((next, permissionKey) => setOverride(next, permissionKey, value), overrides);
-}
-
 function roleBasePermissions(role: AppRole, allPermissionKeys: string[]) {
   return new Set(role === "admin" ? allPermissionKeys : ROLE_PERMISSION_TEMPLATES[role] ?? []);
 }
 
-function AccessStatus({ allowed }: { allowed: boolean }) {
+function AccessToggle({
+  label,
+  allowed,
+  customized,
+  allowText = "Liberado",
+  blockText = "Bloqueado",
+  blockDisabled = false,
+  blockTitle,
+  onChoose,
+  onReset,
+}: {
+  label: string;
+  allowed: boolean | "mixed";
+  customized: boolean;
+  allowText?: string;
+  blockText?: string;
+  blockDisabled?: boolean;
+  blockTitle?: string;
+  onChoose: (allow: boolean) => void;
+  onReset: () => void;
+}) {
   return (
-    <em className={`admin-access-status ${allowed ? "is-allowed" : "is-blocked"}`}>
-      {allowed ? "Liberado" : "Bloqueado"}
-    </em>
+    <div className="admin-permission-toggle" role="group" aria-label={label}>
+      <button type="button" className={allowed === true ? "active is-allowed" : ""} onClick={() => onChoose(true)}>
+        {allowText}
+      </button>
+      <button
+        type="button"
+        className={allowed === false ? "active is-blocked" : ""}
+        disabled={blockDisabled}
+        title={blockTitle}
+        onClick={() => onChoose(false)}
+      >
+        {blockText}
+      </button>
+      <button
+        type="button"
+        className="admin-permission-reset"
+        disabled={!customized}
+        title="Voltar ao que o papel libera"
+        onClick={onReset}
+      >
+        Padrao
+      </button>
+    </div>
   );
 }
 
@@ -225,6 +244,23 @@ export function AdminUsersPage() {
     const override = draft.permissionOverrides.find((entry) => entry.permissionKey === permissionKey);
     return override ? override.allowed : roleBase.has(permissionKey);
   };
+  const isCustomized = (permissionKeys: string[]) =>
+    draft.permissionOverrides.some((entry) => permissionKeys.includes(entry.permissionKey));
+  // Escolher o mesmo que o papel ja libera remove a excecao; o contrario grava um extra/bloqueio.
+  const chooseAccess = (permissionKeys: string[], allow: boolean) =>
+    setDraft({
+      ...draft,
+      permissionOverrides: permissionKeys.reduce(
+        (next, permissionKey) =>
+          setOverride(next, permissionKey, roleBase.has(permissionKey) === allow ? "inherit" : allow ? "allow" : "deny"),
+        draft.permissionOverrides,
+      ),
+    });
+  const resetAccess = (permissionKeys: string[]) =>
+    setDraft({
+      ...draft,
+      permissionOverrides: draft.permissionOverrides.filter((entry) => !permissionKeys.includes(entry.permissionKey)),
+    });
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredUsers = users.filter((user) => {
     const target = `${user.name} ${user.email} ${user.role}`.toLowerCase();
@@ -633,7 +669,7 @@ export function AdminUsersPage() {
                 <SlidersHorizontal size={18} />
                 <div>
                   <h3>Acessos do menu</h3>
-                  <p>Controle uma pasta inteira ou cada tela separadamente. Automatico segue a role base; a etiqueta mostra o acesso final.</p>
+                  <p>Controle uma pasta inteira ou cada tela separadamente. Os botoes mostram o que fica liberado com o papel escolhido; "Padrao" desfaz uma excecao.</p>
                 </div>
               </div>
               <div className="admin-override-summary">
@@ -645,7 +681,8 @@ export function AdminUsersPage() {
             <div className="admin-menu-access-grid">
               {navigationAccessFolders.map((folder) => {
                 const folderPermissionKeys = folder.items.map((item) => item.permissionKey);
-                const folderValue = folderOverrideValue(draft.permissionOverrides, folderPermissionKeys);
+                const folderStates = new Set(folderPermissionKeys.map(isAllowed));
+                const folderAllowed = folderStates.size === 1 ? folderStates.has(true) : "mixed";
                 return (
                   <div key={folder.key} className="admin-menu-folder">
                     <div className="admin-menu-folder-header">
@@ -653,76 +690,48 @@ export function AdminUsersPage() {
                         <h4>{folder.label}</h4>
                         <p>{folder.description}</p>
                       </div>
-                      <div className="admin-permission-toggle" role="group" aria-label={`Pasta ${folder.label}`}>
-                        {(["inherit", "allow", "deny"] as const).map((value) => (
-                          <button
-                            key={value}
-                            type="button"
-                            className={folderValue === value ? "active" : ""}
-                            onClick={() =>
-                              setDraft({
-                                ...draft,
-                                permissionOverrides: setFolderOverrides(
-                                  draft.permissionOverrides,
-                                  value === "deny" && isEditingOwnAccess
-                                    ? folderPermissionKeys.filter((key) => key !== "admin.users.manage")
-                                    : folderPermissionKeys,
-                                  value,
-                                ),
-                              })
-                            }
-                          >
-                            {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar pasta" : "Bloquear pasta"}
-                          </button>
-                        ))}
-                      </div>
+                      <AccessToggle
+                        label={`Pasta ${folder.label}`}
+                        allowed={folderAllowed}
+                        customized={isCustomized(folderPermissionKeys)}
+                        allowText="Liberar pasta"
+                        blockText="Bloquear pasta"
+                        onChoose={(allow) =>
+                          chooseAccess(
+                            !allow && isEditingOwnAccess
+                              ? folderPermissionKeys.filter((key) => key !== "admin.users.manage")
+                              : folderPermissionKeys,
+                            allow,
+                          )
+                        }
+                        onReset={() => resetAccess(folderPermissionKeys)}
+                      />
                     </div>
-                    {folderValue === "mixed" ? (
-                      <span className="admin-menu-folder-summary">Acessos personalizados por tela</span>
+                    {folderAllowed === "mixed" ? (
+                      <span className="admin-menu-folder-summary">Algumas telas liberadas, outras bloqueadas</span>
                     ) : null}
                     <div className="admin-menu-folder-items">
                       {folder.items.map((item) => {
                         const permission = permissionDefinitions.get(item.permissionKey);
-                        const currentValue = overrideValue(draft.permissionOverrides, item.permissionKey);
                         return (
                           <div key={item.permissionKey} className="admin-permission-row">
                             <span>
-                              <strong>{item.label} <AccessStatus allowed={isAllowed(item.permissionKey)} /></strong>
+                              <strong>{item.label}{isCustomized([item.permissionKey]) ? <em className="admin-access-custom">personalizado</em> : null}</strong>
                               <small>{permission?.description || item.path}</small>
                             </span>
-                            <div className="admin-permission-toggle" role="group" aria-label={`Tela ${item.label}`}>
-                              {(["inherit", "allow", "deny"] as const).map((value) => (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  className={currentValue === value ? "active" : ""}
-                                  disabled={
-                                    value === "deny"
-                                    && isEditingOwnAccess
-                                    && item.permissionKey === "admin.users.manage"
-                                  }
-                                  title={
-                                    value === "deny"
-                                    && isEditingOwnAccess
-                                    && item.permissionKey === "admin.users.manage"
-                                      ? "Outro administrador precisa remover este acesso."
-                                      : undefined
-                                  }
-                                  onClick={() =>
-                                    setDraft({
-                                      ...draft,
-                                      permissionOverrides: setOverride(
-                                        draft.permissionOverrides,
-                                        item.permissionKey,
-                                        value,
-                                      ),
-                                    })
-                                  }
-                                >
-                                  {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar" : "Bloquear"}
-                                </button>
-                              ))}
-                            </div>
+                            <AccessToggle
+                              label={`Tela ${item.label}`}
+                              allowed={isAllowed(item.permissionKey)}
+                              customized={isCustomized([item.permissionKey])}
+                              blockDisabled={isEditingOwnAccess && item.permissionKey === "admin.users.manage"}
+                              blockTitle={
+                                isEditingOwnAccess && item.permissionKey === "admin.users.manage"
+                                  ? "Outro administrador precisa remover este acesso."
+                                  : undefined
+                              }
+                              onChoose={(allow) => chooseAccess([item.permissionKey], allow)}
+                              onReset={() => resetAccess([item.permissionKey])}
+                            />
                           </div>
                         );
                       })}
@@ -750,30 +759,19 @@ export function AdminUsersPage() {
                     <h4>{groupLabels[group] ?? group}</h4>
                   </div>
                   {groupPermissions.map((permission) => {
-                    const currentValue = overrideValue(draft.permissionOverrides, permission.key);
                     return (
                       <div key={permission.key} className="admin-permission-row">
                         <span>
-                          <strong>{permission.name} <AccessStatus allowed={isAllowed(permission.key)} /></strong>
+                          <strong>{permission.name}{isCustomized([permission.key]) ? <em className="admin-access-custom">personalizado</em> : null}</strong>
                           <small>{permission.description || permission.key}</small>
                         </span>
-                        <div className="admin-permission-toggle" role="group" aria-label={`Permissao ${permission.name}`}>
-                          {(["inherit", "allow", "deny"] as const).map((value) => (
-                            <button
-                              key={value}
-                              type="button"
-                              className={currentValue === value ? "active" : ""}
-                              onClick={() =>
-                                setDraft({
-                                  ...draft,
-                                  permissionOverrides: setOverride(draft.permissionOverrides, permission.key, value),
-                                })
-                              }
-                            >
-                              {value === "inherit" ? "Automatico" : value === "allow" ? "Liberar" : "Bloquear"}
-                            </button>
-                          ))}
-                        </div>
+                        <AccessToggle
+                          label={`Permissao ${permission.name}`}
+                          allowed={isAllowed(permission.key)}
+                          customized={isCustomized([permission.key])}
+                          onChoose={(allow) => chooseAccess([permission.key], allow)}
+                          onReset={() => resetAccess([permission.key])}
+                        />
                       </div>
                     );
                   })}
