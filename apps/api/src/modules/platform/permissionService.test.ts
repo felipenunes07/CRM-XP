@@ -13,13 +13,13 @@ describe("permissionService", () => {
       role: "vendas",
       overrides: [
         { permissionKey: "finance.view", allowed: true },
-        { permissionKey: "messages.view", allowed: false },
+        { permissionKey: "commercial.customers.view", allowed: false },
       ],
     });
 
-    expect(effective).toContain("commercial.view");
+    expect(effective).toContain("dashboard.view");
     expect(effective).toContain("finance.view");
-    expect(effective).not.toContain("messages.view");
+    expect(effective).not.toContain("commercial.customers.view");
   });
 
   it("gives admins every declared permission", () => {
@@ -39,9 +39,10 @@ describe("permissionService", () => {
     expect(effective).toContain("admin.users.manage");
   });
 
-  it("uses the seller role as a practical access template", () => {
-    expect(ROLE_PERMISSIONS.vendas).toContain("commercial.pipeline.view");
-    expect(ROLE_PERMISSIONS.vendas).toContain("messages.inbox.view");
+  it("gives the seller role the same access the sellers had as viewers", () => {
+    expect(ROLE_PERMISSIONS.vendas).toEqual(ROLE_PERMISSIONS.viewer);
+    expect(ROLE_PERMISSIONS.vendas).toContain("commercial.customers.view");
+    expect(ROLE_PERMISSIONS.vendas).not.toContain("messages.inbox.view");
     expect(ROLE_PERMISSIONS.vendas).not.toContain("finance.customers.view");
     expect(ROLE_PERMISSIONS.vendas).not.toContain("admin.users.manage");
   });
