@@ -33,6 +33,8 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
   const queryClient = useQueryClient();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [naming, setNaming] = useState(false);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
@@ -94,6 +96,7 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     function close() {
       setOpen(false);
       setSearch("");
+      setNaming(false);
     }
 
     function handlePointerDown(event: MouseEvent) {
@@ -142,6 +145,12 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     }
     saveMutation.mutate([...selectedNames, search.trim()]);
     setSearch("");
+    setNaming(false);
+  }
+
+  function startNewLabel() {
+    setNaming(true);
+    searchRef.current?.focus();
   }
 
   return (
@@ -166,9 +175,12 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
         ? createPortal(
             <div ref={popoverRef} className="customer-label-popover" style={{ top: position.top, left: position.left }}>
               <input
+                ref={searchRef}
                 autoFocus
                 className="customer-label-popover-search"
-                placeholder={tx("Buscar ou criar rotulo", "搜索或创建标签")}
+                placeholder={
+                  naming ? tx("Nome do novo rotulo", "新标签名称") : tx("Buscar ou criar rotulo", "搜索或创建标签")
+                }
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
@@ -218,6 +230,11 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
                 >
                   <Plus size={14} />
                   {tx(`Criar "${search.trim()}"`, `创建 "${search.trim()}"`)}
+                </button>
+              ) : !normalizedSearch ? (
+                <button type="button" className="customer-label-create" onClick={startNewLabel}>
+                  <Plus size={14} />
+                  {naming ? tx("Digite o nome acima e tecle Enter", "在上方输入名称并按回车") : tx("Novo rotulo", "新标签")}
                 </button>
               ) : null}
 
