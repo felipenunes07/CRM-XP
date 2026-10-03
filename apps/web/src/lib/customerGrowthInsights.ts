@@ -12,10 +12,15 @@ export interface InsightCustomer {
   value: number;
   // Texto curto de apoio (ex.: "40 -> 12 pecas/mes").
   detail: string;
+  // Serie mes a mes usada no mini grafico da linha.
+  values: number[];
+  // Segunda serie opcional (ex.: tela DE ao lado da tela XP).
+  compareValues?: number[];
 }
 
 export interface InsightList {
   total: number;
+  // Lista completa; a tela mostra os primeiros e expande o resto.
   customers: InsightCustomer[];
 }
 
@@ -47,13 +52,16 @@ export interface GrowthInsights {
 
 export const INSIGHT_PRODUCTS: CustomerGrowthMetric[] = ["pieces", "screenXp", "screenDe", "screenVv", "battery", "dock"];
 
-const LIST_SIZE = 6;
 // Quantos maiores clientes (por pecas no periodo) entram em "clientes grandes".
 const BIG_CUSTOMER_COUNT = 50;
 // Media minima de telas por mes para sugerir bateria/dock.
 const CROSS_SELL_MIN_SCREENS = 10;
 // Meses finais sem compra para considerar que o cliente sumiu.
 const QUIET_MONTHS = 2;
+// Troca XP -> DE: a tela DE precisa cobrir pelo menos essa parte da queda de XP
+// e o cliente precisa levar um minimo de DE por mes; senao e so queda de XP.
+const XP_TO_DE_MIN_COVERAGE = 0.2;
+const XP_TO_DE_MIN_DE_PER_MONTH = 5;
 
 function sum(values: number[]) {
   return values.reduce((total, value) => total + value, 0);
@@ -63,18 +71,30 @@ function round(value: number) {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: value < 10 ? 1 : 0 });
 }
 
-function toInsightCustomer(customer: GrowthCustomer, value: number, detail: string): InsightCustomer {
+function toInsightCustomer(
+  customer: GrowthCustomer,
+  value: number,
+  detail: string,
+  values: number[] = customer.series.pieces,
+  compareValues?: number[],
+): InsightCustomer {
   return {
     customerId: customer.customerId,
     customerCode: customer.customerCode,
     displayName: customer.displayName,
     value,
     detail,
+    values,
+    compareValues,
   };
 }
 
 function toList(entries: InsightCustomer[]): InsightList {
-  return { total: entries.length, customers: entries.slice(0, LIST_SIZE) };
+  return { total: entries.length, customers: entries };
+}
+
+function average(values: number[]) {
+  return values.length ? sum(values) / values.length : 0;
 }
 
 function screens(customer: GrowthCustomer) {
@@ -149,20 +169,32 @@ export function computeGrowthInsights(data: CustomerGrowthResponse): GrowthInsig
       .map((customer) => ({ customer, screensAvg: sum(screens(customer).slice(-half)) / Math.max(half, 1) }))
       .filter((entry) => entry.screensAvg >= CROSS_SELL_MIN_SCREENS && sum(entry.customer.series[metric]) === 0)
       .sort((left, right) => right.screensAvg - left.screensAvg)
-      .map((entry) => toInsightCustomer(entry.customer, entry.screensAvg, `${round(entry.screensAvg)} telas/mes`));
+      .map((entry) => toInsightCustomer(entry.customer, entry.screensAvg, `${round(entry.screensAvg)} telas/mes`, screens(entry.customer)));
 
-  // Caindo em tela XP enquanto sobem em tela DE.
+  // Trocando XP por DE: XP caiu e a DE subiu o suficiente para cobrir parte real
+  // da queda. Compara as mesmas metades do calendario para as duas telas.
   const xpToDeEntries = customers
-    .map((customer) => ({
-      customer,
-      xp: summarizeGrowth(customer.series.screenXp),
-      de: summarizeGrowth(customer.series.screenDe),
-    }))
+    .map((customer) => {
+      const xp = customer.series.screenXp;
+      const de = customer.series.screenDe;
+      const split = monthCount - half;
+      const xpBefore = average(xp.slice(0, split));
+      const xpAfter = average(xp.slice(split));
+      const deBefore = average(de.slice(0, split));
+      const deAfter = average(de.slice(split));
+      const xpLoss = xpBefore - xpAfter;
+      const deGain = deAfter - deBefore;
+      return { customer, xpBefore, xpAfter, deBefore, deAfter, xpLoss, deGain, coverage: xpLoss > 0 ? deGain / xpLoss : 0 };
+    })
     .filter(
       (entry) =>
-        (entry.xp.trend === "down" || entry.xp.trend === "stopped") && (entry.de.trend === "up" || entry.de.trend === "new"),
+        entry.xpLoss > 0 &&
+        entry.xpAfter < entry.xpBefore * (1 - 0.15) &&
+        entry.deGain > 0 &&
+        entry.deAfter >= XP_TO_DE_MIN_DE_PER_MONTH &&
+        entry.coverage >= XP_TO_DE_MIN_COVERAGE,
     )
-    .sort((left, right) => left.xp.delta - right.xp.delta);
+    .sort((left, right) => right.deGain - left.deGain);
 
   const totalPieces = sum(customers.map((customer) => sum(customer.series.pieces)));
   const top10Pieces = sum(byVolume.slice(0, 10).map((customer) => sum(customer.series.pieces)));
@@ -188,8 +220,10 @@ export function computeGrowthInsights(data: CustomerGrowthResponse): GrowthInsig
       xpToDeEntries.map((entry) =>
         toInsightCustomer(
           entry.customer,
-          entry.xp.delta,
-          `XP ${round(entry.xp.previousAvg)} → ${round(entry.xp.recentAvg)} · DE ${round(entry.de.previousAvg)} → ${round(entry.de.recentAvg)}`,
+          entry.deGain,
+          `XP ${round(entry.xpBefore)} → ${round(entry.xpAfter)} · DE ${round(entry.deBefore)} → ${round(entry.deAfter)} · DE cobre ${Math.round(Math.min(entry.coverage, 1) * 100)}% da queda`,
+          entry.customer.series.screenXp,
+          entry.customer.series.screenDe,
         ),
       ),
     ),
