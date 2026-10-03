@@ -41,4 +41,11 @@ describe("summarizeGrowth", () => {
     expect(summarizeGrowth([0, 0, 0, 0, 0, 5]).trend).toBe("new");
     expect(summarizeGrowth([5, 4, 6, 0, 0, 0]).trend).toBe("stopped");
   });
+
+  it("does not call a single big order growth when the last month falls back", () => {
+    // Comprou 701 em um mes e 10 no seguinte: pico isolado, nao crescimento.
+    expect(summarizeGrowth([0, 0, 50, 0, 701, 10]).trend).toBe("irregular");
+    // Caiu na media, mas o ultimo mes voltou ao nivel anterior.
+    expect(summarizeGrowth([20, 20, 20, 0, 0, 25]).trend).toBe("irregular");
+  });
 });
