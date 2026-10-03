@@ -120,3 +120,56 @@
   color: var(--danger);
   font-size: 0.75rem;
 }
+
+/* Janela "Novo rotulo" aberta a partir da lista de clientes. */
+.customer-label-modal {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.customer-label-modal-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.customer-label-modal-field > span:first-child {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.customer-label-modal-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.customer-label-modal-swatch {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.customer-label-modal-swatch.is-selected {
+  border-color: var(--bg);
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.customer-label-modal-preview {
+  width: fit-content;
+}
+
+.customer-label-modal-warning {
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+.customer-label-modal-manage {
+  margin-right: auto;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+}

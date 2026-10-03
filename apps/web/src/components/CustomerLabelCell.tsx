@@ -3,8 +3,10 @@ import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerLabel, CustomerListItem } from "@olist-crm/shared";
-import { Check, Plus } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Check, Plus, X } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
+import { usePermissions } from "../hooks/usePermissions";
 import { api } from "../lib/api";
 import { useUiLanguage } from "../i18n";
 import "./customerLabelCell.css";
@@ -25,6 +27,133 @@ function LabelTags({ labels }: { labels: CustomerLabel[] }) {
   );
 }
 
+const LABEL_COLORS = ["#2956d7", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#334155"];
+
+function NewLabelModal({
+  initialName,
+  existingNames,
+  isSaving,
+  error,
+  onCancel,
+  onCreate,
+}: {
+  initialName: string;
+  existingNames: string[];
+  isSaving: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onCreate: (name: string, color: string) => void;
+}) {
+  const { tx } = useUiLanguage();
+  const { canAccess } = usePermissions();
+  const [name, setName] = useState(initialName);
+  const [color, setColor] = useState(LABEL_COLORS[0]!);
+  const trimmed = name.trim();
+  const normalized = trimmed.toLocaleLowerCase("pt-BR");
+  const isDuplicate = existingNames.some((existing) => existing.toLocaleLowerCase("pt-BR") === normalized);
+  const isReserved = normalized === AMBASSADOR_LABEL_NAME.toLocaleLowerCase("pt-BR");
+  const canSubmit = trimmed.length > 0 && !isDuplicate && !isReserved && !isSaving;
+
+  function submit() {
+    if (canSubmit) {
+      onCreate(trimmed, color);
+    }
+  }
+
+  return createPortal(
+    <div className="modal-backdrop" onMouseDown={onCancel}>
+      <div
+        className="modal-container customer-label-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={tx("Novo rotulo", "新标签")}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3>{tx("Novo rotulo", "新标签")}</h3>
+          <button type="button" className="modal-close" onClick={onCancel} aria-label={tx("Fechar", "关闭")}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="modal-body">
+          <label>
+            {tx("Nome", "名称")}
+            <input
+              autoFocus
+              value={name}
+              maxLength={40}
+              placeholder={tx("Ex.: Cliente VIP", "例如：VIP 客户")}
+              onChange={(event) => setName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submit();
+                }
+                if (event.key === "Escape") {
+                  onCancel();
+                }
+              }}
+            />
+          </label>
+          {isDuplicate ? (
+            <span className="customer-label-modal-warning">{tx("Ja existe um rotulo com esse nome.", "已存在同名标签。")}</span>
+          ) : null}
+          {isReserved ? (
+            <span className="customer-label-modal-warning">{tx("Esse nome e reservado.", "该名称已保留。")}</span>
+          ) : null}
+
+          <div className="customer-label-modal-field">
+            <span>{tx("Cor", "颜色")}</span>
+            <div className="customer-label-modal-colors" role="radiogroup" aria-label={tx("Cor", "颜色")}>
+              {LABEL_COLORS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={color === option}
+                  className={`customer-label-modal-swatch ${color === option ? "is-selected" : ""}`}
+                  style={{ background: option }}
+                  onClick={() => setColor(option)}
+                >
+                  {color === option ? <Check size={14} /> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="customer-label-modal-field">
+            <span>{tx("Previa", "预览")}</span>
+            <span
+              className="tag customer-label-modal-preview"
+              style={{ background: `${color}14`, color, borderColor: `${color}33` }}
+            >
+              {trimmed || tx("Nome do rotulo", "标签名称")}
+            </span>
+          </div>
+
+          {error ? <span className="customer-label-popover-error">{error}</span> : null}
+        </div>
+
+        <div className="modal-footer">
+          {canAccess("commercial.labels.view") ? (
+            <Link className="customer-label-modal-manage" to="/rotulos">
+              {tx("Gerenciar rotulos", "管理标签")}
+            </Link>
+          ) : null}
+          <button type="button" className="ghost-button small" onClick={onCancel}>
+            {tx("Cancelar", "取消")}
+          </button>
+          <button type="button" className="primary-button small" onClick={submit} disabled={!canSubmit}>
+            {isSaving ? tx("Criando...", "创建中...") : tx("Criar e aplicar", "创建并应用")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // Celula de rotulos da tabela de clientes: clicar abre um seletor para marcar
 // rotulos existentes ou criar um novo sem sair da lista.
 export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) {
@@ -33,8 +162,7 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
   const queryClient = useQueryClient();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const [naming, setNaming] = useState(false);
+  const [newLabelName, setNewLabelName] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
@@ -57,6 +185,8 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     [labelsQuery.data, normalizedSearch],
   );
 
+  const existingNames = useMemo(() => (labelsQuery.data ?? []).map((label) => label.name), [labelsQuery.data]);
+
   const canCreate =
     normalizedSearch.length > 0 &&
     normalizedSearch !== AMBASSADOR_LABEL_NAME.toLocaleLowerCase("pt-BR") &&
@@ -72,6 +202,21 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
       );
       queryClient.setQueryData(["customer", updated.id], updated);
       void queryClient.invalidateQueries({ queryKey: ["customer-labels"] });
+    },
+  });
+
+  // Cria o rotulo com a cor escolhida e ja aplica no cliente.
+  const createMutation = useMutation({
+    mutationFn: async ({ name, color }: { name: string; color: string }) => {
+      const created = await api.createCustomerLabel(token!, name);
+      if (created.color !== color) {
+        await api.updateCustomerLabel(token!, created.id, color);
+      }
+      return name;
+    },
+    onSuccess: (name) => {
+      saveMutation.mutate([...selectedNames, name]);
+      setNewLabelName(null);
     },
   });
 
@@ -96,7 +241,6 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     function close() {
       setOpen(false);
       setSearch("");
-      setNaming(false);
     }
 
     function handlePointerDown(event: MouseEvent) {
@@ -139,18 +283,11 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
     saveMutation.mutate(next);
   }
 
-  function createLabel() {
-    if (!canCreate) {
-      return;
-    }
-    saveMutation.mutate([...selectedNames, search.trim()]);
+  function openNewLabel() {
+    createMutation.reset();
+    setNewLabelName(canCreate ? search.trim() : "");
+    setOpen(false);
     setSearch("");
-    setNaming(false);
-  }
-
-  function startNewLabel() {
-    setNaming(true);
-    searchRef.current?.focus();
   }
 
   return (
@@ -175,12 +312,9 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
         ? createPortal(
             <div ref={popoverRef} className="customer-label-popover" style={{ top: position.top, left: position.left }}>
               <input
-                ref={searchRef}
                 autoFocus
                 className="customer-label-popover-search"
-                placeholder={
-                  naming ? tx("Nome do novo rotulo", "新标签名称") : tx("Buscar ou criar rotulo", "搜索或创建标签")
-                }
+                placeholder={tx("Buscar ou criar rotulo", "搜索或创建标签")}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 onKeyDown={(event) => {
@@ -189,7 +323,7 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
                   }
                   event.preventDefault();
                   if (canCreate) {
-                    createLabel();
+                    openNewLabel();
                   } else if (options.length === 1 && options[0]) {
                     toggleLabel(options[0].name);
                   }
@@ -221,22 +355,10 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
                 ) : null}
               </div>
 
-              {canCreate ? (
-                <button
-                  type="button"
-                  className="customer-label-create"
-                  onClick={createLabel}
-                  disabled={saveMutation.isPending}
-                >
-                  <Plus size={14} />
-                  {tx(`Criar "${search.trim()}"`, `创建 "${search.trim()}"`)}
-                </button>
-              ) : !normalizedSearch ? (
-                <button type="button" className="customer-label-create" onClick={startNewLabel}>
-                  <Plus size={14} />
-                  {naming ? tx("Digite o nome acima e tecle Enter", "在上方输入名称并按回车") : tx("Novo rotulo", "新标签")}
-                </button>
-              ) : null}
+              <button type="button" className="customer-label-create" onClick={openNewLabel}>
+                <Plus size={14} />
+                {canCreate ? tx(`Criar "${search.trim()}"`, `创建 "${search.trim()}"`) : tx("Novo rotulo", "新标签")}
+              </button>
 
               {saveMutation.isError ? (
                 <span className="customer-label-popover-error">
@@ -247,6 +369,17 @@ export function CustomerLabelCell({ customer }: { customer: CustomerListItem }) 
             document.body,
           )
         : null}
+
+      {newLabelName !== null ? (
+        <NewLabelModal
+          initialName={newLabelName}
+          existingNames={existingNames}
+          isSaving={createMutation.isPending || saveMutation.isPending}
+          error={createMutation.isError ? tx("Nao foi possivel criar o rotulo.", "无法创建标签。") : null}
+          onCancel={() => setNewLabelName(null)}
+          onCreate={(name, color) => createMutation.mutate({ name, color })}
+        />
+      ) : null}
     </>
   );
 }
