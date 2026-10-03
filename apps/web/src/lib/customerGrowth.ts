@@ -1,4 +1,6 @@
-export type GrowthTrend = "up" | "down" | "stable" | "new" | "stopped";
+// "irregular": a media mudou por causa de um pico isolado, mas o ultimo mes
+// nao confirma a tendencia (ex.: comprou 700 em um mes e 10 no seguinte).
+export type GrowthTrend = "up" | "down" | "stable" | "irregular" | "new" | "stopped";
 
 export interface GrowthSummary {
   previousAvg: number;
@@ -63,13 +65,17 @@ export function summarizeGrowth(values: number[]): GrowthSummary {
   const delta = recentAvg - previousAvg;
   const changePct = previousAvg > 0 ? (delta / previousAvg) * 100 : null;
 
+  // O ultimo mes precisa confirmar a direcao: so esta em alta quem continua
+  // comprando pelo menos o que comprava antes, e so esta em queda quem
+  // comprou menos que antes no ultimo mes.
+  const lastMonth = active[active.length - 1] ?? 0;
   let trend: GrowthTrend = "stable";
   if (recentAvg === 0) {
     trend = "stopped";
   } else if (changePct !== null && changePct >= GROWTH_THRESHOLD_PCT) {
-    trend = "up";
+    trend = lastMonth >= previousAvg ? "up" : "irregular";
   } else if (changePct !== null && changePct <= -GROWTH_THRESHOLD_PCT) {
-    trend = "down";
+    trend = lastMonth < previousAvg ? "down" : "irregular";
   }
 
   return { previousAvg, recentAvg, changePct, delta, upStreak, downStreak, trend };

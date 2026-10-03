@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, ChevronDown, ExternalLink, Flame } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, BarChart3, ExternalLink, Flame } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import type { CustomerGrowthMetric } from "../lib/api";
@@ -75,6 +75,17 @@ function MonthlyChart({ row, months, tone, metricLabel }: { row: GrowthRow; mont
   );
 }
 
+// Icone que abre/fecha o grafico mes a mes na propria tela.
+function ChartToggle({ isOpen, onClick }: { isOpen: boolean; onClick: () => void }) {
+  const { tx } = useUiLanguage();
+  const label = isOpen ? tx("Fechar grafico", "关闭图表") : tx("Ver mes a mes", "查看每月");
+  return (
+    <button type="button" className={`growth-chart-toggle ${isOpen ? "is-open" : ""}`} onClick={onClick} aria-expanded={isOpen} title={label} aria-label={label}>
+      <BarChart3 size={16} />
+    </button>
+  );
+}
+
 function ChangeBadge({ summary }: { summary: GrowthSummary }) {
   const { tx } = useUiLanguage();
   if (summary.trend === "new") {
@@ -134,8 +145,8 @@ function GrowthList({
             const isOpen = openId === row.customerId;
             return (
               <li key={row.customerId} className={isOpen ? "is-open" : ""}>
-                <button type="button" className="growth-row" onClick={() => onToggle(row.customerId)} aria-expanded={isOpen}>
-                  <span className="growth-row-name">
+                <div className="growth-row">
+                  <Link to={`/clientes/${row.customerId}`} className="growth-row-name" title={tx("Abrir ficha do cliente", "打开客户档案")}>
                     <strong>{row.displayName}</strong>
                     <span>
                       {row.customerCode}
@@ -143,7 +154,7 @@ function GrowthList({
                         ? ` · ${tone === "up" ? tx(`${streak} meses subindo`, `连续 ${streak} 个月上升`) : tx(`${streak} meses caindo`, `连续 ${streak} 个月下降`)}`
                         : ""}
                     </span>
-                  </span>
+                  </Link>
                   <MiniBars values={row.values} months={months} tone={tone} />
                   <span className="growth-row-avg">
                     <span>
@@ -152,8 +163,8 @@ function GrowthList({
                     <small>{tx("pecas/mes", "件/月")}</small>
                   </span>
                   <ChangeBadge summary={row.summary} />
-                  <ChevronDown size={16} className="growth-row-chevron" />
-                </button>
+                  <ChartToggle isOpen={isOpen} onClick={() => onToggle(row.customerId)} />
+                </div>
                 {isOpen ? <MonthlyChart row={row} months={months} tone={tone} metricLabel={metricLabel} /> : null}
               </li>
             );
@@ -233,7 +244,7 @@ export function CustomerGrowthPage() {
       streakers: rows
         .filter((row) => row.summary.upStreak >= STREAK_MIN)
         .sort((left, right) => right.summary.upStreak - left.summary.upStreak || right.summary.delta - left.summary.delta),
-      stableCount: rows.filter((row) => row.summary.trend === "stable").length,
+      stableCount: rows.filter((row) => row.summary.trend === "stable" || row.summary.trend === "irregular").length,
     };
   }, [rows, sortMode]);
 
@@ -338,7 +349,7 @@ export function CustomerGrowthPage() {
               <strong>{falling.length}</strong>
             </div>
             <div className="growth-kpi">
-              <span>{tx("Estaveis", "稳定")}</span>
+              <span title={tx("Inclui quem teve so um pico isolado de compra.", "包括只有一次性大额采购的客户。")}>{tx("Estaveis ou pontuais", "稳定或偶发")}</span>
               <strong>{stableCount}</strong>
             </div>
             <div className="growth-kpi tone-streak">
@@ -358,22 +369,20 @@ export function CustomerGrowthPage() {
               </header>
               <div className="growth-streak-grid">
                 {streakers.slice(0, 12).map((row) => (
-                  <button
-                    key={row.customerId}
-                    type="button"
-                    className={`growth-streak-card ${openId === row.customerId ? "is-open" : ""}`}
-                    onClick={() => toggleOpen(row.customerId)}
-                  >
-                    <span className="growth-streak-name">
-                      <strong>{row.displayName}</strong>
-                      <span>{row.customerCode}</span>
+                  <div key={row.customerId} className={`growth-streak-card ${openId === row.customerId ? "is-open" : ""}`}>
+                    <span className="growth-streak-top">
+                      <Link to={`/clientes/${row.customerId}`} className="growth-streak-name" title={tx("Abrir ficha do cliente", "打开客户档案")}>
+                        <strong>{row.displayName}</strong>
+                        <span>{row.customerCode}</span>
+                      </Link>
+                      <ChartToggle isOpen={openId === row.customerId} onClick={() => toggleOpen(row.customerId)} />
                     </span>
                     <MiniBars values={row.values} months={months} tone="up" />
                     <small>
                       {tx(`${row.summary.upStreak} meses seguidos subindo`, `连续 ${row.summary.upStreak} 个月上升`)} ·{" "}
                       {formatPieces(row.values[row.values.length - 1] ?? 0)} {tx("no ultimo mes", "上月")}
                     </small>
-                  </button>
+                  </div>
                 ))}
               </div>
               {openStreaker ? (
