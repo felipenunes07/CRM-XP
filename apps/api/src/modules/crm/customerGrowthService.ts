@@ -1,6 +1,6 @@
 import { pool } from "../../db/client.js";
 
-export const CUSTOMER_GROWTH_METRICS = ["pieces", "screenXp", "screenDe", "screenVv", "battery", "dock", "revenue"] as const;
+export const CUSTOMER_GROWTH_METRICS = ["pieces", "screenXp", "screenDe", "screenVv", "battery", "dock"] as const;
 export type CustomerGrowthMetric = (typeof CUSTOMER_GROWTH_METRICS)[number];
 
 export interface CustomerGrowthRow {
@@ -23,7 +23,6 @@ const METRIC_COLUMNS: Record<CustomerGrowthMetric, string> = {
   screenVv: "screen_vv",
   battery: "battery",
   dock: "dock",
-  revenue: "revenue",
 };
 
 // Lista os ultimos `monthCount` meses fechados (o mes atual fica de fora para
@@ -52,8 +51,7 @@ export async function getCustomerGrowth(monthCount: number): Promise<CustomerGro
         SELECT
           o.id,
           o.customer_id,
-          to_char(o.order_date, 'YYYY-MM') AS month,
-          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_amount
+          to_char(o.order_date, 'YYYY-MM') AS month
         FROM orders o
         CROSS JOIN bounds b
         WHERE o.order_date >= b.start_month
@@ -117,8 +115,7 @@ export async function getCustomerGrowth(monthCount: number): Promise<CustomerGro
         COALESCE(SUM(t.screen_de), 0)::float8 AS screen_de,
         COALESCE(SUM(t.screen_vv), 0)::float8 AS screen_vv,
         COALESCE(SUM(t.battery), 0)::float8 AS battery,
-        COALESCE(SUM(t.dock), 0)::float8 AS dock,
-        COALESCE(SUM(o.total_amount), 0)::float8 AS revenue
+        COALESCE(SUM(t.dock), 0)::float8 AS dock
       FROM selected_orders o
       JOIN customers c ON c.id = o.customer_id
       LEFT JOIN order_item_totals t ON t.order_id = o.id
