@@ -57,6 +57,12 @@ describe("permissionService", () => {
     expect(ROLE_PERMISSIONS.tarefas).toEqual(["tasks.view"]);
   });
 
+  it("lets viewers open the customer list without other commercial areas", () => {
+    expect(ROLE_PERMISSIONS.viewer).toContain("commercial.customers.view");
+    expect(ROLE_PERMISSIONS.viewer).not.toContain("commercial.pipeline.view");
+    expect(ROLE_PERMISSIONS.viewer).not.toContain("finance.customers.view");
+  });
+
   it("checks permissions against the effective permission set", () => {
     expect(hasPermission(ROLE_PERMISSIONS.financeiro, "finance.view")).toBe(true);
     expect(hasPermission(ROLE_PERMISSIONS.financeiro, "admin.users.manage")).toBe(false);

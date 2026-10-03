@@ -796,7 +796,7 @@ export function CustomersPage() {
           {customersQuery.isLoading ? <div className="page-loading">Carregando clientes...</div> : null}
           {customersQuery.isError ? <div className="page-error">Falha ao carregar a carteira.</div> : null}
           {customersQuery.data ? (
-            <CustomerTable customers={customersQuery.data} latestNotes={latestNotesByCustomer} onOpenNotes={setNotesCustomer} />
+            <CustomerTable customers={customersQuery.data} latestNotes={latestNotesByCustomer} onOpenNotes={setNotesCustomer} editableLabels />
           ) : null}
           <CustomerNotesDrawer customer={notesCustomer} onClose={() => setNotesCustomer(null)} />
         </>

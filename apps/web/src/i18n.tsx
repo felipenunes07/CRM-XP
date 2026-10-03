@@ -591,6 +591,7 @@ const exactTranslations: Record<string, string> = {
   "Metas da Empresa (Globais)": "公司目标（全局）",
   "Metas por Vendedora": "按销售分配目标",
   "Clientes Novos": "新客户",
+  "Crescimento": "增长分析",
   "Saude do Negocio (LTV vs CAC)": "业务健康度（LTV 对 CAC）",
   "Saúde do Negócio (LTV vs CAC)": "业务健康度（LTV 对 CAC）",
   "Historico mensal": "月度历史",

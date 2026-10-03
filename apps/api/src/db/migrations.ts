@@ -4785,4 +4785,10 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_customer_credit_change_log_customer
     ON customer_credit_change_log (customer_id, created_at DESC);
   `,
+  `
+  -- Viewer (vendedoras) passa a acessar "Todos os Clientes".
+  INSERT INTO role_permissions (role, permission_key)
+  VALUES ('viewer', 'commercial.customers.view')
+  ON CONFLICT DO NOTHING;
+  `,
 ];

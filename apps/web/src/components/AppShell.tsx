@@ -98,6 +98,7 @@ const sidebarMenu: SidebarEntry[] = [
     icon: Users,
     children: [
       { to: "/clientes", labelPt: "Todos os Clientes" },
+      { to: "/clientes/crescimento", labelPt: "Crescimento" },
       { to: "/clientes/financeiro", labelPt: "Financeiro" },
       { to: "/clientes-novos", labelPt: "Clientes Novos" },
       { to: "/reativacao", labelPt: "Reativação" },

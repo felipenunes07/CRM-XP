@@ -3,6 +3,7 @@ import { AMBASSADOR_LABEL_NAME } from "@olist-crm/shared";
 import type { CustomerListItem, CustomerNote } from "@olist-crm/shared";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Link } from "react-router-dom";
+import { CustomerLabelCell } from "./CustomerLabelCell";
 import { CustomerNoteOutcomeBadge } from "./CustomerNotesPanel";
 import { InfoHint } from "./InfoHint";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, getFormattingLocale, statusLabel } from "../lib/format";
@@ -207,6 +208,7 @@ export function CustomerTable({
   onSelectedIdsChange,
   latestNotes,
   onOpenNotes,
+  editableLabels = false,
 }: {
   customers: CustomerListItem[];
   selectable?: boolean;
@@ -215,6 +217,8 @@ export function CustomerTable({
   // Quando informado, mostra a coluna "Ultimo retorno" com a observacao mais recente.
   latestNotes?: Map<string, CustomerNote>;
   onOpenNotes?: (customer: CustomerListItem) => void;
+  // Permite marcar ou criar rotulos direto na coluna "Rotulos".
+  editableLabels?: boolean;
 }) {
   const { tx } = useUiLanguage();
   const [sortState, setSortState] = useState<{ columnId: SortableColumnId; direction: SortDirection } | null>(null);
@@ -496,6 +500,9 @@ export function CustomerTable({
                   <td>{formatCurrency(customer.avgTicket)}</td>
                   <td>{formatCurrency(customer.totalSpent)}</td>
                   <td>
+                    {editableLabels ? (
+                      <CustomerLabelCell customer={customer} />
+                    ) : (
                     <div className="tag-row compact">
                       {customer.labels.length ? (
                         customer.labels.map((label) => (
@@ -511,6 +518,7 @@ export function CustomerTable({
                         <span className="muted-copy">{tx("Sem rotulo", "无标签")}</span>
                       )}
                     </div>
+                    )}
                   </td>
                   <td>{customer.priorityScore.toFixed(1)}</td>
                   <td>{customer.primaryInsight ?? tx("Sem alerta", "无提醒")}</td>
