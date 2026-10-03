@@ -1,9 +1,10 @@
-import { Suspense, lazy } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Suspense, lazy, useLayoutEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { PublicOnlyRoute, ProtectedRoute } from "./components/ProtectedRoute";
 import { useAuth } from "./hooks/useAuth";
 import { usePermissions } from "./hooks/usePermissions";
 import { useUiLanguage } from "./i18n";
+import { applyAppZoom } from "./lib/appZoom";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
@@ -133,6 +134,14 @@ function ExecutiveSalesRoute() {
 
 export default function App() {
   const { tx } = useUiLanguage();
+  const { pathname } = useLocation();
+
+  useLayoutEffect(() => {
+    applyAppZoom(pathname);
+    const handleResize = () => applyAppZoom(pathname);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [pathname]);
 
   return (
     <Suspense fallback={<div className="page-loading fullscreen">{tx("Carregando tela...", "正在加载页面...")}</div>}>

@@ -927,7 +927,7 @@ const OB_STYLES = `
 
   .ob-page-stack {
     background: linear-gradient(180deg, #F6F8FC 0%, #FAFBFD 50%, #FCFDFF 100%);
-    min-height: calc(100vh - 100px);
+    min-height: calc(100vh / var(--vz, 1) - 100px);
     padding: 0.65rem;
     font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
   }

@@ -54,6 +54,7 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber } from "../lib/format";
+import { toLayoutPx } from "../lib/appZoom";
 
 type AutomationNodeKind = "schedule" | "audience" | "condition" | "agent" | "template" | "send" | "wait";
 type InactivityStageId = "ATTENTION_1" | "ATTENTION_2" | "INACTIVE_1" | "INACTIVE_2";
@@ -1280,8 +1281,8 @@ function AutomationsPageInner() {
       setNodes((currentNodes) => [
         ...currentNodes,
         createNode(id, kind, {
-          x: event.clientX - bounds.left - 90,
-          y: event.clientY - bounds.top - 40,
+          x: toLayoutPx(event.clientX - bounds.left) - 90,
+          y: toLayoutPx(event.clientY - bounds.top) - 40,
         }),
       ]);
       setSelectedNodeId(id);

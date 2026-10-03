@@ -1,6 +1,6 @@
 /* Quadro de tarefas autenticado do CRM (/tarefas). */
 .tarefas-page {
-  min-height: 100vh;
+  min-height: calc(100vh / var(--vz, 1));
   background: #f7f7f8;
   padding: 20px;
   font-variant-numeric: tabular-nums;
@@ -148,8 +148,8 @@
   z-index: 45;
   top: 38px;
   right: 0;
-  width: min(410px, calc(100vw - 28px));
-  max-height: min(520px, calc(100vh - 110px));
+  width: min(410px, calc(calc(100vw / var(--vz, 1)) - 28px));
+  max-height: min(520px, calc(calc(100vh / var(--vz, 1)) - 110px));
   overflow: auto;
   border: 1px solid #dce4f1;
   border-radius: 14px;
@@ -833,7 +833,7 @@
 .tarefas-modal {
   width: 100%;
   max-width: 440px;
-  max-height: 88vh;
+  max-height: calc(88vh / var(--vz, 1));
   overflow-y: auto;
   background: #fff;
   border-radius: 12px;
@@ -917,7 +917,7 @@
   background: #fff;
   outline-color: #2956d7;
 }
-.tarefas-details-modal { width: min(640px, calc(100vw - 28px)); }
+.tarefas-details-modal { width: min(640px, calc(calc(100vw / var(--vz, 1)) - 28px)); }
 .tarefas-details-modal textarea { min-height: 230px; }
 .tarefas-checklist-editor {
   display: grid;
@@ -959,7 +959,7 @@
   padding: 0;
   display: grid;
   gap: 2px;
-  max-height: 46vh;
+  max-height: calc(46vh / var(--vz, 1));
   overflow-y: auto;
 }
 .tarefas-team li {

@@ -6,6 +6,7 @@ import App from "./App";
 import { AuthProvider } from "./hooks/useAuth";
 import { UiLanguageProvider } from "./i18n";
 import { isApiAuthError } from "./lib/api";
+import { applyAppZoom } from "./lib/appZoom";
 import "./styles.css";
 
 const shouldRetryRequest = (failureCount: number, error: unknown) => {
@@ -49,6 +50,7 @@ window.addEventListener("unhandledrejection", (e) => {
   }
 });
 
+applyAppZoom();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock, Eye, CalendarClock, CheckCircle2, TrendingUp, RefreshCw, Info, Send, Search, ArrowRight, Bot, MessageSquare, Settings, Users, CornerUpRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api, type LifecycleStage } from "../lib/api";
+import { toLayoutPx } from "../lib/appZoom";
 
 const STAGE_ORDER: LifecycleStage[] = ["ATENCAO_1", "ATENCAO_2", "INATIVO", "INATIVO_30"];
 
@@ -329,8 +330,8 @@ export function LifecyclePage() {
     if (!draggingNode) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - draggingNode.startX;
-      const dy = e.clientY - draggingNode.startY;
+      const dx = toLayoutPx(e.clientX - draggingNode.startX);
+      const dy = toLayoutPx(e.clientY - draggingNode.startY);
       const newX = Math.max(0, draggingNode.nodeStartX + dx);
       const newY = Math.max(0, draggingNode.nodeStartY + dy);
       setNodePositions((prev) => ({
@@ -341,8 +342,8 @@ export function LifecyclePage() {
 
     const handleMouseUp = (e: MouseEvent) => {
       if (draggingNode) {
-        const dx = e.clientX - draggingNode.startX;
-        const dy = e.clientY - draggingNode.startY;
+        const dx = toLayoutPx(e.clientX - draggingNode.startX);
+        const dy = toLayoutPx(e.clientY - draggingNode.startY);
         const newX = Math.max(0, draggingNode.nodeStartX + dx);
         const newY = Math.max(0, draggingNode.nodeStartY + dy);
         const next = {

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Check, ChevronDown, Circle, CircleCheck, Loader2, PlayCircle } from "lucide-react";
 import "./TaskStatusPicker.css";
+import { getAppZoom } from "../lib/appZoom";
 
 export type TaskStatus = "todo" | "doing" | "review" | "done";
 const options: { value: TaskStatus; label: string; Icon: typeof Circle }[] = [
@@ -21,11 +22,15 @@ export function TaskStatusPicker({ taskTitle, value, onChange, allowedStatuses }
   const current = optionFor(value);
   function show() {
     const menu = popup.current;
-    const rect = trigger.current?.getBoundingClientRect();
-    if (!menu || !rect) return;
+    const screenRect = trigger.current?.getBoundingClientRect();
+    if (!menu || !screenRect) return;
+    const zoom = getAppZoom();
+    const rect = { left: screenRect.left / zoom, top: screenRect.top / zoom, bottom: screenRect.bottom / zoom };
+    const viewportWidth = innerWidth / zoom;
+    const viewportHeight = innerHeight / zoom;
     if (open) return menu.hidePopover();
-    menu.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 210))}px`;
-    menu.style.top = `${Math.max(8, rect.bottom + 190 > innerHeight ? rect.top - 190 : rect.bottom + 6)}px`;
+    menu.style.left = `${Math.max(8, Math.min(rect.left, viewportWidth - 210))}px`;
+    menu.style.top = `${Math.max(8, rect.bottom + 190 > viewportHeight ? rect.top - 190 : rect.bottom + 6)}px`;
     menu.showPopover();
     menu.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
   }

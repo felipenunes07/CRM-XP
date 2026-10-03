@@ -34,6 +34,7 @@ import { useUiLanguage } from "../i18n";
 import { api } from "../lib/api";
 import { formatDate, formatNumber, formatCurrency, getFormattingLocale } from "../lib/format";
 import { isTrendRangeVisible, resolveTrendRangeSelection } from "./dashboardPage.helpers";
+import { toLayoutPx } from "../lib/appZoom";
 
 type TrendPeriod = '90d' | '6m' | '1y' | '2y' | 'max';
 
@@ -240,8 +241,8 @@ function formatTrendTooltipLabel(value: string) {
 }
 
 function getFullScreenAnnotationTooltipPosition(mouseX: number, mouseY: number) {
-  const viewportWidth = typeof window === "undefined" ? mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH : window.innerWidth;
-  const viewportHeight = typeof window === "undefined" ? mouseY + FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT : window.innerHeight;
+  const viewportWidth = typeof window === "undefined" ? mouseX + FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH : toLayoutPx(window.innerWidth);
+  const viewportHeight = typeof window === "undefined" ? mouseY + FULL_SCREEN_ANNOTATION_TOOLTIP_HEIGHT : toLayoutPx(window.innerHeight);
   const shouldRenderToLeft =
     mouseX > viewportWidth - (FULL_SCREEN_ANNOTATION_TOOLTIP_WIDTH + FULL_SCREEN_ANNOTATION_TOOLTIP_GAP + FULL_SCREEN_ANNOTATION_TOOLTIP_MARGIN);
 
@@ -698,7 +699,7 @@ function TrendTooltip({
       className="chart-tooltip trend-tooltip"
       style={isFullScreen ? {
         width: "280px",
-        maxWidth: "calc(100vw - 4rem)",
+        maxWidth: "calc(100vw / var(--vz, 1) - 4rem)",
         boxSizing: "border-box",
         padding: "1rem",
         borderRadius: "12px",
@@ -1165,8 +1166,8 @@ export function DashboardPage() {
 
     const handleMouseMove = (e: MouseEvent) => {
       const containerRect = fsContainerRef.current!.getBoundingClientRect();
-      const newHeight = containerRect.bottom - e.clientY - 120; // legend and bottom padding
-      setFsBottomChartHeight(Math.max(100, Math.min(newHeight, containerRect.height - 250)));
+      const newHeight = toLayoutPx(containerRect.bottom - e.clientY) - 120; // legend and bottom padding
+      setFsBottomChartHeight(Math.max(100, Math.min(newHeight, toLayoutPx(containerRect.height) - 250)));
     };
 
     const handleMouseUp = () => {
@@ -1356,8 +1357,8 @@ export function DashboardPage() {
   ) => {
     setHoveredFullScreenAnnotation({
       annotation,
-      mouseX: event.clientX,
-      mouseY: event.clientY,
+      mouseX: toLayoutPx(event.clientX),
+      mouseY: toLayoutPx(event.clientY),
     });
   };
 

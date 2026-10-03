@@ -852,7 +852,7 @@
 .model-analysis-heading h1 {
   margin: 0;
   color: #12213f;
-  font-size: clamp(1.55rem, 3vw, 2.25rem);
+  font-size: clamp(1.55rem, calc(3vw / var(--vz, 1)), 2.25rem);
   line-height: 1.1;
 }
 
@@ -1317,7 +1317,7 @@
 .model-customer-dialog {
   display: grid;
   width: min(1220px, 100%);
-  max-height: calc(100vh - 2.5rem);
+  max-height: calc(calc(100vh / var(--vz, 1)) - 2.5rem);
   overflow-y: auto;
   border: 1px solid rgba(41, 86, 215, 0.14);
   border-radius: 22px;
@@ -2249,7 +2249,7 @@
 .sku-detail-identity h3 {
   margin: 0;
   color: #0f172a;
-  font-size: clamp(1.25rem, 2.3vw, 1.65rem);
+  font-size: clamp(1.25rem, calc(2.3vw / var(--vz, 1)), 1.65rem);
 }
 
 .sku-decision-banner {
@@ -2626,7 +2626,7 @@
 
   .model-customer-dialog {
     width: 100%;
-    max-height: 100vh;
+    max-height: calc(100vh / var(--vz, 1));
     border: 0;
     border-radius: 0;
   }

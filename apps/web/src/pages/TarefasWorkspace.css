@@ -1,5 +1,5 @@
 /* Task workspace: clear hierarchy, generous inset and compact editable cells. */
-.tarefas-page { box-sizing: border-box; container-type: inline-size; width: 100%; min-width: 0; padding: 30px clamp(20px, 4vw, 68px) 60px; background: #f7f7f8; max-width: 1700px; margin: 0 auto; color: #243044; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tarefas-page { box-sizing: border-box; container-type: inline-size; width: 100%; min-width: 0; padding: 30px clamp(20px, calc(4vw / var(--vz, 1)), 68px) 60px; background: #f7f7f8; max-width: 1700px; margin: 0 auto; color: #243044; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .tarefas-page button, .tarefas-page input, .tarefas-page select, .tarefas-page textarea { font-family: inherit; }
 .tarefas-page-heading { display: flex; align-items: center; gap: 14px; padding: 0 0 24px; }
 .tarefas-page-mark { display: grid; place-items: center; height: 44px; width: 44px; border-radius: 12px; background: #eef2fe; color: #2956d7; }
@@ -57,7 +57,7 @@
 .tarefas-sheet .tarefas-addrow { padding: 8px 8px 12px 38px; border-bottom: 1px solid #e8ecf2; }
 .tarefas-sheet .tarefas-addrow button { border: 0; background: transparent; font-size: 13px; font-weight: 400; color: #8190a5; height: 30px; padding: 0; }
 .tarefas-sheet .tarefas-addrow button:hover { color: #2956d7; }
-.tarefas-compose.tarefas-modal { width: min(680px, calc(100vw - 32px)); max-width: 680px; padding: 28px 32px; border-radius: 14px; gap: 22px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.tarefas-compose.tarefas-modal { width: min(680px, calc(calc(100vw / var(--vz, 1)) - 32px)); max-width: 680px; padding: 28px 32px; border-radius: 14px; gap: 22px; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .tarefas-compose-heading { display: flex; gap: 12px; align-items: center; }
 .tarefas-compose-heading > span { display: grid; place-items: center; width: 44px; height: 44px; background: #eef2fe; color: #2956d7; border-radius: 11px; }
 .tarefas-compose-heading > div { flex: 1; }
