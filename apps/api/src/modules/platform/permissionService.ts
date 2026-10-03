@@ -63,29 +63,11 @@ const ALL_PERMISSION_KEYS = APP_PERMISSIONS.map((permission) => permission.key);
 
 export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
   admin: ALL_PERMISSION_KEYS,
+  // Padrao das vendedoras (Amanda, Suelen, Thais...): mesmo acesso que tinham como viewer.
   vendas: [
     "tasks.view",
     "dashboard.view",
-    "commercial.view",
-    "commercial.manage",
-    "commercial.pipeline.view",
     "commercial.customers.view",
-    "commercial.new_customers.view",
-    "commercial.reactivation.view",
-    "commercial.ambassadors.view",
-    "commercial.agenda.view",
-    "commercial.ideas.view",
-    "commercial.prospecting.view",
-    "commercial.labels.view",
-    "messages.view",
-    "messages.manage",
-    "messages.inbox.view",
-    "messages.events.view",
-    "messages.complaints.view",
-    "messages.templates.view",
-    "messages.offboarding.view",
-    "messages.lifecycle.view",
-    "messages.broadcast.view",
     "reports.view",
     "reports.executive.view",
     "reports.attendants.view",
@@ -94,7 +76,6 @@ export const ROLE_PERMISSIONS: Record<AppRole, string[]> = {
     "reports.inventory.view",
     "reports.segments.view",
     "reports.strategies.view",
-    "automations.view",
     "changelog.view",
   ],
   financeiro: [

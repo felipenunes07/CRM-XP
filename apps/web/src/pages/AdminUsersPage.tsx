@@ -26,7 +26,7 @@ import { navigationAccessFolders, navigationPermissionKeys } from "../lib/naviga
 
 const roleOptions: Array<{ value: AppRole; label: string; description: string }> = [
   { value: "admin", label: "Admin", description: "Modelo com acesso total. Bloqueios individuais continuam valendo." },
-  { value: "vendas", label: "Vendas", description: "Modelo para vendedoras, com ferramentas comerciais, mensagens e relatorios." },
+  { value: "vendas", label: "Vendas", description: "Padrao das vendedoras: dashboard, tarefas, clientes e relatorios." },
   { value: "financeiro", label: "Financeiro", description: "Financeiro, comprovantes, metas e relatorios." },
   { value: "operacional", label: "Operacional", description: "Rotina operacional, mensagens e integracoes." },
   { value: "tarefas", label: "Somente tarefas", description: "Acesso exclusivo ao quadro de tarefas." },
