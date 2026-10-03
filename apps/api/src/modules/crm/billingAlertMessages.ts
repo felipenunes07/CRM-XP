@@ -250,164 +250,99 @@ function describeUnmatched(entry: BillingUnmatchedEntry) {
   return `• ${kind} com código *${entry.customerCode}* em ${formatBrDate(entry.entryDate)}${reference}: ${formatBrl(entry.amount)}`;
 }
 
-const DAILY_TOP_PER_SELLER = 10;
-const DAILY_RECENT_SALE_DAYS = 7;
-const DAILY_RECENT_NO_CREDIT_LINES = 5;
-const DAILY_OTHER_SELLER_LINES = 3;
-
-function statusIcons(customer: BillingCustomerResult) {
-  const icons = [
-    customer.limitLevel === "OVER_LIMIT" ? "🔴" : null,
-    customer.limitLevel === "OVER_CREDIT" ? "🟠" : null,
-    isNoCredit(customer) ? "⚪" : null,
-    customer.limitLevel === "NEAR_LIMIT" ? "🟡" : null,
-    customer.hasOverdue ? "⏰" : null,
-  ].filter(Boolean);
-  return icons.join("");
+function financeBlocks(report: BillingAlertReport, missingTermPreview: number) {
+  const blocks: string[] = [];
+  if (report.missingPaymentTerm.length) {
+    const total = report.missingPaymentTerm.reduce((sum, customer) => sum + customer.debtAmount, 0);
+    const top = report.missingPaymentTerm
+      .slice(0, missingTermPreview)
+      .map((customer) => `• ${customer.customerCode} · ${customer.displayName} — deve ${formatBrl(customer.debtAmount)}`);
+    const rest = report.missingPaymentTerm.length - top.length;
+    blocks.push(
+      [
+        `📋 *Sem prazo cadastrado:* ${plural(report.missingPaymentTerm.length, "cliente devendo", "clientes devendo")} ${formatBrl(total)}. Sem o PRAZO (coluna I do RESUMO) não dá para saber se está vencido. Maiores:`,
+        ...top,
+        rest > 0 ? `…e mais ${rest}. Lista completa no CRM › Financeiro.` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+  if (report.unmatchedEntries.length) {
+    blocks.push(
+      [
+        "⚠️ *Código inválido na planilha* — estes lançamentos não contam para nenhum cliente. Corrigir o COD:",
+        ...report.unmatchedEntries.map(describeUnmatched),
+      ].join("\n"),
+    );
+  }
+  return blocks;
 }
 
-/** Uma linha por cliente: situacao, quanto deve, vencido e ultima venda. */
-export function compactCustomerLine(customer: BillingCustomerResult, today: string) {
-  let debt = `deve ${formatBrl(customer.debtAmount)}`;
-  if (customer.limitUsage !== null && customer.limitLevel !== "OK" && customer.limitLevel !== "NO_LIMIT") {
-    debt += ` (${Math.round(customer.limitUsage * 100)}%)`;
-  }
-  const parts = [debt];
-  if (customer.hasOverdue) {
-    parts.push(`vencido ${formatBrl(customer.overdueAmount)} há ${customer.oldestOverdueDays}d`);
-  }
-  const sale = customer.lastSale;
-  if (sale?.orderDate) parts.push(`venda ${formatShortDate(sale.orderDate, today)}`);
-  return `${statusIcons(customer)} *${customer.customerCode}* ${customer.displayName} — ${parts.join(" · ")}`;
-}
-
-function isRecentSale(customer: BillingCustomerResult, today: string, days: number) {
-  const date = customer.lastSale?.orderDate;
-  if (!date) return false;
-  return (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000 <= days;
-}
-
-function splitSellerCustomers(group: SellerGroup, today: string) {
-  const onlyNoCredit = group.customers.filter((customer) => isNoCredit(customer) && !customer.hasOverdue);
-  const priorityList = group.customers.filter((customer) => !onlyNoCredit.includes(customer)).sort(compareCustomers);
-  const recentNoCredit = onlyNoCredit
-    .filter((customer) => isRecentSale(customer, today, DAILY_RECENT_SALE_DAYS))
-    .sort((left, right) => String(right.lastSale?.orderDate ?? "").localeCompare(String(left.lastSale?.orderDate ?? "")));
-  const noCreditTotal = onlyNoCredit.reduce((sum, customer) => sum + customer.debtAmount, 0);
-  return { onlyNoCredit, priorityList, recentNoCredit, noCreditTotal };
-}
-
-function sellerDailyText(group: SellerGroup, today: string) {
-  const { onlyNoCredit, priorityList, recentNoCredit, noCreditTotal } = splitSellerCustomers(group, today);
-  const total = group.customers.reduce((sum, customer) => sum + amountToCharge(customer), 0);
-  const lines = [`${sellerTag(group)} — ${plural(group.customers.length, "cliente", "clientes")} · ${formatBrl(total)}`];
-
-  if (priorityList.length) {
-    lines.push("", "*Mais urgentes:*");
-    priorityList
-      .slice(0, DAILY_TOP_PER_SELLER)
-      .forEach((customer, index) => lines.push(`${index + 1}. ${compactCustomerLine(customer, today)}`));
-    if (priorityList.length > DAILY_TOP_PER_SELLER) {
-      lines.push(`…e mais ${priorityList.length - DAILY_TOP_PER_SELLER} no CRM`);
-    }
-  }
-
-  if (onlyNoCredit.length) {
-    lines.push("", `⚪ *Sem crédito:* ${plural(onlyNoCredit.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`);
-    if (recentNoCredit.length) {
-      lines.push(`🛒 Venderam sem crédito nos últimos ${DAILY_RECENT_SALE_DAYS} dias:`);
-      for (const customer of recentNoCredit.slice(0, DAILY_RECENT_NO_CREDIT_LINES)) {
-        const sale = customer.lastSale!;
-        lines.push(
-          `• *${customer.customerCode}* ${customer.displayName} — deve ${formatBrl(customer.debtAmount)} · venda ${formatShortDate(sale.orderDate!, today)} ${formatBrl(sale.totalAmount)}`,
-        );
-      }
-      if (recentNoCredit.length > DAILY_RECENT_NO_CREDIT_LINES) {
-        lines.push(`…e mais ${recentNoCredit.length - DAILY_RECENT_NO_CREDIT_LINES} no CRM`);
-      }
-    }
-  }
-  return lines.join("\n");
-}
-
-/** Vendedor(a) sem WhatsApp no CRM ou sem vendedora: resumo curto para o financeiro direcionar. */
-function otherSellerSummary(group: SellerGroup, today: string) {
-  const { onlyNoCredit, priorityList, noCreditTotal } = splitSellerCustomers(group, today);
-  const total = group.customers.reduce((sum, customer) => sum + amountToCharge(customer), 0);
-  const lines = [`• *${group.seller}* — ${plural(group.customers.length, "cliente", "clientes")} · ${formatBrl(total)}`];
-  for (const customer of priorityList.slice(0, DAILY_OTHER_SELLER_LINES)) {
-    lines.push(`   ${compactCustomerLine(customer, today)}`);
-  }
-  if (priorityList.length > DAILY_OTHER_SELLER_LINES) {
-    lines.push(`   …e mais ${priorityList.length - DAILY_OTHER_SELLER_LINES}`);
-  }
-  if (onlyNoCredit.length) {
-    lines.push(`   ⚪ sem crédito: ${plural(onlyNoCredit.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`);
-  }
-  return lines.join("\n");
-}
-
-/**
- * Relatorio das 9h, curto: resumo + uma mensagem por vendedora com os 10 mais
- * urgentes (uma linha cada) e o resumo de sem credito, destacando quem vendeu
- * sem credito nos ultimos dias. A lista completa fica no CRM.
- */
 export function buildDailyReportMessages(
   report: BillingAlertReport,
   phones: SellerPhoneDirectory = new Map(),
+  options: { missingTermPreview?: number } = {},
 ): BillingOutgoingMessage[] {
   const toCharge = [
     ...new Set([...report.overLimit, ...report.overCredit, ...report.overdue, ...report.noCredit, ...report.nearLimit]),
   ];
+  const noCreditTotal = report.noCredit.reduce((sum, customer) => sum + customer.debtAmount, 0);
   const groups = groupBySeller(toCharge, phones);
   const overdueTotal = report.overdue.reduce((sum, customer) => sum + customer.overdueAmount, 0);
-  const noCreditTotal = report.noCredit.reduce((sum, customer) => sum + customer.debtAmount, 0);
 
   const header = [
     `💰 *COBRANÇA DO DIA — ${formatBrDate(report.today)}*`,
-    `🔴 Estourou o limite: ${report.overLimit.length} · 🟠 Passou do crédito: ${report.overCredit.length}`,
-    `⏰ Vencido: ${plural(report.overdue.length, "cliente", "clientes")} · ${formatBrl(overdueTotal)}`,
-    `⚪ Sem crédito: ${plural(report.noCredit.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
-    `🟡 Perto do limite: ${report.nearLimit.length}`,
     "",
-    "Cada vendedor(a) recebe abaixo os mais urgentes. Lista completa e filtros: CRM › Financeiro › Quem cobrar hoje.",
+    "Abaixo, cada vendedor(a) é marcado(a) com os clientes que precisa cobrar hoje.",
+    "",
+    `🔴 Estourou o limite: ${plural(report.overLimit.length, "cliente", "clientes")}`,
+    `🟠 Passou do crédito: ${plural(report.overCredit.length, "cliente", "clientes")}`,
+    `⏰ Pagamento vencido: ${plural(report.overdue.length, "cliente", "clientes")} · ${formatBrl(overdueTotal)}`,
+    `⚪ Devendo sem crédito: ${plural(report.noCredit.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
+    `🟡 Perto do limite: ${plural(report.nearLimit.length, "cliente", "clientes")}`,
+    "",
+    "_Como ler:_",
+    "🔴 deve mais que o crédito e o crédito interno",
+    "🟠 passou do crédito, mas ainda está dentro do interno",
+    "⏰ pedido não pago depois do prazo (cada pagamento quita primeiro os pedidos mais antigos)",
+    "⚪ deve, mas não tem crédito liberado na planilha",
+    "🟡 já usou 80% ou mais do crédito",
   ].join("\n");
 
   const messages: BillingOutgoingMessage[] = [{ text: header, mentions: [] }];
 
-  const withWhatsapp = groups.filter((group) => group.phone);
-  const others = groups.filter((group) => !group.phone);
-
-  for (const group of withWhatsapp) {
-    const texts = splitIntoMessages([sellerDailyText(group, report.today)]);
-    texts.forEach((text, index) =>
-      messages.push({
-        text: index === 0 ? text : `${group.seller} (continuação)\n\n${text}`,
-        mentions: index === 0 ? [group.phone!] : [],
-      }),
-    );
+  for (const group of groups) {
+    const total = group.customers.reduce((sum, customer) => sum + amountToCharge(customer), 0);
+    const title = `${plural(group.customers.length, "cliente", "clientes")} para acompanhar · cobrar ${formatBrl(total)}`;
+    // Quem so deve sem credito (sem vencido nem limite) vira uma linha cada, do
+    // maior para o menor, no fim — sao centenas e o cartao completo lotaria o grupo.
+    const onlyNoCredit = group.customers.filter((customer) => isNoCredit(customer) && !customer.hasOverdue);
+    const withCard = group.customers.filter((customer) => !onlyNoCredit.includes(customer));
+    const blocks = withCard.map((customer, index) => `${index + 1}. ${customerCard(customer, report.today)}`);
+    if (onlyNoCredit.length) {
+      const sorted = [...onlyNoCredit].sort((left, right) => right.debtAmount - left.debtAmount);
+      const noCreditTotal = sorted.reduce((sum, customer) => sum + customer.debtAmount, 0);
+      blocks.push(
+        [
+          `⚪ *Devendo sem crédito liberado* — ${plural(sorted.length, "cliente", "clientes")} · ${formatBrl(noCreditTotal)}`,
+          "_Cobrar o valor todo; próximo pedido só com pagamento._",
+          ...sorted.map((customer) => {
+            const sale = customer.lastSale;
+            const saleInfo = sale?.orderDate
+              ? ` · últ. venda ${formatShortDate(sale.orderDate, report.today)}${sale.seller ? ` (${sale.seller})` : ""}`
+              : "";
+            return `• ${customer.customerCode} · ${customer.displayName} — ${formatBrl(customer.debtAmount)}${saleInfo}`;
+          }),
+        ].join("\n"),
+      );
+    }
+    messages.push(...sellerMessages(group, title, blocks));
   }
 
-  const financeLines: string[] = [];
-  if (others.length) {
-    financeLines.push(
-      "👥 *Sem WhatsApp no CRM / sem vendedora* — financeiro, favor direcionar:",
-      ...others.map((group) => otherSellerSummary(group, report.today)),
-    );
-  }
-  if (report.missingPaymentTerm.length) {
-    const total = report.missingPaymentTerm.reduce((sum, customer) => sum + customer.debtAmount, 0);
-    financeLines.push(
-      `📋 *Sem prazo cadastrado:* ${plural(report.missingPaymentTerm.length, "cliente", "clientes")} · ${formatBrl(total)} — preencher a coluna PRAZO no RESUMO.`,
-    );
-  }
-  if (report.unmatchedEntries.length) {
-    financeLines.push(
-      ["⚠️ *Código inválido na planilha* (não conta para ninguém):", ...report.unmatchedEntries.map(describeUnmatched)].join("\n"),
-    );
-  }
-  if (financeLines.length) {
-    for (const text of splitIntoMessages(["🧾 *Para o financeiro*", ...financeLines])) {
+  const finance = financeBlocks(report, options.missingTermPreview ?? 10);
+  if (finance.length) {
+    for (const text of splitIntoMessages(["🧾 *Para o financeiro*", ...finance])) {
       messages.push({ text, mentions: [] });
     }
   }
