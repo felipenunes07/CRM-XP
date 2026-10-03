@@ -1173,6 +1173,7 @@ export interface InventoryIntelligenceItem {
   brand: string;
   family: string;
   productKind: InventoryProductKind;
+  factory: "XP" | "VV" | "DE" | "BATERIA";
   color: string | null;
   quality: string | null;
   price: number;
