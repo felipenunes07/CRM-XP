@@ -199,6 +199,7 @@ describe("inventory and opportunity routes", () => {
         brand: "SAMSUNG",
         family: "A05S",
         productKind: "TELA",
+        factory: "XP",
         color: "PRETO",
         quality: "PREMIER",
         price: 12,

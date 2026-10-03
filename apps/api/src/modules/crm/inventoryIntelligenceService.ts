@@ -477,6 +477,8 @@ function buildInventoryItem(input: {
     brand: grouping.brand,
     family: grouping.family,
     productKind: grouping.productKind,
+    // Usa o modelo bruto: a limpeza do rotulo remove marcadores como "[VV]".
+    factory: deriveInventoryFactory(input.model, grouping.productKind),
     color: input.color,
     quality: input.quality,
     price: input.price,
@@ -2702,7 +2704,7 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       brand: item.brand,
       family: item.family,
       productKind: item.productKind,
-      factory: deriveInventoryFactory(item.model, item.productKind),
+      factory: item.factory,
       stockUnits: 0,
       activeSkuCount: 0,
       totalSkuCount: 0,
