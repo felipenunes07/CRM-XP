@@ -232,6 +232,61 @@ describe("CustomerFinancialPageView", () => {
     expect(markup).not.toContain("Editar crédito");
   });
 
+  it("shows a registered customer without credit and keeps orders and payments visible", () => {
+    const withoutCredit = {
+      ...overview.linkedRows[1]!,
+      id: "customer-customer-3",
+      customerId: "customer-3",
+      customerCode: "CL1160",
+      customerDisplayName: "CL1160 - Gabriel Brelaz",
+      sourceDisplayName: null,
+      creditLimit: 0,
+      availableCreditAmount: 0,
+      withinCreditLimit: false,
+      operationalState: "SETTLED" as const,
+      observation: "Sem crédito informado",
+    };
+    const allCustomersOverview = {
+      ...overview,
+      linkedRows: [...overview.linkedRows, withoutCredit],
+      summary: { ...overview.summary, totalLinkedCustomers: 3 },
+    };
+    const withoutCreditDetail = {
+      ...detail,
+      row: withoutCredit,
+      orders: detail.orders.map((order) => ({ ...order, customerId: "customer-3", customerCode: "CL1160" })),
+      payments: detail.payments.map((payment) => ({ ...payment, customerId: "customer-3", customerCode: "CL1160" })),
+    };
+
+    const markup = renderToStaticMarkup(
+      <MemoryRouter>
+        <CustomerFinancialPageView
+          overview={allCustomersOverview}
+          detail={withoutCreditDetail}
+          selectedCustomerId="customer-3"
+          search="gabriel"
+          isOverviewLoading={false}
+          isOverviewError={false}
+          isDetailLoading={false}
+          isDetailError={false}
+          canRefreshCredit
+          isRefreshing={false}
+          refreshError={false}
+          onSearchChange={() => undefined}
+          onSelectCustomer={() => undefined}
+          onRefresh={() => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(markup).toContain("Todos os clientes");
+    expect(markup).toContain("CL1160 - Gabriel Brelaz");
+    expect(markup).toContain("Sem crédito");
+    expect(markup).toContain("Pedidos");
+    expect(markup).toContain("Pagamentos");
+    expect(markup).toContain("7.217,00");
+  });
+
   it("mostra Editar credito para quem pode alterar o credito", () => {
     const markup = renderToStaticMarkup(
       <MemoryRouter>

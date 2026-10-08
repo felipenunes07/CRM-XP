@@ -4,6 +4,7 @@ import path from "node:path";
 import XLSX from "xlsx";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildCustomerCreditMatchMap,
   deriveCustomerCreditOperationalState,
   findLatestCustomerCreditWorkbook,
   isCustomerCreditSourceCurrent,
@@ -66,7 +67,7 @@ describe("isCustomerCreditSourceCurrent", () => {
     expect(
       isCustomerCreditSourceCurrent(
         {
-          parserVersion: 7,
+          parserVersion: 8,
           sourceFilePath: "/XP SALDO TEMPORARIO/SALDO VENDAS - 22.07.xlsx",
           sourceFileSizeBytes: 62_333_071,
           sourceFileUpdatedAt: "2026-07-22 20:01:10+00",
@@ -465,6 +466,24 @@ describe("deriveCustomerCreditOperationalState", () => {
 });
 
 describe("resolveParsedCreditDetails", () => {
+  it("links a financial CL code to a customer whose Olist id is stored as customer_code", () => {
+    const matches = buildCustomerCreditMatchMap(
+      ["CL1160"],
+      [
+        {
+          id: "customer-gabriel",
+          customerCode: "757394626",
+          displayName: "CL1160 - Gabriel Brelaz",
+        },
+      ],
+    );
+
+    expect(matches.get("CL1160")).toEqual({
+      id: "customer-gabriel",
+      displayName: "CL1160 - Gabriel Brelaz",
+    });
+  });
+
   it("links parsed orders and payments to CRM customers by customer code", () => {
     const matches = new Map([["CL475", { id: "customer-1", displayName: "Fast Phone CRM" }]]);
 

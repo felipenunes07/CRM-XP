@@ -30,7 +30,7 @@ const CUSTOMER_CREDIT_SOURCE_TYPE = "customer_credit_xlsx";
 const CUSTOMER_CREDIT_SHEET_NAME = "RESUMO";
 const CUSTOMER_CREDIT_LOCK_NS = 8201;
 const CUSTOMER_CREDIT_LOCK_KEY = 1;
-const CUSTOMER_CREDIT_PARSER_VERSION = 7;
+const CUSTOMER_CREDIT_PARSER_VERSION = 8;
 const CUSTOMER_CREDIT_DETAIL_INSERT_CHUNK_SIZE = 5000;
 const RISK_PRIORITY: Record<CustomerCreditRiskLevel, number> = {
   CRITICO: 0,
@@ -140,6 +140,12 @@ export interface ParsedCustomerCreditWorkbook {
 }
 
 type CustomerCreditMatch = { id: string; displayName: string };
+
+interface CustomerMatchCandidate {
+  id: string;
+  customerCode: string;
+  displayName: string;
+}
 
 interface ResolvedCustomerCreditRow extends ParsedCustomerCreditRow {
   customerId: string | null;
@@ -977,12 +983,43 @@ export async function parseCustomerCreditWorkbook(
   };
 }
 
-function buildRowLookup(rows: ParsedCustomerCreditRow[]) {
-  return Array.from(new Set(rows.map((row) => row.customerCode)));
+function extractFinancialCustomerCode(displayName: string) {
+  const match = normalizeCode(displayName).match(/^([A-Z]{1,8}\d+)\b/);
+  return match?.[1] ?? null;
 }
 
-async function resolveCustomerMatches(rows: ParsedCustomerCreditRow[]) {
-  const customerCodes = buildRowLookup(rows);
+export function buildCustomerCreditMatchMap(
+  customerCodes: string[],
+  candidates: CustomerMatchCandidate[],
+) {
+  const requestedCodes = new Set(customerCodes.map((code) => normalizeCode(code)).filter(Boolean));
+  const matches = new Map<string, CustomerCreditMatch>();
+
+  for (const candidate of candidates) {
+    const exactCode = normalizeCode(candidate.customerCode);
+    if (requestedCodes.has(exactCode)) {
+      matches.set(exactCode, { id: candidate.id, displayName: candidate.displayName });
+    }
+  }
+
+  const aliases = new Map<string, CustomerMatchCandidate[]>();
+  for (const candidate of candidates) {
+    const alias = extractFinancialCustomerCode(candidate.displayName);
+    if (!alias || !requestedCodes.has(alias) || matches.has(alias)) continue;
+    aliases.set(alias, [...(aliases.get(alias) ?? []), candidate]);
+  }
+
+  for (const [alias, aliasCandidates] of aliases) {
+    if (aliasCandidates.length !== 1) continue;
+    const candidate = aliasCandidates[0]!;
+    matches.set(alias, { id: candidate.id, displayName: candidate.displayName });
+  }
+
+  return matches;
+}
+
+async function resolveCustomerMatches(entries: Array<{ customerCode: string }>) {
+  const customerCodes = Array.from(new Set(entries.map((entry) => normalizeCode(entry.customerCode)).filter(Boolean)));
   if (!customerCodes.length) {
     return new Map<string, { id: string; displayName: string }>();
   }
@@ -991,19 +1028,16 @@ async function resolveCustomerMatches(rows: ParsedCustomerCreditRow[]) {
     `
       SELECT id, customer_code, display_name
       FROM customers
-      WHERE customer_code = ANY($1::text[])
     `,
-    [customerCodes],
   );
 
-  return new Map(
-    result.rows.map((row) => [
-      String(row.customer_code),
-      {
-        id: String(row.id),
-        displayName: String(row.display_name ?? row.customer_code ?? ""),
-      },
-    ]),
+  return buildCustomerCreditMatchMap(
+    customerCodes,
+    result.rows.map((row) => ({
+      id: String(row.id),
+      customerCode: String(row.customer_code ?? ""),
+      displayName: String(row.display_name ?? row.customer_code ?? ""),
+    })),
   );
 }
 
@@ -1512,7 +1546,11 @@ async function refreshSnapshotInternal(forceRefresh = false) {
       latestWorkbook.sourcePath,
       latestWorkbook,
     );
-    const matches = await resolveCustomerMatches(workbook.rows);
+    const matches = await resolveCustomerMatches([
+      ...workbook.rows,
+      ...workbook.orders,
+      ...workbook.payments,
+    ]);
     const rows = resolveParsedRows(workbook.rows, matches);
     const orders = resolveParsedCreditOrders(workbook.orders, matches);
     const payments = resolveParsedCreditPayments(workbook.payments, matches);
@@ -1790,7 +1828,95 @@ async function loadOverviewRows(snapshotId: string) {
   return filteredRows.sort(compareCreditRows);
 }
 
-const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview";
+async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<CustomerCreditRow[]> {
+  const result = await pool.query(
+    `
+      WITH order_dates AS (
+        SELECT customer_id, MAX(order_date)::text AS last_order_date
+        FROM customer_credit_order_entries
+        WHERE snapshot_id = $1
+          AND customer_id IS NOT NULL
+        GROUP BY customer_id
+      ),
+      payment_dates AS (
+        SELECT customer_id, MAX(payment_date)::text AS last_payment_date
+        FROM customer_credit_payment_entries
+        WHERE snapshot_id = $1
+          AND customer_id IS NOT NULL
+        GROUP BY customer_id
+      )
+      SELECT
+        customer.id,
+        customer.customer_code,
+        customer.display_name,
+        override.credit_limit,
+        override.payment_term,
+        override.internal_credit_limit,
+        override.updated_at,
+        override.updated_by_name,
+        order_dates.last_order_date,
+        payment_dates.last_payment_date
+      FROM customers customer
+      LEFT JOIN customer_credit_overrides override
+        ON override.customer_id = customer.id
+      LEFT JOIN order_dates
+        ON order_dates.customer_id = customer.id
+      LEFT JOIN payment_dates
+        ON payment_dates.customer_id = customer.id
+      WHERE customer.display_name NOT ILIKE '%shop online%'
+    `,
+    [snapshotId],
+  );
+
+  return result.rows.map((row) => {
+    const creditLimit = Number(row.credit_limit ?? 0);
+    const displayName = String(row.display_name ?? row.customer_code ?? "");
+
+    return {
+      id: `customer-${String(row.id)}`,
+      customerId: String(row.id),
+      customerCode: extractFinancialCustomerCode(displayName) ?? String(row.customer_code ?? ""),
+      customerDisplayName: displayName,
+      sourceDisplayName: null,
+      matched: true,
+      balanceAmount: 0,
+      debtAmount: 0,
+      creditBalanceAmount: 0,
+      creditLimit,
+      availableCreditAmount: creditLimit,
+      withinCreditLimit: creditLimit > 0,
+      operationalState: creditLimit > 0 ? "UNUSED_CREDIT" : "SETTLED",
+      riskLevel: "OK",
+      observation: creditLimit > 0 ? "" : "Sem crédito informado",
+      lastOrderDate: row.last_order_date ? String(row.last_order_date) : null,
+      lastPaymentDate: row.last_payment_date ? String(row.last_payment_date) : null,
+      daysSinceLastOrder: null,
+      daysSinceLastPayment: null,
+      paymentTerm: row.payment_term === null || row.payment_term === undefined ? null : Number(row.payment_term),
+      riskScore: null,
+      flags: [],
+      hasOverCredit: false,
+      hasOverduePayment: false,
+      hasSeverelyOverduePayment: false,
+      hasNoPayment: false,
+      hasNoOrder: false,
+      hasNegativeCredit: false,
+      hasDebtWithoutCredit: false,
+      internalCreditLimit:
+        row.internal_credit_limit === null || row.internal_credit_limit === undefined
+          ? null
+          : Number(row.internal_credit_limit),
+      internalCreditLimitSource:
+        row.internal_credit_limit === null || row.internal_credit_limit === undefined ? "SPREADSHEET" : "MANUAL",
+      creditLimitSource: row.credit_limit === null || row.credit_limit === undefined ? "SPREADSHEET" : "MANUAL",
+      paymentTermSource: row.payment_term === null || row.payment_term === undefined ? "SPREADSHEET" : "MANUAL",
+      manualOverrideUpdatedAt: row.updated_at ? String(row.updated_at) : null,
+      manualOverrideUpdatedByName: row.updated_by_name ? String(row.updated_by_name) : null,
+    };
+  });
+}
+
+const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v2";
 // A planilha de saldos so muda uma vez por dia, e o worker (alem do refresh em
 // background abaixo) reaquece o cache. Por isso guardamos por bastante tempo:
 // abrir a aba repetidas vezes responde em milissegundos.
@@ -1799,8 +1925,23 @@ const CREDIT_OVERVIEW_CACHE_TTL_SECONDS = 60 * 60; // 1 hora
 let overviewBackgroundRefreshInFlight = false;
 
 async function buildOverviewResponse(snapshot: CustomerCreditSnapshotMeta): Promise<CustomerCreditOverviewResponse> {
-  const rows = await loadOverviewRows(snapshot.id);
-  const linkedRows = rows.filter((row) => row.matched);
+  const [rows, customerDirectoryRows] = await Promise.all([
+    loadOverviewRows(snapshot.id),
+    loadCustomerDirectoryRows(snapshot.id),
+  ]);
+  const linkedByCustomerId = new Map<string, CustomerCreditRow>();
+  for (const row of rows) {
+    if (row.matched && row.customerId && !linkedByCustomerId.has(row.customerId)) {
+      linkedByCustomerId.set(row.customerId, row);
+    }
+  }
+  for (const row of customerDirectoryRows) {
+    if (row.customerId && !linkedByCustomerId.has(row.customerId)) {
+      linkedByCustomerId.set(row.customerId, row);
+    }
+  }
+
+  const linkedRows = Array.from(linkedByCustomerId.values()).sort(compareCreditRows);
   const unmatchedRows = rows.filter((row) => !row.matched);
 
   return {
@@ -1808,6 +1949,16 @@ async function buildOverviewResponse(snapshot: CustomerCreditSnapshotMeta): Prom
     summary: buildOverviewSummary(linkedRows, unmatchedRows),
     linkedRows,
     unmatchedRows,
+  };
+}
+
+async function buildCustomerDirectoryOnlyResponse(): Promise<CustomerCreditOverviewResponse> {
+  const linkedRows = (await loadCustomerDirectoryRows(null)).sort(compareCreditRows);
+  return {
+    snapshot: null,
+    summary: buildOverviewSummary(linkedRows, []),
+    linkedRows,
+    unmatchedRows: [],
   };
 }
 
@@ -1872,12 +2023,7 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
   //    responde imediatamente. A tela consulta novamente até o snapshot ficar
   //    pronto, sem prender a navegação durante o parse do XLSX.
   refreshOverviewInBackground();
-  return {
-    snapshot: null,
-    summary: emptySummary(),
-    linkedRows: [],
-    unmatchedRows: [],
-  };
+  return buildCustomerDirectoryOnlyResponse();
 }
 
 export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
@@ -1885,12 +2031,7 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
   // baixam/reprocessam quando os metadados ou a versão do parser mudaram.
   const snapshot = await ensureCustomerCreditSnapshot(false);
   if (!snapshot) {
-    return {
-      snapshot: null,
-      summary: emptySummary(),
-      linkedRows: [],
-      unmatchedRows: [],
-    };
+    return buildCustomerDirectoryOnlyResponse();
   }
 
   const response = await buildOverviewResponse(snapshot);

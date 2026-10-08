@@ -79,7 +79,7 @@ function customerAmountLabel(row: CustomerCreditRow) {
   if (row.debtAmount > 0) return `Devendo ${formatCurrency(row.debtAmount)}`;
   if (row.creditBalanceAmount > 0) return `Saldo ${formatCurrency(row.creditBalanceAmount)}`;
   if (row.availableCreditAmount > 0) return `Livre ${formatCurrency(row.availableCreditAmount)}`;
-  return "Sem saldo aberto";
+  return "Sem crédito";
 }
 
 function customerFinancialPrimaryLabel(row: CustomerCreditRow) {
@@ -211,7 +211,7 @@ export function CustomerFinancialPageView({
             <p className="eyebrow">Clientes / Financeiro</p>
             <h2 className="premium-header-title">Financeiro por cliente</h2>
             <p className="panel-subcopy">
-              Selecione um cliente vinculado ao saldo diario para ver resumo, pedidos e pagamentos do snapshot.
+              Todos os clientes cadastrados aparecem aqui, inclusive os que ainda não possuem crédito informado.
             </p>
           </div>
 
@@ -253,7 +253,7 @@ export function CustomerFinancialPageView({
           <div className="panel-header compact">
             <div>
               <p className="eyebrow">Selecao</p>
-              <h3>Clientes com financeiro</h3>
+              <h3>Todos os clientes</h3>
             </div>
           </div>
 
@@ -274,7 +274,7 @@ export function CustomerFinancialPageView({
           {!isOverviewLoading && !isOverviewError ? (
             <>
               <div className="customer-financial-list-meta">
-                {formatNumber(filteredRows.length)} de {formatNumber(linkedRows.length)} clientes
+                {formatNumber(filteredRows.length)} de {formatNumber(linkedRows.length)} clientes cadastrados
               </div>
               <CustomerSelector
                 rows={filteredRows}
