@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { BillingAlertReport, BillingCustomerResult } from "../lib/api";
-import { CustomerBillingAlertsView, filterAndSortBillingRows } from "./CustomerBillingAlertsPanel";
+import {
+  billingRowsForGroup,
+  CustomerBillingAlertsView,
+  filterAndSortBillingRows,
+} from "./CustomerBillingAlertsPanel";
 
 const leomar: BillingCustomerResult = {
   customerCode: "CL034",
@@ -82,6 +86,33 @@ describe("CustomerBillingAlertsView", () => {
       report: { ...report, noCredit: [{ ...leomar, customerCode: "KH76", displayName: "Ln129", creditLimit: null, internalCreditLimit: null, limitLevel: "NO_LIMIT", limitUsage: null }] },
     });
     expect(html).toContain("Sem crédito");
+  });
+
+  it("mostra sem prazo e sem credito somente para quem nao possui os dois", () => {
+    const semPrazoSemCredito = {
+      ...leomar,
+      customerCode: "CL700",
+      creditLimit: null,
+      internalCreditLimit: null,
+      paymentTerm: null,
+      limitLevel: "NO_LIMIT" as const,
+      limitUsage: null,
+      missingPaymentTerm: true,
+    };
+    const semPrazoComCredito = {
+      ...leomar,
+      customerCode: "CL701",
+      paymentTerm: null,
+      limitLevel: "OK" as const,
+      missingPaymentTerm: true,
+    };
+    const mixedReport = {
+      ...report,
+      missingPaymentTerm: [semPrazoSemCredito, semPrazoComCredito],
+    };
+
+    expect(billingRowsForGroup(mixedReport, "missingPaymentTerm")).toEqual([semPrazoSemCredito]);
+    expect(render({ report: mixedReport })).toContain("Sem prazo e sem crédito");
   });
 
   it("mostra a coluna de ultima venda com quem vendeu e os filtros", () => {

@@ -14,8 +14,20 @@ const GROUPS: Array<{ key: BillingGroupKey; label: string; tone: string; hint: s
   { key: "overdue", label: "Prazo vencido", tone: "danger", hint: "Pedidos com saldo em aberto depois de data do pedido + prazo. Os pagamentos abatem os pedidos mais antigos." },
   { key: "noCredit", label: "Sem crédito", tone: "warning", hint: "Devendo sem nenhum crédito liberado na planilha (CREDITO e CREDITO INTERNO vazios), qualquer valor (do maior para o menor). Cobrar o valor todo; próximo pedido só com pagamento." },
   { key: "nearLimit", label: "Perto do limite", tone: "attention", hint: "Usando 80% ou mais do crédito. Avisar antes do próximo pedido." },
-  { key: "missingPaymentTerm", label: "Sem prazo", tone: "neutral", hint: "Devendo sem PRAZO na coluna I do RESUMO — não entram na cobrança por prazo até preencher." },
+  {
+    key: "missingPaymentTerm",
+    label: "Sem prazo e sem crédito",
+    tone: "neutral",
+    hint: "Devendo sem PRAZO e sem nenhum crédito liberado — é necessário preencher as duas informações.",
+  },
 ];
+
+export function billingRowsForGroup(report: BillingAlertReport, key: BillingGroupKey) {
+  const rows = report[key] ?? [];
+  return key === "missingPaymentTerm"
+    ? rows.filter((customer) => customer.limitLevel === "NO_LIMIT")
+    : rows;
+}
 
 function limitText(customer: BillingCustomerResult) {
   const parts: string[] = [];
@@ -173,7 +185,7 @@ export function CustomerBillingAlertsView({
     if (!report) return [];
     const names = new Set<string>();
     for (const entry of GROUPS) {
-      for (const customer of report[entry.key] ?? []) {
+      for (const customer of billingRowsForGroup(report, entry.key)) {
         if (customer.lastSale?.seller) names.add(customer.lastSale.seller);
       }
     }
@@ -185,7 +197,7 @@ export function CustomerBillingAlertsView({
   if (!report) return null;
 
   const group = GROUPS.find((entry) => entry.key === activeGroup)!;
-  const allRows = report[activeGroup] ?? [];
+  const allRows = billingRowsForGroup(report, activeGroup);
   const rows = filterAndSortBillingRows(allRows, { sort, seller: sellerFilter, period, today: report.today });
   const isFiltered = Boolean(sellerFilter) || period !== "all";
 
@@ -228,7 +240,7 @@ export function CustomerBillingAlertsView({
             className={`billing-chip ${entry.tone} ${entry.key === activeGroup ? "active" : ""}`}
             onClick={() => setActiveGroup(entry.key)}
           >
-            <strong>{formatNumber((report[entry.key] ?? []).length)}</strong>
+            <strong>{formatNumber(billingRowsForGroup(report, entry.key).length)}</strong>
             {entry.label}
           </button>
         ))}
