@@ -16,16 +16,16 @@ const GROUPS: Array<{ key: BillingGroupKey; label: string; tone: string; hint: s
   { key: "nearLimit", label: "Perto do limite", tone: "attention", hint: "Usando 80% ou mais do crédito. Avisar antes do próximo pedido." },
   {
     key: "missingPaymentTerm",
-    label: "Sem prazo e sem crédito",
+    label: "Sem prazo",
     tone: "neutral",
-    hint: "Devendo sem PRAZO e sem nenhum crédito liberado — é necessário preencher as duas informações.",
+    hint: "Devendo e com crédito liberado, mas sem PRAZO cadastrado. Sem essa informação não é possível calcular se o pedido está atrasado.",
   },
 ];
 
 export function billingRowsForGroup(report: BillingAlertReport, key: BillingGroupKey) {
   const rows = report[key] ?? [];
   return key === "missingPaymentTerm"
-    ? rows.filter((customer) => customer.limitLevel === "NO_LIMIT")
+    ? rows.filter((customer) => customer.limitLevel !== "NO_LIMIT")
     : rows;
 }
 

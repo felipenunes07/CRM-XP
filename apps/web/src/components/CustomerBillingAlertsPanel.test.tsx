@@ -88,7 +88,7 @@ describe("CustomerBillingAlertsView", () => {
     expect(html).toContain("Sem crédito");
   });
 
-  it("mostra sem prazo e sem credito somente para quem nao possui os dois", () => {
+  it("separa clientes sem prazo dos clientes sem credito", () => {
     const semPrazoSemCredito = {
       ...leomar,
       customerCode: "CL700",
@@ -108,11 +108,14 @@ describe("CustomerBillingAlertsView", () => {
     };
     const mixedReport = {
       ...report,
+      noCredit: [semPrazoSemCredito],
       missingPaymentTerm: [semPrazoSemCredito, semPrazoComCredito],
     };
 
-    expect(billingRowsForGroup(mixedReport, "missingPaymentTerm")).toEqual([semPrazoSemCredito]);
-    expect(render({ report: mixedReport })).toContain("Sem prazo e sem crédito");
+    expect(billingRowsForGroup(mixedReport, "missingPaymentTerm")).toEqual([semPrazoComCredito]);
+    const html = render({ report: mixedReport });
+    expect(html).toContain("<strong>1</strong>Sem crédito");
+    expect(html).toContain("<strong>1</strong>Sem prazo");
   });
 
   it("mostra a coluna de ultima venda com quem vendeu e os filtros", () => {
