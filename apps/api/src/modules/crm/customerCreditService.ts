@@ -1782,6 +1782,18 @@ function buildOverviewSummary(linkedRows: CustomerCreditRow[], unmatchedRows: Cu
 async function loadOverviewRows(snapshotId: string) {
   const result = await pool.query(
     `
+      WITH latest_orders AS MATERIALIZED (
+        SELECT DISTINCT ON (entry.customer_id)
+          entry.customer_id,
+          entry.seller
+        FROM customer_credit_order_entries entry
+        WHERE entry.snapshot_id = $1
+          AND entry.customer_id IS NOT NULL
+        ORDER BY
+          entry.customer_id,
+          entry.order_date DESC NULLS LAST,
+          entry.order_number DESC
+      )
       SELECT
         snapshot_row.id,
         snapshot_row.customer_id,
@@ -1825,14 +1837,8 @@ async function loadOverviewRows(snapshotId: string) {
       FROM customer_credit_snapshot_rows snapshot_row
       LEFT JOIN customers customer
         ON customer.id = snapshot_row.customer_id
-      LEFT JOIN LATERAL (
-        SELECT entry.seller
-        FROM customer_credit_order_entries entry
-        WHERE entry.snapshot_id = snapshot_row.snapshot_id
-          AND entry.customer_id = snapshot_row.customer_id
-        ORDER BY entry.order_date DESC NULLS LAST, entry.order_number DESC
-        LIMIT 1
-      ) latest_orders ON TRUE
+      LEFT JOIN latest_orders
+        ON latest_orders.customer_id = snapshot_row.customer_id
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = snapshot_row.customer_id
       WHERE snapshot_row.snapshot_id = $1
@@ -1854,6 +1860,31 @@ async function loadOverviewRows(snapshotId: string) {
 async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<CustomerCreditRow[]> {
   const result = await pool.query(
     `
+      WITH latest_orders AS MATERIALIZED (
+        SELECT DISTINCT ON (entry.customer_id)
+          entry.customer_id,
+          entry.order_date::text AS last_order_date,
+          entry.seller AS last_order_seller
+        FROM customer_credit_order_entries entry
+        WHERE entry.snapshot_id = $1
+          AND entry.customer_id IS NOT NULL
+        ORDER BY
+          entry.customer_id,
+          entry.order_date DESC NULLS LAST,
+          entry.order_number DESC
+      ),
+      payment_dates AS MATERIALIZED (
+        SELECT DISTINCT ON (entry.customer_id)
+          entry.customer_id,
+          entry.payment_date::text AS last_payment_date
+        FROM customer_credit_payment_entries entry
+        WHERE entry.snapshot_id = $1
+          AND entry.customer_id IS NOT NULL
+        ORDER BY
+          entry.customer_id,
+          entry.payment_date DESC NULLS LAST,
+          entry.payment_number DESC
+      )
       SELECT
         customer.id,
         customer.customer_code,
@@ -1873,24 +1904,10 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
       FROM customers customer
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = customer.id
-      LEFT JOIN LATERAL (
-        SELECT
-          entry.order_date::text AS last_order_date,
-          entry.seller AS last_order_seller
-        FROM customer_credit_order_entries entry
-        WHERE entry.snapshot_id = $1
-          AND entry.customer_id = customer.id
-        ORDER BY entry.order_date DESC NULLS LAST, entry.order_number DESC
-        LIMIT 1
-      ) latest_orders ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT entry.payment_date::text AS last_payment_date
-        FROM customer_credit_payment_entries entry
-        WHERE entry.snapshot_id = $1
-          AND entry.customer_id = customer.id
-        ORDER BY entry.payment_date DESC NULLS LAST, entry.payment_number DESC
-        LIMIT 1
-      ) payment_dates ON TRUE
+      LEFT JOIN latest_orders
+        ON latest_orders.customer_id = customer.id
+      LEFT JOIN payment_dates
+        ON payment_dates.customer_id = customer.id
       WHERE customer.display_name NOT ILIKE '%shop online%'
     `,
     [snapshotId],
@@ -1946,7 +1963,7 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
   });
 }
 
-const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v3";
+const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v4";
 // A planilha de saldos so muda uma vez por dia, e o worker (alem do refresh em
 // background abaixo) reaquece o cache. Por isso guardamos por bastante tempo:
 // abrir a aba repetidas vezes responde em milissegundos.
@@ -2034,7 +2051,14 @@ function refreshOverviewInBackground() {
     try {
       const snapshot = await ensureCustomerCreditSnapshot(false);
       if (snapshot) {
-        await cacheOverviewResponse(await buildOverviewResponse(snapshot));
+        const cached = await redis.get(CREDIT_OVERVIEW_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached) as CustomerCreditOverviewResponse;
+          if (parsed.snapshot?.id === snapshot.id) {
+            return;
+          }
+        }
+        await buildAndCacheOverviewOnce(snapshot);
       }
     } catch (error) {
       logger.warn("background credit overview refresh failed", { error: String(error) });
