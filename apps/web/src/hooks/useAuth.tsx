@@ -4,6 +4,28 @@ import { navigationAccessFolders } from "../lib/navigationPermissions";
 import { supabase } from "../lib/supabase";
 
 const delay = (ms: number) => new Promise<void>((resolve) => globalThis.setTimeout(resolve, ms));
+const SESSION_RESTORE_TIMEOUT_MS = 2_000;
+
+function readPersistedAccessToken() {
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) return null;
+
+    const projectRef = new URL(supabaseUrl).hostname.split(".")[0];
+    const rawSession = globalThis.localStorage?.getItem(`sb-${projectRef}-auth-token`);
+    if (!rawSession) return null;
+
+    const session = JSON.parse(rawSession) as { access_token?: unknown; expires_at?: unknown };
+    const accessToken = typeof session.access_token === "string" ? session.access_token : null;
+    const expiresAt = typeof session.expires_at === "number" ? session.expires_at : 0;
+
+    // O fallback nunca usa token vencido. O cliente do Supabase continua
+    // inicializando em background e assume novamente assim que responder.
+    return accessToken && expiresAt * 1000 > Date.now() + 30_000 ? accessToken : null;
+  } catch {
+    return null;
+  }
+}
 
 export type LegacyRole = "ADMIN" | "MANAGER" | "SELLER";
 export type AppRole = "admin" | "vendas" | "financeiro" | "operacional" | "tarefas" | "viewer";
@@ -141,8 +163,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function restoreSession() {
       setLoading(true);
-      const { data } = await supabase.auth.getSession();
-      const accessToken = data.session?.access_token ?? null;
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession(),
+        delay(SESSION_RESTORE_TIMEOUT_MS).then(() => null),
+      ]);
+      const accessToken = sessionResult?.data.session?.access_token ?? readPersistedAccessToken();
 
       if (!accessToken) {
         if (!cancelled) {
