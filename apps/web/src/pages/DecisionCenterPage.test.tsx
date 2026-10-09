@@ -49,4 +49,3 @@ describe("DecisionCenterPageView", () => {
     expect(html).toContain("Ver financeiro");
   });
 });
-

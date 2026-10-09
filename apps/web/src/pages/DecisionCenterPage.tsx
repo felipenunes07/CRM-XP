@@ -32,7 +32,6 @@ const queueMeta: Array<{ key: QueueKey; label: string; helper: string }> = [
 function normalize(value: unknown) {
   return String(value ?? "").trim().toLocaleLowerCase("pt-BR");
 }
-
 function relativeDays(days: number | null) {
   if (days === null) return "Sem data de compra";
   if (days === 0) return "Comprou hoje";

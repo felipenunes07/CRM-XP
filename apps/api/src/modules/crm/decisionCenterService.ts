@@ -44,7 +44,6 @@ function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
-
 function isoValue(value: string | Date | null) {
   if (!value) return null;
   const parsed = new Date(value);

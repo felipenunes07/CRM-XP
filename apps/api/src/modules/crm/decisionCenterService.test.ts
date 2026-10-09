@@ -11,4 +11,3 @@ describe("decision center recovery guidance", () => {
     expect(recoverySuggestedAction("INACTIVE", 60)).toContain("reativação hoje");
   });
 });
-
