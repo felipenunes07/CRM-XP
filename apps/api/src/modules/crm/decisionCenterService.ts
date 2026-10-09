@@ -1,12 +1,13 @@
 import type {
   CustomerStatus,
+  CustomerOpportunityQueueItem,
   DecisionCenterCreditDecision,
   DecisionCenterRecoveryItem,
   DecisionCenterResponse,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { getCustomerCreditOverview } from "./customerCreditService.js";
-import { getCustomerCreditOpportunities } from "./opportunityService.js";
+import { isOpportunityEligibleCreditRow } from "./opportunityService.js";
 
 const CACHE_TTL_MS = 60_000;
 const MAX_DECISIONS = 40;
@@ -161,10 +162,9 @@ async function loadRecoveryOpportunities(): Promise<DecisionCenterRecoveryItem[]
 }
 
 async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
-  const [creditOverview, proposalsResult, opportunityQueue, recoveryOpportunities] = await Promise.all([
+  const [creditOverview, proposalsResult, recoveryOpportunities] = await Promise.all([
     getCustomerCreditOverview(),
     loadOpenProposals(),
-    getCustomerCreditOpportunities(),
     loadRecoveryOpportunities(),
   ]);
 
@@ -211,7 +211,44 @@ async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
     .sort((left, right) => right.requiredPayment - left.requiredPayment || right.orderTotal - left.orderTotal)
     .slice(0, MAX_DECISIONS);
 
-  const salesOpportunities = opportunityQueue.items.slice(0, MAX_SALES_OPPORTUNITIES);
+  // A Central precisa abrir em poucos segundos. O cruzamento completo com
+  // estoque e historico de produtos continua disponivel na tela de
+  // oportunidades, mas pode varrer centenas de milhares de itens. Aqui a fila
+  // executiva usa apenas o snapshot financeiro ja materializado: mostra quem
+  // tem saldo ou credito livre e deixa a investigacao detalhada para o clique.
+  const salesOpportunities = creditOverview.linkedRows
+    .filter((row) => Boolean(row.customerId) && isOpportunityEligibleCreditRow(row))
+    .map((row): CustomerOpportunityQueueItem => {
+      const primarySource = row.creditBalanceAmount > 0 ? "CREDIT_BALANCE" : "AVAILABLE_CREDIT";
+      const targetAmount = primarySource === "CREDIT_BALANCE"
+        ? row.creditBalanceAmount
+        : Math.max(0, row.availableCreditAmount);
+      return {
+        customerId: row.customerId!,
+        customerCode: row.customerCode,
+        customerDisplayName: row.customerDisplayName,
+        primarySource,
+        targetAmount,
+        creditBalanceAmount: row.creditBalanceAmount,
+        availableCreditAmount: row.availableCreditAmount,
+        suggestedAmount: targetAmount,
+        remainingGapAmount: 0,
+        coverageRatio: targetAmount > 0 ? 1 : 0,
+        matchedProductCount: 0,
+        suggestedLineCount: 0,
+        topModelsInStock: [],
+        lastPurchaseAt: row.lastOrderDate,
+        daysSinceLastPurchase: row.daysSinceLastOrder,
+        lastAttendant: row.assignedSeller || row.lastOrderSeller || null,
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(right.primarySource === "CREDIT_BALANCE") - Number(left.primarySource === "CREDIT_BALANCE") ||
+        right.targetAmount - left.targetAmount ||
+        left.customerDisplayName.localeCompare(right.customerDisplayName, "pt-BR"),
+    )
+    .slice(0, MAX_SALES_OPPORTUNITIES);
 
   return {
     generatedAt: new Date().toISOString(),

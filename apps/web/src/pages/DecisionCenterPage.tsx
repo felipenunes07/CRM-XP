@@ -25,7 +25,7 @@ type QueueKey = "decisions" | "sales" | "recovery";
 
 const queueMeta: Array<{ key: QueueKey; label: string; helper: string }> = [
   { key: "decisions", label: "Pedidos para decidir", helper: "Propostas que ultrapassam o limite" },
-  { key: "sales", label: "Vender hoje", helper: "Crédito disponível combinado com estoque" },
+  { key: "sales", label: "Vender hoje", helper: "Clientes com saldo ou crédito livre para comprar" },
   { key: "recovery", label: "Recuperar clientes", helper: "Clientes perdendo ritmo de compra" },
 ];
 
@@ -187,7 +187,7 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
                 <div className="decision-card-top"><span><Sparkles size={15} /> Pronto para vender</span><strong>{item.lastAttendant || "Não atribuída"}</strong></div>
                 <h3>{item.customerCode} · {item.customerDisplayName}</h3>
                 <p>{item.creditBalanceAmount > 0 ? "Cliente com saldo a favor" : "Cliente com crédito disponível"}</p>
-                <div className="decision-card-value"><span>Venda sugerida</span><strong>{formatCurrency(item.suggestedAmount)}</strong></div>
+                <div className="decision-card-value"><span>Venda potencial</span><strong>{formatCurrency(item.suggestedAmount)}</strong></div>
                 <div className="decision-card-meta">
                   <span><Target size={14} /> Potencial {formatCurrency(item.targetAmount)}</span>
                   <span><Clock3 size={14} /> {relativeDays(item.daysSinceLastPurchase)}</span>
@@ -234,7 +234,7 @@ export function DecisionCenterPage() {
   });
 
   if (query.isLoading) {
-    return <div className="decision-state"><RefreshCw size={24} className="is-spinning" /><strong>Montando a Central de Decisão…</strong><span>Cruzando propostas, crédito, estoque e carteira.</span></div>;
+    return <div className="decision-state"><RefreshCw size={24} className="is-spinning" /><strong>Montando a Central de Decisão…</strong><span>Cruzando propostas, crédito e carteira.</span></div>;
   }
   if (query.isError || !query.data) {
     return <div className="decision-state is-error"><CircleAlert size={26} /><strong>Não foi possível carregar a central</strong><span>Tente novamente; nenhuma decisão foi alterada.</span><button type="button" onClick={() => query.refetch()}>Tentar novamente</button></div>;
