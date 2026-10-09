@@ -60,15 +60,31 @@ function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
-function creditNumberValue(value: unknown) {
+export function creditNumberValue(value: unknown) {
   if (typeof value === "number") return numberValue(value);
   const normalized = String(value ?? "")
     .trim()
     .replace(/[^\d,.-]/g, "");
   if (!normalized) return 0;
-  const decimal = normalized.includes(",")
-    ? normalized.replace(/\./g, "").replace(",", ".")
-    : normalized;
+
+  const lastComma = normalized.lastIndexOf(",");
+  const lastDot = normalized.lastIndexOf(".");
+  let decimal = normalized;
+  if (lastComma >= 0 && lastDot >= 0) {
+    // O arquivo pode trazer tanto 150.000,00 quanto 150,000.00. O ultimo
+    // separador e o decimal; o anterior e apenas o separador de milhar.
+    decimal = lastComma > lastDot
+      ? normalized.replace(/\./g, "").replace(",", ".")
+      : normalized.replace(/,/g, "");
+  } else if (lastComma >= 0) {
+    const decimals = normalized.length - lastComma - 1;
+    decimal = decimals <= 2
+      ? normalized.replace(",", ".")
+      : normalized.replace(/,/g, "");
+  } else if (lastDot >= 0) {
+    const decimals = normalized.length - lastDot - 1;
+    decimal = decimals === 3 ? normalized.replace(/\./g, "") : normalized;
+  }
   return numberValue(decimal);
 }
 function isoValue(value: string | Date | null) {
