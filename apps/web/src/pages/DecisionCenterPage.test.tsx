@@ -42,10 +42,41 @@ describe("DecisionCenterPageView", () => {
       </MemoryRouter>,
     );
 
-    expect(html).toContain("O que precisa de decisão hoje");
+    expect(html).toContain("Prioridades de hoje");
     expect(html).toContain("CL034 · Leomar");
     expect(html).toContain("Pedido 44001");
     expect(html).toContain("R$ 20.000,00");
     expect(html).toContain("Ver financeiro");
+  });
+
+  it("explains recovery urgency without exposing an abstract score", () => {
+    const recoveryData: DecisionCenterResponse = {
+      ...data,
+      summary: { ...data.summary, decisionsCount: 0, decisionsValue: 0, requiredPaymentTotal: 0, recoveryCount: 1 },
+      creditDecisions: [],
+      recoveryOpportunities: [{
+        customerId: "customer-2",
+        customerCode: "CL55",
+        customerName: "Naiara",
+        status: "ATTENTION",
+        lastPurchaseAt: "2026-07-20T12:00:00.000Z",
+        daysSinceLastPurchase: 81,
+        averageTicket: 37_904.61,
+        totalSpent: 250_000,
+        priorityScore: 70,
+        seller: "Thais",
+        suggestedAction: "Antecipar a próxima compra antes de perder o cliente",
+      }],
+    };
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <DecisionCenterPageView data={recoveryData} refreshing={false} onRefresh={() => undefined} />
+      </MemoryRouter>,
+    );
+
+    expect(html).toContain("Por que agir agora");
+    expect(html).toContain("Há 81 dias sem comprar");
+    expect(html).toContain("Urgência média");
+    expect(html).not.toContain("Prioridade 70");
   });
 });

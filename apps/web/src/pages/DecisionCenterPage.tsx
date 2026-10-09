@@ -2,15 +2,12 @@ import type { DecisionCenterResponse } from "@olist-crm/shared";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
-  Banknote,
   CircleAlert,
-  Clock3,
   Gauge,
   RefreshCw,
   Search,
   ShoppingCart,
   Sparkles,
-  Target,
   TrendingUp,
   UserRoundSearch,
 } from "lucide-react";
@@ -24,9 +21,9 @@ import "./decisionCenter.css";
 type QueueKey = "decisions" | "sales" | "recovery";
 
 const queueMeta: Array<{ key: QueueKey; label: string; helper: string }> = [
-  { key: "decisions", label: "Pedidos para decidir", helper: "Propostas que ultrapassam o limite" },
-  { key: "sales", label: "Vender hoje", helper: "Clientes com saldo ou crédito livre para comprar" },
-  { key: "recovery", label: "Recuperar clientes", helper: "Clientes perdendo ritmo de compra" },
+  { key: "decisions", label: "Liberar pedidos", helper: "Pedidos bloqueados por falta de limite" },
+  { key: "sales", label: "Buscar novas vendas", helper: "Clientes que podem comprar sem estourar o limite" },
+  { key: "recovery", label: "Evitar perdas", helper: "Clientes que estão demorando mais que o normal para voltar" },
 ];
 
 function normalize(value: unknown) {
@@ -37,6 +34,12 @@ function relativeDays(days: number | null) {
   if (days === 0) return "Comprou hoje";
   if (days === 1) return "Há 1 dia sem comprar";
   return `Há ${days} dias sem comprar`;
+}
+
+function recoveryUrgency(status: string, days: number | null) {
+  if (status === "INACTIVE" || (days ?? 0) >= 90) return "Urgência alta";
+  if ((days ?? 0) >= 60) return "Urgência média";
+  return "Acompanhar";
 }
 
 function sellerOptions(data: DecisionCenterResponse) {
@@ -53,7 +56,9 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
   refreshing: boolean;
   onRefresh: () => void;
 }) {
-  const [activeQueue, setActiveQueue] = useState<QueueKey>("decisions");
+  const [activeQueue, setActiveQueue] = useState<QueueKey>(() =>
+    data.creditDecisions.length ? "decisions" : data.salesOpportunities.length ? "sales" : "recovery",
+  );
   const [search, setSearch] = useState("");
   const [seller, setSeller] = useState("");
   const needle = normalize(search);
@@ -83,8 +88,8 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
       <header className="decision-hero">
         <div>
           <div className="decision-eyebrow"><Gauge size={15} /> Gestão / Central de Decisão</div>
-          <h1>O que precisa de decisão hoje</h1>
-          <p>Pedidos, oportunidades e clientes organizados por impacto — sem procurar em várias telas.</p>
+          <h1>Prioridades de hoje</h1>
+          <p>Veja o problema, quem é responsável e qual é a próxima ação.</p>
         </div>
         <div className="decision-hero-actions">
           <span>Atualizado {formatDateTime(data.generatedAt)}</span>
@@ -95,27 +100,29 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
         </div>
       </header>
 
-      <section className="decision-summary-grid" aria-label="Resumo da central">
-        <article className="decision-summary-card is-danger">
-          <span className="decision-summary-icon"><CircleAlert size={21} /></span>
-          <div><strong>{data.summary.decisionsCount}</strong><span>pedidos para decidir</span></div>
-          <small>{formatCurrency(data.summary.decisionsValue)} em propostas</small>
+      <section className="decision-overview" aria-label="Resumo da central">
+        <article className={`decision-focus-card ${data.summary.decisionsCount ? "is-danger" : "is-clear"}`}>
+          <span className="decision-focus-icon"><CircleAlert size={24} /></span>
+          <div>
+            <span className="decision-focus-label">Decisão financeira</span>
+            {data.summary.decisionsCount ? (
+              <><strong>{data.summary.decisionsCount} pedido{data.summary.decisionsCount === 1 ? "" : "s"} bloqueado{data.summary.decisionsCount === 1 ? "" : "s"}</strong><p>Cobrar {formatCurrency(data.summary.requiredPaymentTotal)} antes de liberar {formatCurrency(data.summary.decisionsValue)} em propostas.</p></>
+            ) : (
+              <><strong>Nenhum pedido bloqueado agora</strong><p>Não há proposta acima do limite que exija pagamento.</p></>
+            )}
+          </div>
+          <button type="button" onClick={() => setActiveQueue("decisions")}>Ver pedidos <ArrowRight size={15} /></button>
         </article>
-        <article className="decision-summary-card is-money">
-          <span className="decision-summary-icon"><Banknote size={21} /></span>
-          <div><strong>{formatCurrency(data.summary.requiredPaymentTotal)}</strong><span>pagamento necessário</span></div>
-          <small>para enquadrar as propostas</small>
-        </article>
-        <article className="decision-summary-card is-opportunity">
-          <span className="decision-summary-icon"><TrendingUp size={21} /></span>
-          <div><strong>{data.summary.salesCount}</strong><span>oportunidades prontas</span></div>
-          <small>{formatCurrency(data.summary.salesPotential)} sugeridos</small>
-        </article>
-        <article className="decision-summary-card is-recovery">
-          <span className="decision-summary-icon"><UserRoundSearch size={21} /></span>
-          <div><strong>{data.summary.recoveryCount}</strong><span>clientes para recuperar</span></div>
-          <small>priorizados por valor e urgência</small>
-        </article>
+        <button type="button" className="decision-metric-card is-opportunity" onClick={() => setActiveQueue("sales")}>
+          <span className="decision-summary-icon"><TrendingUp size={20} /></span>
+          <span><strong>{data.summary.salesCount} clientes podem comprar</strong><small>{formatCurrency(data.summary.salesPotential)} de capacidade financeira — não é previsão de venda</small></span>
+          <ArrowRight size={17} />
+        </button>
+        <button type="button" className="decision-metric-card is-recovery" onClick={() => setActiveQueue("recovery")}>
+          <span className="decision-summary-icon"><UserRoundSearch size={20} /></span>
+          <span><strong>{data.summary.recoveryCount} clientes esfriando</strong><small>Ordenados por tempo sem comprar e valor histórico</small></span>
+          <ArrowRight size={17} />
+        </button>
       </section>
 
       <section className="decision-workspace">
@@ -151,7 +158,7 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
             <h2>{queueMeta.find((queue) => queue.key === activeQueue)?.label}</h2>
             <p>{queueMeta.find((queue) => queue.key === activeQueue)?.helper}</p>
           </div>
-          <span>{counts[activeQueue]} na fila</span>
+          <span>{counts[activeQueue]} cliente{counts[activeQueue] === 1 ? "" : "s"}</span>
         </div>
 
         {activeQueue === "decisions" && (
@@ -160,16 +167,16 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
               <article className="decision-row is-credit" key={item.orderId}>
                 <div className="decision-row-main">
                   <div className="decision-row-title">
-                    <span className="decision-priority">Decidir agora</span>
+                    <span className="decision-priority">Bloqueado pelo crédito</span>
                     <h3>{item.customerCode} · {item.customerName}</h3>
                     <p>Pedido {item.orderNumber} · {item.seller || "Sem vendedora"}</p>
                   </div>
                   <div className="decision-money-block"><span>Proposta</span><strong>{formatCurrency(item.orderTotal)}</strong></div>
-                  <div className="decision-money-block"><span>Dívida + propostas</span><strong>{formatCurrency(item.projectedExposure)}</strong></div>
+                  <div className="decision-money-block"><span>Deve + propostas</span><strong>{formatCurrency(item.projectedExposure)}</strong></div>
                   <div className="decision-money-block"><span>Limite</span><strong>{formatCurrency(item.effectiveLimit)}</strong></div>
                 </div>
                 <div className="decision-row-action">
-                  <div><CircleAlert size={17} /><span>Exigir antes de liberar</span><strong>{formatCurrency(item.requiredPayment)}</strong></div>
+                  <div><CircleAlert size={17} /><span>Cobrar antes de liberar</span><strong>{formatCurrency(item.requiredPayment)}</strong></div>
                   {item.customerId ? (
                     <Link to={`/clientes/financeiro/${item.customerId}`}>Ver financeiro <ArrowRight size={15} /></Link>
                   ) : <span className="decision-muted">Cliente não vinculado</span>}
@@ -181,18 +188,20 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
         )}
 
         {activeQueue === "sales" && (
-          <div className="decision-card-grid">
+          <div className="decision-action-list">
             {sales.map((item) => (
-              <article className="decision-opportunity-card" key={item.customerId}>
-                <div className="decision-card-top"><span><Sparkles size={15} /> Pronto para vender</span><strong>{item.lastAttendant || "Não atribuída"}</strong></div>
-                <h3>{item.customerCode} · {item.customerDisplayName}</h3>
-                <p>{item.creditBalanceAmount > 0 ? "Cliente com saldo a favor" : "Cliente com crédito disponível"}</p>
-                <div className="decision-card-value"><span>Venda potencial</span><strong>{formatCurrency(item.suggestedAmount)}</strong></div>
-                <div className="decision-card-meta">
-                  <span><Target size={14} /> Potencial {formatCurrency(item.targetAmount)}</span>
-                  <span><Clock3 size={14} /> {relativeDays(item.daysSinceLastPurchase)}</span>
+              <article className="decision-action-row is-sale" key={item.customerId}>
+                <span className="decision-action-badge"><Sparkles size={14} /> Vender</span>
+                <div className="decision-action-client">
+                  <h3>{item.customerCode} · {item.customerDisplayName}</h3>
+                  <p>Responsável: <strong>{item.lastAttendant || "Não atribuída"}</strong></p>
                 </div>
-                {!!item.topModelsInStock.length && <p className="decision-products">{item.topModelsInStock.join(" · ")}</p>}
+                <div className="decision-action-reason">
+                  <span>Por que aparece aqui</span>
+                  <strong>{item.creditBalanceAmount > 0 ? `${formatCurrency(item.creditBalanceAmount)} de saldo a favor` : `${formatCurrency(item.availableCreditAmount)} de limite livre`}</strong>
+                  <small>{relativeDays(item.daysSinceLastPurchase)}</small>
+                </div>
+                <div className="decision-action-next"><span>Próxima ação</span><strong>Contatar para uma nova venda</strong></div>
                 <Link to={`/clientes/${item.customerId}`}>Abrir cliente <ArrowRight size={15} /></Link>
               </article>
             ))}
@@ -201,17 +210,20 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
         )}
 
         {activeQueue === "recovery" && (
-          <div className="decision-card-grid">
+          <div className="decision-action-list">
             {recovery.map((item) => (
-              <article className="decision-opportunity-card is-recovery" key={item.customerId}>
-                <div className="decision-card-top"><span>{item.status === "INACTIVE" ? "Inativo" : "Perdendo ritmo"}</span><strong>{item.seller || "Não atribuída"}</strong></div>
-                <h3>{item.customerCode ? `${item.customerCode} · ` : ""}{item.customerName}</h3>
-                <p>{item.suggestedAction}</p>
-                <div className="decision-card-value"><span>Ticket médio</span><strong>{formatCurrency(item.averageTicket)}</strong></div>
-                <div className="decision-card-meta">
-                  <span><Clock3 size={14} /> {relativeDays(item.daysSinceLastPurchase)}</span>
-                  <span><Target size={14} /> Prioridade {Math.round(item.priorityScore)}</span>
+              <article className="decision-action-row is-recovery" key={item.customerId}>
+                <span className="decision-action-badge">{recoveryUrgency(item.status, item.daysSinceLastPurchase)}</span>
+                <div className="decision-action-client">
+                  <h3>{item.customerCode ? `${item.customerCode} · ` : ""}{item.customerName}</h3>
+                  <p>Responsável: <strong>{item.seller || "Não atribuída"}</strong></p>
                 </div>
+                <div className="decision-action-reason">
+                  <span>Por que agir agora</span>
+                  <strong>{relativeDays(item.daysSinceLastPurchase)}</strong>
+                  <small>Ticket médio {formatCurrency(item.averageTicket)} · Histórico {formatCurrency(item.totalSpent)}</small>
+                </div>
+                <div className="decision-action-next"><span>Próxima ação</span><strong>{item.suggestedAction}</strong></div>
                 <Link to={`/clientes/${item.customerId}`}>Abrir cliente <ArrowRight size={15} /></Link>
               </article>
             ))}
