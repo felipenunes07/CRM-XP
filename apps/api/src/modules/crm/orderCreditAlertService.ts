@@ -55,7 +55,10 @@ export function evaluateOrderCredit(params: {
   const requiredPayment = Math.max(0, projectedExposure - effectiveLimit);
 
   return {
-    shouldAlert: params.orderTotal > 0 && requiredPayment >= 0.01,
+    // Cliente sem nenhum credito aprovado fica fora deste alerta. A cobranca
+    // desses clientes ja tem fluxo proprio e nao deve inundar o grupo a cada
+    // proposta nova.
+    shouldAlert: effectiveLimit > 0 && params.orderTotal > 0 && requiredPayment >= 0.01,
     effectiveLimit,
     availableBeforeOrder: Math.max(0, effectiveLimit - exposureBeforeOrder),
     projectedExposure,
@@ -231,6 +234,11 @@ export async function checkOlistOrderCreditRisk(order: OlistOrderCreditInput) {
     otherOpenProposals,
     orderTotal: order.orderTotal,
   });
+
+  if (evaluation.effectiveLimit <= 0) {
+    await clearAlertClaim(order.orderId);
+    return { sent: false, reason: "customer-without-approved-credit", evaluation } as const;
+  }
 
   if (!evaluation.shouldAlert) {
     await clearAlertClaim(order.orderId);

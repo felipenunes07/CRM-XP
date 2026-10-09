@@ -15,7 +15,7 @@ describe("order credit proposal detection", () => {
     expect(isCommercialProposalStatus("Cancelado")).toBe(false);
   });
 
-  it("treats a customer without approved credit as prepaid", () => {
+  it("does not alert for customers without approved credit", () => {
     expect(
       evaluateOrderCredit({
         debtAmount: 0,
@@ -25,7 +25,7 @@ describe("order credit proposal detection", () => {
         orderTotal: 15_000,
       }),
     ).toMatchObject({
-      shouldAlert: true,
+      shouldAlert: false,
       effectiveLimit: 0,
       requiredPayment: 15_000,
     });
