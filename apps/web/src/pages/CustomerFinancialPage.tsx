@@ -448,8 +448,11 @@ export function CustomerFinancialPage() {
     queryKey: ["customer-credit-overview"],
     queryFn: () => api.customerCreditOverview(token!),
     enabled: Boolean(token),
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
+    // A visao agrega a planilha financeira inteira. Ela ja e invalidada apos
+    // importacoes/edicoes e possui o botao "Atualizar agora"; polling a cada
+    // 30 segundos multiplicava a mesma consulta para cada usuario com a tela aberta.
+    staleTime: 5 * 60_000,
+    refetchInterval: false,
   });
 
   const linkedRows = overviewQuery.data?.linkedRows ?? [];

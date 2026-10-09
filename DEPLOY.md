@@ -53,7 +53,7 @@ OLIST_WEBHOOK_TOKEN=um-segredo-longo-e-aleatorio
 EXECUTIVE_ONLY_SHIPPED=true
 STARTUP_SYNC_ENABLED=false
 WORKER_OLIST_SYNC_ENABLED=true
-WORKER_OLIST_SYNC_INTERVAL_MINUTES=60
+WORKER_OLIST_SYNC_INTERVAL_MINUTES=1
 SUPABASE_DATABASE_URL=postgresql://... # somente fonte 2026, se usar
 SUPABASE_TABLE_2026=f_vendas_2026
 HISTORICAL_FILES=/Historico/2023.xlsx;/Historico/2024.xlsx;/Historico/2025.xlsx
@@ -71,7 +71,7 @@ No EasyPanel, nao use caminhos locais do Windows em `HISTORICAL_FILES`. Use cami
 
 `OLIST_WEBHOOK_TOKEN` liga o webhook de vendas da Olist em `/api/webhooks/olist`, que leva a venda ao relatorio executivo em segundos. Passo a passo da configuracao no ERP em [docs/PAINEL_AO_VIVO.md](docs/PAINEL_AO_VIVO.md).
 
-Mantenha `WORKER_OLIST_SYNC_ENABLED=true` para atualizar os dados a cada 15 minutos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
+Mantenha `WORKER_OLIST_SYNC_ENABLED=true` e `WORKER_OLIST_SYNC_INTERVAL_MINUTES=1` para verificar pedidos/propostas novos mesmo quando ninguem estiver logado no CRM. A API tambem assume essa rotina quando o ambiente nao sobe um container worker separado; um lock no banco impede importacoes duplicadas. A varredura incremental consulta apenas os resumos dos pedidos e o alerta de credito ignora clientes sem limite cadastrado e propostas historicas, evitando carga e disparos em massa. O snapshot diario de defeitos tambem roda no servidor da API quando `WORKER_DEFECT_SYNC_ENABLED=true`.
 
 ### Alerta de cobranca (financeiro)
 

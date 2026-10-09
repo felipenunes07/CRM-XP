@@ -99,7 +99,7 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((value) => value === "true"),
-  WORKER_OLIST_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(15),
+  WORKER_OLIST_SYNC_INTERVAL_MINUTES: z.coerce.number().int().positive().default(1),
   WORKER_GEOGRAPHIC_SYNC_ENABLED: z
     .enum(["true", "false"])
     .default("false")

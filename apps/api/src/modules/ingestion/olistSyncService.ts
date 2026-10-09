@@ -3,6 +3,10 @@ import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { extractDisplayName, normalizeCode, normalizeText, safeNumber, toIsoDate } from "../../lib/normalize.js";
 import { rebuildReadModels } from "../analytics/analyticsService.js";
+import {
+  checkOlistOrderCreditRisk,
+  isCommercialProposalStatus,
+} from "../crm/orderCreditAlertService.js";
 import { buildSaleLineFingerprint } from "./fingerprint.js";
 import { OlistClient, withRetry } from "./olistClient.js";
 import { getOlistApiToken } from "./olistTokenProvider.js";
@@ -521,6 +525,20 @@ export function getOlistTodayDateKey(date = new Date()) {
   return `${read("year")}-${read("month")}-${read("day")}`;
 }
 
+/**
+ * A varredura de contingencia nao deve avisar propostas historicas na primeira
+ * execucao. Pedidos ja conhecidos podem ser reavaliados quando mudam; pedidos
+ * ainda desconhecidos so entram no alerta se forem do dia civil atual.
+ */
+export function shouldCheckOlistCreditFallback(
+  input: { orderStatus: string; orderDate?: string | null; wasKnown: boolean },
+  today = getOlistTodayDateKey(),
+) {
+  if (!isCommercialProposalStatus(input.orderStatus)) return false;
+  if (input.wasKnown) return true;
+  return toIsoDate(input.orderDate ?? "") === today;
+}
+
 type AttendantResolver = ResolveOrderAttendantDeps;
 
 /**
@@ -694,6 +712,8 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
   let recordsInserted = 0;
   const impactedCustomerCodes = new Set<string>();
   let recordsSkipped = 0;
+  let creditAlertsSent = 0;
+  let creditChecksFailed = 0;
   const resolver = createAttendantResolver();
 
   try {
@@ -762,7 +782,47 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
         impactedCustomerCodes.add(code);
       }
 
-      await saveOrderSummary(summary);
+      const orderStatus = normalizeText(outcome.order.situacao) || "VALID";
+      let creditCheckFailed = false;
+      if (shouldCheckOlistCreditFallback({
+        orderStatus,
+        orderDate: outcome.order.data_pedido ?? summary.data_pedido,
+        wasKnown: Boolean(stored),
+      }, today)) {
+        const customer = buildOrderCustomerContext(outcome.order);
+        try {
+          const creditAlert = await checkOlistOrderCreditRisk({
+            orderId: String(outcome.order.id),
+            orderNumber: normalizeText(String(outcome.order.numero)),
+            customerCode: customer.customerCode,
+            customerName: customer.customerName,
+            orderStatus,
+            orderTotal: getOlistOrderTotal(outcome.order),
+            attendantName: outcome.attendantName,
+          });
+          if (creditAlert.sent) creditAlertsSent += 1;
+          logger.info("olist fallback credit check completed", {
+            orderId: String(outcome.order.id),
+            orderNumber: normalizeText(String(outcome.order.numero)),
+            sent: creditAlert.sent,
+            reason: "reason" in creditAlert ? creditAlert.reason : "credit-exceeded",
+          });
+        } catch (error) {
+          creditCheckFailed = true;
+          creditChecksFailed += 1;
+          // A venda continua sincronizada mesmo se o financeiro ou WhatsApp
+          // estiver temporariamente indisponivel. Nao salvamos o resumo neste
+          // caso para que a varredura do minuto seguinte tente o alerta de novo.
+          logger.error("olist fallback credit check failed", {
+            orderId: String(outcome.order.id),
+            error: String(error),
+          });
+        }
+      }
+
+      if (!creditCheckFailed) {
+        await saveOrderSummary(summary);
+      }
     }
 
     if (impactedCustomerCodes.size) {
@@ -780,7 +840,15 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
       [runId, recordsSeen, recordsInserted],
     );
 
-    return { runId, recordsSeen, recordsInserted, recordsSkipped, cursor };
+    return {
+      runId,
+      recordsSeen,
+      recordsInserted,
+      recordsSkipped,
+      creditAlertsSent,
+      creditChecksFailed,
+      cursor,
+    };
   } catch (error) {
     await pool.query(
       `

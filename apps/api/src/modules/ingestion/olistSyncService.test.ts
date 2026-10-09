@@ -5,6 +5,7 @@ import {
   getOlistTodayDateKey,
   isOlistOrderSnapshotUnchanged,
   resolveOrderAttendantName,
+  shouldCheckOlistCreditFallback,
 } from "./olistSyncService.js";
 
 describe("Olist current-day safety scan", () => {
@@ -31,6 +32,38 @@ describe("Olist current-day safety scan", () => {
     };
     expect(getOlistOrderTotal(order as never)).toBe(1250.5);
     expect(getOlistOrderTotal({ ...order, total_pedido: undefined } as never)).toBe(1000);
+  });
+
+  it("checks a new proposal from today as a webhook contingency", () => {
+    expect(shouldCheckOlistCreditFallback({
+      orderStatus: "Em aberto",
+      orderDate: "09/10/2026",
+      wasKnown: false,
+    }, "2026-10-09")).toBe(true);
+  });
+
+  it("does not flood the group with unknown historical proposals", () => {
+    expect(shouldCheckOlistCreditFallback({
+      orderStatus: "Proposta comercial",
+      orderDate: "08/10/2026",
+      wasKnown: false,
+    }, "2026-10-09")).toBe(false);
+  });
+
+  it("rechecks a known order that changed into a proposal", () => {
+    expect(shouldCheckOlistCreditFallback({
+      orderStatus: "Orcamento",
+      orderDate: "01/09/2026",
+      wasKnown: true,
+    }, "2026-10-09")).toBe(true);
+  });
+
+  it("ignores non-proposal statuses in the fallback", () => {
+    expect(shouldCheckOlistCreditFallback({
+      orderStatus: "Preparando envio",
+      orderDate: "09/10/2026",
+      wasKnown: true,
+    }, "2026-10-09")).toBe(false);
   });
 });
 

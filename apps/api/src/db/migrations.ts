@@ -4791,4 +4791,31 @@ export const migrations = [
   VALUES ('viewer', 'commercial.customers.view')
   ON CONFLICT DO NOTHING;
   `,
+  `
+  -- A tela financeira consulta a ultima venda/pagamento de cada cliente. Os
+  -- indices antigos nao definiam NULLS LAST e alguns ambientes de producao
+  -- nunca receberam a migracao de desempenho, provocando sort completo do
+  -- arquivo de saldo e timeout. Esta migracao e anexada para ser executada em
+  -- todos os ambientes, inclusive os que ja estao com o contador atualizado.
+  CREATE INDEX IF NOT EXISTS idx_credit_rows_snapshot_customer_code_upper
+    ON customer_credit_snapshot_rows (snapshot_id, UPPER(customer_code));
+  CREATE INDEX IF NOT EXISTS idx_credit_orders_snapshot_customer_latest
+    ON customer_credit_order_entries (
+      snapshot_id,
+      customer_id,
+      order_date DESC NULLS LAST,
+      order_number DESC
+    );
+  CREATE INDEX IF NOT EXISTS idx_credit_orders_snapshot_code_number_upper
+    ON customer_credit_order_entries (snapshot_id, UPPER(customer_code), order_number);
+  CREATE INDEX IF NOT EXISTS idx_credit_payments_snapshot_customer_latest
+    ON customer_credit_payment_entries (
+      snapshot_id,
+      customer_id,
+      payment_date DESC NULLS LAST,
+      payment_number DESC
+    );
+  CREATE INDEX IF NOT EXISTS idx_sales_raw_olist_customer_upper_order
+    ON sales_raw (source_system, UPPER(customer_code), external_order_id);
+  `,
 ];

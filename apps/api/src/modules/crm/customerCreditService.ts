@@ -1782,15 +1782,6 @@ function buildOverviewSummary(linkedRows: CustomerCreditRow[], unmatchedRows: Cu
 async function loadOverviewRows(snapshotId: string) {
   const result = await pool.query(
     `
-      WITH latest_orders AS (
-        SELECT DISTINCT ON (customer_id)
-          customer_id,
-          seller
-        FROM customer_credit_order_entries
-        WHERE snapshot_id = $1
-          AND customer_id IS NOT NULL
-        ORDER BY customer_id, order_date DESC NULLS LAST, order_number DESC
-      )
       SELECT
         snapshot_row.id,
         snapshot_row.customer_id,
@@ -1834,8 +1825,14 @@ async function loadOverviewRows(snapshotId: string) {
       FROM customer_credit_snapshot_rows snapshot_row
       LEFT JOIN customers customer
         ON customer.id = snapshot_row.customer_id
-      LEFT JOIN latest_orders
-        ON latest_orders.customer_id = snapshot_row.customer_id
+      LEFT JOIN LATERAL (
+        SELECT entry.seller
+        FROM customer_credit_order_entries entry
+        WHERE entry.snapshot_id = snapshot_row.snapshot_id
+          AND entry.customer_id = snapshot_row.customer_id
+        ORDER BY entry.order_date DESC NULLS LAST, entry.order_number DESC
+        LIMIT 1
+      ) latest_orders ON TRUE
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = snapshot_row.customer_id
       WHERE snapshot_row.snapshot_id = $1
@@ -1857,23 +1854,6 @@ async function loadOverviewRows(snapshotId: string) {
 async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<CustomerCreditRow[]> {
   const result = await pool.query(
     `
-      WITH latest_orders AS (
-        SELECT DISTINCT ON (customer_id)
-          customer_id,
-          order_date::text AS last_order_date,
-          seller AS last_order_seller
-        FROM customer_credit_order_entries
-        WHERE snapshot_id = $1
-          AND customer_id IS NOT NULL
-        ORDER BY customer_id, order_date DESC NULLS LAST, order_number DESC
-      ),
-      payment_dates AS (
-        SELECT customer_id, MAX(payment_date)::text AS last_payment_date
-        FROM customer_credit_payment_entries
-        WHERE snapshot_id = $1
-          AND customer_id IS NOT NULL
-        GROUP BY customer_id
-      )
       SELECT
         customer.id,
         customer.customer_code,
@@ -1893,10 +1873,24 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
       FROM customers customer
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = customer.id
-      LEFT JOIN latest_orders
-        ON latest_orders.customer_id = customer.id
-      LEFT JOIN payment_dates
-        ON payment_dates.customer_id = customer.id
+      LEFT JOIN LATERAL (
+        SELECT
+          entry.order_date::text AS last_order_date,
+          entry.seller AS last_order_seller
+        FROM customer_credit_order_entries entry
+        WHERE entry.snapshot_id = $1
+          AND entry.customer_id = customer.id
+        ORDER BY entry.order_date DESC NULLS LAST, entry.order_number DESC
+        LIMIT 1
+      ) latest_orders ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT entry.payment_date::text AS last_payment_date
+        FROM customer_credit_payment_entries entry
+        WHERE entry.snapshot_id = $1
+          AND entry.customer_id = customer.id
+        ORDER BY entry.payment_date DESC NULLS LAST, entry.payment_number DESC
+        LIMIT 1
+      ) payment_dates ON TRUE
       WHERE customer.display_name NOT ILIKE '%shop online%'
     `,
     [snapshotId],
@@ -1959,6 +1953,23 @@ const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v3";
 const CREDIT_OVERVIEW_CACHE_TTL_SECONDS = 60 * 60; // 1 hora
 
 let overviewBackgroundRefreshInFlight = false;
+let overviewBuildInFlight: Promise<CustomerCreditOverviewResponse> | null = null;
+let overviewBackgroundRefreshNotBefore = 0;
+const OVERVIEW_BACKGROUND_REFRESH_COOLDOWN_MS = 5 * 60 * 1000;
+
+function buildAndCacheOverviewOnce(snapshot: CustomerCreditSnapshotMeta) {
+  if (overviewBuildInFlight) return overviewBuildInFlight;
+
+  overviewBuildInFlight = (async () => {
+    const response = await buildOverviewResponse(snapshot);
+    await cacheOverviewResponse(response);
+    return response;
+  })().finally(() => {
+    overviewBuildInFlight = null;
+  });
+
+  return overviewBuildInFlight;
+}
 
 async function buildOverviewResponse(snapshot: CustomerCreditSnapshotMeta): Promise<CustomerCreditOverviewResponse> {
   const [rows, customerDirectoryRows] = await Promise.all([
@@ -2011,10 +2022,13 @@ async function cacheOverviewResponse(response: CustomerCreditOverviewResponse) {
 // reaquece o cache quando terminar. Garantimos uma execucao por vez para nao
 // disparar varios parses pesados em paralelo.
 function refreshOverviewInBackground() {
-  if (overviewBackgroundRefreshInFlight) {
+  if (overviewBackgroundRefreshInFlight || Date.now() < overviewBackgroundRefreshNotBefore) {
     return;
   }
   overviewBackgroundRefreshInFlight = true;
+  // Varios acessos ao cache nao devem reconstruir a mesma visao pesada. O
+  // worker e a atualizacao manual continuam podendo renovar o dado na hora.
+  overviewBackgroundRefreshNotBefore = Date.now() + OVERVIEW_BACKGROUND_REFRESH_COOLDOWN_MS;
 
   void (async () => {
     try {
@@ -2047,10 +2061,9 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
   //    arquivo de 60MB muda, a aba abre rapido em vez de travar ~1min no parse.
   const activeSnapshot = await getActiveSnapshotRecord();
   if (activeSnapshot) {
-    const response = await buildOverviewResponse(
+    const response = await buildAndCacheOverviewOnce(
       mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>),
     );
-    await cacheOverviewResponse(response);
     refreshOverviewInBackground();
     return response;
   }

@@ -26,6 +26,12 @@ describe("performance migrations", () => {
     expect(sql).toContain("idx_customer_credit_rows_snapshot_customer");
     expect(sql).toContain("idx_customer_credit_orders_snapshot_customer_date");
     expect(sql).toContain("idx_customer_credit_payments_snapshot_customer_date");
+    expect(sql).toContain("idx_credit_rows_snapshot_customer_code_upper");
+    expect(sql).toContain("idx_credit_orders_snapshot_customer_latest");
+    expect(sql).toContain("order_date DESC NULLS LAST");
+    expect(sql).toContain("idx_credit_payments_snapshot_customer_latest");
+    expect(sql).toContain("payment_date DESC NULLS LAST");
+    expect(sql).toContain("idx_sales_raw_olist_customer_upper_order");
   });
 
   it("keeps manual credit overrides independent from spreadsheet snapshots", () => {
