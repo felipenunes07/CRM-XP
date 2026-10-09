@@ -296,7 +296,10 @@ const envSchema = z.object({
   // (padrao R$ 1), do maior para o menor.
   BILLING_ALERT_NO_CREDIT_ENABLED: z
     .enum(["true", "false"])
-    .default("true")
+    // Regra operacional: proposta/pedido so entra no alerta de credito quando
+    // o cliente possui algum limite aprovado. Manter desligado por padrao evita
+    // inundar o grupo com qualquer saldo de clientes sem credito cadastrado.
+    .default("false")
     .transform((value) => value === "true"),
   BILLING_ALERT_NO_CREDIT_MIN_DEBT: z.coerce.number().min(0).default(1),
   // Aviso no grupo do financeiro quando alguem altera credito, credito interno

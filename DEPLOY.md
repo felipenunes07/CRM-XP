@@ -93,7 +93,7 @@ BILLING_ALERT_INSTANT_ENABLED=true
 BILLING_ALERT_INSTANT_UNTIL_HOUR=20
 BILLING_ALERT_INSTANCE_ID=Lili          # quem envia: nome ou id da instancia (Lili Assistente esta no grupo)
 BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=5511888888888"
-BILLING_ALERT_NO_CREDIT_ENABLED=true     # cobrar quem deve e nao tem credito (CREDITO e CREDITO INTERNO vazios)
+BILLING_ALERT_NO_CREDIT_ENABLED=false    # nao disparar para clientes sem credito cadastrado
 BILLING_ALERT_NO_CREDIT_MIN_DEBT=1       # a partir de quanto (padrao: qualquer valor)
 CREDIT_CHANGE_ALERT_ENABLED=true         # avisa o grupo quando alguem altera credito/credito interno/prazo no CRM
 CREDIT_CHANGE_ALERT_GROUP_JID=120363410602450990@g.us  # "XP - CRM Financeiro" (padrao)
