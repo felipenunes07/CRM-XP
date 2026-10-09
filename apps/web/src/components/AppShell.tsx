@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ClipboardList,
   Crosshair,
+  Gauge,
   Kanban,
   LayoutDashboard,
   Lightbulb,
@@ -37,6 +38,7 @@ import { permissionForPath } from "../lib/navigationPermissions";
 /* ── link structure for external tests ── */
 export const appShellLinks = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/central-decisao", icon: Gauge, labelPt: "Central de Decisão" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
   // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)
@@ -89,6 +91,7 @@ function isGroup(entry: SidebarEntry): entry is SidebarGroup {
 /* ── Sidebar menu structure ── */
 const sidebarMenu: SidebarEntry[] = [
   { to: "/", icon: LayoutDashboard, labelPt: "Dashboard" },
+  { to: "/central-decisao", icon: Gauge, labelPt: "Central de Decisão" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
   // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)

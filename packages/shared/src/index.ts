@@ -1679,6 +1679,52 @@ export interface CustomerOpportunityQueueResponse {
   items: CustomerOpportunityQueueItem[];
 }
 
+export interface DecisionCenterCreditDecision {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  orderTotal: number;
+  orderUpdatedAt: string | null;
+  customerId: string | null;
+  customerCode: string;
+  customerName: string;
+  seller: string | null;
+  debtAmount: number;
+  openProposalsAmount: number;
+  projectedExposure: number;
+  effectiveLimit: number;
+  requiredPayment: number;
+}
+
+export interface DecisionCenterRecoveryItem {
+  customerId: string;
+  customerCode: string | null;
+  customerName: string;
+  status: CustomerStatus;
+  lastPurchaseAt: string | null;
+  daysSinceLastPurchase: number | null;
+  averageTicket: number;
+  totalSpent: number;
+  priorityScore: number;
+  seller: string | null;
+  suggestedAction: string;
+}
+
+export interface DecisionCenterResponse {
+  generatedAt: string;
+  summary: {
+    decisionsCount: number;
+    decisionsValue: number;
+    requiredPaymentTotal: number;
+    salesCount: number;
+    salesPotential: number;
+    recoveryCount: number;
+  };
+  creditDecisions: DecisionCenterCreditDecision[];
+  salesOpportunities: CustomerOpportunityQueueItem[];
+  recoveryOpportunities: DecisionCenterRecoveryItem[];
+}
+
 export type MessageTemplateType = "TEXT" | "IMAGE" | "VIDEO";
 
 export interface MessageTemplate {

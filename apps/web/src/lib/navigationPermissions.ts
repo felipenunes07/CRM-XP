@@ -99,6 +99,7 @@ const permissionByPath = new Map(
 );
 
 export function permissionForPath(path: string) {
+  if (path === "/central-decisao") return "reports.executive.view";
   const exactPermission = permissionByPath.get(path);
   if (exactPermission) return exactPermission;
   if (path === "/relatorio-executivo") return "dashboard.view";

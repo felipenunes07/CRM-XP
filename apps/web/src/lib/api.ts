@@ -9,6 +9,7 @@ import type {
   CustomerAnalyticsResponse,
   CustomerOpportunityDetail,
   CustomerOpportunityQueueResponse,
+  DecisionCenterResponse,
   CustomerCreditDetailResponse,
   CustomerCreditSettingsUpdate,
   CustomerDefectCustomerDetailResponse,
@@ -764,6 +765,9 @@ export const api = {
   },
   customerCreditOpportunities(token: string) {
     return request<CustomerOpportunityQueueResponse>("/api/customer-credit/opportunities", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
+  },
+  decisionCenter(token: string) {
+    return request<DecisionCenterResponse>("/api/decision-center", {}, token, false, CREDIT_REQUEST_TIMEOUT_MS);
   },
   inventorySnapshot(token: string) {
     return request<InventorySnapshotMeta | null>("/api/inventory/snapshot", {}, token);

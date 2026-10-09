@@ -8,6 +8,7 @@ import { applyAppZoom } from "./lib/appZoom";
 
 const AppShell = lazy(async () => ({ default: (await import("./components/AppShell")).AppShell }));
 const DashboardPage = lazy(async () => ({ default: (await import("./pages/DashboardPage")).DashboardPage }));
+const DecisionCenterPage = lazy(async () => ({ default: (await import("./pages/DecisionCenterPage")).DecisionCenterPage }));
 const ExecutiveSalesDashboardPage = lazy(async () => ({
   default: (await import("./pages/ExecutiveSalesDashboardPage")).ExecutiveSalesDashboardPage,
 }));
@@ -155,6 +156,7 @@ export default function App() {
             <Route path="/acesso-negado" element={<AccessDeniedPage />} />
             <Route path="/tarefas" element={<PermissionElement permission="tasks.view"><TarefasPage /></PermissionElement>} />
             <Route path="/" element={<DefaultLandingRoute />} />
+            <Route path="/central-decisao" element={<PermissionElement permission="reports.executive.view"><DecisionCenterPage /></PermissionElement>} />
             <Route path="/pipeline" element={<PermissionElement permission="commercial.pipeline.view"><PipelinePage /></PermissionElement>} />
             <Route path="/atendentes" element={<PermissionElement permission="reports.attendants.view"><AttendantsPage /></PermissionElement>} />
             <Route path="/clientes" element={<PermissionElement permission="commercial.customers.view"><CustomersPage /></PermissionElement>} />

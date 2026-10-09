@@ -65,6 +65,7 @@ import { getAttendantPortfolio, getAttendantsOverview } from "./modules/crm/atte
 import { getAgendaItems, getDashboardMetrics, getCustomerMovements, getTrendRangeAnalysis, saveMonthlyTarget, deleteMonthlyTarget, getMonthlyTargets, getMonthlyTargetActuals, getChartAnnotations, saveChartAnnotation, deleteChartAnnotation } from "./modules/crm/dashboardService.js";
 import { getExecutiveDashboardMetrics } from "./modules/crm/executiveDashboardService.js";
 import { subscribeExecutiveDashboardUpdates } from "./modules/crm/executiveDashboardBus.js";
+import { getDecisionCenter } from "./modules/crm/decisionCenterService.js";
 import {
   createSavedSegment,
   deleteSavedSegment,
@@ -1528,6 +1529,18 @@ export function createApp() {
       next(error);
     }
   });
+
+  app.get(
+    "/api/decision-center",
+    requirePermission("reports.executive.view"),
+    async (_request, response, next) => {
+      try {
+        response.json(await getDecisionCenter());
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   app.get("/api/customer-defects/overview", async (_request, response, next) => {
     try {
