@@ -21,11 +21,10 @@ import {
   formatNumber,
 } from "../lib/format";
 import {
+  customerFinancialCategory,
   customerCreditHeadlineClassName,
   customerCreditHeadlineLabel,
   customerCreditPrimaryLabel,
-  customerCreditRiskClassName,
-  customerCreditRiskLabel,
   customerCreditVisibleFlags,
 } from "../lib/customerCredit";
 import { exportCustomerFinancialWorkbook } from "../lib/customerFinancialExport";
@@ -50,15 +49,25 @@ interface CustomerFinancialPageViewProps {
   onEditCredit?: (row: CustomerCreditRow) => void;
 }
 
-function filterCreditRows(rows: CustomerCreditRow[], search: string) {
-  const needle = search.trim().toLowerCase();
-  if (!needle) return rows;
+const NO_SELLER_FILTER = "__NO_SELLER__";
 
+function filterCreditRows(rows: CustomerCreditRow[], search: string, seller: string, category: string) {
+  const needle = search.trim().toLowerCase();
   return rows.filter((row) => {
+    const rowCategory = customerFinancialCategory(row);
+    if (seller === NO_SELLER_FILTER && row.assignedSeller) return false;
+    if (seller && seller !== NO_SELLER_FILTER && row.assignedSeller !== seller) return false;
+    if (category && rowCategory.label !== category) return false;
+    if (!needle) return true;
+
     const haystack = [
       row.customerDisplayName,
       row.sourceDisplayName,
       row.customerCode,
+      row.assignedSeller,
+      row.lastOrderSeller,
+      rowCategory.label,
+      rowCategory.action,
       row.observation,
       row.flags.join(" "),
     ]
@@ -120,7 +129,9 @@ function CustomerSelector({
           >
             <span>
               <strong>{row.customerDisplayName}</strong>
-              <small>{row.customerCode || "Sem codigo"}</small>
+              <small>
+                {row.customerCode || "Sem codigo"} · {row.assignedSeller || "Não atribuída"}
+              </small>
             </span>
             <span className={row.debtAmount > 0 ? "amount-danger" : "amount-neutral"}>
               {customerAmountLabel(row)}
@@ -172,8 +183,21 @@ export function CustomerFinancialPageView({
 }: CustomerFinancialPageViewProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState(false);
+  const [sellerFilter, setSellerFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const linkedRows = overview?.linkedRows ?? [];
-  const filteredRows = useMemo(() => filterCreditRows(linkedRows, search), [linkedRows, search]);
+  const sellers = useMemo(
+    () => [...new Set(linkedRows.map((row) => row.assignedSeller).filter((value): value is string => Boolean(value)))].sort((left, right) => left.localeCompare(right, "pt-BR")),
+    [linkedRows],
+  );
+  const categories = useMemo(
+    () => [...new Set(linkedRows.map((row) => customerFinancialCategory(row).label))].sort((left, right) => left.localeCompare(right, "pt-BR")),
+    [linkedRows],
+  );
+  const filteredRows = useMemo(
+    () => filterCreditRows(linkedRows, search, sellerFilter, categoryFilter),
+    [linkedRows, search, sellerFilter, categoryFilter],
+  );
   const selectedRow = linkedRows.find((row) => row.customerId === selectedCustomerId) ?? null;
   const creditRow = detail?.row ?? selectedRow;
   const orders = detail?.orders ?? [];
@@ -269,6 +293,28 @@ export function CustomerFinancialPageView({
             </div>
           </label>
 
+          <div className="customer-financial-filter-grid">
+            <label>
+              Vendedora responsável
+              <select value={sellerFilter} onChange={(event) => setSellerFilter(event.target.value)}>
+                <option value="">Todas</option>
+                {sellers.map((seller) => (
+                  <option key={seller} value={seller}>{seller}</option>
+                ))}
+                <option value={NO_SELLER_FILTER}>Não atribuída</option>
+              </select>
+            </label>
+            <label>
+              Categoria financeira
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+                <option value="">Todas</option>
+                {categories.map((category) => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
           {isOverviewLoading ? <div className="page-loading">Carregando clientes...</div> : null}
           {isOverviewError ? <div className="page-error">Falha ao carregar o snapshot financeiro.</div> : null}
           {!isOverviewLoading && !isOverviewError ? (
@@ -306,8 +352,8 @@ export function CustomerFinancialPageView({
                     <span className={`tag credit-badge ${customerCreditHeadlineClassName(creditRow)}`}>
                       {customerCreditHeadlineLabel(creditRow)}
                     </span>
-                    <span className={`tag credit-badge ${customerCreditRiskClassName(creditRow.riskLevel)}`}>
-                      {customerCreditRiskLabel(creditRow.riskLevel)}
+                    <span className={`tag credit-badge ${customerFinancialCategory(creditRow).className}`}>
+                      {customerFinancialCategory(creditRow).label}
                     </span>
                     {onEditCredit ? (
                       <button type="button" className="primary-button small" onClick={() => onEditCredit(creditRow)}>
@@ -345,7 +391,7 @@ export function CustomerFinancialPageView({
                     helper={
                       lastSale
                         ? [lastSaleSeller ? `por ${lastSaleSeller}` : null, formatDaysSince(calculateDaysSince(lastSale.orderDate))].filter(Boolean).join(" · ")
-                        : formatDaysSince(creditRow.daysSinceLastOrder)
+                        : [creditRow.lastOrderSeller ? `por ${creditRow.lastOrderSeller}` : null, formatDaysSince(creditRow.daysSinceLastOrder)].filter(Boolean).join(" · ")
                     }
                   />
                   <FinancialMetric label="Ultimo pagamento" value={formatDate(creditRow.lastPaymentDate)} helper={formatDaysSince(daysSinceLastPayment)} />

@@ -4664,6 +4664,33 @@ textarea {
   font-size: 0.84rem;
 }
 
+.customer-financial-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.customer-financial-filter-grid label {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.customer-financial-filter-grid select {
+  min-width: 0;
+  width: 100%;
+  min-height: 38px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+}
+
 .customer-financial-list-meta {
   font-size: 0.78rem;
   font-weight: 700;

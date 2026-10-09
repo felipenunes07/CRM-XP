@@ -194,6 +194,105 @@ export function customerCreditRiskClassName(value: CustomerCreditRiskLevel) {
   return "credit-badge-ok";
 }
 
+export type CustomerFinancialCategory = {
+  label: string;
+  action: string;
+  className: string;
+};
+
+/**
+ * Categoria operacional para filtragem e cobrança. Ao contrário do grau de
+ * risco vindo da planilha, explica o principal motivo e a próxima ação.
+ */
+export function customerFinancialCategory(row: CustomerCreditRow): CustomerFinancialCategory {
+  if (row.hasOverCredit || row.operationalState === "OVER_CREDIT") {
+    return {
+      label: "Limite ultrapassado",
+      action: "Bloquear nova venda e revisar o limite",
+      className: "credit-badge-danger",
+    };
+  }
+
+  if (row.debtAmount > 0 && (row.hasDebtWithoutCredit || row.creditLimit <= 0)) {
+    return {
+      label: "Dívida sem crédito",
+      action: "Cobrar o saldo; nova venda somente com pagamento",
+      className: "credit-badge-danger",
+    };
+  }
+
+  if (row.debtAmount > 0 && row.hasNoPayment) {
+    return {
+      label: "Sem histórico de pagamento",
+      action: "Confirmar pagamento e condição comercial",
+      className: "credit-badge-danger",
+    };
+  }
+
+  if (row.debtAmount > 0 && row.hasSeverelyOverduePayment) {
+    return {
+      label: "Pagamento muito vencido",
+      action: "Fazer cobrança imediata",
+      className: "credit-badge-danger",
+    };
+  }
+
+  if (row.debtAmount > 0 && isOverdueCreditRow(row)) {
+    return {
+      label: "Pagamento vencido",
+      action: "Cobrar hoje",
+      className: "credit-badge-warning",
+    };
+  }
+
+  if (row.debtAmount > 0 && (!row.paymentTerm || row.paymentTerm <= 0)) {
+    return {
+      label: "Sem prazo cadastrado",
+      action: "Cadastrar prazo para calcular o vencimento",
+      className: "credit-badge-warning",
+    };
+  }
+
+  const limitUsage = row.creditLimit > 0 ? row.debtAmount / row.creditLimit : 0;
+  if (row.debtAmount > 0 && limitUsage >= 0.8) {
+    return {
+      label: "Perto do limite",
+      action: "Revisar antes do próximo pedido",
+      className: "credit-badge-warning",
+    };
+  }
+
+  if (row.debtAmount > 0) {
+    return {
+      label: "Saldo em aberto no prazo",
+      action: "Acompanhar o vencimento",
+      className: "credit-badge-monitor",
+    };
+  }
+
+  if (row.creditBalanceAmount > 0) {
+    return {
+      label: "Saldo a favor",
+      action: "Usar o saldo na próxima venda",
+      className: "credit-badge-info",
+    };
+  }
+
+  if (row.operationalState === "UNUSED_CREDIT") {
+    return {
+      label: "Crédito disponível",
+      action: "Cliente apto para nova venda",
+      className: "credit-badge-success",
+    };
+  }
+
+  return {
+    label: "Sem pendência",
+    action: "Nenhuma ação financeira",
+    className: "credit-badge-ok",
+  };
+}
+
 export function customerCreditStateLabel(value: CustomerCreditOperationalState) {
   if (value === "OWES") return "Devendo";
   if (value === "HAS_CREDIT_BALANCE") return "Saldo a favor";

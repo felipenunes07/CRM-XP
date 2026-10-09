@@ -54,6 +54,8 @@ const overview: CustomerCreditOverviewResponse = {
       daysSinceLastOrder: 75,
       lastPaymentDate: "2026-05-12T00:00:00.000Z",
       lastOrderDate: "2026-02-27T00:00:00.000Z",
+      lastOrderSeller: "Thais",
+      assignedSeller: "Thais",
       observation: "Parcial falta R$ 6.193,17",
       flags: ["Saldo em aberto"],
       hasNoPayment: false,
@@ -85,6 +87,8 @@ const overview: CustomerCreditOverviewResponse = {
       daysSinceLastOrder: 12,
       lastPaymentDate: "2026-05-10T00:00:00.000Z",
       lastOrderDate: "2026-05-08T00:00:00.000Z",
+      lastOrderSeller: "Suelen",
+      assignedSeller: "Suelen",
       observation: "",
       flags: [],
       hasNoPayment: false,
@@ -224,6 +228,10 @@ describe("CustomerFinancialPageView", () => {
     expect(markup).toContain("Exportar 2 cliente(s) do filtro atual");
     expect(markup).toContain("Fast Phone");
     expect(markup).toContain("Patrick Sos Celular");
+    expect(markup).toContain("Vendedora responsável");
+    expect(markup).toContain("Categoria financeira");
+    expect(markup).toContain("Thais");
+    expect(markup).toContain("Pagamento muito vencido");
     expect(markup).toContain("Saldo devedor");
     expect(markup).toContain("6.193,17");
     expect(markup).toContain("Pagamentos");

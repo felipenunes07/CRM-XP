@@ -1628,6 +1628,8 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
     riskLevel: String(row.risk_level) as CustomerCreditRiskLevel,
     observation: String(row.observation ?? ""),
     lastOrderDate: row.last_order_date ? String(row.last_order_date) : null,
+    lastOrderSeller: normalizeCreditSeller(row.last_order_seller),
+    assignedSeller: normalizeCreditSeller(row.assigned_seller ?? row.last_order_seller),
     lastPaymentDate: row.last_payment_date ? String(row.last_payment_date) : null,
     daysSinceLastOrder:
       row.days_since_last_order === null || row.days_since_last_order === undefined
@@ -1662,6 +1664,12 @@ function mapCustomerCreditRow(row: Record<string, unknown>): CustomerCreditRow {
       ? String(row.manual_override_updated_by_name)
       : null,
   };
+}
+
+function normalizeCreditSeller(value: unknown) {
+  const seller = String(value ?? "").trim();
+  if (!seller || seller.toLocaleLowerCase("pt-BR") === "resumo") return null;
+  return seller;
 }
 
 function mapCustomerCreditOrderEntry(row: Record<string, unknown>): CustomerCreditOrderEntry {
@@ -1774,10 +1782,19 @@ function buildOverviewSummary(linkedRows: CustomerCreditRow[], unmatchedRows: Cu
 async function loadOverviewRows(snapshotId: string) {
   const result = await pool.query(
     `
+      WITH latest_orders AS (
+        SELECT DISTINCT ON (customer_id)
+          customer_id,
+          seller
+        FROM customer_credit_order_entries
+        WHERE snapshot_id = $1
+          AND customer_id IS NOT NULL
+        ORDER BY customer_id, order_date DESC NULLS LAST, order_number DESC
+      )
       SELECT
         snapshot_row.id,
         snapshot_row.customer_id,
-        customer_code,
+        snapshot_row.customer_code,
         customer_display_name,
         source_display_name,
         balance_amount,
@@ -1786,6 +1803,11 @@ async function loadOverviewRows(snapshotId: string) {
         risk_level,
         observation,
         last_order_date::text AS last_order_date,
+        latest_orders.seller AS last_order_seller,
+        COALESCE(
+          NULLIF(CASE WHEN LOWER(BTRIM(latest_orders.seller)) = 'resumo' THEN '' ELSE BTRIM(latest_orders.seller) END, ''),
+          NULLIF(BTRIM(customer.last_attendant), '')
+        ) AS assigned_seller,
         last_payment_date::text AS last_payment_date,
         days_since_last_order,
         days_since_last_payment,
@@ -1810,6 +1832,10 @@ async function loadOverviewRows(snapshotId: string) {
         override.updated_at AS manual_override_updated_at,
         override.updated_by_name AS manual_override_updated_by_name
       FROM customer_credit_snapshot_rows snapshot_row
+      LEFT JOIN customers customer
+        ON customer.id = snapshot_row.customer_id
+      LEFT JOIN latest_orders
+        ON latest_orders.customer_id = snapshot_row.customer_id
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = snapshot_row.customer_id
       WHERE snapshot_row.snapshot_id = $1
@@ -1831,12 +1857,15 @@ async function loadOverviewRows(snapshotId: string) {
 async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<CustomerCreditRow[]> {
   const result = await pool.query(
     `
-      WITH order_dates AS (
-        SELECT customer_id, MAX(order_date)::text AS last_order_date
+      WITH latest_orders AS (
+        SELECT DISTINCT ON (customer_id)
+          customer_id,
+          order_date::text AS last_order_date,
+          seller AS last_order_seller
         FROM customer_credit_order_entries
         WHERE snapshot_id = $1
           AND customer_id IS NOT NULL
-        GROUP BY customer_id
+        ORDER BY customer_id, order_date DESC NULLS LAST, order_number DESC
       ),
       payment_dates AS (
         SELECT customer_id, MAX(payment_date)::text AS last_payment_date
@@ -1854,13 +1883,18 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
         override.internal_credit_limit,
         override.updated_at,
         override.updated_by_name,
-        order_dates.last_order_date,
+        latest_orders.last_order_date,
+        latest_orders.last_order_seller,
+        COALESCE(
+          NULLIF(CASE WHEN LOWER(BTRIM(latest_orders.last_order_seller)) = 'resumo' THEN '' ELSE BTRIM(latest_orders.last_order_seller) END, ''),
+          NULLIF(BTRIM(customer.last_attendant), '')
+        ) AS assigned_seller,
         payment_dates.last_payment_date
       FROM customers customer
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = customer.id
-      LEFT JOIN order_dates
-        ON order_dates.customer_id = customer.id
+      LEFT JOIN latest_orders
+        ON latest_orders.customer_id = customer.id
       LEFT JOIN payment_dates
         ON payment_dates.customer_id = customer.id
       WHERE customer.display_name NOT ILIKE '%shop online%'
@@ -1889,6 +1923,8 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
       riskLevel: "OK",
       observation: creditLimit > 0 ? "" : "Sem crédito informado",
       lastOrderDate: row.last_order_date ? String(row.last_order_date) : null,
+      lastOrderSeller: normalizeCreditSeller(row.last_order_seller),
+      assignedSeller: normalizeCreditSeller(row.assigned_seller),
       lastPaymentDate: row.last_payment_date ? String(row.last_payment_date) : null,
       daysSinceLastOrder: null,
       daysSinceLastPayment: null,
@@ -1916,7 +1952,7 @@ async function loadCustomerDirectoryRows(snapshotId: string | null): Promise<Cus
   });
 }
 
-const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v2";
+const CREDIT_OVERVIEW_CACHE_KEY = "crm:customer_credit:overview:v3";
 // A planilha de saldos so muda uma vez por dia, e o worker (alem do refresh em
 // background abaixo) reaquece o cache. Por isso guardamos por bastante tempo:
 // abrir a aba repetidas vezes responde em milissegundos.
@@ -2090,9 +2126,9 @@ export async function getCustomerCreditDetail(
     pool.query(
       `
         SELECT
-          id,
+          snapshot_row.id,
           snapshot_row.customer_id,
-          customer_code,
+          snapshot_row.customer_code,
           customer_display_name,
           source_display_name,
           balance_amount,
@@ -2101,6 +2137,11 @@ export async function getCustomerCreditDetail(
           risk_level,
           observation,
           last_order_date::text AS last_order_date,
+          latest_order.seller AS last_order_seller,
+          COALESCE(
+            NULLIF(CASE WHEN LOWER(BTRIM(latest_order.seller)) = 'resumo' THEN '' ELSE BTRIM(latest_order.seller) END, ''),
+            NULLIF(BTRIM(customer.last_attendant), '')
+          ) AS assigned_seller,
           last_payment_date::text AS last_payment_date,
           days_since_last_order,
           days_since_last_payment,
@@ -2125,6 +2166,16 @@ export async function getCustomerCreditDetail(
           override.updated_at AS manual_override_updated_at,
           override.updated_by_name AS manual_override_updated_by_name
         FROM customer_credit_snapshot_rows snapshot_row
+        LEFT JOIN customers customer
+          ON customer.id = snapshot_row.customer_id
+        LEFT JOIN LATERAL (
+          SELECT order_entry.seller
+          FROM customer_credit_order_entries order_entry
+          WHERE order_entry.snapshot_id = snapshot_row.snapshot_id
+            AND order_entry.customer_id = snapshot_row.customer_id
+          ORDER BY order_entry.order_date DESC NULLS LAST, order_entry.order_number DESC
+          LIMIT 1
+        ) latest_order ON TRUE
         LEFT JOIN customer_credit_overrides override
           ON override.customer_id = snapshot_row.customer_id
         WHERE snapshot_row.snapshot_id = $1

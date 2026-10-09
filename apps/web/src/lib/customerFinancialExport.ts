@@ -1,7 +1,7 @@
 import type { CustomerCreditRow, CustomerCreditSnapshotMeta } from "@olist-crm/shared";
 import {
+  customerFinancialCategory,
   customerCreditHeadlineLabel,
-  customerCreditRiskLabel,
   customerCreditVisibleFlags,
 } from "./customerCredit";
 
@@ -9,8 +9,11 @@ export const CUSTOMER_FINANCIAL_EXPORT_HEADERS = [
   "Código",
   "Cliente",
   "Nome no arquivo",
+  "Vendedora responsável",
+  "Vendedora da última compra",
+  "Categoria financeira",
+  "Ação recomendada",
   "Situação",
-  "Risco",
   "Saldo devedor",
   "Saldo a favor",
   "Limite de crédito",
@@ -48,26 +51,32 @@ function formatExportDateTime(value: string) {
 }
 
 export function buildCustomerFinancialExportRows(rows: CustomerCreditRow[]): CustomerFinancialExportCell[][] {
-  return rows.map((row) => [
-    row.customerCode,
-    row.customerDisplayName,
-    row.sourceDisplayName ?? "",
-    customerCreditHeadlineLabel(row),
-    customerCreditRiskLabel(row.riskLevel),
-    row.debtAmount,
-    row.creditBalanceAmount,
-    row.creditLimit,
-    row.availableCreditAmount,
-    row.creditLimit > 0 ? row.debtAmount / row.creditLimit : "",
-    row.withinCreditLimit ? "Sim" : "Não",
-    row.paymentTerm ?? "",
-    formatExportDate(row.lastOrderDate),
-    row.daysSinceLastOrder ?? "",
-    formatExportDate(row.lastPaymentDate),
-    row.daysSinceLastPayment ?? "",
-    row.observation,
-    customerCreditVisibleFlags(row).join("; "),
-  ]);
+  return rows.map((row) => {
+    const category = customerFinancialCategory(row);
+    return [
+      row.customerCode,
+      row.customerDisplayName,
+      row.sourceDisplayName ?? "",
+      row.assignedSeller ?? "Não atribuída",
+      row.lastOrderSeller ?? "Sem vendedora informada",
+      category.label,
+      category.action,
+      customerCreditHeadlineLabel(row),
+      row.debtAmount,
+      row.creditBalanceAmount,
+      row.creditLimit,
+      row.availableCreditAmount,
+      row.creditLimit > 0 ? row.debtAmount / row.creditLimit : "",
+      row.withinCreditLimit ? "Sim" : "Não",
+      row.paymentTerm ?? "",
+      formatExportDate(row.lastOrderDate),
+      row.daysSinceLastOrder ?? "",
+      formatExportDate(row.lastPaymentDate),
+      row.daysSinceLastPayment ?? "",
+      row.observation,
+      customerCreditVisibleFlags(row).join("; "),
+    ];
+  });
 }
 
 function localDateStamp(date: Date) {
@@ -93,13 +102,16 @@ export async function exportCustomerFinancialWorkbook({
     ...buildCustomerFinancialExportRows(rows),
   ]);
 
-  sheet["!autofilter"] = { ref: `A1:R${Math.max(rows.length + 1, 1)}` };
+  sheet["!autofilter"] = { ref: `A1:U${Math.max(rows.length + 1, 1)}` };
   sheet["!cols"] = [
     { wch: 14 },
     { wch: 32 },
     { wch: 32 },
     { wch: 22 },
-    { wch: 14 },
+    { wch: 24 },
+    { wch: 28 },
+    { wch: 48 },
+    { wch: 22 },
     { wch: 17 },
     { wch: 16 },
     { wch: 18 },
@@ -116,12 +128,12 @@ export async function exportCustomerFinancialWorkbook({
   ];
 
   for (let rowIndex = 2; rowIndex <= rows.length + 1; rowIndex += 1) {
-    for (const column of ["F", "G", "H", "I"]) {
+    for (const column of ["I", "J", "K", "L"]) {
       const cell = sheet[`${column}${rowIndex}`];
       if (cell) cell.z = 'R$ #,##0.00;[Red]-R$ #,##0.00';
     }
 
-    const usageCell = sheet[`J${rowIndex}`];
+    const usageCell = sheet[`M${rowIndex}`];
     if (usageCell) usageCell.z = "0%";
   }
 

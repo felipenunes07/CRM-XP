@@ -2,6 +2,7 @@ import type { CustomerCreditRow } from "@olist-crm/shared";
 import { describe, expect, it } from "vitest";
 import {
   computeOrderSettlements,
+  customerFinancialCategory,
   customerCreditHeadlineLabel,
   customerCreditPrimaryLabel,
   customerCreditRiskClassName,
@@ -129,6 +130,25 @@ describe("customer credit helpers", () => {
     expect(customerCreditPrimaryLabel(withinLimitRow)).toBe("Em aberto");
     expect(customerCreditHeadlineLabel(withinLimitRow)).toBe("Dentro do credito");
     expect(customerCreditVisibleFlags(withinLimitRow)).toEqual(["Pagamento Muito Vencido"]);
+  });
+
+  it("categorizes customers by the financial action instead of the generic risk level", () => {
+    expect(customerFinancialCategory(buildRow({ hasOverCredit: true, operationalState: "OVER_CREDIT" }))).toMatchObject({
+      label: "Limite ultrapassado",
+      action: "Bloquear nova venda e revisar o limite",
+    });
+    expect(customerFinancialCategory(buildRow({ creditLimit: 0, hasDebtWithoutCredit: true }))).toMatchObject({
+      label: "Dívida sem crédito",
+    });
+    expect(customerFinancialCategory(buildRow({ hasSeverelyOverduePayment: true }))).toMatchObject({
+      label: "Pagamento muito vencido",
+    });
+    expect(customerFinancialCategory(buildRow({ debtAmount: 4_250, creditLimit: 5_000, lastOrderDate: "2099-01-01" }))).toMatchObject({
+      label: "Perto do limite",
+    });
+    expect(customerFinancialCategory(buildRow({ debtAmount: 0, balanceAmount: 0, operationalState: "SETTLED" }))).toMatchObject({
+      label: "Sem pendência",
+    });
   });
 
   it("calculates the estimated deadline from the last order plus the spreadsheet term", () => {

@@ -1001,6 +1001,10 @@ export interface CustomerCreditRow {
   riskLevel: CustomerCreditRiskLevel;
   observation: string;
   lastOrderDate: string | null;
+  /** Vendedora registrada no pedido mais recente do snapshot financeiro. */
+  lastOrderSeller?: string | null;
+  /** Responsável comercial: última vendedora conhecida, com fallback para o cadastro do cliente. */
+  assignedSeller?: string | null;
   lastPaymentDate: string | null;
   daysSinceLastOrder: number | null;
   daysSinceLastPayment: number | null;

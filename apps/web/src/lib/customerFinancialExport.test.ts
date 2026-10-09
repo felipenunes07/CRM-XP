@@ -19,6 +19,8 @@ const row: CustomerCreditRow = {
   riskLevel: "CRITICO",
   observation: "Parcial em aberto",
   lastOrderDate: "2026-02-27T00:00:00.000Z",
+  lastOrderSeller: "Thais",
+  assignedSeller: "Thais",
   lastPaymentDate: "2026-05-12T00:00:00.000Z",
   daysSinceLastOrder: 75,
   daysSinceLastPayment: 146,
@@ -38,14 +40,17 @@ describe("customerFinancialExport", () => {
   it("builds an Excel row with the financial information displayed by the CRM", () => {
     const [exported] = buildCustomerFinancialExportRows([row]);
 
-    expect(CUSTOMER_FINANCIAL_EXPORT_HEADERS).toHaveLength(18);
+    expect(CUSTOMER_FINANCIAL_EXPORT_HEADERS).toHaveLength(21);
     expect(exported).toHaveLength(CUSTOMER_FINANCIAL_EXPORT_HEADERS.length);
     expect(exported).toEqual([
       "CL475",
       "Fast Phone",
       "FAST PHONE",
+      "Thais",
+      "Thais",
+      "Pagamento muito vencido",
+      "Fazer cobrança imediata",
       "Dentro do credito",
-      "Crítico",
       6193.17,
       0,
       50000,
