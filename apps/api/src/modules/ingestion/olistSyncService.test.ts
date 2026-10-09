@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   extractOrderAttendantName,
+  getOlistOrderTotal,
   getOlistTodayDateKey,
   isOlistOrderSnapshotUnchanged,
   resolveOrderAttendantName,
@@ -21,6 +22,15 @@ describe("Olist current-day safety scan", () => {
     const existing = [{ fingerprint: "same", order_status: "Enviado", attendant_name: "Suelen" }];
     const incoming = [{ fingerprint: "same", orderStatus: "Enviado", attendantName: "Suelen" }];
     expect(isOlistOrderSnapshotUnchanged(existing, incoming)).toBe(true);
+  });
+
+  it("uses the order grand total and falls back to the item lines", () => {
+    const order = {
+      total_pedido: "1.250,50",
+      itens: [{ item: { quantidade: "2", valor_unitario: "500" } }],
+    };
+    expect(getOlistOrderTotal(order as never)).toBe(1250.5);
+    expect(getOlistOrderTotal({ ...order, total_pedido: undefined } as never)).toBe(1000);
   });
 });
 

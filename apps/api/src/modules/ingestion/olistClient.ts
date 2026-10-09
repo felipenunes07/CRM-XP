@@ -56,6 +56,10 @@ const pedidoObterSchema = z.object({
               .passthrough(),
           }),
         ),
+        total_pedido: z.union([z.string(), z.number()]).optional(),
+        total_produtos: z.union([z.string(), z.number()]).optional(),
+        valor_frete: z.union([z.string(), z.number()]).optional(),
+        valor_desconto: z.union([z.string(), z.number()]).optional(),
         situacao: z.string().optional(),
       })
       .passthrough()

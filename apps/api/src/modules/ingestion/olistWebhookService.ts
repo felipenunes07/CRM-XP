@@ -6,6 +6,7 @@ import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
 import { clearDashboardCache } from "../crm/dashboardService.js";
 import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.js";
 import { publishExecutiveDashboardUpdate } from "../crm/executiveDashboardBus.js";
+import { checkOlistOrderCreditRisk } from "../crm/orderCreditAlertService.js";
 
 // A Olist tem dois webhooks de pedido, com formatos diferentes:
 //  - extensao Webhooks (conta inteira): tipo inclusao_pedido/atualizacao_pedido,
@@ -129,6 +130,28 @@ export async function processOlistWebhookOrder(orderId: string, tipo: string) {
     if (result.skipped) {
       logger.warn("olist webhook order skipped", { orderId, tipo, reason: result.reason });
       return;
+    }
+
+    try {
+      const creditAlert = await checkOlistOrderCreditRisk({
+        orderId: result.orderId,
+        orderNumber: result.orderNumber,
+        customerCode: result.customerCode,
+        customerName: result.customerName,
+        orderStatus: result.orderStatus,
+        orderTotal: result.orderTotal,
+        attendantName: result.attendantName,
+      });
+      logger.info("olist order credit check completed", {
+        orderId,
+        orderNumber: result.orderNumber,
+        sent: creditAlert.sent,
+        reason: "reason" in creditAlert ? creditAlert.reason : "credit-exceeded",
+      });
+    } catch (error) {
+      // O alerta e importante, mas uma indisponibilidade do WhatsApp ou do
+      // financeiro nao pode impedir a atualizacao normal do pedido no CRM.
+      logger.error("olist order credit alert failed", { orderId, tipo, error: String(error) });
     }
 
     await refreshDashboardDailyMetrics();

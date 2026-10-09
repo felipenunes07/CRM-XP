@@ -586,6 +586,16 @@ async function ingestOlistOrder(orderId: string | number, resolver: AttendantRes
   };
 }
 
+export function getOlistOrderTotal(order: OlistOrder) {
+  const reportedTotal = safeNumber(order.total_pedido);
+  if (reportedTotal > 0) return reportedTotal;
+
+  return order.itens.reduce((total, entry) => {
+    const item = entry.item;
+    return total + safeNumber(item.quantidade) * safeNumber(item.valor_unitario);
+  }, 0);
+}
+
 function buildOrderSummaryFingerprint(summary: Pick<OlistOrderSummary, "situacao" | "valor" | "data_pedido">) {
   return [
     normalizeText(String(summary.situacao ?? "")),
@@ -801,7 +811,7 @@ export async function syncOlistIncremental(options: OlistIncrementalSyncOptions 
 export async function syncOlistOrderById(orderId: string | number) {
   if (!(await getOlistApiToken())) {
     logger.warn("olist order sync skipped: OLIST_API_TOKEN not configured", { orderId: String(orderId) });
-    return { skipped: true, reason: "MISSING_TOKEN" as const, recordsInserted: 0 };
+    return { skipped: true as const, reason: "MISSING_TOKEN" as const, recordsInserted: 0 };
   }
 
   const outcome = await ingestOlistOrder(orderId, createAttendantResolver());
@@ -818,10 +828,17 @@ export async function syncOlistOrderById(orderId: string | number) {
     attendantName: outcome.attendantName,
   });
 
+  const customer = buildOrderCustomerContext(outcome.order);
+
   return {
     skipped: false as const,
     orderId: String(outcome.order.id),
     orderNumber: normalizeText(String(outcome.order.numero)),
+    customerCode: customer.customerCode,
+    customerName: customer.customerName,
+    orderStatus: normalizeText(outcome.order.situacao) || "VALID",
+    orderTotal: getOlistOrderTotal(outcome.order),
+    attendantName: outcome.attendantName,
     recordsSeen: outcome.recordsSeen,
     recordsInserted: outcome.recordsInserted,
   };
