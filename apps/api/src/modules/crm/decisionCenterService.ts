@@ -1,13 +1,11 @@
 import type {
-  CustomerStatus,
   CustomerOpportunityQueueItem,
+  CustomerStatus,
   DecisionCenterCreditDecision,
   DecisionCenterRecoveryItem,
   DecisionCenterResponse,
 } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
-import { getCustomerCreditOverview } from "./customerCreditService.js";
-import { isOpportunityEligibleCreditRow } from "./opportunityService.js";
 
 const CACHE_TTL_MS = 60_000;
 const MAX_DECISIONS = 40;
@@ -28,6 +26,23 @@ type ProposalRow = {
   seller: string | null;
 };
 
+type CentralCreditRow = {
+  customer_id: string;
+  customer_code: string;
+  customer_name: string;
+  balance_amount: string | number | null;
+  credit_limit: string | number | null;
+  internal_credit_override: string | number | null;
+  internal_credit_raw: string | number | null;
+  risk_level: string | null;
+  last_order_date: string | Date | null;
+  days_since_last_order: string | number | null;
+  assigned_seller: string | null;
+  has_overdue_payment: boolean | null;
+  has_severely_overdue_payment: boolean | null;
+  has_no_payment: boolean | null;
+};
+
 type RecoveryRow = {
   customer_id: string;
   customer_code: string | null;
@@ -44,6 +59,17 @@ type RecoveryRow = {
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+function creditNumberValue(value: unknown) {
+  if (typeof value === "number") return numberValue(value);
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[^\d,.-]/g, "");
+  if (!normalized) return 0;
+  const decimal = normalized.includes(",")
+    ? normalized.replace(/\./g, "").replace(",", ".")
+    : normalized;
+  return numberValue(decimal);
 }
 function isoValue(value: string | Date | null) {
   if (!value) return null;
@@ -113,6 +139,46 @@ async function loadOpenProposals() {
   );
 }
 
+async function loadCentralCreditRows() {
+  return pool.query<CentralCreditRow>(
+    `
+      WITH active_snapshot AS (
+        SELECT id
+        FROM customer_credit_snapshots
+        WHERE is_active = TRUE
+        ORDER BY imported_at DESC
+        LIMIT 1
+      )
+      SELECT
+        snapshot_row.customer_id,
+        snapshot_row.customer_code,
+        COALESCE(NULLIF(BTRIM(snapshot_row.customer_display_name), ''), customer.display_name, snapshot_row.customer_code) AS customer_name,
+        snapshot_row.balance_amount,
+        COALESCE(override.credit_limit, snapshot_row.credit_limit) AS credit_limit,
+        override.internal_credit_limit AS internal_credit_override,
+        (
+          SELECT entry.value
+          FROM jsonb_each_text(snapshot_row.raw_payload) AS entry
+          WHERE UPPER(BTRIM(entry.key)) = 'CREDITO INTERNO'
+          LIMIT 1
+        ) AS internal_credit_raw,
+        snapshot_row.risk_level,
+        snapshot_row.last_order_date,
+        snapshot_row.days_since_last_order,
+        NULLIF(BTRIM(customer.last_attendant), '') AS assigned_seller,
+        snapshot_row.has_overdue_payment,
+        snapshot_row.has_severely_overdue_payment,
+        snapshot_row.has_no_payment
+      FROM customer_credit_snapshot_rows snapshot_row
+      JOIN active_snapshot snapshot ON snapshot.id = snapshot_row.snapshot_id
+      JOIN customers customer ON customer.id = snapshot_row.customer_id
+      LEFT JOIN customer_credit_overrides override ON override.customer_id = snapshot_row.customer_id
+      WHERE snapshot_row.customer_id IS NOT NULL
+        AND customer.display_name NOT ILIKE '%shop online%'
+    `,
+  );
+}
+
 async function loadRecoveryOpportunities(): Promise<DecisionCenterRecoveryItem[]> {
   const result = await pool.query<RecoveryRow>(
     `
@@ -162,14 +228,14 @@ async function loadRecoveryOpportunities(): Promise<DecisionCenterRecoveryItem[]
 }
 
 async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
-  const [creditOverview, proposalsResult, recoveryOpportunities] = await Promise.all([
-    getCustomerCreditOverview(),
+  const [creditRowsResult, proposalsResult, recoveryOpportunities] = await Promise.all([
+    loadCentralCreditRows(),
     loadOpenProposals(),
     loadRecoveryOpportunities(),
   ]);
 
   const creditByCode = new Map(
-    creditOverview.linkedRows.map((row) => [row.customerCode.trim().toUpperCase(), row] as const),
+    creditRowsResult.rows.map((row) => [row.customer_code.trim().toUpperCase(), row] as const),
   );
   const openTotalByCustomer = new Map<string, number>();
   for (const proposal of proposalsResult.rows) {
@@ -183,11 +249,16 @@ async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
       const credit = creditByCode.get(key);
       if (!credit) return null;
 
-      const effectiveLimit = Math.max(credit.creditLimit, credit.internalCreditLimit ?? 0);
+      const creditLimit = numberValue(credit.credit_limit);
+      const internalCreditLimit = credit.internal_credit_override === null
+        ? creditNumberValue(credit.internal_credit_raw)
+        : numberValue(credit.internal_credit_override);
+      const effectiveLimit = Math.max(creditLimit, internalCreditLimit);
       if (effectiveLimit <= 0) return null;
 
+      const debtAmount = Math.max(0, -numberValue(credit.balance_amount));
       const openProposalsAmount = openTotalByCustomer.get(key) ?? 0;
-      const projectedExposure = credit.debtAmount + openProposalsAmount;
+      const projectedExposure = debtAmount + openProposalsAmount;
       if (projectedExposure <= effectiveLimit) return null;
 
       return {
@@ -196,11 +267,11 @@ async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
         orderStatus: String(proposal.order_status ?? "Proposta comercial"),
         orderTotal: numberValue(proposal.order_total),
         orderUpdatedAt: isoValue(proposal.order_updated_at),
-        customerId: credit.customerId,
-        customerCode: credit.customerCode,
-        customerName: credit.customerDisplayName || String(proposal.customer_name ?? credit.customerCode),
-        seller: proposal.seller || credit.assignedSeller || credit.lastOrderSeller || null,
-        debtAmount: credit.debtAmount,
+        customerId: String(credit.customer_id),
+        customerCode: credit.customer_code,
+        customerName: credit.customer_name || String(proposal.customer_name ?? credit.customer_code),
+        seller: proposal.seller || credit.assigned_seller || null,
+        debtAmount,
         openProposalsAmount,
         projectedExposure,
         effectiveLimit,
@@ -216,30 +287,48 @@ async function buildDecisionCenter(): Promise<DecisionCenterResponse> {
   // oportunidades, mas pode varrer centenas de milhares de itens. Aqui a fila
   // executiva usa apenas o snapshot financeiro ja materializado: mostra quem
   // tem saldo ou credito livre e deixa a investigacao detalhada para o clique.
-  const salesOpportunities = creditOverview.linkedRows
-    .filter((row) => Boolean(row.customerId) && isOpportunityEligibleCreditRow(row))
+  const salesOpportunities = creditRowsResult.rows
+    .filter((row) => {
+      const balanceAmount = numberValue(row.balance_amount);
+      const debtAmount = Math.max(0, -balanceAmount);
+      const creditBalanceAmount = Math.max(0, balanceAmount);
+      const creditLimit = numberValue(row.credit_limit);
+      const availableCreditAmount = Math.max(0, creditLimit - debtAmount);
+      const hasFunds = creditBalanceAmount > 0 || (debtAmount === 0 && availableCreditAmount > 0);
+      return hasFunds
+        && debtAmount === 0
+        && !row.has_overdue_payment
+        && !row.has_severely_overdue_payment
+        && !row.has_no_payment
+        && String(row.risk_level ?? "").toUpperCase() !== "CRITICO";
+    })
     .map((row): CustomerOpportunityQueueItem => {
-      const primarySource = row.creditBalanceAmount > 0 ? "CREDIT_BALANCE" : "AVAILABLE_CREDIT";
+      const balanceAmount = numberValue(row.balance_amount);
+      const creditBalanceAmount = Math.max(0, balanceAmount);
+      const availableCreditAmount = Math.max(0, numberValue(row.credit_limit) - Math.max(0, -balanceAmount));
+      const primarySource = creditBalanceAmount > 0 ? "CREDIT_BALANCE" : "AVAILABLE_CREDIT";
       const targetAmount = primarySource === "CREDIT_BALANCE"
-        ? row.creditBalanceAmount
-        : Math.max(0, row.availableCreditAmount);
+        ? creditBalanceAmount
+        : availableCreditAmount;
       return {
-        customerId: row.customerId!,
-        customerCode: row.customerCode,
-        customerDisplayName: row.customerDisplayName,
+        customerId: String(row.customer_id),
+        customerCode: row.customer_code,
+        customerDisplayName: row.customer_name,
         primarySource,
         targetAmount,
-        creditBalanceAmount: row.creditBalanceAmount,
-        availableCreditAmount: row.availableCreditAmount,
+        creditBalanceAmount,
+        availableCreditAmount,
         suggestedAmount: targetAmount,
         remainingGapAmount: 0,
         coverageRatio: targetAmount > 0 ? 1 : 0,
         matchedProductCount: 0,
         suggestedLineCount: 0,
         topModelsInStock: [],
-        lastPurchaseAt: row.lastOrderDate,
-        daysSinceLastPurchase: row.daysSinceLastOrder,
-        lastAttendant: row.assignedSeller || row.lastOrderSeller || null,
+        lastPurchaseAt: isoValue(row.last_order_date),
+        daysSinceLastPurchase: row.days_since_last_order === null
+          ? null
+          : Math.max(0, Math.round(numberValue(row.days_since_last_order))),
+        lastAttendant: row.assigned_seller || null,
       };
     })
     .sort(
