@@ -21,7 +21,7 @@ import "./decisionCenter.css";
 type QueueKey = "decisions" | "sales" | "recovery";
 
 const queueMeta: Array<{ key: QueueKey; label: string; helper: string }> = [
-  { key: "decisions", label: "Liberar pedidos", helper: "Pedidos bloqueados por falta de limite" },
+  { key: "decisions", label: "Aprovar pedidos", helper: "Pedidos que excedem o limite e precisam de pagamento ou aprovação" },
   { key: "sales", label: "Buscar novas vendas", helper: "Clientes que podem comprar sem estourar o limite" },
   { key: "recovery", label: "Evitar perdas", helper: "Clientes que estão demorando mais que o normal para voltar" },
 ];
@@ -106,9 +106,9 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
           <div>
             <span className="decision-focus-label">Decisão financeira</span>
             {data.summary.decisionsCount ? (
-              <><strong>{data.summary.decisionsCount} pedido{data.summary.decisionsCount === 1 ? "" : "s"} bloqueado{data.summary.decisionsCount === 1 ? "" : "s"}</strong><p>Cobrar {formatCurrency(data.summary.requiredPaymentTotal)} antes de liberar {formatCurrency(data.summary.decisionsValue)} em propostas.</p></>
+              <><strong>{data.summary.decisionsCount} pedido{data.summary.decisionsCount === 1 ? "" : "s"} aguardando aprovação</strong><p>Cobrar {formatCurrency(data.summary.requiredPaymentTotal)} antes de liberar {formatCurrency(data.summary.decisionsValue)} em propostas.</p></>
             ) : (
-              <><strong>Nenhum pedido bloqueado agora</strong><p>Não há proposta acima do limite que exija pagamento.</p></>
+              <><strong>Nenhum pedido precisa de aprovação agora</strong><p>Não há proposta acima do limite que exija pagamento.</p></>
             )}
           </div>
           <button type="button" onClick={() => setActiveQueue("decisions")}>Ver pedidos <ArrowRight size={15} /></button>
@@ -167,7 +167,7 @@ export function DecisionCenterPageView({ data, refreshing, onRefresh }: {
               <article className="decision-row is-credit" key={item.orderId}>
                 <div className="decision-row-main">
                   <div className="decision-row-title">
-                    <span className="decision-priority">Bloqueado pelo crédito</span>
+                    <span className="decision-priority">Precisa de aprovação</span>
                     <h3>{item.customerCode} · {item.customerName}</h3>
                     <p>Pedido {item.orderNumber} · {item.seller || "Sem vendedora"}</p>
                   </div>

@@ -103,12 +103,6 @@ async function loadOpenProposals() {
         FROM sales_raw sr
         WHERE sr.source_system = 'olist_v2'
           AND NULLIF(BTRIM(sr.external_order_id), '') IS NOT NULL
-          AND (
-            UPPER(COALESCE(sr.order_status, '')) LIKE '%PROPOSTA%'
-            OR UPPER(COALESCE(sr.order_status, '')) LIKE '%ORCAMENTO%'
-            OR UPPER(COALESCE(sr.order_status, '')) LIKE '%ORÇAMENTO%'
-            OR UPPER(COALESCE(sr.order_status, '')) LIKE '%ABERTO%'
-          )
         GROUP BY sr.external_order_id, UPPER(BTRIM(sr.customer_code))
       ), active_snapshot AS (
         SELECT id
@@ -116,6 +110,14 @@ async function loadOpenProposals() {
         WHERE is_active = TRUE
         ORDER BY imported_at DESC
         LIMIT 1
+      ), active_credit_alerts AS (
+        -- O webhook pode alertar quando o pedido esta "Em aberto" e, minutos
+        -- depois, a Olist muda-lo para "Preparando envio". Ele precisa
+        -- continuar na Central enquanto o alerta estiver ativo, mesmo que o
+        -- status atual ja nao contenha a palavra proposta/orcamento.
+        SELECT REPLACE(key, 'olist_order_credit_alert:', '') AS order_id
+        FROM sync_cursors
+        WHERE key LIKE 'olist_order_credit_alert:%'
       )
       SELECT
         proposal.order_id,
@@ -127,7 +129,18 @@ async function loadOpenProposals() {
         proposal.customer_name,
         proposal.seller
       FROM proposal_orders proposal
-      WHERE NOT EXISTS (
+      WHERE (
+          UPPER(COALESCE(proposal.order_status, '')) LIKE '%PROPOSTA%'
+          OR UPPER(COALESCE(proposal.order_status, '')) LIKE '%ORCAMENTO%'
+          OR UPPER(COALESCE(proposal.order_status, '')) LIKE '%ORÇAMENTO%'
+          OR UPPER(COALESCE(proposal.order_status, '')) LIKE '%ABERTO%'
+          OR EXISTS (
+            SELECT 1
+            FROM active_credit_alerts alert
+            WHERE alert.order_id = proposal.order_id
+          )
+        )
+        AND NOT EXISTS (
         SELECT 1
         FROM customer_credit_order_entries entry
         JOIN active_snapshot snapshot ON snapshot.id = entry.snapshot_id
