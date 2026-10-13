@@ -11,6 +11,7 @@ const today = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 }).format(new Date());
+const todayWeekday = new Date(`${today}T12:00:00-03:00`).getDay();
 
 const db = {
   activeSnapshotId: "snap-manha",
@@ -71,10 +72,10 @@ vi.mock("../../db/client.js", () => ({
   },
 }));
 
-vi.mock("../../lib/env.js", () => ({
-  env: {
+const mockedEnv = {
     BILLING_ALERT_ENABLED: true,
     BILLING_ALERT_GROUP_JID: "financeiro@g.us",
+    BILLING_ALERT_WEEKDAY: todayWeekday,
     BILLING_ALERT_HOUR: 0,
     BILLING_ALERT_TIMEZONE: "America/Sao_Paulo",
     BILLING_ALERT_INSTANCE_ID: "",
@@ -84,8 +85,8 @@ vi.mock("../../lib/env.js", () => ({
     BILLING_ALERT_SELLER_PHONES: "",
     BILLING_ALERT_NO_CREDIT_ENABLED: true,
     BILLING_ALERT_NO_CREDIT_MIN_DEBT: 1,
-  },
-}));
+};
+vi.mock("../../lib/env.js", () => ({ env: mockedEnv }));
 
 vi.mock("../../lib/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
@@ -95,14 +96,6 @@ vi.mock("./offboardingAlertService.js", () => ({
   sendToGroup: async (_jid: string, text: string, _instanceId: string, mentions: string[] = []) => {
     sent.push(text);
     sentMentions.push(mentions);
-  },
-}));
-
-let snapshotListener: (() => Promise<void> | void) | null = null;
-vi.mock("./customerCreditService.js", () => ({
-  onCustomerCreditSnapshotChanged: (listener: () => Promise<void> | void) => {
-    snapshotListener = listener;
-    return () => undefined;
   },
 }));
 
@@ -123,6 +116,7 @@ beforeEach(() => {
   sentMentions.length = 0;
   db.cursors.clear();
   db.activeSnapshotId = "snap-manha";
+  mockedEnv.BILLING_ALERT_WEEKDAY = todayWeekday;
   db.orders.set("snap-manha", leomarOrders());
   db.orders.set(
     "snap-tarde",
@@ -132,38 +126,25 @@ beforeEach(() => {
   );
 });
 
-describe("alerta de cobranca durante o dia", () => {
-  it("manda o relatorio da manha e, quando lancam pedido novo, avisa na hora", { timeout: 20_000 }, async () => {
+describe("alerta semanal de cobranca", () => {
+  it("manda o relatorio geral somente no dia semanal configurado", { timeout: 20_000 }, async () => {
     const scheduler = startBillingAlertScheduler();
     await waitFor(() => sent.some((text) => text.includes("Leomar")));
 
-    // 1) Relatorio do dia saiu.
-    expect(sent.join("\n")).toContain("COBRANÇA DO DIA");
+    expect(sent.join("\n")).toContain("COBRANÇA SEMANAL");
     expect(sent.join("\n")).toContain("Leomar");
     // A mensagem do Leomar marca a Suelen (vendedora dele) pelo numero da instancia dela.
     const suelenIndex = sent.findIndex((text) => text.includes("*Suelen*"));
     expect(sent[suelenIndex]).toContain("@5511911111111");
     expect(sentMentions[suelenIndex]).toEqual(["5511911111111"]);
-    const afterMorning = sent.length;
+    await scheduler.close();
+  });
 
-    // 2) Financeiro lanca um pedido e salva a planilha -> nova importacao.
-    db.activeSnapshotId = "snap-tarde";
-    await snapshotListener?.();
-    await waitFor(() => sent.some((text) => text.includes("pedido 43300")));
+  it("nao manda o relatorio geral nos outros dias da semana", async () => {
+    mockedEnv.BILLING_ALERT_WEEKDAY = (todayWeekday + 1) % 7;
+    const scheduler = startBillingAlertScheduler();
     await flush();
-
-    const instant = sent.slice(afterMorning).join("\n");
-    expect(instant).toContain("Alerta de cobrança");
-    expect(instant).toContain("Pedido novo lançado para cliente que já passou do crédito");
-    expect(instant).toContain("pedido 43300");
-    expect(sentMentions.slice(afterMorning).flat()).toEqual(["5511911111111"]);
-
-    // 3) Mesma planilha de novo (nada mudou): nao repete o aviso.
-    const beforeRepeat = sent.length;
-    await snapshotListener?.();
-    await flush();
-    expect(sent.length).toBe(beforeRepeat);
-
+    expect(sent).toEqual([]);
     await scheduler.close();
   });
 });

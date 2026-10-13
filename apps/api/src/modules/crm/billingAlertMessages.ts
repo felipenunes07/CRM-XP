@@ -292,7 +292,7 @@ export function buildDailyReportMessages(
   const overdueTotal = report.overdue.reduce((sum, customer) => sum + customer.overdueAmount, 0);
 
   const header = [
-    `💰 *COBRANÇA DO DIA — ${formatBrDate(report.today)}*`,
+    `💰 *COBRANÇA SEMANAL — ${formatBrDate(report.today)}*`,
     "",
     "Abaixo, cada vendedor(a) é marcado(a) com os clientes que precisa cobrar hoje.",
     "",

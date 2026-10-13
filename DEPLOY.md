@@ -77,8 +77,8 @@ Mantenha `WORKER_OLIST_SYNC_ENABLED=true` e `WORKER_OLIST_SYNC_INTERVAL_MINUTES=
 
 Le a planilha de saldo (abas RESUMO, OUT e PAG) e manda ao grupo do financeiro:
 
-- todo dia as `BILLING_ALERT_HOUR` (9h): quem estourou o limite (coluna G `CREDITO` e H `CREDITO INTERNO`), quem tem pedido com prazo vencido (data do pedido + coluna I `PRAZO`; pagamentos abatem os pedidos mais antigos), quem esta perto do limite e quem deve sem prazo cadastrado;
-- durante o dia, ate `BILLING_ALERT_INSTANT_UNTIL_HOUR`, avisa na hora so os alertas novos sempre que a planilha e reprocessada (passou do limite, pedido novo para cliente acima do credito, chegou perto do limite, prazo venceu, lancamento com COD que nao existe no RESUMO).
+- uma vez por semana, em `BILLING_ALERT_WEEKDAY` (padrao: segunda-feira) as `BILLING_ALERT_HOUR` (9h): quem estourou o limite (coluna G `CREDITO` e H `CREDITO INTERNO`), quem tem pedido com prazo vencido (data do pedido + coluna I `PRAZO`; pagamentos abatem os pedidos mais antigos), quem esta perto do limite e quem deve sem prazo cadastrado;
+- quando a Olist recebe um pedido/proposta que excede o credito, avisa na hora somente sobre aquele cliente e pedido. A reimportacao da planilha, sozinha, nao dispara mensagens.
 
 O worker escuta a pasta `DROPBOX_CUSTOMER_CREDIT_PATH` pelo longpoll do Dropbox (`WORKER_CREDIT_WATCH_ENABLED=true`, padrao): assim que a planilha salva chega no Dropbox, ele reprocessa (~1-2 min para o arquivo de 60MB) e o alerta sai em seguida. O ciclo de `WORKER_CREDIT_SYNC_INTERVAL_MINUTES` continua como rede de seguranca. O lancamento so e visto depois que a planilha e **salva** e termina de sincronizar no Dropbox.
 
@@ -87,10 +87,9 @@ Clientes com STATUS (coluna J) `GOLPE` ou `DESATIVADO` ficam fora. Vem desligado
 ```env
 BILLING_ALERT_ENABLED=true
 BILLING_ALERT_GROUP_JID=                 # grupo dos alertas de cobranca (prazo/credito) — preencher
+BILLING_ALERT_WEEKDAY=1                  # 0=domingo, 1=segunda, ... 6=sabado
 BILLING_ALERT_HOUR=9
 BILLING_ALERT_NEAR_LIMIT_PERCENT=80
-BILLING_ALERT_INSTANT_ENABLED=true
-BILLING_ALERT_INSTANT_UNTIL_HOUR=20
 BILLING_ALERT_INSTANCE_ID=Lili          # quem envia: nome ou id da instancia (Lili Assistente esta no grupo)
 BILLING_ALERT_SELLER_PHONES=            # opcional: "Thais=5511999999999;Suelen=5511888888888"
 BILLING_ALERT_NO_CREDIT_ENABLED=false    # nao disparar para clientes sem credito cadastrado

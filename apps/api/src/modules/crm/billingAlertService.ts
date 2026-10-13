@@ -1,12 +1,13 @@
 /**
  * Alerta de cobranca do financeiro.
  *
- * - Todo dia as BILLING_ALERT_HOUR (9h) manda ao grupo do financeiro o
+ * - Uma vez por semana, em BILLING_ALERT_WEEKDAY as BILLING_ALERT_HOUR, manda
+ *   ao grupo do financeiro o
  *   relatorio completo: estourou o limite, acima do credito, prazo vencido,
  *   perto do limite e quem deve sem prazo cadastrado.
- * - Durante o dia, sempre que a planilha de saldo for reprocessada (o worker
- *   olha o Dropbox a cada poucos minutos), avisa na hora somente os alertas
- *   NOVOS — ex.: lancaram um pedido que fez o cliente passar do limite.
+ * - Avisos pontuais sao disparados pelo pedido recebido da Olist, no fluxo de
+ *   orderCreditAlertService, e incluem somente o cliente afetado. Reimportar a
+ *   planilha de saldo, por si so, nao envia mensagem ao grupo.
  *
  * Os dados vem do snapshot ativo da planilha (RESUMO/OUT/PAG) que o
  * customerCreditService ja importa; as regras ficam em billingAlertEngine.
@@ -31,7 +32,6 @@ import {
   type BillingOutgoingMessage,
   type SellerPhoneDirectory,
 } from "./billingAlertMessages.js";
-import { onCustomerCreditSnapshotChanged } from "./customerCreditService.js";
 import { sendToGroup } from "./offboardingAlertService.js";
 
 const BILLING_DAILY_CURSOR_KEY = "billing_alert_daily_date";
@@ -65,12 +65,14 @@ function getLocalParts(timeZone: string, date = new Date()) {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
+    weekday: "short",
     hourCycle: "h23",
   });
   const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
   return {
     dateKey: `${parts.year}-${parts.month}-${parts.day}`,
     hour: Number(parts.hour ?? "0"),
+    weekday: ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[parts.weekday ?? ""] ?? -1,
   };
 }
 
@@ -370,7 +372,7 @@ async function hasDailyReportRun(dateKey: string) {
 }
 
 /**
- * Relatorio completo do dia. `force` ignora a trava de "ja rodou hoje"
+ * Relatorio completo semanal. `force` ignora a trava de "ja rodou na data"
  * (envio manual pelo CRM); `dryRun` so monta as mensagens.
  */
 export async function runDailyBillingReport(
@@ -503,16 +505,10 @@ export function startBillingAlertScheduler() {
     running = true;
     try {
       const now = getLocalParts(env.BILLING_ALERT_TIMEZONE);
-      if (now.hour < env.BILLING_ALERT_HOUR) {
+      if (now.weekday !== env.BILLING_ALERT_WEEKDAY || now.hour < env.BILLING_ALERT_HOUR) {
         return;
       }
-      const daily = await runDailyBillingReport();
-      if (daily.sent) {
-        return;
-      }
-      if (env.BILLING_ALERT_INSTANT_ENABLED && now.hour <= env.BILLING_ALERT_INSTANT_UNTIL_HOUR) {
-        await checkNewBillingAlerts();
-      }
+      await runDailyBillingReport();
     } catch (error) {
       logger.error("billing alert check failed", { error: String(error) });
     } finally {
@@ -524,22 +520,19 @@ export function startBillingAlertScheduler() {
     }
   };
 
-  // Planilha de saldo reimportada (lancamento feito durante o dia): checa na
-  // hora, sem esperar o proximo ciclo.
-  const unsubscribe = onCustomerCreditSnapshotChanged(() => check());
   const interval = setInterval(check, CHECK_INTERVAL_MS);
   void check();
 
   logger.info("billing alert scheduler initialized", {
     hour: env.BILLING_ALERT_HOUR,
+    weekday: env.BILLING_ALERT_WEEKDAY,
     timezone: env.BILLING_ALERT_TIMEZONE,
-    instant: env.BILLING_ALERT_INSTANT_ENABLED,
+    instantSource: "olist-order",
   });
 
   return {
     async close() {
       clearInterval(interval);
-      unsubscribe();
     },
   };
 }

@@ -63,7 +63,7 @@ describe("relatorio diario por vendedora", () => {
   const all = messages.map((message) => message.text).join("\n\n");
 
   it("comeca com o resumo e a legenda", () => {
-    expect(messages[0]!.text).toContain("COBRANÇA DO DIA — 26/09/2026");
+    expect(messages[0]!.text).toContain("COBRANÇA SEMANAL — 26/09/2026");
     expect(messages[0]!.text).toContain("Como ler");
     expect(messages[0]!.mentions).toEqual([]);
   });

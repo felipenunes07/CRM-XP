@@ -266,10 +266,10 @@ const envSchema = z.object({
   // (is_default) ativa do banco, qualquer provedor (UAZAPI/Evolution). Preencha
   // com o id de uma whatsapp_instances para fixar um remetente especifico.
   OFFBOARDING_ALERT_INSTANCE_ID: z.string().default(""),
-  // Alerta de cobranca (financeiro): todo dia no horario abaixo manda ao grupo
-  // do financeiro quem passou do limite (CREDITO / CREDITO INTERNO) e quem tem
-  // pedido com prazo vencido; durante o dia, quando a planilha de saldo muda,
-  // avisa na hora apenas os alertas novos. Desligado por padrao — ligue
+  // Alerta de cobranca (financeiro): uma vez por semana, no dia/horario abaixo,
+  // manda ao grupo o relatorio geral. Alertas pontuais nao nascem da simples
+  // reimportacao da planilha: sao avaliados por pedido recebido da Olist e
+  // mostram somente o cliente afetado. Desligado por padrao — ligue
   // BILLING_ALERT_ENABLED=true e defina BILLING_ALERT_GROUP_JID.
   BILLING_ALERT_ENABLED: z
     .enum(["true", "false"])
@@ -277,15 +277,19 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   // Grupo dos alertas de COBRANCA (passou do prazo / do credito). Vazio = nao envia.
   BILLING_ALERT_GROUP_JID: z.string().default(""),
+  // 0=domingo, 1=segunda, ... 6=sabado.
+  BILLING_ALERT_WEEKDAY: z.coerce.number().int().min(0).max(6).default(1),
   BILLING_ALERT_HOUR: z.coerce.number().int().min(0).max(23).default(9),
   BILLING_ALERT_TIMEZONE: z.string().default("America/Sao_Paulo"),
   // Quem envia: id da whatsapp_instances OU nome da instancia. "Lili" = Lili
   // Assistente, que esta no grupo "XP - CRM Financeiro".
   BILLING_ALERT_INSTANCE_ID: z.string().default("Lili"),
   BILLING_ALERT_NEAR_LIMIT_PERCENT: z.coerce.number().min(1).max(100).default(80),
+  // Legado: mantido para nao quebrar ambientes antigos. A planilha nao dispara
+  // mais alertas; o aviso individual e acionado pelo pedido da Olist.
   BILLING_ALERT_INSTANT_ENABLED: z
     .enum(["true", "false"])
-    .default("true")
+    .default("false")
     .transform((value) => value === "true"),
   BILLING_ALERT_INSTANT_UNTIL_HOUR: z.coerce.number().int().min(0).max(23).default(20),
   // Numero para marcar (@) cada vendedora no grupo, quando nao for o da
