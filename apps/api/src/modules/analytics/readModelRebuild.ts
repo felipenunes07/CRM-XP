@@ -17,7 +17,7 @@ import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
 import { rebuildReadModels, refreshDashboardDailyMetrics } from "./analyticsService.js";
-import { clearDashboardCache } from "../crm/dashboardService.js";
+import { clearDashboardCache, refreshDashboardMonthlyItemMetrics } from "../crm/dashboardService.js";
 
 const BATCH_SIZE = 200;
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // checa a cada 30 min
@@ -50,6 +50,7 @@ export function rebuildAllReadModels(
     }
 
     await refreshDashboardDailyMetrics();
+    await refreshDashboardMonthlyItemMetrics();
     await clearDashboardCache();
     return { customers: codes.length };
   })().finally(() => {

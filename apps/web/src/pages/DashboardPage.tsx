@@ -991,13 +991,13 @@ export function DashboardPage() {
       const response = await api.getChartAnnotations(token!);
       return response;
     },
-    enabled: Boolean(token && dashboardQuery.data),
+    enabled: Boolean(token),
   });
 
   const agendaQuery = useQuery({
     queryKey: ["dashboard-agenda-preview"],
     queryFn: () => api.agenda(token!, 6, 0),
-    enabled: Boolean(token && dashboardQuery.data),
+    enabled: Boolean(token),
   });
 
   const filteredCustomersQuery = useQuery({
@@ -1018,7 +1018,7 @@ export function DashboardPage() {
         sortBy: "priority",
         limit: 120,
       }),
-    enabled: Boolean(token && dashboardQuery.data && selectedBuckets.length === 0 && !selectedSaleMonth),
+    enabled: Boolean(token && selectedBuckets.length === 0 && !selectedSaleMonth),
   });
 
   const salesCustomersQuery = useQuery({

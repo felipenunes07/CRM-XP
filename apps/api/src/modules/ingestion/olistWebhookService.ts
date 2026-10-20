@@ -3,7 +3,7 @@ import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { syncOlistOrderById } from "./olistSyncService.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
-import { clearDashboardCache } from "../crm/dashboardService.js";
+import { clearDashboardCache, refreshDashboardMonthlyItemMetrics } from "../crm/dashboardService.js";
 import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.js";
 import { publishExecutiveDashboardUpdate } from "../crm/executiveDashboardBus.js";
 import { checkOlistOrderCreditRisk } from "../crm/orderCreditAlertService.js";
@@ -155,6 +155,7 @@ export async function processOlistWebhookOrder(orderId: string, tipo: string) {
     }
 
     await refreshDashboardDailyMetrics();
+    await refreshDashboardMonthlyItemMetrics();
     await clearDashboardCache();
     clearExecutiveDashboardCache();
 

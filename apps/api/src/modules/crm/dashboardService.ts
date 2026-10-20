@@ -37,6 +37,7 @@ const TREND_RANGE_STATUS_SEVERITY: Record<TrendRangeCustomerStatus, number> = {
   ATTENTION: 1,
   INACTIVE: 2,
 };
+let dashboardFreshnessRepair: Promise<void> | null = null;
 
 export interface TrendRangeAnalysisCustomerRow {
   customer_id: string;
@@ -332,31 +333,32 @@ async function getAgendaEligibleCount(filters: CustomerFilters = {}) {
 async function getSalesPerformance() {
   const result = await pool.query(
     `
-      WITH order_item_totals AS (
-        SELECT
-          oi.order_id,
-          COALESCE(SUM(oi.quantity), 0)::int AS total_items
-        FROM order_items oi
-        GROUP BY oi.order_id
-      ),
-      scoped_orders AS (
+      WITH scoped_orders AS MATERIALIZED (
         SELECT
           o.id,
           o.customer_id,
           COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
-          COALESCE(oit.total_items, 0)::int AS total_items
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue
         FROM orders o
-        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-        WHERE date_trunc('month', o.order_date) = date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)
+        WHERE o.order_date >= date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date)::date
+          AND o.order_date < (date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date) + INTERVAL '1 month')::date
+      ),
+      order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items
+        FROM order_items oi
+        JOIN scoped_orders so ON so.id = oi.order_id
+        GROUP BY oi.order_id
       )
       SELECT
         so.attendant,
         COUNT(*)::int AS total_orders,
         COUNT(DISTINCT so.customer_id)::int AS unique_customers,
         COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
-        COALESCE(SUM(so.total_items), 0)::int AS total_items
+        COALESCE(SUM(oit.total_items), 0)::int AS total_items
       FROM scoped_orders so
+      LEFT JOIN order_item_totals oit ON oit.order_id = so.id
       GROUP BY so.attendant
       ORDER BY total_orders DESC, total_revenue DESC, attendant ASC
       LIMIT 10
@@ -375,32 +377,32 @@ async function getSalesPerformance() {
 async function getTodaySalesPerformance() {
   const result = await pool.query(
     `
-      WITH order_item_totals AS (
-        SELECT
-          oi.order_id,
-          COALESCE(SUM(oi.quantity), 0)::int AS total_items
-        FROM order_items oi
-        GROUP BY oi.order_id
-      ),
-      scoped_orders AS (
+      WITH scoped_orders AS MATERIALIZED (
         SELECT
           o.id,
           o.customer_id,
           COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') AS attendant,
-          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue,
-          COALESCE(oit.total_items, 0)::int AS total_items
+          COALESCE(o.total_amount, 0)::numeric(14,2) AS total_revenue
         FROM orders o
-        LEFT JOIN order_item_totals oit ON oit.order_id = o.id
-        WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+        WHERE o.order_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
           ${buildShippedSalesOnlySql("o")}
+      ),
+      order_item_totals AS (
+        SELECT
+          oi.order_id,
+          COALESCE(SUM(oi.quantity), 0)::int AS total_items
+        FROM order_items oi
+        JOIN scoped_orders so ON so.id = oi.order_id
+        GROUP BY oi.order_id
       )
       SELECT
         so.attendant,
         COUNT(*)::int AS total_orders,
         COUNT(DISTINCT so.customer_id)::int AS unique_customers,
         COALESCE(SUM(so.total_revenue), 0)::numeric(14,2) AS total_revenue,
-        COALESCE(SUM(so.total_items), 0)::int AS total_items
+        COALESCE(SUM(oit.total_items), 0)::int AS total_items
       FROM scoped_orders so
+      LEFT JOIN order_item_totals oit ON oit.order_id = so.id
       GROUP BY so.attendant
       ORDER BY total_items DESC, total_orders DESC, total_revenue DESC, attendant ASC
       LIMIT 10
@@ -646,24 +648,58 @@ async function getReactivationLeaderboard(): Promise<ReactivationLeaderboardEntr
   }));
 }
 
+export function requiresSynchronousDashboardMetricsRepair(
+  snapshotRowCount: number,
+  trendRowCount: number,
+) {
+  return snapshotRowCount === 0 || trendRowCount === 0;
+}
+
+function scheduleDashboardMetricsRepair(input: {
+  days: number;
+  refreshSnapshots: boolean;
+  refreshTrend: boolean;
+  rebuildLegacyTrend: boolean;
+}) {
+  if (dashboardFreshnessRepair) return;
+
+  dashboardFreshnessRepair = (async () => {
+    if (input.rebuildLegacyTrend) {
+      await pool.query("DELETE FROM dashboard_daily_metrics");
+    }
+    if (input.refreshSnapshots) {
+      await refreshAllSnapshots();
+    }
+    if (input.refreshTrend || input.rebuildLegacyTrend) {
+      await refreshDashboardDailyMetrics(input.days);
+    }
+    await clearDashboardCache();
+  })()
+    .then(() => logger.info("dashboard metrics: background freshness repair completed", input))
+    .catch((error) => logger.warn("dashboard metrics: background freshness repair failed", {
+      ...input,
+      error: String(error),
+    }))
+    .finally(() => {
+      dashboardFreshnessRepair = null;
+    });
+}
+
 async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
   const validatedDays = normalizeDashboardTrendDays(days);
   const trendBounds = await getDashboardTrendBounds(validatedDays);
 
-  // Auto-healing: Check for any legacy 'NEW' status rows in dashboard_daily_metrics in production
+  let legacyTrendNeedsRebuild = false;
+  // Auto-healing runs outside a user request when it is safe to serve the
+  // previous snapshot. A first-ever dashboard still builds synchronously so it
+  // never renders an empty CRM just to avoid waiting.
   try {
     const legacyCheck = await pool.query<{ count: number }>(
       "SELECT COUNT(*)::int as count FROM dashboard_daily_metrics WHERE new_count > 0"
     );
-    if (Number(legacyCheck.rows[0]?.count ?? 0) > 0) {
-      logger.info("dashboard metrics: detected legacy 'NEW' status rows. Clearing and rebuilding metrics history...");
-      await pool.query("DELETE FROM dashboard_daily_metrics");
-      await refreshAllSnapshots();
-      await refreshDashboardDailyMetrics(validatedDays);
-      logger.info("dashboard metrics: auto-healing completed successfully.");
-    }
+    legacyTrendNeedsRebuild = Number(legacyCheck.rows[0]?.count ?? 0) > 0;
   } catch (err) {
-    logger.warn("dashboard metrics: failed to check/auto-heal legacy daily metrics", { error: String(err) });
+    logger.warn("dashboard metrics: failed to check legacy daily metrics", { error: String(err) });
   }
 
   const freshnessResult = await pool.query<{
@@ -701,7 +737,20 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
   const snapshotIsStale = snapshotRowCount === 0 || isStale;
   const trendNeedsRefresh = trendRowCount < trendBounds.expectedRowCount || !latestTrendDay || latestTrendDay < today;
 
-  if (!snapshotIsStale && !trendNeedsRefresh) {
+  if (!snapshotIsStale && !trendNeedsRefresh && !legacyTrendNeedsRebuild) {
+    return validatedDays;
+  }
+
+  const repair = {
+    days: validatedDays,
+    refreshSnapshots: snapshotIsStale,
+    refreshTrend: trendNeedsRefresh,
+    rebuildLegacyTrend: legacyTrendNeedsRebuild,
+  };
+
+  if (!requiresSynchronousDashboardMetricsRepair(snapshotRowCount, trendRowCount)) {
+    logger.info("dashboard metrics: scheduling background freshness repair", repair);
+    scheduleDashboardMetricsRepair(repair);
     return validatedDays;
   }
 
@@ -710,7 +759,11 @@ async function ensureDashboardMetricsFresh(days: number = DASHBOARD_TREND_WINDOW
     await refreshAllSnapshots();
   }
 
-  if (trendNeedsRefresh) {
+  if (legacyTrendNeedsRebuild) {
+    await pool.query("DELETE FROM dashboard_daily_metrics");
+  }
+
+  if (trendNeedsRefresh || legacyTrendNeedsRebuild) {
     logger.info("dashboard metrics: refreshing daily trends", { days: validatedDays });
     await refreshDashboardDailyMetrics(validatedDays);
   }
@@ -745,7 +798,7 @@ async function getPortfolioTrend(days: number = DASHBOARD_TREND_WINDOW_DAYS) {
     [trendBounds.startDay],
   );
 
-  if ((result.rowCount ?? 0) < trendBounds.expectedRowCount) {
+  if ((result.rowCount ?? 0) === 0) {
     await refreshDashboardDailyMetrics(validatedDays);
     result = await pool.query(
       `
@@ -1294,8 +1347,41 @@ export function buildItemsSoldTrendQuery(customerPrefix?: string) {
   };
 }
 
+export function buildDashboardItemsSoldTrendReadModelQuery(customerPrefix?: string) {
+  return {
+    sql: `
+      WITH sales AS (
+        SELECT
+          year,
+          month,
+          COALESCE(SUM(total_items), 0)::int AS total_items,
+          COALESCE(SUM(screen_items), 0)::int AS screen_items,
+          COALESCE(SUM(screen_xp_items), 0)::int AS screen_xp_items,
+          COALESCE(SUM(screen_vv_items), 0)::int AS screen_vv_items,
+          COALESCE(SUM(screen_de_items), 0)::int AS screen_de_items,
+          COALESCE(SUM(battery_items), 0)::int AS battery_items,
+          COALESCE(SUM(charging_dock_items), 0)::int AS charging_dock_items,
+          COALESCE(SUM(total_items) FILTER (WHERE customer_code ~ '^CL[0-9]+'), 0)::int AS cl_items,
+          COALESCE(SUM(total_items) FILTER (WHERE customer_code ~ '^KH[0-9]+'), 0)::int AS kh_items,
+          COALESCE(SUM(total_items) FILTER (WHERE customer_code ~ '^LJ[0-9]+'), 0)::int AS lj_items,
+          COALESCE(SUM(total_items) FILTER (WHERE customer_code !~ '^(CL|KH|LJ)[0-9]+'), 0)::int AS other_items,
+          COALESCE(SUM(total_orders), 0)::int AS total_orders,
+          COALESCE(SUM(total_revenue), 0)::numeric(14,2) AS total_revenue
+        FROM dashboard_monthly_customer_item_metrics
+        WHERE $1::text IS NULL OR customer_code ~ ('^' || $1 || '[0-9]+')
+        GROUP BY year, month
+      )
+      SELECT s.*, mt.target_amount
+      FROM sales s
+      LEFT JOIN monthly_targets mt ON mt.year = s.year AND mt.month = s.month AND mt.attendant = 'TOTAL'
+      ORDER BY s.year ASC, s.month ASC
+    `,
+    params: [customerPrefix ?? null],
+  };
+}
+
 async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTrendPoint[]> {
-  const query = buildItemsSoldTrendQuery(customerPrefix);
+  const query = buildDashboardItemsSoldTrendReadModelQuery(customerPrefix);
   const result = await pool.query(query.sql, query.params);
 
   return result.rows.map(row => ({
@@ -1316,6 +1402,36 @@ async function getItemsSoldTrend(customerPrefix?: string): Promise<ItemsSoldTren
     totalRevenue: Number(row.total_revenue ?? 0),
     targetAmount: row.target_amount ? Number(row.target_amount) : null,
   }));
+}
+
+const DASHBOARD_ITEM_METRICS_REFRESH_LOCK_ID = 506_912_084;
+
+/**
+ * Keeps the expensive historical item classifier out of dashboard requests.
+ * The materialized view retains the previous complete result while PostgreSQL
+ * builds the next one, and the advisory lock prevents duplicate refreshes.
+ */
+export async function refreshDashboardMonthlyItemMetrics(): Promise<boolean> {
+  const client = await pool.connect();
+  let lockAcquired = false;
+
+  try {
+    const { rows } = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock($1) AS locked",
+      [DASHBOARD_ITEM_METRICS_REFRESH_LOCK_ID],
+    );
+    lockAcquired = Boolean(rows[0]?.locked);
+    if (!lockAcquired) return false;
+
+    await client.query("REFRESH MATERIALIZED VIEW CONCURRENTLY dashboard_monthly_customer_item_metrics");
+    return true;
+  } finally {
+    if (lockAcquired) {
+      await client.query("SELECT pg_advisory_unlock($1)", [DASHBOARD_ITEM_METRICS_REFRESH_LOCK_ID])
+        .catch(() => undefined);
+    }
+    client.release();
+  }
 }
 
 export async function getMonthlyTargetActuals(year: number): Promise<MonthlyTargetActual[]> {
@@ -1663,7 +1779,7 @@ export async function getDashboardMetrics(trendDays?: number, customerPrefix?: s
           FROM orders o
           LEFT JOIN order_items oi ON oi.order_id = o.id
           LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
-          WHERE o.order_date::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
+          WHERE o.order_date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date
             ${buildShippedSalesOnlySql("o")}
         )
         SELECT

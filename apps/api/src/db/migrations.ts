@@ -4818,4 +4818,90 @@ export const migrations = [
   CREATE INDEX IF NOT EXISTS idx_sales_raw_olist_customer_upper_order
     ON sales_raw (source_system, UPPER(customer_code), external_order_id);
   `,
+  `
+  -- O dashboard nao pode reclassificar todo o historico de order_items a cada
+  -- expiracao de cache. Este read-model mantem o mesmo calculo por cliente e
+  -- mes; a API apenas soma poucas linhas prontas e junta a meta atual.
+  CREATE MATERIALIZED VIEW dashboard_monthly_customer_item_metrics AS
+  WITH selected_orders AS MATERIALIZED (
+    SELECT
+      o.id,
+      o.order_date,
+      COALESCE(o.total_amount, 0)::numeric(14,2) AS total_amount,
+      c.customer_code
+    FROM orders o
+    JOIN customers c ON c.id = o.customer_id
+    WHERE o.order_date >= '2023-01-01'::date
+  ),
+  active_catalog AS (
+    SELECT DISTINCT isi.sku
+    FROM inventory_snapshot_items isi
+    JOIN inventory_snapshots inventory ON inventory.id = isi.snapshot_id
+    WHERE inventory.is_active = TRUE
+      AND NULLIF(BTRIM(isi.sku), '') IS NOT NULL
+  ),
+  raw_order_items AS MATERIALIZED (
+    SELECT
+      oi.order_id,
+      COALESCE(oi.quantity, 0)::numeric(14,2) AS quantity,
+      UPPER(COALESCE(oi.item_description, '') || ' ' || COALESCE(oi.sku, '')) AS product_text,
+      active_catalog.sku IS NOT NULL AS is_active_catalog_item
+    FROM order_items oi
+    JOIN selected_orders selected ON selected.id = oi.order_id
+    LEFT JOIN active_catalog ON active_catalog.sku = oi.sku
+  ),
+  classified_order_items AS (
+    SELECT
+      order_id,
+      quantity,
+      CASE
+        WHEN product_text ~ '(^|[^A-Z])(DOC|DOCK)[[:space:]]+DE[[:space:]]+CARGA([^A-Z]|$)' THEN 'DOCK'
+        WHEN product_text ~ '(^|[^A-Z])(BAT|BATTERY|BATERIA|BATERIAS)([^A-Z]|$)' THEN 'BATTERY'
+        WHEN is_active_catalog_item
+          OR product_text ~ '(^|[^A-Z])(TELA|FRONTAL|DISPLAY|LCD|OLED|AMOLED|INCELL|ONCELL|TOUCH)([^A-Z]|$)'
+          THEN 'SCREEN'
+        ELSE 'OTHER'
+      END AS category,
+      CASE
+        WHEN product_text ~ '(^|[[:space:]\\[])VV([[:space:]\\]]|$)' THEN 'VV'
+        WHEN product_text ~ '(^|[[:space:]\\[])DE([[:space:]\\]]|$)' THEN 'DE'
+        ELSE 'XP'
+      END AS factory
+    FROM raw_order_items
+  ),
+  order_item_totals AS (
+    SELECT
+      order_id,
+      COALESCE(SUM(quantity), 0)::int AS total_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN'), 0)::int AS screen_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'XP'), 0)::int AS screen_xp_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'VV'), 0)::int AS screen_vv_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'SCREEN' AND factory = 'DE'), 0)::int AS screen_de_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'BATTERY'), 0)::int AS battery_items,
+      COALESCE(SUM(quantity) FILTER (WHERE category = 'DOCK'), 0)::int AS charging_dock_items
+    FROM classified_order_items
+    GROUP BY order_id
+  )
+  SELECT
+    EXTRACT(YEAR FROM o.order_date)::int AS year,
+    EXTRACT(MONTH FROM o.order_date)::int AS month,
+    o.customer_code,
+    COALESCE(SUM(items.total_items), 0)::int AS total_items,
+    COALESCE(SUM(items.screen_items), 0)::int AS screen_items,
+    COALESCE(SUM(items.screen_xp_items), 0)::int AS screen_xp_items,
+    COALESCE(SUM(items.screen_vv_items), 0)::int AS screen_vv_items,
+    COALESCE(SUM(items.screen_de_items), 0)::int AS screen_de_items,
+    COALESCE(SUM(items.battery_items), 0)::int AS battery_items,
+    COALESCE(SUM(items.charging_dock_items), 0)::int AS charging_dock_items,
+    COUNT(DISTINCT o.id)::int AS total_orders,
+    COALESCE(SUM(o.total_amount), 0)::numeric(14,2) AS total_revenue
+  FROM selected_orders o
+  LEFT JOIN order_item_totals items ON items.order_id = o.id
+  GROUP BY EXTRACT(YEAR FROM o.order_date), EXTRACT(MONTH FROM o.order_date), o.customer_code;
+
+  CREATE UNIQUE INDEX dashboard_monthly_customer_item_metrics_unique_idx
+    ON dashboard_monthly_customer_item_metrics (year, month, customer_code);
+  CREATE INDEX dashboard_monthly_customer_item_metrics_customer_month_idx
+    ON dashboard_monthly_customer_item_metrics (customer_code, year, month);
+  `,
 ];

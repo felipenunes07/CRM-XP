@@ -6,7 +6,7 @@ import { syncOlistIncremental } from "../ingestion/olistSyncService.js";
 import { getOlistApiToken } from "../ingestion/olistTokenProvider.js";
 import { importSupabase2026 } from "../ingestion/supabaseImporter.js";
 import { refreshDashboardDailyMetrics } from "../analytics/analyticsService.js";
-import { clearDashboardCache } from "../crm/dashboardService.js";
+import { clearDashboardCache, refreshDashboardMonthlyItemMetrics } from "../crm/dashboardService.js";
 import { clearExecutiveDashboardCache } from "../crm/executiveDashboardService.js";
 import { publishExecutiveDashboardUpdate } from "../crm/executiveDashboardBus.js";
 
@@ -127,6 +127,7 @@ async function runPrimarySyncInternal(reason: string) {
     const recordsInserted = readRecordsInserted(result);
     if (recordsInserted === null || recordsInserted > 0) {
       await refreshDashboardDailyMetrics();
+      await refreshDashboardMonthlyItemMetrics();
       await clearDashboardCache();
       clearExecutiveDashboardCache();
       publishExecutiveDashboardUpdate({

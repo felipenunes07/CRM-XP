@@ -1,6 +1,10 @@
 import type { ItemsSoldTrendPoint } from "@olist-crm/shared";
 import { describe, expect, it, vi } from "vitest";
-import { buildItemsSoldTrendQuery, loadDashboardItemsSoldTrends } from "./dashboardService.js";
+import {
+  buildDashboardItemsSoldTrendReadModelQuery,
+  buildItemsSoldTrendQuery,
+  loadDashboardItemsSoldTrends,
+} from "./dashboardService.js";
 
 describe("dashboard items sold trend", () => {
   it("limits orders before joining and classifying their items", () => {
@@ -19,6 +23,22 @@ describe("dashboard items sold trend", () => {
 
     expect(query.params).toEqual(["CL"]);
     expect(query.sql).toContain("c.customer_code ~ ('^' || $1 || '[0-9]+')");
+  });
+
+  it("reads the dashboard path from the compact monthly read model", () => {
+    const query = buildDashboardItemsSoldTrendReadModelQuery();
+
+    expect(query.params).toEqual([null]);
+    expect(query.sql).toContain("FROM dashboard_monthly_customer_item_metrics");
+    expect(query.sql).not.toContain("FROM order_items oi");
+    expect(query.sql).toContain("LEFT JOIN monthly_targets");
+  });
+
+  it("filters an item trend read-model request by customer prefix", () => {
+    const query = buildDashboardItemsSoldTrendReadModelQuery("KH");
+
+    expect(query.params).toEqual(["KH"]);
+    expect(query.sql).toContain("customer_code ~ ('^' || $1 || '[0-9]+')");
   });
 
   it("reuses the global request when there is no customer prefix", () => {
