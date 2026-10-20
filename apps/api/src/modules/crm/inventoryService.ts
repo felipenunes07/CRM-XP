@@ -429,3 +429,22 @@ export async function getInventorySnapshotWithItems() {
     items: await loadInventoryItems(snapshot.id),
   };
 }
+
+/**
+ * Small, read-only catalogue used by the price comparison workspace.  Keeping
+ * this next to the active inventory snapshot guarantees the comparison always
+ * uses the same prices shown in the CRM.
+ */
+export async function getInventoryPriceCatalog() {
+  const { snapshot, items } = await getInventorySnapshotWithItems();
+  return {
+    snapshot,
+    items: items.map((item) => ({
+      sku: item.sku,
+      model: item.model,
+      quality: item.quality,
+      price: item.price,
+      stockQuantity: item.stockQuantity,
+    })),
+  };
+}

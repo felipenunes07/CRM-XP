@@ -777,6 +777,13 @@ export const api = {
       method: "POST",
     }, token);
   },
+  inventoryPriceCatalog(token: string) {
+    return request<{ snapshot: InventorySnapshotMeta | null; items: Array<{ sku: string; model: string; quality: string | null; price: number; stockQuantity: number }> }>(
+      "/api/inventory/price-catalog",
+      {},
+      token,
+    );
+  },
   inventoryIntelligence(
     token: string,
     query: Record<string, string | number | boolean | undefined> = {},

@@ -60,6 +60,7 @@ export const navigationAccessFolders: NavigationAccessFolder[] = [
       { label: "Relatorios WhatsApp", path: "/atividade-whatsapp", permissionKey: "reports.whatsapp.view" },
       { label: "Movimentacao da Base", path: "/movimentacao", permissionKey: "reports.movement.view" },
       { label: "Estoque", path: "/estoque", permissionKey: "reports.inventory.view" },
+      { label: "Comparacao de Preco", path: "/comparacao-precos", permissionKey: "reports.inventory.view" },
       { label: "Segmentos", path: "/segmentos", permissionKey: "reports.segments.view" },
       { label: "Rotulos", path: "/rotulos", permissionKey: "commercial.labels.view" },
     ],

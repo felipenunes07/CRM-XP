@@ -26,6 +26,7 @@ const InventoryPage = lazy(async () => ({ default: (await import("./pages/Invent
 const InventoryModelAnalysisPage = lazy(async () => ({
   default: (await import("./pages/InventoryModelAnalysisPage")).InventoryModelAnalysisPage,
 }));
+const PriceComparisonPage = lazy(async () => ({ default: (await import("./pages/PriceComparisonPage")).PriceComparisonPage }));
 const CustomerDetailPage = lazy(async () => ({
   default: (await import("./pages/CustomerDetailPage")).CustomerDetailPage,
 }));
@@ -165,6 +166,7 @@ export default function App() {
             <Route path="/clientes/financeiro/:id" element={<PermissionElement permission="finance.customers.view"><CustomerFinancialDetailPage /></PermissionElement>} />
             <Route path="/estoque" element={<PermissionElement permission="reports.inventory.view"><InventoryPage /></PermissionElement>} />
             <Route path="/estoque/modelos/:modelKey" element={<PermissionElement permission="reports.inventory.view"><InventoryModelAnalysisPage /></PermissionElement>} />
+            <Route path="/comparacao-precos" element={<PermissionElement permission="reports.inventory.view"><PriceComparisonPage /></PermissionElement>} />
             <Route path="/embaixadores" element={<PermissionElement permission="commercial.ambassadors.view"><AmbassadorsPage /></PermissionElement>} />
             <Route path="/clientes/:id" element={<PermissionElement permission="commercial.customers.view"><CustomerDetailPage /></PermissionElement>} />
             <Route path="/clientes/:id/compras" element={<PermissionElement permission="commercial.customers.view"><CustomerPurchasesPage /></PermissionElement>} />

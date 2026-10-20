@@ -55,7 +55,7 @@ import {
   getInventoryRestock,
   getInventoryStale,
 } from "./modules/crm/inventoryIntelligenceService.js";
-import { getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
+import { getInventoryPriceCatalog, getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
 import { getCrossSellStrategy } from "./modules/crm/strategyCrossSellService.js";
 import { getSlowMovingStrategy } from "./modules/crm/strategySlowMovingService.js";
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
@@ -1586,6 +1586,14 @@ export function createApp() {
   app.post("/api/inventory/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
     try {
       response.json(await refreshInventorySnapshot());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/inventory/price-catalog", async (_request, response, next) => {
+    try {
+      response.json(await getInventoryPriceCatalog());
     } catch (error) {
       next(error);
     }
