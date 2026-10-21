@@ -10968,64 +10968,74 @@ button.attendants-ranking-row:hover {
   gap: 1rem;
 }
 
-/* Price comparison ------------------------------------------------------- */
-.price-comparison-page { gap: 1rem; }
-.price-comparison-hero { align-items: center; }
-.price-upload-button { display: inline-flex; align-items: center; justify-content: center; gap: .55rem; min-height: 48px; padding: .75rem 1.25rem; border: 0; border-radius: 12px; background: #2956d7; color: #fff; font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.price-upload-button:hover { background: #2044ab; }
-.price-upload-button:focus-visible { outline: 3px solid #2956d7; outline-offset: 4px; }
-.price-upload-button:disabled { opacity: .65; cursor: wait; }
-.price-import-panel { padding: 1.5rem; display: grid; gap: 1rem; border: 1px solid #c7d5ff; }
-.price-import-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
-.price-import-heading h3 { margin: .35rem 0; }
-.price-import-panel p { margin: 0; color: var(--muted); }
-.price-source-badge { padding: .5rem .85rem; border-radius: 10px; background: #eaf0ff; color: #2044ab; font-weight: 800; }
-.price-import-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
-.price-import-actions .muted-copy { overflow-wrap: anywhere; min-width: 0; }
-.price-upload-button input { display: none; }
-.price-comparison-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem 1.5rem; padding: 1rem 1.2rem; }
-.price-comparison-controls > div { display: grid; gap: .25rem; }
-.price-margin-control { display: inline-flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .9rem; }
-.price-margin-control input { width: 66px; min-height: 36px; border: 1px solid var(--line); border-radius: 10px; padding: 0 .45rem; font: inherit; color: var(--text); background: var(--bg-soft); }
-.price-margin-control b { color: var(--text); }
-.price-comparison-controls .muted-copy { flex: 1 1 280px; margin: 0; font-size: .86rem; }
-.price-message { display: flex; align-items: center; gap: .5rem; padding: .85rem 1rem; border-radius: 14px; }
-.price-message.error { color: #b42318; background: #fff0ef; border: 1px solid #fecdc8; }
-.price-empty { min-height: 180px; display: grid; justify-items: center; align-content: center; text-align: center; gap: .5rem; padding: 1.5rem; }
-.price-empty h3, .price-empty p { margin: 0; }
-.price-empty p { max-width: 580px; color: var(--muted); }
-.price-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .85rem; }
-.price-summary-card { position: relative; display: grid; gap: .3rem; min-height: 124px; padding: 1rem; text-align: left; border: 1px solid var(--line); border-radius: 18px; color: var(--text); background: var(--panel); cursor: pointer; }
-.price-summary-card:hover, .price-summary-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent); }
-.price-summary-card > svg { position: absolute; top: 1rem; right: 1rem; color: var(--accent); }
-.price-summary-card span, .price-summary-card small { color: var(--muted); }
-.price-summary-card strong { font-size: 1.75rem; line-height: 1; }
-.price-summary-card.success strong, .price-summary-card.success svg { color: #0d8a61; }
-.price-summary-card.warning strong, .price-summary-card.warning svg { color: #b54708; }
-.price-summary-card.review strong, .price-summary-card.review svg { color: #6941c6; }
-.price-table-panel { padding: 0; overflow: hidden; }
-.price-table-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--line); }
-.price-table-header h3, .price-table-header p { margin: 0; }
-.price-table-header h3 { margin-bottom: .3rem; }
-.price-search { display: inline-flex; align-items: center; gap: .45rem; min-width: 220px; padding: 0 .7rem; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); background: var(--bg-soft); }
-.price-search input { width: 100%; min-height: 36px; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; }
-.price-table-wrap { overflow: auto; }
-.price-table { min-width: 1080px; }
-.price-table th { white-space: nowrap; }
-.price-table td { vertical-align: middle; }
-.price-table td:first-child { min-width: 220px; }
-.price-table td strong, .price-table td small { display: block; }
-.price-table td small { margin-top: .2rem; color: var(--muted); font-size: .75rem; }
-.price-table select { display: block; width: 250px; max-width: 100%; min-height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 0 .4rem; color: var(--text); background: var(--bg-soft); font: inherit; }
-.price-status, .confidence { display: inline-flex; padding: .32rem .55rem; border-radius: 999px; font-size: .76rem; font-weight: 700; white-space: nowrap; }
-.price-status.better { color: #067647; background: #ecfdf3; }
-.price-status.above { color: #b54708; background: #fff4e5; }
-.price-status.missing { color: #475467; background: #f2f4f7; }
-.confidence-alta { color: #067647; background: #ecfdf3; }
-.confidence-revisar { color: #b54708; background: #fff4e5; }
-.confidence-baixa { color: #b42318; background: #fff0ef; }
-@media (max-width: 980px) { .price-comparison-hero { align-items: flex-start; } }
-@media (max-width: 620px) { .price-table-header { align-items: stretch; flex-direction: column; } .price-search { width: 100%; } }
+/* Price comparison workspace */
+.comparison-workspace { display: grid; gap: 14px; color: var(--text); }
+.comparison-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.comparison-heading h2 { margin: 0; font-size: 22px; letter-spacing: -.5px; }
+.comparison-heading p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+.comparison-workspace button, .comparison-workspace input, .comparison-workspace select { font: inherit; }
+.comparison-workspace button { cursor: pointer; }
+.comparison-workspace button:disabled { opacity: .5; cursor: default; }
+.comparison-workspace button:focus-visible, .comparison-workspace select:focus-visible, .comparison-workspace input:focus-visible { outline: 2px solid #2956d7; outline-offset: 3px; }
+.comparison-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 8px; padding: 9px 13px; background: #2956d7; color: white; font-size: 12px !important; font-weight: 650 !important; }
+.comparison-primary:hover { background: #2044ab; }
+.comparison-surface { background: #fff; border: 1px solid #dfe5f0; border-radius: 12px; overflow: hidden; box-shadow: 0 3px 14px #152b5010; min-width: 0; }
+.comparison-suppliers { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid #e7ebf2; background: #fafbfe; }
+.comparison-suppliers [role=tablist] { display: flex; gap: 18px; overflow: auto; }
+.comparison-suppliers [role=tab] { display: flex; align-items: center; gap: 8px; padding: 13px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #64748b; white-space: nowrap; font-size: 12px; }
+.comparison-suppliers [role=tab][aria-selected=true] { border-bottom-color: #2956d7; color: #2044ab; font-weight: 700; }
+.comparison-suppliers [role=tab] small { padding: 2px 6px; background: #edf1f8; border-radius: 4px; font-size: 10px; font-weight: 500; }
+.comparison-add { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 0; color: #2956d7; white-space: nowrap; font-size: 12px !important; }
+.comparison-add-form { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; padding: 12px 16px; background: #f0f5ff; font-size: 12px; }
+.comparison-add-form input { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.comparison-add-form button:last-child { background: transparent; border: 0; color: #64748b; }
+.comparison-context { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 16px; font-size: 11px; color: #64748b; }
+.comparison-context > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.comparison-context strong { color: #334155; }
+.comparison-context label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.comparison-context input { width: 58px; border: 1px solid #dfe5f0; border-radius: 6px; padding: 5px 6px; color: #0f172a; }
+.comparison-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 4px 16px 12px; }
+.comparison-search { display: flex; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid #dfe5f0; border-radius: 7px; color: #64748b; width: 280px; max-width: 100%; }
+.comparison-search input { width: 100%; padding: 8px 0; border: 0; background: transparent; min-width: 0; font-size: 12px; color: #0f172a; }
+.comparison-toolbar select { width: auto; min-width: 160px; border: 1px solid #dfe5f0; background: white; border-radius: 7px; padding: 8px; font-size: 12px; color: #334155; }
+.comparison-rule { margin-left: auto; font-size: 11px; color: #64748b; }
+.comparison-filters { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 16px 12px; }
+.comparison-filter { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #e1e7ef; border-radius: 6px; background: white; color: #64748b; font-size: 11px !important; }
+.comparison-filter b { font-size: 11px; font-variant-numeric: tabular-nums; }
+.comparison-filter[aria-pressed=true] { background: #eef3ff; border-color: #b3c5ff; color: #2044ab; }
+.comparison-filter.above b { color: #b45309; }
+.comparison-filter.better b { color: #047857; }
+.comparison-filter.review b { color: #7c3aed; }
+.comparison-table-scroll { overflow: auto; max-height: calc(100vh - 290px); min-height: 160px; }
+.comparison-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 900px; font-size: 13px; }
+.comparison-table th { position: sticky; top: 0; z-index: 1; background: #f5f7fb; padding: 10px 12px; font-size: 10px; color: #64748b; font-weight: 650; text-align: right; border-block: 1px solid #e7ebf2; }
+.comparison-table th:nth-child(1) { width: 26%; text-align: left; }
+.comparison-table th:nth-child(2) { width: 30%; text-align: left; }
+.comparison-table th:last-child { width: 14%; }
+.comparison-table td { padding: 11px 12px; border-bottom: 1px solid #edf0f5; vertical-align: top; line-height: 1.4; }
+.comparison-table tbody tr:hover { background: #fafcff; }
+.comparison-table td strong { display: block; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.comparison-table td small { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-size: 10px; color: #64748b; }
+.comparison-kind { display: inline-block; padding: 1px 5px; border-radius: 4px; background: #edf2ff; color: #3b5ba9; font-size: 9px; }
+.comparison-kind.dock { color: #9a5d08; background: #fff4df; }
+.comparison-table td select { display: block; width: 100%; min-width: 0; margin-top: 5px; padding: 5px; background: white; border: 1px solid #e2e8f0; border-radius: 5px; color: #475569; font-size: 10px; }
+.comparison-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
+.comparison-muted { color: #64748b; font-size: 11px; font-weight: 400; }
+.comparison-result { display: block; text-align: right; font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.comparison-result small { justify-content: flex-end; font-weight: 400; }
+.comparison-result.above { color: #b45309; }
+.comparison-result.better { color: #047857; }
+.comparison-result.review { color: #7c3aed; }
+.comparison-result.missing { color: #94a3b8; font-weight: 400; }
+.comparison-empty { display: grid; justify-items: center; gap: 10px; padding: 40px 16px; color: #64748b; text-align: center; font-size: 12px; }
+.comparison-empty h3 { margin: 0; color: #334155; font-size: 15px; }
+.comparison-empty p { margin: 0 0 4px; line-height: 1.7; }
+.comparison-alert { display: flex; align-items: center; gap: 8px; padding: 10px 16px; background: #fff4ef; color: #b42318; font-size: 12px; }
+.comparison-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 16px; font-size: 10px; color: #64748b; border-top: 1px solid #e7ebf2; }
+.comparison-footer div { display: flex; gap: 6px; }
+.comparison-footer button { border: 1px solid #dfe5f0; border-radius: 5px; background: white; color: #334155; padding: 4px 8px; }
+.comparison-no-results { text-align: center; color: #64748b; padding: 30px !important; }
+@media (max-width: 700px) { .comparison-context { align-items: flex-start; flex-direction: column; gap: 8px; } .comparison-context > span { max-width: 100%; } .comparison-suppliers { align-items: flex-start; flex-direction: column; gap: 0; padding-bottom: 10px; } .comparison-rule { margin-left: 0; } .comparison-table-scroll { max-height: 65vh; } .comparison-heading h2 { font-size: 18px; } }
 
 .inventory-shell {
   display: grid;
