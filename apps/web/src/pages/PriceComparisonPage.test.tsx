@@ -94,32 +94,56 @@ describe("Comparação automática com múltiplas qualidades", () => {
     const result = matchCatalog(competitor("DR IPHONE 13 ORIGINAL"), indexCatalog(catalog));
     expect(result.kind).toBe("Frontal");
     expect(result.quality).toBe("ORIGINAL");
-    expect(result.candidates.map((xp) => xp.sku)).toEqual(["1173-1", "CX275-1", "1272-1"]);
+    expect(result.candidates.map((xp) => xp.sku)).toEqual(["1173-1", "CX275-1"]);
   });
   it("separa aro e linha de qualidade do modelo A05 e mantém A05S independente", () => {
-    expect(matchCatalog(competitor("FRONTAL A05"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0542-1", "0590-1"]);
-    expect(matchCatalog(competitor("FRONTAL A05 COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0590-1", "0542-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0542-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05 COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0590-1"]);
     expect(matchCatalog(competitor("DR A05S"), catalog).candidates.map((xp) => xp.sku)).toEqual(["1162-1"]);
   });
   it("reconhece ORI e mantém a variante PRO MAX", () => {
     expect(qualityLabel("ORI")).toBe("ORIGINAL");
-    const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 0 }];
+    const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 12 }];
     expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX ORIGINAL"), variants).candidates.map((xp) => xp.sku)).toEqual(["pm"]);
   });
   it("compara modelos compatíveis listados com barra sem ampliar para modelos vizinhos", () => {
-    expect(matchCatalog(competitor("DR A05/A05S"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "0590-1", "1162-1"]);
+    expect(matchCatalog(competitor("DR A05/A05S"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "1162-1"]);
   });
   it("renderiza todas as qualidades e diferenças diretamente, sem seletor de mapeamento", () => {
     const item = competitor("DR IPHONE 13 ORIGINAL");
     const match = matchCatalog(item, catalog);
     const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, ...match, totalCandidates: match.candidates.length, target: 137 }} /></tbody></table>);
     expect(html).toContain("SOFT OLED");
-    expect(html).toContain("SELECT MAX");
+    expect(html).not.toContain("SELECT MAX");
     expect(html).toContain("1173-1");
     expect(html).toContain("CX275-1");
-    expect(html).toContain("Sem estoque");
+    expect(html).not.toContain("Sem estoque");
     expect(html).toContain("Outra qualidade XP");
-    expect(html).toContain('rowSpan="3"');
+    expect(html).toContain('rowSpan="2"');
+    expect(html.match(/class="comparison-money comparison-supplier-price"/g)).toHaveLength(2);
     expect(html).not.toContain("<select");
+  });
+
+  it("exclui estoque zero ou negativo mesmo quando a qualidade seria idêntica", () => {
+    const result = matchCatalog(competitor("FRONTAL A05 PREMIER"), [
+      ...catalog,
+      { sku: "zero", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: 0 },
+      { sku: "negative", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: -2 },
+    ]);
+    expect(result.candidates.map((xp) => xp.sku)).toEqual(["0542-1"]);
+  });
+
+  it("mostra a qualidade mais semelhante primeiro, acima de uma qualidade mais barata", () => {
+    const variants = [...catalog, { sku: "same-grade", model: "SM-A05 PREMIER", quality: "PREMIER", price: 99, stockQuantity: 1 }];
+    expect(matchCatalog(competitor("FRONTAL A05 PREMIER"), variants).candidates.map((xp) => xp.sku)).toEqual(["same-grade", "0542-1"]);
+  });
+
+  it("identifica com aro e sem aro e impede opções incompatíveis também na renderização", () => {
+    const item = competitor("FRONTAL A05 COM ARO");
+    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, kind: "Frontal", quality: null, candidates: catalog, totalCandidates: catalog.length, target: 137 }} /></tbody></table>);
+    expect(html).toContain("0590-1");
+    expect(html).toContain("Com aro");
+    expect(html).not.toContain("0542-1");
+    expect(html).not.toContain("1272-1");
   });
 });

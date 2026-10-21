@@ -11033,6 +11033,12 @@ button.attendants-ranking-row:hover {
 .comparison-quality { display: inline-block; margin-right: 7px; padding: 2px 6px; background: #eef2ff; border-radius: 4px; color: #2947a1; }
 .comparison-offer-model { display: block; font-size: 11px; color: #475569; margin-top: 4px; }
 .comparison-stock-available { color: #047857; }
+.comparison-table th:nth-child(3), .comparison-table td.comparison-supplier-price { background: #ecfdf3; color: #067647; }
+.comparison-table td.comparison-supplier-price { font-weight: 750; }
+.comparison-frame { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.comparison-frame.with-frame { background: #fff3d6; color: #92400e; }
+.comparison-frame.without-frame { background: #eaf1ff; color: #1e40af; }
+.comparison-availability { color: #047857; font-size: 11px; }
 .comparison-stock-empty { color: #94a3b8; }
 .comparison-stock-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; white-space: nowrap; }
 .comparison-stock-filter input { width: auto; margin: 0; accent-color: #2956d7; }

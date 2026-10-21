@@ -55,6 +55,7 @@ type IndexedItem = { item: CatalogItem; brand: number; quality: string | null; f
 export function indexCatalog(catalog: CatalogItem[]) {
   const index = new Map<string, IndexedItem[]>();
   for (const item of catalog) {
+    if (!(item.stockQuantity > 0)) continue;
     const entry = { item, brand: brand(item.model), quality: qualityLabel(item.quality ?? "") ?? qualityLabel(item.model), frame: hasFrame(item.model) };
     for (const model of modelKeys(item.model)) {
       const key = `${partKind(item.model, true)}|${model}`;
@@ -76,12 +77,12 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
   if (kind !== "Outras peças") {
     for (const model of modelKeys(item.name)) {
       for (const entry of index.get(`${kind}|${model}`) ?? []) {
-        if (itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand) found.set(entry.item.sku, entry);
+        if (entry.frame === frame && (itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand)) found.set(entry.item.sku, entry);
       }
     }
   }
   const ranked = [...found.values()].sort((a, b) => {
-    const rank = (entry: IndexedItem) => (entry.quality === itemQuality && itemQuality ? 100 : 0) + (entry.frame === frame ? 30 : 0) + (entry.item.stockQuantity > 0 ? 10 : 0);
+    const rank = (entry: IndexedItem) => (entry.quality === itemQuality && itemQuality ? 100 : 0);
     return rank(b) - rank(a) || a.item.price - b.item.price || a.item.sku.localeCompare(b.item.sku);
   });
   return { kind, quality: itemQuality, candidates: ranked.map((entry) => entry.item) };

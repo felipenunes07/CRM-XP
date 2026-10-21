@@ -13,15 +13,16 @@ type Supplier = { id: string; name: string; fileName: string; items: CompetitorI
 type ComparisonRow = { item: CompetitorItem; kind: PartKind; quality: string | null; candidates: CatalogItem[]; totalCandidates: number; target: number };
 
 export function PriceComparisonRows({ row }: { row: ComparisonRow }) {
-  const offers: (CatalogItem | null)[] = row.candidates.length ? row.candidates : [null];
+  const available = row.candidates.filter((xp) => xp.stockQuantity > 0 && hasFrame(xp.model) === hasFrame(row.item.name));
+  const offers: (CatalogItem | null)[] = available.length ? available : [null];
   return <Fragment>{offers.map((xp, index) => {
     const difference = xp ? xp.price - row.target : null;
     return <tr key={xp?.sku ?? "missing"} className={`comparison-offer ${index === 0 ? "comparison-group-start" : ""}`}>
-      {index === 0 ? <td rowSpan={offers.length} className="comparison-competitor"><strong>{row.item.name}</strong><small><span className={`comparison-kind ${row.kind === "Dock de carga" ? "dock" : ""}`}>{row.kind}</span>{row.item.code}</small><small>{row.quality ? `Qualidade: ${row.quality}` : "Qualidade não informada"}</small><small>{formatNumber(row.totalCandidates)} opções XP do modelo</small></td> : null}
-      <td>{xp ? <><strong><span className="comparison-quality">{xp.quality ?? "Sem qualidade informada"}</span>{hasFrame(xp.model) ? "Com aro" : ""}</strong><span className="comparison-offer-model">{xp.model}</span><small>{xp.sku} · <span className={xp.stockQuantity > 0 ? "comparison-stock-available" : "comparison-stock-empty"}>{xp.stockQuantity > 0 ? `${formatNumber(xp.stockQuantity)} em estoque` : "Sem estoque"}</span></small><small>{comparisonNote(row.item, xp)}</small></> : <span className="comparison-muted">{row.totalCandidates ? `${row.totalCandidates} opções XP sem estoque. Desmarque o filtro para ver.` : "Nenhum similar deste modelo e tipo de peça no catálogo XP."}</span>}</td>
-      {index === 0 ? <td className="comparison-money comparison-competitor" rowSpan={offers.length}>{formatCurrency(row.item.price)}</td> : null}
+      {index === 0 ? <td rowSpan={offers.length} className="comparison-competitor"><strong>{row.item.name}</strong><small><span className={`comparison-kind ${row.kind === "Dock de carga" ? "dock" : ""}`}>{row.kind}</span>{row.item.code}</small>{row.kind === "Frontal" ? <small><span className={`comparison-frame ${hasFrame(row.item.name) ? "with-frame" : "without-frame"}`}>{hasFrame(row.item.name) ? "Com aro" : "Sem aro"}</span></small> : null}<small>{row.quality ? `Qualidade: ${row.quality}` : "Qualidade não informada"}</small><small>{formatNumber(available.length)} opções XP disponíveis</small></td> : null}
+      <td>{xp ? <><strong><span className="comparison-quality">{xp.quality ?? "Sem qualidade informada"}</span>{row.kind === "Frontal" ? <span className={`comparison-frame ${hasFrame(xp.model) ? "with-frame" : "without-frame"}`}>{hasFrame(xp.model) ? "Com aro" : "Sem aro"}</span> : null}</strong><span className="comparison-offer-model">{xp.model}</span><small>{xp.sku} · <span className="comparison-stock-available">{formatNumber(xp.stockQuantity)} em estoque</span></small><small>{index === 0 ? "Mais semelhante · " : ""}{comparisonNote(row.item, xp)}</small></> : <span className="comparison-muted">Nenhum similar disponível no estoque XP com este modelo, tipo de peça e aro.</span>}</td>
+      <td className="comparison-money comparison-supplier-price">{formatCurrency(row.item.price)}</td>
       <td className="comparison-money">{xp ? formatCurrency(xp.price) : "—"}</td>
-      {index === 0 ? <td className="comparison-money comparison-muted comparison-competitor" rowSpan={offers.length}>{formatCurrency(row.target)}</td> : null}
+      <td className="comparison-money comparison-muted">{formatCurrency(row.target)}</td>
       <td>{difference !== null ? <span className={`comparison-result ${difference > 0 ? "above" : "better"}`}>{difference > 0 ? "+" : difference < 0 ? "−" : ""}{formatCurrency(Math.abs(difference))}<small>{difference > 0 ? "acima do alvo" : "no alvo ou abaixo"}</small></span> : "—"}</td>
     </tr>;
   })}</Fragment>;
@@ -74,14 +75,13 @@ export function PriceComparisonPage() {
   const [kind, setKind] = useState<PartKind | "all">("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const [onlyInStock, setOnlyInStock] = useState(false);
   const [error, setError] = useState("");
   const catalogQuery = useQuery({ queryKey: ["inventory-price-catalog"], queryFn: () => api.inventoryPriceCatalog(token!), enabled: Boolean(token) });
   const catalog = catalogQuery.data?.items ?? [];
   const active = suppliers.find((supplier) => supplier.id === activeId)!;
   const catalogIndex = useMemo(() => indexCatalog(catalog), [catalog]);
   useEffect(() => { globalThis.localStorage?.setItem("xpcrm-price-comparison-margin", String(margin)); }, [margin]);
-  useEffect(() => { setPage(1); }, [filter, kind, search, activeId, onlyInStock]);
+  useEffect(() => { setPage(1); }, [filter, kind, search, activeId]);
 
   const matches = useMemo(() => active.items.map((item) => {
     const match = matchCatalog(item, catalogIndex);
@@ -89,12 +89,11 @@ export function PriceComparisonPage() {
   }), [active, catalogIndex]);
   const rows = matches.map((row) => {
     const target = row.item.price + margin;
-    const candidates = onlyInStock ? row.candidates.filter((xp) => xp.stockQuantity > 0) : row.candidates;
-    return { ...row, target, candidates, totalCandidates: row.candidates.length };
+    return { ...row, target, totalCandidates: row.candidates.length };
   });
   const filters: { id: Filter; label: string }[] = [
     { id: "all", label: "Todos" }, { id: "above", label: "XP acima" }, { id: "better", label: "XP no alvo" },
-    { id: "matched", label: "Com opções XP" }, { id: "missing", label: "Sem similar" },
+    { id: "matched", label: "Com opções XP" }, { id: "missing", label: "Sem opção disponível" },
   ];
   const inFilter = (row: typeof rows[number], value: Filter) => value === "all" || (value === "matched" && row.candidates.length > 0) || (value === "missing" && row.totalCandidates === 0) || (value === "above" && row.candidates.some((xp) => xp.price > row.target)) || (value === "better" && row.candidates.some((xp) => xp.price <= row.target));
   const visible = rows.filter((row) => inFilter(row, filter) && (kind === "all" || row.kind === kind) && normalise(`${row.item.name} ${row.item.code} ${row.candidates.map((xp) => `${xp.model} ${xp.quality ?? ""} ${xp.sku}`).join(" ")}`).includes(normalise(search)));
@@ -153,7 +152,7 @@ export function PriceComparisonPage() {
         <div className="comparison-toolbar">
           <label className="comparison-search"><Search size={16} /><input aria-label="Buscar modelo ou código" placeholder="Buscar modelo ou código" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <select aria-label="Tipo de peça" value={kind} onChange={(event) => setKind(event.target.value as PartKind | "all")}><option value="all">Todas as peças</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select>
-          <label className="comparison-stock-filter"><input type="checkbox" checked={onlyInStock} onChange={(event) => setOnlyInStock(event.target.checked)} />Somente com estoque</label>
+          <span className="comparison-availability">Somente XP disponível · Mesmo tipo de aro · Mais semelhantes primeiro</span>
           <span className="comparison-rule">Alvo XP = concorrente + {formatCurrency(margin)}</span>
         </div>
         <div className="comparison-filters" aria-label="Situação dos preços">{filters.map(({ id, label }) => <button type="button" key={id} aria-pressed={filter === id} className={`comparison-filter ${id}`} onClick={() => setFilter(id)}>{label}<b>{formatNumber(rows.filter((row) => inFilter(row, id)).length)}</b></button>)}</div>
