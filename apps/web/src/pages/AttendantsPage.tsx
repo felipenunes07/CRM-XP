@@ -179,7 +179,7 @@ function MetricTile({
   );
 }
 
-function ChartTooltip({
+export function ChartTooltip({
   active,
   payload,
   label,
@@ -199,48 +199,28 @@ function ChartTooltip({
   const previousRow = currentIndex > 0 ? data[currentIndex - 1] : null;
   const formatValue = (value: number) => metric === "revenue" ? formatCurrency(value) : formatNumber(value);
 
+  // Compacto: uma linha por atendente (valor do mes, variacao e mes anterior),
+  // para nao cobrir o grafico quando passa o mouse.
   return (
-    <div className={`attendant-chart-tooltip${payload.length === 1 ? " is-single" : ""}`}>
-      <span>
-        {formatMonthLabel(label)}
-        <small>{label === currentMonth ? "Mês atual · parcial" : "Mês fechado"}</small>
-      </span>
+    <div className="attendant-tip">
+      <div className="attendant-tip-head">
+        <strong>{formatMonthLabel(label)}</strong>
+        <small>{label === currentMonth ? "mês atual · parcial" : "mês fechado"}</small>
+      </div>
       {payload.map((entry) => {
         const currentValue = Number(entry.value ?? 0);
         const previousValue = previousRow ? Number(previousRow[String(entry.dataKey)] ?? 0) : 0;
         const growth = previousRow && previousValue > 0 ? (currentValue - previousValue) / previousValue : null;
-        const growthPercent = growth === null ? null : growth * 100;
-        const gaugeFill = growthPercent === null ? 0 : Math.min(100, Math.abs(growthPercent));
         const direction = growth === null ? "neutral" : growth > 0 ? "up" : growth < 0 ? "down" : "stable";
         return (
-          <div className={`attendant-chart-tooltip-row is-${direction}`} key={String(entry.dataKey)}>
-            <div className="attendant-chart-tooltip-person">
-              <i style={{ background: entry.color }} />
-              <strong>{entry.name}</strong>
-            </div>
-            <div className="attendant-chart-comparison">
-              <div>
-                <small>Mês anterior</small>
-                <strong>{previousRow ? formatValue(previousValue) : "Sem base"}</strong>
-              </div>
-              <span className="attendant-chart-gauge" aria-label={growth === null ? "Sem base anterior" : formatGrowth(growth)}>
-                <svg viewBox="0 0 120 66" aria-hidden="true">
-                  <path d="M 10 58 A 50 50 0 0 1 110 58" pathLength="100" />
-                  <path
-                    className="attendant-chart-gauge-fill"
-                    d="M 10 58 A 50 50 0 0 1 110 58"
-                    pathLength="100"
-                    style={{ strokeDasharray: `${gaugeFill} 100` }}
-                  />
-                </svg>
-                <b>{growth === null ? "—" : formatGrowth(growth)}</b>
-                <small>vs. mês anterior</small>
-              </span>
-              <div>
-                <small>Mês analisado</small>
-                <strong>{formatValue(currentValue)}</strong>
-              </div>
-            </div>
+          <div className="attendant-tip-row" key={String(entry.dataKey)}>
+            <i style={{ background: entry.color }} />
+            <span className="attendant-tip-name">{entry.name}</span>
+            <strong>{formatValue(currentValue)}</strong>
+            <b className={`attendant-tip-growth is-${direction}`}>
+              {growth === null ? "—" : `${growth > 0 ? "▲" : growth < 0 ? "▼" : ""} ${formatGrowth(growth).replace(/^[+-]/, "")}`}
+            </b>
+            <small>{previousRow ? `antes ${formatValue(previousValue)}` : "sem base"}</small>
           </div>
         );
       })}
