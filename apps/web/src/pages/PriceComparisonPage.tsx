@@ -1,14 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { AlertTriangle, FileUp, Plus, Search, X } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatCurrency, formatNumber } from "../lib/format";
-import { indexCatalog, matchCatalog, normalise, type CompetitorItem, type PartKind } from "./priceComparison.helpers";
+import { comparisonNote, hasFrame, indexCatalog, matchCatalog, normalise, type CatalogItem, type CompetitorItem, type PartKind } from "./priceComparison.helpers";
 
-type Filter = "all" | "above" | "better" | "review" | "missing";
-type Supplier = { id: string; name: string; fileName: string; items: CompetitorItem[]; overrides: Record<string, string> };
+type Filter = "all" | "above" | "better" | "matched" | "missing";
+type Supplier = { id: string; name: string; fileName: string; items: CompetitorItem[] };
+
+type ComparisonRow = { item: CompetitorItem; kind: PartKind; quality: string | null; candidates: CatalogItem[]; totalCandidates: number; target: number };
+
+export function PriceComparisonRows({ row }: { row: ComparisonRow }) {
+  const offers: (CatalogItem | null)[] = row.candidates.length ? row.candidates : [null];
+  return <Fragment>{offers.map((xp, index) => {
+    const difference = xp ? xp.price - row.target : null;
+    return <tr key={xp?.sku ?? "missing"} className={`comparison-offer ${index === 0 ? "comparison-group-start" : ""}`}>
+      {index === 0 ? <td rowSpan={offers.length} className="comparison-competitor"><strong>{row.item.name}</strong><small><span className={`comparison-kind ${row.kind === "Dock de carga" ? "dock" : ""}`}>{row.kind}</span>{row.item.code}</small><small>{row.quality ? `Qualidade: ${row.quality}` : "Qualidade não informada"}</small><small>{formatNumber(row.totalCandidates)} opções XP do modelo</small></td> : null}
+      <td>{xp ? <><strong><span className="comparison-quality">{xp.quality ?? "Sem qualidade informada"}</span>{hasFrame(xp.model) ? "Com aro" : ""}</strong><span className="comparison-offer-model">{xp.model}</span><small>{xp.sku} · <span className={xp.stockQuantity > 0 ? "comparison-stock-available" : "comparison-stock-empty"}>{xp.stockQuantity > 0 ? `${formatNumber(xp.stockQuantity)} em estoque` : "Sem estoque"}</span></small><small>{comparisonNote(row.item, xp)}</small></> : <span className="comparison-muted">{row.totalCandidates ? `${row.totalCandidates} opções XP sem estoque. Desmarque o filtro para ver.` : "Nenhum similar deste modelo e tipo de peça no catálogo XP."}</span>}</td>
+      {index === 0 ? <td className="comparison-money comparison-competitor" rowSpan={offers.length}>{formatCurrency(row.item.price)}</td> : null}
+      <td className="comparison-money">{xp ? formatCurrency(xp.price) : "—"}</td>
+      {index === 0 ? <td className="comparison-money comparison-muted comparison-competitor" rowSpan={offers.length}>{formatCurrency(row.target)}</td> : null}
+      <td>{difference !== null ? <span className={`comparison-result ${difference > 0 ? "above" : "better"}`}>{difference > 0 ? "+" : difference < 0 ? "−" : ""}{formatCurrency(Math.abs(difference))}<small>{difference > 0 ? "acima do alvo" : "no alvo ou abaixo"}</small></span> : "—"}</td>
+    </tr>;
+  })}</Fragment>;
+}
 
 export function parseSheet(file: File): Promise<CompetitorItem[]> {
   return file.arrayBuffer().then((buffer) => {
@@ -44,7 +61,7 @@ export function parseSheet(file: File): Promise<CompetitorItem[]> {
 export function PriceComparisonPage() {
   const { token } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([{ id: "uuf", name: "UUF", fileName: "", items: [], overrides: {} }]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([{ id: "uuf", name: "UUF", fileName: "", items: [] }]);
   const [activeId, setActiveId] = useState("uuf");
   const [adding, setAdding] = useState(false);
   const [supplierName, setSupplierName] = useState("");
@@ -57,32 +74,31 @@ export function PriceComparisonPage() {
   const [kind, setKind] = useState<PartKind | "all">("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [onlyInStock, setOnlyInStock] = useState(false);
   const [error, setError] = useState("");
   const catalogQuery = useQuery({ queryKey: ["inventory-price-catalog"], queryFn: () => api.inventoryPriceCatalog(token!), enabled: Boolean(token) });
   const catalog = catalogQuery.data?.items ?? [];
   const active = suppliers.find((supplier) => supplier.id === activeId)!;
   const catalogIndex = useMemo(() => indexCatalog(catalog), [catalog]);
   useEffect(() => { globalThis.localStorage?.setItem("xpcrm-price-comparison-margin", String(margin)); }, [margin]);
-  useEffect(() => { setPage(1); }, [filter, kind, search, activeId]);
+  useEffect(() => { setPage(1); }, [filter, kind, search, activeId, onlyInStock]);
 
   const matches = useMemo(() => active.items.map((item) => {
     const match = matchCatalog(item, catalogIndex);
-    const override = active.overrides[item.id];
-    const selected = override !== undefined ? match.candidates.find((xp) => xp.sku === override) ?? null : match.automatic;
-    return { item, ...match, selected, manual: Boolean(override) };
+    return { item, ...match };
   }), [active, catalogIndex]);
   const rows = matches.map((row) => {
     const target = row.item.price + margin;
-    const difference = row.selected ? row.selected.price - target : null;
-    const status: Filter = !row.selected ? row.candidates.length ? "review" : "missing" : difference! > 0 ? "above" : "better";
-    return { ...row, target, difference, status };
+    const candidates = onlyInStock ? row.candidates.filter((xp) => xp.stockQuantity > 0) : row.candidates;
+    return { ...row, target, candidates, totalCandidates: row.candidates.length };
   });
   const filters: { id: Filter; label: string }[] = [
     { id: "all", label: "Todos" }, { id: "above", label: "XP acima" }, { id: "better", label: "XP no alvo" },
-    { id: "review", label: "Revisar vínculo" }, { id: "missing", label: "Sem equivalente" },
+    { id: "matched", label: "Com opções XP" }, { id: "missing", label: "Sem similar" },
   ];
-  const visible = rows.filter((row) => (filter === "all" || row.status === filter) && (kind === "all" || row.kind === kind) && normalise(`${row.item.name} ${row.item.code} ${row.selected?.model ?? ""}`).includes(normalise(search)));
-  const pageCount = Math.max(1, Math.ceil(visible.length / 50));
+  const inFilter = (row: typeof rows[number], value: Filter) => value === "all" || (value === "matched" && row.candidates.length > 0) || (value === "missing" && row.totalCandidates === 0) || (value === "above" && row.candidates.some((xp) => xp.price > row.target)) || (value === "better" && row.candidates.some((xp) => xp.price <= row.target));
+  const visible = rows.filter((row) => inFilter(row, filter) && (kind === "all" || row.kind === kind) && normalise(`${row.item.name} ${row.item.code} ${row.candidates.map((xp) => `${xp.model} ${xp.quality ?? ""} ${xp.sku}`).join(" ")}`).includes(normalise(search)));
+  const pageCount = Math.max(1, Math.ceil(visible.length / 20));
   const currentPage = Math.min(page, pageCount);
   const kinds: PartKind[] = ["Frontal", "Dock de carga", "Bateria", "Outras peças"];
 
@@ -94,7 +110,7 @@ export function PriceComparisonPage() {
     if (existing) { setActiveId(existing.id); }
     else {
       const id = crypto.randomUUID();
-      setSuppliers((current) => [...current, { id, name, fileName: "", items: [], overrides: {} }]);
+      setSuppliers((current) => [...current, { id, name, fileName: "", items: [] }]);
       setActiveId(id);
     }
     setAdding(false); setSupplierName(""); setError("");
@@ -106,7 +122,7 @@ export function PriceComparisonPage() {
     setError(""); setIsImporting(true);
     try {
       const items = await parseSheet(file);
-      setSuppliers((current) => current.map((supplier) => supplier.id === importingId ? { ...supplier, fileName: file.name, items, overrides: {} } : supplier));
+      setSuppliers((current) => current.map((supplier) => supplier.id === importingId ? { ...supplier, fileName: file.name, items } : supplier));
       setFilter("all"); setKind("all"); setSearch(""); setPage(1);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível ler a planilha.");
@@ -137,19 +153,13 @@ export function PriceComparisonPage() {
         <div className="comparison-toolbar">
           <label className="comparison-search"><Search size={16} /><input aria-label="Buscar modelo ou código" placeholder="Buscar modelo ou código" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
           <select aria-label="Tipo de peça" value={kind} onChange={(event) => setKind(event.target.value as PartKind | "all")}><option value="all">Todas as peças</option>{kinds.map((value) => <option key={value}>{value}</option>)}</select>
+          <label className="comparison-stock-filter"><input type="checkbox" checked={onlyInStock} onChange={(event) => setOnlyInStock(event.target.checked)} />Somente com estoque</label>
           <span className="comparison-rule">Alvo XP = concorrente + {formatCurrency(margin)}</span>
         </div>
-        <div className="comparison-filters" aria-label="Situação dos preços">{filters.map(({ id, label }) => <button type="button" key={id} aria-pressed={filter === id} className={`comparison-filter ${id}`} onClick={() => setFilter(id)}>{label}<b>{formatNumber(id === "all" ? rows.length : rows.filter((row) => row.status === id).length)}</b></button>)}</div>
+        <div className="comparison-filters" aria-label="Situação dos preços">{filters.map(({ id, label }) => <button type="button" key={id} aria-pressed={filter === id} className={`comparison-filter ${id}`} onClick={() => setFilter(id)}>{label}<b>{formatNumber(rows.filter((row) => inFilter(row, id)).length)}</b></button>)}</div>
 
-        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <div className="comparison-table-scroll"><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Equivalente XP</th><th>{active.name}</th><th>Preço XP</th><th>Alvo XP</th><th>Resultado</th></tr></thead><tbody>{visible.slice((currentPage - 1) * 50, currentPage * 50).map((row) => <tr key={row.item.id}>
-          <td><strong>{row.item.name}</strong><small><span className={`comparison-kind ${row.kind === "Dock de carga" ? "dock" : ""}`}>{row.kind}</span>{row.item.code}</small></td>
-          <td>{row.selected ? <><strong>{row.selected.model}</strong><small>{row.selected.quality ?? "Qualidade não informada"} · {formatNumber(row.selected.stockQuantity)} em estoque</small></> : <span className="comparison-muted">{row.candidates.length ? "Confirme o equivalente e a qualidade" : "Sem peça do mesmo tipo e modelo"}</span>}
-            {row.candidates.length ? <select aria-label={`Equivalente XP para ${row.item.name}`} value={row.selected?.sku ?? ""} onChange={(event) => { const sku = event.target.value; setSuppliers((current) => current.map((supplier) => supplier.id === activeId ? { ...supplier, overrides: { ...supplier.overrides, [row.item.id]: sku } } : supplier)); }}><option value="">Não comparar este item</option>{row.candidates.map((xp) => <option key={xp.sku} value={xp.sku}>{xp.model} · {xp.quality ?? "Sem qualidade"} · {xp.sku}</option>)}</select> : null}
-          </td>
-          <td className="comparison-money">{formatCurrency(row.item.price)}</td><td className="comparison-money">{row.selected ? formatCurrency(row.selected.price) : "—"}</td><td className="comparison-money comparison-muted">{formatCurrency(row.target)}</td>
-          <td>{row.difference !== null ? <span className={`comparison-result ${row.status}`}>{row.difference > 0 ? "+" : row.difference < 0 ? "−" : ""}{formatCurrency(Math.abs(row.difference))}<small>{row.difference > 0 ? "acima do alvo" : "dentro do alvo"}</small></span> : <span className={`comparison-result ${row.status}`}>{row.status === "review" ? "Revisar vínculo" : "Sem comparação"}</span>}</td>
-        </tr>)}{!visible.length ? <tr><td colSpan={6} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>}
-        <footer className="comparison-footer"><span>{active.items.length ? `${formatNumber(visible.length)} produtos · página ${currentPage} de ${pageCount}` : "Cada concorrente tem sua própria tabela."}</span>{pageCount > 1 ? <div><button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Anterior</button><button disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Próxima</button></div> : null}<small>Dados nesta sessão · importar novamente atualiza apenas {active.name}.</small></footer>
+        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <div className="comparison-table-scroll"><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Opções XP · todas as qualidades</th><th>{active.name}</th><th>Preço XP</th><th>Alvo XP</th><th>Diferença</th></tr></thead><tbody>{visible.slice((currentPage - 1) * 20, currentPage * 20).map((row) => <PriceComparisonRows key={row.item.id} row={row} />)}{!visible.length ? <tr><td colSpan={6} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>}
+        <footer className="comparison-footer"><span>{active.items.length ? `${formatNumber(visible.length)} ${visible.length === 1 ? "produto" : "produtos"} · página ${currentPage} de ${pageCount}` : "Cada concorrente tem sua própria tabela."}</span>{pageCount > 1 ? <div><button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Anterior</button><button disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Próxima</button></div> : null}<small>Cada qualidade XP tem seu próprio resultado. Um produto pode ter opções acima e abaixo do alvo. Dados nesta sessão.</small></footer>
       </div>
     </section>
   </div>;
