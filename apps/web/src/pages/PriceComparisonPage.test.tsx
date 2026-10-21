@@ -26,6 +26,8 @@ describe("Importação UUF", () => {
     expect(html).toContain('role="tab"');
     expect(html).not.toContain("Trocar planilha UUF");
     expect(html).toContain('type="file"');
+    expect(html).toContain('aria-label="Somente peças em estoque"');
+    expect(html).toContain("checked");
   });
 
   it("localiza o cabeçalho após o título e prioriza o preço mínimo com moeda brasileira", async () => {
@@ -142,6 +144,11 @@ describe("Comparação automática com múltiplas qualidades", () => {
       { sku: "negative", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: -2 },
     ]);
     expect(result.candidates.map((xp) => xp.sku)).toEqual(["0542-1"]);
+  });
+
+  it("inclui peças sem estoque quando o filtro de estoque é desligado", () => {
+    const variants = [...catalog, { sku: "zero", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: 0 }];
+    expect(matchCatalog(competitor("FRONTAL A05 PREMIER"), indexCatalog(variants, false)).candidates.map((xp) => xp.sku)).toEqual(["zero", "0542-1"]);
   });
 
   it("mostra a qualidade mais semelhante primeiro, acima de uma qualidade mais barata", () => {
