@@ -106,6 +106,17 @@ describe("Comparação automática com múltiplas qualidades", () => {
     const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 12 }];
     expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX ORIGINAL"), variants).candidates.map((xp) => xp.sku)).toEqual(["pm"]);
   });
+  it("lê qualificadores compostos que aparecem nos nomes da UUF", () => {
+    expect(qualityLabel("FRONTAL IPHONE 13 ORIGINAL SOFT")).toBe("ORIGINAL SOFT");
+    expect(qualityLabel("FRONTAL IPHONE 13 INCELL JK")).toBe("INCELL JK");
+    expect(qualityLabel("FRONTAL IPHONE 13 ORIGINAL DD")).toBe("ORIGINAL DD");
+    expect(qualityLabel("FRONTAL A05 ORIGINAL DISPLAY GRANDE COM ARO VIVID")).toBe("VIVID");
+    const variants = [
+      { sku: "lcd", model: "IP-13 LCD", quality: "LCD", price: 50, stockQuantity: 1 },
+      { sku: "soft", model: "IP-13 SOFT OLED", quality: "SOFT OLED", price: 80, stockQuantity: 1 },
+    ];
+    expect(matchCatalog(competitor("FRONTAL IPHONE 13 ORIGINAL SOFT"), variants).candidates.map((xp) => xp.sku)).toEqual(["soft", "lcd"]);
+  });
   it("compara modelos compatíveis listados com barra sem ampliar para modelos vizinhos", () => {
     expect(matchCatalog(competitor("DR A05/A05S"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "1162-1"]);
   });
