@@ -11027,6 +11027,15 @@ button.attendants-ranking-row:hover {
 .comparison-result.better { color: #047857; }
 .comparison-result.review { color: #7c3aed; }
 .comparison-result.missing { color: #94a3b8; font-weight: 400; }
+.comparison-offer td { padding-block: 9px; }
+.comparison-offer.comparison-group-start td { border-top: 2px solid #dce4f1; }
+.comparison-table td.comparison-competitor { background: #f8faff; vertical-align: top; padding-top: 14px; }
+.comparison-quality { display: inline-block; margin-right: 7px; padding: 2px 6px; background: #eef2ff; border-radius: 4px; color: #2947a1; }
+.comparison-offer-model { display: block; font-size: 11px; color: #475569; margin-top: 4px; }
+.comparison-stock-available { color: #047857; }
+.comparison-stock-empty { color: #94a3b8; }
+.comparison-stock-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; white-space: nowrap; }
+.comparison-stock-filter input { width: auto; margin: 0; accent-color: #2956d7; }
 .comparison-empty { display: grid; justify-items: center; gap: 10px; padding: 40px 16px; color: #64748b; text-align: center; font-size: 12px; }
 .comparison-empty h3 { margin: 0; color: #334155; font-size: 15px; }
 .comparison-empty p { margin: 0 0 4px; line-height: 1.7; }

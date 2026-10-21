@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as XLSX from "xlsx";
-import { parseSheet, PriceComparisonPage } from "./PriceComparisonPage";
-import { matchCatalog, partKind, type CatalogItem } from "./priceComparison.helpers";
+import { parseSheet, PriceComparisonPage, PriceComparisonRows } from "./PriceComparisonPage";
+import { indexCatalog, matchCatalog, partKind, qualityLabel, type CatalogItem } from "./priceComparison.helpers";
 
 vi.mock("../hooks/useAuth", () => ({ useAuth: () => ({ token: "test" }) }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: { items: [] }, isLoading: false }) }));
@@ -56,21 +56,70 @@ describe("Equivalência de peças", () => {
   const item = (name: string) => ({ id: "1", code: "", name, price: 33 });
 
   it("nunca sugere dock para frontal nem frontal para doc", () => {
-    expect(matchCatalog(item("FRONTAL A01 PREMIER"), catalog).candidates.map((xp) => xp.sku)).toEqual(["screen"]);
+    expect(matchCatalog(item("FRONTAL A01 PREMIER"), catalog).candidates.map((xp) => xp.sku)).toEqual(["screen", "oled"]);
     for (const name of ["DOC A01 PREMIER", "DOC DE CARGA A01 PREMIER", "DOCK A01 PREMIER"]) {
       expect(matchCatalog(item(name), catalog).candidates.map((xp) => xp.sku)).toEqual(["dock"]);
     }
   });
-  it("não mistura modelos ou qualidades e exige revisão quando a qualidade não foi informada", () => {
-    expect(matchCatalog(item("FRONTAL A01"), catalog).automatic).toBeNull();
-    expect(matchCatalog(item("FRONTAL A01 PREMIER"), catalog).automatic?.sku).toBe("screen");
-    expect(matchCatalog(item("FRONTAL A01 OLED"), catalog).automatic?.sku).toBe("oled");
-    expect(matchCatalog(item("FRONTAL A01 CORE PREMIER"), catalog).automatic?.sku).toBe("other-model");
+  it("mostra outras qualidades automaticamente, prioriza a qualidade no nome e preserva o modelo", () => {
+    expect(matchCatalog(item("FRONTAL A01"), catalog).candidates).toHaveLength(2);
+    expect(matchCatalog(item("FRONTAL A01 PREMIER"), catalog).candidates[0]?.sku).toBe("screen");
+    expect(matchCatalog(item("FRONTAL A01 OLED"), catalog).candidates[0]?.sku).toBe("oled");
+    expect(matchCatalog(item("FRONTAL A01 CORE PREMIER"), catalog).candidates.map((xp) => xp.sku)).toEqual(["other-model"]);
     expect(matchCatalog(item("FRONTAL A01S PREMIER"), catalog).candidates).toHaveLength(0);
   });
   it("não deduz frontal para peças desconhecidas", () => {
     expect(partKind("TAMPA A01")).toBe("Outras peças");
     expect(matchCatalog(item("A01"), catalog).candidates).toHaveLength(0);
     expect(matchCatalog(item("BATERIA A01"), catalog).candidates).toHaveLength(0);
+  });
+});
+
+describe("Comparação automática com múltiplas qualidades", () => {
+  const catalog: CatalogItem[] = [
+    { sku: "0542-1", model: "SM-A05 PREMIER MAX", quality: "PREMIER MAX", price: 43, stockQuantity: 1786 },
+    { sku: "0590-1", model: "SM-A05 * COM ARO * PREMIER MAX", quality: "PREMIER MAX", price: 48, stockQuantity: 477 },
+    { sku: "1162-1", model: "SM-A05S PREMIER MAX", quality: "PREMIER MAX", price: 45, stockQuantity: 1902 },
+    { sku: "1307-1", model: "[DOC DE CARGA] SAMSUNG A05 PREMIER", quality: "PREMIER", price: 11, stockQuantity: 158 },
+    { sku: "1173-1", model: "IP-13 FHD COF (TROCA CI)", quality: "LCD", price: 90, stockQuantity: 573 },
+    { sku: "CX275-1", model: "[ De ] IP-13 FHD (TROCA CI) 120Hz", quality: "SOFT OLED", price: 213, stockQuantity: 859 },
+    { sku: "1272-1", model: "IP-13 (TROCA CI) MAX [Borda Original]", quality: "SELECT MAX", price: 72, stockQuantity: 0 },
+    { sku: "pro", model: "IP-13 PRO (TROCA CI)", quality: "OLED", price: 197, stockQuantity: 0 },
+    { sku: "mini", model: "IP-13 MINI (TROCA CI)", quality: "LCD", price: 86, stockQuantity: 0 },
+    { sku: "dock-ip", model: "[DOC DE CARGA] IPHONE 13", quality: "CONECTOR", price: 34.5, stockQuantity: 0 },
+  ];
+  const competitor = (name: string) => ({ id: "test", name, code: "DR-UP182", price: 132 });
+
+  it("decodifica DR IPHONE 13 ORIGINAL e oferece as qualidades do IP-13 sem incluir PRO, MINI ou dock", () => {
+    const result = matchCatalog(competitor("DR IPHONE 13 ORIGINAL"), indexCatalog(catalog));
+    expect(result.kind).toBe("Frontal");
+    expect(result.quality).toBe("ORIGINAL");
+    expect(result.candidates.map((xp) => xp.sku)).toEqual(["1173-1", "CX275-1", "1272-1"]);
+  });
+  it("separa aro e linha de qualidade do modelo A05 e mantém A05S independente", () => {
+    expect(matchCatalog(competitor("FRONTAL A05"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0542-1", "0590-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05 COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0590-1", "0542-1"]);
+    expect(matchCatalog(competitor("DR A05S"), catalog).candidates.map((xp) => xp.sku)).toEqual(["1162-1"]);
+  });
+  it("reconhece ORI e mantém a variante PRO MAX", () => {
+    expect(qualityLabel("ORI")).toBe("ORIGINAL");
+    const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 0 }];
+    expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX ORIGINAL"), variants).candidates.map((xp) => xp.sku)).toEqual(["pm"]);
+  });
+  it("compara modelos compatíveis listados com barra sem ampliar para modelos vizinhos", () => {
+    expect(matchCatalog(competitor("DR A05/A05S"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "0590-1", "1162-1"]);
+  });
+  it("renderiza todas as qualidades e diferenças diretamente, sem seletor de mapeamento", () => {
+    const item = competitor("DR IPHONE 13 ORIGINAL");
+    const match = matchCatalog(item, catalog);
+    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, ...match, totalCandidates: match.candidates.length, target: 137 }} /></tbody></table>);
+    expect(html).toContain("SOFT OLED");
+    expect(html).toContain("SELECT MAX");
+    expect(html).toContain("1173-1");
+    expect(html).toContain("CX275-1");
+    expect(html).toContain("Sem estoque");
+    expect(html).toContain("Outra qualidade XP");
+    expect(html).toContain('rowSpan="3"');
+    expect(html).not.toContain("<select");
   });
 });
