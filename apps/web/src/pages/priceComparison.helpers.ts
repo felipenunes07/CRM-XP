@@ -60,10 +60,10 @@ export function modelKeys(name: string): string[] {
 }
 
 type IndexedItem = { item: CatalogItem; brand: number; quality: string | null; frame: boolean };
-export function indexCatalog(catalog: CatalogItem[]) {
+export function indexCatalog(catalog: CatalogItem[], inStockOnly = true) {
   const index = new Map<string, IndexedItem[]>();
   for (const item of catalog) {
-    if (!(item.stockQuantity > 0)) continue;
+    if (inStockOnly && !(item.stockQuantity > 0)) continue;
     const entry = { item, brand: brand(item.model), quality: qualityLabel(item.quality ?? "") ?? qualityLabel(item.model), frame: hasFrame(item.model) };
     for (const model of modelKeys(item.model)) {
       const key = `${partKind(item.model, true)}|${model}`;
