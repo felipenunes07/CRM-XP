@@ -87,7 +87,7 @@ export function PriceComparisonPage() {
   const rows = matches.map((row) => ({ ...row, totalCandidates: row.candidates.length }));
   const filters: { id: Filter; label: string }[] = [
     { id: "all", label: "Todos" }, { id: "above", label: "XP mais caro" }, { id: "better", label: "XP igual ou menor" },
-    { id: "matched", label: "Com opções XP" }, { id: "missing", label: "Sem opção disponível" },
+    { id: "matched", label: "Tem equivalente XP" }, { id: "missing", label: "Sem equivalente XP" },
   ];
   const inFilter = (row: typeof rows[number], value: Filter) => value === "all" || (value === "matched" && row.candidates.length > 0) || (value === "missing" && row.totalCandidates === 0) || (value === "above" && row.candidates.some((xp) => xp.price > row.item.price)) || (value === "better" && row.candidates.some((xp) => xp.price <= row.item.price));
   const visible = rows.filter((row) => inFilter(row, filter) && (kind === "all" || row.kind === kind) && normalise(`${row.item.name} ${row.item.code} ${row.candidates.map((xp) => `${xp.model} ${xp.quality ?? ""} ${xp.sku}`).join(" ")}`).includes(normalise(search)));
