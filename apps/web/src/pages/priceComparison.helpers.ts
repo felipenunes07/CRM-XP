@@ -18,9 +18,17 @@ export function partKind(name: string, catalog = false): PartKind {
 
 export function qualityLabel(name: string) {
   const text = normalise(name);
-  const qualities = ["premier max", "select max", "soft oled", "hard oled", "oled yk", "premier", "select", "vivid", "incell", "original", "ori", "amoled", "oled", "fhd", "lcd", "prime"];
+  const qualities = ["premier max", "select max", "soft oled", "hard oled", "oled yk", "ori yk", "original soft", "original dd", "incell jk", "premier", "select", "vivid", "incell", "original", "ori", "amoled", "oled", "fhd", "lcd", "prime"];
   const value = qualities.find((quality) => new RegExp(`\\b${quality}\\b`).test(text.replace(/in cell/g, "incell")));
   return value === "ori" ? "ORIGINAL" : value?.toUpperCase() ?? null;
+}
+
+function qualityFamily(quality: string | null) {
+  if (quality === "ORIGINAL SOFT") return "SOFT OLED";
+  if (quality === "INCELL JK") return "INCELL";
+  if (quality === "ORIGINAL DD") return "ORIGINAL";
+  if (quality === "ORI YK") return "OLED YK";
+  return quality;
 }
 
 export function hasFrame(name: string) {
@@ -82,7 +90,8 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
     }
   }
   const ranked = [...found.values()].sort((a, b) => {
-    const rank = (entry: IndexedItem) => (entry.quality === itemQuality && itemQuality ? 100 : 0);
+    const targetQuality = qualityFamily(itemQuality);
+    const rank = (entry: IndexedItem) => (entry.quality === itemQuality && itemQuality ? 200 : qualityFamily(entry.quality) === targetQuality && targetQuality ? 100 : 0);
     return rank(b) - rank(a) || a.item.price - b.item.price || a.item.sku.localeCompare(b.item.sku);
   });
   return { kind, quality: itemQuality, candidates: ranked.map((entry) => entry.item) };
@@ -91,7 +100,7 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
 export function comparisonNote(competitor: CompetitorItem, xp: CatalogItem) {
   const left = qualityLabel(competitor.name);
   const right = qualityLabel(xp.quality ?? "") ?? qualityLabel(xp.model);
-  const notes = [left && left === right ? "Qualidade semelhante no nome" : left ? "Outra qualidade XP" : "Qualidade do concorrente não informada"];
+  const notes = [left && qualityFamily(left) === qualityFamily(right) ? "Qualidade semelhante no nome" : left ? "Outra qualidade XP" : "Qualidade do concorrente não informada"];
   if (hasFrame(competitor.name) !== hasFrame(xp.model)) notes.push(hasFrame(xp.model) ? "XP com aro" : "XP sem aro explícito");
   return notes.join(" · ");
 }
