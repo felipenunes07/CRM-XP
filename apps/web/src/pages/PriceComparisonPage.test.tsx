@@ -112,7 +112,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
   it("renderiza todas as qualidades e diferenças diretamente, sem seletor de mapeamento", () => {
     const item = competitor("DR IPHONE 13 ORIGINAL");
     const match = matchCatalog(item, catalog);
-    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, ...match, totalCandidates: match.candidates.length, target: 137 }} /></tbody></table>);
+    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, ...match, totalCandidates: match.candidates.length }} /></tbody></table>);
     expect(html).toContain("SOFT OLED");
     expect(html).not.toContain("SELECT MAX");
     expect(html).toContain("1173-1");
@@ -140,7 +140,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
 
   it("identifica com aro e sem aro e impede opções incompatíveis também na renderização", () => {
     const item = competitor("FRONTAL A05 COM ARO");
-    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, kind: "Frontal", quality: null, candidates: catalog, totalCandidates: catalog.length, target: 137 }} /></tbody></table>);
+    const html = renderToStaticMarkup(<table><tbody><PriceComparisonRows row={{ item, kind: "Frontal", quality: null, candidates: catalog, totalCandidates: catalog.length }} /></tbody></table>);
     expect(html).toContain("0590-1");
     expect(html).toContain("Com aro");
     expect(html).not.toContain("0542-1");
