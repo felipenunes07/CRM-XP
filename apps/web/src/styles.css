@@ -11007,7 +11007,6 @@ button.attendants-ranking-row:hover {
 .comparison-filter.better b { color: #047857; }
 .comparison-filter.review b { color: #7c3aed; }
 .comparison-table-scroll { overflow-x: auto; min-height: 160px; }
-.comparison-load-more { height: 1px; }
 .comparison-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 900px; font-size: 15px; }
 .comparison-table th { position: sticky; top: 0; z-index: 1; background: #f5f7fb; padding: 10px 12px; font-size: 12px; color: #64748b; font-weight: 650; text-align: right; border-block: 1px solid #e7ebf2; }
 .comparison-table th:nth-child(1) { width: 26%; text-align: left; }

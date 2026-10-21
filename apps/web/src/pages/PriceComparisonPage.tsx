@@ -61,7 +61,6 @@ export function parseSheet(file: File): Promise<CompetitorItem[]> {
 export function PriceComparisonPage() {
   const { token } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
-  const loadMore = useRef<HTMLDivElement>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([{ id: "uuf", name: "UUF", fileName: "", items: [] }]);
   const [activeId, setActiveId] = useState("uuf");
   const [adding, setAdding] = useState(false);
@@ -94,13 +93,13 @@ export function PriceComparisonPage() {
   const displayedCount = Math.min(visibleCount, visible.length);
   const kinds: PartKind[] = ["Frontal", "Dock de carga", "Bateria", "Outras peças"];
   useEffect(() => {
-    const sentinel = loadMore.current;
-    if (!sentinel || visibleCount >= visible.length) return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) setVisibleCount((count) => Math.min(count + 20, visible.length));
-    }, { rootMargin: "500px" });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    if (visibleCount >= visible.length) return;
+    const loadMore = () => {
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 500) setVisibleCount((count) => Math.min(count + 20, visible.length));
+    };
+    window.addEventListener("scroll", loadMore, { passive: true });
+    loadMore();
+    return () => window.removeEventListener("scroll", loadMore);
   }, [visible.length, visibleCount]);
 
   function addSupplier(event: React.FormEvent) {
@@ -158,7 +157,7 @@ export function PriceComparisonPage() {
         </div>
         <div className="comparison-filters" aria-label="Situação dos preços">{filters.map(({ id, label }) => <button type="button" key={id} aria-pressed={filter === id} className={`comparison-filter ${id}`} onClick={() => setFilter(id)}>{label}<b>{formatNumber(rows.filter((row) => inFilter(row, id)).length)}</b></button>)}</div>
 
-        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <><div className="comparison-table-scroll" role="region" aria-label="Comparação de preços com rolagem contínua"><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Opções XP · todas as qualidades</th><th>{active.name}</th><th>Preço XP</th><th>Diferença</th></tr></thead><tbody>{visible.slice(0, visibleCount).map((row) => <PriceComparisonRows key={row.item.id} row={row} />)}{!visible.length ? <tr><td colSpan={5} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>{displayedCount < visible.length ? <div className="comparison-load-more" ref={loadMore} aria-hidden="true" /> : null}</>}
+        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <div className="comparison-table-scroll" role="region" aria-label="Comparação de preços com rolagem contínua"><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Opções XP · todas as qualidades</th><th>{active.name}</th><th>Preço XP</th><th>Diferença</th></tr></thead><tbody>{visible.slice(0, visibleCount).map((row) => <PriceComparisonRows key={row.item.id} row={row} />)}{!visible.length ? <tr><td colSpan={5} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>}
         <footer className="comparison-footer"><span role="status">{active.items.length ? `${formatNumber(displayedCount)} de ${formatNumber(visible.length)} produtos${displayedCount < visible.length ? " · role para ver mais" : " · todos carregados"}` : "Cada concorrente tem sua própria tabela."}</span><small>Diferença = preço XP menos preço da {active.name}. Cada qualidade XP tem seu próprio resultado. Dados nesta sessão.</small></footer>
       </div>
     </section>
