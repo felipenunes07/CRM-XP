@@ -62,6 +62,7 @@ export function parseSheet(file: File): Promise<CompetitorItem[]> {
 export function PriceComparisonPage() {
   const { token } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
+  const tableScroll = useRef<HTMLDivElement>(null);
   const [suppliers, setSuppliers] = useState<Supplier[]>([{ id: "uuf", name: "UUF", fileName: "", items: [] }]);
   const [activeId, setActiveId] = useState("uuf");
   const [adding, setAdding] = useState(false);
@@ -74,14 +75,17 @@ export function PriceComparisonPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [kind, setKind] = useState<PartKind | "all">("all");
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const [visibleCount, setVisibleCount] = useState(20);
   const [error, setError] = useState("");
   const catalogQuery = useQuery({ queryKey: ["inventory-price-catalog"], queryFn: () => api.inventoryPriceCatalog(token!), enabled: Boolean(token) });
   const catalog = catalogQuery.data?.items ?? [];
   const active = suppliers.find((supplier) => supplier.id === activeId)!;
   const catalogIndex = useMemo(() => indexCatalog(catalog), [catalog]);
   useEffect(() => { globalThis.localStorage?.setItem("xpcrm-price-comparison-margin", String(margin)); }, [margin]);
-  useEffect(() => { setPage(1); }, [filter, kind, search, activeId]);
+  useEffect(() => {
+    setVisibleCount(20);
+    if (tableScroll.current) tableScroll.current.scrollTop = 0;
+  }, [filter, kind, search, activeId, active.items]);
 
   const matches = useMemo(() => active.items.map((item) => {
     const match = matchCatalog(item, catalogIndex);
@@ -97,8 +101,7 @@ export function PriceComparisonPage() {
   ];
   const inFilter = (row: typeof rows[number], value: Filter) => value === "all" || (value === "matched" && row.candidates.length > 0) || (value === "missing" && row.totalCandidates === 0) || (value === "above" && row.candidates.some((xp) => xp.price > row.target)) || (value === "better" && row.candidates.some((xp) => xp.price <= row.target));
   const visible = rows.filter((row) => inFilter(row, filter) && (kind === "all" || row.kind === kind) && normalise(`${row.item.name} ${row.item.code} ${row.candidates.map((xp) => `${xp.model} ${xp.quality ?? ""} ${xp.sku}`).join(" ")}`).includes(normalise(search)));
-  const pageCount = Math.max(1, Math.ceil(visible.length / 20));
-  const currentPage = Math.min(page, pageCount);
+  const displayedCount = Math.min(visibleCount, visible.length);
   const kinds: PartKind[] = ["Frontal", "Dock de carga", "Bateria", "Outras peças"];
 
   function addSupplier(event: React.FormEvent) {
@@ -122,7 +125,7 @@ export function PriceComparisonPage() {
     try {
       const items = await parseSheet(file);
       setSuppliers((current) => current.map((supplier) => supplier.id === importingId ? { ...supplier, fileName: file.name, items } : supplier));
-      setFilter("all"); setKind("all"); setSearch(""); setPage(1);
+      setFilter("all"); setKind("all"); setSearch(""); setVisibleCount(20);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Não foi possível ler a planilha.");
     } finally {
@@ -157,8 +160,8 @@ export function PriceComparisonPage() {
         </div>
         <div className="comparison-filters" aria-label="Situação dos preços">{filters.map(({ id, label }) => <button type="button" key={id} aria-pressed={filter === id} className={`comparison-filter ${id}`} onClick={() => setFilter(id)}>{label}<b>{formatNumber(rows.filter((row) => inFilter(row, id)).length)}</b></button>)}</div>
 
-        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <div className="comparison-table-scroll"><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Opções XP · todas as qualidades</th><th>{active.name}</th><th>Preço XP</th><th>Alvo XP</th><th>Diferença</th></tr></thead><tbody>{visible.slice((currentPage - 1) * 20, currentPage * 20).map((row) => <PriceComparisonRows key={row.item.id} row={row} />)}{!visible.length ? <tr><td colSpan={6} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>}
-        <footer className="comparison-footer"><span>{active.items.length ? `${formatNumber(visible.length)} ${visible.length === 1 ? "produto" : "produtos"} · página ${currentPage} de ${pageCount}` : "Cada concorrente tem sua própria tabela."}</span>{pageCount > 1 ? <div><button disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Anterior</button><button disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Próxima</button></div> : null}<small>Cada qualidade XP tem seu próprio resultado. Um produto pode ter opções acima e abaixo do alvo. Dados nesta sessão.</small></footer>
+        {!active.items.length ? <div className="comparison-empty"><FileUp size={28} /><h3>Adicione a tabela de {active.name}</h3><p>Importe Excel ou CSV com produto e preço.<br />Para outra empresa, use “Adicionar concorrente”.</p><button type="button" className="comparison-primary" disabled={isImporting} onClick={() => fileInput.current?.click()}>Selecionar planilha</button></div> : catalogQuery.isLoading ? <div className="comparison-empty" role="status">Carregando os preços XP…</div> : <div className="comparison-table-scroll" role="region" aria-label="Comparação de preços com rolagem contínua" tabIndex={0} ref={tableScroll} onScroll={(event) => { const element = event.currentTarget; if (element.scrollHeight - element.scrollTop - element.clientHeight < 400) setVisibleCount((count) => Math.min(count + 20, visible.length)); }}><table className="comparison-table"><thead><tr><th>Produto · {active.name}</th><th>Opções XP · todas as qualidades</th><th>{active.name}</th><th>Preço XP</th><th>Alvo XP</th><th>Diferença</th></tr></thead><tbody>{visible.slice(0, visibleCount).map((row) => <PriceComparisonRows key={row.item.id} row={row} />)}{!visible.length ? <tr><td colSpan={6} className="comparison-no-results">Nenhum produto neste filtro. Ajuste a busca ou selecione “Todos”.</td></tr> : null}</tbody></table></div>}
+        <footer className="comparison-footer"><span role="status">{active.items.length ? `${formatNumber(displayedCount)} de ${formatNumber(visible.length)} produtos${displayedCount < visible.length ? " · role para ver mais" : " · todos carregados"}` : "Cada concorrente tem sua própria tabela."}</span><small>Cada qualidade XP tem seu próprio resultado. Um produto pode ter opções acima e abaixo do alvo. Dados nesta sessão.</small></footer>
       </div>
     </section>
   </div>;
