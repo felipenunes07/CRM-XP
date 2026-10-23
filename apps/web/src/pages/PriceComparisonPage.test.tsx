@@ -124,6 +124,16 @@ describe("Comparação automática com múltiplas qualidades", () => {
       { sku: "1666-1", model: "SM-A24/A25/M34/F34 PREMIER MAX", quality: "PREMIER MAX", price: 48, stockQuantity: 90 },
     ];
     expect(matchCatalog(competitor("FRONTAL A24 INCELL COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0322-1"]);
+    expect(matchCatalog(competitor("FRONTAL A24 ORIGINAL DISPLAY GRANDE COM ARO"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0322-1"]);
+  });
+  it("entende abreviação SAM e erros de descrição sem trocar o modelo", () => {
+    const catalog = [
+      { sku: "s21", model: "SM-S21 * COM ARO *", quality: "OLED", price: 90, stockQuantity: 4 },
+      { sku: "s21-ultra", model: "SM-S21 ULTRA * COM ARO *", quality: "OLED", price: 120, stockQuantity: 4 },
+      { sku: "a33", model: "SM-A33 * COM ARO * [Borda Fina]", quality: "OLED", price: 95, stockQuantity: 4 },
+    ];
+    expect(matchCatalog(competitor("FRONTAL SAM S21 INCELLL COM ARO"), catalog).candidates.map((xp) => xp.sku)).toEqual(["s21"]);
+    expect(matchCatalog(competitor("FRONTAL A33 ORIGINAL DISPLAY GRANGE COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["a33"]);
   });
   it("lê listas de compatibilidade e mantém 4G e 5G separados", () => {
     const generic = { sku: "a17-generic", model: "REALME C35/OPPO A17/A57/A77/A38/A58 5G COM ARO", quality: "PREMIER", price: 36.1, stockQuantity: 8 };

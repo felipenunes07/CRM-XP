@@ -37,11 +37,11 @@ export function hasFrame(name: string) {
 
 function brand(name: string) {
   const text = normalise(name);
-  const aliases = [/\b(samsung|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\b(realme|oppo)\b/];
+  const aliases = [/\b(samsung|sam|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\b(realme|oppo)\b/];
   return aliases.findIndex((pattern) => pattern.test(text));
 }
 
-const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme oppo dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big".split(" "));
+const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sam sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme oppo dr kelai original origina originao ori fhd incell incelll in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul cinza dourado dourodo rosa roxo vermelha vermelho verde prata destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big grande grange menor".split(" "));
 
 export function modelKeys(name: string): string[] {
   const modelName = name.replace(/\[[^\]]*\]/g, " ");
