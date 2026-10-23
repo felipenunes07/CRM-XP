@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as XLSX from "xlsx";
 import { parseSheet, PriceComparisonPage, PriceComparisonRows } from "./PriceComparisonPage";
-import { indexCatalog, matchCatalog, partKind, qualityLabel, type CatalogItem } from "./priceComparison.helpers";
+import { indexCatalog, matchCatalog, missingReason, partKind, qualityLabel, type CatalogItem } from "./priceComparison.helpers";
 
 vi.mock("../hooks/useAuth", () => ({ useAuth: () => ({ token: "test" }) }));
 vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: { items: [] }, isLoading: false }) }));
@@ -134,6 +134,17 @@ describe("Comparação automática com múltiplas qualidades", () => {
     ];
     expect(matchCatalog(competitor("FRONTAL SAM S21 INCELLL COM ARO"), catalog).candidates.map((xp) => xp.sku)).toEqual(["s21"]);
     expect(matchCatalog(competitor("FRONTAL A33 ORIGINAL DISPLAY GRANGE COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["a33"]);
+  });
+  it("classifica os motivos sem equivalente conforme o catálogo", () => {
+    const catalog = indexCatalog([
+      { sku: "empty", model: "SM-A01", quality: "LCD", price: 30, stockQuantity: 0 },
+      { sku: "frame", model: "SM-A02 COM ARO", quality: "LCD", price: 30, stockQuantity: 2 },
+      { sku: "brand", model: "REALME A03", quality: "LCD", price: 30, stockQuantity: 2 },
+    ], false);
+    expect(missingReason(competitor("FRONTAL A01"), catalog)).toBe("out-of-stock");
+    expect(missingReason(competitor("FRONTAL A02"), catalog)).toBe("frame");
+    expect(missingReason(competitor("FRONTAL SAMSUNG A03"), catalog)).toBe("brand");
+    expect(missingReason(competitor("FRONTAL A04"), catalog)).toBe("model");
   });
   it("lê listas de compatibilidade e mantém 4G e 5G separados", () => {
     const generic = { sku: "a17-generic", model: "REALME C35/OPPO A17/A57/A77/A38/A58 5G COM ARO", quality: "PREMIER", price: 36.1, stockQuantity: 8 };

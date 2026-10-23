@@ -116,6 +116,21 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
   return { kind, quality: itemQuality, candidates: ranked.map((entry) => entry.item) };
 }
 
+export type MissingReason = "out-of-stock" | "frame" | "brand" | "model";
+
+export function missingReason(item: CompetitorItem, fullCatalog: ReturnType<typeof indexCatalog>): MissingReason {
+  if (matchCatalog(item, fullCatalog).candidates.length) return "out-of-stock";
+  const kind = partKind(item.name);
+  const entries = modelKeys(item.name).flatMap((model) => fullCatalog.get(`${kind}|${model}`) ?? []);
+  const itemBrand = brand(item.name);
+  const compatibleBrand = entries.filter((entry) => itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand);
+  const compatibleFrame = compatibleBrand.filter((entry) => entry.frame === hasFrame(item.name));
+  if (compatibleFrame.length) return "out-of-stock";
+  if (compatibleBrand.length) return "frame";
+  if (entries.length) return "brand";
+  return "model";
+}
+
 export function comparisonNote(competitor: CompetitorItem, xp: CatalogItem) {
   const left = qualityLabel(competitor.name);
   const right = qualityLabel(xp.quality ?? "") ?? qualityLabel(xp.model);
