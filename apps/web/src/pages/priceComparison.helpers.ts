@@ -44,13 +44,14 @@ function brand(name: string) {
 const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme oppo dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big".split(" "));
 
 export function modelKeys(name: string): string[] {
-  const text = normalise(name.replace(/^\d[\w/-]*\s+-\s+/, ""));
+  const modelName = name.replace(/\[[^\]]*\]/g, " ");
+  const text = normalise(modelName.replace(/^\d[\w/-]*\s+-\s+/, ""));
   // Read the phone variant before removing commercial quality suffixes such as SELECT MAX.
   const iphone = [...text.matchAll(/\b(?:iphone|ip)\s*(\d{1,2}|xs|xr|x|se)\b(?:\s*(pro max|pro|mini|plus|(?:max)(?=\s|$)))?/g)];
   if (iphone.length) return [...new Set(iphone.map((match) => `iphone${match[1]} ${match[2] ?? ""}`.trim()))];
   const keys: string[] = [];
   let previousModel = "";
-  for (const segment of name.split("/")) {
+  for (const segment of modelName.split("/")) {
     const cleaned = normalise(segment)
       .replace(/\b(premier|select|prime)\s+max\b/g, " ")
       .split(" ").filter((word) => !stopWords.has(word) && !/^\d+hz$/.test(word)).join(" ")

@@ -117,6 +117,14 @@ describe("Comparação automática com múltiplas qualidades", () => {
     expect(matchCatalog(competitor("DR IPHONE 13 PRO COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro"]);
     expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro-max"]);
   });
+  it("encontra A24 com aro em estoque apesar da anotação de borda", () => {
+    const catalog = [
+      { sku: "0493-1", model: "SM-A24 * COM ARO *", quality: "LCD", price: 51, stockQuantity: 0 },
+      { sku: "0322-1", model: "SM-A24 * COM ARO * [Borda Grossa]", quality: "OLED", price: 121, stockQuantity: 71 },
+      { sku: "1666-1", model: "SM-A24/A25/M34/F34 PREMIER MAX", quality: "PREMIER MAX", price: 48, stockQuantity: 90 },
+    ];
+    expect(matchCatalog(competitor("FRONTAL A24 INCELL COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0322-1"]);
+  });
   it("lê listas de compatibilidade e mantém 4G e 5G separados", () => {
     const generic = { sku: "a17-generic", model: "REALME C35/OPPO A17/A57/A77/A38/A58 5G COM ARO", quality: "PREMIER", price: 36.1, stockQuantity: 8 };
     const a17FourG = { sku: "a17-4g", model: "OPPO A17 4G COM ARO", quality: "PREMIER", price: 37, stockQuantity: 8 };
