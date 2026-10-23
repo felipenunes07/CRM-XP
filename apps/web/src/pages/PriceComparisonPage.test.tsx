@@ -117,6 +117,16 @@ describe("Comparação automática com múltiplas qualidades", () => {
     expect(matchCatalog(competitor("DR IPHONE 13 PRO COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro"]);
     expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro-max"]);
   });
+  it("lê listas de compatibilidade e mantém 4G e 5G separados", () => {
+    const generic = { sku: "a17-generic", model: "REALME C35/OPPO A17/A57/A77/A38/A58 5G COM ARO", quality: "PREMIER", price: 36.1, stockQuantity: 8 };
+    const a17FourG = { sku: "a17-4g", model: "OPPO A17 4G COM ARO", quality: "PREMIER", price: 37, stockQuantity: 8 };
+    const a17FiveG = { sku: "a17-5g", model: "OPPO A17 5G COM ARO", quality: "PREMIER", price: 38, stockQuantity: 8 };
+    expect(matchCatalog(competitor("FRONTAL A17 4G COM ARO"), [generic, a17FourG, a17FiveG]).candidates.map((xp) => xp.sku)).toEqual(["a17-4g"]);
+    expect(matchCatalog(competitor("FRONTAL A17 5G COM ARO"), [generic, a17FourG, a17FiveG]).candidates.map((xp) => xp.sku)).toEqual(["a17-5g"]);
+    expect(matchCatalog(competitor("FRONTAL A17 4G/5G COM ARO"), [generic, a17FourG, a17FiveG]).candidates.map((xp) => xp.sku).sort()).toEqual(["a17-4g", "a17-5g"]);
+    expect(matchCatalog(competitor("FRONTAL A17 5G COM ARO"), [a17FourG]).candidates).toHaveLength(0);
+    expect(matchCatalog(competitor("FRONTAL A17 5G COM ARO"), [generic]).candidates.map((xp) => xp.sku)).toEqual(["a17-generic"]);
+  });
   it("reconhece ORI e mantém a variante PRO MAX", () => {
     expect(qualityLabel("ORI")).toBe("ORIGINAL");
     const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 12 }];

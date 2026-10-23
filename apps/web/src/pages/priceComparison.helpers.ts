@@ -37,26 +37,37 @@ export function hasFrame(name: string) {
 
 function brand(name: string) {
   const text = normalise(name);
-  const aliases = [/\b(samsung|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\brealme\b/];
+  const aliases = [/\b(samsung|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\b(realme|oppo)\b/];
   return aliases.findIndex((pattern) => pattern.test(text));
 }
 
-const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big".split(" "));
+const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme oppo dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big".split(" "));
 
 export function modelKeys(name: string): string[] {
   const text = normalise(name.replace(/^\d[\w/-]*\s+-\s+/, ""));
   // Read the phone variant before removing commercial quality suffixes such as SELECT MAX.
   const iphone = [...text.matchAll(/\b(?:iphone|ip)\s*(\d{1,2}|xs|xr|x|se)\b(?:\s*(pro max|pro|mini|plus|(?:max)(?=\s|$)))?/g)];
   if (iphone.length) return [...new Set(iphone.map((match) => `iphone${match[1]} ${match[2] ?? ""}`.trim()))];
-  return [...new Set(name.split("/").map((segment) => {
+  const keys: string[] = [];
+  let previousModel = "";
+  for (const segment of name.split("/")) {
     const cleaned = normalise(segment)
       .replace(/\b(premier|select|prime)\s+max\b/g, " ")
       .split(" ").filter((word) => !stopWords.has(word) && !/^\d+hz$/.test(word)).join(" ")
       .replace(/\b([a-z]+)\s+(\d+[a-z]*)\b/g, "$1$2");
     const tokens = cleaned.split(" ").filter(Boolean);
-    // A shared digit is not a model: require a model identifier, retaining CORE / PRO / MAX / 5G.
-    return tokens.some((token) => /\d/.test(token)) ? [...new Set(tokens)].sort().join(" ") : "";
-  }).filter(Boolean))];
+    const networks = tokens.filter((token) => /^(?:4|5)g$/.test(token));
+    const modelTokens = tokens.filter((token) => !/^(?:4|5)g$/.test(token));
+    if (!modelTokens.some((token) => /\d/.test(token))) {
+      if (previousModel && networks.length === 1 && tokens.length === 1) keys.push(`${previousModel} ${networks[0]}`);
+      continue;
+    }
+    const model = [...new Set(modelTokens)].sort().join(" ");
+    previousModel = model;
+    if (networks.length) networks.forEach((network) => keys.push(`${model} ${network}`));
+    else keys.push(model);
+  }
+  return [...new Set(keys)];
 }
 
 type IndexedItem = { item: CatalogItem; brand: number; quality: string | null; frame: boolean };
@@ -82,12 +93,19 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
   const itemQuality = qualityLabel(item.name);
   const frame = hasFrame(item.name);
   const found = new Map<string, IndexedItem>();
-  if (kind !== "Outras peças") {
-    for (const model of modelKeys(item.name)) {
+  const addMatches = (models: string[]) => {
+    for (const model of models) {
       for (const entry of index.get(`${kind}|${model}`) ?? []) {
         if (entry.frame === frame && (itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand)) found.set(entry.item.sku, entry);
       }
     }
+  };
+  if (kind !== "Outras peças") {
+    const models = modelKeys(item.name);
+    addMatches(models);
+    // XP's grouped compatibility records sometimes omit 4G/5G. Use them only
+    // as a fallback; explicit variants are never cross-matched.
+    if (!found.size) addMatches(models.map((model) => model.replace(/\s+[45]g$/, "")));
   }
   const ranked = [...found.values()].sort((a, b) => {
     const targetQuality = qualityFamily(itemQuality);
