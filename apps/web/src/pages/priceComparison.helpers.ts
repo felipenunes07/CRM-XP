@@ -41,7 +41,7 @@ function brand(name: string) {
   return aliases.findIndex((pattern) => pattern.test(text));
 }
 
-const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max".split(" "));
+const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme dr kelai original ori fhd incell in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big".split(" "));
 
 export function modelKeys(name: string): string[] {
   const text = normalise(name.replace(/^\d[\w/-]*\s+-\s+/, ""));
@@ -54,7 +54,7 @@ export function modelKeys(name: string): string[] {
       .split(" ").filter((word) => !stopWords.has(word) && !/^\d+hz$/.test(word)).join(" ")
       .replace(/\b([a-z]+)\s+(\d+[a-z]*)\b/g, "$1$2");
     const tokens = cleaned.split(" ").filter(Boolean);
-    // A shared digit is not a model: require a model identifier, retaining CORE / PRO / 5G.
+    // A shared digit is not a model: require a model identifier, retaining CORE / PRO / MAX / 5G.
     return tokens.some((token) => /\d/.test(token)) ? [...new Set(tokens)].sort().join(" ") : "";
   }).filter(Boolean))];
 }

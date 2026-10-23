@@ -103,6 +103,20 @@ describe("Comparação automática com múltiplas qualidades", () => {
     expect(matchCatalog(competitor("FRONTAL A05 COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0590-1"]);
     expect(matchCatalog(competitor("DR A05S"), catalog).candidates.map((xp) => xp.sku)).toEqual(["1162-1"]);
   });
+  it("trata BIG como nomenclatura interna, sem aproximar CORE, PRO ou MAX", () => {
+    const variants = [
+      { sku: "a01-big", model: "SM-A01 BIG COM ARO", quality: "PREMIER", price: 37, stockQuantity: 8 },
+      { sku: "a03", model: "SM-A03 COM ARO", quality: "PREMIER", price: 40, stockQuantity: 8 },
+      { sku: "a03-core", model: "SM-A03 CORE COM ARO", quality: "PREMIER", price: 41, stockQuantity: 8 },
+      { sku: "ip13", model: "IP-13 COM ARO", quality: "PREMIER", price: 90, stockQuantity: 8 },
+      { sku: "ip13-pro", model: "IP-13 PRO COM ARO", quality: "PREMIER", price: 100, stockQuantity: 8 },
+      { sku: "ip13-pro-max", model: "IP-13 PRO MAX COM ARO", quality: "PREMIER", price: 110, stockQuantity: 8 },
+    ];
+    expect(matchCatalog(competitor("FRONTAL A01 COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["a01-big"]);
+    expect(matchCatalog(competitor("FRONTAL A03 CORE COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["a03-core"]);
+    expect(matchCatalog(competitor("DR IPHONE 13 PRO COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro"]);
+    expect(matchCatalog(competitor("DR IPHONE 13 PRO MAX COM ARO"), variants).candidates.map((xp) => xp.sku)).toEqual(["ip13-pro-max"]);
+  });
   it("reconhece ORI e mantém a variante PRO MAX", () => {
     expect(qualityLabel("ORI")).toBe("ORIGINAL");
     const variants = [...catalog, { sku: "pm", model: "IP-13 PRO MAX MAX [Borda Original] 120Hz", quality: "SELECT MAX", price: 96, stockQuantity: 12 }];
