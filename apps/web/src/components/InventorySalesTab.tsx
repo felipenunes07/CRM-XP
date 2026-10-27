@@ -274,7 +274,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
       if (groupBy === "modelo") {
         const quality = item.quality?.trim() || "Sem qualidade";
         key = JSON.stringify([item.category, item.brand, item.modelLabel, quality]);
-        label = `${item.modelLabel} · Qualidade: ${quality}`;
+        label = `${item.modelLabel} · ${quality}`;
         sublabel = `${categoryLabel(item.category)} · ${item.brand}`;
         category = item.category;
       } else if (groupBy === "marca") {
