@@ -88,6 +88,11 @@
   min-width: 130px;
 }
 
+/* As opcoes carregam depois do relatorio; largura fixa evita que a barra quebre e reposicione filtros. */
+.invsales-control select {
+  width: 160px;
+}
+
 .invsales-control input {
   min-width: 195px;
 }
