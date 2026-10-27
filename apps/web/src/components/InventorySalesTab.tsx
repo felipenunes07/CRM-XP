@@ -179,14 +179,15 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const [factoryFilter, setFactoryFilter] = useState("");
   const [qualityFilter, setQualityFilter] = useState("");
   const [familyFilter, setFamilyFilter] = useState("");
+  const [sellerFilter, setSellerFilter] = useState("");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SalesSortKey>("units");
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(TABLE_PAGE_SIZE);
 
   const reportQuery = useQuery({
-    queryKey: ["inventory-sales-report", appliedRange.dateFrom, appliedRange.dateTo],
-    queryFn: () => api.inventorySalesReport(token!, appliedRange),
+    queryKey: ["inventory-sales-report", appliedRange.dateFrom, appliedRange.dateTo, sellerFilter],
+    queryFn: () => api.inventorySalesReport(token!, { ...appliedRange, seller: sellerFilter || undefined }),
     enabled: Boolean(token),
     staleTime: 5 * 60 * 1000,
     placeholderData: (previousData) => previousData,
@@ -559,6 +560,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     factoryFilter ? { label: `Fábrica: ${factoryFilter}`, clear: () => setFactoryFilter("") } : null,
     qualityFilter ? { label: `Qualidade: ${qualityFilter}`, clear: () => setQualityFilter("") } : null,
     familyFilter ? { label: `Familia: ${familyFilter}`, clear: () => setFamilyFilter("") } : null,
+    sellerFilter ? { label: `Vendedora: ${sellerFilter}`, clear: () => setSellerFilter("") } : null,
   ].filter((crumb): crumb is { label: string; clear: () => void } => Boolean(crumb));
 
   function clearAllFilters() {
@@ -567,6 +569,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     setFactoryFilter("");
     setQualityFilter("");
     setFamilyFilter("");
+    setSellerFilter("");
     setSearch("");
     resetPagination();
   }
@@ -806,6 +809,24 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               {filterOptions.factories.map((factory) => (
                 <option key={factory} value={factory}>
                   {factory}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="invsales-control">
+            <span className="invsales-control-label">Vendedora</span>
+            <select
+              value={sellerFilter}
+              onChange={(event) => {
+                setSellerFilter(event.target.value);
+                resetPagination();
+              }}
+            >
+              <option value="">Todas</option>
+              {(report?.filters.sellers ?? []).map((seller) => (
+                <option key={seller} value={seller}>
+                  {seller}
                 </option>
               ))}
             </select>

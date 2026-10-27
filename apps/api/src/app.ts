@@ -555,6 +555,7 @@ const inventorySalesReportQuerySchema = z
   .object({
     dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    seller: z.string().trim().min(1).optional(),
   })
   .refine((value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo, {
     message: "A data inicial deve ser anterior ou igual a data final.",
