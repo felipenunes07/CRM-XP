@@ -1523,6 +1523,7 @@ export interface InventorySalesReportResponse {
     factories: Array<"XP" | "VV" | "DE" | "BATERIA">;
     families: string[];
     qualities: string[];
+    sellers?: string[];
   };
 }
 

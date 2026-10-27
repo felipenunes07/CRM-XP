@@ -804,7 +804,7 @@ export const api = {
   inventoryStale(token: string) {
     return request<InventoryStaleResponse>("/api/inventory/stale", {}, token);
   },
-  inventorySalesReport(token: string, filters: { dateFrom: string; dateTo: string }) {
+  inventorySalesReport(token: string, filters: { dateFrom: string; dateTo: string; seller?: string }) {
     const search = new URLSearchParams(filters);
     return request<InventorySalesReportResponse>(`/api/inventory/sales-report?${search.toString()}`, {}, token);
   },

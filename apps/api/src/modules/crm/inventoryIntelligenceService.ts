@@ -3265,7 +3265,14 @@ interface InventoryMonthlySalesRow {
   description: string | null;
 }
 
-async function loadMonthlySalesRows(dateFrom: string, dateTo: string) {
+function salesSellerScope(seller: string | undefined, parameterIndex: number) {
+  return seller
+    ? { sql: `AND LOWER(BTRIM(COALESCE(o.last_attendant, ''))) = LOWER($${parameterIndex})`, params: [seller] }
+    : { sql: "", params: [] as string[] };
+}
+
+async function loadMonthlySalesRows(dateFrom: string, dateTo: string, seller?: string) {
+  const sellerScope = salesSellerScope(seller, 3);
   const result = await pool.query<InventoryMonthlySalesRow>(
     `
       SELECT
@@ -3280,11 +3287,12 @@ async function loadMonthlySalesRows(dateFrom: string, dateTo: string) {
       JOIN orders o ON o.id = oi.order_id
       WHERE o.order_date >= $1::date
         AND o.order_date < $2::date + INTERVAL '1 day'
+        ${sellerScope.sql}
         AND oi.sku IS NOT NULL
         AND oi.sku <> ''
       GROUP BY oi.sku, to_char(date_trunc('month', o.order_date), 'YYYY-MM')
     `,
-    [dateFrom, dateTo],
+    [dateFrom, dateTo, ...sellerScope.params],
   );
 
   return result.rows;
@@ -3297,7 +3305,8 @@ interface InventoryPreviousSalesRow {
   description: string | null;
 }
 
-async function loadPreviousSalesRows(dateFrom: string, dateTo: string) {
+async function loadPreviousSalesRows(dateFrom: string, dateTo: string, seller?: string) {
+  const sellerScope = salesSellerScope(seller, 3);
   const result = await pool.query<InventoryPreviousSalesRow>(
     `
       SELECT
@@ -3309,24 +3318,43 @@ async function loadPreviousSalesRows(dateFrom: string, dateTo: string) {
       JOIN orders o ON o.id = oi.order_id
       WHERE o.order_date >= $1::date
         AND o.order_date < $2::date + INTERVAL '1 day'
+        ${sellerScope.sql}
         AND oi.sku IS NOT NULL
         AND oi.sku <> ''
       GROUP BY oi.sku
     `,
-    [dateFrom, dateTo],
+    [dateFrom, dateTo, ...sellerScope.params],
   );
 
   return result.rows;
 }
 
+async function loadSalesReportSellers(dateFrom: string, dateTo: string) {
+  const result = await pool.query<{ seller: string }>(
+    `
+      SELECT DISTINCT ON (LOWER(BTRIM(o.last_attendant))) BTRIM(o.last_attendant) AS seller
+      FROM orders o
+      WHERE o.order_date >= $1::date
+        AND o.order_date < $2::date + INTERVAL '1 day'
+        AND NULLIF(BTRIM(o.last_attendant), '') IS NOT NULL
+      ORDER BY LOWER(BTRIM(o.last_attendant)), BTRIM(o.last_attendant)
+    `,
+    [dateFrom, dateTo],
+  );
+
+  return result.rows.map((row) => row.seller);
+}
+
 export async function getInventorySalesReport(
-  filters: { dateFrom?: string; dateTo?: string } = {},
+  filters: { dateFrom?: string; dateTo?: string; seller?: string } = {},
 ): Promise<InventorySalesReportResponse> {
   const period = resolveSalesReportPeriod(filters);
-  const [{ snapshot, items: snapshotItems }, salesRows, previousSalesRows] = await Promise.all([
+  const seller = filters.seller?.trim() || undefined;
+  const [{ snapshot, items: snapshotItems }, salesRows, previousSalesRows, sellers] = await Promise.all([
     getInventorySnapshotWithItems(),
-    loadMonthlySalesRows(period.dateFrom, period.dateTo),
-    loadPreviousSalesRows(period.previousDateFrom, period.previousDateTo),
+    loadMonthlySalesRows(period.dateFrom, period.dateTo, seller),
+    loadPreviousSalesRows(period.previousDateFrom, period.previousDateTo, seller),
+    loadSalesReportSellers(period.dateFrom, period.dateTo),
   ]);
 
   const months = buildSalesReportMonths(period.dateFrom, period.dateTo);
@@ -3459,6 +3487,7 @@ export async function getInventorySalesReport(
       factories: sortUnique(items.map((item) => item.factory)) as Array<"XP" | "VV" | "DE" | "BATERIA">,
       families: sortUnique(items.map((item) => item.family)),
       qualities: sortUnique(items.map((item) => item.quality ?? "SEM QUALIDADE")),
+      sellers,
     },
   };
 }
