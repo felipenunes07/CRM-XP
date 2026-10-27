@@ -1,3 +1,5 @@
+import type { InventorySalesReportItem } from "@olist-crm/shared";
+
 export interface InventorySalesExportGroup {
   label: string;
   units: number;
@@ -33,14 +35,18 @@ function localDateTime(value: Date) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(value);
 }
 
-export async function exportInventorySalesWorkbook({
+export async function buildInventorySalesWorkbook({
   groups,
+  items,
+  months,
   groupLabel,
   dateFrom,
   dateTo,
   filters,
 }: {
   groups: InventorySalesExportGroup[];
+  items: InventorySalesReportItem[];
+  months: string[];
   groupLabel: string;
   dateFrom: string;
   dateTo: string;
@@ -72,11 +78,33 @@ export async function exportInventorySalesWorkbook({
   }
   XLSX.utils.book_append_sheet(workbook, sheet, "Vendas");
 
+  const detailRows = [...items].sort((a, b) => b.totalUnits - a.totalUnits).map((item) => [
+    item.sku, item.modelLabel, item.brand, item.factory, item.category, item.family,
+    item.quality ?? "", item.color ?? "", item.totalUnits, item.totalRevenue,
+    item.totalUnits > 0 ? item.totalRevenue / item.totalUnits : null,
+    item.stockUnits, item.lastSaleAt ?? "", ...item.monthlyUnits, ...item.monthlyRevenue,
+  ]);
+  const detailSheet = XLSX.utils.aoa_to_sheet([
+    ["SKU", "Modelo", "Marca", "Fábrica", "Tipo", "Família", "Qualidade", "Cor", "Peças vendidas", "Faturamento", "Preço médio", "Estoque hoje", "Última venda", ...months.map((month) => `Peças ${month}`), ...months.map((month) => `Faturamento ${month}`)],
+    ...detailRows,
+  ]);
+  const lastColumn = XLSX.utils.encode_col(12 + months.length * 2);
+  detailSheet["!autofilter"] = { ref: `A1:${lastColumn}${detailRows.length + 1}` };
+  detailSheet["!cols"] = [{ wch: 18 }, { wch: 40 }, ...Array.from({ length: 11 }, () => ({ wch: 18 }))];
+  for (let rowIndex = 2; rowIndex <= detailRows.length + 1; rowIndex += 1) {
+    for (const columnIndex of [9, 10, ...months.map((_, index) => 13 + months.length + index)]) {
+      const cell = detailSheet[`${XLSX.utils.encode_col(columnIndex)}${rowIndex}`];
+      if (cell) cell.z = 'R$ #,##0.00;[Red]-R$ #,##0.00';
+    }
+  }
+  XLSX.utils.book_append_sheet(workbook, detailSheet, "Detalhes por SKU");
+
   const infoSheet = XLSX.utils.aoa_to_sheet([
     ["Relatório", `Vendas por ${groupLabel.toLowerCase()}`],
     ["Período", `${dateFrom} a ${dateTo}`],
     ["Gerado em", localDateTime(new Date())],
     ["Linhas exportadas", groups.length],
+    ["SKUs detalhados", items.length],
     [],
     ["Filtros aplicados", "Valor"],
     ...filters,
@@ -84,7 +112,13 @@ export async function exportInventorySalesWorkbook({
   infoSheet["!cols"] = [{ wch: 24 }, { wch: 48 }];
   XLSX.utils.book_append_sheet(workbook, infoSheet, "Informações");
 
-  XLSX.writeFile(workbook, `vendas_por_${groupLabel.toLowerCase()}_${dateFrom}_a_${dateTo}.xlsx`, {
+  return workbook;
+}
+
+export async function exportInventorySalesWorkbook(options: Parameters<typeof buildInventorySalesWorkbook>[0]) {
+  const XLSX = await import("xlsx");
+  const workbook = await buildInventorySalesWorkbook(options);
+  XLSX.writeFile(workbook, `vendas_por_${options.groupLabel.toLowerCase()}_${options.dateFrom}_a_${options.dateTo}.xlsx`, {
     compression: true,
   });
 }

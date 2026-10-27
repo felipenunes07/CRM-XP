@@ -11,6 +11,25 @@ describe("api request timeouts", () => {
     vi.unstubAllGlobals();
   });
 
+  it("consulta todas as vendedoras sem enviar seller=undefined e filtra uma vendedora quando selecionada", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request) => new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const period = { dateFrom: "2026-10-07", dateTo: "2026-10-26" };
+
+    await api.inventorySalesReport("token-1", { ...period, seller: undefined });
+    await api.inventorySalesReport("token-1", { ...period, seller: "Amanda" });
+    await api.inventorySalesReport("token-1", { ...period, seller: "" });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/inventory/sales-report?dateFrom=2026-10-07&dateTo=2026-10-26",
+      "/api/inventory/sales-report?dateFrom=2026-10-07&dateTo=2026-10-26&seller=Amanda",
+      "/api/inventory/sales-report?dateFrom=2026-10-07&dateTo=2026-10-26",
+    ]);
+  });
+
   it("aborts requests that never resolve", async () => {
     const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
       return new Promise<Response>((_resolve, reject) => {
