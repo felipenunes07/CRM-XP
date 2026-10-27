@@ -34,7 +34,6 @@ type SalesSortKey = "units" | "revenue" | "avgPrice" | "stock" | "lastSale";
 const CHART_COLORS = ["#2956d7", "#d09a29", "#2f9d67", "#7c3aed", "#c2410c"];
 const OTHERS_COLOR = "#94a3b8";
 const GRID_STROKE = "rgba(23, 50, 96, 0.08)";
-const TABLE_PAGE_SIZE = 40;
 
 /* Cor fixa por tipo (a cor segue a entidade, nao o rank) */
 const CATEGORY_COLORS: Record<InventorySalesCategory, string> = {
@@ -173,7 +172,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const [customDateFrom, setCustomDateFrom] = useState(appliedRange.dateFrom);
   const [customDateTo, setCustomDateTo] = useState(appliedRange.dateTo);
   const [metric, setMetric] = useState<SalesMetric>("units");
-  const [groupBy, setGroupBy] = useState<SalesGroupBy>("marca");
+  const [groupBy, setGroupBy] = useState<SalesGroupBy>("modelo");
   const [categoryFilter, setCategoryFilter] = useState<SalesCategoryFilter>("all");
   const [brandFilter, setBrandFilter] = useState("");
   const [factoryFilter, setFactoryFilter] = useState("");
@@ -182,8 +181,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const [sellerFilter, setSellerFilter] = useState("");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SalesSortKey>("units");
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(TABLE_PAGE_SIZE);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const reportQuery = useQuery({
     queryKey: ["inventory-sales-report", appliedRange.dateFrom, appliedRange.dateTo, sellerFilter],
@@ -202,8 +200,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
   const groupLabel = groupByOptions.find((option) => option.value === groupBy)?.label ?? "Grupo";
 
   function resetPagination() {
-    setVisibleCount(TABLE_PAGE_SIZE);
-    setExpandedGroup(null);
+    setCollapsedGroups(new Set());
   }
 
   const categoryTotals = useMemo(() => {
@@ -548,7 +545,12 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
       setFamilyFilter(group.key);
       setGroupBy("modelo");
     } else {
-      setExpandedGroup((current) => (current === key ? null : key));
+      setCollapsedGroups((current) => {
+        const next = new Set(current);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
       return;
     }
     resetPagination();
@@ -585,7 +587,6 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
     return <section className="panel invsales-empty">Nao consegui carregar o relatorio de vendas agora.</section>;
   }
 
-  const visibleGroups = sortedGroups.slice(0, visibleCount);
   const periodCompareLabel = "periodo anterior equivalente";
   const windowRangeLabel = `${formatDate(report.period.dateFrom)} a ${formatDate(report.period.dateTo)}`;
   const todayInput = formatLocalDateInput(new Date());
@@ -1075,7 +1076,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
             <h3>Todos os {groupLabel.toLowerCase()}s do recorte</h3>
             <p className="invsales-section-sub">
               {groupBy === "modelo"
-                ? "Clique numa linha para abrir os SKUs do modelo (cor e qualidade) com atalho para a analise completa."
+                ? "Os SKUs estão abertos por modelo. Clique numa linha para recolher ou abrir novamente."
                 : "Clique numa linha para mergulhar nos modelos desse grupo."}{" "}
               Clique nos titulos das colunas para reordenar.
             </p>
@@ -1083,9 +1084,12 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
           <button
             type="button"
             className="ghost-button"
+            disabled={reportQuery.isFetching || reportQuery.isError}
             onClick={() =>
               void exportInventorySalesWorkbook({
                 groups: sortedGroups,
+                items: filteredItems,
+                months,
                 groupLabel,
                 dateFrom: report.period.dateFrom,
                 dateTo: report.period.dateTo,
@@ -1096,6 +1100,7 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
                   ["Qualidade", qualityFilter || "Todas"],
                   ["Fábrica", factoryFilter || "Todas"],
                   ["Família", familyFilter || "Todas"],
+                  ["Vendedora", sellerFilter || "Todas"],
                   ["Busca", search.trim() || "Nenhuma"],
                 ],
               })
@@ -1162,13 +1167,13 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
               </tr>
             </thead>
             <tbody>
-              {visibleGroups.map((group, index) => (
+              {sortedGroups.map((group, index) => (
                 <SalesGroupRows
                   key={group.key}
                   group={group}
                   rank={index + 1}
                   share={totals.units > 0 ? (group.units / totals.units) * 100 : 0}
-                  isExpanded={expandedGroup === group.key}
+                  isExpanded={groupBy === "modelo" && !collapsedGroups.has(group.key)}
                   groupBy={groupBy}
                   windowStart={windowStart}
                   onToggle={() => drillInto(group.key)}
@@ -1178,19 +1183,6 @@ export function InventorySalesTab({ onOpenModel }: { onOpenModel: (modelKey: str
             </tbody>
           </table>
         </div>
-
-        {sortedGroups.length > visibleCount ? (
-          <div className="invsales-table-foot">
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => setVisibleCount((current) => current + TABLE_PAGE_SIZE)}
-            >
-              Mostrar mais {formatNumber(Math.min(TABLE_PAGE_SIZE, sortedGroups.length - visibleCount))} de{" "}
-              {formatNumber(sortedGroups.length - visibleCount)} restantes
-            </button>
-          </div>
-        ) : null}
 
         {!sortedGroups.length ? <div className="invsales-empty">Nada bateu com esse filtro.</div> : null}
       </section>
