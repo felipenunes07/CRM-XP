@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as XLSX from "xlsx";
 import { parseSheet, PriceComparisonPage, PriceComparisonRows } from "./PriceComparisonPage";
-import { indexCatalog, matchCatalog, missingReason, partKind, qualityLabel, type CatalogItem } from "./priceComparison.helpers";
+import { compareCatalogItem, comparisonNote, indexCatalog, matchCatalog, missingReason, modelKeys, partKind, qualityLabel, type CatalogItem } from "./priceComparison.helpers";
 
 vi.mock("../hooks/useAuth", () => ({ useAuth: () => ({ token: "test" }) }));
-vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: { items: [] }, isLoading: false }) }));
+vi.mock("@tanstack/react-query", () => ({ useQuery: () => ({ data: { items: [] }, isLoading: false }), useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 
 function spreadsheet(rows: unknown[][]) {
   const book = XLSX.utils.book_new();
@@ -57,6 +57,46 @@ describe("Equivalência de peças", () => {
   ];
   const item = (name: string) => ({ id: "1", code: "", name, price: 33 });
 
+  it("encontra A01 e A01 Core com aro quando o fornecedor não informa o aro", () => {
+    const stock = [
+      { sku: "0669-1", model: "SM-A01 BIG * COM ARO *", quality: "LCD", price: 40, stockQuantity: 430 },
+      { sku: "0647-1", model: "SM-A01 CORE * COM ARO *", quality: "LCD", price: 41, stockQuantity: 184 },
+    ];
+    expect(matchCatalog(item("FRONTAL A01"), stock).candidates.map((xp) => xp.sku)).toEqual(["0669-1"]);
+    expect(matchCatalog(item("FRONTAL A01 CORE"), stock).candidates.map((xp) => xp.sku)).toEqual(["0647-1"]);
+    expect(matchCatalog(item("FRONTAL A01 SEM ARO"), stock).candidates).toEqual([]);
+    expect(comparisonNote(item("FRONTAL A01"), stock[0]!)).toContain("Aro do fornecedor não informado");
+  });
+
+  it("distingue equivalente sem estoque de produto sem vínculo", () => {
+    const stock = [{ sku: "01", model: "SM-A01", quality: "LCD", price: 40, stockQuantity: 0 }];
+    const row = compareCatalogItem(item("FRONTAL A01"), indexCatalog(stock), indexCatalog(stock, false));
+    expect(row.totalCandidates).toBe(1);
+    expect(row.candidates).toEqual([]);
+    expect(row.missingReason).toBe("out-of-stock");
+    expect(compareCatalogItem(item("FRONTAL A01 CORE"), indexCatalog(stock), indexCatalog(stock, false)).totalCandidates).toBe(0);
+  });
+
+  it("lê LG, Zenfone, Moto One, 6S e 7G PLUS sem inventar modelos de números de qualidade", () => {
+    expect(modelKeys("LG-K40S PREMIER")).toEqual(modelKeys("FRONTAL K40S"));
+    expect(modelKeys("ZF-ZB634KL")).toEqual(modelKeys("FRONTAL ZENFONE ZB634KL"));
+    expect(modelKeys("MT-ONE FUSION PLUS")).toEqual(modelKeys("FRONTAL MOTO ONE FUSION PLUS"));
+    expect(modelKeys("IP-6S")).toEqual(["iphone6s"]);
+    expect(modelKeys("FRONTAL IPHONE 7G PLUS")).toEqual(["iphone7 plus"]);
+    expect(modelKeys("IP14PROMAX OLED SOFT 1:1 ORIGINAL")).toEqual(["iphone14 pro max"]);
+    expect(modelKeys("IP-12/12 PRO")).toEqual(["iphone12", "iphone12 pro"]);
+  });
+
+  it("impede colisões entre Infinix Note 12, Redmi Note 12 e Nokia C21/Realme C21", () => {
+    const stock = [
+      { sku: "redmi", model: "MI-NOTE 12 4G/NOTE 12 5G", quality: "LCD", price: 40, stockQuantity: 4 },
+      { sku: "nokia", model: "NOKIA C10/C20/C21", quality: "LCD", price: 40, stockQuantity: 4 },
+    ];
+    expect(matchCatalog(item("FRONTAL INFINIX NOTE 12"), stock).candidates).toEqual([]);
+    expect(matchCatalog(item("FRONTAL REALME C21"), stock).candidates).toEqual([]);
+    expect(matchCatalog(item("FRONTAL REDMI NOTE 12"), stock).candidates.map((xp) => xp.sku)).toEqual(["redmi"]);
+  });
+
   it("nunca sugere dock para frontal nem frontal para doc", () => {
     expect(matchCatalog(item("FRONTAL A01 PREMIER"), catalog).candidates.map((xp) => xp.sku)).toEqual(["screen", "oled"]);
     for (const name of ["DOC A01 PREMIER", "DOC DE CARGA A01 PREMIER", "DOCK A01 PREMIER"]) {
@@ -99,7 +139,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
     expect(result.candidates.map((xp) => xp.sku)).toEqual(["1173-1", "CX275-1"]);
   });
   it("separa aro e linha de qualidade do modelo A05 e mantém A05S independente", () => {
-    expect(matchCatalog(competitor("FRONTAL A05"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0542-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05 SEM ARO"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0542-1"]);
     expect(matchCatalog(competitor("FRONTAL A05 COM ARO VIVID"), catalog).candidates.map((xp) => xp.sku)).toEqual(["0590-1"]);
     expect(matchCatalog(competitor("DR A05S"), catalog).candidates.map((xp) => xp.sku)).toEqual(["1162-1"]);
   });
@@ -142,7 +182,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
       { sku: "brand", model: "REALME A03", quality: "LCD", price: 30, stockQuantity: 2 },
     ], false);
     expect(missingReason(competitor("FRONTAL A01"), catalog)).toBe("out-of-stock");
-    expect(missingReason(competitor("FRONTAL A02"), catalog)).toBe("frame");
+    expect(missingReason(competitor("FRONTAL A02 SEM ARO"), catalog)).toBe("frame");
     expect(missingReason(competitor("FRONTAL SAMSUNG A03"), catalog)).toBe("brand");
     expect(missingReason(competitor("FRONTAL A04"), catalog)).toBe("model");
   });
@@ -173,7 +213,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
     expect(matchCatalog(competitor("FRONTAL IPHONE 13 ORIGINAL SOFT"), variants).candidates.map((xp) => xp.sku)).toEqual(["soft", "lcd"]);
   });
   it("compara modelos compatíveis listados com barra sem ampliar para modelos vizinhos", () => {
-    expect(matchCatalog(competitor("DR A05/A05S"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "1162-1"]);
+    expect(matchCatalog(competitor("DR A05/A05S SEM ARO"), catalog).candidates.map((xp) => xp.sku).sort()).toEqual(["0542-1", "1162-1"]);
   });
   it("renderiza todas as qualidades e diferenças diretamente, sem seletor de mapeamento", () => {
     const item = competitor("DR IPHONE 13 ORIGINAL");
@@ -191,7 +231,7 @@ describe("Comparação automática com múltiplas qualidades", () => {
   });
 
   it("exclui estoque zero ou negativo mesmo quando a qualidade seria idêntica", () => {
-    const result = matchCatalog(competitor("FRONTAL A05 PREMIER"), [
+    const result = matchCatalog(competitor("FRONTAL A05 SEM ARO PREMIER"), [
       ...catalog,
       { sku: "zero", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: 0 },
       { sku: "negative", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: -2 },
@@ -201,12 +241,12 @@ describe("Comparação automática com múltiplas qualidades", () => {
 
   it("inclui peças sem estoque quando o filtro de estoque é desligado", () => {
     const variants = [...catalog, { sku: "zero", model: "SM-A05 PREMIER", quality: "PREMIER", price: 10, stockQuantity: 0 }];
-    expect(matchCatalog(competitor("FRONTAL A05 PREMIER"), indexCatalog(variants, false)).candidates.map((xp) => xp.sku)).toEqual(["zero", "0542-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05 SEM ARO PREMIER"), indexCatalog(variants, false)).candidates.map((xp) => xp.sku)).toEqual(["zero", "0542-1"]);
   });
 
   it("mostra a qualidade mais semelhante primeiro, acima de uma qualidade mais barata", () => {
     const variants = [...catalog, { sku: "same-grade", model: "SM-A05 PREMIER", quality: "PREMIER", price: 99, stockQuantity: 1 }];
-    expect(matchCatalog(competitor("FRONTAL A05 PREMIER"), variants).candidates.map((xp) => xp.sku)).toEqual(["same-grade", "0542-1"]);
+    expect(matchCatalog(competitor("FRONTAL A05 SEM ARO PREMIER"), variants).candidates.map((xp) => xp.sku)).toEqual(["same-grade", "0542-1"]);
   });
 
   it("identifica com aro e sem aro e impede opções incompatíveis também na renderização", () => {

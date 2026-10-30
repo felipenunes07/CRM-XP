@@ -1,3 +1,4 @@
+import { supplierPriceSchema } from "./supplierPriceSchema.js";
 export const migrations = [
   `
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -4904,4 +4905,5 @@ export const migrations = [
   CREATE INDEX dashboard_monthly_customer_item_metrics_customer_month_idx
     ON dashboard_monthly_customer_item_metrics (customer_code, year, month);
   `,
+  supplierPriceSchema,
 ];

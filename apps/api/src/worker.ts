@@ -19,6 +19,7 @@ import { startPrimarySyncScheduler } from "./modules/platform/syncService.js";
 import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertService.js";
 import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js";
 import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationService.js";
+import { startSupplierPriceScheduler } from "./modules/crm/supplierPriceService.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -33,6 +34,7 @@ async function main() {
   const intervals: NodeJS.Timeout[] = [];
   const folderWatchers: DropboxFolderWatcher[] = [];
   const recurringJobs: RecurringJobHandle[] = [];
+  recurringJobs.push(startSupplierPriceScheduler());
 
   // 1. Primary sales sync
   recurringJobs.push(
