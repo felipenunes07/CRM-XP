@@ -3268,3 +3268,4 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
     "changelog.view",
   ],
 };
+export * from "./supplierPrices.js";

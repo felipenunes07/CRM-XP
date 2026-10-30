@@ -1,4 +1,5 @@
 import type {
+  PriceSupplier, PriceSnapshot, PriceSnapshotSummary,
   AcquisitionMetrics,
   AmbassadorResponse,
   AgendaResponse,
@@ -783,6 +784,30 @@ export const api = {
       {},
       token,
     );
+  },
+  priceSuppliers(token: string) {
+    return request<{ suppliers: PriceSupplier[] }>("/api/price-suppliers", {}, token, false);
+  },
+  createPriceSupplier(token: string, name: string) {
+    return request<{ id: string }>("/api/price-suppliers", { method: "POST", body: JSON.stringify({ name }) }, token);
+  },
+  priceSnapshots(token: string, supplierId: string) {
+    return request<{ snapshots: PriceSnapshotSummary[] }>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/snapshots`, {}, token, false);
+  },
+  priceSnapshot(token: string, supplierId: string, snapshotId: string) {
+    return request<PriceSnapshot>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/snapshots/${encodeURIComponent(snapshotId)}`, {}, token, false);
+  },
+  importPriceSnapshot(token: string, supplierId: string, fileName: string, base64: string) {
+    return request<{ id: string }>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/snapshots`, { method: "POST", body: JSON.stringify({ fileName, base64 }) }, token, false, 120_000);
+  },
+  syncPriceSupplier(token: string, supplierId: string) {
+    return request<{ id: string }>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/sync`, { method: "POST" }, token, false, 300_000);
+  },
+  downloadPriceSnapshot(token: string, supplierId: string, snapshotId: string) {
+    return request<{ fileName: string; base64: string }>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/snapshots/${encodeURIComponent(snapshotId)}/download`, {}, token, false);
+  },
+  supplierProductHistory(token: string, supplierId: string, code: string, name: string) {
+    return request<{ points: Array<{ snapshotId: string; capturedAt: string; fileName: string; code: string; name: string; price: number }> }>(`/api/price-suppliers/${encodeURIComponent(supplierId)}/product-history?${new URLSearchParams({ code, name })}`, {}, token, false);
   },
   inventoryIntelligence(
     token: string,

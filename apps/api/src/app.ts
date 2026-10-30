@@ -56,6 +56,7 @@ import {
   getInventoryStale,
 } from "./modules/crm/inventoryIntelligenceService.js";
 import { getInventoryPriceCatalog, getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
+import { createPriceSupplier, downloadPriceSnapshot, getPriceSnapshot, getSupplierProductHistory, importPriceSnapshot, listPriceSnapshots, listPriceSuppliers, syncPriceSupplier } from "./modules/crm/supplierPriceService.js";
 import { getCrossSellStrategy } from "./modules/crm/strategyCrossSellService.js";
 import { getSlowMovingStrategy } from "./modules/crm/strategySlowMovingService.js";
 import { getCustomerCreditOpportunities, getCustomerOpportunity } from "./modules/crm/opportunityService.js";
@@ -1598,6 +1599,40 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  app.get("/api/price-suppliers", requirePermission("reports.inventory.view"), async (_request, response, next) => {
+    try { response.json({ suppliers: await listPriceSuppliers() }); } catch (error) { next(error); }
+  });
+  app.post("/api/price-suppliers", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try {
+      const { name } = z.object({ name: z.string().trim().min(1).max(50) }).parse(request.body);
+      response.status(201).json(await createPriceSupplier(name));
+    } catch (error) { next(error); }
+  });
+  app.get("/api/price-suppliers/:supplierId/snapshots", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try { response.json({ snapshots: await listPriceSnapshots(String(request.params.supplierId)) }); } catch (error) { next(error); }
+  });
+  app.post("/api/price-suppliers/:supplierId/snapshots", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try {
+      const input = z.object({ fileName: z.string().min(1).max(255), base64: z.string().min(1).max(28_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).parse(request.body);
+      response.status(201).json(await importPriceSnapshot(String(request.params.supplierId), input.fileName, input.base64, request.user?.id));
+    } catch (error) { next(error); }
+  });
+  app.get("/api/price-suppliers/:supplierId/snapshots/:snapshotId", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try { response.json(await getPriceSnapshot(String(request.params.supplierId), z.string().uuid().parse(request.params.snapshotId))); } catch (error) { next(error); }
+  });
+  app.get("/api/price-suppliers/:supplierId/snapshots/:snapshotId/download", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try { response.json(await downloadPriceSnapshot(String(request.params.supplierId), z.string().uuid().parse(request.params.snapshotId))); } catch (error) { next(error); }
+  });
+  app.get("/api/price-suppliers/:supplierId/product-history", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try {
+      const { code, name } = z.object({ code: z.string().max(500).default(""), name: z.string().max(2000).default("") }).parse(request.query);
+      response.json({ points: await getSupplierProductHistory(String(request.params.supplierId), code, name) });
+    } catch (error) { next(error); }
+  });
+  app.post("/api/price-suppliers/:supplierId/sync", requirePermission("reports.inventory.view"), async (request, response, next) => {
+    try { response.json(await syncPriceSupplier(String(request.params.supplierId), request.user?.id)); } catch (error) { next(error); }
   });
 
   app.get("/api/inventory/intelligence", async (request, response, next) => {

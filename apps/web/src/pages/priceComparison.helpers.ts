@@ -35,31 +35,51 @@ export function hasFrame(name: string) {
   return /\bcom aro\b/.test(normalise(name));
 }
 
+export function supplierFrame(name: string): boolean | null {
+  if (hasFrame(name)) return true;
+  return /\bsem aro\b/.test(normalise(name)) ? false : null;
+}
+
+export function compatibleFrame(name: string, model: string) {
+  const frame = supplierFrame(name);
+  return frame === null || frame === hasFrame(model);
+}
+
 function brand(name: string) {
   const text = normalise(name);
-  const aliases = [/\b(samsung|sam|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\b(realme|oppo)\b/];
+  const aliases = [/\b(samsung|sam|sm)\b/, /\b(motorola|moto|mt)\b/, /\b(xiaomi|redmi|mi|poco)\b/, /\b(iphone|ip|apple)\s*\d*\b/, /\bhuawei\b/, /\b(realme|oppo)\b/, /\blg\b/, /\binfinix\b/, /\bnokia\b/, /\b(asus|zenfone|zf)\b/];
   return aliases.findIndex((pattern) => pattern.test(text));
 }
 
 const stopWords = new Set("frontal tela display screen lcd doc dock de carga conector placa flex bateria battery bat samsung sam sm motorola moto mt xiaomi mi redmi iphone ip apple huawei realme oppo dr kelai original origina originao ori fhd incell incelll in cell prime premier select oled amoled ips service pack copy com sem troca ci aro preto branco azul cinza dourado dourodo rosa roxo vermelha vermelho verde prata destaque nacional premium qualidade touch compativel para vivid jk dd soft hard cof borda hz outlet yk max big grande grange menor".split(" "));
 
 export function modelKeys(name: string): string[] {
-  const modelName = name.replace(/\[[^\]]*\]/g, " ");
-  const text = normalise(modelName.replace(/^\d[\w/-]*\s+-\s+/, ""));
+  const modelName = name.replace(/\[[^\]]*\]/g, " ").replace(/\\/g, "/").replace(/\b1\s*:\s*1\b/g, " ");
+  const text = normalise(modelName.replace(/^\d[\w/-]*\s+-\s+/, "")).replace(/\b(ip|iphone)(?=\d|x\b|xs\b|xr\b|se\b)/g, "$1 ");
   // Read the phone variant before removing commercial quality suffixes such as SELECT MAX.
-  const iphone = [...text.matchAll(/\b(?:iphone|ip)\s*(\d{1,2}|xs|xr|x|se)\b(?:\s*(pro max|pro|mini|plus|(?:max)(?=\s|$)))?/g)];
-  if (iphone.length) return [...new Set(iphone.map((match) => `iphone${match[1]} ${match[2] ?? ""}`.trim()))];
+  if (/\b(?:iphone|ip)\b/.test(text)) {
+    const segments = modelName.split("/");
+    return [...new Set(segments.flatMap((segment, index) => {
+      const cleaned = normalise(segment).replace(/\b(ip|iphone)(?=\d|x\b|xs\b|xr\b|se\b)/g, "$1 ");
+      const start = (index === 0 ? cleaned.replace(/^.*?\b(?:iphone|ip)\s*/, "") : cleaned).replace(/^(?:(?:iphone|ip)\s*)+/, "");
+      const match = start.match(/^(\d{1,2}[se]?|xs|xr|x|se)(?:g)?(?:\s*(pro\s*max|pro|mini|plus|max))?(?=\s|$)/);
+      return match ? [`iphone${match[1]} ${(match[2] ?? "").replace(/pro\s*max/, "pro max")}`.trim()] : [];
+    }))];
+  }
   const keys: string[] = [];
   let previousModel = "";
   for (const segment of modelName.split("/")) {
     const cleaned = normalise(segment)
+      .replace(/(\d)(core|pro|max|plus|ultra|lite|play|power|fusion)\b/g, "$1 $2")
       .replace(/\b(premier|select|prime)\s+max\b/g, " ")
+      .replace(/\b(lg|infinix|nokia|asus|zenfone|zf|realmi|diamonds|diamond|master|prteo|vremlha|tled|incel|biometria|biomenteria|fuciona|funciona|maior)\b/g, " ")
+      .replace(/\b(s\d+)\s+fe\b/g, "$1fe")
       .split(" ").filter((word) => !stopWords.has(word) && !/^\d+hz$/.test(word)).join(" ")
       .replace(/\b([a-z]+)\s+(\d+[a-z]*)\b/g, "$1$2");
     const tokens = cleaned.split(" ").filter(Boolean);
     const networks = tokens.filter((token) => /^(?:4|5)g$/.test(token));
     const modelTokens = tokens.filter((token) => !/^(?:4|5)g$/.test(token));
-    if (!modelTokens.some((token) => /\d/.test(token))) {
+    if (!modelTokens.some((token) => /\d/.test(token)) && !/\b(one|edge|z)\b/.test(modelTokens.join(" "))) {
       if (previousModel && networks.length === 1 && tokens.length === 1) keys.push(`${previousModel} ${networks[0]}`);
       continue;
     }
@@ -82,6 +102,12 @@ export function indexCatalog(catalog: CatalogItem[], inStockOnly = true) {
       const group = index.get(key) ?? [];
       group.push(entry);
       index.set(key, group);
+      if (/\s[45]g$/.test(model)) {
+        const variantKey = `${partKind(item.model, true)}|${model.replace(/\s[45]g$/, "")}|network-unspecified`;
+        const variants = index.get(variantKey) ?? [];
+        variants.push(entry);
+        index.set(variantKey, variants);
+      }
     }
   }
   return index;
@@ -92,12 +118,13 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
   const index = Array.isArray(catalog) ? indexCatalog(catalog) : catalog;
   const itemBrand = brand(item.name);
   const itemQuality = qualityLabel(item.name);
-  const frame = hasFrame(item.name);
+  const frame = supplierFrame(item.name);
   const found = new Map<string, IndexedItem>();
-  const addMatches = (models: string[]) => {
+  const addMatches = (models: string[], includeVariants = true) => {
     for (const model of models) {
-      for (const entry of index.get(`${kind}|${model}`) ?? []) {
-        if (entry.frame === frame && (itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand)) found.set(entry.item.sku, entry);
+      const entries = [...index.get(`${kind}|${model}`) ?? [], ...(includeVariants && !/\s[45]g$/.test(model) ? index.get(`${kind}|${model}|network-unspecified`) ?? [] : [])];
+      for (const entry of entries) {
+        if ((frame === null || entry.frame === frame) && (itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand)) found.set(entry.item.sku, entry);
       }
     }
   };
@@ -106,7 +133,7 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
     addMatches(models);
     // XP's grouped compatibility records sometimes omit 4G/5G. Use them only
     // as a fallback; explicit variants are never cross-matched.
-    if (!found.size) addMatches(models.map((model) => model.replace(/\s+[45]g$/, "")));
+    if (!found.size) addMatches(models.map((model) => model.replace(/\s+[45]g$/, "")), false);
   }
   const ranked = [...found.values()].sort((a, b) => {
     const targetQuality = qualityFamily(itemQuality);
@@ -116,16 +143,24 @@ export function matchCatalog(item: CompetitorItem, catalog: CatalogItem[] | Retu
   return { kind, quality: itemQuality, candidates: ranked.map((entry) => entry.item) };
 }
 
+export function compareCatalogItem(item: CompetitorItem, catalog: ReturnType<typeof indexCatalog>, fullCatalog: ReturnType<typeof indexCatalog>) {
+  const full = matchCatalog(item, fullCatalog);
+  const match = matchCatalog(item, catalog);
+  return { item, ...match, totalCandidates: full.candidates.length, missingReason: match.candidates.length ? null : missingReason(item, fullCatalog) };
+}
+
 export type MissingReason = "out-of-stock" | "frame" | "brand" | "model";
 
 export function missingReason(item: CompetitorItem, fullCatalog: ReturnType<typeof indexCatalog>): MissingReason {
   if (matchCatalog(item, fullCatalog).candidates.length) return "out-of-stock";
   const kind = partKind(item.name);
-  const entries = modelKeys(item.name).flatMap((model) => fullCatalog.get(`${kind}|${model}`) ?? []);
+  const models = modelKeys(item.name);
+  const entries = models.flatMap((model) => [...fullCatalog.get(`${kind}|${model}`) ?? [], ...(!/\s[45]g$/.test(model) ? fullCatalog.get(`${kind}|${model}|network-unspecified`) ?? [] : [])]);
+  if (!entries.length) entries.push(...models.flatMap((model) => fullCatalog.get(`${kind}|${model.replace(/\s[45]g$/, "")}`) ?? []));
   const itemBrand = brand(item.name);
   const compatibleBrand = entries.filter((entry) => itemBrand < 0 || entry.brand < 0 || itemBrand === entry.brand);
-  const compatibleFrame = compatibleBrand.filter((entry) => entry.frame === hasFrame(item.name));
-  if (compatibleFrame.length) return "out-of-stock";
+  const sameFrame = compatibleBrand.filter((entry) => compatibleFrame(item.name, entry.item.model));
+  if (sameFrame.length) return "out-of-stock";
   if (compatibleBrand.length) return "frame";
   if (entries.length) return "brand";
   return "model";
@@ -135,6 +170,8 @@ export function comparisonNote(competitor: CompetitorItem, xp: CatalogItem) {
   const left = qualityLabel(competitor.name);
   const right = qualityLabel(xp.quality ?? "") ?? qualityLabel(xp.model);
   const notes = [left && qualityFamily(left) === qualityFamily(right) ? "Qualidade semelhante no nome" : left ? "Outra qualidade XP" : "Qualidade do concorrente não informada"];
+  if (supplierFrame(competitor.name) === null && partKind(competitor.name) === "Frontal") notes.push("Aro do fornecedor não informado; confira antes de comprar");
+  if (!modelKeys(competitor.name).some((key) => /\s[45]g$/.test(key)) && modelKeys(xp.model).some((key) => /\s[45]g$/.test(key))) notes.push("Rede do fornecedor não informada; confira 4G/5G");
   if (hasFrame(competitor.name) !== hasFrame(xp.model)) notes.push(hasFrame(xp.model) ? "XP com aro" : "XP sem aro explícito");
   return notes.join(" · ");
 }
