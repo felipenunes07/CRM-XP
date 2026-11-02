@@ -12,7 +12,9 @@ As vendas precisam ter uma sincronizacao concluida nas ultimas duas horas. Desti
 
 ## Operacao
 
-Na tela Automacoes, use Preparar regua 30 / 60 / 90 e Simular sem enviar. A lista mostra cliente, grupo, faixa, mensagem e pendencias. As regras podem ser ativadas individualmente na lista. Pausar uma regra tambem pausa suas campanhas pendentes; uma campanha pausada so volta pelo comando Retomar no Disparador.
+Na tela Automacoes, o painel Proximos disparos abre automaticamente com os clientes elegiveis e atualiza a previsao a cada minuto. Os cards filtram as faixas; os controles Prontos, Pendencias e Todos separam as situacoes. A busca encontra cliente, codigo ou grupo, e Ver mensagem mostra o texto personalizado sem enviar. A tabela tem paginacao de 25 clientes e informa a proxima verificacao em horario de Sao Paulo. Acompanhar envios abre o Disparador para consultar campanhas efetivamente criadas.
+
+Se a regua ainda nao existir, use Preparar regua 30 / 60 / 90. As novas regras ficam pausadas e podem ser ativadas individualmente na lista abaixo. Pausar uma regra tambem pausa suas campanhas pendentes; uma campanha pausada so volta pelo comando Retomar no Disparador.
 
 Com DATABASE_URL apontando para o banco correto:
 

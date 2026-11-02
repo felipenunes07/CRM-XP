@@ -22,7 +22,6 @@ import {
 } from "@xyflow/react";
 import type {
   CustomerStatus,
-  LiliReactivationPreview,
   MessageAutomation,
   MessageAutomationRun,
   MessageAutomationSendMode,
@@ -52,6 +51,7 @@ import {
   Zap,
   Users,
 } from "lucide-react";
+import { LiliReactivationPanel } from "../components/LiliReactivationPanel";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber } from "../lib/format";
@@ -1038,7 +1038,6 @@ function AutomationsPageInner() {
   const [builderMode, setBuilderMode] = useState<"visual" | "classic">("visual");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>("audience");
   const [feedbackMessage, setFeedbackMessage] = useState("");
-  const [liliPreview, setLiliPreview] = useState<LiliReactivationPreview | null>(null);
   const initialFlow = useMemo(() => createDefaultFlow(draft), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlow.edges);
@@ -1105,19 +1104,6 @@ function AutomationsPageInner() {
 
   const previewMutation = useMutation({
     mutationFn: (definition: SegmentDefinition) => api.previewSegment(token!, definition),
-  });
-
-  const prepareLiliMutation = useMutation({
-    mutationFn: () => api.prepareLiliReactivation(token!),
-    onSuccess: async (preview) => {
-      setLiliPreview(preview);
-      setFeedbackMessage("Regua Lili preparada. As novas automacoes estao pausadas para revisao.");
-      await queryClient.invalidateQueries({ queryKey: ["automations"] });
-    },
-  });
-  const previewLiliMutation = useMutation({
-    mutationFn: () => api.previewLiliReactivation(token!),
-    onSuccess: setLiliPreview,
   });
 
   const saveAutomationMutation = useMutation({
@@ -1308,6 +1294,8 @@ function AutomationsPageInner() {
 
   return (
     <div className="automation-page">
+      <LiliReactivationPanel token={token} automations={automationsQuery.data} canManage={canManage} />
+
       <header className="automation-topbar">
         <div>
           <p className="eyebrow">Automacoes</p>
@@ -1388,35 +1376,6 @@ function AutomationsPageInner() {
       </header>
 
       {feedbackMessage ? <div className="save-ok automation-feedback">{feedbackMessage}</div> : null}
-
-      <section className="panel" style={{ minWidth: 0, maxWidth: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: "0.75rem" }}>
-        <h3>Reativacao com Lili Assistente</h3>
-        <p>Mensagens de 30, 60 e 90 dias nos grupos dos clientes, pela conta +55 11 91127-9702. Uma vez por faixa; uma nova compra reinicia a contagem.</p>
-        <div className="automation-topbar-actions">
-          <button type="button" className="secondary-button" disabled={!canManage || prepareLiliMutation.isPending} onClick={() => prepareLiliMutation.mutate()}>
-            {prepareLiliMutation.isPending ? "Preparando..." : "Preparar regua 30 / 60 / 90"}
-          </button>
-          <button type="button" className="secondary-button" disabled={previewLiliMutation.isPending} onClick={() => previewLiliMutation.mutate()}>
-            <Eye size={16} /> Simular sem enviar
-          </button>
-        </div>
-        {prepareLiliMutation.error || previewLiliMutation.error ? <p role="alert">{(prepareLiliMutation.error ?? previewLiliMutation.error)?.message}</p> : null}
-        {liliPreview ? <div style={{ minWidth: 0 }}>
-          <p>Remetente: {liliPreview.sender.name} · {liliPreview.sender.phone}. Simulacao de {formatDateTime(liliPreview.generatedAt)}.</p>
-          {liliPreview.stages.map((stage) => <details key={stage.automationId}>
-            <summary>{stage.days} dias: {stage.ready} prontos · {stage.rows.length - stage.ready} pendencias · {stage.status === "ACTIVE" ? "Ativa" : "Pausada"}</summary>
-            <p>Verificacao diaria as {stage.schedule.time}, horario de Sao Paulo. {stage.nextRunAt ? `Proxima verificacao: ${formatDateTime(stage.nextRunAt)}.` : "Ative a automacao na lista apos revisar."}</p>
-            <div style={{ overflow: "auto", maxHeight: 560, maxWidth: "100%" }}><table className="data-table" style={{ minWidth: 1100 }}>
-              <thead><tr><th>Cliente</th><th>Dias</th><th>Grupo</th><th>Situacao</th><th>Mensagem</th></tr></thead>
-              <tbody>{stage.rows.map((row) => <tr key={row.customerId}>
-                <td>{row.customerCode} · {row.customerName}</td><td>{row.daysInactive}</td><td>{row.groupName ?? "—"}</td>
-                <td>{{ READY: "Pronto", NO_GROUP: "Sem grupo confirmado", MULTIPLE_GROUPS: "Mais de um grupo", IDENTITY_CONFLICT: "Codigo divergente", RECENT_CONTACT: "Contato recente" }[row.status] ?? row.status}</td>
-                <td style={{ whiteSpace: "pre-wrap", minWidth: 280 }}>{row.message}</td>
-              </tr>)}</tbody>
-            </table></div>
-          </details>)}
-        </div> : null}
-      </section>
 
       <section className="automation-explain-strip">
         <div>
