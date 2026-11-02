@@ -192,6 +192,22 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('IDENTITY_CONFLICT');
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe('NO_MATCH');
   });
+  it("mostra o grupo de um cadastro duplicado sem enfileirar duas mensagens", async () => {
+    const c = await customer(120);
+    const alias = randomUUID();
+    await db().query("INSERT INTO customers(id,customer_code,display_name,normalized_name,source_system_first) VALUES($1,$2,$3,'cliente teste','supabase_2026')", [alias, `${c.code}-`, `${c.code} - Cliente Teste`]);
+    await db().query("INSERT INTO orders(customer_id,customer_code,order_date,total_amount,status,source_system,order_number) VALUES($1,$2,CURRENT_DATE-100,100,'VALID','history_xls',$3)", [alias,`${c.code}-`,randomUUID()]);
+    const row = (await previewLiliReactivation()).stages.find(s=>s.days===90)!.rows.find(r=>r.customerId===alias);
+    expect(row).toMatchObject({status:'DUPLICATE_CUSTOMER',groupName:expect.stringContaining(c.code)});
+    const {run,recipient}=await queuedRecipient(90);
+    expect(recipient.customer_id).toBe(c.id);
+    expect((await db().query('SELECT id FROM whatsapp_campaign_recipients WHERE campaign_id=$1',[run.campaignId])).rows).toHaveLength(1);
+  });
+  it("diagnostica codigo divergente mesmo quando o vinculo ainda nao existe", async () => {
+    const c = await customer(35,'PENDING_REVIEW');
+    await db().query("UPDATE customers SET display_name='CL999999 - Outro Cliente' WHERE id=$1",[c.id]);
+    expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('IDENTITY_CONFLICT');
+  });
   it("cancela mensagem na fila apos recompra", async () => {
     const c = await customer();
     const { recipient } = await queuedRecipient();

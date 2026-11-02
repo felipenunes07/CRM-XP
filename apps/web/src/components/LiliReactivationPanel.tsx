@@ -14,6 +14,7 @@ const scheduleFormat = new Intl.DateTimeFormat("pt-BR", {
 const STATUS_LABELS: Record<string, string> = {
   READY: "Pronto para envio", NO_GROUP: "Vínculo pendente", MULTIPLE_GROUPS: "Revisar grupos",
   IDENTITY_CONFLICT: "Código divergente", RECENT_CONTACT: "Contato recente",
+  DUPLICATE_CUSTOMER: "Cadastro duplicado",
 };
 
 export function LiliReactivationPanel({ token, automations, canManage }: {

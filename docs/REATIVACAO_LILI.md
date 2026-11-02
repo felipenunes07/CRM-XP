@@ -6,6 +6,8 @@ O codigo reaproveita automacoes, campanhas, fila, historico e reenvio manual do 
 
 Na reativacao, um unico grupo comercial confirmado manualmente tem prioridade sobre associacoes automaticas por nome. Dois grupos comerciais manuais continuam exigindo revisao. Grupos de pagamento, cobranca, garantia, defeitos ou desativados ficam fora desta regua; seus vinculos continuam disponiveis para outros fluxos. A mesma selecao vale para previa, criacao da campanha e revalidacao antes do envio. A importacao diaria preserva nome e codigo dos grupos revisados para que nomes antigos da planilha nao desfacam a confirmacao.
 
+Quando um cadastro com variacao de codigo aponta para um codigo principal que ja possui grupo, a previa mostra Cadastro duplicado e o grupo encontrado. Esse diagnostico nao move compras nem habilita outro destinatario: a duplicidade continua bloqueada ate reconciliar o cadastro. Codigo e nome divergentes sao sinalizados mesmo sem grupo associado.
+
 Cada faixa usa a data da ultima compra como ciclo, sem depender do UUID de pedidos recriados. A base antiga entra apenas na faixa atual. Uma recompra reinicia o ciclo. A data atual usa America/Sao_Paulo. Pedidos futuros, cancelados, sem valor e pedidos Olist ainda nao enviados ficam fora, seguindo o criterio de vendas do CRM.
 
 A simulacao da tela e somente leitura e nao reserva clientes. Uma execucao para aprovacao reserva os clientes ate aprovar ou rejeitar; a compra e conferida novamente ao aprovar. Clientes sem grupo ou bloqueados por contato recente continuam elegiveis depois da correcao. Falhas de envio ficam no Disparador para reenvio manual. Um envio interrompido sem confirmacao nunca e repetido automaticamente: confira a conversa antes de retentar.
