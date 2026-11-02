@@ -24,6 +24,8 @@ import { logger } from "../../lib/logger.js";
 import { getWhatsappGroupsByIds } from "./whatsappGroupService.js";
 import { computeRecentBlock, randomDelaySeconds } from "./whatsappCore.js";
 import { getCampaignMediaDir, getCampaignVideoObjectName } from "./whatsappMedia.js";
+import { REACTIVATION_PRESET, reactivationDispatchReason, reactivationCustomerName, reactivationIdentityConflict } from "../crm/reactivationCore.js";
+import { REACTIVATION_LAST_PURCHASE_SQL, requireReactivationSender, reactivationSalesAreFresh } from "../crm/reactivationAudience.js";
 
 export const WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS = 7;
 
@@ -1375,7 +1377,9 @@ export async function resetStaleSendingRecipients(staleMinutes = 5): Promise<num
     `
       UPDATE whatsapp_campaign_recipients r
       SET
-        status = 'PENDING',
+        status = CASE WHEN wc.filters_snapshot->>'reactivationPreset' = 'lili-inactivity-v1' THEN 'FAILED' ELSE 'PENDING' END,
+        last_error = CASE WHEN wc.filters_snapshot->>'reactivationPreset' = 'lili-inactivity-v1'
+          THEN 'Envio interrompido sem confirmacao. Confira a conversa antes de tentar novamente.' ELSE r.last_error END,
         scheduled_for = COALESCE(r.scheduled_for, NOW()),
         last_attempt_at = NULL,
         updated_at = NOW()
@@ -1736,6 +1740,10 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
           wc.created_by_user_id,
           wc.created_by_name,
           wc.whatsapp_instance_id,
+          wc.filters_snapshot,
+          wc.override_recent_block,
+          wc.min_delay_seconds,
+          wi.phone_number AS whatsapp_phone_number,
           wi.instance_name AS whatsapp_instance_name,
           wi.evolution_base_url AS whatsapp_evolution_base_url,
           wi.evolution_api_key AS whatsapp_evolution_api_key,
@@ -1777,6 +1785,67 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
     if (String(row.recipient_status) !== "PENDING") {
       await client.query("ROLLBACK");
       return null;
+    }
+    if (String(row.campaign_status) === 'PAUSED') {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const filters = (row.filters_snapshot ?? {}) as Record<string, unknown>;
+    const isReactivation = filters.reactivationPreset === REACTIVATION_PRESET;
+    if (isReactivation) {
+      const senderLock = await client.query("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS locked", [`lili-dispatch:${row.whatsapp_instance_id}`]);
+      if (!senderLock.rows[0]?.locked) { await client.query('ROLLBACK'); return null; }
+      const senderBusy = await client.query(`SELECT EXISTS (
+        SELECT 1 FROM whatsapp_campaign_recipients active JOIN whatsapp_campaigns campaign ON campaign.id = active.campaign_id
+        WHERE campaign.whatsapp_instance_id = $1 AND active.id <> $3
+          AND campaign.filters_snapshot->>'reactivationPreset' = 'lili-inactivity-v1'
+          AND active.status IN ('SENDING', 'SENT', 'FAILED')
+          AND (active.status = 'SENDING' OR active.last_attempt_at > NOW() - ($2::int * INTERVAL '1 second'))
+      ) AS busy`, [row.whatsapp_instance_id, row.min_delay_seconds, recipientId]);
+      if (senderBusy.rows[0]?.busy) { await client.query('ROLLBACK'); return null; }
+      if (!await reactivationSalesAreFresh()) {
+        await client.query("UPDATE whatsapp_campaign_recipients SET last_error = 'Aguardando sincronizacao das vendas antes de enviar.', updated_at = NOW() WHERE id = $1", [recipientId]);
+        await client.query('COMMIT');
+        return null;
+      }
+      await requireReactivationSender(String(row.whatsapp_instance_id), true);
+      const current = await client.query(`WITH purchases AS (${REACTIVATION_LAST_PURCHASE_SQL})
+        SELECT p.last_purchase::text, c.customer_code, c.display_name,
+          ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - p.last_purchase)::int AS days_inactive,
+          EXISTS (SELECT 1 FROM whatsapp_groups g WHERE g.id = $2 AND g.customer_id = $1 AND g.jid = $3
+            AND g.mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED')
+            AND (SELECT COUNT(*) FROM whatsapp_groups other WHERE other.customer_id = $1
+              AND other.mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED') AND other.jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$') = 1) AS group_matches
+          , (SELECT last_contact_at FROM whatsapp_groups WHERE id = $2) AS last_contact_at
+          , (SELECT source_code FROM whatsapp_groups WHERE id = $2) AS group_code
+        FROM purchases p JOIN customers c ON c.id = p.customer_id WHERE p.customer_id = $1`, [row.customer_id, row.group_id, row.jid]);
+      const purchase = current.rows[0];
+      const provider = String(row.whatsapp_provider ?? '');
+      const ready = provider === 'UAZAPI' ? Boolean(row.whatsapp_uazapi_base_url && row.whatsapp_uazapi_token)
+        : provider === 'EVOLUTION' && Boolean(row.whatsapp_instance_name && row.whatsapp_evolution_base_url && row.whatsapp_evolution_api_key);
+      const cycles = (filters.reactivationCycles ?? {}) as Record<string, string>;
+      const reason = reactivationDispatchReason({ expectedPurchase: cycles[String(row.customer_id)],
+        actualPurchase: purchase?.last_purchase ?? null, daysInactive: purchase ? Number(purchase.days_inactive) : null,
+        minDays: Number(filters.reactivationStageDays), maxDays: filters.reactivationMaxDays == null ? null : Number(filters.reactivationMaxDays),
+        jid: String(row.jid), groupMatches: Boolean(purchase?.group_matches),
+        senderPhone: String(row.whatsapp_phone_number ?? ''), senderReady: ready,
+        identityConflict: purchase && reactivationIdentityConflict(purchase.customer_code, String(purchase.display_name), purchase.group_code) })
+        ?? (!row.override_recent_block && computeRecentBlock(purchase?.last_contact_at ? String(purchase.last_contact_at) : null, env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS).isBlocked ? 'Contato recente com o grupo. Mensagem adiada para evitar repeticao.' : null);
+      if (reason) {
+        await client.query("UPDATE whatsapp_campaign_recipients SET status = 'SKIPPED', skipped_at = NOW(), last_error = $2, updated_at = NOW() WHERE id = $1", [recipientId, reason]);
+        await client.query('COMMIT');
+        await refreshWhatsappCampaignStatus(String(row.campaign_id));
+        return null;
+      }
+      row.customer_display_name = purchase?.display_name ?? row.customer_display_name;
+    }
+
+    // Uma instancia explicitamente escolhida nunca deve cair no remetente padrao.
+    if (row.whatsapp_instance_id && !(row.whatsapp_provider === 'UAZAPI'
+      ? row.whatsapp_uazapi_base_url && row.whatsapp_uazapi_token
+      : row.whatsapp_instance_name && row.whatsapp_evolution_base_url && row.whatsapp_evolution_api_key)) {
+      throw new HttpError(409, "A instancia selecionada esta inativa ou sem credenciais. Reconecte a mesma instancia para reenviar.");
     }
 
     await client.query(
@@ -1823,7 +1892,7 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
       menuData: parseMenuData(row.menu_data),
       videoUrl: row.video_url ? String(row.video_url) : null,
       imageUrl: row.image_url ? String(row.image_url) : null,
-      customerDisplayName: row.customer_display_name ? String(row.customer_display_name) : null,
+      customerDisplayName: row.customer_display_name ? (isReactivation ? reactivationCustomerName(String(row.customer_display_name)) : String(row.customer_display_name)) : null,
       sourceName: String(row.source_name ?? ""),
       sourceCode: row.source_code ? String(row.source_code) : null,
       createdByUserId: String(row.created_by_user_id ?? ""),

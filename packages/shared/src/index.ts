@@ -1852,6 +1852,19 @@ export interface MessageAutomationRunAudienceSnapshot {
   eligibleGroupIds: string[];
   blockedGroupIds: string[];
   unmappedCustomerIds: string[];
+  purchaseCycles?: Record<string, string>;
+}
+
+export interface LiliReactivationPreview {
+  generatedAt: string;
+  sender: { id: string; name: string; phone: string };
+  stages: Array<{
+    automationId: string; days: number; status: MessageAutomationStatus; nextRunAt: string | null; ready: number; schedule: MessageAutomationSchedule;
+    rows: Array<{
+      customerId: string; customerCode: string | null; customerName: string; daysInactive: number;
+      lastPurchase: string; status: string; groupName: string | null; groupJid: string | null; message: string;
+    }>;
+  }>;
 }
 
 export interface MessageAutomationRun {

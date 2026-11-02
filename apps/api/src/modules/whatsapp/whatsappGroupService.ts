@@ -43,56 +43,9 @@ interface ParsedGroupRow {
   classification: WhatsappGroupClassification;
 }
 
-function parseCsvRows(csvText: string): ParsedGroupRow[] {
-  const lines = csvText.split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length < 2) {
-    return [];
-  }
-
-  const headerLine = lines[0]!;
-  const headers = headerLine.split(",").map((header) => header.trim().toLowerCase());
-  const nameIndex = headers.findIndex(
-    (header) =>
-      header === "name" ||
-      header === "nome" ||
-      header.includes("name") ||
-      header.includes("nome")
-  );
-  const jidIndex = headers.findIndex(
-    (header) =>
-      header === "jid" ||
-      header === "whatsappjid" ||
-      header.includes("jid")
-  );
-
-  if (nameIndex === -1 || jidIndex === -1) {
-    return [];
-  }
-
-  const uniqueRows = new Map<string, ParsedGroupRow>();
-
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i]!.trim();
-    if (!line) continue;
-
-    const columns = line.split(",");
-    const sourceName = (columns[nameIndex] ?? "").trim();
-    const jid = normalizeWhatsappJid(columns[jidIndex] ?? "");
-
-    if (!sourceName || !jid) {
-      continue;
-    }
-
-    uniqueRows.set(jid, {
-      jid,
-      sourceName,
-      normalizedSourceName: normalizeWhatsappMatchName(sourceName),
-      sourceCode: extractWhatsappSourceCode(sourceName),
-      classification: classifyWhatsappGroup(sourceName),
-    });
-  }
-
-  return [...uniqueRows.values()];
+export function parseCsvRows(csvText: string): ParsedGroupRow[] {
+  // O leitor CSV existente respeita virgulas e quebras de linha entre aspas.
+  return parseWorkbookRows(Buffer.from(csvText, 'utf8'));
 }
 
 export interface WhatsappGroupFilters {
@@ -148,7 +101,7 @@ function readColumn(row: Record<string, unknown>, candidate: string) {
 }
 
 function parseWorkbookRows(fileBuffer: Buffer) {
-  const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+  const workbook = XLSX.read(fileBuffer, { type: "buffer", codepage: 65001 });
   const firstSheetName = workbook.SheetNames[0];
   if (!firstSheetName) {
     throw new HttpError(400, "A planilha enviada nao possui abas.");

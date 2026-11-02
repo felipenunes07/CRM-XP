@@ -19,6 +19,11 @@ import { previewSegment } from "./customerService.js";
 import { createWhatsappCampaign } from "../whatsapp/whatsappCampaignService.js";
 import { enqueueWhatsappCampaignRecipients } from "../whatsapp/whatsappQueue.js";
 import { computeRecentBlock } from "../whatsapp/whatsappCore.js";
+import { startRecurringJob } from "../platform/scheduledJobs.js";
+import { isReactivationPreset, REACTIVATION_PRESET, REACTIVATION_PHONE, reactivationStage, reactivationIdentityConflict } from "./reactivationCore.js";
+import { findReactivationCustomers, markReactivationCustomersHandled, requireReactivationSender, reactivationSalesAreFresh } from "./reactivationAudience.js";
+import { importWhatsappGroupsFromDefaultWorkbook } from "../whatsapp/whatsappGroupService.js";
+import { runPrimarySync } from "../platform/syncService.js";
 import {
   buildStageEntryEventKey,
   filterUnhandledStageEntryCustomerIds,
@@ -103,16 +108,29 @@ interface ResolvedAutomationAudience {
   eligibleGroupIds: string[];
   blockedGroupIds: string[];
   unmappedCustomerIds: string[];
+  purchaseCycles?: Record<string, string>;
 }
 
 let ensureTablesPromise: Promise<void> | null = null;
 
-const AUTOMATION_SYSTEM_USER: JwtUser = {
-  id: "automation",
-  email: "automation@system.local",
-  role: "ADMIN",
-  name: "Automacao",
-};
+async function automationSystemUser(): Promise<JwtUser> {
+  const result = await pool.query("SELECT id, email, name, role FROM users WHERE role = 'ADMIN' ORDER BY created_at LIMIT 1");
+  if (!result.rows[0]) throw new Error("Nenhum administrador cadastrado para registrar o envio automatico.");
+  return { ...result.rows[0], role: "ADMIN" };
+}
+
+async function withAutomationLock<T>(id: string, operation: () => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  let locked = false;
+  try {
+    locked = Boolean((await client.query("SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked", [`message-automation:${id}`])).rows[0]?.locked);
+    if (!locked) throw new HttpError(409, "Esta automacao ja esta em execucao.");
+    return await operation();
+  } finally {
+    if (locked) await client.query("SELECT pg_advisory_unlock(hashtextextended($1, 0))", [`message-automation:${id}`]).catch(() => undefined);
+    client.release();
+  }
+}
 
 function emptyAudienceSnapshot(): MessageAutomationRunAudienceSnapshot {
   return {
@@ -162,6 +180,10 @@ async function ensureAutomationTables() {
           ADD COLUMN IF NOT EXISTS whatsapp_instance_id UUID REFERENCES whatsapp_instances(id) ON DELETE SET NULL,
           ADD COLUMN IF NOT EXISTS saved_segment_id UUID REFERENCES saved_segments(id) ON DELETE SET NULL,
           ADD COLUMN IF NOT EXISTS saved_segment_name TEXT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_lili_reactivation_stage
+          ON message_automations ((flow_definition->>'reactivationPreset'), (segment_definition->>'minDaysInactive'))
+          WHERE flow_definition->>'reactivationPreset' = 'lili-inactivity-v1';
 
         DO $$
         BEGIN
@@ -512,6 +534,7 @@ async function resolveAutomationWhatsappAudience(
       FROM whatsapp_groups
       WHERE customer_id = ANY($1::uuid[])
         AND mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+        AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'
     `,
     [customerIds],
   );
@@ -600,6 +623,41 @@ function validateDelays(input: UpsertMessageAutomationInput) {
   return { minDelaySeconds, maxDelaySeconds };
 }
 
+async function validateReactivationInput(input: UpsertMessageAutomationInput) {
+  if (input.flowDefinition?.reactivationPreset !== REACTIVATION_PRESET) return;
+  reactivationStage(input.segmentDefinition);
+  if (input.savedSegmentId || input.triggerMode !== 'ON_STAGE_ENTRY') throw new HttpError(400, "A regua Lili exige o gatilho por faixa sem publico salvo.");
+  if (input.schedule.frequency !== 'DAILY' || input.schedule.timezone !== 'America/Sao_Paulo') throw new HttpError(400, "A regua Lili exige verificacao diaria no horario de Sao Paulo.");
+  await requireReactivationSender(input.whatsappInstanceId ?? null);
+}
+
+async function reactivationAudience(automation: MessageAutomation, ignoreRunId: string | null = null): Promise<MessageAutomationRunAudienceSnapshot> {
+  await requireReactivationSender(automation.whatsappInstanceId);
+  const customers = await findReactivationCustomers(automation, ignoreRunId);
+  const ids = customers.map((customer) => customer.id);
+  const audience = await resolveAutomationWhatsappAudience(ids, automation.overrideRecentBlock);
+  // Mais de um grupo confirmado exige escolher o grupo correto antes do disparo.
+  const groups = await pool.query(`SELECT customer_id, array_agg(id::text) AS ids FROM whatsapp_groups
+    WHERE customer_id = ANY($1::uuid[]) AND mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
+      AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'
+    GROUP BY customer_id HAVING COUNT(*) > 1`, [ids]);
+  const ambiguousGroups = new Set(groups.rows.flatMap((row) => row.ids as string[]));
+  const identities = await pool.query(`SELECT g.id, g.customer_id, g.source_code, c.customer_code, c.display_name
+    FROM whatsapp_groups g JOIN customers c ON c.id = g.customer_id WHERE g.id = ANY($1::uuid[])`, [audience.eligibleGroupIds]);
+  const conflicts = identities.rows.filter((row) => reactivationIdentityConflict(row.customer_code, String(row.display_name), row.source_code));
+  const conflictingGroups = new Set(conflicts.map((row) => String(row.id)));
+  audience.eligibleGroupIds = audience.eligibleGroupIds.filter((id) => !ambiguousGroups.has(id) && !conflictingGroups.has(id));
+  audience.unmappedCustomerIds.push(...groups.rows.map((row) => String(row.customer_id)));
+  audience.unmappedCustomerIds = [...new Set([...audience.unmappedCustomerIds, ...conflicts.map((row) => String(row.customer_id))])];
+  return { ...audience, purchaseCycles: Object.fromEntries(customers.map((customer) => [customer.id, customer.last_purchase])) };
+}
+
+async function handledReactivationCustomerIds(audience: MessageAutomationRunAudienceSnapshot) {
+  if (!audience.eligibleGroupIds.length) return [];
+  const result = await pool.query("SELECT DISTINCT customer_id FROM whatsapp_groups WHERE id = ANY($1::uuid[])", [audience.eligibleGroupIds]);
+  return result.rows.map((row) => String(row.customer_id));
+}
+
 export async function listMessageAutomations(): Promise<MessageAutomation[]> {
   const result = await queryAutomationRows();
   return result.rows.map((row) => mapAutomationRow(row as Record<string, unknown>));
@@ -617,6 +675,7 @@ export async function createMessageAutomation(input: UpsertMessageAutomationInpu
   }
 
   const definition = savedSegment?.definition ?? input.segmentDefinition;
+  await validateReactivationInput(input);
   const nextRunAt = input.status === "ACTIVE" ? computeNextAutomationRunAt(input.schedule, new Date()).toISOString() : null;
 
   const result = await pool.query(
@@ -682,6 +741,7 @@ export async function updateMessageAutomation(id: string, input: UpsertMessageAu
   const sendMode = input.sendMode ?? "APPROVAL";
   const triggerMode = input.triggerMode ?? "SCHEDULED";
   const definition = savedSegment?.definition ?? input.segmentDefinition;
+  await validateReactivationInput(input);
   const nextRunAt = input.status === "ACTIVE" ? computeNextAutomationRunAt(input.schedule, new Date()).toISOString() : null;
 
   const result = await pool.query(
@@ -733,6 +793,11 @@ export async function updateMessageAutomation(id: string, input: UpsertMessageAu
 
   if (!result.rows[0]) {
     return null;
+  }
+
+  if (isReactivationPreset({ flowDefinition: input.flowDefinition ?? {} }) && input.status === 'PAUSED') {
+    await pool.query(`UPDATE whatsapp_campaigns SET status = 'PAUSED', updated_at = NOW()
+      WHERE filters_snapshot->>'automationId' = $1 AND status IN ('QUEUED', 'IN_PROGRESS')`, [id]);
   }
 
   return getAutomationById(id);
@@ -816,6 +881,18 @@ async function createCampaignFromAutomationRun(
   user: JwtUser,
   nextStatus: "APPROVED" | "ENQUEUED",
 ) {
+  if (isReactivationPreset(automation)) {
+    if (!await reactivationSalesAreFresh()) throw new Error("Vendas sem sincronizacao concluida nas ultimas duas horas. Nenhuma mensagem foi enviada.");
+    await requireReactivationSender(automation.whatsappInstanceId, true);
+    const current = await reactivationAudience(automation, run.id);
+    const stillEligible = new Set(current.eligibleGroupIds);
+    const matchingCycles = Object.keys(run.audienceSnapshot.purchaseCycles ?? {}).filter((id) =>
+      run.audienceSnapshot.purchaseCycles?.[id] === current.purchaseCycles?.[id]);
+    const groups = await pool.query("SELECT id, customer_id FROM whatsapp_groups WHERE id = ANY($1::uuid[])", [run.audienceSnapshot.eligibleGroupIds]);
+    run.audienceSnapshot.eligibleGroupIds = groups.rows.filter((row) => stillEligible.has(String(row.id)) && matchingCycles.includes(String(row.customer_id))).map((row) => String(row.id));
+    await pool.query(`UPDATE message_automation_runs SET audience_snapshot = $2::jsonb, mapped_group_count = $3, updated_at = NOW() WHERE id = $1`,
+      [run.id, JSON.stringify(run.audienceSnapshot), run.audienceSnapshot.eligibleGroupIds.length]);
+  }
   if (!run.audienceSnapshot.eligibleGroupIds.length) {
     await pool.query(
       `
@@ -854,12 +931,17 @@ async function createCampaignFromAutomationRun(
           whatsappInstanceId: automation.whatsappInstanceId,
           whatsappInstanceName: automation.whatsappInstanceName,
           whatsappInstanceLabel: automation.whatsappInstanceLabel,
+          ...(isReactivationPreset(automation) ? {
+            reactivationPreset: REACTIVATION_PRESET,
+            reactivationStageDays: reactivationStage(automation.segmentDefinition).days,
+            reactivationMaxDays: reactivationStage(automation.segmentDefinition).maxDays,
+            reactivationCycles: run.audienceSnapshot.purchaseCycles,
+            requiredSenderPhone: REACTIVATION_PHONE,
+          } : {}),
         },
       },
       user,
     );
-
-    await enqueueWhatsappCampaignRecipients(campaign.enqueuedJobs);
 
     await pool.query(
       `
@@ -875,6 +957,13 @@ async function createCampaignFromAutomationRun(
       `,
       [run.id, nextStatus, campaign.campaignId, nextStatus === "APPROVED" ? user.id : null],
     );
+    if (isReactivationPreset(automation)) {
+      await markReactivationCustomersHandled(automation, run.id, run.audienceSnapshot.purchaseCycles ?? {}, await handledReactivationCustomerIds(run.audienceSnapshot));
+    }
+    // Destinatarios ja estao persistidos; o resgate da fila pode continuar apos falha no Redis.
+    await enqueueWhatsappCampaignRecipients(campaign.enqueuedJobs).catch((error) => {
+      logger.error("automation campaign persisted; queue rescue required", { campaignId: campaign.campaignId, error: String(error) });
+    });
   } catch (error) {
     await pool.query(
       `
@@ -893,7 +982,7 @@ async function createCampaignFromAutomationRun(
 }
 
 async function markAutomationExecuted(automationId: string, scheduledFor: string, schedule: MessageAutomationSchedule) {
-  const nextRunAt = computeNextAutomationRunAt(schedule, new Date(new Date(scheduledFor).getTime() + 1000)).toISOString();
+  const nextRunAt = computeNextAutomationRunAt(schedule, new Date(Math.max(Date.now(), new Date(scheduledFor).getTime()) + 1000)).toISOString();
   await pool.query(
     `
       UPDATE message_automations
@@ -916,7 +1005,7 @@ async function executeMessageAutomation(automationId: string) {
   const scheduledFor = automation.nextRunAt;
   await executeResolvedMessageAutomation(automation, scheduledFor, {
     markSchedule: true,
-    systemUser: AUTOMATION_SYSTEM_USER,
+    systemUser: await automationSystemUser(),
   });
 }
 
@@ -929,19 +1018,38 @@ async function executeResolvedMessageAutomation(
     sendModeOverride?: MessageAutomationSendMode;
   },
 ): Promise<MessageAutomationRun | null> {
+  return withAutomationLock(automation.id, async () => {
+    if (options.markSchedule) {
+      const latest = await getAutomationById(automation.id);
+      if (!latest || latest.status !== 'ACTIVE' || latest.nextRunAt !== scheduledFor) return null;
+    }
+    return executeUnlockedMessageAutomation(automation, scheduledFor, options);
+  });
+}
+
+async function executeUnlockedMessageAutomation(
+  automation: MessageAutomation,
+  scheduledFor: string,
+  options: { markSchedule: boolean; systemUser: JwtUser; sendModeOverride?: MessageAutomationSendMode },
+): Promise<MessageAutomationRun | null> {
   let createdRun: MessageAutomationRun | null = null;
   try {
-    const preview = await previewSegment(automation.segmentDefinition);
-    const previewCustomerIds = preview.customers.map((customer) => customer.id);
+    const isReactivation = isReactivationPreset(automation);
+    if (isReactivation && options.markSchedule) {
+      if (!await reactivationSalesAreFresh()) await runPrimarySync('lili-reactivation-before-send');
+      await importWhatsappGroupsFromDefaultWorkbook();
+    }
+    const preview = isReactivation ? null : await previewSegment(automation.segmentDefinition);
+    const previewCustomerIds = preview?.customers.map((customer) => customer.id) ?? [];
     const stageEntryEventKey =
-      automation.triggerMode === "ON_STAGE_ENTRY" ? buildStageEntryEventKey(automation.segmentDefinition) : null;
+      !isReactivation && automation.triggerMode === "ON_STAGE_ENTRY" ? buildStageEntryEventKey(automation.segmentDefinition) : null;
     const customerIds = stageEntryEventKey
       ? filterUnhandledStageEntryCustomerIds(
           previewCustomerIds,
           await getHandledStageEntryCustomerIds(automation.id, stageEntryEventKey),
         )
       : previewCustomerIds;
-    const audience = await resolveAutomationWhatsappAudience(
+    const audience = isReactivation ? await reactivationAudience(automation) : await resolveAutomationWhatsappAudience(
       customerIds,
       automation.overrideRecentBlock,
     );
@@ -968,8 +1076,13 @@ async function executeResolvedMessageAutomation(
     if (run && stageEntryEventKey) {
       await markStageEntryCustomersHandled(automation.id, stageEntryEventKey, customerIds, run.id);
     }
+    if (run && isReactivation && runStatus === 'PENDING_APPROVAL') {
+      await markReactivationCustomersHandled(automation, run.id, audience.purchaseCycles ?? {}, await handledReactivationCustomerIds(audience));
+    }
   } catch (error) {
-    createdRun = await insertAutomationRun({
+    if (createdRun) {
+      await pool.query("UPDATE message_automation_runs SET status = 'FAILED', error_message = $2, resolved_at = NOW(), updated_at = NOW() WHERE id = $1", [createdRun.id, error instanceof Error ? error.message : String(error)]);
+    } else createdRun = await insertAutomationRun({
       automationId: automation.id,
       automationName: automation.name,
       status: "FAILED",
@@ -985,7 +1098,7 @@ async function executeResolvedMessageAutomation(
       await markAutomationExecuted(automation.id, scheduledFor, automation.schedule);
     }
   }
-  return createdRun;
+  return createdRun ? getAutomationRunById(createdRun.id) : null;
 }
 
 export async function runMessageAutomationNow(
@@ -1055,9 +1168,11 @@ export async function approveMessageAutomationRun(id: string, user: JwtUser): Pr
     throw new HttpError(404, "Automacao nao encontrada.");
   }
 
-  await createCampaignFromAutomationRun(automation, run, user, "APPROVED");
-
-  return (await getAutomationRunById(id))!;
+  return withAutomationLock(automation.id, async () => {
+    const current = (await getAutomationRunById(id))!;
+    if (current.status === 'PENDING_APPROVAL') await createCampaignFromAutomationRun(automation, current, user, "APPROVED");
+    return (await getAutomationRunById(id))!;
+  });
 }
 
 export async function rejectMessageAutomationRun(id: string, user: JwtUser): Promise<MessageAutomationRun> {
@@ -1089,18 +1204,6 @@ export async function rejectMessageAutomationRun(id: string, user: JwtUser): Pro
 }
 
 export function startMessageAutomationScheduler() {
-  const run = () => {
-    executeDueMessageAutomations().catch((error) => {
-      logger.error("message automation scheduler failed", { error: String(error) });
-    });
-  };
-
-  void run();
-  const interval = setInterval(run, 60_000);
-
-  return {
-    async close() {
-      clearInterval(interval);
-    },
-  };
+  return startRecurringJob({ intervalMs: 60_000, run: () => executeDueMessageAutomations(),
+    onError: (error) => logger.error("message automation scheduler failed", { error: String(error) }) });
 }

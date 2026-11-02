@@ -83,6 +83,7 @@ import {
   runMessageAutomationNow,
   updateMessageAutomation,
 } from "./modules/crm/automationService.js";
+import { prepareLiliReactivation, previewLiliReactivation } from "./modules/crm/reactivationSetupService.js";
 import {
   createMessageTemplate,
   deleteMessageTemplate,
@@ -2015,6 +2016,14 @@ export function createApp() {
     } catch (error) {
       next(error);
     }
+  });
+
+  app.post("/api/automations/lili-reactivation/prepare", requireRole(["ADMIN", "MANAGER"]), requirePermission("automations.manage"), async (_request, response, next) => {
+    try { response.json(await prepareLiliReactivation()); } catch (error) { next(error); }
+  });
+
+  app.get("/api/automations/lili-reactivation/preview", async (_request, response, next) => {
+    try { response.json(await previewLiliReactivation()); } catch (error) { next(error); }
   });
 
   app.post("/api/automations", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {

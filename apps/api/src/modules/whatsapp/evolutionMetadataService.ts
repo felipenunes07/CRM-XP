@@ -292,6 +292,14 @@ function phoneFromJid(jid: string | null) {
   return digits || null;
 }
 
+export async function fetchEvolutionInstanceIdentity(config: EvolutionInstanceConfig) {
+  const instances = await fetchEvolutionInstances(config);
+  const raw = instances.find((item) => parseInstanceSummary(item).instanceName === config.instanceName);
+  if (!raw) throw new Error("A instancia selecionada nao foi encontrada na Evolution.");
+  const source = { ...raw, ...(pickNestedRecord(raw, ["instance"]) ?? {}) };
+  return { phone: phoneFromJid(parseInstanceSummary(raw).ownerJid), state: pickString(source, ["connectionStatus", "state"]) ?? "unknown" };
+}
+
 async function getCachedChatProfile(instanceName: string, remoteJid: string): Promise<WhatsappProfileCache | null> {
   const result = await pool.query(
     `
