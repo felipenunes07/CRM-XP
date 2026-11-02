@@ -1,9 +1,11 @@
+import type { Pool, PoolClient } from "pg";
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { extractDisplayName, normalizeName } from "../../lib/normalize.js";
 import { computeCustomerSnapshot } from "./analyticsCore.js";
 
 const DASHBOARD_DAILY_WINDOW_DAYS = 90;
+type ReadModelDatabase = Pick<Pool | PoolClient, "query">;
 
 interface AggregateRow {
   customerId: string;
@@ -23,12 +25,12 @@ function percentile(values: number[], target: number) {
   return sorted[index] ?? 0;
 }
 
-async function upsertCustomers(customerCodes: string[]) {
+async function upsertCustomers(customerCodes: string[], database: ReadModelDatabase) {
   if (!customerCodes.length) {
     return;
   }
 
-  const result = await pool.query(
+  const result = await database.query(
     `
       SELECT DISTINCT ON (customer_code)
         customer_code,
@@ -36,8 +38,8 @@ async function upsertCustomers(customerCodes: string[]) {
         attendant_name,
         source_system,
         external_customer_id
-      FROM sales_raw
-      WHERE customer_code = ANY($1)
+      FROM resolved_sales_raw
+      WHERE source_customer_code = ANY($1)
       ORDER BY customer_code, sale_date DESC, created_at DESC
     `,
     [customerCodes],
@@ -61,7 +63,7 @@ async function upsertCustomers(customerCodes: string[]) {
   }
 
   if (placeholders.length > 0) {
-    await pool.query(
+    await database.query(
       `
         INSERT INTO customers (
           customer_code,
@@ -85,14 +87,14 @@ async function upsertCustomers(customerCodes: string[]) {
   }
 }
 
-async function rebuildOrders(customerCodes: string[]) {
+async function rebuildOrders(customerCodes: string[], database: ReadModelDatabase) {
   if (!customerCodes.length) {
     return;
   }
 
-  await pool.query("DELETE FROM orders WHERE customer_code = ANY($1)", [customerCodes]);
+  await database.query("DELETE FROM orders WHERE customer_code = ANY($1)", [customerCodes]);
 
-  const orderGroups = await pool.query(
+  const orderGroups = await database.query(
     `
       WITH preferred_sources AS (
         SELECT 
@@ -103,8 +105,8 @@ async function rebuildOrders(customerCodes: string[]) {
             PARTITION BY order_number, customer_code 
             ORDER BY (CASE WHEN source_system = 'supabase_2026' THEN 1 ELSE 2 END) ASC
           ) as rn
-        FROM sales_raw
-        WHERE customer_code = ANY($1)
+        FROM resolved_sales_raw
+        WHERE source_customer_code = ANY($1)
           AND LOWER(COALESCE(order_status, '')) != 'cancelado'
       )
       SELECT
@@ -117,12 +119,12 @@ async function rebuildOrders(customerCodes: string[]) {
         COALESCE(MAX(sr.attendant_name), '') AS last_attendant,
         SUM(sr.line_total)::numeric(14,2) AS total_amount,
         COUNT(*)::int AS item_count
-      FROM sales_raw sr
+      FROM resolved_sales_raw sr
       JOIN preferred_sources ps 
         ON sr.order_number = ps.order_number 
         AND sr.customer_code = ps.customer_code 
         AND sr.source_system = ps.source_system
-      WHERE ps.rn = 1
+      WHERE ps.rn = 1 AND sr.source_customer_code = ANY($1)
         AND LOWER(COALESCE(sr.order_status, '')) != 'cancelado'
       GROUP BY sr.source_system, sr.external_order_id, sr.order_number, sr.customer_code, sr.sale_date
       ORDER BY sr.sale_date DESC
@@ -134,7 +136,7 @@ async function rebuildOrders(customerCodes: string[]) {
     return;
   }
 
-  const customerMapResult = await pool.query("SELECT id, customer_code FROM customers WHERE customer_code = ANY($1)", [customerCodes]);
+  const customerMapResult = await database.query("SELECT id, customer_code FROM customers WHERE customer_code = ANY($1)", [customerCodes]);
   const customerMap = new Map(customerMapResult.rows.map(r => [r.customer_code, r.id]));
 
   const arrays = {
@@ -170,7 +172,7 @@ async function rebuildOrders(customerCodes: string[]) {
     return;
   }
 
-  const inserted = await pool.query<{
+  const inserted = await database.query<{
     id: string;
     source_system: string;
     order_number: string;
@@ -207,10 +209,10 @@ async function rebuildOrders(customerCodes: string[]) {
     const ids = inserted.rows.map((row) => row.id);
     const sourceSystems = inserted.rows.map((row) => row.source_system);
     const orderNumbers = inserted.rows.map((row) => row.order_number);
-    const customerCodes = inserted.rows.map((row) => row.customer_code);
+    const insertedCustomerCodes = inserted.rows.map((row) => row.customer_code);
     const saleDates = inserted.rows.map((row) => row.order_date);
 
-    await pool.query(
+    await database.query(
       `
         INSERT INTO order_items (
           order_id, sale_raw_id, sku, item_description, quantity, unit_price, line_total, attendant_name
@@ -223,26 +225,28 @@ async function rebuildOrders(customerCodes: string[]) {
               PARTITION BY o.id, sr.fingerprint
               ORDER BY (CASE WHEN sr.source_system = 'supabase_2026' THEN 1 ELSE 2 END) ASC
             ) as item_rn
-          FROM sales_raw sr
+          FROM resolved_sales_raw sr
           JOIN (
             SELECT * FROM UNNEST($1::uuid[], $2::text[], $3::text[], $4::text[], $5::date[]) 
             AS t(id, source_system, order_number, customer_code, sale_date)
           ) o ON sr.order_number = o.order_number 
              AND sr.customer_code = o.customer_code 
              AND sr.sale_date = o.sale_date
+             AND sr.source_system = o.source_system
+          WHERE sr.source_customer_code = ANY($6::text[])
         )
         SELECT 
           order_uuid, id, sku, item_description, quantity, unit_price, line_total, attendant_name
         FROM ranked_items
         WHERE item_rn = 1
       `,
-      [ids, sourceSystems, orderNumbers, customerCodes, saleDates]
+      [ids, sourceSystems, orderNumbers, insertedCustomerCodes, saleDates, customerCodes]
     );
   }
 }
 
-async function fetchAggregates(customerCodes?: string[]) {
-  const result = await pool.query<AggregateRow>(
+async function fetchAggregates(customerCodes: string[] | undefined, database: ReadModelDatabase) {
+  const result = await database.query<AggregateRow>(
     `
       SELECT
         c.id AS "customerId",
@@ -261,8 +265,8 @@ async function fetchAggregates(customerCodes?: string[]) {
   return result.rows;
 }
 
-export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW_DAYS) {
-  const result = await pool.query<{
+export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW_DAYS, database: ReadModelDatabase = pool) {
+  const result = await database.query<{
     day: string;
     total_customers: number;
     active_count: number;
@@ -337,7 +341,7 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   }
 
   if (placeholders.length > 0) {
-    await pool.query(
+    await database.query(
       `
         INSERT INTO dashboard_daily_metrics (
           day,
@@ -367,8 +371,8 @@ export async function refreshDashboardDailyMetrics(days = DASHBOARD_DAILY_WINDOW
   logger.info("dashboard daily metrics refreshed", { days, count: result.rows.length });
 }
 
-export async function refreshCustomerSnapshots(customerCodes?: string[]) {
-  const aggregates = await fetchAggregates(customerCodes);
+export async function refreshCustomerSnapshots(customerCodes?: string[], database: ReadModelDatabase = pool) {
+  const aggregates = await fetchAggregates(customerCodes, database);
   if (!aggregates.length) {
     return;
   }
@@ -429,7 +433,7 @@ export async function refreshCustomerSnapshots(customerCodes?: string[]) {
       chunkPlaceholders.push(`(${rowPlaceholders}, NOW())`);
     }
 
-    await pool.query(
+    await database.query(
       `
         INSERT INTO customer_snapshot (
           customer_id, display_name, customer_code, last_purchase_at, days_since_last_purchase,
@@ -463,15 +467,22 @@ export async function refreshCustomerSnapshots(customerCodes?: string[]) {
     );
   }
 
-  await refreshDashboardDailyMetrics();
+  await refreshDashboardDailyMetrics(undefined, database);
   logger.info("customer snapshots refreshed", { count: aggregates.length });
 }
 
-export async function rebuildReadModels(customerCodes: string[]) {
+export async function rebuildReadModels(customerCodes: string[], database: ReadModelDatabase = pool) {
   const uniqueCodes = Array.from(new Set(customerCodes.filter(Boolean)));
-  await upsertCustomers(uniqueCodes);
-  await rebuildOrders(uniqueCodes);
-  await refreshCustomerSnapshots(uniqueCodes);
+  // Uma nova importacao no codigo antigo tambem precisa reconstruir o cadastro corrigido.
+  const corrections = await database.query<{ source_customer_code: string; canonical_customer_code: string }>(`
+    SELECT source_customer_code, canonical_customer_code FROM customer_identity_corrections
+    WHERE source_customer_code = ANY($1::text[]) OR canonical_customer_code = ANY($1::text[])
+  `, [uniqueCodes]);
+  for (const correction of corrections.rows) uniqueCodes.push(correction.source_customer_code, correction.canonical_customer_code);
+  const expandedCodes = [...new Set(uniqueCodes)];
+  await upsertCustomers(expandedCodes, database);
+  await rebuildOrders(expandedCodes, database);
+  await refreshCustomerSnapshots(expandedCodes, database);
 }
 
 export async function refreshAllSnapshots() {
