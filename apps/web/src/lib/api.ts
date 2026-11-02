@@ -1,4 +1,5 @@
 import type {
+  LiliReactivationPreview,
   PriceSupplier, PriceSnapshot, PriceSnapshotSummary,
   AcquisitionMetrics,
   AmbassadorResponse,
@@ -966,6 +967,12 @@ export const api = {
   },
   automations(token: string) {
     return request<MessageAutomation[]>("/api/automations", {}, token);
+  },
+  prepareLiliReactivation(token: string) {
+    return request<LiliReactivationPreview>("/api/automations/lili-reactivation/prepare", { method: "POST" }, token);
+  },
+  previewLiliReactivation(token: string) {
+    return request<LiliReactivationPreview>("/api/automations/lili-reactivation/preview", {}, token);
   },
   createAutomation(
     token: string,

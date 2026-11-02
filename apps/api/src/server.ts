@@ -22,6 +22,7 @@ import { runConversationIntelligence } from "./modules/events/conversationAi.js"
 import { cacheActiveWhatsappInstanceAvatars } from "./modules/whatsapp/whatsappAvatarCache.js";
 import { startTaskOverdueReminderScheduler } from "./modules/tasks/taskReminderService.js";
 import { startSupplierPriceScheduler } from "./modules/crm/supplierPriceService.js";
+import { startMessageAutomationScheduler } from "./modules/crm/automationService.js";
 
 /**
  * Garante que toda instância uazapi ativa entregue mensagens recebidas ao CRM.
@@ -79,6 +80,7 @@ async function main() {
   const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
   const taskReminderScheduler = startTaskOverdueReminderScheduler();
   const supplierPriceScheduler = startSupplierPriceScheduler();
+  const automationScheduler = startMessageAutomationScheduler();
   const whatsappWorker = startWhatsappDispatchWorker();
   // Só (re)configura o webhook da uazapi se explicitamente habilitado. Por padrão
   // o CRM não mexe no webhook da uazapi (UAZAPI_AUTO_CONFIGURE_WEBHOOK=false).
@@ -188,6 +190,7 @@ async function main() {
       await billingAlertScheduler.close();
       await customerDefectSyncScheduler.close();
       await supplierPriceScheduler.close();
+      await automationScheduler.close();
       if (whatsappWorker && typeof whatsappWorker.close === "function") {
         await whatsappWorker.close();
       }

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "reactivation:lili": "tsx src/scripts/liliReactivation.ts",
     "dev": "tsx watch src/server.ts",
     "build": "npm run build -w @olist-crm/shared && tsc -p tsconfig.json",
     "start": "node dist/server.js",
