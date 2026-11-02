@@ -2,11 +2,12 @@ import type { MessageAutomation } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
-import { computeRecentBlock, applyWhatsappMessagePlaceholders } from "../whatsapp/whatsappCore.js";
+import { computeRecentBlock, applyWhatsappMessagePlaceholders, extractWhatsappSourceCode } from "../whatsapp/whatsappCore.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "../whatsapp/whatsappGroupService.js";
 import { createMessageAutomation, listMessageAutomations } from "./automationService.js";
 import { findReactivationCustomers, requireReactivationSender } from "./reactivationAudience.js";
 import { REACTIVATION_PHONE, REACTIVATION_PRESET, REACTIVATION_STAGES, isReactivationPreset, reactivationCustomerName, reactivationIdentityConflict } from "./reactivationCore.js";
+import { buildReactivationGroupScopeSql } from "./reactivationGroupScope.js";
 
 export async function prepareLiliReactivation() {
   const instances = await pool.query(`SELECT id FROM whatsapp_instances WHERE status = 'ACTIVE'
@@ -52,15 +53,22 @@ export async function previewLiliReactivation() {
 
 async function previewStage(automation: MessageAutomation) {
   const customers = await findReactivationCustomers(automation);
-  const groups = await pool.query(`SELECT id, customer_id, jid, source_name, source_code, last_contact_at FROM whatsapp_groups
-    WHERE customer_id = ANY($1::uuid[]) AND mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED')
-      AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'`, [customers.map((item) => item.id)]);
+  const groups = await pool.query(`SELECT id, customer_id, jid, source_name, source_code, last_contact_at FROM whatsapp_groups g
+    WHERE customer_id = ANY($1::uuid[]) AND ${buildReactivationGroupScopeSql('g')}`, [customers.map((item) => item.id)]);
+  const codes = [...new Set(customers.map(c => extractWhatsappSourceCode(c.customer_code) ?? extractWhatsappSourceCode(c.display_name)).filter(Boolean))];
+  const canonicalGroups = await pool.query(`SELECT g.customer_id, g.jid, g.source_name, g.source_code, g.last_contact_at
+    FROM whatsapp_groups g JOIN customers owner ON owner.id = g.customer_id
+    WHERE g.source_code = ANY($1::text[]) AND owner.customer_code = g.source_code
+      AND ${buildReactivationGroupScopeSql('g')}`, [codes]);
   const rows = customers.map((customer) => {
     const matched = groups.rows.filter((group) => String(group.customer_id) === customer.id);
-    const group = matched.length === 1 ? matched[0] : null;
+    const code = extractWhatsappSourceCode(customer.customer_code) ?? extractWhatsappSourceCode(customer.display_name);
+    const duplicates = matched.length === 0 ? canonicalGroups.rows.filter(g => g.source_code === code && String(g.customer_id) !== customer.id) : [];
+    const duplicate = duplicates.length === 1 ? duplicates[0] : null;
+    const group = matched.length === 1 ? matched[0] : duplicate;
     const blocked = group && !automation.overrideRecentBlock && computeRecentBlock(group.last_contact_at ? String(group.last_contact_at) : null, env.WHATSAPP_RECENT_CONTACT_BLOCK_DAYS).isBlocked;
-    const conflict = group && reactivationIdentityConflict(customer.customer_code, customer.display_name, group.source_code);
-    const status = matched.length === 0 ? "NO_GROUP" : matched.length > 1 ? "MULTIPLE_GROUPS" : conflict ? "IDENTITY_CONFLICT" : blocked ? "RECENT_CONTACT" : "READY";
+    const conflict = reactivationIdentityConflict(customer.customer_code, customer.display_name, group?.source_code ?? null);
+    const status = conflict ? "IDENTITY_CONFLICT" : duplicate ? "DUPLICATE_CUSTOMER" : matched.length === 0 ? "NO_GROUP" : matched.length > 1 ? "MULTIPLE_GROUPS" : blocked ? "RECENT_CONTACT" : "READY";
     return { customerId: customer.id, customerCode: customer.customer_code, customerName: customer.display_name,
       daysInactive: Number(customer.days_inactive), lastPurchase: customer.last_purchase, status,
       groupName: group ? String(group.source_name) : null, groupJid: group ? String(group.jid) : null,

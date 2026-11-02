@@ -26,6 +26,7 @@ import { computeRecentBlock, randomDelaySeconds } from "./whatsappCore.js";
 import { getCampaignMediaDir, getCampaignVideoObjectName } from "./whatsappMedia.js";
 import { REACTIVATION_PRESET, reactivationDispatchReason, reactivationCustomerName, reactivationIdentityConflict } from "../crm/reactivationCore.js";
 import { REACTIVATION_LAST_PURCHASE_SQL, requireReactivationSender, reactivationSalesAreFresh } from "../crm/reactivationAudience.js";
+import { buildReactivationGroupScopeSql } from "../crm/reactivationGroupScope.js";
 
 export const WHATSAPP_CAMPAIGN_ATTRIBUTION_WINDOW_DAYS = 7;
 
@@ -1814,9 +1815,9 @@ export async function claimRecipientForDispatch(recipientId: string): Promise<Di
         SELECT p.last_purchase::text, c.customer_code, c.display_name,
           ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - p.last_purchase)::int AS days_inactive,
           EXISTS (SELECT 1 FROM whatsapp_groups g WHERE g.id = $2 AND g.customer_id = $1 AND g.jid = $3
-            AND g.mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED')
+            AND ${buildReactivationGroupScopeSql('g')}
             AND (SELECT COUNT(*) FROM whatsapp_groups other WHERE other.customer_id = $1
-              AND other.mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED') AND other.jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$') = 1) AS group_matches
+              AND ${buildReactivationGroupScopeSql('other')}) = 1) AS group_matches
           , (SELECT last_contact_at FROM whatsapp_groups WHERE id = $2) AS last_contact_at
           , (SELECT source_code FROM whatsapp_groups WHERE id = $2) AS group_code
         FROM purchases p JOIN customers c ON c.id = p.customer_id WHERE p.customer_id = $1`, [row.customer_id, row.group_id, row.jid]);
