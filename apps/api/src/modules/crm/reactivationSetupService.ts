@@ -7,6 +7,7 @@ import { importWhatsappGroupsFromDefaultWorkbook } from "../whatsapp/whatsappGro
 import { createMessageAutomation, listMessageAutomations } from "./automationService.js";
 import { findReactivationCustomers, requireReactivationSender } from "./reactivationAudience.js";
 import { REACTIVATION_PHONE, REACTIVATION_PRESET, REACTIVATION_STAGES, isReactivationPreset, reactivationCustomerName, reactivationIdentityConflict } from "./reactivationCore.js";
+import { buildReactivationGroupScopeSql } from "./reactivationGroupScope.js";
 
 export async function prepareLiliReactivation() {
   const instances = await pool.query(`SELECT id FROM whatsapp_instances WHERE status = 'ACTIVE'
@@ -52,9 +53,8 @@ export async function previewLiliReactivation() {
 
 async function previewStage(automation: MessageAutomation) {
   const customers = await findReactivationCustomers(automation);
-  const groups = await pool.query(`SELECT id, customer_id, jid, source_name, source_code, last_contact_at FROM whatsapp_groups
-    WHERE customer_id = ANY($1::uuid[]) AND mapping_status IN ('AUTO_MAPPED','MANUAL_MAPPED')
-      AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'`, [customers.map((item) => item.id)]);
+  const groups = await pool.query(`SELECT id, customer_id, jid, source_name, source_code, last_contact_at FROM whatsapp_groups g
+    WHERE customer_id = ANY($1::uuid[]) AND ${buildReactivationGroupScopeSql('g')}`, [customers.map((item) => item.id)]);
   const rows = customers.map((customer) => {
     const matched = groups.rows.filter((group) => String(group.customer_id) === customer.id);
     const group = matched.length === 1 ? matched[0] : null;

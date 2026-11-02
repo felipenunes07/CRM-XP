@@ -33,6 +33,10 @@ interface ExistingGroupRow {
   mapping_status: WhatsappGroupMappingStatus;
   customer_id: string | null;
   mapping_note: string;
+  source_name: string;
+  source_code: string | null;
+  normalized_source_name: string;
+  classification: WhatsappGroupClassification;
 }
 
 interface ParsedGroupRow {
@@ -193,7 +197,11 @@ async function loadExistingGroups() {
         jid,
         mapping_status,
         customer_id,
-        mapping_note
+        mapping_note,
+        source_name,
+        source_code,
+        normalized_source_name,
+        classification
       FROM whatsapp_groups
     `,
   );
@@ -207,6 +215,10 @@ async function loadExistingGroups() {
         mapping_status: String(row.mapping_status) as WhatsappGroupMappingStatus,
         customer_id: row.customer_id ? String(row.customer_id) : null,
         mapping_note: String(row.mapping_note ?? ""),
+        source_name: String(row.source_name ?? ""),
+        source_code: row.source_code ? String(row.source_code) : null,
+        normalized_source_name: String(row.normalized_source_name ?? ""),
+        classification: String(row.classification) as WhatsappGroupClassification,
       } satisfies ExistingGroupRow,
     ]),
   );
@@ -592,9 +604,14 @@ async function importWhatsappGroupsFromParsedRows(parsedRows: ParsedGroupRow[]):
     const mappingNotes: string[] = [];
     const lastImportedAts: string[] = [];
 
-    for (const row of parsedRows) {
+    for (const importedRow of parsedRows) {
+      const existing = existingGroups.get(importedRow.jid);
+      // A planilha pode conservar um nome antigo; a revisao manual nao deve regredir na importacao diaria.
+      const row = existing?.mapping_status === 'MANUAL_MAPPED' ? { ...importedRow,
+        sourceName: existing.source_name, sourceCode: existing.source_code,
+        normalizedSourceName: existing.normalized_source_name, classification: existing.classification,
+      } : importedRow;
       classificationCounts[row.classification] += 1;
-      const existing = existingGroups.get(row.jid);
 
       let customerId: string | null = null;
       let mappingStatus: WhatsappGroupMappingStatus = "PENDING_REVIEW";

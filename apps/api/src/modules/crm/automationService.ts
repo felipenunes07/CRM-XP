@@ -24,6 +24,7 @@ import { isReactivationPreset, REACTIVATION_PRESET, REACTIVATION_PHONE, reactiva
 import { findReactivationCustomers, markReactivationCustomersHandled, requireReactivationSender, reactivationSalesAreFresh } from "./reactivationAudience.js";
 import { importWhatsappGroupsFromDefaultWorkbook } from "../whatsapp/whatsappGroupService.js";
 import { runPrimarySync } from "../platform/syncService.js";
+import { buildReactivationGroupScopeSql } from "./reactivationGroupScope.js";
 import {
   buildStageEntryEventKey,
   filterUnhandledStageEntryCustomerIds,
@@ -520,6 +521,7 @@ async function getAutomationRunById(id: string) {
 async function resolveAutomationWhatsappAudience(
   customerIds: string[],
   overrideRecentBlock: boolean,
+  reactivationOnly = false,
 ): Promise<ResolvedAutomationAudience> {
   if (!customerIds.length) {
     return emptyAudienceSnapshot();
@@ -531,10 +533,11 @@ async function resolveAutomationWhatsappAudience(
         id,
         customer_id,
         last_contact_at
-      FROM whatsapp_groups
+      FROM whatsapp_groups g
       WHERE customer_id = ANY($1::uuid[])
         AND mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
         AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'
+        AND ${reactivationOnly ? buildReactivationGroupScopeSql('g') : 'TRUE'}
     `,
     [customerIds],
   );
@@ -635,11 +638,10 @@ async function reactivationAudience(automation: MessageAutomation, ignoreRunId: 
   await requireReactivationSender(automation.whatsappInstanceId);
   const customers = await findReactivationCustomers(automation, ignoreRunId);
   const ids = customers.map((customer) => customer.id);
-  const audience = await resolveAutomationWhatsappAudience(ids, automation.overrideRecentBlock);
+  const audience = await resolveAutomationWhatsappAudience(ids, automation.overrideRecentBlock, true);
   // Mais de um grupo confirmado exige escolher o grupo correto antes do disparo.
-  const groups = await pool.query(`SELECT customer_id, array_agg(id::text) AS ids FROM whatsapp_groups
-    WHERE customer_id = ANY($1::uuid[]) AND mapping_status IN ('AUTO_MAPPED', 'MANUAL_MAPPED')
-      AND jid ~ '^[0-9]+(-[0-9]+)?@g[.]us$'
+  const groups = await pool.query(`SELECT customer_id, array_agg(id::text) AS ids FROM whatsapp_groups g
+    WHERE customer_id = ANY($1::uuid[]) AND ${buildReactivationGroupScopeSql('g')}
     GROUP BY customer_id HAVING COUNT(*) > 1`, [ids]);
   const ambiguousGroups = new Set(groups.rows.flatMap((row) => row.ids as string[]));
   const identities = await pool.query(`SELECT g.id, g.customer_id, g.source_code, c.customer_code, c.display_name

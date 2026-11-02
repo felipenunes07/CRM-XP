@@ -19,6 +19,7 @@ import { listMessageAutomations, runMessageAutomationNow, approveMessageAutomati
 import { claimRecipientForDispatch, markRecipientSent, resetStaleSendingRecipients } from "../whatsapp/whatsappCampaignService.js";
 import { findReactivationCustomers } from "./reactivationAudience.js";
 import { REACTIVATION_PHONE, REACTIVATION_PRESET } from "./reactivationCore.js";
+import { importWhatsappGroupsFromWorkbook } from "../whatsapp/whatsappGroupService.js";
 
 // O teste clona apenas a estrutura; o search_path nunca inclui public e nenhum envio sai da fila falsa.
 describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres real em schema isolado", () => {
@@ -137,6 +138,53 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     await customer(35, "AUTO_MAPPED", 2);
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe("MULTIPLE_GROUPS");
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
+  });
+  it("usa o grupo comercial revisado sem remover o grupo automatico antigo", async () => {
+    const c = await customer(35, "AUTO_MAPPED", 2);
+    const groups = (await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1 ORDER BY id", [c.id])).rows;
+    await db().query("UPDATE whatsapp_groups SET mapping_status='MANUAL_MAPPED' WHERE id=$1", [groups[0]!.id]);
+    expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('READY');
+    const { recipient } = await queuedRecipient();
+    expect(recipient.group_id).toBe(groups[0]!.id);
+    expect(await claimRecipientForDispatch(recipient.id)).toBeTruthy();
+    expect((await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1", [c.id])).rows).toHaveLength(2);
+  });
+  it("nao escolhe entre dois grupos confirmados manualmente", async () => {
+    await customer(35, "MANUAL_MAPPED", 2);
+    expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('MULTIPLE_GROUPS');
+    expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe('NO_MATCH');
+  });
+  it("exclui grupos de pagamento e desativados da previa, fila e envio", async () => {
+    const c = await customer(35, "AUTO_MAPPED", 3);
+    const groups = (await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1 ORDER BY id", [c.id])).rows;
+    await db().query("UPDATE whatsapp_groups SET source_name='CL9001 - Pagamentos',mapping_status='MANUAL_MAPPED' WHERE id=$1", [groups[0]!.id]);
+    await db().query("UPDATE whatsapp_groups SET source_name='CL9001 - Grupo DESATIVADO' WHERE id=$1", [groups[1]!.id]);
+    expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('READY');
+    const { recipient } = await queuedRecipient();
+    expect(recipient.group_id).toBe(groups[2]!.id);
+    expect(await claimRecipientForDispatch(recipient.id)).toBeTruthy();
+  });
+  it("nao envia quando so existe grupo de pagamento", async () => {
+    const c = await customer();
+    await db().query("UPDATE whatsapp_groups SET source_name='Grupo de PAGAMENTOS' WHERE customer_id=$1", [c.id]);
+    expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('NO_GROUP');
+    expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe('NO_MATCH');
+    expect((await db().query('SELECT * FROM message_automation_customer_events')).rows).toHaveLength(0);
+  });
+  it("cancela uma mensagem se outro grupo comercial for confirmado antes do envio", async () => {
+    const c = await customer();
+    const { recipient } = await queuedRecipient();
+    await db().query(`INSERT INTO whatsapp_groups (jid,source_name,normalized_source_name,classification,mapping_status,customer_id)
+      VALUES ('120363999999999@g.us','Grupo revisado','grupo revisado','OTHER','MANUAL_MAPPED',$1)`, [c.id]);
+    expect(await claimRecipientForDispatch(recipient.id)).toBeNull();
+    expect((await db().query('SELECT status FROM whatsapp_campaign_recipients WHERE id=$1', [recipient.id])).rows[0]?.status).toBe('SKIPPED');
+  });
+  it("preserva o nome e codigo revisados quando a planilha ainda tem nome antigo", async () => {
+    const c = await customer();
+    const group = (await db().query("UPDATE whatsapp_groups SET mapping_status='MANUAL_MAPPED',source_name='CL9001 - Nome atual',source_code='CL9001' WHERE customer_id=$1 RETURNING jid", [c.id])).rows[0];
+    await importWhatsappGroupsFromWorkbook(Buffer.from(`Name,Group ID (JID)\nCliente Nome antigo,${group.jid}`));
+    expect((await db().query('SELECT source_name,source_code,mapping_status,customer_id FROM whatsapp_groups WHERE jid=$1', [group.jid])).rows[0])
+      .toMatchObject({source_name:'CL9001 - Nome atual',source_code:'CL9001',mapping_status:'MANUAL_MAPPED',customer_id:c.id});
   });
   it("separa codigo conflitante entre cadastro, nome e grupo", async () => {
     const c = await customer();
