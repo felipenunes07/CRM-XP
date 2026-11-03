@@ -17,6 +17,7 @@ import { logger } from "../../lib/logger.js";
 import type { JwtUser } from "../platform/authService.js";
 import { previewSegment } from "./customerService.js";
 import { createWhatsappCampaign } from "../whatsapp/whatsappCampaignService.js";
+import { EvolutionIdentityUnavailableError } from "../whatsapp/evolutionMetadataService.js";
 import { enqueueWhatsappCampaignRecipients } from "../whatsapp/whatsappQueue.js";
 import { computeRecentBlock } from "../whatsapp/whatsappCore.js";
 import { startRecurringJob } from "../platform/scheduledJobs.js";
@@ -983,8 +984,8 @@ async function createCampaignFromAutomationRun(
   }
 }
 
-async function markAutomationExecuted(automationId: string, scheduledFor: string, schedule: MessageAutomationSchedule) {
-  const nextRunAt = computeNextAutomationRunAt(schedule, new Date(Math.max(Date.now(), new Date(scheduledFor).getTime()) + 1000)).toISOString();
+async function markAutomationExecuted(automationId: string, scheduledFor: string, schedule: MessageAutomationSchedule, retryAt?: string) {
+  const nextRunAt = retryAt ?? computeNextAutomationRunAt(schedule, new Date(Math.max(Date.now(), new Date(scheduledFor).getTime()) + 1000)).toISOString();
   await pool.query(
     `
       UPDATE message_automations
@@ -1035,6 +1036,7 @@ async function executeUnlockedMessageAutomation(
   options: { markSchedule: boolean; systemUser: JwtUser; sendModeOverride?: MessageAutomationSendMode },
 ): Promise<MessageAutomationRun | null> {
   let createdRun: MessageAutomationRun | null = null;
+  let retryAt: string | undefined;
   try {
     const isReactivation = isReactivationPreset(automation);
     if (isReactivation && options.markSchedule) {
@@ -1095,9 +1097,20 @@ async function executeUnlockedMessageAutomation(
       blockedRecentCount: 0,
       errorMessage: error instanceof Error ? error.message : String(error),
     });
+    if (options.markSchedule && isReactivationPreset(automation) && error instanceof EvolutionIdentityUnavailableError) {
+      // A verificacao do remetente falha antes da criacao da campanha.
+      const retry = await pool.query<{ retry_at: Date | null }>(`
+        SELECT CASE WHEN COUNT(*) < 4 THEN NOW() + INTERVAL '5 minutes' END AS retry_at
+        FROM message_automation_runs
+        WHERE automation_id = $1 AND status = 'FAILED' AND error_message = $2
+          AND (scheduled_for AT TIME ZONE 'America/Sao_Paulo')::date =
+              ((NOW() + INTERVAL '5 minutes') AT TIME ZONE 'America/Sao_Paulo')::date
+      `, [automation.id, error.message]);
+      retryAt = retry.rows[0]?.retry_at?.toISOString();
+    }
   } finally {
     if (options.markSchedule) {
-      await markAutomationExecuted(automation.id, scheduledFor, automation.schedule);
+      await markAutomationExecuted(automation.id, scheduledFor, automation.schedule, retryAt);
     }
   }
   return createdRun ? getAutomationRunById(createdRun.id) : null;

@@ -211,6 +211,7 @@ async function fetchEvolutionJson(
   config: EvolutionInstanceConfig,
   path: string,
   init: RequestInit = {},
+  retryTransient = false,
 ): Promise<Record<string, unknown> | null> {
   const signal = init.signal ?? AbortSignal.timeout(6000);
   const response = await fetch(`${stripTrailingSlash(config.baseUrl)}${path}`, {
@@ -223,7 +224,14 @@ async function fetchEvolutionJson(
     },
   });
 
-  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (retryTransient && (response.status === 408 || response.status === 429 || response.status >= 500)) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new EvolutionIdentityUnavailableError();
+  }
+  const payload = (await response.json().catch(error => {
+    if (retryTransient && (error?.name === "TimeoutError" || error?.name === "AbortError")) throw error;
+    return {};
+  })) as Record<string, unknown>;
   if (!response.ok) {
     logger.warn("Evolution metadata request failed", {
       path,
@@ -293,11 +301,32 @@ function phoneFromJid(jid: string | null) {
 }
 
 export async function fetchEvolutionInstanceIdentity(config: EvolutionInstanceConfig) {
-  const instances = await fetchEvolutionInstances(config);
+  let instances: Awaited<ReturnType<typeof fetchEvolutionInstances>>;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const payload = await fetchEvolutionJson(config, "/instance/fetchInstances", {
+        signal: AbortSignal.timeout(12000),
+      }, true);
+      instances = collectArrayPayload(payload);
+      break;
+    } catch (error) {
+      const transient = error instanceof EvolutionIdentityUnavailableError ||
+        (error instanceof Error && ["TimeoutError", "AbortError", "TypeError"].includes(error.name));
+      if (!transient) throw error;
+      if (attempt === 3) throw new EvolutionIdentityUnavailableError();
+      await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+    }
+  }
   const raw = instances.find((item) => parseInstanceSummary(item).instanceName === config.instanceName);
   if (!raw) throw new Error("A instancia selecionada nao foi encontrada na Evolution.");
   const source = { ...raw, ...(pickNestedRecord(raw, ["instance"]) ?? {}) };
   return { phone: phoneFromJid(parseInstanceSummary(raw).ownerJid), state: pickString(source, ["connectionStatus", "state"]) ?? "unknown" };
+}
+
+export class EvolutionIdentityUnavailableError extends Error {
+  constructor() {
+    super("Evolution indisponivel ao verificar a identidade da Lili.");
+  }
 }
 
 async function getCachedChatProfile(instanceName: string, remoteJid: string): Promise<WhatsappProfileCache | null> {
