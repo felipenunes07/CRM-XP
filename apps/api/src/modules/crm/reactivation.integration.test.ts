@@ -8,7 +8,9 @@ vi.mock("../../db/client.js", () => ({ pool: {
   connect: () => state.pool!.connect(),
 } }));
 vi.mock("../whatsapp/whatsappQueue.js", () => ({ enqueueWhatsappCampaignRecipients: state.enqueue }));
-vi.mock("../whatsapp/evolutionMetadataService.js", () => ({ fetchEvolutionInstanceIdentity: state.identity }));
+vi.mock("../whatsapp/evolutionMetadataService.js", async (original) => ({
+  ...await original<object>(), fetchEvolutionInstanceIdentity: state.identity,
+}));
 vi.mock("../platform/syncService.js", () => ({ runPrimarySync: state.sync }));
 vi.mock("../whatsapp/whatsappGroupService.js", async (original) => ({
   ...await original<object>(), importWhatsappGroupsFromDefaultWorkbook: vi.fn(async () => ({})),
@@ -20,6 +22,7 @@ import { claimRecipientForDispatch, markRecipientSent, resetStaleSendingRecipien
 import { findReactivationCustomers } from "./reactivationAudience.js";
 import { REACTIVATION_PHONE, REACTIVATION_PRESET } from "./reactivationCore.js";
 import { importWhatsappGroupsFromWorkbook } from "../whatsapp/whatsappGroupService.js";
+import { EvolutionIdentityUnavailableError } from "../whatsapp/evolutionMetadataService.js";
 
 // O teste clona apenas a estrutura; o search_path nunca inclui public e nenhum envio sai da fila falsa.
 describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres real em schema isolado", () => {
@@ -257,6 +260,21 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     await queuedRecipient();
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
     expect((await db().query("SELECT status FROM whatsapp_campaign_recipients")).rows[0].status).toBe("PENDING");
+  });
+  it("retoma a execucao apos timeout da Evolution sem duplicar campanha", async () => {
+    await customer();
+    const id = rule(30).id;
+    await db().query("UPDATE message_automations SET status='ACTIVE',next_run_at=NOW() WHERE id=$1", [id]);
+    state.identity.mockRejectedValueOnce(new EvolutionIdentityUnavailableError());
+    await executeDueMessageAutomations();
+    expect((await db().query("SELECT status FROM message_automation_runs")).rows).toEqual([{ status: "FAILED" }]);
+    expect((await db().query("SELECT id FROM whatsapp_campaigns")).rows).toHaveLength(0);
+    const retry = (await db().query("SELECT next_run_at BETWEEN NOW() + INTERVAL '4 minutes' AND NOW() + INTERVAL '5 minutes' AS queued FROM message_automations WHERE id=$1", [id])).rows[0];
+    expect(retry.queued).toBe(true);
+    await db().query("UPDATE message_automations SET next_run_at=NOW() WHERE id=$1", [id]);
+    await executeDueMessageAutomations();
+    await executeDueMessageAutomations();
+    expect((await db().query("SELECT id FROM whatsapp_campaigns")).rows).toHaveLength(1);
   });
   it("aguarda vendas atualizadas e nao dispara com banco desatualizado", async () => {
     await customer();
