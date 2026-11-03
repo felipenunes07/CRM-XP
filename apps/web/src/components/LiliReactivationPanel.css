@@ -10,7 +10,11 @@
 .lili-queue-summary svg { color: #6366f1; }
 .lili-queue-summary strong { color: #1e293b; }
 .lili-queue-summary small { color: #64748b; }
-.lili-queue-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+.lili-rule-editor { display: grid; gap: .8rem; padding: 1rem; border: 1px solid #e2e8f0; border-radius: .8rem; }
+.lili-rule-editor label { display: grid; gap: .35rem; font-weight: 600; }
+.lili-rule-editor .lili-rule-active { display: flex; align-items: center; }
+.lili-rule-editor select, .lili-rule-editor input[type="number"], .lili-rule-editor textarea { width: 100%; padding: .55rem; font: inherit; }
+.lili-queue-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
 .lili-queue-stages button { display: flex; flex-direction: column; align-items: stretch; gap: .6rem; padding: 1rem; background: white; border: 1px solid #e2e8f0; border-radius: .8rem; text-align: left; color: #334155; cursor: pointer; }
 .lili-queue-stages button:hover { border-color: #a5b4fc; }
 .lili-queue-stages button.is-selected { border-color: #818cf8; background: #f5f6ff; box-shadow: 0 0 0 1px #818cf8; }

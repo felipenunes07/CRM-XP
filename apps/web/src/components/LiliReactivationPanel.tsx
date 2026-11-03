@@ -26,7 +26,10 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
-  const rules = automations?.filter(a => a.flowDefinition.reactivationPreset === "lili-inactivity-v1");
+  const [editor, setEditor] = useState<{ id: string; days: string; message: string; active: boolean } | null>(null);
+  const [saved, setSaved] = useState(false);
+  const rules = automations?.filter(a => a.flowDefinition.reactivationPreset === "lili-inactivity-v1")
+    .sort((a, b) => (a.segmentDefinition.minDaysInactive ?? 0) - (b.segmentDefinition.minDaysInactive ?? 0));
   const previewQuery = useQuery({
     queryKey: ["lili-reactivation-preview", rules?.map(a => `${a.id}:${a.updatedAt}`).join(",")],
     queryFn: () => api.previewLiliReactivation(token!),
@@ -40,6 +43,44 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
       await queryClient.invalidateQueries({ queryKey: ["automations"] });
     },
   });
+  const saveMutation = useMutation({
+    mutationFn: async (draft: NonNullable<typeof editor>) => {
+      const rule = rules?.find(a => a.id === draft.id);
+      const base = rule ?? rules?.[0];
+      if (!token || !base?.whatsappInstanceId || (draft.id && !rule)) throw new Error("Faixa indisponível. Atualize a tela.");
+      const days = Number(draft.days);
+      if (!rule && rules?.some(a => a.segmentDefinition.minDaysInactive === days)) {
+        throw new Error(`Já existe uma faixa de ${days} dias.`);
+      }
+      const input = {
+        name: rule?.name ?? `Lili — clientes sem comprar há ${days} dias`,
+        status: draft.active ? "ACTIVE" as const : "PAUSED" as const,
+        channel: "WHATSAPP_GROUP" as const,
+        sendMode: "AUTOMATIC" as const,
+        triggerMode: "ON_STAGE_ENTRY" as const,
+        flowDefinition: base.flowDefinition,
+        segmentDefinition: rule?.segmentDefinition ?? { minDaysInactive: days },
+        whatsappInstanceId: base.whatsappInstanceId,
+        messageText: draft.message.trim(),
+        schedule: base.schedule,
+        overrideRecentBlock: rule?.overrideRecentBlock ?? false,
+        minDelaySeconds: base.minDelaySeconds,
+        maxDelaySeconds: base.maxDelaySeconds,
+      };
+      return rule ? api.updateAutomation(token, rule.id, input) : api.createAutomation(token, input);
+    },
+    onSuccess: async () => {
+      setEditor(null);
+      setSaved(true);
+      await queryClient.invalidateQueries({ queryKey: ["automations"] });
+    },
+  });
+  function openEditor(id: string) {
+    const rule = rules?.find(a => a.id === id);
+    saveMutation.reset();
+    setSaved(false);
+    setEditor({ id, days: String(rule?.segmentDefinition.minDaysInactive ?? ""), message: rule?.messageText ?? "", active: rule?.status === "ACTIVE" });
+  }
   const preview = previewQuery.data;
   const rows = (preview?.stages ?? []).flatMap(stage => stage.rows.map(row => ({ ...row, stage })));
   const filtered = rows.filter(row => (stageFilter === null || row.stage.days === stageFilter)
@@ -59,14 +100,43 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
     <div className="lili-queue-heading">
       <div><span className="lili-queue-eyebrow"><MessageCircle size={14} /> Lili Assistente</span>
         <h2 id="lili-queue-title">Próximos disparos</h2>
-        <p>Reativação nos grupos dos clientes · 30, 60 e 90 dias sem comprar</p></div>
+        <p>Reativação nos grupos dos clientes no dia em que completam cada faixa de inatividade</p></div>
       <div className="lili-queue-heading-actions">
+        {canManage && rules?.length ? <button type="button" className="secondary-button" onClick={() => openEditor(rules[0]!.id)}>
+          Editar mensagens e faixas
+        </button> : null}
         <Link to="/disparador" className="lili-queue-history">Acompanhar envios <ArrowRight size={14} /></Link>
         {rules?.length ? <button type="button" className="secondary-button" disabled={previewQuery.isFetching} onClick={() => void previewQuery.refetch()}>
           <RefreshCw size={14} className={previewQuery.isFetching ? "lili-refreshing" : ""} /> Atualizar lista
         </button> : null}
       </div>
     </div>
+    {saved ? <p role="status">Faixa salva.</p> : null}
+    {canManage && editor ? <form className="lili-rule-editor" onSubmit={event => { event.preventDefault(); saveMutation.mutate(editor); }}>
+      <label>Faixa
+        <select value={editor.id} disabled={saveMutation.isPending} onChange={event => openEditor(event.target.value)}>
+          {rules?.map(rule => <option key={rule.id} value={rule.id}>{rule.segmentDefinition.minDaysInactive} dias</option>)}
+          <option value="">Nova faixa</option>
+        </select>
+      </label>
+      {!editor.id ? <label>Dias sem comprar
+        <input type="number" required min={1} max={3650} step={1} placeholder="Ex.: 120" value={editor.days}
+          onChange={event => setEditor({ ...editor, days: event.target.value })} />
+      </label> : null}
+      <label>Mensagem do WhatsApp
+        <textarea required rows={5} value={editor.message} onChange={event => setEditor({ ...editor, message: event.target.value })} />
+      </label>
+      <small>Use {"{nome}"} para inserir o nome do cliente. A mensagem vale para as próximas execuções.</small>
+      <label className="lili-rule-active"><input type="checkbox" checked={editor.active}
+        onChange={event => setEditor({ ...editor, active: event.target.checked })} /> Ativar envio automático</label>
+      {saveMutation.error ? <p role="alert" className="lili-queue-error">{saveMutation.error.message}</p> : null}
+      <div className="lili-queue-heading-actions">
+        <button type="button" className="secondary-button" disabled={saveMutation.isPending} onClick={() => setEditor(null)}>Cancelar</button>
+        <button type="submit" className="primary-button" disabled={saveMutation.isPending || !editor.message.trim()}>
+          {saveMutation.isPending ? "Salvando…" : "Salvar faixa"}
+        </button>
+      </div>
+    </form> : null}
     {error ? <p role="alert" className="lili-queue-error">Não foi possível atualizar a lista: {error.message}</p> : null}
     {!automations || (rules?.length && !preview && previewQuery.isPending) ? <p role="status">Carregando próximos disparos…</p> : null}
     {automations && !rules?.length ? <div className="lili-queue-empty">
@@ -86,7 +156,7 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
         </button>
         {preview.stages.map(stage => <button type="button" key={stage.automationId} className={`lili-stage-${stage.days} ${stageFilter === stage.days ? "is-selected" : ""}`}
           aria-pressed={stageFilter === stage.days} onClick={() => { setStageFilter(stage.days); setPage(0); }}>
-          <span>{stage.days === 90 ? "90 dias ou mais" : `${stage.days}–${stage.days === 30 ? 59 : 89} dias`}<i className={stage.status === "ACTIVE" ? "is-active" : ""}>{stage.status === "ACTIVE" ? "Ativa" : "Pausada"}</i></span>
+          <span>{stage.days} dias<i className={stage.status === "ACTIVE" ? "is-active" : ""}>{stage.status === "ACTIVE" ? "Ativa" : "Pausada"}</i></span>
           <strong>{formatNumber(stage.ready)} <small>prontos</small></strong><small>{formatNumber(stage.rows.length - stage.ready)} pendências para revisar</small>
         </button>)}
       </div>
@@ -106,7 +176,7 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
           const expanded = expandedCustomer === key;
           return <Fragment key={key}><tr>
             <td><strong>{row.customerName}</strong><small>{row.customerCode ?? "Sem código"} · {row.daysInactive} dias sem comprar</small></td>
-            <td><span className={`lili-queue-stage-pill lili-stage-${row.stage.days}`}>{row.stage.days} dias{row.stage.days === 90 ? "+" : ""}</span></td>
+            <td><span className={`lili-queue-stage-pill lili-stage-${row.stage.days}`}>{row.stage.days} dias</span></td>
             <td>{row.stage.status === "ACTIVE" ? <><span>{row.stage.nextRunAt ? scheduleFormat.format(new Date(row.stage.nextRunAt)) : "Aguardando agendamento"}</span><small>São Paulo · verificação diária</small></> : <span className="lili-queue-pending">Automação pausada</span>}</td>
             <td><span className="lili-queue-group">{row.groupName ?? "Aguardando confirmação do vínculo"}</span></td>
             <td><span className={`lili-queue-status ${row.status === "READY" ? "is-ready" : "is-pending"}`}>

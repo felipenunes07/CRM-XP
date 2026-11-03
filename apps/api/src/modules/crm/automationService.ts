@@ -629,7 +629,12 @@ function validateDelays(input: UpsertMessageAutomationInput) {
 
 async function validateReactivationInput(input: UpsertMessageAutomationInput) {
   if (input.flowDefinition?.reactivationPreset !== REACTIVATION_PRESET) return;
-  reactivationStage(input.segmentDefinition);
+  try {
+    reactivationStage(input.segmentDefinition);
+  } catch {
+    throw new HttpError(400, "Informe uma faixa de inatividade valida para a Lili.");
+  }
+  if (!input.messageText.trim()) throw new HttpError(400, "Escreva a mensagem da faixa.");
   if (input.savedSegmentId || input.triggerMode !== 'ON_STAGE_ENTRY') throw new HttpError(400, "A regua Lili exige o gatilho por faixa sem publico salvo.");
   if (input.schedule.frequency !== 'DAILY' || input.schedule.timezone !== 'America/Sao_Paulo') throw new HttpError(400, "A regua Lili exige verificacao diaria no horario de Sao Paulo.");
   await requireReactivationSender(input.whatsappInstanceId ?? null);
@@ -767,7 +772,11 @@ export async function updateMessageAutomation(id: string, input: UpsertMessageAu
         override_recent_block = $15,
         min_delay_seconds = $16,
         max_delay_seconds = $17,
-        next_run_at = $18::timestamptz,
+        next_run_at = CASE
+          WHEN flow_definition->>'reactivationPreset' = 'lili-inactivity-v1'
+            AND $10::jsonb = flow_definition AND $9::jsonb = segment_definition
+            AND $14::jsonb = schedule_json AND $3 = status AND next_run_at IS NOT NULL
+          THEN next_run_at ELSE $18::timestamptz END,
         updated_at = NOW()
       WHERE id = $1
       RETURNING id
