@@ -24,13 +24,12 @@ export async function findReactivationCustomers(automation: MessageAutomation, i
     SELECT c.id, c.display_name, c.customer_code, p.last_purchase::text,
       ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - p.last_purchase)::int AS days_inactive
     FROM customers c JOIN purchases p ON p.customer_id = c.id
-    WHERE ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - p.last_purchase) >= $1
-      AND ($2::int IS NULL OR ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - p.last_purchase) <= $2)
+    WHERE p.last_purchase = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date - $1::int
       AND NOT EXISTS (
         SELECT 1 FROM message_automation_customer_events e
         JOIN message_automation_runs run ON run.id = e.last_triggered_run_id
-        WHERE e.automation_id = $3 AND e.customer_id = c.id
-          AND ($4::uuid IS NULL OR run.id <> $4)
+        WHERE e.automation_id = $2 AND e.customer_id = c.id
+          AND ($3::uuid IS NULL OR run.id <> $3)
           AND e.event_key = 'lili-inactivity:' || $1::text || ':purchase:' || p.last_purchase::text
           AND (run.status = 'PENDING_APPROVAL' OR EXISTS (
             SELECT 1 FROM whatsapp_campaign_recipients r
@@ -46,7 +45,7 @@ export async function findReactivationCustomers(automation: MessageAutomation, i
           AND campaign.filters_snapshot->'reactivationCycles'->>c.id::text = p.last_purchase::text
       )
     ORDER BY days_inactive DESC, c.display_name
-  `, [stage.days, stage.maxDays, automation.id, ignoreRunId]);
+  `, [stage.days, automation.id, ignoreRunId]);
   return result.rows;
 }
 

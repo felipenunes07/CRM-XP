@@ -67,7 +67,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     vi.unstubAllGlobals();
   });
 
-  async function customer(days = 35, mapping = "AUTO_MAPPED", groupCount = 1) {
+  async function customer(days = 30, mapping = "AUTO_MAPPED", groupCount = 1) {
     const id = randomUUID();
     const code = `CL${Math.random().toString().slice(2, 10)}`;
     await db().query("INSERT INTO customers (id,customer_code,display_name,normalized_name,source_system_first) VALUES ($1,$2,$3,'cliente teste','history_xls')", [id, code, `${code} - Cliente Teste`]);
@@ -120,16 +120,28 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
   });
   it("inicia novo ciclo depois de recompra", async () => {
-    const c = await customer(45);
-    await queuedRecipient();
+    const c = await customer(30);
+    const { run } = await queuedRecipient();
+    // A primeira passagem pela faixa ocorreu em um dia anterior.
+    const { rows: [{ purchase }] } = await db().query(
+      "SELECT ((CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date-60)::text AS purchase",
+    );
+    await db().query(
+      "UPDATE whatsapp_campaigns SET filters_snapshot=jsonb_set(filters_snapshot, ARRAY['reactivationCycles',$2::text],to_jsonb($3::text)) WHERE id=$1",
+      [run.campaignId, c.id, purchase],
+    );
+    await db().query(
+      "UPDATE message_automation_customer_events SET event_key=$2 WHERE customer_id=$1",
+      [c.id, `lili-inactivity:30:purchase:${purchase}`],
+    );
     await db().query("UPDATE orders SET order_date=(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date WHERE customer_id=$1", [c.id]);
     expect((await findReactivationCustomers(rule(30)))).toHaveLength(0);
-    await db().query("UPDATE orders SET order_date=(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date-31 WHERE customer_id=$1", [c.id]);
+    await db().query("UPDATE orders SET order_date=(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date-30 WHERE customer_id=$1", [c.id]);
     await queuedRecipient();
     expect((await db().query("SELECT * FROM whatsapp_campaigns")).rows).toHaveLength(2);
   });
   it("nao consome a faixa de quem esta bloqueado ou sem grupo", async () => {
-    const c = await customer(35, "PENDING_REVIEW");
+    const c = await customer(30, "PENDING_REVIEW");
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
     await db().query("UPDATE whatsapp_groups SET mapping_status='MANUAL_MAPPED',last_contact_at=NOW() WHERE customer_id=$1", [c.id]);
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
@@ -138,12 +150,12 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     await queuedRecipient();
   });
   it("separa clientes com mais de um grupo para revisao", async () => {
-    await customer(35, "AUTO_MAPPED", 2);
+    await customer(30, "AUTO_MAPPED", 2);
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe("MULTIPLE_GROUPS");
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe("NO_MATCH");
   });
   it("usa o grupo comercial revisado sem remover o grupo automatico antigo", async () => {
-    const c = await customer(35, "AUTO_MAPPED", 2);
+    const c = await customer(30, "AUTO_MAPPED", 2);
     const groups = (await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1 ORDER BY id", [c.id])).rows;
     await db().query("UPDATE whatsapp_groups SET mapping_status='MANUAL_MAPPED' WHERE id=$1", [groups[0]!.id]);
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('READY');
@@ -153,12 +165,12 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1", [c.id])).rows).toHaveLength(2);
   });
   it("nao escolhe entre dois grupos confirmados manualmente", async () => {
-    await customer(35, "MANUAL_MAPPED", 2);
+    await customer(30, "MANUAL_MAPPED", 2);
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('MULTIPLE_GROUPS');
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe('NO_MATCH');
   });
   it("exclui grupos de pagamento e desativados da previa, fila e envio", async () => {
-    const c = await customer(35, "AUTO_MAPPED", 3);
+    const c = await customer(30, "AUTO_MAPPED", 3);
     const groups = (await db().query("SELECT id FROM whatsapp_groups WHERE customer_id=$1 ORDER BY id", [c.id])).rows;
     await db().query("UPDATE whatsapp_groups SET source_name='CL9001 - Pagamentos',mapping_status='MANUAL_MAPPED' WHERE id=$1", [groups[0]!.id]);
     await db().query("UPDATE whatsapp_groups SET source_name='CL9001 - Grupo DESATIVADO' WHERE id=$1", [groups[1]!.id]);
@@ -196,10 +208,10 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await runMessageAutomationNow(rule(30).id, user)).status).toBe('NO_MATCH');
   });
   it("mostra o grupo de um cadastro duplicado sem enfileirar duas mensagens", async () => {
-    const c = await customer(120);
+    const c = await customer(90);
     const alias = randomUUID();
     await db().query("INSERT INTO customers(id,customer_code,display_name,normalized_name,source_system_first) VALUES($1,$2,$3,'cliente teste','supabase_2026')", [alias, `${c.code}-`, `${c.code} - Cliente Teste`]);
-    await db().query("INSERT INTO orders(customer_id,customer_code,order_date,total_amount,status,source_system,order_number) VALUES($1,$2,CURRENT_DATE-100,100,'VALID','history_xls',$3)", [alias,`${c.code}-`,randomUUID()]);
+    await db().query("INSERT INTO orders(customer_id,customer_code,order_date,total_amount,status,source_system,order_number) VALUES($1,$2,(CURRENT_TIMESTAMP AT TIME ZONE 'America/Sao_Paulo')::date-90,100,'VALID','history_xls',$3)", [alias,`${c.code}-`,randomUUID()]);
     const row = (await previewLiliReactivation()).stages.find(s=>s.days===90)!.rows.find(r=>r.customerId===alias);
     expect(row).toMatchObject({status:'DUPLICATE_CUSTOMER',groupName:expect.stringContaining(c.code)});
     const {run,recipient}=await queuedRecipient(90);
@@ -207,7 +219,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await db().query('SELECT id FROM whatsapp_campaign_recipients WHERE campaign_id=$1',[run.campaignId])).rows).toHaveLength(1);
   });
   it("diagnostica codigo divergente mesmo quando o vinculo ainda nao existe", async () => {
-    const c = await customer(35,'PENDING_REVIEW');
+    const c = await customer(30,'PENDING_REVIEW');
     await db().query("UPDATE customers SET display_name='CL999999 - Outro Cliente' WHERE id=$1",[c.id]);
     expect((await previewLiliReactivation()).stages[0]!.rows[0]!.status).toBe('IDENTITY_CONFLICT');
   });
@@ -331,7 +343,7 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     expect((await db().query('SELECT * FROM whatsapp_campaigns')).rows).toHaveLength(1);
   });
   it("ignora cancelados, pedidos futuros e pedidos Olist ainda nao enviados", async () => {
-    const c = await customer(35);
+    const c = await customer(30);
     await db().query("UPDATE orders SET status='cancelado' WHERE customer_id=$1", [c.id]);
     expect(await findReactivationCustomers(rule(30))).toHaveLength(0);
     await db().query("UPDATE orders SET status='Em aberto',source_system='olist_v2' WHERE customer_id=$1", [c.id]);
@@ -339,11 +351,19 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     await db().query("UPDATE orders SET status='Enviado',order_date=CURRENT_DATE+1 WHERE customer_id=$1", [c.id]);
     expect(await findReactivationCustomers(rule(30))).toHaveLength(0);
   });
-  it("trata a base antiga so na faixa atual, inclusive acima de 180 dias", async () => {
+  it("inclui somente quem completa 30, 60 ou 90 dias hoje", async () => {
     await customer(250);
+    await customer(91);
+    await customer(59);
     expect(await findReactivationCustomers(rule(30))).toHaveLength(0);
     expect(await findReactivationCustomers(rule(60))).toHaveLength(0);
-    expect(await findReactivationCustomers(rule(90))).toHaveLength(1);
+    expect(await findReactivationCustomers(rule(90))).toHaveLength(0);
+    for (const days of [30, 60]) {
+      const entered = await customer(days);
+      expect(await findReactivationCustomers(rule(days))).toMatchObject([{ id: entered.id }]);
+    }
+    const entered = await customer(90);
+    expect(await findReactivationCustomers(rule(90))).toMatchObject([{ id: entered.id }]);
     await queuedRecipient(90);
   });
   it("agenda em Sao Paulo e pula datas perdidas sem disparos acumulados", () => {
