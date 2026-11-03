@@ -1,7 +1,7 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageAutomation } from "@olist-crm/shared";
-import { ArrowRight, CalendarClock, ChevronLeft, ChevronRight, MessageCircle, RefreshCw, Search } from "lucide-react";
+import { ArrowRight, CalendarClock, ChevronLeft, ChevronRight, MessageCircle, Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber } from "../lib/format";
@@ -28,6 +28,11 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [editor, setEditor] = useState<{ id: string; days: string; message: string; active: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
+  const editorMessage = useRef<HTMLTextAreaElement>(null);
+  const editingId = editor?.id;
+  useEffect(() => {
+    if (editingId !== undefined) editorMessage.current?.focus();
+  }, [editingId]);
   const rules = automations?.filter(a => a.flowDefinition.reactivationPreset === "lili-inactivity-v1")
     .sort((a, b) => (a.segmentDefinition.minDaysInactive ?? 0) - (b.segmentDefinition.minDaysInactive ?? 0));
   const previewQuery = useQuery({
@@ -99,32 +104,42 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
   return <section className="panel lili-queue" aria-labelledby="lili-queue-title">
     <div className="lili-queue-heading">
       <div><span className="lili-queue-eyebrow"><MessageCircle size={14} /> Lili Assistente</span>
-        <h2 id="lili-queue-title">Próximos disparos</h2>
+        <h2 id="lili-queue-title">Réguas de reativação</h2>
         <p>Reativação nos grupos dos clientes no dia em que completam cada faixa de inatividade</p></div>
       <div className="lili-queue-heading-actions">
-        {canManage && rules?.length ? <button type="button" className="secondary-button" onClick={() => openEditor(rules[0]!.id)}>
-          Editar mensagens e faixas
+        {canManage && rules?.length ? <button type="button" className="primary-button" disabled={saveMutation.isPending} onClick={() => openEditor("")}>
+          <Plus size={16} /> Nova faixa
         </button> : null}
         <Link to="/disparador" className="lili-queue-history">Acompanhar envios <ArrowRight size={14} /></Link>
-        {rules?.length ? <button type="button" className="secondary-button" disabled={previewQuery.isFetching} onClick={() => void previewQuery.refetch()}>
-          <RefreshCw size={14} className={previewQuery.isFetching ? "lili-refreshing" : ""} /> Atualizar lista
-        </button> : null}
       </div>
     </div>
+    {rules?.length ? <div className="lili-rule-grid">
+      {rules.map(rule => {
+        const days = rule.segmentDefinition.minDaysInactive;
+        const active = rule.status === "ACTIVE";
+        return <article key={rule.id} className="lili-rule-card">
+          <div className="lili-rule-card-heading">
+            <strong>{days} dias</strong>
+            <span className={active ? "is-active" : ""}>{active ? "Ativa" : "Pausada"}</span>
+          </div>
+          <p>{rule.messageText.split("\n")[0]}</p>
+          <small>{active ? `Verifica às ${rule.schedule.time} · São Paulo` : "Envio automático pausado"}</small>
+          {canManage ? <button type="button" className="secondary-button" disabled={saveMutation.isPending}
+            aria-label={`Editar mensagem de ${days} dias`} onClick={() => openEditor(rule.id)}>
+            <Pencil size={14} /> Editar mensagem
+          </button> : null}
+        </article>;
+      })}
+    </div> : null}
     {saved ? <p role="status">Faixa salva.</p> : null}
     {canManage && editor ? <form className="lili-rule-editor" onSubmit={event => { event.preventDefault(); saveMutation.mutate(editor); }}>
-      <label>Faixa
-        <select value={editor.id} disabled={saveMutation.isPending} onChange={event => openEditor(event.target.value)}>
-          {rules?.map(rule => <option key={rule.id} value={rule.id}>{rule.segmentDefinition.minDaysInactive} dias</option>)}
-          <option value="">Nova faixa</option>
-        </select>
-      </label>
+      <h3>{editor.id ? `Editar mensagem de ${editor.days} dias` : "Criar faixa de inatividade"}</h3>
       {!editor.id ? <label>Dias sem comprar
         <input type="number" required min={1} max={3650} step={1} placeholder="Ex.: 120" value={editor.days}
           onChange={event => setEditor({ ...editor, days: event.target.value })} />
       </label> : null}
       <label>Mensagem do WhatsApp
-        <textarea required rows={5} value={editor.message} onChange={event => setEditor({ ...editor, message: event.target.value })} />
+        <textarea ref={editorMessage} required rows={5} value={editor.message} onChange={event => setEditor({ ...editor, message: event.target.value })} />
       </label>
       <small>Use {"{nome}"} para inserir o nome do cliente. A mensagem vale para as próximas execuções.</small>
       <label className="lili-rule-active"><input type="checkbox" checked={editor.active}
@@ -150,22 +165,26 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
         <small>Horário de São Paulo</small></span>
         <span>Envio pela {preview.sender.name} · +{preview.sender.phone}</span>
       </div>
-      <div className="lili-queue-stages" aria-label="Filtrar por faixa de inatividade">
-        <button type="button" className={stageFilter === null ? "is-selected" : ""} aria-pressed={stageFilter === null} onClick={() => { setStageFilter(null); setPage(0); }}>
-          <span>Todas as faixas</span><strong>{formatNumber(ready)} <small>prontos</small></strong><small>{formatNumber(pending)} pendências para revisar</small>
+      <div className="lili-queue-heading">
+        <div><h3>Próximos disparos</h3><p>{formatNumber(ready)} prontos · {formatNumber(pending)} pendências</p></div>
+        <button type="button" className="secondary-button" disabled={previewQuery.isFetching} onClick={() => void previewQuery.refetch()}>
+          <RefreshCw size={14} className={previewQuery.isFetching ? "lili-refreshing" : ""} /> Atualizar
         </button>
-        {preview.stages.map(stage => <button type="button" key={stage.automationId} className={`lili-stage-${stage.days} ${stageFilter === stage.days ? "is-selected" : ""}`}
-          aria-pressed={stageFilter === stage.days} onClick={() => { setStageFilter(stage.days); setPage(0); }}>
-          <span>{stage.days} dias<i className={stage.status === "ACTIVE" ? "is-active" : ""}>{stage.status === "ACTIVE" ? "Ativa" : "Pausada"}</i></span>
-          <strong>{formatNumber(stage.ready)} <small>prontos</small></strong><small>{formatNumber(stage.rows.length - stage.ready)} pendências para revisar</small>
-        </button>)}
       </div>
+      {rows.length === 0 ? <div className="lili-queue-empty">Nenhum cliente na fila nesta conferência.</div> : <>
       <div className="lili-queue-toolbar">
         <div className="lili-queue-filters" role="group" aria-label="Filtrar por situação">
           {([["READY", "Prontos"], ["PENDING", "Pendências"], ["ALL", "Todos"]] as const).map(([value, label]) =>
             <button type="button" key={value} aria-pressed={statusFilter === value} className={statusFilter === value ? "is-selected" : ""}
               onClick={() => { setStatusFilter(value); setPage(0); }}>{label}</button>)}
         </div>
+        <select aria-label="Filtrar por faixa" value={stageFilter ?? ""} onChange={event => {
+          setStageFilter(event.target.value === "" ? null : Number(event.target.value));
+          setPage(0);
+        }}>
+          <option value="">Todas as faixas</option>
+          {preview.stages.map(stage => <option key={stage.automationId} value={stage.days}>{stage.days} dias</option>)}
+        </select>
         <label className="lili-queue-search"><Search size={15} /><input aria-label="Buscar cliente ou grupo" placeholder="Buscar cliente ou grupo…" value={search}
           onChange={event => { setSearch(event.target.value); setPage(0); }} /></label>
       </div>
@@ -190,6 +209,7 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
         <div><button type="button" aria-label="Página anterior" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={16} /></button>
           <span>{currentPage + 1} / {pageCount}</span><button type="button" aria-label="Próxima página" disabled={currentPage + 1 >= pageCount} onClick={() => setPage(currentPage + 1)}><ChevronRight size={16} /></button></div>
       </div>
+      </>}
       <p className="lili-queue-note">Previsão atualizada em {formatDateTime(preview.generatedAt)}. A lista é conferida novamente antes de enviar; uma nova compra reinicia a contagem.</p>
     </> : null}
   </section>;

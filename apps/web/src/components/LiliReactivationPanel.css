@@ -14,16 +14,6 @@
 .lili-rule-editor label { display: grid; gap: .35rem; font-weight: 600; }
 .lili-rule-editor .lili-rule-active { display: flex; align-items: center; }
 .lili-rule-editor select, .lili-rule-editor input[type="number"], .lili-rule-editor textarea { width: 100%; padding: .55rem; font: inherit; }
-.lili-queue-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
-.lili-queue-stages button { display: flex; flex-direction: column; align-items: stretch; gap: .6rem; padding: 1rem; background: white; border: 1px solid #e2e8f0; border-radius: .8rem; text-align: left; color: #334155; cursor: pointer; }
-.lili-queue-stages button:hover { border-color: #a5b4fc; }
-.lili-queue-stages button.is-selected { border-color: #818cf8; background: #f5f6ff; box-shadow: 0 0 0 1px #818cf8; }
-.lili-queue-stages button > span { display: flex; justify-content: space-between; align-items: center; gap: .25rem; font-size: .78rem; font-weight: 650; flex-wrap: wrap; }
-.lili-queue-stages strong { font-size: 1.7rem; line-height: 1.1; color: #0f172a; }
-.lili-queue-stages strong small { font-size: .78rem; font-weight: 500; }
-.lili-queue-stages small { font-size: .72rem; color: #64748b; }
-.lili-queue-stages i { padding: .2rem .4rem; border-radius: 1rem; background: #f1f5f9; color: #64748b; font-size: .6rem; font-style: normal; }
-.lili-queue-stages i.is-active { background: #ecfdf5; color: #047857; }
 .lili-queue-filters { display: flex; gap: .25rem; padding: .25rem; border-radius: .55rem; background: #f1f5f9; }
 .lili-queue-filters button { border: 0; background: transparent; border-radius: .4rem; padding: .45rem .8rem; font-size: .76rem; color: #64748b; cursor: pointer; }
 .lili-queue-filters button.is-selected { color: #0f172a; background: white; box-shadow: 0 1px 3px #0f172a12; font-weight: 650; }
@@ -64,9 +54,17 @@
 @keyframes lili-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .lili-refreshing { animation: none; } }
 @media (max-width: 700px) {
-  .lili-queue-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .lili-queue-heading-actions { justify-content: flex-start; }
   .lili-queue-summary { gap: .75rem; }
   .lili-queue-search { width: 100%; }
-  .lili-queue-stages button { padding: .8rem; }
 }
+.lili-rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .85rem; }
+.lili-rule-card { display: flex; flex-direction: column; align-items: flex-start; gap: .6rem; border: 1px solid #dce6f2; border-radius: .85rem; background: #f8faff; padding: 1rem; min-width: 0; }
+.lili-rule-card-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: .5rem; }
+.lili-rule-card-heading strong { font-size: 1.35rem; color: #17243b; }
+.lili-rule-card-heading span { padding: .2rem .5rem; border-radius: 1rem; background: #e9eef5; color: #475569; font-size: .7rem; }
+.lili-rule-card-heading .is-active { background: #dff6ec; color: #047857; }
+.lili-rule-card p { margin: 0; color: #334155; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.lili-rule-card small { margin-top: auto; color: #475569; }
+.lili-rule-editor h3, .lili-queue-heading h3 { margin: 0; }
+.lili-queue-toolbar select { width: auto; max-width: 100%; padding: .45rem .65rem; border: 1px solid #dce6f2; border-radius: .5rem; font: inherit; }

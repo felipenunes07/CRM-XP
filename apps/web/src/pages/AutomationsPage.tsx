@@ -312,7 +312,7 @@ function automationTriggerLabel(triggerMode: MessageAutomationTriggerMode) {
 }
 
 function runStatusLabel(run: MessageAutomationRun) {
-  if (run.status === "PENDING_APPROVAL") return "Aguardando aprovacao";
+  if (run.status === "PENDING_APPROVAL") return "Aguardando aprovação";
   if (run.status === "ENQUEUED") return "Enfileirada";
   if (run.status === "APPROVED") return "Aprovada";
   if (run.status === "NO_MATCH") return "Sem grupos";
@@ -1035,9 +1035,15 @@ function AutomationsPageInner() {
   const canManage = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [draft, setDraft] = useState<AutomationDraft>(createInitialDraft);
   const [activeAutomationId, setActiveAutomationId] = useState<string | null>(null);
-  const [builderMode, setBuilderMode] = useState<"visual" | "classic">("visual");
+  const [view, setView] = useState<"overview" | "activity" | "advanced">("overview");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const editorHeading = useRef<HTMLElement>(null);
+  const [builderMode, setBuilderMode] = useState<"visual" | "classic">("classic");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>("audience");
   const [feedbackMessage, setFeedbackMessage] = useState("");
+  useEffect(() => {
+    if (view === "advanced" && editorOpen) editorHeading.current?.scrollIntoView({ block: "start" });
+  }, [view, editorOpen, activeAutomationId]);
   const initialFlow = useMemo(() => createDefaultFlow(draft), []);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlow.edges);
@@ -1087,6 +1093,8 @@ function AutomationsPageInner() {
     const segment = savedSegmentsQuery.data.find((item) => item.id === incoming.savedSegmentId);
 
     setActiveAutomationId(null);
+    setView("advanced");
+    setEditorOpen(true);
     setBuilderMode("classic");
     setDraft({
       ...createInitialDraft(),
@@ -1242,6 +1250,7 @@ function AutomationsPageInner() {
   }
 
   function openAutomation(automation: MessageAutomation) {
+    setEditorOpen(true);
     const nextDraft = automationToDraft(automation);
     const flow = readFlowDefinition(automation.flowDefinition, nextDraft);
     setActiveAutomationId(automation.id);
@@ -1294,12 +1303,68 @@ function AutomationsPageInner() {
 
   return (
     <div className="automation-page">
+      <header className="automation-home-heading">
+        <h1>Automações</h1>
+        <p>Configure as mensagens da Lili e acompanhe o que o CRM está enviando.</p>
+      </header>
+      <nav className="automation-home-nav" aria-label="Seções de automações">
+        <button type="button" aria-pressed={view === "overview"} onClick={() => setView("overview")}>Réguas da Lili</button>
+        <button type="button" aria-pressed={view === "activity"} onClick={() => setView("activity")}>
+          Atividade {pendingRuns.length > 0 ? <span>{pendingRuns.length} para aprovar</span> : null}
+        </button>
+        <button type="button" aria-pressed={view === "advanced"} onClick={() => setView("advanced")}>Avançado</button>
+      </nav>
+      {feedbackMessage && view !== "overview" ? <div role="status" className="save-ok automation-feedback">{feedbackMessage}</div> : null}
+      {view === "overview" ? (
       <LiliReactivationPanel token={token} automations={automationsQuery.data} canManage={canManage} />
+      ) : null}
+      {view === "advanced" ? <>
+        <article className="automation-run-panel">
+          <div className="automation-section-title">
+            <Copy size={18} />
+            <strong>Automações salvas</strong>
+          </div>
+          {canManage ? <button type="button" className="secondary-button" onClick={() => { resetForm(); setEditorOpen(true); }}>
+            <Plus size={16} /> Nova automação
+          </button> : null}
+          {automationsQuery.data?.length === 0 ? <p className="empty-state">Nenhuma automação cadastrada.</p> : null}
+          {automationsQuery.data?.map((automation) => (
+            <div key={automation.id} className="automation-saved-row">
+              <button
+                type="button"
+                className={`automation-row-toggle ${automation.status === "ACTIVE" ? "is-active" : ""}`}
+                disabled={!canManage || toggleAutomationMutation.isPending}
+                onClick={() => toggleAutomationMutation.mutate(automation)}
+                aria-label={automation.status === "ACTIVE" ? "Pausar automacao" : "Ativar automacao"}
+              >
+                <span />
+              </button>
+              <button type="button" className="automation-saved-main" onClick={() => openAutomation(automation)}>
+                <strong>{automation.name}</strong>
+                <small>
+                  {automationStatusLabel(automation.status)} | {automationTriggerLabel(automation.triggerMode)} |{" "}
+                  {automation.sendMode === "AUTOMATIC" ? "envia sozinho" : "pede aprovacao"} |{" "}
+                  {automation.nextRunAt ? formatDateTime(automation.nextRunAt) : "sem agenda"}
+                </small>
+              </button>
+              <button
+                type="button"
+                className="automation-run-now"
+                disabled={!canManage || runNowMutation.isPending}
+                onClick={() => runNowMutation.mutate({ id: automation.id, sendMode: "APPROVAL" })}
+              >
+                <Zap size={14} />
+                Rodar
+              </button>
+            </div>
+          ))}
+        </article>
 
-      <header className="automation-topbar">
+      {editorOpen ? <>
+      <header className="automation-topbar" ref={editorHeading}>
         <div>
-          <p className="eyebrow">Automacoes</p>
-          <h2>{builderMode === "visual" ? "Construtor visual" : "Formulario classico"}</h2>
+          <p className="eyebrow">Editor avançado</p>
+          <h2>{activeAutomationId ? "Editar automação" : "Nova automação"}</h2>
         </div>
         <div className="automation-name-box">
           <input
@@ -1322,20 +1387,21 @@ function AutomationsPageInner() {
           </button>
         </div>
         <div className="automation-topbar-actions">
-          <div className="automation-mode-toggle" aria-label="Modo de criacao">
+          <button type="button" className="secondary-button" onClick={() => setEditorOpen(false)}>Fechar editor</button>
+          <div className="automation-mode-toggle" aria-label="Modo de criação">
             <button
               type="button"
               className={builderMode === "visual" ? "is-active" : ""}
               onClick={() => setBuilderMode("visual")}
             >
-              Visual
+              Editor de blocos
             </button>
             <button
               type="button"
               className={builderMode === "classic" ? "is-active" : ""}
               onClick={() => setBuilderMode("classic")}
             >
-              Classico
+              Formulário
             </button>
           </div>
           <button type="button" className="secondary-button" onClick={() => previewMutation.mutate(draft.segmentDefinition)}>
@@ -1374,8 +1440,6 @@ function AutomationsPageInner() {
           ) : null}
         </div>
       </header>
-
-      {feedbackMessage ? <div className="save-ok automation-feedback">{feedbackMessage}</div> : null}
 
       <section className="automation-explain-strip">
         <div>
@@ -1488,13 +1552,15 @@ function AutomationsPageInner() {
         />
       )}
 
-      <section className="automation-bottom-grid">
+      </> : null}
+      </> : null}
+      {view === "activity" ? <section className="automation-bottom-grid automation-activity-grid">
         <article className="automation-run-panel">
           <div className="automation-section-title">
             <ShieldCheck size={18} />
-            <strong>Aguardando aprovacao</strong>
+            <strong>Aguardando aprovação</strong>
           </div>
-          {!pendingRuns.length ? <div className="empty-state">Nenhuma execucao pendente.</div> : null}
+          {runsQuery.data && !pendingRuns.length ? <div className="empty-state">Nenhuma execução pendente.</div> : null}
           {pendingRuns.map((run) => (
             <div key={run.id} className="automation-run-card">
               <strong>{run.automationName}</strong>
@@ -1517,46 +1583,12 @@ function AutomationsPageInner() {
 
         <article className="automation-run-panel">
           <div className="automation-section-title">
-            <Copy size={18} />
-            <strong>Automacoes salvas</strong>
-          </div>
-          {automationsQuery.data?.map((automation) => (
-            <div key={automation.id} className="automation-saved-row">
-              <button
-                type="button"
-                className={`automation-row-toggle ${automation.status === "ACTIVE" ? "is-active" : ""}`}
-                disabled={!canManage || toggleAutomationMutation.isPending}
-                onClick={() => toggleAutomationMutation.mutate(automation)}
-                aria-label={automation.status === "ACTIVE" ? "Pausar automacao" : "Ativar automacao"}
-              >
-                <span />
-              </button>
-              <button type="button" className="automation-saved-main" onClick={() => openAutomation(automation)}>
-                <strong>{automation.name}</strong>
-                <small>
-                  {automationStatusLabel(automation.status)} | {automationTriggerLabel(automation.triggerMode)} |{" "}
-                  {automation.sendMode === "AUTOMATIC" ? "envia sozinho" : "pede aprovacao"} |{" "}
-                  {automation.nextRunAt ? formatDateTime(automation.nextRunAt) : "sem agenda"}
-                </small>
-              </button>
-              <button
-                type="button"
-                className="automation-run-now"
-                disabled={!canManage || runNowMutation.isPending}
-                onClick={() => runNowMutation.mutate({ id: automation.id, sendMode: "APPROVAL" })}
-              >
-                <Zap size={14} />
-                Rodar
-              </button>
-            </div>
-          ))}
-        </article>
-
-        <article className="automation-run-panel">
-          <div className="automation-section-title">
             <RadioTower size={18} />
-            <strong>Ultimas execucoes</strong>
+            <strong>Últimas execuções</strong>
           </div>
+          {runsQuery.isPending ? <p role="status">Carregando execuções…</p> : null}
+          {runsQuery.isError ? <p role="alert">Não foi possível carregar as execuções.</p> : null}
+          {runsQuery.data?.length === 0 ? <p className="empty-state">Nenhuma execução registrada.</p> : null}
           {runsQuery.data?.slice(0, 8).map((run) => (
             <div key={run.id} className="automation-history-row">
               <span className={`status-badge status-${runTone(run.status)}`}>{runStatusLabel(run)}</span>
@@ -1568,7 +1600,7 @@ function AutomationsPageInner() {
             </div>
           ))}
         </article>
-      </section>
+      </section> : null}
     </div>
   );
 }
