@@ -22,11 +22,13 @@ export function isReactivationPreset(automation: Pick<MessageAutomation, "flowDe
 }
 
 export function reactivationStage(definition: SegmentDefinition) {
-  const stage = REACTIVATION_STAGES.find((item) => item.days === definition.minDaysInactive);
-  if (!stage || (definition.maxDaysInactive ?? null) !== stage.maxDays) {
-    throw new Error("A regua Lili exige faixas de 30–59, 60–89 ou 90+ dias.");
+  const days = definition.minDaysInactive;
+  const maxDays = REACTIVATION_STAGES.find((item) => item.days === days)?.maxDays ?? null;
+  if (days === undefined || !Number.isInteger(days) || days < 1 || days > 3650 ||
+      (definition.maxDaysInactive != null && definition.maxDaysInactive !== maxDays)) {
+    throw new Error("Informe um dia de inatividade valido entre 1 e 3650.");
   }
-  return stage;
+  return { days, maxDays };
 }
 
 export function reactivationEventKey(stageDays: number, purchaseDate: string) {

@@ -22,6 +22,7 @@ import { claimRecipientForDispatch, markRecipientSent, resetStaleSendingRecipien
 import { findReactivationCustomers } from "./reactivationAudience.js";
 import { REACTIVATION_PHONE, REACTIVATION_PRESET } from "./reactivationCore.js";
 import { importWhatsappGroupsFromWorkbook } from "../whatsapp/whatsappGroupService.js";
+import { createMessageAutomation, updateMessageAutomation } from "./automationService.js";
 import { EvolutionIdentityUnavailableError } from "../whatsapp/evolutionMetadataService.js";
 
 // O teste clona apenas a estrutura; o search_path nunca inclui public e nenhum envio sai da fila falsa.
@@ -365,6 +366,21 @@ describe.runIf(Boolean(process.env.TEST_DATABASE_URL))("reativacao com Postgres 
     const entered = await customer(90);
     expect(await findReactivationCustomers(rule(90))).toMatchObject([{ id: entered.id }]);
     await queuedRecipient(90);
+  });
+  it("cria faixa de 120 dias e salva a mensagem sem mover o horario da regua", async () => {
+    const { id: _id, ...base } = rule(90);
+    const custom = await createMessageAutomation({
+      ...base, status: "ACTIVE", name: "Lili 120 dias",
+      segmentDefinition: { minDaysInactive: 120 }, messageText: "Olá {nome}!",
+    });
+    expect(custom.nextRunAt).toBeTruthy();
+    const edited = await updateMessageAutomation(custom.id, { ...custom, messageText: "Tudo bem, {nome}?" });
+    expect(edited?.nextRunAt).toBe(custom.nextRunAt);
+    const entered = await customer(120);
+    await customer(121);
+    const preview = (await previewLiliReactivation()).stages.find(stage => stage.days === 120);
+    expect(preview?.rows).toMatchObject([{ customerId: entered.id, message: "Tudo bem, Cliente Teste?" }]);
+    expect((await runMessageAutomationNow(custom.id, user)).status).toBe("ENQUEUED");
   });
   it("agenda em Sao Paulo e pula datas perdidas sem disparos acumulados", () => {
     expect(computeNextAutomationRunAt({ frequency: "DAILY", time: "09:00", timezone: "America/Sao_Paulo" }, new Date("2026-11-02T13:00:00Z")).toISOString()).toBe("2026-11-03T12:00:00.000Z");
