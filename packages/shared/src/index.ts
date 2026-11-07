@@ -1355,7 +1355,41 @@ export interface InventoryOverviewResponse {
   };
 }
 
+export interface InventoryPacklistMeta {
+  sourceUpdatedAt: string | null;
+  importedAt: string | null;
+  lastError: string | null;
+  receivedLots: number;
+  pendingLots: number;
+  unmatchedSkuCount?: number;
+}
+
+export interface InventoryReplenishment {
+  leadTimeDays: 60;
+  targetDays: 60;
+  averageDailySales: number;
+  incomingUnits: number;
+  scheduledUnits: number;
+  overdueUnits: number;
+  incompleteUnits: number;
+  undatedUnits: number;
+  nextArrivalAt: string | null;
+  stockoutAt: string | null;
+  suggestedBuyUnits: number;
+  urgentAir: boolean;
+  arrivals: Array<{
+    lotId: string;
+    quantity: number;
+    departureDate: string | null;
+    arrivalDate: string | null;
+    incomplete: boolean;
+    overdue: boolean;
+    inferredYear: boolean;
+  }>;
+}
+
 export interface InventoryBuyingListItem {
+  replenishment?: InventoryReplenishment | null;
   sku: string;
   modelKey: string;
   modelLabel: string;
@@ -1387,6 +1421,7 @@ export interface InventoryBuyingListItem {
 
 export interface InventoryBuyingResponse {
   snapshot: InventorySnapshotMeta | null;
+  packlist?: InventoryPacklistMeta | null;
   items: InventoryBuyingListItem[];
 }
 

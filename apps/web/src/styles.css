@@ -11277,6 +11277,22 @@ button.attendants-ranking-row:hover {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.inventory-packlist-lists {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inventory-buying-table .inventory-stale-model-cell {
+  max-width: 280px;
+  white-space: normal;
+}
+
+.packlist-supply-cell {
+  min-width: 200px;
+  max-width: 260px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .inventory-summary-panel {
   display: grid;
   gap: 0.65rem;

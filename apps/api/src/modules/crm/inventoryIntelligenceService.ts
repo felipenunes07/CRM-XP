@@ -1,6 +1,8 @@
 import type {
   InventoryBuyingListItem,
   InventoryBuyingResponse,
+  InventoryPacklistMeta,
+  InventoryReplenishment,
   InventoryBuyRecommendation,
   InventoryCustomerSuggestion,
   InventoryDailySeriesPoint,
@@ -50,6 +52,8 @@ import {
   withRetry,
 } from "../ingestion/olistClient.js";
 import { getInventorySnapshotWithItems } from "./inventoryService.js";
+import { getPacklistSnapshot } from "./packlistService.js";
+import { projectPacklistSupply, saoPauloDate } from "./packlistCore.js";
 
 const INVENTORY_COVERAGE_LOW_DAYS = 15;
 const INVENTORY_HIGH_STOCK_THRESHOLD = 50;
@@ -1651,6 +1655,7 @@ interface InventoryTopCustomerRow {
 }
 
 interface InventoryModelAggregate {
+  replenishment?: InventoryReplenishment | null;
   sku: string;
   modelKey: string;
   modelLabel: string;
@@ -1702,6 +1707,7 @@ interface InventorySkuSeriesValue {
 }
 
 interface InventoryAnalyticsDataset {
+  packlist?: InventoryPacklistMeta;
   snapshot: InventorySnapshotMeta | null;
   previousSnapshot: InventorySnapshotMeta | null;
   models: InventoryModelAggregate[];
@@ -1713,6 +1719,7 @@ interface InventoryAnalyticsDataset {
 
 let inventoryAnalyticsCache:
   | {
+      packlistVersion: string;
       snapshotId: string | null;
       builtAt: number;
       data: InventoryAnalyticsDataset;
@@ -2141,6 +2148,7 @@ function resolveInventoryRestockStatus(input: {
 
 function buildBuyingListItem(model: InventoryModelAggregate): InventoryBuyingListItem {
   return {
+    replenishment: model.replenishment ?? null,
     sku: model.sku,
     modelKey: model.modelKey,
     modelLabel: model.modelLabel,
@@ -2643,13 +2651,15 @@ function buildModelHighlights(model: InventoryModelAggregate, benchmarks: Invent
 }
 
 async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<InventoryAnalyticsDataset> {
-  const context = await buildInventoryContext();
+  const [context, packlist] = await Promise.all([buildInventoryContext(), getPacklistSnapshot()]);
+  const packlistVersion = JSON.stringify([packlist.meta.importedAt, packlist.meta.lastError, saoPauloDate()]);
   const snapshotId = context.snapshot?.id ?? null;
 
   if (
     !forceRefresh &&
     inventoryAnalyticsCache &&
     inventoryAnalyticsCache.snapshotId === snapshotId &&
+    inventoryAnalyticsCache.packlistVersion === packlistVersion &&
     Date.now() - inventoryAnalyticsCache.builtAt <= INVENTORY_ANALYTICS_CACHE_TTL_MS
   ) {
     return inventoryAnalyticsCache.data;
@@ -2657,6 +2667,7 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
 
   if (!context.snapshot) {
     const emptyDataset: InventoryAnalyticsDataset = {
+      packlist: packlist.meta,
       snapshot: null,
       previousSnapshot: null,
       models: [],
@@ -2666,6 +2677,7 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       latestSeriesDate: null,
     };
     inventoryAnalyticsCache = {
+      packlistVersion,
       snapshotId,
       builtAt: Date.now(),
       data: emptyDataset,
@@ -2794,6 +2806,12 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
       sales90: model.sales90,
     });
     model.buyPriority = computeBuyPriority(model);
+    if (packlist.data) {
+      model.replenishment = projectPacklistSupply({ stockUnits: model.stockUnits, sales90: model.sales90,
+        skus: model.currentItems.map((item) => item.sku), lots: packlist.data.lots });
+      model.buyRecommendation = model.replenishment.suggestedBuyUnits > 0 ? "BUY_NOW" : "DO_NOT_BUY";
+      model.buyPriority += model.replenishment.suggestedBuyUnits > 0 ? (model.replenishment.urgentAir ? 1000 : 500) : 0;
+    }
     model.holdSales =
       (model.stockUnits <= 0 && model.sales90 > 0) ||
       (model.stockUnits > 0 && model.coverageDays !== null && model.coverageDays <= INVENTORY_COVERAGE_LOW_DAYS);
@@ -2810,6 +2828,8 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
 
   const models = [...modelByKey.values()].sort((left, right) => sortLocale(left.modelLabel, right.modelLabel));
   const dataset: InventoryAnalyticsDataset = {
+    packlist: { ...packlist.meta, unmatchedSkuCount: new Set((packlist.data?.lots ?? []).flatMap((lot) =>
+      Object.keys(lot.quantities).filter((sku) => !modelKeyBySku.has(sku)))).size },
     snapshot: context.snapshot,
     previousSnapshot: context.previousSnapshot,
     models,
@@ -2820,6 +2840,7 @@ async function buildInventoryAnalyticsDataset(forceRefresh = false): Promise<Inv
   };
 
   inventoryAnalyticsCache = {
+    packlistVersion,
     snapshotId,
     builtAt: Date.now(),
     data: dataset,
@@ -3050,6 +3071,7 @@ export async function getInventoryBuying(): Promise<InventoryBuyingResponse> {
 
   return {
     snapshot: dataset.snapshot,
+    packlist: dataset.packlist,
     items,
   };
 }

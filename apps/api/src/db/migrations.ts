@@ -4908,4 +4908,16 @@ export const migrations = [
   `,
   supplierPriceSchema,
   customerIdentitySchema,
+  `
+  CREATE TABLE IF NOT EXISTS inventory_packlist_snapshot (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    source_path TEXT,
+    source_updated_at TIMESTAMPTZ,
+    source_size BIGINT,
+    imported_at TIMESTAMPTZ,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    data JSONB,
+    last_error TEXT
+  );
+  `,
 ];

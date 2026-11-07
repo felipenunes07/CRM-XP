@@ -220,6 +220,9 @@ const envSchema = z.object({
   DROPBOX_APP_SECRET: z.string().optional(),
   // Caminho no Dropbox (ex: /XP SALDO TEMPORARIO)
   DROPBOX_CUSTOMER_CREDIT_PATH: z.string().default("/XP SALDO TEMPORARIO"),
+  DROPBOX_PACKLIST_FILE_PATH: z.string().default("/Packlist/Telas PACKLIST.xlsx"),
+  PACKLIST_WORKBOOK_PATH: z.string().default("C:\\Users\\Felipe\\Dropbox\\Packlist\\Telas PACKLIST.xlsx"),
+  PACKLIST_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
   CUSTOMER_CREDIT_WORKBOOK_DIR: z
     .string()
     .default("C:\\Users\\Felipe\\Dropbox\\XP SALDO TEMPORARIO"),
