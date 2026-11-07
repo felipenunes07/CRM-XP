@@ -22,6 +22,7 @@ import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationS
 import { startSupplierPriceScheduler } from "./modules/crm/supplierPriceService.js";
 import { startAttendanceReportScheduler } from "./modules/whatsapp/whatsappAttendanceReportService.js";
 import { startReactivationReportScheduler } from "./modules/whatsapp/whatsappReactivationReportService.js";
+import { startPacklistScheduler } from "./modules/crm/packlistService.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -39,6 +40,7 @@ async function main() {
   const folderWatchers: DropboxFolderWatcher[] = [];
   const recurringJobs: RecurringJobHandle[] = [];
   recurringJobs.push(startSupplierPriceScheduler());
+  recurringJobs.push(startPacklistScheduler());
 
   // 1. Primary sales sync
   recurringJobs.push(

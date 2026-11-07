@@ -32,11 +32,12 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { InventorySalesTab } from "../components/InventorySalesTab";
 import { InventoryStockTab } from "../components/InventoryStockTab";
+import { PacklistIncomingCell, PacklistPurchaseCell } from "../components/PacklistSupply";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDateTime, formatDaysSince, formatNumber, formatShortDate } from "../lib/format";
 
 type InventoryView = "overview" | "screens" | "sales" | "buying" | "restock" | "stale" | "models";
-type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" | "hold_sales";
+type BuyingFilter = "all" | "buy_now" | "ending_soon" | "watch" | "do_not_buy" | "hold_sales" | "no_incoming" | "insufficient";
 type RestockWindow = "all" | "today" | "7d" | "30d";
 type StaleFilter = "30_60" | "60_90" | "90_120" | "120plus";
 type InventoryKindFilter = "all" | InventoryProductKind;
@@ -238,6 +239,10 @@ function productKindTone(value: InventoryStaleListItem["productKind"] | Inventor
 }
 
 function matchesBuyingFilter(item: InventoryBuyingListItem, filter: BuyingFilter) {
+  if (filter === "no_incoming" || filter === "insufficient") {
+    return Boolean(item.replenishment && item.replenishment.suggestedBuyUnits > 0 &&
+      (filter === "no_incoming" ? item.replenishment.incomingUnits === 0 : item.replenishment.incomingUnits > 0));
+  }
   if (filter === "buy_now") {
     return item.buyRecommendation === "BUY_NOW";
   }
@@ -695,7 +700,11 @@ function ModelDetailPanel({
 
   const model = detail.model;
   const decisionCopy =
-    model.buyRecommendation === "BUY_NOW"
+    model.replenishment
+      ? model.replenishment.suggestedBuyUnits > 0
+        ? `Compra sugerida de ${formatNumber(model.replenishment.suggestedBuyUnits)} unidades para cobrir 60 dias, considerando as chegadas do Packlist.`
+        : "Estoque e chegadas previstas cobrem a demanda estimada dos próximos 60 dias."
+      : model.buyRecommendation === "BUY_NOW"
       ? "Reposição recomendada: a demanda recente está pressionando o estoque disponível."
       : model.buyRecommendation === "WATCH"
         ? "Acompanhe este SKU: estoque e ritmo de venda pedem revisão antes da próxima compra."
@@ -733,6 +742,10 @@ function ModelDetailPanel({
       </div>
 
       <div className="invsales-kpi-grid">
+        {model.replenishment ? <>
+          <article className="invsales-kpi"><span>A caminho · Packlist</span><PacklistIncomingCell value={model.replenishment} /></article>
+          <article className="invsales-kpi"><span>Compra sugerida · 60 dias</span><PacklistPurchaseCell value={model.replenishment} /></article>
+        </> : null}
         <article className="invsales-kpi">
           <span>Estoque atual</span>
           <strong>{formatNumber(model.stockUnits)}</strong>
@@ -1026,6 +1039,7 @@ export function InventoryPage() {
     queryKey: ["inventory-buying"],
     queryFn: () => api.inventoryBuying(token!),
     enabled: Boolean(token && activeView === "buying"),
+    refetchInterval: 60_000,
   });
 
   const restockQuery = useQuery({
@@ -1074,6 +1088,10 @@ export function InventoryPage() {
   });
 
   const snapshotMeta = overviewQuery.data?.snapshot ?? snapshotQuery.data;
+  const packlistRefresh = useMutation({
+    mutationFn: () => api.refreshPacklist(token!),
+    onSettled: () => queryClient.invalidateQueries({ predicate: (query) => String(query.queryKey[0]).startsWith("inventory-") }),
+  });
   const latestSeriesDate = overviewQuery.data?.dailySeries.at(-1)?.date ?? toDateOnly(snapshotMeta?.importedAt ?? null);
 
   const visibleBuyingItems = useMemo(
@@ -1434,6 +1452,38 @@ export function InventoryPage() {
 
       {activeView === "buying" ? (
         <>
+          <section className="panel">
+            <div className="inventory-section-heading">
+              <div>
+                <h3>Planejamento com o Packlist</h3>
+                <p>Estoque e vendas do sistema · média de vendas dos últimos 90 dias · cobertura de 60 dias.</p>
+                <p>Chegada estimada: saída + 60 dias para todos os lotes, até a identificação dos aéreos.</p>
+              </div>
+              {canRefresh ? <button type="button" className="ghost-button" disabled={packlistRefresh.isPending} onClick={() => packlistRefresh.mutate()}>
+                {packlistRefresh.isPending ? "Lendo Packlist…" : "Atualizar Packlist"}
+              </button> : null}
+            </div>
+            {buyingQuery.isLoading ? <p>Carregando projeção…</p> : buyingQuery.isError ? <p role="alert">Não foi possível carregar o planejamento de compras.</p> :
+              buyingQuery.data?.packlist?.importedAt ? <p>
+                Packlist atualizado em {formatDateTime(buyingQuery.data.packlist.sourceUpdatedAt)} ·
+                {" "}{buyingQuery.data.packlist.pendingLots} lotes pendentes · sincronização automática.
+              </p> : <p role="status">Packlist ainda não sincronizado. As recomendações atuais ainda não consideram mercadorias a caminho.</p>}
+            {buyingQuery.data?.packlist?.lastError ? <p role="alert">Falha na última sincronização. {buyingQuery.data.packlist.importedAt ? "Exibindo a última leitura válida." : "Sem leitura válida."} {buyingQuery.data.packlist.lastError}</p> : null}
+            {packlistRefresh.isError ? <p role="alert">Não foi possível atualizar o Packlist. A leitura anterior foi preservada.</p> : null}
+            {(buyingQuery.data?.packlist?.unmatchedSkuCount ?? 0) > 0 ? <p role="alert">{buyingQuery.data?.packlist?.unmatchedSkuCount} SKUs do Packlist não estão no catálogo atual de estoque e precisam de conferência.</p> : null}
+            <p>Atrasados, lotes incompletos e quantidades sem data ficam visíveis, mas não reduzem a compra sugerida. Datas sem ano usam o ano mais recente compatível com a data do arquivo.</p>
+          </section>
+          <section className="inventory-summary-grid inventory-packlist-lists">
+            {[
+              { filter: "no_incoming" as const, title: "1. Reposição sem lote a caminho", description: "Produtos com demanda e cobertura insuficiente, sem reposição cadastrada." },
+              { filter: "insufficient" as const, title: "2. Reposição insuficiente e urgências", description: "Existe lote, mas a quantidade ou a chegada não evita a falta nos próximos 60 dias." },
+            ].map((list) => <button key={list.filter} type="button" className={`panel inventory-summary-panel inventory-summary-clickable ${buyingFilter === list.filter ? "selected" : ""}`}
+              disabled={!buyingQuery.data?.packlist?.importedAt} aria-pressed={buyingFilter === list.filter} onClick={() => setBuyingFilter(list.filter)}>
+              <span>{list.title}</span>
+              <strong>{buyingQuery.data?.packlist?.importedAt ? formatNumber((buyingQuery.data.items ?? []).filter((item) => matchesBuyingFilter(item, list.filter)).length) : "Sem projeção"}</strong>
+              <span>{list.description}</span>
+            </button>)}
+          </section>
           <section className="panel inventory-inline-toolbar">
             <div className="inventory-chip-row">
               {[
@@ -1462,18 +1512,20 @@ export function InventoryPage() {
                 <div className="inventory-section-heading">
                   <div>
                     <p className="eyebrow">Compras</p>
-                    <h3>Tabela de compras</h3>
+                    <h3>{buyingFilter === "no_incoming" ? "Reposição sem lote a caminho" : buyingFilter === "insufficient" ? "Reposição insuficiente e urgências" : "Tabela de compras"}</h3>
                   </div>
                   <span>{formatNumber(visibleBuyingItems.length)} SKUs</span>
                 </div>
 
                 <div className="inventory-stale-table-wrap">
-                  <table className="data-table inventory-stale-table">
+                  <table className="data-table inventory-stale-table inventory-buying-table">
                     <thead>
                       <tr>
                         <th>SKU</th>
                         <th>Tipo</th>
                         <th>Em estoque</th>
+                        <th>A caminho · Packlist</th>
+                        <th>Compra sugerida · 60 dias</th>
                         <th>Status SKU</th>
                         <th>Venda 30/90</th>
                         <th>Cobertura</th>
@@ -1503,6 +1555,8 @@ export function InventoryPage() {
                           <td>
                             <strong>{formatNumber(item.stockUnits)}</strong>
                           </td>
+                          <td><PacklistIncomingCell value={item.replenishment} /></td>
+                          <td><PacklistPurchaseCell value={item.replenishment} /></td>
                           <td>
                             <strong>{item.activeSkuCount > 0 ? "Ativo" : "Sem saldo"}</strong>
                             <span className="inventory-table-secondary-text">{formatNumber(item.totalSkuCount)} linha(s)</span>

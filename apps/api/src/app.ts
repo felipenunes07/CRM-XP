@@ -56,6 +56,7 @@ import {
   getInventoryStale,
 } from "./modules/crm/inventoryIntelligenceService.js";
 import { getInventoryPriceCatalog, getInventorySnapshot, refreshInventorySnapshot } from "./modules/crm/inventoryService.js";
+import { getPacklistSnapshot, syncPacklist } from "./modules/crm/packlistService.js";
 import { createPriceSupplier, downloadPriceSnapshot, getPriceSnapshot, getSupplierProductHistory, importPriceSnapshot, listPriceSnapshots, listPriceSuppliers, syncPriceSupplier } from "./modules/crm/supplierPriceService.js";
 import { getCrossSellStrategy } from "./modules/crm/strategyCrossSellService.js";
 import { getSlowMovingStrategy } from "./modules/crm/strategySlowMovingService.js";
@@ -1655,6 +1656,15 @@ export function createApp() {
   app.get("/api/inventory/buying", async (_request, response, next) => {
     try {
       response.json(await getInventoryBuying());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/inventory/packlist/refresh", requireRole(["ADMIN", "MANAGER"]), async (_request, response, next) => {
+    try {
+      await syncPacklist();
+      response.json((await getPacklistSnapshot()).meta);
     } catch (error) {
       next(error);
     }

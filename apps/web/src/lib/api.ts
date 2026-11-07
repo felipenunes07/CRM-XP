@@ -34,6 +34,7 @@ import type {
   IdeaBoardItem,
   IdeaVoteFeedback,
   InventoryBuyingResponse,
+  InventoryPacklistMeta,
   InventoryIntelligenceDetailResponse,
   InventoryIntelligenceResponse,
   InventoryModelDetailResponse,
@@ -834,6 +835,9 @@ export const api = {
   },
   inventoryBuying(token: string) {
     return request<InventoryBuyingResponse>("/api/inventory/buying", {}, token);
+  },
+  refreshPacklist(token: string) {
+    return request<InventoryPacklistMeta>("/api/inventory/packlist/refresh", { method: "POST" }, token, false, 120_000);
   },
   inventoryRestock(token: string) {
     return request<InventoryRestockResponse>("/api/inventory/restock", {}, token);
