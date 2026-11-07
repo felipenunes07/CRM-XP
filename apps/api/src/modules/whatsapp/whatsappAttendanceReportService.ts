@@ -81,12 +81,12 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
 }
 
 export async function countLostAttendanceCustomers(date: string): Promise<number> {
-  // "Passou de 90 dias": count only the first day above 90, once per customer.
+  // Count only the day the customer reaches 90 days, matching the final Lili stage.
   // Ignore future orders, and exclude customers who already bought again today.
   const result = await pool.query<{ count: number }>(`
     SELECT COUNT(DISTINCT o.customer_id)::int AS count
     FROM orders o
-    WHERE o.order_date = $1::date - 91
+    WHERE o.order_date = $1::date - 90
       AND NOT EXISTS (
         SELECT 1 FROM orders newer
         WHERE newer.customer_id = o.customer_id
