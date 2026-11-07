@@ -164,7 +164,7 @@ _06/11/2026_
 
   it("rejects individual-chat destinations", async () => {
     mocks.env.WHATSAPP_ATTENDANCE_REPORT_GROUP_JID = "5511999999999@s.whatsapp.net";
-    await expect(runScheduledAttendanceReport(new Date("2026-11-07T15:55:00Z"))).rejects.toThrow("Invalid attendance report group JID");
+    await expect(runScheduledAttendanceReport(new Date("2026-11-07T15:55:00Z"))).rejects.toThrow("Invalid daily report group JID");
     expect(mocks.send).not.toHaveBeenCalled();
   });
 });

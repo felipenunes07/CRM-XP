@@ -6,7 +6,6 @@ import { startRecurringJob } from "../platform/scheduledJobs.js";
 import { getWhatsappDailySummaryReport } from "./whatsappMonitorService.js";
 
 const TIMEZONE = "America/Sao_Paulo";
-const LOCK_NAMESPACE = 724013;
 const SELLERS = [
   { name: "Thaís", aliases: ["thais"] },
   { name: "Suellen", aliases: ["suellen", "suelen"] },
@@ -30,7 +29,7 @@ interface AttendanceSummary {
   agents: AttendanceAgent[];
 }
 
-export function getAttendanceReportSchedule(now = new Date()) {
+export function getAttendanceReportSchedule(now = new Date(), reportMinute = 55) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: TIMEZONE,
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -38,7 +37,7 @@ export function getAttendanceReportSchedule(now = new Date()) {
   }).formatToParts(now).map((part) => [part.type, part.value]));
   const date = `${parts.year}-${parts.month}-${parts.day}`;
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
-  const scheduledMinute = (weekday === 6 ? 12 : 16) * 60 + 55;
+  const scheduledMinute = (weekday === 6 ? 12 : 16) * 60 + reportMinute;
   const minute = Number(parts.hour) * 60 + Number(parts.minute);
   // A short recovery window tolerates a restart without sending an old report at night.
   return { date, due: weekday !== 0 && minute >= scheduledMinute && minute < scheduledMinute + 15 };
@@ -110,43 +109,47 @@ export async function previewAttendanceGroupReport(date: string) {
 
 export async function runScheduledAttendanceReport(now = new Date()) {
   const schedule = getAttendanceReportSchedule(now);
-  const groupJid = env.WHATSAPP_ATTENDANCE_REPORT_GROUP_JID.trim();
   if (!env.WHATSAPP_ATTENDANCE_REPORT_ENABLED || !schedule.due) return { sent: false, reason: "not_due" };
-  if (!/^\d+(?:-\d+)?@g\.us$/.test(groupJid)) throw new Error("Invalid attendance report group JID");
+  return sendDailyGroupReportOnce(schedule.date, "attendance", async () => (await previewAttendanceGroupReport(schedule.date)).text);
+}
 
-  const cursorKey = `whatsapp_attendance_report:${groupJid}:${schedule.date}`;
+export async function sendDailyGroupReportOnce(date: string, kind: "attendance" | "reactivation", buildText: () => Promise<string>) {
+  const groupJid = env.WHATSAPP_ATTENDANCE_REPORT_GROUP_JID.trim();
+  if (!/^\d+(?:-\d+)?@g\.us$/.test(groupJid)) throw new Error("Invalid daily report group JID");
+  const lockNamespace = kind === "attendance" ? 724013 : 724014;
+  const cursorKey = `whatsapp_${kind}_report:${groupJid}:${date}`;
   const client = await pool.connect();
   let locked = false;
   try {
     const lock = await client.query<{ locked: boolean }>(
-      "SELECT pg_try_advisory_lock($1::int, $2::int) AS locked", [LOCK_NAMESPACE, 1],
+      "SELECT pg_try_advisory_lock($1::int, $2::int) AS locked", [lockNamespace, 1],
     );
     locked = lock.rows[0]?.locked === true;
     if (!locked) return { sent: false, reason: "running" };
     const previous = await client.query("SELECT cursor_value FROM sync_cursors WHERE key = $1", [cursorKey]);
     if (previous.rows.length > 0) return { sent: false, reason: "already_claimed" };
 
-    const report = await previewAttendanceGroupReport(schedule.date);
+    const text = await buildText();
     // Persist before contacting WhatsApp: a timeout or process crash must not duplicate the message.
     await client.query(`
       INSERT INTO sync_cursors (key, cursor_value, updated_at) VALUES ($1, $2, NOW())
-    `, [cursorKey, JSON.stringify({ status: "sending", date: schedule.date })]);
+    `, [cursorKey, JSON.stringify({ status: "sending", date })]);
     try {
-      await sendToGroup(groupJid, report.text, env.WHATSAPP_ATTENDANCE_REPORT_INSTANCE_ID);
+      await sendToGroup(groupJid, text, env.WHATSAPP_ATTENDANCE_REPORT_INSTANCE_ID);
     } catch (error) {
       await client.query("UPDATE sync_cursors SET cursor_value = $2, updated_at = NOW() WHERE key = $1", [
-        cursorKey, JSON.stringify({ status: "failed", date: schedule.date, error: String(error) }),
+        cursorKey, JSON.stringify({ status: "failed", date, error: String(error) }),
       ]);
       throw error;
     }
     await client.query("UPDATE sync_cursors SET cursor_value = $2, updated_at = NOW() WHERE key = $1", [
-      cursorKey, JSON.stringify({ status: "sent", date: schedule.date, sentAt: new Date().toISOString() }),
+      cursorKey, JSON.stringify({ status: "sent", date, sentAt: new Date().toISOString() }),
     ]);
-    logger.info("whatsapp attendance report sent", { date: schedule.date, groupJid });
-    return { sent: true, date: schedule.date };
+    logger.info(`whatsapp ${kind} report sent`, { date, groupJid });
+    return { sent: true, date };
   } finally {
     try {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1::int, $2::int)", [LOCK_NAMESPACE, 1]);
+      if (locked) await client.query("SELECT pg_advisory_unlock($1::int, $2::int)", [lockNamespace, 1]);
     } finally {
       client.release();
     }

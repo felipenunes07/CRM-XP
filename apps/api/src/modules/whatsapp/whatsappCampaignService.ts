@@ -519,7 +519,7 @@ const orderIdentityMatchSql = (orderAlias: string, recipientAlias: string) => `
   )
 `;
 
-async function getWhatsappCampaignPerformance(campaignId: string, excludePerformance = false): Promise<WhatsappCampaignPerformance> {
+export async function getWhatsappCampaignPerformance(campaignId: string, excludePerformance = false): Promise<WhatsappCampaignPerformance> {
   const recipientsResult = await pool.query(
     `
       SELECT id, status

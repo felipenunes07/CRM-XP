@@ -21,6 +21,7 @@ import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js
 import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationService.js";
 import { startSupplierPriceScheduler } from "./modules/crm/supplierPriceService.js";
 import { startAttendanceReportScheduler } from "./modules/whatsapp/whatsappAttendanceReportService.js";
+import { startReactivationReportScheduler } from "./modules/whatsapp/whatsappReactivationReportService.js";
 
 async function main() {
   await bootstrapPlatform();
@@ -28,6 +29,7 @@ async function main() {
   const whatsappWorker = startWhatsappDispatchWorker();
   const automationScheduler = startMessageAutomationScheduler();
   const attendanceReportScheduler = startAttendanceReportScheduler();
+  const reactivationReportScheduler = startReactivationReportScheduler();
   const offboardingScheduler = startDailyOffboardingScheduler();
   const billingAlertScheduler = startBillingAlertScheduler();
   const lifecycleScheduler = startDailyLifecycleScheduler();
@@ -246,6 +248,7 @@ async function main() {
     await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
     await attendanceReportScheduler.close();
+    await reactivationReportScheduler.close();
     await offboardingScheduler.close();
     await billingAlertScheduler.close();
     await lifecycleScheduler.close();
