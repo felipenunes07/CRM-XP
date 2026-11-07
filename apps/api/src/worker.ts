@@ -20,12 +20,14 @@ import { startDailyOffboardingScheduler } from "./modules/crm/offboardingAlertSe
 import { startBillingAlertScheduler } from "./modules/crm/billingAlertService.js";
 import { startDailyLifecycleScheduler } from "./modules/crm/lifecycleAutomationService.js";
 import { startSupplierPriceScheduler } from "./modules/crm/supplierPriceService.js";
+import { startAttendanceReportScheduler } from "./modules/whatsapp/whatsappAttendanceReportService.js";
 
 async function main() {
   await bootstrapPlatform();
   const worker = startWorkerProcessing();
   const whatsappWorker = startWhatsappDispatchWorker();
   const automationScheduler = startMessageAutomationScheduler();
+  const attendanceReportScheduler = startAttendanceReportScheduler();
   const offboardingScheduler = startDailyOffboardingScheduler();
   const billingAlertScheduler = startBillingAlertScheduler();
   const lifecycleScheduler = startDailyLifecycleScheduler();
@@ -243,6 +245,7 @@ async function main() {
     folderWatchers.forEach((watcher) => watcher.close());
     await Promise.all(recurringJobs.map((job) => job.close()));
     await automationScheduler.close();
+    await attendanceReportScheduler.close();
     await offboardingScheduler.close();
     await billingAlertScheduler.close();
     await lifecycleScheduler.close();
