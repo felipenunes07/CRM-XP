@@ -10,7 +10,7 @@ vi.mock("../../db/client.js", () => ({ pool: { connect: mocks.connect, query: mo
 vi.mock("../../lib/env.js", () => ({ env: mocks.env }));
 vi.mock("node:fs/promises", () => ({ default: { stat: mocks.stat, readFile: mocks.readFile } }));
 vi.mock("../../lib/dropboxClient.js", () => ({ listDropboxFiles: mocks.list, downloadFileByPath: mocks.download, cleanupTempFile: mocks.cleanup }));
-import { syncPacklist } from "./packlistService.js";
+import { startPacklistScheduler, syncPacklist } from "./packlistService.js";
 
 const updatedAt = "2026-11-06T21:04:00.000Z";
 function sourceBytes() {
@@ -33,6 +33,22 @@ beforeEach(() => {
 });
 
 describe("Packlist synchronization", () => {
+  it("imports automatically on startup, checks again after 15 minutes, and stops on shutdown", async () => {
+    vi.useFakeTimers();
+    const scheduler = startPacklistScheduler();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.connect).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(mocks.connect).toHaveBeenCalledTimes(2);
+      await scheduler.close();
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(mocks.connect).toHaveBeenCalledTimes(2);
+    } finally {
+      await scheduler.close();
+      vi.useRealTimers();
+    }
+  });
   it("saves an atomically replaced snapshot with parsed pending quantities", async () => {
     await syncPacklist();
     const insert = mocks.query.mock.calls.find(([sql]) => sql.includes("source_size, imported_at"));

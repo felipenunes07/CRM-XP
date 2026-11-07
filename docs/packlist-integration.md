@@ -7,7 +7,7 @@ A aba **Estoque → Compras** cruza o estoque atual do CRM, as vendas por SKU do
 
 ## Fonte e atualização
 
-O worker verifica o arquivo na inicialização e a cada 15 minutos. Compara caminho, tamanho e data de modificação antes de baixar ou processar novamente. Usa o arquivo local quando disponível; em outros ambientes, usa o cliente Dropbox já configurado no CRM.
+A API e o worker verificam o arquivo na inicialização e a cada 15 minutos. Uma trava no banco impede importações simultâneas. Assim a rotina funciona também quando a produção roda somente a API. Compara caminho, tamanho e data de modificação antes de baixar ou processar novamente. Usa o arquivo local quando disponível; em outros ambientes, usa o cliente Dropbox já configurado no CRM.
 
 ```dotenv
 DROPBOX_PACKLIST_FILE_PATH=/Packlist/Telas PACKLIST.xlsx
@@ -15,7 +15,7 @@ PACKLIST_WORKBOOK_PATH=C:\Users\Felipe\Dropbox\Packlist\Telas PACKLIST.xlsx
 PACKLIST_SYNC_INTERVAL_MINUTES=15
 ```
 
-No servidor, configure as credenciais Dropbox existentes (`DROPBOX_REFRESH_TOKEN`, `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, ou `DROPBOX_ACCESS_TOKEN`). Não há credencial nova específica para Packlist. A migração de `inventory_packlist_snapshot` é aplicada pelo bootstrap normal da API/worker.
+No servidor, configure as credenciais Dropbox existentes (`DROPBOX_REFRESH_TOKEN`, `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, ou `DROPBOX_ACCESS_TOKEN`). Não há credencial nova específica para Packlist. O servidor da API aplica as migrações antes de iniciar. Se executar o worker isoladamente, aplique antes `npm run migrate -w @olist-crm/api`, que cria a tabela `inventory_packlist_snapshot`.
 
 Administradores e gerentes podem antecipar a checagem com **Atualizar Packlist**, que chama `POST /api/inventory/packlist/refresh`. A leitura aparece em `GET /api/inventory/buying`, junto das recomendações. As telas atualizam a consulta de compras a cada minuto.
 

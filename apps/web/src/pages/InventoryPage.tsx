@@ -1527,7 +1527,7 @@ export function InventoryPage() {
                         <th>A caminho · Packlist</th>
                         <th>Compra sugerida · 60 dias</th>
                         <th>Status SKU</th>
-                        <th>Venda 30/90</th>
+                        <th>Vendas recentes</th>
                         <th>Cobertura</th>
                         <th>Ultima venda</th>
                         <th>Ultima reposicao</th>
@@ -1562,9 +1562,8 @@ export function InventoryPage() {
                             <span className="inventory-table-secondary-text">{formatNumber(item.totalSkuCount)} linha(s)</span>
                           </td>
                           <td>
-                            <strong>
-                              {formatNumber(item.sales30)} / {formatNumber(item.sales90)}
-                            </strong>
+                            <strong>30 dias: {formatNumber(item.sales30)} un.</strong>
+                            <span className="inventory-table-secondary-text">90 dias: {formatNumber(item.sales90)} un.</span>
                           </td>
                           <td>{formatCoverage(item.coverageDays)}</td>
                           <td>{formatDate(item.lastSaleAt)}</td>
