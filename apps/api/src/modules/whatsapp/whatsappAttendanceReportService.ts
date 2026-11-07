@@ -4,6 +4,7 @@ import { logger } from "../../lib/logger.js";
 import { sendToGroup } from "../crm/offboardingAlertService.js";
 import { startRecurringJob } from "../platform/scheduledJobs.js";
 import { getWhatsappDailySummaryReport } from "./whatsappMonitorService.js";
+import { formatDailySummaryCustomerLines } from "./whatsappMonitorCore.js";
 
 const TIMEZONE = "America/Sao_Paulo";
 const SELLERS = [
@@ -24,6 +25,7 @@ interface AttendanceSummary {
   date: string;
   newCustomersCount: number;
   recoveredCustomersCount: number;
+  recoveredCustomersList?: Record<string, unknown>[];
   totalMessagesSent: number;
   totalMessagesReceived: number;
   agents: AttendanceAgent[];
@@ -62,6 +64,9 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
   let text = `📅 *Relatório de Atendimento XP*\n_${day}/${month}/${year}_\n\n`;
   text += `📱 *Clientes Novos no Dia:* ${summary.newCustomersCount}\n`;
   text += `🔄 *Clientes Recuperados no Dia:* ${summary.recoveredCustomersCount}\n`;
+  if (summary.recoveredCustomersList?.length) {
+    text += `${formatDailySummaryCustomerLines(summary.recoveredCustomersList, { recovered: true })}\n`;
+  }
   text += `📉 *Clientes Perdidos no Dia:* ${lostCustomersCount}\n\n`;
   text += `💬 *Resumo de Mensagens:*\n`;
   text += `📱 Mensagens Enviadas: ${summary.totalMessagesSent.toLocaleString("pt-BR")}\n`;

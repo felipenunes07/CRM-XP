@@ -114,6 +114,26 @@ function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+export function formatDailySummaryCustomerLines(customers: Record<string, unknown>[], options: { recovered?: boolean } = {}) {
+  return customers
+    .map((customer) => {
+      const customerCode = readString(customer.customer_code);
+      const code = customerCode ? `${customerCode} - ` : "";
+      const name = readString(customer.display_name) ?? "Cliente sem nome";
+      const attendant = readString(customer.last_attendant) ?? "Sem atendente";
+      const amount = Number(customer.total_amount ?? 0);
+      const amountText = Number.isFinite(amount)
+        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "";
+      const inactiveText = options.recovered && customer.days_inactive
+        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
+        : "";
+
+      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
+    })
+    .join("\n");
+}
+
 function uniqueStrings(values: Array<string | null | undefined>) {
   const seen = new Set<string>();
   const output: string[] = [];

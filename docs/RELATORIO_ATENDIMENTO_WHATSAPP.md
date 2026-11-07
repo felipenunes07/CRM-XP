@@ -16,7 +16,10 @@ WHATSAPP_ATTENDANCE_REPORT_INSTANCE_ID=Lili
 A mensagem mantém os totais gerais do relatório existente. O ranking e a
 vendedora mais ativa consideram apenas Thaís, Suellen, Amanda e Tamires, incluindo
 as variantes dos nomes no cadastro. Não inclui a linha de atendimentos
-particulares nem listas de clientes. A página e os dados originais continuam iguais.
+particulares nem listas de clientes atendidos. Abaixo de clientes recuperados,
+mostra o código, nome, vendedora, valor da compra e quantos dias o cliente passou
+sem comprar, no mesmo formato do resumo original.
+A página e os dados originais continuam iguais.
 
 Clientes perdidos são clientes cuja última compra, considerando apenas pedidos
 até a data do relatório, foi há **exatamente 90 dias**, na mesma data do gatilho

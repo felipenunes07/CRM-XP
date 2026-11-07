@@ -117,6 +117,15 @@ _06/11/2026_
     expect(message).toContain("*Tamires*\n💬 Mensagens Enviadas: 0");
   });
 
+  it("restores the original recovered-customer details directly below the daily count", () => {
+    const message = formatAttendanceGroupReport({
+      ...summary,
+      recoveredCustomersCount: 1,
+      recoveredCustomersList: [{ customer_code: "CL577", display_name: "Tulio Tem", last_attendant: "Thais", total_amount: "970.00", days_inactive: 226 }],
+    }, 0);
+    expect(message).toContain("🔄 *Clientes Recuperados no Dia:* 1\n- CL577 - Tulio Tem | Thais | R$ 970,00 | 226 dias sem comprar\n📉 *Clientes Perdidos no Dia:* 0");
+  });
+
   it("sends once per day even after another scheduler starts", async () => {
     const now = new Date("2026-11-07T15:55:00Z");
     expect(await runScheduledAttendanceReport(now)).toEqual({ sent: true, date: "2026-11-07" });
