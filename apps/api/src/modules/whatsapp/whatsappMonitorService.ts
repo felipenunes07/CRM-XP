@@ -32,6 +32,7 @@ import {
   extractEvolutionMessageContext,
   extractEvolutionMessageMedia,
   formatWhatsappJidPhone,
+  formatDailySummaryCustomerLines,
   getEvolutionMessageKey,
   mapWhatsappActivityToMessage,
   median,
@@ -4172,26 +4173,6 @@ export async function setWhatsappConversationReadState(
     markedUnread: unread,
     lastReadAt: unread ? null : changedAt,
   };
-}
-
-function formatDailySummaryCustomerLines(customers: Record<string, unknown>[], options: { recovered?: boolean } = {}) {
-  return customers
-    .map((customer) => {
-      const customerCode = optionalString(customer.customer_code);
-      const code = customerCode ? `${customerCode} - ` : "";
-      const name = optionalString(customer.display_name) ?? "Cliente sem nome";
-      const attendant = optionalString(customer.last_attendant) ?? "Sem atendente";
-      const amount = Number(customer.total_amount ?? 0);
-      const amountText = Number.isFinite(amount)
-        ? ` | R$ ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-        : "";
-      const inactiveText = options.recovered && customer.days_inactive
-        ? ` | ${Number(customer.days_inactive).toLocaleString("pt-BR")} dias sem comprar`
-        : "";
-
-      return `- ${code}${name} | ${attendant}${amountText}${inactiveText}`;
-    })
-    .join("\n");
 }
 
 export async function getWhatsappDailySummaryReport(
