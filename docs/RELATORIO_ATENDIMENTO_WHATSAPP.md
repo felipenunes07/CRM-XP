@@ -19,8 +19,10 @@ as variantes dos nomes no cadastro. Não inclui a linha de atendimentos
 particulares nem listas de clientes. A página e os dados originais continuam iguais.
 
 Clientes perdidos são clientes cuja última compra, considerando apenas pedidos
-até a data do relatório, foi há **91 dias**: o primeiro dia acima de 90. Cada
-cliente é contado uma vez. Quem voltou a comprar no dia não entra nessa contagem.
+até a data do relatório, foi há **exatamente 90 dias**, na mesma data do gatilho
+da última mensagem da régua da Lili. Clientes com 91 dias ou mais não entram:
+a contagem é apenas das entradas do dia, sem acumular clientes antigos.
+Cada cliente é contado uma vez. Quem voltou a comprar no dia não entra nessa contagem.
 O cálculo independe dos alertas de saída da base enviados de manhã.
 
 Uma trava do Postgres impede que API e worker disputem o envio. O registro em

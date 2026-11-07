@@ -11,20 +11,22 @@ try {
       await pool.query("CREATE TEMP TABLE orders (customer_id text, order_date date) ON COMMIT DROP");
       await pool.query(`
         INSERT INTO orders VALUES
+          ('notYet89', '2026-11-07'::date - 89),
           ('exactly90', '2026-11-07'::date - 90),
-          ('crossed91', '2026-11-07'::date - 91),
-          ('crossed91', '2026-11-07'::date - 91),
+          ('exactly90', '2026-11-07'::date - 90),
+          ('already91', '2026-11-07'::date - 91),
           ('alreadyLost', '2026-11-07'::date - 92),
-          ('recoveredToday', '2026-11-07'::date - 91),
+          ('recoveredToday', '2026-11-07'::date - 90),
           ('recoveredToday', '2026-11-07'::date),
-          ('futureOrder', '2026-11-07'::date - 91),
+          ('futureOrder', '2026-11-07'::date - 90),
           ('futureOrder', '2026-11-07'::date + 1),
-          ('recentOrder', '2026-11-07'::date - 91),
+          ('recentOrder', '2026-11-07'::date - 90),
           ('recentOrder', '2026-11-07'::date - 1)
       `);
       assert.equal(await countLostAttendanceCustomers("2026-11-07"), 2);
       assert.equal(await countLostAttendanceCustomers("2026-11-08"), 1);
-      console.log("PASS: daily 90-day threshold, deduplication, recovered and future orders (Postgres temporary fixture)");
+      assert.equal(await countLostAttendanceCustomers("2026-11-09"), 0);
+      console.log("PASS: exactly 90 days (not 89 or 91+), no cumulative count, deduplication, recovered and future orders (Postgres temporary fixture)");
     } finally {
       await pool.query("ROLLBACK");
     }
