@@ -40,3 +40,29 @@ npm run test -w @olist-crm/api -- src/modules/whatsapp/whatsappAttendanceReportS
 
 O primeiro comando verifica o SQL real usando uma tabela temporária e rollback.
 O segundo imprime uma prévia com os dados reais. Nenhum deles envia mensagens.
+
+## Segundo resumo: régua da Lili
+
+Com `WHATSAPP_REACTIVATION_REPORT_ENABLED=true`, o mesmo grupo e a mesma instância
+recebem outro resumo às **16h45 de segunda a sexta e às 12h45 aos sábados**, sem
+domingo. Esse resumo tem trava e registro diário próprios, sem interferir no
+relatório de atendimento.
+
+A fonte são os destinatários das campanhas ligadas à régua `lili-inactivity-v1`,
+nas etapas de 30, 60 e 90 dias. Somente envios confirmados (`SENT` com `sent_at`
+no dia, horário de Brasília) entram nos clientes com mensagem enviada. As falhas
+do dia aparecem em uma seção separada, sempre identificando sua etapa.
+Clientes com mais de um grupo não são contados duas vezes na mesma etapa; se um
+envio falhar mas outro for concluído para aquele cliente, prevalece o envio.
+As respostas usam a mesma atribuição do painel de campanhas, até o horário de
+geração do resumo. Ter uma resposta não equivale a uma compra.
+
+Prévia sem enviar mensagens:
+
+```sh
+npx tsx apps/api/src/scripts/checkReactivationReport.ts 2026-11-07
+```
+
+O registro de envio fica em `sync_cursors`, com chave
+`whatsapp_reactivation_report:<grupo>:<data>` e a mesma proteção contra duplicação
+e resultado incerto descrita para o relatório de atendimento.
