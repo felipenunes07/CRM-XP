@@ -31,7 +31,7 @@ interface AttendanceSummary {
   agents: AttendanceAgent[];
 }
 
-export function getAttendanceReportSchedule(now = new Date(), reportMinute = 55) {
+export function getAttendanceReportSchedule(now = new Date(), reportMinute = 55, includeSunday = false) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: TIMEZONE,
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -39,10 +39,10 @@ export function getAttendanceReportSchedule(now = new Date(), reportMinute = 55)
   }).formatToParts(now).map((part) => [part.type, part.value]));
   const date = `${parts.year}-${parts.month}-${parts.day}`;
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
-  const scheduledMinute = (weekday === 6 ? 12 : 16) * 60 + reportMinute;
+  const scheduledMinute = (weekday === 6 || (includeSunday && weekday === 0) ? 12 : 16) * 60 + reportMinute;
   const minute = Number(parts.hour) * 60 + Number(parts.minute);
   // A short recovery window tolerates a restart without sending an old report at night.
-  return { date, due: weekday !== 0 && minute >= scheduledMinute && minute < scheduledMinute + 15 };
+  return { date, due: (weekday !== 0 || includeSunday) && minute >= scheduledMinute && minute < scheduledMinute + 15 };
 }
 
 function normalizeSellerName(name: string) {

@@ -113,7 +113,10 @@ describe("daily Lili reactivation report", () => {
     ["2026-11-07T15:45:00Z", true],
     ["2026-11-07T16:00:00Z", false],
     ["2026-11-07T19:45:00Z", false],
-    ["2026-11-08T15:45:00Z", false],
+    ["2026-11-08T15:44:59Z", false],
+    ["2026-11-08T15:45:00Z", true],
+    ["2026-11-08T15:59:59Z", true],
+    ["2026-11-08T16:00:00Z", false],
     ["2026-11-08T19:45:00Z", false],
     ["2026-11-09T19:45:00Z", true],
   ])("applies the 16:45/12:45 Brasilia schedule at %s", async (date, sent) => {
@@ -135,5 +138,12 @@ describe("daily Lili reactivation report", () => {
     mocks.env.WHATSAPP_REACTIVATION_REPORT_ENABLED = false;
     expect(await runScheduledReactivationReport(new Date("2026-11-07T15:45:00Z"))).toMatchObject({ reason: "not_due" });
     expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
+  it("sends the Sunday reactivation summary once while keeping the attendance report off", async () => {
+    expect(await runScheduledReactivationReport(new Date("2026-11-08T15:45:00Z"))).toMatchObject({ sent: true, date: "2026-11-08" });
+    expect(await runScheduledReactivationReport(new Date("2026-11-08T15:46:00Z"))).toMatchObject({ reason: "already_claimed" });
+    expect(await runScheduledAttendanceReport(new Date("2026-11-08T15:55:00Z"))).toMatchObject({ reason: "not_due" });
+    expect(mocks.send).toHaveBeenCalledOnce();
   });
 });
