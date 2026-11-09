@@ -244,7 +244,7 @@ async function fetchEvolutionJson(
   return payload;
 }
 
-async function fetchEvolutionGroupInfo(config: EvolutionInstanceConfig, remoteJid: string) {
+export async function fetchEvolutionGroupInfo(config: EvolutionInstanceConfig, remoteJid: string) {
   const safeInstance = encodeURIComponent(config.instanceName);
   const search = new URLSearchParams({ groupJid: remoteJid });
   const payload = await fetchEvolutionJson(config, `/group/findGroupInfos/${safeInstance}?${search.toString()}`);

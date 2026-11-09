@@ -368,6 +368,10 @@ export function isInternalWhatsappReportChat(input: {
   return isInternalWhatsappReportName(input.name);
 }
 
+export function getWhatsappReportTeamIdentities(): string[] {
+  return [...new Set([...INTERNAL_TEAM_SENDER_PHONES, ...SALES_AGENT_BY_PHONE.keys(), ...INTERNAL_WHATSAPP_REPORT_PHONE_DIGITS])];
+}
+
 function isInternalChat(name: string | null | undefined, remoteJid: string | null | undefined): boolean {
   return isInternalWhatsappReportChat({ name, remoteJid });
 }
