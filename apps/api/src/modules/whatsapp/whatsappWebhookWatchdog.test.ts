@@ -83,7 +83,7 @@ describe("WhatsApp webhook watchdog", () => {
   });
 
   it.each([
-    { events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUPS_UPDATE"], repaired: false },
+    { events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUP_UPDATE"], repaired: false },
     { events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"], repaired: true },
   ])("checks operational instances and repairs missing group events: $repaired", async ({ events, repaired }) => {
     mocks.poolQuery

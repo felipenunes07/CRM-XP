@@ -172,7 +172,7 @@ describe("whatsapp conversation isolation", () => {
     mocks.refreshRollups.mockResolvedValue({ refreshed: true, deleted: 0, inserted: 1 });
   });
 
-  it.each(["groups.upsert", "GROUPS_UPDATE"])("records group metadata for %s without creating chat activity", async (event) => {
+  it.each(["groups.upsert", "groups.update", "GROUPS_UPSERT", "GROUP_UPDATE", "group.update"])("records group metadata for %s without creating chat activity", async (event) => {
     mocks.recordGroupUpdates.mockResolvedValue(1);
     const group = { id: "120363414626474487@g.us", subject: "Cliente Janfone Celulares", creation: 1794229306 };
     expect(await handleEvolutionWebhook({ event, instance: "Thais", data: group })).toMatchObject({ processed: true, event });

@@ -29,7 +29,7 @@ comunidades e grupos de avisos de comunidades são excluídos. Não é necessár
 ter cliente cadastrado nem compra: o grupo pode ser o primeiro contato comercial.
 Essa contagem é independente de clientes novos por primeira compra.
 
-Os eventos `GROUPS_UPSERT` e `GROUPS_UPDATE` mantêm esses metadados atualizados
+Os eventos `GROUPS_UPSERT` e `GROUP_UPDATE` mantêm esses metadados atualizados
 nas instâncias operacionais da Evolution. Uma renomeação preserva a data de
 criação conhecida. O watchdog mantém esses eventos habilitados junto aos eventos
 de mensagens. Instâncias configuradas somente para envio continuam sem captura.

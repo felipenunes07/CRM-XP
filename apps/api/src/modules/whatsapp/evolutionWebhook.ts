@@ -388,7 +388,7 @@ export async function handleEvolutionWebhook(
     return { processed: connectionResult.processed, event, alertSent: connectionResult.alertSent };
   }
 
-  if (["groups.upsert", "groups.update"].includes(event.toLowerCase().replace(/_/g, "."))) {
+  if (["groups.upsert", "groups.update", "group.update"].includes(event.toLowerCase().replace(/_/g, "."))) {
     const updated = await recordWhatsappGroupUpdates(instance, payload.data);
     return { processed: updated > 0, event };
   }
