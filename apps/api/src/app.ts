@@ -86,6 +86,7 @@ import {
 } from "./modules/crm/automationService.js";
 import { prepareLiliReactivation, previewLiliReactivation } from "./modules/crm/reactivationSetupService.js";
 import { getProspectRemarketingSettings, saveProspectRemarketingSettings } from "./modules/whatsapp/prospectRemarketingSettings.js";
+import { getAutomationActivity } from "./modules/crm/automationActivityService.js";
 import {
   createMessageTemplate,
   deleteMessageTemplate,
@@ -518,6 +519,16 @@ const automationSchema = z.object({
 
 const automationRunsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const automationActivityQuerySchema = z.object({
+  date: z.string().date(),
+  status: z.enum(["ALL", "SENT", "WAITING", "FAILED", "NOT_SENT", "PENDING_APPROVAL"]).optional(),
+  kind: z.enum(["ALL", "REACTIVATION", "PROSPECT", "CUSTOM"]).optional(),
+  search: z.string().max(200).optional(),
+  runId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).max(100000).optional(),
 });
 
 const automationRunNowSchema = z.object({
@@ -2077,13 +2088,17 @@ export function createApp() {
     }
   });
 
-  app.post("/api/automations/:id/run-now", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+  app.post("/api/automations/:id/run-now", requireRole(["ADMIN", "MANAGER"]), requirePermission("automations.manage"), async (request, response, next) => {
     try {
       const payload = automationRunNowSchema.parse(request.body ?? {});
       response.json(await runMessageAutomationNow(String(request.params.id), request.user!, payload.sendMode));
     } catch (error) {
       next(error);
     }
+  });
+
+  app.get("/api/automations/activity", async (request, response, next) => {
+    try { response.json(await getAutomationActivity(automationActivityQuerySchema.parse(request.query))); } catch (error) { next(error); }
   });
 
   app.get("/api/automations/runs", async (request, response, next) => {
@@ -2095,7 +2110,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/automations/runs/:id/approve", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+  app.post("/api/automations/runs/:id/approve", requireRole(["ADMIN", "MANAGER"]), requirePermission("automations.manage"), async (request, response, next) => {
     try {
       response.json(await approveMessageAutomationRun(String(request.params.id), request.user!));
     } catch (error) {
@@ -2103,7 +2118,7 @@ export function createApp() {
     }
   });
 
-  app.post("/api/automations/runs/:id/reject", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {
+  app.post("/api/automations/runs/:id/reject", requireRole(["ADMIN", "MANAGER"]), requirePermission("automations.manage"), async (request, response, next) => {
     try {
       response.json(await rejectMessageAutomationRun(String(request.params.id), request.user!));
     } catch (error) {

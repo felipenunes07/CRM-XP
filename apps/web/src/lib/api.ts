@@ -1,4 +1,5 @@
 import type {
+  AutomationActivityQuery, AutomationActivityResponse,
   ProspectRemarketingInput, ProspectRemarketingSettings,
   LiliReactivationPreview,
   PriceSupplier, PriceSnapshot, PriceSnapshotSummary,
@@ -1059,6 +1060,10 @@ export const api = {
   },
   automationRuns(token: string, limit = 100) {
     return request<MessageAutomationRun[]>(`/api/automations/runs?limit=${limit}`, {}, token);
+  },
+  automationActivity(token: string, query: AutomationActivityQuery) {
+    const params = new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]));
+    return request<AutomationActivityResponse>(`/api/automations/activity?${params}`, {}, token);
   },
   approveAutomationRun(token: string, id: string) {
     return request<MessageAutomationRun>(`/api/automations/runs/${id}/approve`, {

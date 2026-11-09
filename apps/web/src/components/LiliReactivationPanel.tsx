@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MessageAutomation } from "@olist-crm/shared";
 import { ArrowRight, CalendarClock, ChevronLeft, ChevronRight, MessageCircle, Pencil, Plus, RefreshCw, Search } from "lucide-react";
-import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber } from "../lib/format";
 import "./LiliReactivationPanel.css";
@@ -17,8 +16,8 @@ const STATUS_LABELS: Record<string, string> = {
   DUPLICATE_CUSTOMER: "Cadastro duplicado",
 };
 
-export function LiliReactivationPanel({ token, automations, canManage }: {
-  token: string | null; automations: MessageAutomation[] | undefined; canManage: boolean;
+export function LiliReactivationPanel({ token, automations, canManage, onViewActivity }: {
+  token: string | null; automations: MessageAutomation[] | undefined; canManage: boolean; onViewActivity: () => void;
 }) {
   const queryClient = useQueryClient();
   const [stageFilter, setStageFilter] = useState<number | null>(null);
@@ -110,7 +109,7 @@ export function LiliReactivationPanel({ token, automations, canManage }: {
         {canManage && rules?.length ? <button type="button" className="primary-button" disabled={saveMutation.isPending} onClick={() => openEditor("")}>
           <Plus size={16} /> Nova faixa
         </button> : null}
-        <Link to="/disparador" className="lili-queue-history">Acompanhar envios <ArrowRight size={14} /></Link>
+        <button type="button" className="secondary-button" onClick={onViewActivity}>Ver clientes contatados <ArrowRight size={14} /></button>
       </div>
     </div>
     {rules?.length ? <div className="lili-rule-grid">

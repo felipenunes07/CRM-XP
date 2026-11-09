@@ -23,7 +23,6 @@ import {
 import type {
   CustomerStatus,
   MessageAutomation,
-  MessageAutomationRun,
   MessageAutomationSendMode,
   MessageAutomationTriggerMode,
   SegmentDefinition,
@@ -34,23 +33,22 @@ import {
   CalendarClock,
   CheckCircle2,
   Clock3,
-  Copy,
   Eye,
   GitBranch,
   MessageCircle,
   PauseCircle,
   Play,
   Plus,
-  RadioTower,
   Save,
   Send,
-  ShieldCheck,
   Smartphone,
   Sparkles,
   Trash2,
   Zap,
   Users,
 } from "lucide-react";
+import { AutomationActivityPanel } from "../components/AutomationActivityPanel";
+import { isCustomAutomation } from "../components/automationActivityPresentation";
 import { LiliReactivationPanel } from "../components/LiliReactivationPanel";
 import { ProspectRemarketingPanel } from "../components/ProspectRemarketingPanel";
 import { useAuth } from "../hooks/useAuth";
@@ -197,7 +195,7 @@ function createInitialDraft(): AutomationDraft {
   const stage = defaultInactivityStage;
 
   return {
-    name: "Reativacao automatica",
+    name: "Nova automação",
     status: "PAUSED",
     channel: "WHATSAPP_GROUP",
     sendMode: "AUTOMATIC",
@@ -310,21 +308,6 @@ function automationStatusLabel(status: MessageAutomation["status"]) {
 
 function automationTriggerLabel(triggerMode: MessageAutomationTriggerMode) {
   return triggerMode === "ON_STAGE_ENTRY" ? "Cliente entrou agora na faixa" : "Clientes que ja estao na faixa";
-}
-
-function runStatusLabel(run: MessageAutomationRun) {
-  if (run.status === "PENDING_APPROVAL") return "Aguardando aprovação";
-  if (run.status === "ENQUEUED") return "Enfileirada";
-  if (run.status === "APPROVED") return "Aprovada";
-  if (run.status === "NO_MATCH") return "Sem grupos";
-  if (run.status === "REJECTED") return "Rejeitada";
-  return "Falhou";
-}
-
-function runTone(status: MessageAutomationRun["status"]) {
-  if (status === "ENQUEUED" || status === "APPROVED") return "success";
-  if (status === "FAILED" || status === "REJECTED") return "danger";
-  return "warning";
 }
 
 function Inspector({
@@ -745,7 +728,7 @@ function AutomationHowItWorks({
         </span>
         <div>
           <strong>Como essa automacao vai funcionar</strong>
-          <span>Um resumo em portugues claro do que o robo faz sozinho.</span>
+          <span>Confira como esta regra funcionará antes de salvar.</span>
         </div>
       </div>
 
@@ -820,11 +803,11 @@ function ClassicAutomationForm({
     <section className="automation-classic-panel">
       <div className="automation-classic-intro">
         <div>
-          <p className="eyebrow">Modo classico</p>
-          <h3>Formulario simples da automacao</h3>
+          <p className="eyebrow">Configuração</p>
+          <h3>Público, horário e mensagem</h3>
         </div>
         <span>
-          Use este modo para configurar sem canvas. Ele salva a mesma automacao do modo visual.
+          Escolha quem receberá a mensagem, quando a regra será verificada e se os envios precisam de aprovação.
         </span>
       </div>
 
@@ -1033,7 +1016,8 @@ function automationToDraft(automation: MessageAutomation): AutomationDraft {
 function AutomationsPageInner() {
   const { token, user } = useAuth();
   const queryClient = useQueryClient();
-  const canManage = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const canManage = (user?.role === "ADMIN" || user?.role === "MANAGER") && Boolean(user?.permissions.includes("automations.manage"));
+  const [reviewRunId, setReviewRunId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AutomationDraft>(createInitialDraft);
   const [activeAutomationId, setActiveAutomationId] = useState<string | null>(null);
   const [view, setView] = useState<"overview" | "remarketing" | "activity" | "advanced">("overview");
@@ -1156,16 +1140,19 @@ function AutomationsPageInner() {
     mutationFn: ({ id, sendMode }: { id: string; sendMode?: MessageAutomationSendMode }) =>
       api.runAutomationNow(token!, id, sendMode),
     onSuccess: async (run) => {
+      setReviewRunId(run.id);
+      setView("activity");
       setFeedbackMessage(
         run.status === "PENDING_APPROVAL"
-          ? "Execucao criada para sua aprovacao."
+          ? "Lista preparada. Confira os destinatários e a mensagem antes de aprovar."
           : run.status === "ENQUEUED"
-            ? "Execucao rodada agora e campanha enfileirada."
-            : "Execucao rodada agora.",
+            ? "Envio colocado na fila. Acompanhe o resultado por cliente abaixo."
+            : "Verificação concluída. Confira o resultado abaixo.",
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["automation-runs"] }),
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["automation-activity"] }),
       ]);
     },
   });
@@ -1176,6 +1163,7 @@ function AutomationsPageInner() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["automation-runs"] }),
         queryClient.invalidateQueries({ queryKey: ["whatsapp-campaigns"] }),
+        queryClient.invalidateQueries({ queryKey: ["automation-activity"] }),
       ]);
     },
   });
@@ -1183,7 +1171,7 @@ function AutomationsPageInner() {
   const rejectRunMutation = useMutation({
     mutationFn: (id: string) => api.rejectAutomationRun(token!, id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["automation-runs"] });
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["automation-runs"] }),queryClient.invalidateQueries({ queryKey: ["automation-activity"] })]);
     },
   });
 
@@ -1192,6 +1180,7 @@ function AutomationsPageInner() {
     [nodes, selectedNodeId],
   );
 
+  const customAutomations = automationsQuery.data?.filter(isCustomAutomation);
   const pendingRuns = useMemo(
     () => (runsQuery.data ?? []).filter((run) => run.status === "PENDING_APPROVAL"),
     [runsQuery.data],
@@ -1311,62 +1300,36 @@ function AutomationsPageInner() {
       <nav className="automation-home-nav" aria-label="Seções de automações">
         <button type="button" aria-pressed={view === "overview"} onClick={() => setView("overview")}>Réguas da Lili</button>
         <button type="button" aria-pressed={view === "remarketing"} onClick={() => setView("remarketing")}>Remarketing</button>
-        <button type="button" aria-pressed={view === "activity"} onClick={() => setView("activity")}>
-          Atividade {pendingRuns.length > 0 ? <span>{pendingRuns.length} para aprovar</span> : null}
+        <button type="button" aria-pressed={view === "activity"} onClick={() => { setReviewRunId(null); setView("activity"); }}>
+          Envios e clientes {pendingRuns.length > 0 ? <span>{pendingRuns.length} para aprovar</span> : null}
         </button>
-        <button type="button" aria-pressed={view === "advanced"} onClick={() => setView("advanced")}>Avançado</button>
+        <button type="button" aria-pressed={view === "advanced"} onClick={() => setView("advanced")}>Outras automações</button>
       </nav>
       {feedbackMessage && view !== "overview" ? <div role="status" className="save-ok automation-feedback">{feedbackMessage}</div> : null}
       {view === "overview" ? (
-      <LiliReactivationPanel token={token} automations={automationsQuery.data} canManage={canManage} />
+      <LiliReactivationPanel token={token} automations={automationsQuery.data} canManage={canManage} onViewActivity={() => { setReviewRunId(null); setView("activity"); }} />
       ) : null}
       {view === "remarketing" ? <ProspectRemarketingPanel token={token} canManage={canManage && Boolean(user?.permissions.includes("automations.manage"))} /> : null}
       {view === "advanced" ? <>
         <article className="automation-run-panel">
-          <div className="automation-section-title">
-            <Copy size={18} />
-            <strong>Automações salvas</strong>
+          <div className="automation-custom-heading"><div><h2>Automações personalizadas</h2><p>Crie mensagens para cobranças, públicos salvos ou outras regras da sua operação. Cada automação tem seu próprio texto, público e horário.</p></div>
+            {canManage ? <button type="button" className="primary-button" onClick={() => { resetForm(); setEditorOpen(true); }}><Plus size={16} /> Criar automação</button> : null}
           </div>
-          {canManage ? <button type="button" className="secondary-button" onClick={() => { resetForm(); setEditorOpen(true); }}>
-            <Plus size={16} /> Nova automação
-          </button> : null}
-          {automationsQuery.data?.length === 0 ? <p className="empty-state">Nenhuma automação cadastrada.</p> : null}
-          {automationsQuery.data?.map((automation) => (
-            <div key={automation.id} className="automation-saved-row">
-              <button
-                type="button"
-                className={`automation-row-toggle ${automation.status === "ACTIVE" ? "is-active" : ""}`}
-                disabled={!canManage || toggleAutomationMutation.isPending}
-                onClick={() => toggleAutomationMutation.mutate(automation)}
-                aria-label={automation.status === "ACTIVE" ? "Pausar automacao" : "Ativar automacao"}
-              >
-                <span />
-              </button>
-              <button type="button" className="automation-saved-main" onClick={() => openAutomation(automation)}>
-                <strong>{automation.name}</strong>
-                <small>
-                  {automationStatusLabel(automation.status)} | {automationTriggerLabel(automation.triggerMode)} |{" "}
-                  {automation.sendMode === "AUTOMATIC" ? "envia sozinho" : "pede aprovacao"} |{" "}
-                  {automation.nextRunAt ? formatDateTime(automation.nextRunAt) : "sem agenda"}
-                </small>
-              </button>
-              <button
-                type="button"
-                className="automation-run-now"
-                disabled={!canManage || runNowMutation.isPending}
-                onClick={() => runNowMutation.mutate({ id: automation.id, sendMode: "APPROVAL" })}
-              >
-                <Zap size={14} />
-                Rodar
-              </button>
-            </div>
-          ))}
+          <div className="automation-custom-shortcuts"><span>As automações da Lili ficam nas abas próprias:</span><button type="button" className="secondary-button" onClick={() => setView("overview")}>Clientes sem comprar · 30 / 60 / 90 dias</button><button type="button" className="secondary-button" onClick={() => setView("remarketing")}>Remarketing de grupos novos</button></div>
+          {automationsQuery.isPending ? <p role="status">Carregando automações…</p> : null}
+          {automationsQuery.isError ? <p role="alert" className="automation-history-error">Não foi possível carregar as automações. <button type="button" className="secondary-button" onClick={() => automationsQuery.refetch()}>Tentar novamente</button></p> : null}
+          {customAutomations?.length === 0 ? <div className="automation-custom-empty"><strong>Nenhuma automação personalizada criada</strong><p>As mensagens de 30, 60 e 90 dias já são gerenciadas em Réguas da Lili.<br />Use esta área quando precisar de uma regra diferente, como uma cobrança.</p></div> : null}
+          {customAutomations?.map(automation => <div key={automation.id} className="automation-saved-row automation-custom-row"><div><span className={`automation-custom-state ${automation.status === "ACTIVE" ? "is-active" : ""}`}>{automationStatusLabel(automation.status)}</span><strong style={{display:"block"}}>{automation.name}</strong><small>{automationTriggerLabel(automation.triggerMode)} · {automation.sendMode === "AUTOMATIC" ? "Envio automático" : "Exige aprovação"}</small><small>{automation.nextRunAt ? `Próxima verificação: ${formatDateTime(automation.nextRunAt)}` : "Sem próximo envio programado"}</small></div><div className="automation-custom-actions">
+            <button type="button" className="secondary-button" onClick={() => openAutomation(automation)}>Editar regra</button>
+            {canManage ? <><button type="button" className="secondary-button" disabled={toggleAutomationMutation.isPending} onClick={() => toggleAutomationMutation.mutate(automation)}>{automation.status === "ACTIVE" ? "Pausar" : "Ativar"}</button><button type="button" className="secondary-button" disabled={runNowMutation.isPending} onClick={() => runNowMutation.mutate({ id: automation.id, sendMode: "APPROVAL" })}>Preparar para aprovação</button></> : null}
+          </div></div>)}
+          <p className="lili-queue-note">Preparar para aprovação monta uma lista para você conferir. As mensagens só entram na fila depois da sua aprovação em Envios e clientes.</p>
         </article>
 
       {editorOpen ? <>
       <header className="automation-topbar" ref={editorHeading}>
         <div>
-          <p className="eyebrow">Editor avançado</p>
+          <p className="eyebrow">Configurar automação</p>
           <h2>{activeAutomationId ? "Editar automação" : "Nova automação"}</h2>
         </div>
         <div className="automation-name-box">
@@ -1409,7 +1372,7 @@ function AutomationsPageInner() {
           </div>
           <button type="button" className="secondary-button" onClick={() => previewMutation.mutate(draft.segmentDefinition)}>
             <Eye size={16} />
-            Testar
+            Prévia do público
           </button>
           {activeAutomationId ? (
             <button
@@ -1419,7 +1382,7 @@ function AutomationsPageInner() {
               onClick={() => runNowMutation.mutate({ id: activeAutomationId, sendMode: "APPROVAL" })}
             >
               <Zap size={16} />
-              Rodar agora
+              Preparar para aprovação
             </button>
           ) : null}
           <button
@@ -1454,8 +1417,8 @@ function AutomationsPageInner() {
           <span>Pega a carteira atual inteira. Bom para campanha pontual ou para gerar aprovação diária.</span>
         </div>
         <div>
-          <strong>Rodar agora</strong>
-          <span>Cria uma execução na hora para testar. Por padrão, gera para aprovação antes do envio.</span>
+          <strong>Preparar para aprovação</strong>
+          <span>Monta os destinatários sem enviar. Confira a lista em Envios e clientes e aprove quando estiver pronta.</span>
         </div>
       </section>
 
@@ -1557,53 +1520,11 @@ function AutomationsPageInner() {
 
       </> : null}
       </> : null}
-      {view === "activity" ? <section className="automation-bottom-grid automation-activity-grid">
-        <article className="automation-run-panel">
-          <div className="automation-section-title">
-            <ShieldCheck size={18} />
-            <strong>Aguardando aprovação</strong>
-          </div>
-          {runsQuery.data && !pendingRuns.length ? <div className="empty-state">Nenhuma execução pendente.</div> : null}
-          {pendingRuns.map((run) => (
-            <div key={run.id} className="automation-run-card">
-              <strong>{run.automationName}</strong>
-              <span>{formatDateTime(run.scheduledFor)}</span>
-              <small>
-                {formatNumber(run.mappedGroupCount)} grupos | {formatNumber(run.unmappedCustomerCount)} sem grupo |{" "}
-                {formatNumber(run.blockedRecentCount)} bloqueados
-              </small>
-              <div className="inline-actions">
-                <button type="button" className="primary-button" disabled={!canManage} onClick={() => approveRunMutation.mutate(run.id)}>
-                  Aprovar
-                </button>
-                <button type="button" className="ghost-button danger" disabled={!canManage} onClick={() => rejectRunMutation.mutate(run.id)}>
-                  Rejeitar
-                </button>
-              </div>
-            </div>
-          ))}
-        </article>
-
-        <article className="automation-run-panel">
-          <div className="automation-section-title">
-            <RadioTower size={18} />
-            <strong>Últimas execuções</strong>
-          </div>
-          {runsQuery.isPending ? <p role="status">Carregando execuções…</p> : null}
-          {runsQuery.isError ? <p role="alert">Não foi possível carregar as execuções.</p> : null}
-          {runsQuery.data?.length === 0 ? <p className="empty-state">Nenhuma execução registrada.</p> : null}
-          {runsQuery.data?.slice(0, 8).map((run) => (
-            <div key={run.id} className="automation-history-row">
-              <span className={`status-badge status-${runTone(run.status)}`}>{runStatusLabel(run)}</span>
-              <strong>{run.automationName}</strong>
-              <small>
-                {formatDateTime(run.scheduledFor)} | {formatNumber(run.mappedGroupCount)} grupos
-              </small>
-              {run.errorMessage ? <small>{run.errorMessage}</small> : null}
-            </div>
-          ))}
-        </article>
-      </section> : null}
+      {view === "activity" ? <AutomationActivityPanel token={token} runs={runsQuery.data} canManage={canManage} focusRunId={reviewRunId}
+        onApprove={id => approveRunMutation.mutate(id)} onReject={id => rejectRunMutation.mutate(id)}
+        resolving={approveRunMutation.isPending || rejectRunMutation.isPending}
+        actionError={(approveRunMutation.error ?? rejectRunMutation.error ?? runsQuery.error)?.message} /> : null}
+      {view === "advanced" && (runNowMutation.error || toggleAutomationMutation.error || saveAutomationMutation.error || deleteAutomationMutation.error) ? <p role="alert" className="automation-history-error">{(runNowMutation.error ?? toggleAutomationMutation.error ?? saveAutomationMutation.error ?? deleteAutomationMutation.error)?.message}</p> : null}
     </div>
   );
 }
