@@ -116,14 +116,14 @@ async function sendProspectFollowup(group: ProspectGroup, sender: Sender, stage:
     if (stage === "second" && (!group.firstRecipient || !areWhatsappJidsEqual(group.firstRecipient, preview.phone!))) return { jid: group.jid, status: "skipped", reason: "customer_changed" };
     const current = await getProspectRemarketingSettings();
     if (!current.enabled || JSON.stringify(current) !== JSON.stringify(settings)) return { jid: group.jid, status: "settings_changed" };
-    await client.query("INSERT INTO sync_cursors(key,cursor_value,updated_at) VALUES($1,$2,NOW())", [key, JSON.stringify({ status: "sending", name: preview.name, createdAt: group.createdAt, phone: preview.phone })]);
+    await client.query("INSERT INTO sync_cursors(key,cursor_value,updated_at) VALUES($1,$2,NOW())", [key, JSON.stringify({ status: "sending", name: preview.name, createdAt: group.createdAt, phone: preview.phone, message: preview.text })]);
     try {
       await sendToGroup(group.jid, preview.text!, String(sender.id), [preview.phone!]);
     } catch (error) {
-      await client.query("UPDATE sync_cursors SET cursor_value=$2,updated_at=NOW() WHERE key=$1", [key, JSON.stringify({ status: "failed", name: preview.name, error: String(error) })]);
+      await client.query("UPDATE sync_cursors SET cursor_value=$2,updated_at=NOW() WHERE key=$1", [key, JSON.stringify({ status: "failed", name: preview.name, message: preview.text, error: String(error) })]);
       throw error;
     }
-    await client.query("UPDATE sync_cursors SET cursor_value=$2,updated_at=NOW() WHERE key=$1", [key, JSON.stringify({ status: "sent", name: preview.name, createdAt: group.createdAt, phone: preview.phone, sentAt: new Date().toISOString() })]);
+    await client.query("UPDATE sync_cursors SET cursor_value=$2,updated_at=NOW() WHERE key=$1", [key, JSON.stringify({ status: "sent", name: preview.name, createdAt: group.createdAt, phone: preview.phone, message: preview.text, sentAt: new Date().toISOString() })]);
     await client.query(`INSERT INTO message_logs(destination,message,status,sent_by_name)
       VALUES($1,$2,'SENT','Lili — retorno de grupo novo')`, [group.jid, preview.text]);
     logger.info("prospect followup sent", { jid: group.jid });

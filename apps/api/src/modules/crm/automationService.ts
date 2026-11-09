@@ -144,7 +144,7 @@ function emptyAudienceSnapshot(): MessageAutomationRunAudienceSnapshot {
   };
 }
 
-async function ensureAutomationTables() {
+export async function ensureAutomationTables() {
   if (!ensureTablesPromise) {
     ensureTablesPromise = (async () => {
       await pool.query(`
