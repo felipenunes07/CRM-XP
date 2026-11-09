@@ -42,6 +42,7 @@ const envSchema = z.object({
   WHATSAPP_ATTENDANCE_REPORT_GROUP_JID: z.string().default(""),
   WHATSAPP_ATTENDANCE_REPORT_INSTANCE_ID: z.string().default("Lili"),
   WHATSAPP_REACTIVATION_REPORT_ENABLED: flexibleBoolean(false),
+  WHATSAPP_PROSPECT_FOLLOWUP_ENABLED: flexibleBoolean(false),
   // Quando "true", o CRM (re)configura o webhook das instâncias uazapi no startup
   // e ao criar campanha, apontando para /api/webhooks/uazapi. Padrão "false":
   // o CRM NÃO mexe no webhook da uazapi (deixa o que já estiver lá).
