@@ -109,7 +109,7 @@ export async function previewReactivationGroupReport(date: string, asOf = new Da
 }
 
 export async function runScheduledReactivationReport(now = new Date()) {
-  const schedule = getAttendanceReportSchedule(now, 45);
+  const schedule = getAttendanceReportSchedule(now, 45, true);
   if (!env.WHATSAPP_REACTIVATION_REPORT_ENABLED || !schedule.due) return { sent: false, reason: "not_due" };
   return sendDailyGroupReportOnce(schedule.date, "reactivation", async () => (await previewReactivationGroupReport(schedule.date, now)).text);
 }
@@ -118,7 +118,7 @@ export function startReactivationReportScheduler() {
   logger.info("whatsapp reactivation report scheduler", {
     enabled: env.WHATSAPP_REACTIVATION_REPORT_ENABLED,
     groupJid: env.WHATSAPP_ATTENDANCE_REPORT_GROUP_JID,
-    weekdays: "16:45", saturday: "12:45", sunday: false, timezone: "America/Sao_Paulo",
+    weekdays: "16:45", saturday: "12:45", sunday: "12:45", timezone: "America/Sao_Paulo",
   });
   if (!env.WHATSAPP_REACTIVATION_REPORT_ENABLED) return { async close() {} };
   return startRecurringJob({

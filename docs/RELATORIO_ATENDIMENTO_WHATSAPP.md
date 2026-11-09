@@ -49,8 +49,9 @@ O segundo imprime uma prévia com os dados reais. Nenhum deles envia mensagens.
 ## Segundo resumo: régua da Lili
 
 Com `WHATSAPP_REACTIVATION_REPORT_ENABLED=true`, o mesmo grupo e a mesma instância
-recebem outro resumo às **16h45 de segunda a sexta e às 12h45 aos sábados**, sem
-domingo. Esse resumo tem trava e registro diário próprios, sem interferir no
+recebem outro resumo às **16h45 de segunda a sexta e às 12h45 aos sábados e domingos**.
+Assim, envios da régua feitos no domingo também aparecem no resumo daquele dia.
+Esse resumo tem trava e registro diário próprios, sem interferir no
 relatório de atendimento.
 
 A fonte são os destinatários das campanhas ligadas à régua `lili-inactivity-v1`,
