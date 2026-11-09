@@ -1,0 +1,19 @@
+.prospect-remarketing form, .prospect-remarketing fieldset { display: grid; gap: 1rem; min-width: 0; }
+.prospect-remarketing fieldset { padding: 0; margin: 0; border: 0; }
+.prospect-remarketing fieldset:disabled { opacity: .75; }
+.prospect-toggle { display: flex; align-items: center; gap: .55rem; font-size: .85rem; }
+.prospect-toggle input { width: 1rem; height: 1rem; accent-color: #059669; }
+.prospect-stage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.prospect-stage-grid h3 { margin: 0; font-size: 1rem; }
+.prospect-stage-grid .lili-rule-editor { align-content: start; font-size: .8rem; }
+.prospect-stage-grid input[type="number"] { max-width: 8rem; }
+.prospect-stage-grid textarea { resize: vertical; min-height: 10rem; border: 1px solid #cbd5e1; border-radius: .5rem; line-height: 1.65; }
+.prospect-stage-grid .prospect-toggle { display: flex; }
+.prospect-preview { background: #ecfdf5; padding: .9rem; border-radius: .75rem; border: 1px solid #d1fae5; }
+.prospect-preview small { color: #047857; font-weight: 650; }
+.prospect-preview p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin: .5rem 0 0; }
+.prospect-add { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; border: 1px dashed #cbd5e1; border-radius: .8rem; gap: .8rem; color: #64748b; text-align: center; }
+.prospect-add p { margin: 0; font-size: .8rem; }
+.prospect-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+.prospect-saved { color: #047857; font-size: .85rem; }
+@media (max-width: 850px) { .prospect-stage-grid { grid-template-columns: minmax(0, 1fr); } }

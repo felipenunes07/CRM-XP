@@ -3317,3 +3317,4 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
   ],
 };
 export * from "./supplierPrices.js";
+export * from "./prospectRemarketing.js";

@@ -1,14 +1,16 @@
 import { areWhatsappJidsEqual } from "./whatsappMonitorCore.js";
 import { normalizeWhatsappMatchName } from "./whatsappCore.js";
 
-export function getProspectFollowupSchedule(now = new Date()) {
+export const DEFAULT_PROSPECT_MESSAGE = "Bom dia {cliente} ☀️🙏🏻🤩\n\nGostou dos nossos preços?\n\nQualquer coisa é só avisar a gente que deixamos tudo separado e prontinho pra vc! 📦🤝☺️";
+
+export function getProspectFollowupSchedule(now = new Date(), daysAfterCreation = 2) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(now).map((part) => [part.type, part.value]));
   const date = `${parts.year}-${parts.month}-${parts.day}`;
   const created = new Date(`${date}T12:00:00Z`);
-  created.setUTCDate(created.getUTCDate() - 2);
+  created.setUTCDate(created.getUTCDate() - daysAfterCreation);
   return { date, createdDate: created.toISOString().slice(0, 10), due: Number(parts.hour) === 9 && Number(parts.minute) < 15 };
 }
 
@@ -54,6 +56,6 @@ export function prospectConversionReason(name: string, phone: string, linkedIds:
   return null;
 }
 
-export function buildProspectFollowupText(phone: string) {
-  return `Bom dia @${phone} ☀️🙏🏻🤩\n\nGostou dos nossos preços?\n\nQualquer coisa é só avisar a gente que deixamos tudo separado e prontinho pra vc! 📦🤝☺️`;
+export function buildProspectFollowupText(phone: string, template = DEFAULT_PROSPECT_MESSAGE) {
+  return template.replaceAll("{cliente}", `@${phone}`);
 }

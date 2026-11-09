@@ -85,6 +85,7 @@ import {
   updateMessageAutomation,
 } from "./modules/crm/automationService.js";
 import { prepareLiliReactivation, previewLiliReactivation } from "./modules/crm/reactivationSetupService.js";
+import { getProspectRemarketingSettings, saveProspectRemarketingSettings } from "./modules/whatsapp/prospectRemarketingSettings.js";
 import {
   createMessageTemplate,
   deleteMessageTemplate,
@@ -2034,6 +2035,14 @@ export function createApp() {
 
   app.get("/api/automations/lili-reactivation/preview", async (_request, response, next) => {
     try { response.json(await previewLiliReactivation()); } catch (error) { next(error); }
+  });
+
+  app.get("/api/automations/prospect-followup", async (_request, response, next) => {
+    try { response.json(await getProspectRemarketingSettings()); } catch (error) { next(error); }
+  });
+
+  app.put("/api/automations/prospect-followup", requireRole(["ADMIN", "MANAGER"]), requirePermission("automations.manage"), async (request, response, next) => {
+    try { response.json(await saveProspectRemarketingSettings(request.body)); } catch (error) { next(error); }
   });
 
   app.post("/api/automations", requireRole(["ADMIN", "MANAGER"]), async (request, response, next) => {

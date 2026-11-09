@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks=vi.hoisted(()=>({query:vi.fn(),clientQuery:vi.fn(),connect:vi.fn(),release:vi.fn(),groups:vi.fn(),info:vi.fn(),sender:vi.fn(),send:vi.fn(),sync:vi.fn(),fresh:true,customers:[] as Record<string,unknown>[],env:{WHATSAPP_PROSPECT_FOLLOWUP_ENABLED:true}}));
+const mocks=vi.hoisted(()=>({query:vi.fn(),clientQuery:vi.fn(),connect:vi.fn(),release:vi.fn(),groups:vi.fn(),info:vi.fn(),sender:vi.fn(),send:vi.fn(),sync:vi.fn(),fresh:true,settings:null as ProspectRemarketingSettings | null,secondRows:[] as Record<string,unknown>[],cursors:new Map<string,string>(),customers:[] as Record<string,unknown>[],env:{WHATSAPP_PROSPECT_FOLLOWUP_ENABLED:true}}));
+vi.mock("./prospectRemarketingSettings.js",()=>({getProspectRemarketingSettings:vi.fn(async()=>mocks.settings ?? ({enabled:mocks.env.WHATSAPP_PROSPECT_FOLLOWUP_ENABLED,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:null,updatedAt:null}))}));
 vi.mock("../../db/client.js",()=>({pool:{query:mocks.query,connect:mocks.connect}}));
 vi.mock("../../lib/env.js",()=>({env:mocks.env}));
 vi.mock("../../lib/logger.js",()=>({logger:{info:vi.fn(),error:vi.fn()}}));
@@ -8,6 +9,8 @@ vi.mock("../crm/reactivationAudience.js",()=>({requireReactivationSender:mocks.s
 vi.mock("../platform/syncService.js",()=>({runPrimarySync:mocks.sync}));
 vi.mock("./evolutionMetadataService.js",()=>({fetchEvolutionGroupInfo:mocks.info}));
 vi.mock("./whatsappMonitorService.js",()=>({getWhatsappGroupsCreatedOnDate:mocks.groups,getWhatsappReportTeamIdentities:()=>["5511999999999","111111111111111"],isInternalWhatsappReportChat:()=>false}));
+import { DEFAULT_PROSPECT_MESSAGE } from "./prospectFollowupCore.js";
+import type { ProspectRemarketingSettings } from "@olist-crm/shared";
 import { previewProspectFollowups,runProspectFollowups } from "./prospectFollowupService.js";
 const group={jid:"120300000000001@g.us",name:"Cliente Janfone Celulares",createdAt:"2026-11-09T13:01:46Z"};
 const now=new Date("2026-11-11T12:00:00Z");
@@ -17,17 +20,18 @@ const raw=()=>({id:group.jid,owner:"111111111111111@lid",participants:[
 ]});
 describe("prospect group followups",()=>{
   beforeEach(()=>{
-    vi.clearAllMocks();mocks.fresh=true;mocks.customers=[];mocks.env.WHATSAPP_PROSPECT_FOLLOWUP_ENABLED=true;
+    vi.clearAllMocks();mocks.settings=null;mocks.secondRows=[];mocks.cursors.clear();mocks.fresh=true;mocks.customers=[];mocks.env.WHATSAPP_PROSPECT_FOLLOWUP_ENABLED=true;
     mocks.groups.mockResolvedValue([group]);mocks.info.mockResolvedValue({displayName:group.name,rawProfile:raw()});
     mocks.sender.mockResolvedValue({id:"lili-id",instance_name:"Lili",provider:"EVOLUTION",evolution_base_url:"https://evo.example",evolution_api_key:"test"});
     mocks.send.mockResolvedValue({key:{id:"sent-1"}});mocks.sync.mockResolvedValue({});
     mocks.query.mockImplementation(async(sql:string)=>{
+      if(sql.includes("substring(key"))return{rows:mocks.secondRows};
       if(sql.startsWith("SELECT id FROM whatsapp_instances"))return{rows:[{id:"lili-id"}]};
       if(sql.includes("AS fresh"))return{rows:[{fresh:mocks.fresh}]};
       if(sql.includes("FROM customers c"))return{rows:mocks.customers};
       return{rows:[]};
     });
-    const cursors=new Map<string,string>();
+    const cursors=mocks.cursors;
     mocks.clientQuery.mockImplementation(async(sql:string,params:string[]=[])=>{
       if(sql.includes("pg_try_advisory_lock"))return{rows:[{locked:true}]};
       if(sql.startsWith("SELECT cursor_value"))return{rows:cursors.has(params[0]!)?[{cursor_value:cursors.get(params[0]!)}]:[]};
@@ -84,5 +88,55 @@ describe("prospect group followups",()=>{
   it("does not act before 9h or while disabled",async()=>{
     await runProspectFollowups(new Date("2026-11-11T11:59:59Z"));mocks.env.WHATSAPP_PROSPECT_FOLLOWUP_ENABLED=false;await runProspectFollowups(now);
     expect(mocks.groups).not.toHaveBeenCalled();expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("uses configured first delay and text without replaying the existing ledger",async()=>{
+    mocks.settings={enabled:true,first:{daysAfterCreation:4,message:"Oi {cliente}, posso ajudar?"},second:null,updatedAt:"2026-11-09T12:00:00Z"};
+    mocks.cursors.set(`prospect_group_followup:${group.jid}`,JSON.stringify({status:"sent"}));
+    expect((await runProspectFollowups(now)).results).toMatchObject([{status:"already_handled"}]);
+    expect(mocks.groups).toHaveBeenCalledWith("2026-11-07");expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("sends the second stage once using the actual first delivery cohort",async()=>{
+    mocks.groups.mockResolvedValue([]);
+    mocks.settings={enabled:true,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:{enabled:true,daysAfterFirst:3,message:"Oi {cliente}, ainda posso ajudar?"},updatedAt:null};
+    mocks.secondRows=[{jid:group.jid,name:group.name,created_at:null,first_recipient:"558189999000"}];
+    expect((await runProspectFollowups(now)).results).toMatchObject([{status:"sent"}]);
+    expect((await runProspectFollowups(now)).results).toMatchObject([{status:"already_handled"}]);
+    expect(mocks.query).toHaveBeenCalledWith(expect.stringContaining("delivery->>'status' = 'sent'"),["2026-11-11",3]);
+    expect(mocks.send).toHaveBeenCalledWith(group.jid,"Oi @558189999000, ainda posso ajudar?","lili-id",["558189999000"]);
+    expect(mocks.cursors.has(`prospect_group_followup_second:${group.jid}`)).toBe(true);
+  });
+  it("never sends a second message after purchase",async()=>{
+    mocks.groups.mockResolvedValue([]);mocks.secondRows=[{jid:group.jid,name:group.name}];
+    mocks.settings={enabled:true,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:{enabled:true,daysAfterFirst:3,message:"Oi {cliente}"},updatedAt:null};
+    mocks.customers=[{id:"buyer",display_name:group.name,has_purchase:true}];
+    expect((await runProspectFollowups(now)).results).toMatchObject([{reason:"already_purchased"}]);expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("pauses from stored settings even when the environment default is active",async()=>{
+    mocks.settings={enabled:false,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:null,updatedAt:null};
+    await runProspectFollowups(now);expect(mocks.groups).not.toHaveBeenCalled();expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("stops a delivery if settings change during live inspection",async()=>{
+    mocks.info.mockImplementation(async()=>{mocks.settings={enabled:false,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:null,updatedAt:null};return{displayName:group.name,rawProfile:raw()};});
+    expect((await runProspectFollowups(now)).results).toMatchObject([{status:"settings_changed"}]);expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("does not query second-stage deliveries while that stage is paused",async()=>{
+    mocks.groups.mockResolvedValue([]);
+    mocks.settings={enabled:true,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:{enabled:false,daysAfterFirst:3,message:""},updatedAt:null};
+    await runProspectFollowups(now);
+    expect(mocks.query.mock.calls.some(call=>String(call[0]).includes("substring(key"))).toBe(false);
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("renders the saved first message in previews",async()=>{
+    mocks.settings={enabled:true,first:{daysAfterCreation:4,message:"Olá {cliente}, tudo certo?"},second:null,updatedAt:null};
+    const preview=await previewProspectFollowups("2026-11-11");
+    expect(mocks.groups).toHaveBeenCalledWith("2026-11-07");
+    expect(preview.groups[0]?.text).toBe("Olá @558189999000, tudo certo?");
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+  it("never sends a second message to a replacement customer in the group",async()=>{
+    mocks.groups.mockResolvedValue([]);mocks.secondRows=[{jid:group.jid,name:group.name,first_recipient:"5511988888888"}];
+    mocks.settings={enabled:true,first:{daysAfterCreation:2,message:DEFAULT_PROSPECT_MESSAGE},second:{enabled:true,daysAfterFirst:3,message:"Oi {cliente}"},updatedAt:null};
+    expect((await runProspectFollowups(now)).results).toMatchObject([{reason:"customer_changed"}]);
+    expect(mocks.send).not.toHaveBeenCalled();
   });
 });
