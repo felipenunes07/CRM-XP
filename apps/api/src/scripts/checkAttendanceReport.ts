@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { pool, redis, whatsappMonitorPool } from "../db/client.js";
-import { countLostAttendanceCustomers, previewAttendanceGroupReport } from "../modules/whatsapp/whatsappAttendanceReportService.js";
+import { countLostAttendanceCustomers, getLostAttendanceCustomers, previewAttendanceGroupReport } from "../modules/whatsapp/whatsappAttendanceReportService.js";
 
 try {
   if (process.argv.includes("--self-test")) {
@@ -9,6 +9,7 @@ try {
     await pool.query("BEGIN");
     try {
       await pool.query("CREATE TEMP TABLE orders (customer_id text, order_date date) ON COMMIT DROP");
+      await pool.query("CREATE TEMP TABLE customers (id text, customer_code text, display_name text) ON COMMIT DROP");
       await pool.query(`
         INSERT INTO orders VALUES
           ('notYet89', '2026-11-07'::date - 89),
@@ -23,9 +24,11 @@ try {
           ('recentOrder', '2026-11-07'::date - 90),
           ('recentOrder', '2026-11-07'::date - 1)
       `);
+      await pool.query("INSERT INTO customers SELECT DISTINCT customer_id, 'CL-' || customer_id, customer_id FROM orders");
       assert.equal(await countLostAttendanceCustomers("2026-11-07"), 2);
       assert.equal(await countLostAttendanceCustomers("2026-11-08"), 1);
       assert.equal(await countLostAttendanceCustomers("2026-11-09"), 0);
+      assert.deepEqual((await getLostAttendanceCustomers("2026-11-07")).map(customer => customer.customerCode), ["CL-exactly90", "CL-futureOrder"]);
       console.log("PASS: exactly 90 days (not 89 or 91+), no cumulative count, deduplication, recovered and future orders (Postgres temporary fixture)");
     } finally {
       await pool.query("ROLLBACK");

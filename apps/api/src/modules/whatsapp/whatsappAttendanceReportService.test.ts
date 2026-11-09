@@ -14,7 +14,7 @@ vi.mock("../../lib/logger.js", () => ({ logger: { info: vi.fn(), error: vi.fn() 
 vi.mock("../crm/offboardingAlertService.js", () => ({ sendToGroup: mocks.send }));
 vi.mock("./whatsappMonitorService.js", () => ({ getWhatsappDailySummaryReport: mocks.summary, getWhatsappGroupsCreatedOnDate: vi.fn().mockResolvedValue([]) }));
 
-import { formatAttendanceGroupReport, getAttendanceReportSchedule, runScheduledAttendanceReport } from "./whatsappAttendanceReportService.js";
+import { formatAttendanceGroupReport, getAttendanceReportSchedule, getLostAttendanceCustomers, previewAttendanceGroupReport, runScheduledAttendanceReport } from "./whatsappAttendanceReportService.js";
 
 const summary = {
   date: "2026-11-06", newCustomersCount: 0, recoveredCustomersCount: 0,
@@ -34,7 +34,7 @@ describe("attendance group report", () => {
     vi.clearAllMocks();
     mocks.env.WHATSAPP_ATTENDANCE_REPORT_ENABLED = true;
     mocks.env.WHATSAPP_ATTENDANCE_REPORT_GROUP_JID = "120363024604307554@g.us";
-    mocks.query.mockResolvedValue({ rows: [{ count: 3 }] });
+    mocks.query.mockResolvedValue({ rows: [{ id: "lost-1", customer_code: "CL001", display_name: "Cliente Um" }, { id: "lost-2", customer_code: "CL002", display_name: "Cliente Dois" }, { id: "lost-3", customer_code: null, display_name: "Cliente Sem Código" }] });
     mocks.summary.mockResolvedValue(summary);
     mocks.send.mockResolvedValue({ id: "message-1" });
     mocks.connect.mockResolvedValue({ query: mocks.clientQuery, release: mocks.release });
@@ -88,22 +88,22 @@ _06/11/2026_
 
 🥇 *Thaís*
 💬 Mensagens Enviadas: 221
-👥 Atendimentos em Grupo: 6
+👥 Grupos Atendidos: 6
 ✨ Conversas Iniciadas: 20
 
 🥈 *Amanda*
 💬 Mensagens Enviadas: 54
-👥 Atendimentos em Grupo: 8
+👥 Grupos Atendidos: 8
 ✨ Conversas Iniciadas: 17
 
 🥉 *Suellen*
 💬 Mensagens Enviadas: 53
-👥 Atendimentos em Grupo: 16
+👥 Grupos Atendidos: 16
 ✨ Conversas Iniciadas: 22
 
 ❤️ *Tamires*
 💬 Mensagens Enviadas: 46
-👥 Atendimentos em Grupo: 1
+👥 Grupos Atendidos: 1
 ✨ Conversas Iniciadas: 7`);
     expect(summary).toEqual(original);
   });
@@ -132,6 +132,20 @@ _06/11/2026_
       { jid: "120363414626474487@g.us", name: "Cliente Janfone Celulares", createdAt: "2026-11-09T13:01:46Z" },
     ] }, 0);
     expect(message).toContain("📱 *Clientes Novos no Dia:* 0\n👥 *Grupos Criados no Dia:* 1\n- Cliente Janfone Celulares | Criado às 10:01\n");
+  });
+
+  it("lists the exact lost customers once and derives the count from that same list", async () => {
+    const report = await previewAttendanceGroupReport("2026-11-09");
+    expect(report.lostCustomersCount).toBe(3);
+    expect(report.lostCustomers).toHaveLength(3);
+    expect(report.text).toContain("📉 *Clientes Perdidos no Dia:* 3\n- CL001 - Cliente Um | 90 dias sem comprar\n- CL002 - Cliente Dois | 90 dias sem comprar\n- Cliente Sem Código | 90 dias sem comprar\n\n💬");
+    expect(mocks.query).toHaveBeenCalledOnce();
+  });
+
+  it("returns no names on a day without newly lost customers", async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    expect(await getLostAttendanceCustomers("2026-11-09")).toEqual([]);
+    expect(formatAttendanceGroupReport(summary, 0, [])).toContain("📉 *Clientes Perdidos no Dia:* 0\n\n💬");
   });
 
   it("sends once per day even after another scheduler starts", async () => {

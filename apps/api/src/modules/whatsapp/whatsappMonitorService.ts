@@ -4310,17 +4310,17 @@ export async function getWhatsappDailySummaryReport(
   // source for group traffic; deal_activities remains as fallback for older rows.
   const activityWhere: string[] = [
     "da.activity_type IN ('WHATSAPP_SENT', 'WHATSAPP_RECEIVED')",
-    "da.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
+    "da.created_at >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')",
     "da.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
     monitorableWhatsappJidSql("COALESCE(da.metadata ->> 'remoteJid', d.whatsapp_jid)"),
   ];
   const monitorWhere: string[] = [
-    "wmm.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
+    "wmm.created_at >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')",
     "wmm.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
     monitorableWhatsappJidSql("COALESCE(NULLIF(wmm.remote_jid, ''), NULLIF(wmm.media_json ->> 'remoteJid', ''), d.whatsapp_jid)"),
   ];
   const incomingWhere: string[] = [
-    "wim.created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')",
+    "wim.created_at >= ($1::date::timestamp AT TIME ZONE 'America/Sao_Paulo')",
     "wim.created_at < (($1::date + INTERVAL '1 day') AT TIME ZONE 'America/Sao_Paulo')",
     monitorableWhatsappJidSql("wim.remote_jid"),
   ];
@@ -4631,8 +4631,6 @@ export async function getWhatsappDailySummaryReport(
     privateChats: Set<string>;
     groupChats: Set<string>;
     initiatedChats: Set<string>;
-    // Keep track of first activity in each chat to calculate initiation
-    chatFirstActivity: Map<string, { activityType: string; isGroup: boolean; name: string }>;
     // Detail lists
     attendedPrivateClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
     attendedGroupClients: Map<string, { name: string; jid: string; sent: number; received: number; initiated: boolean }>;
@@ -4642,6 +4640,8 @@ export async function getWhatsappDailySummaryReport(
 
   let totalSent = 0;
   let totalReceived = 0;
+  // Incoming messages may be attributed to another instance: first means first in the chat, not first in an agent's bucket.
+  const chatsSeenToday = new Set<string>();
   const pendingInboundByAgentConversation = new Map<string, Date>();
 
   for (const row of activitiesResult.rows) {
@@ -4679,6 +4679,9 @@ export async function getWhatsappDailySummaryReport(
       salesAgent = SALES_AGENT_BY_NAME.get(senderStripped) || SALES_AGENT_BY_NAME.get(actorNameLower);
     }
     const isInternalSender = Boolean(senderDigits) && !salesAgent && INTERNAL_TEAM_SENDER_PHONES.has(senderDigits);
+    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
+    const isFirstChatActivity = Boolean(remoteJid) && !chatsSeenToday.has(remoteJid);
+    if (remoteJid) chatsSeenToday.add(remoteJid);
 
     // Remetente é time INTERNO (não-vendedora): conversa interna entre o time. Não conta
     // como conversa, nem enviada, nem recebida — é ruído interno (ex.: Iza/Defeitos,
@@ -4699,7 +4702,6 @@ export async function getWhatsappDailySummaryReport(
       ? salesAgent.name
       : (matchedUser ? matchedUser.name : (wiLabel || 'Sem agente'));
 
-    const remoteJid = String(row.metadata_remote_jid || row.whatsapp_jid || "");
     const isGroup = remoteJid.endsWith("@g.us");
     // ENVIADA se o remetente é uma vendedora (por número) OU o provider marcou from_me/
     // OUTBOUND. Pega a msg de equipe em grupo gravada com from_me=false.
@@ -4770,7 +4772,6 @@ export async function getWhatsappDailySummaryReport(
         privateChats: new Set(),
         groupChats: new Set(),
         initiatedChats: new Set(),
-        chatFirstActivity: new Map(),
         attendedPrivateClients: new Map(),
         attendedGroupClients: new Map(),
         totalResponseSeconds: 0,
@@ -4830,27 +4831,15 @@ export async function getWhatsappDailySummaryReport(
       else client.received++;
     }
 
-    // Check first activity for initiation
-    if (!agent.chatFirstActivity.has(remoteJid)) {
-      agent.chatFirstActivity.set(remoteJid, {
-        activityType: isOutbound ? "WHATSAPP_SENT" : "WHATSAPP_RECEIVED",
-        isGroup,
-        name: chatName,
-      });
-
-      // Primeira atividade do dia foi do vendedor (outbound) = ele PUXOU a conversa.
-      // Vale pra privado E grupo — antes só contava privado, então numa operação
-      // 100% em grupo "Conversas Iniciadas" dava sempre 0.
-      if (isOutbound) {
-        agent.initiatedChats.add(remoteJid);
-        const privateClient = agent.attendedPrivateClients.get(remoteJid);
-        if (privateClient) {
-          privateClient.initiated = true;
-        }
-        const groupClient = agent.attendedGroupClients.get(remoteJid);
-        if (groupClient) {
-          groupClient.initiated = true;
-        }
+    if (isFirstChatActivity && isOutbound) {
+      agent.initiatedChats.add(remoteJid);
+      const privateClient = agent.attendedPrivateClients.get(remoteJid);
+      if (privateClient) {
+        privateClient.initiated = true;
+      }
+      const groupClient = agent.attendedGroupClients.get(remoteJid);
+      if (groupClient) {
+        groupClient.initiated = true;
       }
     }
   }
@@ -5137,7 +5126,7 @@ export async function getWhatsappDailySummaryReport(
     text += `${emoji} *${agent.agentName}*\n`;
     text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
     text += `📱 Atendimentos Particular: ${agent.privateChatsCount}\n`;
-    text += `👥 Atendimentos em Grupo: ${agent.groupChatsCount}\n`;
+    text += `👥 Grupos Atendidos: ${agent.groupChatsCount}\n`;
     text += `✨ Conversas Iniciadas: ${agent.initiatedCount}\n`;
 
     if (agent.attendedPrivateClients.length > 0 || agent.attendedGroupClients.length > 0) {
