@@ -98,7 +98,7 @@ function webhookConfigIsHealthy(payload: Record<string, unknown> | null): boolea
     events.includes("MESSAGES_UPSERT") &&
     events.includes("CONNECTION_UPDATE") &&
     events.includes("GROUPS_UPSERT") &&
-    events.includes("GROUPS_UPDATE")
+    events.includes("GROUP_UPDATE")
   );
 }
 

@@ -40,7 +40,7 @@ describe("sendWhatsappInstanceMediaMessage", () => {
     await configureInstanceWebhook(instance);
     const [, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(JSON.parse(String(requestInit.body)).webhook.events).toEqual([
-      "MESSAGES_UPSERT", "SEND_MESSAGE", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUPS_UPDATE",
+      "MESSAGES_UPSERT", "SEND_MESSAGE", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUP_UPDATE",
     ]);
   });
 
