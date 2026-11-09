@@ -580,6 +580,32 @@ export async function resolveWhatsappMessageMetadata(context: EvolutionMessageCo
   return metadata;
 }
 
+export async function recordWhatsappGroupUpdates(instanceName: string, data: unknown): Promise<number> {
+  const groups = new Map<string, Record<string, unknown>>();
+  for (const item of Array.isArray(data) ? data : [data]) {
+    if (!item || typeof item !== "object") continue;
+    const group = { ...item } as Record<string, unknown>;
+    const jid = String(group.id ?? "");
+    if (!/^\d+(?:-\d+)?@g\.us$/.test(jid)) continue;
+    if (!/^\d{9,10}$|^\d{12,13}$/.test(String(group.creation ?? ""))) delete group.creation;
+    if (typeof group.subject !== "string" || !group.subject.trim()) delete group.subject;
+    groups.set(jid, { ...groups.get(jid), ...group });
+  }
+  if (!groups.size) return 0;
+  const result = await pool.query(`
+    INSERT INTO whatsapp_chat_profiles (instance_name, remote_jid, display_name, is_group, raw_profile, last_synced_at)
+    SELECT $1, g ->> 'id', NULLIF(g ->> 'subject', ''), TRUE, g, NOW()
+    FROM jsonb_array_elements($2::jsonb) g
+    WHERE EXISTS (SELECT 1 FROM whatsapp_instances wi WHERE LOWER(wi.instance_name) = LOWER($1) AND wi.status = 'ACTIVE')
+    ON CONFLICT (instance_name, remote_jid) DO UPDATE SET
+      display_name = COALESCE(EXCLUDED.display_name, whatsapp_chat_profiles.display_name),
+      is_group = TRUE,
+      raw_profile = COALESCE(whatsapp_chat_profiles.raw_profile, '{}'::jsonb) || EXCLUDED.raw_profile,
+      last_synced_at = NOW()
+  `, [instanceName, JSON.stringify([...groups.values()])]);
+  return result.rowCount ?? 0;
+}
+
 export async function refreshWhatsappChatProfile(
   remoteJid: string,
   instanceName: string | null,

@@ -21,6 +21,27 @@ mostra o código, nome, vendedora, valor da compra e quantos dias o cliente pass
 sem comprar, no mesmo formato do resumo original.
 A página e os dados originais continuam iguais.
 
+O relatório também inclui **Grupos Criados no Dia**, com nomes e horário de
+criação em Brasília. A fonte é `creation` informada pelo WhatsApp em
+`whatsapp_chat_profiles.raw_profile`, não a data de cadastro/importação no CRM.
+Cada JID aparece uma vez, mesmo que esteja em várias instâncias. Grupos internos,
+comunidades e grupos de avisos de comunidades são excluídos. Não é necessário
+ter cliente cadastrado nem compra: o grupo pode ser o primeiro contato comercial.
+Essa contagem é independente de clientes novos por primeira compra.
+
+Os eventos `GROUPS_UPSERT` e `GROUPS_UPDATE` mantêm esses metadados atualizados
+nas instâncias operacionais da Evolution. Uma renomeação preserva a data de
+criação conhecida. O watchdog mantém esses eventos habilitados junto aos eventos
+de mensagens. Instâncias configuradas somente para envio continuam sem captura.
+
+```sh
+npx tsx apps/api/src/scripts/checkCreatedGroupsReport.ts --self-test
+npx tsx apps/api/src/scripts/checkCreatedGroupsReport.ts 2026-11-09
+```
+
+O primeiro comando verifica o SQL de registro e consulta usando tabelas
+temporárias com rollback; o segundo lê os grupos do dia sem enviar mensagens.
+
 Clientes perdidos são clientes cuja última compra, considerando apenas pedidos
 até a data do relatório, foi há **exatamente 90 dias**, na mesma data do gatilho
 da última mensagem da régua da Lili. Clientes com 91 dias ou mais não entram:

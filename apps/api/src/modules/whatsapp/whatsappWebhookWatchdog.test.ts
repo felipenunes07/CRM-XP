@@ -82,7 +82,10 @@ describe("WhatsApp webhook watchdog", () => {
     expect(mocks.configureInstanceWebhook).not.toHaveBeenCalled();
   });
 
-  it("continues checking operational Evolution instances", async () => {
+  it.each([
+    { events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUPS_UPDATE"], repaired: false },
+    { events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"], repaired: true },
+  ])("checks operational instances and repairs missing group events: $repaired", async ({ events, repaired }) => {
     mocks.poolQuery
       .mockResolvedValueOnce({
         rows: [
@@ -107,7 +110,7 @@ describe("WhatsApp webhook watchdog", () => {
         json: async () => ({
           enabled: true,
           url: "https://crm.example/api/webhooks/evolution",
-          events: ["MESSAGES_UPSERT", "CONNECTION_UPDATE"],
+          events,
         }),
       });
     vi.stubGlobal("fetch", fetchMock);
@@ -116,7 +119,8 @@ describe("WhatsApp webhook watchdog", () => {
 
     expect(result.checked).toBe(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(mocks.configureInstanceWebhook).not.toHaveBeenCalled();
+    expect(mocks.configureInstanceWebhook).toHaveBeenCalledTimes(repaired ? 1 : 0);
+    expect(result.webhookRepaired).toEqual(repaired ? ["Amanda"] : []);
   });
 
   it("marks a close event as pending without sending an immediate alert", async () => {

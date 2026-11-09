@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   redisGet: vi.fn(),
   redisSet: vi.fn(),
   resolveMetadata: vi.fn(),
+  recordGroupUpdates: vi.fn(),
   createEventFromMessage: vi.fn(),
   resolveIdentity: vi.fn(),
   upsertAliases: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock("../../db/client.js", () => ({
 
 vi.mock("./evolutionMetadataService.js", () => ({
   resolveWhatsappMessageMetadata: mocks.resolveMetadata,
+  recordWhatsappGroupUpdates: mocks.recordGroupUpdates,
 }));
 
 vi.mock("./whatsappIdentityService.js", () => ({
@@ -151,6 +153,7 @@ describe("whatsapp conversation isolation", () => {
     mocks.redisGet.mockReset();
     mocks.redisSet.mockReset();
     mocks.resolveMetadata.mockReset();
+    mocks.recordGroupUpdates.mockReset();
     mocks.createEventFromMessage.mockReset();
     mocks.resolveIdentity.mockReset();
     mocks.upsertAliases.mockReset();
@@ -168,6 +171,16 @@ describe("whatsapp conversation isolation", () => {
     mocks.upsertAliases.mockResolvedValue(undefined);
     mocks.refreshRollups.mockResolvedValue({ refreshed: true, deleted: 0, inserted: 1 });
   });
+
+  it.each(["groups.upsert", "GROUPS_UPDATE"])("records group metadata for %s without creating chat activity", async (event) => {
+    mocks.recordGroupUpdates.mockResolvedValue(1);
+    const group = { id: "120363414626474487@g.us", subject: "Cliente Janfone Celulares", creation: 1794229306 };
+    expect(await handleEvolutionWebhook({ event, instance: "Thais", data: group })).toMatchObject({ processed: true, event });
+    expect(mocks.recordGroupUpdates).toHaveBeenCalledWith("Thais", group);
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.createEventFromMessage).not.toHaveBeenCalled();
+  });
+
   it("lists agent identity, health, and lightweight risk alerts without scanning monitor messages", async () => {
     mocks.query.mockResolvedValue({
       rows: [{
