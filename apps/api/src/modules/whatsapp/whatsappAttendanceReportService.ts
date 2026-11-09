@@ -3,7 +3,7 @@ import { env } from "../../lib/env.js";
 import { logger } from "../../lib/logger.js";
 import { sendToGroup } from "../crm/offboardingAlertService.js";
 import { startRecurringJob } from "../platform/scheduledJobs.js";
-import { getWhatsappDailySummaryReport } from "./whatsappMonitorService.js";
+import { getWhatsappDailySummaryReport, getWhatsappGroupsCreatedOnDate, type WhatsappCreatedGroup } from "./whatsappMonitorService.js";
 import { formatDailySummaryCustomerLines } from "./whatsappMonitorCore.js";
 
 const TIMEZONE = "America/Sao_Paulo";
@@ -26,6 +26,7 @@ interface AttendanceSummary {
   newCustomersCount: number;
   recoveredCustomersCount: number;
   recoveredCustomersList?: Record<string, unknown>[];
+  createdGroups?: WhatsappCreatedGroup[];
   totalMessagesSent: number;
   totalMessagesReceived: number;
   agents: AttendanceAgent[];
@@ -63,6 +64,11 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
   const [year, month, day] = summary.date.split("-");
   let text = `📅 *Relatório de Atendimento XP*\n_${day}/${month}/${year}_\n\n`;
   text += `📱 *Clientes Novos no Dia:* ${summary.newCustomersCount}\n`;
+  text += `👥 *Grupos Criados no Dia:* ${summary.createdGroups?.length ?? 0}\n`;
+  for (const group of summary.createdGroups ?? []) {
+    const time = new Intl.DateTimeFormat("pt-BR", { timeZone: TIMEZONE, hour: "2-digit", minute: "2-digit" }).format(new Date(group.createdAt));
+    text += `- ${group.name} | Criado às ${time}\n`;
+  }
   text += `🔄 *Clientes Recuperados no Dia:* ${summary.recoveredCustomersCount}\n`;
   if (summary.recoveredCustomersList?.length) {
     text += `${formatDailySummaryCustomerLines(summary.recoveredCustomersList, { recovered: true })}\n`;
@@ -103,13 +109,14 @@ export async function countLostAttendanceCustomers(date: string): Promise<number
 }
 
 export async function previewAttendanceGroupReport(date: string) {
-  const [summary, lostCustomersCount] = await Promise.all([
+  const [summary, lostCustomersCount, createdGroups] = await Promise.all([
     getWhatsappDailySummaryReport({
       id: "attendance-report-scheduler", name: "Relatório de Atendimento", email: "scheduler@localhost", role: "ADMIN",
     }, date),
     countLostAttendanceCustomers(date),
+    getWhatsappGroupsCreatedOnDate(date),
   ]);
-  return { date, lostCustomersCount, text: formatAttendanceGroupReport(summary, lostCustomersCount) };
+  return { date, lostCustomersCount, createdGroups, text: formatAttendanceGroupReport({ ...summary, createdGroups }, lostCustomersCount) };
 }
 
 export async function runScheduledAttendanceReport(now = new Date()) {

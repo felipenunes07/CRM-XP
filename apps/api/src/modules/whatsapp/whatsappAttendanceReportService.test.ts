@@ -12,7 +12,7 @@ vi.mock("../../db/client.js", () => ({ pool: { query: mocks.query, connect: mock
 vi.mock("../../lib/env.js", () => ({ env: mocks.env }));
 vi.mock("../../lib/logger.js", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
 vi.mock("../crm/offboardingAlertService.js", () => ({ sendToGroup: mocks.send }));
-vi.mock("./whatsappMonitorService.js", () => ({ getWhatsappDailySummaryReport: mocks.summary }));
+vi.mock("./whatsappMonitorService.js", () => ({ getWhatsappDailySummaryReport: mocks.summary, getWhatsappGroupsCreatedOnDate: vi.fn().mockResolvedValue([]) }));
 
 import { formatAttendanceGroupReport, getAttendanceReportSchedule, runScheduledAttendanceReport } from "./whatsappAttendanceReportService.js";
 
@@ -74,6 +74,7 @@ describe("attendance group report", () => {
 _06/11/2026_
 
 📱 *Clientes Novos no Dia:* 0
+👥 *Grupos Criados no Dia:* 0
 🔄 *Clientes Recuperados no Dia:* 0
 📉 *Clientes Perdidos no Dia:* 3
 
@@ -124,6 +125,13 @@ _06/11/2026_
       recoveredCustomersList: [{ customer_code: "CL577", display_name: "Tulio Tem", last_attendant: "Thais", total_amount: "970.00", days_inactive: 226 }],
     }, 0);
     expect(message).toContain("🔄 *Clientes Recuperados no Dia:* 1\n- CL577 - Tulio Tem | Thais | R$ 970,00 | 226 dias sem comprar\n📉 *Clientes Perdidos no Dia:* 0");
+  });
+
+  it("lists newly created groups before a customer has made a first purchase", () => {
+    const message = formatAttendanceGroupReport({ ...summary, date: "2026-11-09", createdGroups: [
+      { jid: "120363414626474487@g.us", name: "Cliente Janfone Celulares", createdAt: "2026-11-09T13:01:46Z" },
+    ] }, 0);
+    expect(message).toContain("📱 *Clientes Novos no Dia:* 0\n👥 *Grupos Criados no Dia:* 1\n- Cliente Janfone Celulares | Criado às 10:01\n");
   });
 
   it("sends once per day even after another scheduler starts", async () => {

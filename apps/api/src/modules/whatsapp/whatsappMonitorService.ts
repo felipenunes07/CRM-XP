@@ -4175,6 +4175,38 @@ export async function setWhatsappConversationReadState(
   };
 }
 
+export interface WhatsappCreatedGroup {
+  jid: string;
+  name: string;
+  createdAt: string;
+}
+
+export async function getWhatsappGroupsCreatedOnDate(date: string): Promise<WhatsappCreatedGroup[]> {
+  const result = await pool.query(`
+    WITH profiles AS (
+      SELECT remote_jid, instance_name, last_synced_at,
+        COALESCE(NULLIF(raw_profile ->> 'subject', ''), NULLIF(display_name, ''), remote_jid) AS name,
+        CASE
+          WHEN raw_profile ->> 'creation' ~ '^[0-9]{9,10}$' THEN to_timestamp((raw_profile ->> 'creation')::double precision)
+          WHEN raw_profile ->> 'creation' ~ '^[0-9]{12,13}$' THEN to_timestamp((raw_profile ->> 'creation')::double precision / 1000)
+        END AS group_created_at
+      FROM whatsapp_chat_profiles
+      WHERE is_group = TRUE AND remote_jid LIKE '%@g.us'
+        AND COALESCE(raw_profile ->> 'isCommunity', 'false') <> 'true'
+        AND COALESCE(raw_profile ->> 'isCommunityAnnounce', 'false') <> 'true'
+    )
+    SELECT DISTINCT ON (remote_jid) remote_jid, name, group_created_at
+    FROM profiles
+    WHERE group_created_at >= ($1::date AT TIME ZONE 'America/Sao_Paulo')
+      AND group_created_at < (($1::date + 1) AT TIME ZONE 'America/Sao_Paulo')
+    ORDER BY remote_jid, last_synced_at DESC, instance_name
+  `, [date]);
+  return result.rows
+    .filter((row) => !isInternalChat(String(row.name), String(row.remote_jid)))
+    .map((row) => ({ jid: String(row.remote_jid), name: String(row.name), createdAt: new Date(row.group_created_at).toISOString() }))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.name.localeCompare(right.name));
+}
+
 export async function getWhatsappDailySummaryReport(
   user: JwtUser,
   dateInput?: string

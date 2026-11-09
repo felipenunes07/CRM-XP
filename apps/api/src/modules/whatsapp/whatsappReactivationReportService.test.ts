@@ -14,7 +14,7 @@ vi.mock("../../lib/env.js", () => ({ env: mocks.env }));
 vi.mock("../../lib/logger.js", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
 vi.mock("../crm/offboardingAlertService.js", () => ({ sendToGroup: mocks.send }));
 vi.mock("./whatsappCampaignService.js", () => ({ getWhatsappCampaignPerformance: mocks.performance }));
-vi.mock("./whatsappMonitorService.js", () => ({ getWhatsappDailySummaryReport: vi.fn().mockResolvedValue({
+vi.mock("./whatsappMonitorService.js", () => ({ getWhatsappGroupsCreatedOnDate: vi.fn().mockResolvedValue([]), getWhatsappDailySummaryReport: vi.fn().mockResolvedValue({
   date: "2026-11-07", newCustomersCount: 0, recoveredCustomersCount: 0, totalMessagesSent: 0, totalMessagesReceived: 0, agents: [],
 }) }));
 

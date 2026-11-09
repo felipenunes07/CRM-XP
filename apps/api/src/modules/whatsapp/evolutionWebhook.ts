@@ -1,7 +1,7 @@
 import { pool } from "../../db/client.js";
 import { logger } from "../../lib/logger.js";
 import { env } from "../../lib/env.js";
-import { resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
+import { recordWhatsappGroupUpdates, resolveWhatsappMessageMetadata } from "./evolutionMetadataService.js";
 import {
   resolveWhatsappConversationIdentity,
   upsertWhatsappJidAliases,
@@ -386,6 +386,11 @@ export async function handleEvolutionWebhook(
     const state = String(data.state ?? data.status ?? nestedInstance.state ?? payload.state ?? "");
     const connectionResult = await handleEvolutionConnectionUpdate(instance, state);
     return { processed: connectionResult.processed, event, alertSent: connectionResult.alertSent };
+  }
+
+  if (["groups.upsert", "groups.update"].includes(event.toLowerCase().replace(/_/g, "."))) {
+    const updated = await recordWhatsappGroupUpdates(instance, payload.data);
+    return { processed: updated > 0, event };
   }
 
   if (!ACCEPTED_EVENTS.has(event)) {

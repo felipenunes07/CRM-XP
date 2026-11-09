@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { disableInstanceWebhook, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
+import { configureInstanceWebhook, disableInstanceWebhook, sendWhatsappInstanceMediaMessage } from "./evolutionService.js";
 
 const instance = {
   instanceName: "xp",
@@ -32,6 +32,16 @@ describe("sendWhatsappInstanceMediaMessage", () => {
         events: [],
       },
     });
+  });
+
+  it("subscribes to group creation and update events alongside the existing message events", async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }));
+    vi.stubGlobal("fetch", fetchMock);
+    await configureInstanceWebhook(instance);
+    const [, requestInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(requestInit.body)).webhook.events).toEqual([
+      "MESSAGES_UPSERT", "SEND_MESSAGE", "CONNECTION_UPDATE", "GROUPS_UPSERT", "GROUPS_UPDATE",
+    ]);
   });
 
   it("rejects non-MP4 video data URLs before calling Evolution", async () => {
