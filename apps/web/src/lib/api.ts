@@ -1,4 +1,5 @@
 import type {
+  ProspectRemarketingInput, ProspectRemarketingSettings,
   LiliReactivationPreview,
   PriceSupplier, PriceSnapshot, PriceSnapshotSummary,
   AcquisitionMetrics,
@@ -971,6 +972,12 @@ export const api = {
   },
   automations(token: string) {
     return request<MessageAutomation[]>("/api/automations", {}, token);
+  },
+  prospectRemarketing(token: string) {
+    return request<ProspectRemarketingSettings>("/api/automations/prospect-followup", {}, token);
+  },
+  saveProspectRemarketing(token: string, input: ProspectRemarketingInput) {
+    return request<ProspectRemarketingSettings>("/api/automations/prospect-followup", { method: "PUT", body: JSON.stringify(input) }, token);
   },
   prepareLiliReactivation(token: string) {
     return request<LiliReactivationPreview>("/api/automations/lili-reactivation/prepare", { method: "POST" }, token);

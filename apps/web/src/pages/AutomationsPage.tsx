@@ -52,6 +52,7 @@ import {
   Users,
 } from "lucide-react";
 import { LiliReactivationPanel } from "../components/LiliReactivationPanel";
+import { ProspectRemarketingPanel } from "../components/ProspectRemarketingPanel";
 import { useAuth } from "../hooks/useAuth";
 import { api } from "../lib/api";
 import { formatDateTime, formatNumber } from "../lib/format";
@@ -1035,7 +1036,7 @@ function AutomationsPageInner() {
   const canManage = user?.role === "ADMIN" || user?.role === "MANAGER";
   const [draft, setDraft] = useState<AutomationDraft>(createInitialDraft);
   const [activeAutomationId, setActiveAutomationId] = useState<string | null>(null);
-  const [view, setView] = useState<"overview" | "activity" | "advanced">("overview");
+  const [view, setView] = useState<"overview" | "remarketing" | "activity" | "advanced">("overview");
   const [editorOpen, setEditorOpen] = useState(false);
   const editorHeading = useRef<HTMLElement>(null);
   const [builderMode, setBuilderMode] = useState<"visual" | "classic">("classic");
@@ -1309,6 +1310,7 @@ function AutomationsPageInner() {
       </header>
       <nav className="automation-home-nav" aria-label="Seções de automações">
         <button type="button" aria-pressed={view === "overview"} onClick={() => setView("overview")}>Réguas da Lili</button>
+        <button type="button" aria-pressed={view === "remarketing"} onClick={() => setView("remarketing")}>Remarketing</button>
         <button type="button" aria-pressed={view === "activity"} onClick={() => setView("activity")}>
           Atividade {pendingRuns.length > 0 ? <span>{pendingRuns.length} para aprovar</span> : null}
         </button>
@@ -1318,6 +1320,7 @@ function AutomationsPageInner() {
       {view === "overview" ? (
       <LiliReactivationPanel token={token} automations={automationsQuery.data} canManage={canManage} />
       ) : null}
+      {view === "remarketing" ? <ProspectRemarketingPanel token={token} canManage={canManage && Boolean(user?.permissions.includes("automations.manage"))} /> : null}
       {view === "advanced" ? <>
         <article className="automation-run-panel">
           <div className="automation-section-title">
