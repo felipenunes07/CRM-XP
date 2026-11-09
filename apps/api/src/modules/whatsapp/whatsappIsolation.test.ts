@@ -443,7 +443,7 @@ describe("whatsapp conversation isolation", () => {
       agentName: "Thais",
       groupChatsCount: 1,
     });
-    expect(summary.formattedText).toContain("Atendimentos em Grupo: 1");
+    expect(summary.formattedText).toContain("Grupos Atendidos: 1");
     expect(summary.formattedText).toContain("CL1049 - MINAS CELL / XP EXPOR TELAS (Grupo)");
   });
 
@@ -515,7 +515,7 @@ describe("whatsapp conversation isolation", () => {
     expect(summary.formattedText).toContain("Atendimentos Particular: 1");
   });
 
-  it("attributes daily raw private messages to the matched instance before the raw sender name", async () => {
+  it("attributes daily messages to the sending seller instead of the capturing instance", async () => {
     const date = localTodayKey();
     mocks.query
       .mockResolvedValueOnce({ rows: [] })
@@ -580,10 +580,52 @@ describe("whatsapp conversation isolation", () => {
 
     expect(summary.agents).toHaveLength(1);
     expect(summary.agents[0]).toMatchObject({
-      agentName: "Suelen",
+      agentName: "Tamires",
       sentMessages: 1,
       privateChatsCount: 1,
     });
+  });
+
+  it.each([
+    { label: "customer first through another instance", speakers: ["customer", "thais", "thais"], expected: 0, sent: 2, group: true },
+    { label: "another seller first", speakers: ["suelen", "thais", "thais"], expected: 0, sent: 3, group: true },
+    { label: "internal team member first", speakers: ["internal", "thais", "thais"], expected: 0, sent: 2, group: true },
+    { label: "Thais first, then a customer and another seller", speakers: ["thais", "customer", "suelen", "thais"], expected: 1, sent: 3, group: true },
+    { label: "private customer first in a different agent bucket", speakers: ["customer", "thais"], expected: 0, sent: 1, group: false },
+    { label: "Thais first in a private chat", speakers: ["thais", "customer", "thais"], expected: 1, sent: 2, group: false },
+  ])("counts initiation from the first message in the chat: $label", async ({ speakers, expected, sent, group }) => {
+    const date = localTodayKey();
+    const jid = group ? "120300000000001@g.us" : "558189999000@s.whatsapp.net";
+    const rows = speakers.map((speaker, index) => {
+      const sender = speaker === "thais" ? "5511944705416" : speaker === "suelen" ? "5511996435466" : speaker === "internal" ? "5511911279702" : "558189999000";
+      return {
+        activity_type: "WHATSAPP_RECEIVED", incoming_from_me: false,
+        actor_name: speaker === "thais" ? "XP Thais" : speaker === "suelen" ? "XP Suelen" : "Cliente",
+        sender_jid: `${sender}@s.whatsapp.net`, metadata_instance: "suelen",
+        metadata_remote_jid: jid, metadata_chat_display_name: "Cliente Teste",
+        metadata: { remoteJid: jid, fromMe: false }, created_at: `${date}T12:${String(index).padStart(2, "0")}:00Z`,
+        whatsapp_jid: jid, title: "Cliente Teste",
+      };
+    });
+    mocks.query.mockImplementation(async (query) => {
+      const sql = String(query);
+      if (sql.includes("WITH monitor_messages AS")) return { rows };
+      if (sql.includes("SELECT id, name FROM users")) return { rows: [] };
+      if (sql.includes("SELECT id, instance_name, display_label")) return { rows: [{ id: "instance-suelen", instance_name: "suelen", display_label: "Suelen" }] };
+      return { rows: [] };
+    });
+    const user = { id: "admin", name: "Admin", email: "admin@example.invalid", role: "ADMIN" } as any;
+    const report = await getWhatsappDailySummaryReport(user, date);
+    const thais = report.agents.find((agent: any) => agent.agentName === "Thais");
+    expect(thais.initiatedCount).toBe(expected);
+    const repeated = await getWhatsappDailySummaryReport(user, date);
+    expect(repeated.agents.find((agent: any) => agent.agentName === "Thais").initiatedCount).toBe(expected);
+    expect((group ? thais.attendedGroupClients : thais.attendedPrivateClients)[0].initiated).toBe(Boolean(expected));
+    expect(thais.groupChatsCount).toBe(group ? 1 : 0);
+    expect(report.totalMessagesSent).toBe(sent);
+    if (speakers[0] === "thais") expect(report.agents.find((agent: any) => agent.agentName === "Suelen")?.initiatedCount ?? 0).toBe(0);
+    const activitiesSql = String(mocks.query.mock.calls.find(call => String(call[0]).includes("WITH monitor_messages AS"))?.[0]);
+    expect(activitiesSql).toContain("$1::date::timestamp AT TIME ZONE 'America/Sao_Paulo'");
   });
 
   it("ranks daily WhatsApp summary agents by activity before sales totals", async () => {

@@ -51,7 +51,13 @@ function normalizeSellerName(name: string) {
     .trim().toLowerCase().replace(/^xp\s+/, "");
 }
 
-export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCustomersCount: number) {
+export interface LostAttendanceCustomer {
+  customerId: string;
+  customerCode: string | null;
+  name: string;
+}
+
+export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCustomersCount: number, lostCustomers: LostAttendanceCustomer[] = []) {
   const agents = SELLERS.map((seller) => {
     const matches = summary.agents.filter((agent) => seller.aliases.includes(normalizeSellerName(agent.agentName)));
     return {
@@ -73,7 +79,11 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
   if (summary.recoveredCustomersList?.length) {
     text += `${formatDailySummaryCustomerLines(summary.recoveredCustomersList, { recovered: true })}\n`;
   }
-  text += `📉 *Clientes Perdidos no Dia:* ${lostCustomersCount}\n\n`;
+  text += `📉 *Clientes Perdidos no Dia:* ${lostCustomersCount}\n`;
+  for (const customer of lostCustomers) {
+    text += `- ${customer.customerCode ? `${customer.customerCode} - ` : ""}${customer.name} | 90 dias sem comprar\n`;
+  }
+  text += "\n";
   text += `💬 *Resumo de Mensagens:*\n`;
   text += `📱 Mensagens Enviadas: ${summary.totalMessagesSent.toLocaleString("pt-BR")}\n`;
   text += `🧾 Mensagens Recebidas: ${summary.totalMessagesReceived.toLocaleString("pt-BR")}\n\n`;
@@ -85,18 +95,19 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
   agents.forEach((agent, index) => {
     text += `${["🥇", "🥈", "🥉"][index] ?? "❤️"} *${agent.agentName}*\n`;
     text += `💬 Mensagens Enviadas: ${agent.sentMessages.toLocaleString("pt-BR")}\n`;
-    text += `👥 Atendimentos em Grupo: ${agent.groupChatsCount}\n`;
+    text += `👥 Grupos Atendidos: ${agent.groupChatsCount}\n`;
     text += `✨ Conversas Iniciadas: ${agent.initiatedCount}\n\n`;
   });
   return text.trimEnd();
 }
 
-export async function countLostAttendanceCustomers(date: string): Promise<number> {
+export async function getLostAttendanceCustomers(date: string): Promise<LostAttendanceCustomer[]> {
   // Count only the day the customer reaches 90 days, matching the final Lili stage.
   // Ignore future orders, and exclude customers who already bought again today.
-  const result = await pool.query<{ count: number }>(`
-    SELECT COUNT(DISTINCT o.customer_id)::int AS count
+  const result = await pool.query<{ id: string; customer_code: string | null; display_name: string }>(`
+    SELECT DISTINCT c.id, c.customer_code, c.display_name
     FROM orders o
+    JOIN customers c ON c.id = o.customer_id
     WHERE o.order_date = $1::date - 90
       AND NOT EXISTS (
         SELECT 1 FROM orders newer
@@ -104,19 +115,24 @@ export async function countLostAttendanceCustomers(date: string): Promise<number
           AND newer.order_date > o.order_date
           AND newer.order_date <= $1::date
       )
+    ORDER BY c.display_name, c.customer_code, c.id
   `, [date]);
-  return Number(result.rows[0]?.count ?? 0);
+  return result.rows.map(row => ({ customerId: String(row.id), customerCode: row.customer_code, name: row.display_name }));
+}
+
+export async function countLostAttendanceCustomers(date: string): Promise<number> {
+  return (await getLostAttendanceCustomers(date)).length;
 }
 
 export async function previewAttendanceGroupReport(date: string) {
-  const [summary, lostCustomersCount, createdGroups] = await Promise.all([
+  const [summary, lostCustomers, createdGroups] = await Promise.all([
     getWhatsappDailySummaryReport({
       id: "attendance-report-scheduler", name: "Relatório de Atendimento", email: "scheduler@localhost", role: "ADMIN",
     }, date),
-    countLostAttendanceCustomers(date),
+    getLostAttendanceCustomers(date),
     getWhatsappGroupsCreatedOnDate(date),
   ]);
-  return { date, lostCustomersCount, createdGroups, text: formatAttendanceGroupReport({ ...summary, createdGroups }, lostCustomersCount) };
+  return { date, lostCustomersCount: lostCustomers.length, lostCustomers, createdGroups, text: formatAttendanceGroupReport({ ...summary, createdGroups }, lostCustomers.length, lostCustomers) };
 }
 
 export async function runScheduledAttendanceReport(now = new Date()) {
