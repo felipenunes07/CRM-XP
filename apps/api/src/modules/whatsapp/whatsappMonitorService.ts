@@ -4218,15 +4218,16 @@ export async function getWhatsappDailySummaryReport(
   // Use provided date or default to current date in America/Sao_Paulo timezone
   const dateStr = dateInput || new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Sao_Paulo" }).format(new Date());
 
-  // 1. Query New Customers of the day (Optimized: filters by date first, then runs fast NOT EXISTS index lookup)
+  // One row per new customer, including all purchases made on their first day.
   const newCustomersResult = await pool.query(
     `
     SELECT
       c.customer_code,
       c.display_name,
-      o.total_amount::numeric(14,2) as total_amount,
-      o.item_count,
-      COALESCE(NULLIF(o.last_attendant, ''), 'Sem atendente') as last_attendant
+      SUM(COALESCE(o.total_amount, 0))::numeric(14,2) AS total_amount,
+      SUM(COALESCE(o.item_count, 0))::int AS item_count,
+      STRING_AGG(DISTINCT COALESCE(NULLIF(TRIM(o.last_attendant), ''), 'Sem atendente'), ', '
+        ORDER BY COALESCE(NULLIF(TRIM(o.last_attendant), ''), 'Sem atendente')) AS last_attendant
     FROM orders o
     JOIN customers c ON c.id = o.customer_id
     WHERE o.order_date = $1::date
@@ -4235,7 +4236,8 @@ export async function getWhatsappDailySummaryReport(
         WHERE o2.customer_id = o.customer_id
           AND o2.order_date < $1::date
       )
-    ORDER BY o.total_amount DESC, c.display_name ASC
+    GROUP BY c.id, c.customer_code, c.display_name
+    ORDER BY total_amount DESC, c.display_name ASC, c.id
     `,
     [dateStr]
   );

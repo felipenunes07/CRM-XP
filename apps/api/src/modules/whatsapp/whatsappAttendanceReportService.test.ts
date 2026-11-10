@@ -118,6 +118,19 @@ _06/11/2026_
     expect(message).toContain("*Tamires*\n💬 Mensagens Enviadas: 0");
   });
 
+  it("lists new customer names, sellers and purchase amounts directly below the count", async () => {
+    mocks.summary.mockResolvedValueOnce({
+      ...summary, newCustomersCount: 2,
+      newCustomersList: [
+        { customer_code: "CL2001", display_name: "Cliente Novo", last_attendant: "Amanda", total_amount: "2065.50" },
+        { customer_code: null, display_name: "Outro Cliente", last_attendant: "Thais", total_amount: "620.00" },
+      ],
+    });
+    const report = await previewAttendanceGroupReport("2026-11-10");
+    expect(report.text).toContain("📱 *Clientes Novos no Dia:* 2\n- CL2001 - Cliente Novo | Amanda | R$ 2.065,50\n- Outro Cliente | Thais | R$ 620,00\n👥 *Grupos Criados no Dia:*");
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
   it("restores the original recovered-customer details directly below the daily count", () => {
     const message = formatAttendanceGroupReport({
       ...summary,
