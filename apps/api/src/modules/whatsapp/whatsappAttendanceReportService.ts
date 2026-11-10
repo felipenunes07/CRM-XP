@@ -24,6 +24,7 @@ interface AttendanceAgent {
 interface AttendanceSummary {
   date: string;
   newCustomersCount: number;
+  newCustomersList?: Record<string, unknown>[];
   recoveredCustomersCount: number;
   recoveredCustomersList?: Record<string, unknown>[];
   createdGroups?: WhatsappCreatedGroup[];
@@ -70,6 +71,9 @@ export function formatAttendanceGroupReport(summary: AttendanceSummary, lostCust
   const [year, month, day] = summary.date.split("-");
   let text = `📅 *Relatório de Atendimento XP*\n_${day}/${month}/${year}_\n\n`;
   text += `📱 *Clientes Novos no Dia:* ${summary.newCustomersCount}\n`;
+  if (summary.newCustomersList?.length) {
+    text += `${formatDailySummaryCustomerLines(summary.newCustomersList)}\n`;
+  }
   text += `👥 *Grupos Criados no Dia:* ${summary.createdGroups?.length ?? 0}\n`;
   for (const group of summary.createdGroups ?? []) {
     const time = new Intl.DateTimeFormat("pt-BR", { timeZone: TIMEZONE, hour: "2-digit", minute: "2-digit" }).format(new Date(group.createdAt));
