@@ -3254,6 +3254,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
     "changelog.view",
   ],
   financeiro: [
+    "returns.view",
+    "returns.finance",
     "tasks.view",
     "dashboard.view",
     "finance.view",
@@ -3270,6 +3272,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
   operacional: [
     "returns.view",
     "returns.manage",
+    "returns.logistics",
     "tasks.view",
     "dashboard.view",
     "commercial.view",

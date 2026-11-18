@@ -61,7 +61,7 @@ const path=require('node:path');
   await page.screenshot({path:path.join(output,'triagem-desktop.png'),fullPage:true});
   await page.getByRole('button',{name:'Concluir triagem',exact:true}).click();
   await page.getByRole('button',{name:'Reabrir triagem',exact:true}).waitFor();
-  await page.getByText('Triagem concluída. Os destinos estão registrados; isso não confirma crédito, envio à fábrica nem entrega ao cliente.',{exact:true}).waitFor();
+  await page.getByText('Triagem concluída. Continue abaixo com fábrica, acerto, entrega e destino das peças. Parecer, crédito e entrega têm comprovações independentes.',{exact:true}).waitFor();
   await page.getByRole('combobox',{name:'Situação',exact:true}).selectOption('triage_completed');
   await page.getByRole('button',{name:new RegExp(protocol)}).waitFor();
   await page.reload();

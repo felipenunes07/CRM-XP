@@ -68,4 +68,13 @@ describe("permissionService", () => {
     expect(hasPermission(ROLE_PERMISSIONS.financeiro, "finance.view")).toBe(true);
     expect(hasPermission(ROLE_PERMISSIONS.financeiro, "admin.users.manage")).toBe(false);
   });
+  it('separates technical, logistics and financial return authority',()=>{
+    expect(ROLE_PERMISSIONS.operacional).toContain('returns.logistics');
+    expect(ROLE_PERMISSIONS.operacional).not.toContain('returns.finance');
+    expect(ROLE_PERMISSIONS.financeiro).toContain('returns.view');
+    expect(ROLE_PERMISSIONS.financeiro).toContain('returns.finance');
+    expect(ROLE_PERMISSIONS.financeiro).not.toContain('returns.manage');
+    const technician=computeEffectivePermissions({role:'viewer',overrides:[{permissionKey:'returns.view',allowed:true},{permissionKey:'returns.manage',allowed:true}]});
+    expect(technician).not.toContain('returns.logistics');expect(technician).not.toContain('returns.finance');
+  });
 });
