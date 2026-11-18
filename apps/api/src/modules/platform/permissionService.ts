@@ -18,6 +18,8 @@ export interface PermissionOverride {
 export const APP_PERMISSIONS: PermissionDefinition[] = [
   { key: "returns.view", name: "Trocas: visualizar", description: "Consultar recebimentos, protocolos e a fila da Isis." },
   { key: "returns.manage", name: "Trocas: operar", description: "Registrar recebimentos, atribuir e executar triagem." },
+  { key: "returns.logistics", name: "Trocas: fábrica e entrega", description: "Registrar envios, retornos, atendimento, destinos e encerramento." },
+  { key: "returns.finance", name: "Trocas: créditos", description: "Autorizar, confirmar e estornar créditos com referência financeira." },
   { key: "dashboard.view", name: "Dashboard geral", description: "Visualizar os indicadores principais do CRM." },
   { key: "tasks.view", name: "Tarefas", description: "Acessar o quadro de tarefas." },
   { key: "commercial.view", name: "Ferramentas comerciais", description: "Acessar clientes, agenda, pipeline e prospeccao." },

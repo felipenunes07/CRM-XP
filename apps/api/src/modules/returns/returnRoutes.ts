@@ -4,9 +4,20 @@ import { requirePermission } from "../platform/authMiddleware.js";
 import { returnIdSchema } from "./returnSchemas.js";
 import { assignReturnCase, attachReturnFile, changeReturnStage, createReturnReceipt, getReturnDetail,
   getReturnFile, getReturnLookups, listReturnQueue, removeReturnItem, saveReturnItem } from "./returnService.js";
+import { cancelFactoryBatch,dispatchFactoryBatch,executeReturnOperation,factoryAvailable,getFactoryBatch,listFactoryBatches } from './returnExecutionService.js';
+import { executionOperation } from './returnExecutionSchemas.js';
 
 export const returnRoutes = Router();
 returnRoutes.use(requirePermission("returns.view"));
+returnRoutes.get('/factory-available',async(req,res)=>{res.json(await factoryAvailable(z.string().trim().max(150).parse(req.query.search??'')));});
+returnRoutes.get('/factory-batches',async(req,res)=>{const query=z.object({search:z.string().trim().max(150).default(''),page:z.coerce.number().int().min(1).max(100000).default(1)}).parse(req.query);res.json(await listFactoryBatches(query.search,query.page));});
+returnRoutes.get('/factory-batches/:batchId',async(req,res)=>{res.json(await getFactoryBatch(returnIdSchema.parse(req.params.batchId)));});
+returnRoutes.post('/factory-batches',requirePermission('returns.logistics'),async(req,res)=>{res.status(201).json(await dispatchFactoryBatch(req.body,req.user!));});
+returnRoutes.post('/factory-batches/:batchId/cancel',requirePermission('returns.logistics'),async(req,res)=>{res.json(await cancelFactoryBatch(returnIdSchema.parse(req.params.batchId),req.body,req.user!));});
+returnRoutes.post('/:id/execution/:operation',async(req,res)=>{
+ const operation=executionOperation.parse(req.params.operation);
+ const id=returnIdSchema.parse(req.params.id);await executeReturnOperation(id,operation,req.body,req.user!);res.json(await getReturnDetail(id));
+});
 returnRoutes.get("/", async (req,res) => { res.json(await listReturnQueue(req.query,req.user!)); });
 returnRoutes.get("/lookups", async (req,res) => {
   res.json(await getReturnLookups(z.string().trim().max(150).parse(req.query.search ?? "")));

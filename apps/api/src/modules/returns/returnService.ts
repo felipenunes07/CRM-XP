@@ -5,12 +5,14 @@ import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { computeEffectivePermissions } from "../platform/permissionService.js";
+import { transaction, lockCase, record } from "./returnTransactions.js";
+import { loadExecution,loadExecutions } from "./returnExecutionData.js";
 import { actionSchema, assignmentSchema, attachmentSchema, itemSchema, queueSchema, receiptSchema } from "./returnSchemas.js";
 
 const caseSelect = `SELECT r.*, c.customer_code, c.display_name, p.full_name AS assignee_name,
   COALESCE(i.quantity,0)::int AS item_quantity,
   (r.received_quantity - COALESCE(i.decided,0))::int AS pending_quantity,
-  (r.stage <> 'triage_completed' AND r.due_at < NOW()) AS overdue
+  (r.stage <> 'closed' AND r.due_at < NOW()) AS overdue
   FROM return_cases r JOIN customers c ON c.id = r.customer_id
   LEFT JOIN profiles p ON p.id = r.assignee_id
   LEFT JOIN LATERAL (SELECT SUM(quantity) AS quantity,
@@ -29,38 +31,14 @@ function mapCase(row: Record<string, any>): ReturnCase {
     dueAt: row.due_at ? iso(row.due_at) : null, nextAction: row.next_action,
     version: row.version, itemQuantity: row.item_quantity, pendingQuantity: row.pending_quantity,
     overdue: Boolean(row.overdue), updatedAt: iso(row.updated_at),
+    closedAt: row.closed_at ? iso(row.closed_at) : null,
   };
 }
 
-async function transaction<T>(run: (client: PoolClient) => Promise<T>) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await run(client);
-    await client.query("COMMIT");
-    return result;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
-}
-
-async function lockCase(client: PoolClient, id: string, version: number) {
-  const result = await client.query("SELECT * FROM return_cases WHERE id = $1 FOR UPDATE", [id]);
-  const row = result.rows[0];
-  if (!row) throw new HttpError(404, "Protocolo não encontrado");
-  if (row.version !== version) throw new HttpError(409, "Este protocolo foi atualizado por outra pessoa. Recarregue antes de salvar.");
-  return row;
-}
-
-async function record(client: PoolClient, id: string, action: string, data: unknown, actor: JwtUser) {
-  await client.query("UPDATE return_cases SET version = version + 1, updated_at = NOW() WHERE id = $1", [id]);
-  await client.query(`INSERT INTO return_events (case_id, action, author_id, author_name, data)
-    VALUES ($1,$2,$3,$4,$5::jsonb)`, [id, action, actor.id, actor.name, JSON.stringify(data)]);
-}
-
 export async function getReturnDetail(id: string): Promise<ReturnDetail> {
-  const result = await pool.query(`SELECT base.*,
+ return transaction(async client=>{
+  await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  const result = await client.query(`SELECT base.*,
     COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item."createdAt",item.id) FROM
       (SELECT id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes",created_at AS "createdAt"
         FROM return_items WHERE case_id=base.id) item),'[]'::jsonb) AS items,
@@ -72,7 +50,9 @@ export async function getReturnDetail(id: string): Promise<ReturnDetail> {
     FROM (${caseSelect} WHERE r.id=$1) base`, [id]);
   if (!result.rows[0]) throw new HttpError(404, "Protocolo não encontrado");
   const row = result.rows[0];
-  return { ...mapCase(row), items: row.items as ReturnItem[], attachments: row.attachments, events: row.events };
+  const execution=await loadExecution(client,id,row.items,row.stage);
+  return { ...mapCase(row), items: row.items as ReturnItem[], attachments: row.attachments, events: row.events,execution,progress:execution.progress };
+ });
 }
 
 export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<ReturnQueue> {
@@ -80,8 +60,8 @@ export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<R
   const params: unknown[] = [];
   const where: string[] = [];
   const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replace("?", `$${params.length}`)); };
-  if (input.stage === "active") where.push("r.stage <> 'triage_completed'");
-  else if (input.stage === "overdue") where.push("r.stage <> 'triage_completed' AND r.due_at < NOW()");
+  if (input.stage === "active") where.push("r.stage <> 'closed'");
+  else if (input.stage === "overdue") where.push("r.stage <> 'closed' AND r.due_at < NOW()");
   else if (input.stage !== "all") add("r.stage = ?", input.stage);
   if (input.mine === "true") add("r.assignee_id = ?", actor.id);
   if (input.search) {
@@ -93,26 +73,30 @@ export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<R
   const condition = where.length ? ` WHERE ${where.join(" AND ")}` : "";
   const count = await pool.query(`SELECT count(*)::int AS total FROM return_cases r JOIN customers c ON c.id=r.customer_id${condition}`, params);
   const data = await pool.query(`${caseSelect}${condition}
-    ORDER BY (r.stage = 'triage_completed'), r.due_at ASC NULLS LAST, r.received_at ASC, r.id
+    ORDER BY (r.stage = 'closed'), r.due_at ASC NULLS LAST, r.received_at ASC, r.id
     LIMIT 50 OFFSET $${params.length + 1}`, [...params, (input.page - 1) * 50]);
   const summary = await pool.query(`SELECT
     count(*) FILTER (WHERE stage='received')::int AS received,
     count(*) FILTER (WHERE stage='triage')::int AS triage,
     count(*) FILTER (WHERE stage='triage_completed')::int AS "triageCompleted",
-    count(*) FILTER (WHERE stage<>'triage_completed' AND due_at<NOW())::int AS overdue FROM return_cases`);
-  return { items: data.rows.map(mapCase), total: count.rows[0].total, page: input.page, summary: summary.rows[0] };
+    count(*) FILTER (WHERE stage='closed')::int AS closed,
+    count(*) FILTER (WHERE stage<>'closed' AND due_at<NOW())::int AS overdue FROM return_cases`);
+  const items=(await pool.query(`SELECT case_id AS "caseId",id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes" FROM return_items WHERE case_id=ANY($1::uuid[])`,[data.rows.map(row=>row.id)])).rows;
+  const execution=await loadExecutions(pool,data.rows.map(row=>({id:row.id,stage:row.stage,items:items.filter(item=>item.caseId===row.id)})));
+  return { items: data.rows.map(row=>({...mapCase(row),progress:execution.get(row.id)!.progress})), total: count.rows[0].total, page: input.page, summary: summary.rows[0] };
 }
 
-async function returnOperators(client: Pool | PoolClient) {
+async function returnOperators(client: Pool | PoolClient,required:'any'|'returns.manage'='any') {
   const result = await client.query(`SELECT p.id,COALESCE(NULLIF(p.full_name,''),p.email) AS name,p.role,
     COALESCE(jsonb_agg(jsonb_build_object('permissionKey',u.permission_key,'allowed',u.allowed))
       FILTER (WHERE u.permission_key IS NOT NULL),'[]'::jsonb) AS overrides
     FROM profiles p LEFT JOIN user_permissions u ON u.user_id=p.id
     WHERE p.is_active GROUP BY p.id ORDER BY name,p.id`);
-  return result.rows.filter(row => {
+  return result.rows.flatMap(row => {
     const permissions = computeEffectivePermissions({ role: row.role, overrides: row.overrides });
-    return permissions.includes("returns.view") && permissions.includes("returns.manage");
-  }).map(row => ({ id: row.id as string, name: row.name as string }));
+    const eligible=required==='any'?['returns.manage','returns.logistics','returns.finance'].some(key=>permissions.includes(key)):permissions.includes(required);
+    return permissions.includes('returns.view')&&eligible?[{id:row.id as string,name:row.name as string,canTriage:permissions.includes('returns.manage')}]:[];
+  });
 }
 
 export async function getReturnLookups(search: string) {
@@ -148,8 +132,9 @@ export async function assignReturnCase(id: string, payload: unknown, actor: JwtU
   const input = assignmentSchema.parse(payload);
   await transaction(async client => {
     const before = await lockCase(client, id, input.version);
-    if (input.assigneeId && !(await returnOperators(client)).some(person => person.id === input.assigneeId)) throw new HttpError(400, "Selecione um responsável ativo com acesso às trocas");
-    if (before.stage === "triage" && (!input.assigneeId || !input.dueAt)) throw new HttpError(400, "Triagem em andamento precisa de responsável e prazo");
+    if(before.stage==="closed")throw new HttpError(409,"Reabra o protocolo antes de alterar a responsabilidade");
+    if (input.assigneeId && !(await returnOperators(client,['received','triage'].includes(before.stage)?'returns.manage':'any')).some(person => person.id === input.assigneeId)) throw new HttpError(400, "Selecione um responsável ativo com acesso à etapa da troca");
+    if (["triage","triage_completed"].includes(before.stage) && (!input.assigneeId || !input.dueAt)) throw new HttpError(400, "Protocolo em andamento precisa de responsável e prazo");
     if (before.received_quantity !== input.receivedQuantity) {
       if (!input.correctionReason) throw new HttpError(400,"Informe o motivo da correção da contagem");
       if (before.stage === "triage_completed") throw new HttpError(409,"Reabra a triagem antes de corrigir a contagem");
@@ -199,7 +184,7 @@ export async function changeReturnStage(id: string, payload: unknown, actor: Jwt
     let stage: string;
     if (input.action === "start_triage") {
       if (parent.stage !== "received") throw new HttpError(409,"Este protocolo já iniciou a triagem");
-      const assignee = (await returnOperators(client)).some(person => person.id === parent.assignee_id);
+      const assignee = (await returnOperators(client,'returns.manage')).some(person => person.id === parent.assignee_id);
       if (!assignee || !parent.due_at) throw new HttpError(400,"Defina um responsável ativo e um prazo antes de iniciar");
       stage = "triage";
     } else if (input.action === "complete_triage") {
@@ -211,7 +196,9 @@ export async function changeReturnStage(id: string, payload: unknown, actor: Jwt
       stage = "triage_completed";
     } else {
       if (parent.stage !== "triage_completed") throw new HttpError(409,"Somente uma triagem concluída pode ser reaberta");
-      if (!parent.due_at || !(await returnOperators(client)).some(person => person.id === parent.assignee_id)) throw new HttpError(400,"Defina um responsável ativo com acesso às trocas e um prazo antes de reabrir");
+      const execution=await client.query(`SELECT EXISTS(SELECT 1 FROM return_factory_lines WHERE case_id=$1 UNION ALL SELECT 1 FROM return_resolutions WHERE case_id=$1 UNION ALL SELECT 1 FROM return_physical_receipts WHERE case_id=$1) AS present`,[id]);
+      if(execution.rows[0].present)throw new HttpError(409,"Já existem movimentos após a triagem. Registre uma revisão e corrija os movimentos com histórico antes de alterar a origem.");
+      if (!parent.due_at || !(await returnOperators(client,'returns.manage')).some(person => person.id === parent.assignee_id)) throw new HttpError(400,"Defina um responsável ativo com acesso à triagem e um prazo antes de reabrir");
       stage = "triage";
     }
     await client.query("UPDATE return_cases SET stage=$2 WHERE id=$1",[id,stage]);

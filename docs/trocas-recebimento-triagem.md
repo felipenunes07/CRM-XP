@@ -23,7 +23,11 @@ Primeira parte do processo operacional definido em 18/11/2026. A nova página fi
 6. A triagem concluída permanece consultável no filtro específico ou em **Todos**. A próxima ação passa a ser conferir os destinos com Isis; ela pode reatribuir responsável e prazo para o acompanhamento.
 7. Correções de itens após essa conclusão exigem **Reabrir triagem**, com motivo e responsável ativo/prazo definidos. Não existe botão para encerrar toda a troca nesta entrega.
 
-## Limite funcional
+## Continuação do processo
+
+Esta primeira fase foi publicada no PR93. A continuação está documentada em [Trocas: fluxo completo](trocas-fluxo-completo.md): lotes de fábrica, parecer/retorno parcial, créditos separados, contato, entrega, destino interno e encerramento. As limitações abaixo descrevem somente a entrega inicial.
+
+## Limite funcional da entrega inicial
 
 Triagem concluída **não** comprova crédito, cancelamento, lote enviado, retorno de fábrica, entrega, recondicionamento ou destino final. Esses fluxos pertencem às entregas seguintes. Esta entrega não importa as planilhas antigas nem cria operações financeiras ou mensagens de WhatsApp.
 
@@ -34,7 +38,7 @@ Triagem concluída **não** comprova crédito, cancelamento, lote enviado, retor
 - O servidor já executa as migrações no startup. Frontend e backend precisam ser publicados juntos; publicar só o frontend deixa as novas rotas indisponíveis.
 - `returns.view` libera consulta e anexos; `returns.manage`, junto da primeira, libera operação. Os padrões de admin e operacional incluem ambos. Perfis de vendas/viewer/financeiro não ganham acesso automaticamente. A tela administrativa pode conceder exceções individuais.
 - Conferir o perfil real de Isis e dos técnicos no ambiente publicado. Usuários exclusivos de tarefas continuam sujeitos à restrição existente desse papel; não houve alteração de contas reais nesta entrega.
-- Ainda não houve migração ou publicação no ambiente de produção.
+- A entrega inicial foi publicada em produção com a migração104. A extensão usa a migração105; consultar a documentação do fluxo completo e o comprovante de publicação.
 
 ## Verificação reproduzível
 

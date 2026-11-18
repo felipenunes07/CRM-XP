@@ -1,4 +1,5 @@
 import type {
+  ReturnExecutionInputMap,ReturnBatchInput,ReturnFactoryAvailable,ReturnFactoryBatch,ReturnFactoryBatchList,
   AutomationActivityQuery, AutomationActivityResponse,
   ProspectRemarketingInput, ProspectRemarketingSettings,
   LiliReactivationPreview,
@@ -529,6 +530,15 @@ export const api = {
   returnQueue(token: string, query: { search: string; stage: string; mine: string; page: number }) {
     return request<ReturnQueue>(`/api/returns?${new URLSearchParams({ ...query, page: String(query.page) })}`, {}, token);
   },
+  executeReturn<K extends keyof ReturnExecutionInputMap>(token:string,id:string,operation:K,data:ReturnExecutionInputMap[K]){
+    return request<ReturnDetail>(`/api/returns/${id}/execution/${operation}`,{method:'POST',body:JSON.stringify(data)},token);
+  },
+  returnFactoryAvailable(token:string,search=''){
+    return request<ReturnFactoryAvailable[]>(`/api/returns/factory-available?search=${encodeURIComponent(search)}`,{},token);
+  },
+  returnFactoryBatches(token:string,search='',page=1){return request<ReturnFactoryBatchList>(`/api/returns/factory-batches?search=${encodeURIComponent(search)}&page=${page}`,{},token);},
+  dispatchReturnFactory(token:string,input:ReturnBatchInput){return request<ReturnFactoryBatch>('/api/returns/factory-batches',{method:'POST',body:JSON.stringify(input)},token);},
+  cancelReturnFactory(token:string,id:string,input:{requestId:string;reason:string;cases:Array<{id:string;version:number}>}){return request<ReturnFactoryBatch>(`/api/returns/factory-batches/${id}/cancel`,{method:'POST',body:JSON.stringify(input)},token);},
   returnLookups(token: string, search = "") {
     return request<{ coordinator: string; people: ReturnPerson[]; customers: ReturnCustomer[] }>(`/api/returns/lookups?search=${encodeURIComponent(search)}`, {}, token);
   },

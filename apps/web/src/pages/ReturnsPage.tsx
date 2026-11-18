@@ -6,6 +6,8 @@ import { useAuth } from "../hooks/useAuth";
 import { usePermissions } from "../hooks/usePermissions";
 import { api } from "../lib/api";
 import "./ReturnsPage.css";
+import { ReturnExecutionPanel,ReturnCustomerSummary } from './ReturnExecutionPanel';
+import { ReturnFactoryWorkspace } from './ReturnFactoryWorkspace';
 
 const localTime = (value: string) => {
   const date = new Date(value);
@@ -22,6 +24,7 @@ export function ReturnsPage() {
   const queryClient = useQueryClient();
   const [params,setParams] = useSearchParams();
   const selectedId = params.get("protocolo");
+  const factoryView=params.get('visao')==='fabricas';
   const [creating,setCreating] = useState(false);
   const [search,setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
@@ -40,18 +43,20 @@ export function ReturnsPage() {
   };
   return <div className="page-stack returns-page">
     <section className="panel returns-heading"><div><p className="eyebrow">Recebimento e triagem</p><h1>Trocas · fila da Isis</h1>
-      <p>Isis acompanha as pendências. Cada responsável registra a etapa que executou.</p></div>
-      {canManage && <button className="button primary" onClick={() => setCreating(true)}>Novo recebimento</button>}
+      <p>Recebimento, fábrica, acerto e entrega no mesmo protocolo. Isis acompanha as pendências.</p></div>
+      {canManage && !factoryView && <button className="button primary" onClick={() => setCreating(true)}>Novo recebimento</button>}
     </section>
+    <nav className="returns-view-tabs returns-tabs" aria-label="Visões de trocas"><button aria-pressed={!factoryView} onClick={()=>setParams({})}>Protocolos e fila</button><button aria-pressed={factoryView} onClick={()=>setParams({visao:'fabricas'})}>Envios de fábrica</button></nav>
+    {factoryView?<ReturnFactoryWorkspace token={token!} onCase={id=>setParams({protocolo:id})}/>:<>
     {queue.data && <section className="returns-summary" aria-label="Resumo geral da fila">
       <span>Recebidos <strong>{queue.data.summary.received}</strong></span><span>Em triagem <strong>{queue.data.summary.triage}</strong></span>
-      <span>Triagens concluídas <strong>{queue.data.summary.triageCompleted}</strong></span><span>Prazos vencidos <strong>{queue.data.summary.overdue}</strong></span>
+      <span>Em acompanhamento <strong>{queue.data.summary.triageCompleted}</strong></span><span>Prazos vencidos <strong>{queue.data.summary.overdue}</strong></span>
     </section>}
     <div className="returns-layout"><section className="panel returns-queue">
       <h2>Protocolos</h2><label>Buscar protocolo ou cliente<input value={search} onChange={e => { setSearch(e.target.value);setPage(1); }} placeholder="TR-000001, código ou nome" /></label>
       <div className="returns-filters"><label>Situação<select value={stage} onChange={e => { setStage(e.target.value);setPage(1); }}>
-        <option value="active">Recebimento e triagem abertos</option><option value="received">Recebidos</option><option value="triage">Em triagem</option>
-        <option value="triage_completed">Triagem concluída · próximas etapas</option><option value="overdue">Prazo vencido</option><option value="all">Todos</option>
+        <option value="active">Todos os protocolos em aberto</option><option value="received">Recebidos</option><option value="triage">Em triagem</option>
+        <option value="triage_completed">Pós-triagem · fábrica, acerto e entrega</option><option value="closed">Encerrados</option><option value="overdue">Prazo vencido</option><option value="all">Todos</option>
       </select></label><label className="returns-checkbox"><input type="checkbox" checked={mine} onChange={e => { setMine(e.target.checked);setPage(1); }} />Sob minha responsabilidade</label></div>
       {queue.isLoading && <p role="status">Carregando fila...</p>}
       {queue.isError && <p role="alert">{message(queue.error)} <button onClick={() => void queue.refetch()}>Tentar novamente</button></p>}
@@ -60,6 +65,7 @@ export function ReturnsPage() {
         <div className="returns-card-title"><strong>{row.protocol}</strong><span className="returns-badge">{RETURN_STAGE_LABELS[row.stage]}</span></div>
         <strong>{row.customer.code} · {row.customer.name}</strong>
         <span>{row.receivedQuantity} peças · {row.pendingQuantity} sem destino técnico definido</span>
+        {row.stage==='triage_completed'&&row.progress&&<><span>Fábrica: {row.progress.factoryPendingQuantity} sem parecer · créditos: {row.progress.financePendingCount} pendente(s)</span><span>Cliente: {row.progress.customerComplete?'atendido':`${row.progress.customerPendingQuantity} peça(s) pendente(s)`} · destinos físicos: {row.progress.internalPendingQuantity}</span></>}
         <span>Responsável: {row.assignee?.name ?? "Isis · atribuição pendente"}</span>
         <span className={row.overdue ? "returns-overdue" : ""}>{row.dueAt ? `Prazo: ${dateLabel(row.dueAt)}` : "Prazo de triagem a definir"}</span>
         <span>Próxima ação: {row.nextAction}</span><small>Último movimento: {dateLabel(row.updatedAt)}</small>
@@ -70,9 +76,10 @@ export function ReturnsPage() {
       {creating ? <ReceiptForm token={token!} onSaved={saved} onCancel={() => setCreating(false)} /> : selectedId ? <>
         {detail.isLoading && <p role="status">Carregando protocolo...</p>}
         {detail.isError && <p role="alert">{message(detail.error)}</p>}
-        {detail.data && <ReturnDetailView key={`${detail.data.id}-${detail.data.version}`} detail={detail.data} token={token!} people={lookups.data?.people ?? []} canManage={canManage} onSaved={saved} onReload={() => void detail.refetch()} />}
-      </> : <div className="returns-empty"><h2>Uma remessa, um protocolo</h2><p>Selecione um recebimento para acompanhar os itens, atribuir a triagem e conferir o histórico.</p><p>Triagem concluída registra o encaminhamento das peças. Fábrica, financeiro e entrega continuam sendo próximas etapas do processo.</p></div>}
+        {detail.data && <ReturnDetailView key={detail.data.id} detail={detail.data} token={token!} people={lookups.data?.people ?? []} canManage={canManage} onSaved={saved} onReload={() => void detail.refetch()} />}
+      </> : <div className="returns-empty"><h2>Uma remessa, um protocolo</h2><p>Selecione um recebimento para acompanhar os itens, fábrica, acerto, entregas e histórico até a conclusão.</p><p>Encerrar exige conferência das obrigações com o cliente, dos créditos e dos destinos físicos.</p></div>}
     </section></div>
+    </>}
   </div>;
 }
 
@@ -106,7 +113,10 @@ function ReceiptForm({ token,onSaved,onCancel }: { token: string; onSaved: (valu
 function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: { detail: ReturnDetail; token: string; people: ReturnPerson[]; canManage: boolean; onSaved: (value: ReturnDetail) => void; onReload: () => void }) {
   const [editing,setEditing] = useState<ReturnItem | null | undefined>(undefined);
   const [fileError,setFileError] = useState("");
-  const mutation = useMutation({ mutationFn: (run: () => Promise<ReturnDetail>) => run(),retry: false,onSuccess: onSaved });
+  const [printMode,setPrintMode]=useState<'label'|'customer'>('label');
+  const executionStarted=Boolean(d.execution.factoryLines.length||d.execution.resolutions.length||d.execution.receipts.length);
+  const print=(mode:'label'|'customer')=>{setPrintMode(mode);requestAnimationFrame(()=>requestAnimationFrame(()=>window.print()));};
+  const mutation = useMutation({ mutationFn: (run: () => Promise<ReturnDetail>) => run(),retry: false,onSuccess: result=>{setEditing(undefined);onSaved(result);} });
   const apply = (run: () => Promise<ReturnDetail>) => mutation.mutate(run);
   const assignment = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const data = new FormData(event.currentTarget); const due = formValue(data,"dueAt");
@@ -134,13 +144,13 @@ function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: 
   };
   return <>
     <header className="returns-detail-heading"><div><p className="eyebrow">{RETURN_STAGE_LABELS[d.stage]}</p><h2>{d.protocol}</h2><p>{d.customer.code} · {d.customer.name}</p></div>
-      <div className="returns-actions"><button onClick={onReload}>Recarregar protocolo</button><button onClick={() => window.print()}>Imprimir etiqueta</button></div></header>
+      <div className="returns-actions"><button onClick={onReload}>Recarregar protocolo</button><button onClick={() => print('label')}>Imprimir etiqueta</button><button onClick={()=>print('customer')}>Imprimir resumo do cliente</button></div></header>
     <div className="returns-receipt"><p>Recebido em <strong>{dateLabel(d.receivedAt)}</strong> por {d.receiverName}</p>
       <p><strong>{d.receivedQuantity} peças contadas</strong> · declaradas: {d.declaredQuantity ?? "não informadas"} · {d.volumes} {d.volumes === 1 ? "volume" : "volumes"}</p>
       {d.declaredQuantity !== null && d.declaredQuantity !== d.receivedQuantity && <p className="returns-overdue">Divergência de contagem: conferir com o cliente.</p>}
       {d.notes && <p className="returns-notes">{d.notes}</p>}</div>
-    <form className="returns-form" onSubmit={assignment}><h3>Responsável e próxima ação</h3><fieldset disabled={!canManage || mutation.isPending}>
-      <div className="returns-form-grid"><label>Responsável pela próxima ação<select name="assigneeId" defaultValue={d.assignee?.id ?? ""}><option value="">Isis · atribuição pendente</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <form key={d.version} className="returns-form" onSubmit={assignment}><h3>Responsável e próxima ação</h3><fieldset disabled={!canManage || mutation.isPending || d.stage==='closed'}>
+      <div className="returns-form-grid"><label>Responsável pela próxima ação<select name="assigneeId" defaultValue={d.assignee?.id ?? ""}><option value="">Isis · atribuição pendente</option>{people.filter(p=>!['received','triage'].includes(d.stage)||p.canTriage!==false).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
       <label>Prazo interno<input type="datetime-local" name="dueAt" defaultValue={d.dueAt ? localTime(d.dueAt) : ""} /></label></div>
       <label>Próxima ação<input name="nextAction" defaultValue={d.nextAction} maxLength={500} required /></label>
       <label>Localização atual<input name="location" defaultValue={d.location} maxLength={250} required /></label>
@@ -149,11 +159,11 @@ function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: 
       {canManage && <button type="submit" className="button">Salvar responsável e ação</button>}
     </fieldset></form>
     <section><h3>Itens e resultado da triagem</h3><p>{d.itemQuantity} de {d.receivedQuantity} peças cadastradas · {d.pendingQuantity} sem destino técnico definido</p>
-      {d.stage === "triage_completed" && <p className="returns-info">Triagem concluída. Os destinos estão registrados; isso não confirma crédito, envio à fábrica nem entrega ao cliente.</p>}
+      {d.stage === "triage_completed" && <p className="returns-info">Triagem concluída. Continue abaixo com fábrica, acerto, entrega e destino das peças. Parecer, crédito e entrega têm comprovações independentes.</p>}
       <div className="returns-actions">{canManage && <>
         {d.stage === "received" && <button disabled={mutation.isPending} onClick={() => action("start_triage")}>Iniciar triagem</button>}
         {d.stage === "triage" && <><button disabled={mutation.isPending} onClick={() => setEditing(null)}>Adicionar item</button><button disabled={mutation.isPending || d.pendingQuantity !== 0} onClick={() => action("complete_triage")}>Concluir triagem</button></>}
-        {d.stage === "triage_completed" && <button disabled={mutation.isPending} onClick={() => action("reopen_triage")}>Reabrir triagem</button>}
+        {d.stage === "triage_completed" && <button disabled={mutation.isPending||executionStarted} title={executionStarted?'Movimentos já registrados: solicite revisão à Isis':'Corrigir a triagem com motivo'} onClick={() => action("reopen_triage")}>Reabrir triagem</button>}
       </>}</div>
       {d.items.length === 0 && <p>Os modelos serão identificados durante a triagem.</p>}
       {d.items.map(item => <div key={item.id} className="returns-item"><div><strong>{item.quantity} × {item.model || "Modelo a identificar"}</strong>
@@ -163,13 +173,14 @@ function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: 
       </div>)}
       {editing !== undefined && <ItemForm key={editing?.id ?? "new"} item={editing} version={d.version} busy={mutation.isPending} onCancel={() => setEditing(undefined)} onSubmit={data => apply(() => api.saveReturnItem(token,d.id,editing?.id ?? null,data))} />}
     </section>
+    {['triage_completed','closed'].includes(d.stage)&&<ReturnExecutionPanel detail={d} token={token} onSaved={onSaved}/>}
     {mutation.isPending && <p role="status">Salvando alteração...</p>}{mutation.isError && <p role="alert">{message(mutation.error)}</p>}
     <section><h3>Fotos e documentos</h3><p>JPG, PNG ou PDF · até 5 MB por arquivo · até 20 anexos.</p>
       {canManage && <label>Anexar evidência<input type="file" accept="image/jpeg,image/png,application/pdf" disabled={mutation.isPending} onChange={e => { void upload(e.target.files?.[0]);e.target.value=""; }} /></label>}
       {fileError && <p role="alert">{fileError}</p>}{d.attachments.map(file => <div key={file.id} className="returns-attachment"><span>{file.name} · {file.authorName}</span><button onClick={() => void download(file.id)}>Baixar {file.name}</button></div>)}
     </section>
     <section><h3>Histórico do protocolo</h3><ol className="returns-history">{d.events.map(event => <li key={event.id}><strong>{eventLabel(event.action)}</strong><span>{event.authorName} · {dateLabel(event.createdAt)}</span><p>{eventDescription(event)}</p></li>)}</ol></section>
-    <div className="return-print-label"><h1>{d.protocol}</h1><p>{d.customer.code} · {d.customer.name}</p><p>{d.receivedQuantity} peças · {d.volumes} {d.volumes === 1 ? "volume" : "volumes"}</p><p>{dateLabel(d.receivedAt)} · {d.receiverName}</p><p>Local: {d.location}</p></div>
+    <div className="return-print-label">{printMode==='customer'?<ReturnCustomerSummary detail={d}/>:<><h1>{d.protocol}</h1><p>{d.customer.code} · {d.customer.name}</p><p>{d.receivedQuantity} peças · {d.volumes} {d.volumes === 1 ? "volume" : "volumes"}</p><p>{dateLabel(d.receivedAt)} · {d.receiverName}</p><p>Local: {d.location}</p></>}</div>
   </>;
 }
 
@@ -195,7 +206,7 @@ function ItemForm({ item,version,busy,onCancel,onSubmit }: { item: ReturnItem | 
 }
 
 function eventLabel(action: string) {
-  return ({ received:"Recebimento registrado",assignment_updated:"Responsável / ação atualizados",start_triage:"Triagem iniciada",complete_triage:"Triagem concluída",reopen_triage:"Triagem reaberta",item_added:"Item adicionado",item_updated:"Item alterado",item_removed:"Item removido",file_attached:"Evidência anexada" } as Record<string,string>)[action] ?? action;
+  return ({ factory_dispatched:'Envio de fábrica registrado',factory_cancelled:'Registro de envio corrigido',factory_result:'Parecer da fábrica conferido',physical_receipt:'Entrada física / custódia registrada',resolution:'Atendimento ao cliente definido',credit_authorize:'Crédito autorizado',credit_post:'Lançamento financeiro confirmado',credit_reverse:'Crédito estornado / cancelado',delivery:'Retirada / despacho registrado',delivery_confirm:'Recebimento do cliente confirmado',disposition:'Destino interno encaminhado',disposition_confirm:'Destino interno concluído',notice:'Contato com o cliente registrado',review:'Revisão aberta',review_resolve:'Revisão resolvida',close:'Protocolo encerrado',reopen:'Protocolo reaberto',void_record:'Registro corrigido com histórico',received:"Recebimento registrado",assignment_updated:"Responsável / ação atualizados",start_triage:"Triagem iniciada",complete_triage:"Triagem concluída",reopen_triage:"Triagem reaberta",item_added:"Item adicionado",item_updated:"Item alterado",item_removed:"Item removido",file_attached:"Evidência anexada" } as Record<string,string>)[action] ?? action;
 }
 
 function eventDescription(event: ReturnEvent) {
@@ -211,5 +222,5 @@ function eventDescription(event: ReturnEvent) {
   }
   if (event.action === "received") return `${event.data.receivedQuantity} peças · ${event.data.volumes} volumes · ${event.data.location}`;
   if (event.action === "file_attached") return String(event.data.name ?? "");
-  return typeof event.data.reason === "string" ? event.data.reason : "";
+  return [event.data.reason,event.data.reference,event.data.officialReference,event.data.proof,event.data.resolution,event.data.quantity?`${event.data.quantity} peça(s)`:null].filter(value=>typeof value==='string'&&value).join(' · ');
 }

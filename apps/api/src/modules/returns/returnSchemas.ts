@@ -48,7 +48,7 @@ export const actionSchema = z.object({
 }).strict().refine(value => value.action !== "reopen_triage" || Boolean(value.reason), "Informe o motivo da reabertura");
 export const queueSchema = z.object({
   search: text(150).default(""),
-  stage: z.enum(["active", "all", "received", "triage", "triage_completed", "overdue"]).default("active"),
+  stage: z.enum(["active", "all", "received", "triage", "triage_completed", "closed", "overdue"]).default("active"),
   mine: z.enum(["true", "false"]).default("false"),
   page: z.coerce.number().int().min(1).max(100000).default(1),
 });
