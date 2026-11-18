@@ -332,6 +332,9 @@ function rememberAuth(token: string, user: JwtUser | null) {
 
 export async function verifyToken(token: string) {
   if (token === "local-dev-token") {
+    if (env.NODE_ENV === "production") {
+      throw new HttpError(401, "Sessao invalida");
+    }
     return {
       id: "00000000-0000-0000-0000-000000000001",
       email: "admin@olist-crm.com.br",

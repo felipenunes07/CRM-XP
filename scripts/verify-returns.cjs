@@ -1,0 +1,81 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const path=require('node:path');
+
+(async()=>{
+  const output=process.env.RETURN_SCREENSHOT_DIR || path.resolve('artifacts/returns');
+  await fs.mkdir(output,{recursive:true});
+  const browser=await chromium.launch({channel:'chrome',headless:true});
+  const page=await browser.newPage({viewport:{width:1500,height:1050}});
+  const errors=[];
+  page.on('pageerror',error=>errors.push(error.message));
+  page.on('response',res=>{if(res.url().includes('/api/returns') && res.status()>=500)errors.push(`HTTP ${res.status()} ${res.url()}`);});
+  await page.goto('http://127.0.0.1:5187/trocas');
+  await page.getByRole('button',{name:'Novo recebimento',exact:true}).click();
+  await page.screenshot({path:path.join(output,'recebimento-form.png'),fullPage:true});
+  await page.getByRole('combobox',{name:'Cliente',exact:true}).selectOption('20000000-0000-4000-8000-000000000001');
+  await page.getByLabel('Quantidade declarada pelo cliente').fill('6');
+  await page.getByLabel('Quantidade contada',{exact:true}).fill('5');
+  await page.getByLabel('Localização da caixa').fill('Recebimento · caixa do piloto');
+  await page.getByLabel('Observações / divergência de contagem').fill('Demonstração: cliente declarou seis; contagem física de cinco.');
+  await page.getByRole('button',{name:'Gerar protocolo',exact:true}).click();
+  await page.getByRole('heading',{name:/^TR-\d+$/}).waitFor();
+  const protocol=await page.getByRole('heading',{name:/^TR-\d+$/}).innerText();
+  const caseId=new URL(page.url()).searchParams.get('protocolo');
+  assert(caseId);
+  await page.getByRole('combobox',{name:'Responsável pela próxima ação',exact:true}).selectOption('10000000-0000-4000-8000-000000000001');
+  await page.getByLabel('Prazo interno').fill('2026-11-17T15:00');
+  await page.getByLabel('Próxima ação',{exact:true}).fill('Identificar e testar as cinco peças');
+  await page.getByRole('button',{name:'Salvar responsável e ação',exact:true}).click();
+  await page.getByText('Responsável: Isis',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Iniciar triagem',exact:true}).click();
+  await page.getByRole('button',{name:'Adicionar item',exact:true}).waitFor();
+  assert(await page.getByRole('button',{name:'Concluir triagem',exact:true}).isDisabled());
+
+  async function addItem(quantity,outcome,reason=''){
+    await page.getByRole('button',{name:'Adicionar item',exact:true}).click();
+    await page.getByLabel('Modelo',{exact:true}).fill('IP-11 LCD');
+    await page.getByLabel('SKU, se identificado').fill('CX156-1');
+    await page.getByLabel('Quantidade do grupo').fill(String(quantity));
+    await page.getByRole('combobox',{name:'Resultado',exact:true}).selectOption(outcome);
+    await page.getByLabel('Teste ou inspeção realizada').fill('Teste de imagem e inspeção do flex.');
+    if(outcome==='refused'){
+      assert(await page.getByLabel('Motivo / observação').evaluate(el=>el.required && !el.validity.valid));
+    }
+    if(reason)await page.getByLabel('Motivo / observação').fill(reason);
+    if(outcome==='external_analysis')await page.getByLabel('Fábrica / selo').fill('VV');
+    await page.getByRole('button',{name:'Salvar item',exact:true}).click();
+    await page.getByRole('button',{name:'Salvar item',exact:true}).waitFor({state:'hidden'});
+  }
+  await addItem(2,'approved');
+  await addItem(1,'refused','Flex rasgado');
+  await addItem(2,'external_analysis');
+  assert(await page.getByRole('button',{name:'Concluir triagem',exact:true}).isEnabled());
+  await page.getByLabel('Anexar evidência').setInputFiles({name:'recebimento-piloto.pdf',mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4\nPreview evidence')});
+  await page.getByRole('button',{name:'Baixar recebimento-piloto.pdf',exact:true}).waitFor();
+  const downloadEvent=page.waitForEvent('download');
+  await page.getByRole('button',{name:'Baixar recebimento-piloto.pdf',exact:true}).click();
+  const download=await downloadEvent;
+  assert.equal(download.suggestedFilename(),'recebimento-piloto.pdf');
+  await page.screenshot({path:path.join(output,'triagem-desktop.png'),fullPage:true});
+  await page.getByRole('button',{name:'Concluir triagem',exact:true}).click();
+  await page.getByRole('button',{name:'Reabrir triagem',exact:true}).waitFor();
+  await page.getByText('Triagem concluída. Os destinos estão registrados; isso não confirma crédito, envio à fábrica nem entrega ao cliente.',{exact:true}).waitFor();
+  await page.getByRole('combobox',{name:'Situação',exact:true}).selectOption('triage_completed');
+  await page.getByRole('button',{name:new RegExp(protocol)}).waitFor();
+  await page.reload();
+  await page.getByRole('heading',{name:protocol,exact:true}).waitFor();
+  assert.equal(await page.locator('.returns-item').count(),3);
+  await page.emulateMedia({media:'print'});
+  assert(await page.locator('.return-print-label').isVisible());
+  await page.pdf({path:path.join(output,'etiqueta.pdf'),format:'A4'});
+  await page.emulateMedia({media:'screen'});
+  await page.screenshot({path:path.join(output,'protocolo-concluido.png'),fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.screenshot({path:path.join(output,'triagem-mobile.png'),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'Mobile page overflows');
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({protocol,caseId,steps:'receipt, assignment, triage, 3 outcomes, evidence upload/download, completion, persistence, print, mobile',errors},null,2));
+  await browser.close();
+})().catch(error=>{console.error(error);process.exit(1)});

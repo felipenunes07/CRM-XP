@@ -102,6 +102,7 @@ export interface ChartAnnotation {
 }
 
 import type { AuthUser } from "../hooks/useAuth";
+import type { ReturnAssignmentInput, ReturnCustomer, ReturnDetail, ReturnItemInput, ReturnPerson, ReturnQueue, ReturnReceiptInput } from "@olist-crm/shared";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
@@ -525,6 +526,36 @@ async function request<T>(
 }
 
 export const api = {
+  returnQueue(token: string, query: { search: string; stage: string; mine: string; page: number }) {
+    return request<ReturnQueue>(`/api/returns?${new URLSearchParams({ ...query, page: String(query.page) })}`, {}, token);
+  },
+  returnLookups(token: string, search = "") {
+    return request<{ coordinator: string; people: ReturnPerson[]; customers: ReturnCustomer[] }>(`/api/returns/lookups?search=${encodeURIComponent(search)}`, {}, token);
+  },
+  returnDetail(token: string, id: string) {
+    return request<ReturnDetail>(`/api/returns/${id}`, {}, token);
+  },
+  createReturn(token: string, data: ReturnReceiptInput) {
+    return request<ReturnDetail>("/api/returns", { method: "POST", body: JSON.stringify(data) }, token);
+  },
+  assignReturn(token: string, id: string, data: ReturnAssignmentInput) {
+    return request<ReturnDetail>(`/api/returns/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
+  },
+  returnAction(token: string, id: string, data: { version: number; action: "start_triage" | "complete_triage" | "reopen_triage"; reason?: string }) {
+    return request<ReturnDetail>(`/api/returns/${id}/actions`, { method: "POST", body: JSON.stringify(data) }, token);
+  },
+  saveReturnItem(token: string, id: string, itemId: string | null, data: ReturnItemInput) {
+    return request<ReturnDetail>(`/api/returns/${id}/items${itemId ? `/${itemId}` : ""}`, { method: itemId ? "PUT" : "POST", body: JSON.stringify(data) }, token);
+  },
+  removeReturnItem(token: string, id: string, itemId: string, version: number) {
+    return request<ReturnDetail>(`/api/returns/${id}/items/${itemId}`, { method: "DELETE", body: JSON.stringify({ version }) }, token);
+  },
+  attachReturnFile(token: string, id: string, data: { version: number; name: string; contentType: string; contentBase64: string }) {
+    return request<ReturnDetail>(`/api/returns/${id}/attachments`, { method: "POST", body: JSON.stringify(data) }, token);
+  },
+  returnFile(token: string, id: string, fileId: string) {
+    return request<{ name: string; contentType: string; contentBase64: string }>(`/api/returns/${id}/attachments/${fileId}`, {}, token);
+  },
   login(email: string, password: string) {
     return request<{ token: string; user: AuthUser }>("/api/auth/login", {
       method: "POST",

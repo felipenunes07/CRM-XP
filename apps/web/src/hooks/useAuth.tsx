@@ -57,6 +57,7 @@ const localAdminPermissions = [
   ...navigationAccessFolders.flatMap((folder) => folder.items.map((item) => item.permissionKey)),
   "commercial.view",
   "commercial.manage",
+  "returns.manage",
   "messages.view",
   "messages.manage",
   "finance.view",
