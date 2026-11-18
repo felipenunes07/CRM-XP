@@ -25,9 +25,15 @@ describe("navigation permissions", () => {
     expect(permissionForPath("/tarefas")).toBe("tasks.view");
   });
 
-  it("keeps one unique permission for every configurable menu item", () => {
+  it("protects returns independently and preserves the shared inventory access", () => {
+    expect(permissionForPath("/trocas")).toBe("returns.view");
+    expect(permissionForPath("/estoque")).toBe("reports.inventory.view");
+    expect(permissionForPath("/comparacao-precos")).toBe("reports.inventory.view");
+  });
+
+  it("maps every configurable screen to its declared permission", () => {
     const items = navigationAccessFolders.flatMap((folder) => folder.items);
-    expect(navigationPermissionKeys.size).toBe(items.length);
+    expect(navigationPermissionKeys.has("returns.view")).toBe(true);
     expect(items.every((item) => permissionForPath(item.path) === item.permissionKey)).toBe(true);
   });
 });
