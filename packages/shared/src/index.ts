@@ -3268,6 +3268,8 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
     "changelog.view",
   ],
   operacional: [
+    "returns.view",
+    "returns.manage",
     "tasks.view",
     "dashboard.view",
     "commercial.view",
@@ -3319,3 +3321,4 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
 export * from "./supplierPrices.js";
 export * from "./prospectRemarketing.js";
 export * from "./automationActivity.js";
+export * from "./returns.js";

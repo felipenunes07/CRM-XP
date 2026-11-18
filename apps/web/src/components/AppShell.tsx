@@ -41,6 +41,7 @@ export const appShellLinks = [
   { to: "/central-decisao", icon: Gauge, labelPt: "Central de Decisão" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
+  { to: "/trocas", icon: Boxes, labelPt: "Trocas" },
   // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)
   // { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },
@@ -95,6 +96,7 @@ const sidebarMenu: SidebarEntry[] = [
   { to: "/central-decisao", icon: Gauge, labelPt: "Central de Decisão" },
   { to: "/relatorio-executivo", icon: MonitorUp, labelPt: "Relatório Executivo" },
   { to: "/tarefas", icon: ClipboardList, labelPt: "Tarefas" },
+  { to: "/trocas", icon: Boxes, labelPt: "Trocas" },
   // Pipeline escondido do menu a pedido (rota /pipeline continua existindo)
   // { to: "/pipeline", icon: Kanban, labelPt: "Pipeline" },
   { to: "/metas", icon: Trophy, labelPt: "Metas" },

@@ -19,6 +19,7 @@ export const navigationAccessFolders: NavigationAccessFolder[] = [
     items: [
       { label: "Dashboard", path: "/", permissionKey: "dashboard.view" },
       { label: "Tarefas", path: "/tarefas", permissionKey: "tasks.view" },
+      { label: "Trocas", path: "/trocas", permissionKey: "returns.view" },
       { label: "Pipeline", path: "/pipeline", permissionKey: "commercial.pipeline.view" },
       { label: "Metas", path: "/metas", permissionKey: "finance.goals.view" },
       { label: "Atendentes", path: "/atendentes", permissionKey: "reports.attendants.view" },

@@ -146,6 +146,7 @@ import { syncOlistIncremental } from "./modules/ingestion/olistSyncService.js";
 import { importSupabase2026 } from "./modules/ingestion/supabaseImporter.js";
 import { login, verifyToken } from "./modules/platform/authService.js";
 import { requireAuth, requirePermission, requireRole } from "./modules/platform/authMiddleware.js";
+import { returnRoutes } from "./modules/returns/returnRoutes.js";
 import { subscribeMonitorMessages } from "./modules/whatsapp/whatsappMonitorBus.js";
 import {
   getAvatarBytes,
@@ -1173,6 +1174,7 @@ export function createApp() {
   app.use("/api/automations", requirePermission("automations.view"));
   app.use("/api/whatsapp-campaigns", requirePermission("messages.broadcast.view"));
   app.use("/api/whatsapp-groups", requirePermission("messages.broadcast.view"));
+  app.use("/api/returns", returnRoutes);
 
   app.get("/api/auth/me", (request, response) => {
     response.json({ user: request.user });
