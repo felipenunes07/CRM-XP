@@ -104,6 +104,7 @@ export interface ChartAnnotation {
 
 import type { AuthUser } from "../hooks/useAuth";
 import type { ReturnAssignmentInput, ReturnCustomer, ReturnDetail, ReturnItemInput, ReturnPerson, ReturnQueue, ReturnReceiptInput } from "@olist-crm/shared";
+import type {ReturnFactoryProfile,ReturnLegacyPage,ReturnNativeDetail,ReturnStockLot,ReturnWalletPage} from '@olist-crm/shared';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
@@ -527,12 +528,28 @@ async function request<T>(
 }
 
 export const api = {
-  returnQueue(token: string, query: { search: string; stage: string; mine: string; page: number }) {
+  returnQueue(token: string, query: { search: string; stage: string; mine: string; page: number;factory?:string }) {
     return request<ReturnQueue>(`/api/returns?${new URLSearchParams({ ...query, page: String(query.page) })}`, {}, token);
   },
   executeReturn<K extends keyof ReturnExecutionInputMap>(token:string,id:string,operation:K,data:ReturnExecutionInputMap[K]){
     return request<ReturnDetail>(`/api/returns/${id}/execution/${operation}`,{method:'POST',body:JSON.stringify(data)},token);
   },
+  returnNative(token:string,id:string){return request<ReturnNativeDetail>(`/api/returns/${id}/native`,{},token);},
+  returnWallet(token:string,search='',page=1,customerId?:string){return request<ReturnWalletPage>(`/api/returns/wallet?${new URLSearchParams({search,page:String(page),...(customerId?{customerId}:{})})}`,{},token);},
+  executeNativeReturn(token:string,id:string,operation:string,input:Record<string,unknown>){return request<ReturnDetail>(`/api/returns/${id}/native/${operation}`,{method:'POST',body:JSON.stringify(input)},token);},
+  returnStock(token:string,search=''){return request<ReturnStockLot[]>(`/api/returns/stock?search=${encodeURIComponent(search)}`,{},token);},
+  returnNoticeSenders(token:string){return request<Array<{id:string;name:string;phone:string|null}>>('/api/returns/notice-senders',{},token);},
+  prepareReturnNotice(token:string,id:string,input:Record<string,unknown>){return request<{id:string}>(`/api/returns/${id}/notices`,{method:'POST',body:JSON.stringify(input)},token);},
+  sendReturnNotice(token:string,id:string,messageId:string){return request(`/api/returns/${id}/notices/${messageId}/send`,{method:'POST',body:'{}'},token);},
+  resolveReturnNotice(token:string,id:string,messageId:string,input:Record<string,unknown>){return request(`/api/returns/${id}/notices/${messageId}/resolve`,{method:'POST',body:JSON.stringify(input)},token);},
+  returnTransition(token:string,search='',page=1,pending=false){return request<ReturnLegacyPage>(`/api/returns/transition?${new URLSearchParams({search,page:String(page),pending:String(pending)})}`,{},token);},
+  refreshReturnTransition(token:string){return request<ReturnLegacyPage>('/api/returns/transition/refresh',{method:'POST',body:'{}'},token);},
+  configureReturnTransition(token:string,input:Record<string,unknown>){return request('/api/returns/transition/settings',{method:'PUT',body:JSON.stringify(input)},token);},
+  reviewReturnLegacy(token:string,input:Record<string,unknown>){return request('/api/returns/transition/review',{method:'POST',body:JSON.stringify(input)},token);},
+  resolveReturnLegacy(token:string,input:Record<string,unknown>){return request('/api/returns/transition/resolve',{method:'POST',body:JSON.stringify(input)},token);},
+  saveReturnFactoryProfile(token:string,input:ReturnFactoryProfile){return request<ReturnFactoryProfile[]>('/api/returns/factory-profiles',{method:'POST',body:JSON.stringify(input)},token);},
+  replaceReturnFactoryLines(token:string,id:string,input:Record<string,unknown>){return request<ReturnFactoryBatch>(`/api/returns/factory-batches/${id}/lines`,{method:'PUT',body:JSON.stringify(input)},token);},
+  sendReturnFactory(token:string,id:string,input:Record<string,unknown>){return request<ReturnFactoryBatch>(`/api/returns/factory-batches/${id}/send`,{method:'POST',body:JSON.stringify(input)},token);},
   returnFactoryAvailable(token:string,search=''){
     return request<ReturnFactoryAvailable[]>(`/api/returns/factory-available?search=${encodeURIComponent(search)}`,{},token);
   },
@@ -540,7 +557,7 @@ export const api = {
   dispatchReturnFactory(token:string,input:ReturnBatchInput){return request<ReturnFactoryBatch>('/api/returns/factory-batches',{method:'POST',body:JSON.stringify(input)},token);},
   cancelReturnFactory(token:string,id:string,input:{requestId:string;reason:string;cases:Array<{id:string;version:number}>}){return request<ReturnFactoryBatch>(`/api/returns/factory-batches/${id}/cancel`,{method:'POST',body:JSON.stringify(input)},token);},
   returnLookups(token: string, search = "") {
-    return request<{ coordinator: string; people: ReturnPerson[]; customers: ReturnCustomer[] }>(`/api/returns/lookups?search=${encodeURIComponent(search)}`, {}, token);
+    return request<{ coordinator: string; people: ReturnPerson[]; customers: ReturnCustomer[];factories:ReturnFactoryProfile[] }>(`/api/returns/lookups?search=${encodeURIComponent(search)}`, {}, token);
   },
   returnDetail(token: string, id: string) {
     return request<ReturnDetail>(`/api/returns/${id}`, {}, token);

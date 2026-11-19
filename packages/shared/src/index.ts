@@ -3273,6 +3273,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<"vendas" | "financeiro" | "operac
     "returns.view",
     "returns.manage",
     "returns.logistics",
+    "returns.communicate",
     "tasks.view",
     "dashboard.view",
     "commercial.view",
@@ -3325,3 +3326,5 @@ export * from "./supplierPrices.js";
 export * from "./prospectRemarketing.js";
 export * from "./automationActivity.js";
 export * from "./returns.js";
+export * from "./returnFactories.js";
+export * from './returnNative.js';

@@ -17,7 +17,7 @@ export const RETURN_OUTCOME_LABELS = {
 
 export type ReturnStage = keyof typeof RETURN_STAGE_LABELS;
 export type ReturnOutcome = keyof typeof RETURN_OUTCOME_LABELS;
-export interface ReturnPerson { id: string; name: string; canTriage?:boolean }
+export interface ReturnPerson { id: string; name: string; canTriage?:boolean;canLogistics?:boolean }
 export interface ReturnCustomer { id: string; code: string | null; name: string }
 export interface ReturnReceiptInput {
   requestId: string;
@@ -49,8 +49,11 @@ export interface ReturnItemInput {
   outcome: ReturnOutcome;
   reason: string;
   testNotes: string;
+  factoryCode?:string;
+  seal?:string;
+  routingOverride?:string;
 }
-export interface ReturnItem extends Omit<ReturnItemInput, "version"> { id: string }
+export interface ReturnItem extends Omit<ReturnItemInput, "version"> { id: string;factoryWorkflow?:import('./returnFactories.js').ReturnFactoryWorkflow }
 export interface ReturnCase {
   id: string;
   protocol: string;
@@ -84,12 +87,12 @@ export interface ReturnQueue {
   summary: { received: number; triage: number; triageCompleted: number; overdue: number; closed: number };
 }
 
-export const RETURN_REMEDY_LABELS = { credit:"Crédito ao cliente", replacement:"Entregar substituta", return_original:"Devolver peça original", not_applicable:"Sem obrigação com o cliente · autorizado" } as const;
+export const RETURN_REMEDY_LABELS = { credit:"Crédito ao cliente", sale_cancellation:"Cancelamento de venda", replacement:"Entregar substituta", return_original:"Devolver peça original", not_applicable:"Sem obrigação com o cliente · autorizado" } as const;
 export const RETURN_RECEIPT_LABELS = { original_returned:"Original recebida da fábrica", supplier_replacement:"Substituta recebida da fábrica", factory_retained:"Original retida definitivamente na fábrica", stock_replacement:"Substituta separada do estoque XP" } as const;
 export const RETURN_DESTINATION_LABELS = { reconditioning:"Recondicionamento", outlet:"Outlet", stock:"Estoque após conferência", china:"Envio à China", disposal:"Descarte autorizado" } as const;
 export interface ReturnCommand { requestId: string; version: number; evidenceId?:string|null }
 export interface ReturnFact { id: string; caseId: string; itemId: string; quantity: number; createdAt: string; authorName: string; voidedAt: string | null }
-export interface ReturnFactoryLine { id: string; batchId: string; caseId: string; itemId: string; quantity: number; batchCode: string; manufacturer: string; dueAt: string; sentAt: string; reference: string; voidedAt: string | null }
+export interface ReturnFactoryLine { id: string; batchId: string; caseId: string; itemId: string; quantity: number; batchCode: string; manufacturer: string; dueAt: string; sentAt: string|null; reference: string; voidedAt: string | null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string }
 export interface ReturnFactoryResult extends ReturnFact { lineId: string; decision: "approved"|"refused"; compensation: "replacement"|"credit"|"none"; reason: string; originalReport: string; translation: string; reference: string; occurredAt: string; approvalReference: string }
 export interface ReturnPhysicalReceipt extends ReturnFact { lineId: string|null; resultId: string|null; kind: keyof typeof RETURN_RECEIPT_LABELS; location: string; receivedBy: string; reference: string; reason: string; occurredAt: string; approvalReference: string }
 export interface ReturnResolution extends ReturnFact { resultId: string|null; kind: keyof typeof RETURN_REMEDY_LABELS; reason: string; approvalReference: string }
@@ -102,9 +105,9 @@ export interface ReturnSourcePool { key: string; itemId: string; resultId: strin
 export interface ReturnProgress { factoryPendingQuantity: number; supplierPendingQuantity: number; customerPendingQuantity: number; financePendingCount: number; deliveryPendingQuantity: number; internalPendingQuantity: number; reviewCount: number; customerComplete: boolean; internalComplete: boolean; canClose: boolean; blockers: string[] }
 export interface ReturnExecution { factoryLines: ReturnFactoryLine[]; results: ReturnFactoryResult[]; receipts: ReturnPhysicalReceipt[]; resolutions: ReturnResolution[]; credits: ReturnCredit[]; deliveries: ReturnDelivery[]; dispositions: ReturnDisposition[]; notices: ReturnNotice[]; reviews: ReturnReview[]; pools: ReturnSourcePool[]; progress: ReturnProgress }
 export interface ReturnFactoryAvailable { itemId: string; caseId: string; version: number; protocol: string; customerCode: string; customerName: string; model: string; manufacturer: string; availableQuantity: number }
-export interface ReturnFactoryBatch { id: string; code: string; manufacturer: string; sentAt: string; dueAt: string; reference: string; carrier: string; fromLocation: string; authorName: string; voidedAt: string|null; lines: Array<ReturnFactoryAvailable & { id: string; quantity: number; decidedQuantity: number }> }
+export interface ReturnFactoryBatch { id: string; code: string; manufacturer: string; sentAt: string|null; dueAt: string; reference: string; carrier: string; fromLocation: string; authorName: string; voidedAt: string|null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string;responsibleId:string|null;version:number; lines: Array<ReturnFactoryAvailable & { id: string; quantity: number; decidedQuantity: number }> }
 export interface ReturnFactoryBatchList {items:ReturnFactoryBatch[];total:number;page:number}
-export interface ReturnBatchInput { requestId:string; manufacturer:string; sentAt:string; dueAt:string; reference:string; carrier:string; fromLocation:string; lines:Array<{caseId:string;itemId:string;quantity:number;version:number}> }
+export interface ReturnBatchInput { requestId:string; manufacturer:string; sentAt:string; dueAt:string; reference:string; carrier:string; fromLocation:string; lines:Array<{caseId:string;itemId:string;quantity:number;version:number}>;mode?:'batch'|'individual';state?:'assembling'|'sent';lotReference?:string;responsibleId?:string|null }
 export interface ReturnExecutionInputMap {
  factory_result: ReturnCommand & {lineId:string;quantity:number;decision:"approved"|"refused";compensation:"replacement"|"credit"|"none";reason:string;originalReport:string;translation:string;reference:string;occurredAt:string;approvalReference:string};
  physical_receipt: ReturnCommand & {itemId:string;lineId:string|null;resultId:string|null;kind:ReturnPhysicalReceipt["kind"];quantity:number;location:string;receivedBy:string;reference:string;reason:string;approvalReference:string;occurredAt:string};
