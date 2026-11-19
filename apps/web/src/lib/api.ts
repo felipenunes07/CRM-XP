@@ -104,7 +104,7 @@ export interface ChartAnnotation {
 
 import type { AuthUser } from "../hooks/useAuth";
 import type { ReturnAssignmentInput, ReturnCustomer, ReturnDetail, ReturnItemInput, ReturnPerson, ReturnQueue, ReturnReceiptInput } from "@olist-crm/shared";
-import type {ReturnFactoryProfile,ReturnLegacyPage,ReturnNativeDetail,ReturnStockLot,ReturnWalletPage} from '@olist-crm/shared';
+import type {ReturnFactoryProfile,ReturnLegacyPage,ReturnNativeDetail,ReturnStockLot,ReturnWalletPage,ReturnNoticeAccessConfiguration} from '@olist-crm/shared';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
@@ -539,6 +539,8 @@ export const api = {
   executeNativeReturn(token:string,id:string,operation:string,input:Record<string,unknown>){return request<ReturnDetail>(`/api/returns/${id}/native/${operation}`,{method:'POST',body:JSON.stringify(input)},token);},
   returnStock(token:string,search=''){return request<ReturnStockLot[]>(`/api/returns/stock?search=${encodeURIComponent(search)}`,{},token);},
   returnNoticeSenders(token:string){return request<Array<{id:string;name:string;phone:string|null}>>('/api/returns/notice-senders',{},token);},
+  returnNoticeAccess(token:string){return request<ReturnNoticeAccessConfiguration>('/api/returns/notice-sender-access',{},token);},
+  configureReturnNoticeAccess(token:string,input:{requestId:string;instanceId:string;userId:string;allowed:boolean;previousAllowed:boolean;reason:string}){return request<ReturnNoticeAccessConfiguration>('/api/returns/notice-sender-access',{method:'POST',body:JSON.stringify(input)},token);},
   prepareReturnNotice(token:string,id:string,input:Record<string,unknown>){return request<{id:string}>(`/api/returns/${id}/notices`,{method:'POST',body:JSON.stringify(input)},token);},
   sendReturnNotice(token:string,id:string,messageId:string){return request(`/api/returns/${id}/notices/${messageId}/send`,{method:'POST',body:'{}'},token);},
   resolveReturnNotice(token:string,id:string,messageId:string,input:Record<string,unknown>){return request(`/api/returns/${id}/notices/${messageId}/resolve`,{method:'POST',body:JSON.stringify(input)},token);},
