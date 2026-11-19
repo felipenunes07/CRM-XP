@@ -20,6 +20,7 @@ import { returnWorkflowMigration } from "../../db/returnWorkflowMigration.js";
 import { returnExecutionMigration } from "../../db/returnExecutionMigration.js";
 import {returnFactoryMigration} from '../../db/returnFactoryMigration.js';
 import {returnNativeMigration} from '../../db/returnNativeMigration.js';
+import {returnNoticeAccessMigration} from '../../db/returnNoticeAccessMigration.js';
 import {sendWhatsappInstanceTextMessage} from '../whatsapp/evolutionService.js';
 import { HttpError } from "../../lib/httpError.js";
 import { returnRoutes } from "./returnRoutes.js";
@@ -74,7 +75,7 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
       CREATE TABLE user_permissions(user_id uuid,permission_key text,allowed boolean);
       CREATE TABLE permissions(key text PRIMARY KEY,name text,description text);
       CREATE TABLE role_permissions(role text,permission_key text,PRIMARY KEY(role,permission_key));
-      CREATE TABLE whatsapp_instances(id uuid PRIMARY KEY,display_label text,phone_number text,status text,is_default boolean,assigned_user_id uuid,provider text,instance_name text,evolution_base_url text,evolution_api_key text,uazapi_base_url text,uazapi_token text);
+      CREATE TABLE whatsapp_instances(id uuid PRIMARY KEY,display_label text,phone_number text,status text,is_default boolean,assigned_user_id uuid,assigned_user_name text,last_health_status text,provider text,instance_name text,evolution_base_url text,evolution_api_key text,uazapi_base_url text,uazapi_token text);
       CREATE TABLE customer_credit_snapshots(id uuid PRIMARY KEY,is_active boolean);
       CREATE TABLE customer_credit_payment_entries(snapshot_id uuid,customer_id uuid,payment_key text,amount numeric,payment_number text,payment_type text);
       INSERT INTO profiles VALUES('${operatorId}','isis@test.invalid','Isis','operacional',true);
@@ -84,6 +85,7 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
     await pool.query(returnExecutionMigration);
     await pool.query(returnFactoryMigration);
     await pool.query(returnNativeMigration);
+    await pool.query(returnNoticeAccessMigration);
   });
   beforeEach(async () => {
     grants=["returns.view","returns.manage"];
@@ -443,5 +445,19 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    const make=async()=>{let d=await finished(1,'approved');return operate(d,'resolution',{itemId:d.items[0].id,resultId:null,quantity:1,kind:'replacement',reason:'Reposição conferida',approvalReference:''});};const a=await make(),b=await make();
    const issue=(d:any)=>native(d,'stock_issue',{lotId:lot.id,itemId:d.items[0].id,quantity:1,reference:'CONC-'+d.id,reason:'Separação para atendimento',location:'Entrega',receivedBy:'Isis'});
    const responses=await Promise.all([issue(a),issue(b)]);expect(responses.map(r=>r.status).sort()).toEqual([200,409]);expect((await get('/stock')).body).toHaveLength(0);expect((await pool.query("SELECT count(*)::int AS n FROM return_stock_movements WHERE kind='issue'")).rows[0].n).toBe(1);
+  });
+  it('grants a sender only for returns, audits it and blocks a revoked pending notice',async()=>{
+   grants.push('returns.logistics','returns.communicate','returns.configure');let d=await finished(1,'approved');const instance=crypto.randomUUID();
+   await pool.query("INSERT INTO whatsapp_instances(id,display_label,status,is_default,provider,instance_name,evolution_base_url,evolution_api_key) VALUES($1,'Canal de teste','ACTIVE',false,'EVOLUTION','TEST','https://provider.test','private-test-key')",[instance]);
+   expect((await get('/notice-senders')).body).toHaveLength(0);
+   const input={requestId:crypto.randomUUID(),instanceId:instance,userId:operatorId,allowed:true,previousAllowed:false,reason:'Canal aprovado pela coordenação de trocas'};
+   let response=await post('/notice-sender-access',input);expect(response.status,response.body.message).toBe(200);expect(response.body.instances[0].grants).toEqual([{userId:operatorId,name:'Isis'}]);expect(JSON.stringify(response.body)).not.toContain('private-test-key');
+   expect((await post('/notice-sender-access',input)).status).toBe(200);expect((await pool.query("SELECT count(*)::int AS n FROM return_settings_events WHERE resource='notice_sender_access'")).rows[0].n).toBe(1);
+   expect((await get('/notice-senders')).body).toHaveLength(1);expect((await post('/notice-sender-access',{...input,requestId:crypto.randomUUID(),userId:'10000000-0000-4000-8000-000000000002'})).status).toBe(409);
+   response=await post(`/${d.id}/notices`,{requestId:crypto.randomUUID(),version:d.version,instanceId:instance,destination:'5500000000000',message:'Teste local sem destinatário real'});expect(response.status,response.body.message).toBe(200);const noticeId=response.body.id;
+   expect((await post('/notice-sender-access',{...input,requestId:crypto.randomUUID()})).status).toBe(409);
+   expect((await post('/notice-sender-access',{...input,requestId:crypto.randomUUID(),allowed:false,previousAllowed:true,reason:'Vínculo revogado após conferência'})).status).toBe(200);expect((await get('/notice-senders')).body).toHaveLength(0);
+   expect((await post(`/${d.id}/notices/${noticeId}/send`,{})).status).toBe(409);expect(sendWhatsappInstanceTextMessage).not.toHaveBeenCalled();expect((await pool.query('SELECT is_default,assigned_user_id FROM whatsapp_instances WHERE id=$1',[instance])).rows[0]).toEqual({is_default:false,assigned_user_id:null});
+   grants=grants.filter(p=>p!=='returns.configure');expect((await post('/notice-sender-access',input)).status).toBe(403);expect((await get('/notice-sender-access')).status).toBe(403);
   });
 });

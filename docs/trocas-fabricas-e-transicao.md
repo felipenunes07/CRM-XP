@@ -41,6 +41,8 @@ O estoque recuperado tem entrada, separação para substituição, devolução d
 
 Prepare o aviso, confira remetente, telefone e texto, depois envie a mensagem aprovada. O CRM registra a aceitação somente com identificador do provedor. Aceitação não é comprovação de leitura ou entrega ao aparelho. Uma tentativa incerta não é repetida automaticamente: confira o provedor e registre o resultado. O registro de telefone/presencial continua disponível para contatos realizados fora do WhatsApp.
 
+Em **Regras por fábrica → WhatsApp para avisos de trocas**, o administrador vincula o canal aprovado às pessoas que já tenham permissão de comunicação. O vínculo é específico das trocas, com justificativa e histórico. Não altera a atribuição geral do WhatsApp. Remover esse vínculo impede novas tentativas, inclusive de um aviso preparado e ainda não enviado. O remetente precisa ser definido pela operação; o sistema não escolhe automaticamente o telefone de outra pessoa.
+
 Encerramento exige triagem, decisões, atendimento, créditos, entregas, destinos e comunicação conferidos, sem revisão aberta ou vínculo de migração divergente. Despacho sozinho não comprova recebimento do cliente.
 
 ## Consulta e migração

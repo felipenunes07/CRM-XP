@@ -10,13 +10,15 @@ import {replaceFactoryBatchLines,sendFactoryBatch} from './returnExecutionServic
 import {factoryProfiles,saveFactoryProfile} from './returnFactoryPolicies.js';
 import {configureReturnTransition,listReturnLegacy,refreshReturnLegacy,reviewReturnLegacy,resolveReturnLegacyLink} from './returnLegacyService.js';
 import {executeNativeReturn,getNativeReturn,listReturnStock,listReturnWallet,nativeSchemas} from './returnNativeService.js';
-import {prepareReturnNotice,sendReturnNotice,resolveReturnNotice,returnNoticeSenders} from './returnNoticeService.js';
+import {prepareReturnNotice,sendReturnNotice,resolveReturnNotice,returnNoticeSenders,returnNoticeAccessConfiguration,configureReturnNoticeAccess} from './returnNoticeService.js';
 
 export const returnRoutes = Router();
 returnRoutes.use(requirePermission("returns.view"));
 returnRoutes.get('/stock',async(req,res)=>res.json(await listReturnStock(z.string().trim().max(150).parse(req.query.search??''))));
 returnRoutes.get('/wallet',requirePermission('returns.finance'),async(req,res)=>{const q=z.object({search:z.string().trim().max(150).default(''),customerId:z.string().uuid().optional(),page:z.coerce.number().int().positive().max(100000).default(1)}).parse(req.query);res.json(await listReturnWallet(q.search,q.customerId??null,q.page));});
 returnRoutes.get('/notice-senders',requirePermission('returns.communicate'),async(req,res)=>res.json(await returnNoticeSenders(req.user!)));
+returnRoutes.get('/notice-sender-access',requirePermission('returns.configure'),async(_req,res)=>res.json(await returnNoticeAccessConfiguration()));
+returnRoutes.post('/notice-sender-access',requirePermission('returns.configure'),async(req,res)=>res.json(await configureReturnNoticeAccess(req.body,req.user!)));
 returnRoutes.get('/:id/native',async(req,res)=>res.json(await getNativeReturn(returnIdSchema.parse(req.params.id),req.user!.permissions?.includes('returns.finance')??false)));
 returnRoutes.post('/:id/native/:operation',async(req,res)=>{const op=z.enum(Object.keys(nativeSchemas) as [keyof typeof nativeSchemas,...Array<keyof typeof nativeSchemas>]).parse(req.params.operation);const id=returnIdSchema.parse(req.params.id);await executeNativeReturn(id,op,req.body,req.user!);res.json(await getReturnDetail(id));});
 returnRoutes.post('/:id/notices',requirePermission('returns.communicate'),async(req,res)=>res.json({id:await prepareReturnNotice(returnIdSchema.parse(req.params.id),req.body,req.user!)}));
