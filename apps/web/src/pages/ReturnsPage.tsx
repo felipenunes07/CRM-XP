@@ -63,7 +63,7 @@ export function ReturnsPage() {
         <option value="active">Todos os protocolos em aberto</option><option value="received">Recebidos</option><option value="triage">Em triagem</option>
         <option value="triage_completed">Pós-triagem · fábrica, acerto e entrega</option><option value="closed">Encerrados</option><option value="overdue">Prazo vencido</option><option value="all">Todos</option>
       </select></label><label className="returns-checkbox"><input type="checkbox" checked={mine} onChange={e => { setMine(e.target.checked);setPage(1); }} />Sob minha responsabilidade</label></div>
-      <label>Fábrica<select value={factory} onChange={e=>{setFactory(e.target.value);setPage(1);}}><option value="">Todas as fábricas</option>{lookups.data?.factories.map(p=><option key={p.code} value={p.code}>{p.name}</option>)}</select></label>
+      <label>Fábrica<select value={factory} onChange={e=>{setFactory(e.target.value);setPage(1);}}><option value="">Todas as fábricas</option>{lookups.data?.factories?.map(p=><option key={p.code} value={p.code}>{p.name}</option>)}</select></label>
       {queue.isLoading && <p role="status">Carregando fila...</p>}
       {queue.isError && <p role="alert">{message(queue.error)} <button onClick={() => void queue.refetch()}>Tentar novamente</button></p>}
       {queue.data?.items.length === 0 && <p>Nenhum protocolo nesta fila.</p>}
