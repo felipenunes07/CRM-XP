@@ -77,6 +77,7 @@ export async function executeNativeReturn(caseId:string,operation:NativeOperatio
    }
    case 'cancellation':{
     const i=nativeSchemas.cancellation.parse(input);
+    ensure(Number.isSafeInteger(i.quantity*i.unitCents)&&i.quantity*i.unitCents<=1e12,'O valor total do cancelamento ultrapassa o limite financeiro permitido');
     const source=facts.pools.find(p=>p.itemId===i.itemId&&p.resultId===i.resultId);ensure(source&&i.quantity<=source.remainingQuantity,'Quantidade sem decisão definitiva ou já atendida');
     ensure(items.some(r=>r.id===i.itemId&&r.sku),'Informe o SKU do item antes do cancelamento');
     const checked=(await client.query("SELECT COALESCE(sum(quantity),0)::int AS n FROM return_stock_lots WHERE case_id=$1 AND item_id=$2 AND grade='new'",[caseId,i.itemId])).rows[0].n;
