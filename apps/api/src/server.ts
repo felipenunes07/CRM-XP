@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createApp } from "./app.js";
+import {startReturnLegacySync} from './modules/returns/returnLegacyService.js';
 import { pool, redis } from "./db/client.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
@@ -82,6 +83,7 @@ async function main() {
   const offboardingScheduler = startDailyOffboardingScheduler();
   const billingAlertScheduler = startBillingAlertScheduler();
   const customerDefectSyncScheduler = startDailyCustomerDefectSyncScheduler();
+  const returnLegacySync=startReturnLegacySync();
   const taskReminderScheduler = startTaskOverdueReminderScheduler();
   const supplierPriceScheduler = startSupplierPriceScheduler();
   const automationScheduler = startMessageAutomationScheduler();
@@ -197,6 +199,7 @@ async function main() {
       await offboardingScheduler.close();
       await billingAlertScheduler.close();
       await customerDefectSyncScheduler.close();
+      returnLegacySync.close();
       await supplierPriceScheduler.close();
       await automationScheduler.close();
       await attendanceReportScheduler.close();

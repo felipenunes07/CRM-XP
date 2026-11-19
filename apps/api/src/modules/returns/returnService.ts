@@ -7,6 +7,7 @@ import type { JwtUser } from "../platform/authService.js";
 import { computeEffectivePermissions } from "../platform/permissionService.js";
 import { transaction, lockCase, record } from "./returnTransactions.js";
 import { loadExecution,loadExecutions } from "./returnExecutionData.js";
+import { factoryProfiles,routeReturnItem } from './returnFactoryPolicies.js';
 import { actionSchema, assignmentSchema, attachmentSchema, itemSchema, queueSchema, receiptSchema } from "./returnSchemas.js";
 
 const caseSelect = `SELECT r.*, c.customer_code, c.display_name, p.full_name AS assignee_name,
@@ -40,7 +41,7 @@ export async function getReturnDetail(id: string): Promise<ReturnDetail> {
   await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const result = await client.query(`SELECT base.*,
     COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item."createdAt",item.id) FROM
-      (SELECT id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes",created_at AS "createdAt"
+      (SELECT id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes",factory_code AS "factoryCode",factory_workflow AS "factoryWorkflow",seal,routing_override AS "routingOverride",created_at AS "createdAt"
         FROM return_items WHERE case_id=base.id) item),'[]'::jsonb) AS items,
     COALESCE((SELECT jsonb_agg(to_jsonb(file) ORDER BY file."createdAt",file.id) FROM
       (SELECT id,name,content_type AS "contentType",octet_length(bytes) AS size,created_at AS "createdAt",author_name AS "authorName"
@@ -64,6 +65,7 @@ export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<R
   else if (input.stage === "overdue") where.push("r.stage <> 'closed' AND r.due_at < NOW()");
   else if (input.stage !== "all") add("r.stage = ?", input.stage);
   if (input.mine === "true") add("r.assignee_id = ?", actor.id);
+  if(input.factory)add('EXISTS(SELECT 1 FROM return_items f WHERE f.case_id=r.id AND f.factory_code=?)',input.factory);
   if (input.search) {
     params.push(`%${input.search}%`);
     const n = params.length;
@@ -95,7 +97,7 @@ async function returnOperators(client: Pool | PoolClient,required:'any'|'returns
   return result.rows.flatMap(row => {
     const permissions = computeEffectivePermissions({ role: row.role, overrides: row.overrides });
     const eligible=required==='any'?['returns.manage','returns.logistics','returns.finance'].some(key=>permissions.includes(key)):permissions.includes(required);
-    return permissions.includes('returns.view')&&eligible?[{id:row.id as string,name:row.name as string,canTriage:permissions.includes('returns.manage')}]:[];
+    return permissions.includes('returns.view')&&eligible?[{id:row.id as string,name:row.name as string,canTriage:permissions.includes('returns.manage'),canLogistics:permissions.includes('returns.logistics')}]:[];
   });
 }
 
@@ -105,7 +107,7 @@ export async function getReturnLookups(search: string) {
     pool.query(`SELECT id, customer_code AS code, display_name AS name FROM customers
       WHERE customer_code ILIKE $1 OR display_name ILIKE $1 ORDER BY customer_code,id LIMIT 30`, [`%${search}%`]),
   ]);
-  return { coordinator: "Isis", people, customers: customers.rows };
+  return { coordinator: "Isis", people, customers: customers.rows,factories:await factoryProfiles() };
 }
 
 export async function createReturnReceipt(payload: unknown, actor: JwtUser) {
@@ -149,19 +151,20 @@ export async function assignReturnCase(id: string, payload: unknown, actor: JwtU
 }
 
 export async function saveReturnItem(id: string, itemId: string | null, payload: unknown, actor: JwtUser) {
-  const input = itemSchema.parse(payload);
+  const parsed = itemSchema.parse(payload);
   await transaction(async client => {
-    const parent = await lockCase(client, id, input.version);
+    const parent = await lockCase(client, id, parsed.version);
+    const input=await routeReturnItem(client,parsed,actor);
     if (parent.stage !== "triage") throw new HttpError(409, "Inicie ou reabra a triagem para alterar os itens");
     const before = itemId ? (await client.query("SELECT * FROM return_items WHERE case_id=$1 AND id=$2", [id,itemId])).rows[0] : null;
     if (itemId && !before) throw new HttpError(404, "Item não encontrado neste protocolo");
     const total = (await client.query("SELECT COALESCE(sum(quantity),0)::int AS total FROM return_items WHERE case_id=$1 AND ($2::uuid IS NULL OR id<>$2)", [id,itemId])).rows[0].total;
     if (total + input.quantity > parent.received_quantity) throw new HttpError(400, "A soma dos itens excede a quantidade recebida");
-    const values = [id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes];
+    const values = [id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes,input.factoryCode,input.factoryWorkflow,input.seal,input.routingOverride];
     const result = itemId
-      ? await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10 WHERE case_id=$1 AND id=$11 RETURNING id`, [...values,itemId])
-      : await client.query(`INSERT INTO return_items (case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, values);
-    await record(client,id,itemId ? "item_updated" : "item_added",{ itemId: result.rows[0].id, before, after: input },actor);
+      ? await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10,factory_code=$11,factory_workflow=$12,seal=$13,routing_override=$14 WHERE case_id=$1 AND id=$15 RETURNING id`, [...values,itemId])
+      : await client.query(`INSERT INTO return_items (case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes,factory_code,factory_workflow,seal,routing_override) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`, values);
+    await record(client,id,itemId ? "item_updated" : "item_added",{ itemId: result.rows[0].id, before, after: input,requestedOutcome:parsed.outcome,routingApplied:parsed.outcome!==input.outcome },actor);
   });
   return getReturnDetail(id);
 }
@@ -190,7 +193,7 @@ export async function changeReturnStage(id: string, payload: unknown, actor: Jwt
     } else if (input.action === "complete_triage") {
       if (parent.stage !== "triage") throw new HttpError(409,"A triagem não está em andamento");
       const totals = (await client.query(`SELECT COALESCE(sum(quantity),0)::int AS total,
-        count(*) FILTER (WHERE outcome IN ('pending','review') OR trim(model)='' OR trim(test_notes)='')::int AS pending
+        count(*) FILTER (WHERE outcome IN ('pending','review') OR factory_code='UNKNOWN' OR trim(model)='' OR trim(test_notes)='')::int AS pending
         FROM return_items WHERE case_id=$1`,[id])).rows[0];
       if (totals.total !== parent.received_quantity || totals.pending) throw new HttpError(400,"Identifique, teste e dê um destino a todas as peças recebidas antes de concluir");
       stage = "triage_completed";

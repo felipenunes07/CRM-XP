@@ -18,7 +18,7 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
    await page.getByLabel('Quantidade contada',{exact:true}).fill(String(quantity));
    await page.getByLabel('Localização da caixa').fill('TESTE LOCAL — SEM MERCADORIA');
    await page.getByLabel('Observações / divergência de contagem').fill('VALIDAÇÃO E2E DO PROCESSO COMPLETO — NÃO OPERACIONAL');
-   await page.getByRole('button',{name:'Gerar protocolo',exact:true}).click();await page.getByRole('heading',{name:/^TR-\d+$/}).waitFor();
+   const createdResponse=page.waitForResponse(r=>r.url()===backend+'/api/returns'&&r.request().method()==='POST');await page.getByRole('button',{name:'Gerar protocolo',exact:true}).click();const created=await (await createdResponse).json();await page.getByRole('heading',{name:created.protocol,exact:true}).waitFor();
    const id=new URL(page.url()).searchParams.get('protocolo');assert(id);
    await page.getByRole('combobox',{name:'Responsável pela próxima ação',exact:true}).selectOption('10000000-0000-4000-8000-000000000001');
    await page.getByLabel('Prazo interno').fill('2026-12-10T15:00');await page.getByLabel('Próxima ação',{exact:true}).fill('Conferir remessa de teste');
@@ -26,7 +26,7 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
    await page.locator('.returns-card.is-selected').getByText('Responsável: Isis',{exact:true}).waitFor();await page.getByRole('button',{name:'Iniciar triagem',exact:true}).click();
    await page.getByRole('button',{name:'Adicionar item',exact:true}).click();
    await page.getByLabel('Modelo',{exact:true}).fill('IP11 — TESTE E2E');await page.getByLabel('Quantidade do grupo').fill(String(quantity));
-   await page.getByRole('combobox',{name:'Resultado',exact:true}).selectOption('external_analysis');await page.getByLabel('Fábrica / selo').fill('VV');
+   await page.getByRole('combobox',{name:'Resultado',exact:true}).selectOption('external_analysis');await page.getByLabel('Fábrica',{exact:true}).fill('VV');
    await page.getByLabel('Teste ou inspeção realizada').fill('Teste de imagem e inspeção realizados');
    await page.getByRole('button',{name:'Salvar item',exact:true}).click();await page.getByRole('button',{name:'Salvar item',exact:true}).waitFor({state:'hidden'});
    await page.getByRole('button',{name:'Concluir triagem',exact:true}).click();await page.getByRole('heading',{name:'Fábrica, acerto e entrega',exact:true}).waitFor();
@@ -36,14 +36,14 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
   state.caseIds=[a.id,b.id];await fs.writeFile(path.join(output,'test-cases.json'),JSON.stringify(state,null,2));
   await page.getByRole('button',{name:'Envios de fábrica',exact:true}).click();await page.getByRole('button',{name:'Novo envio',exact:true}).click();
   const batchForm=page.getByRole('form',{name:'Novo envio de fábrica'});
-  await batchForm.getByLabel('Fábrica do envio').fill('VV');await batchForm.getByLabel('Prazo interno de retorno').fill('2026-12-12T15:00');
+  await batchForm.getByLabel('Fábrica do envio').fill('VV');await batchForm.getByLabel('Situação',{exact:true}).selectOption('sent');await batchForm.getByLabel('Identificação do lote VV').fill('VV-E2E-'+Date.now());await batchForm.getByLabel('Prazo interno de retorno').fill('2026-12-12T15:00');
   await batchForm.getByLabel('Local de saída').fill('Recebimento XP');await batchForm.getByLabel('Transportadora / entregue por').fill('Isis — transporte de teste');
   const reference='ENV-E2E-'+Date.now();await batchForm.getByLabel('Comprovante único do envio').fill(reference);
   await batchForm.getByLabel('Buscar itens por cliente ou fábrica').fill(a.protocol);
   await batchForm.getByRole('checkbox',{name:new RegExp(a.protocol)}).check();
   await batchForm.getByLabel('Buscar itens por cliente ou fábrica').fill(b.protocol);
   await batchForm.getByRole('checkbox',{name:new RegExp(b.protocol)}).check();
-  await batchForm.getByRole('button',{name:'Registrar saída e fechar relação',exact:true}).click();await page.getByRole('heading',{name:/^EF-\d+ · VV$/}).waitFor();
+  await batchForm.getByRole('button',{name:'Registrar encaminhamento',exact:true}).click();await page.getByRole('heading',{name:/^EF-\d+ · VV$/}).waitFor();
   await page.screenshot({path:path.join(output,'lote-dois-clientes.png'),fullPage:true});
   await page.evaluate(()=>{window.print=()=>{};});await page.getByRole('button',{name:'Imprimir relação do envio'}).click();await page.pdf({path:path.join(output,'relacao-envio.pdf'),format:'A4'});
   async function openCase(id){await page.goto(front+'/trocas?protocolo='+id);await page.getByRole('heading',{name:'Fábrica, acerto e entrega',exact:true}).waitFor();}
@@ -106,6 +106,10 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
   d=await operation('disposition',async form=>{await form.getByLabel('Item de origem').selectOption(d.items[0].id);await form.getByLabel('Destino interno').selectOption('reconditioning');await form.getByLabel('Local de saída').fill('Triagem');await form.getByLabel('Local de destino').fill('Bancada de reparo');await form.getByLabel('Responsável pela peça no destino').fill('Técnico de teste');await form.getByLabel('Documento / comprovante do movimento').fill('OS-E2E');await form.getByLabel('Motivo / conferência').fill('Retida após crédito');await form.getByLabel('Teste / condição / autorização da destinação').fill('Teste e ordem de reparo conferidos');});
   assert.equal(d.execution.progress.customerComplete,true);assert.equal(d.execution.progress.canClose,false);
   await page.screenshot({path:path.join(output,'cliente-atendido-peca-pendente.png'),fullPage:true});
+  const nativeCommand=async(op,input)=>{const response=await fetch(backend+'/api/returns/'+b.id+'/native/'+op,{method:'POST',headers:{Authorization:'Bearer local-dev-token','Content-Type':'application/json'},body:JSON.stringify({requestId:crypto.randomUUID(),version:d.version,...input})});const value=await response.json();assert.equal(response.status,200,value.message);d=value;};
+  await nativeCommand('repair_assign',{dispositionId:d.execution.dispositions[0].id,assigneeId:'10000000-0000-4000-8000-000000000001',dueAt:'2026-12-10T12:00:00Z',notes:'Trabalho técnico de recondicionamento'});
+  const job=await fetch(backend+'/api/returns/'+b.id+'/native',{headers:{Authorization:'Bearer local-dev-token'}}).then(r=>r.json()).then(n=>n.repairs[0]);
+  await nativeCommand('repair_complete',{jobId:job.id,jobVersion:job.version,grade:'grade_1',seal:'1',testNotes:'Trabalho e testes concluídos pelo técnico'});await openCase(b.id);
   d=await operation('disposition_confirm',async form=>{await form.getByLabel('Encaminhamento pendente').selectOption(d.execution.dispositions[0].id);await form.getByLabel('Responsável que confirmou a conclusão').fill('Responsável pelo estoque');await form.getByLabel('Comprovante do destino concluído / entrada no estoque').fill('OS-E2E CONCLUÍDA / ENTRADA OUTLET TESTE');});
   d=await operation('close',form=>form.getByLabel('Motivo / conferência').fill('Atendimento e destinação interna conferidos'));assert.equal(d.stage,'closed');
   await page.reload();await page.getByRole('tab',{name:'Destino e encerramento',exact:true}).click();await page.getByText(/Protocolo encerrado em/).waitFor();assert.deepEqual(errors,[]);

@@ -20,6 +20,11 @@ export interface DropboxFileMetadata {
   fileSizeBytes: number;
   fileUpdatedAt: string;
 }
+export async function getDropboxFileMetadata(dropboxPath:string){
+ const {result}=await dbx.filesGetMetadata({path:dropboxPath});
+ if(result['.tag']!=='file')throw new Error('A origem configurada precisa ser um arquivo');
+ return {sourcePath:result.path_display??result.path_lower??dropboxPath,fileName:result.name,fileSizeBytes:result.size,fileUpdatedAt:result.server_modified,fileId:result.id,fileRevision:result.rev,contentHash:result.content_hash??''};
+}
 
 export async function listDropboxFiles(folderPath: string) {
   try {
@@ -98,6 +103,7 @@ export async function downloadFileByPath(dropboxPath: string) {
       fileName,
       fileSizeBytes: response.result.size,
       fileUpdatedAt: response.result.server_modified,
+      fileId:response.result.id,fileRevision:response.result.rev,contentHash:response.result.content_hash??'',
     };
   } catch (error) {
     logger.error("Error downloading file from Dropbox by path", { dropboxPath, error });

@@ -2,6 +2,8 @@ import { supplierPriceSchema } from "./supplierPriceSchema.js";
 import { customerIdentitySchema } from "./customerIdentitySchema.js";
 import { returnWorkflowMigration } from "./returnWorkflowMigration.js";
 import { returnExecutionMigration } from "./returnExecutionMigration.js";
+import { returnFactoryMigration } from "./returnFactoryMigration.js";
+import { returnNativeMigration } from './returnNativeMigration.js';
 export const migrations = [
   `
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -4924,4 +4926,6 @@ export const migrations = [
   `,
   returnWorkflowMigration,
   returnExecutionMigration,
+  returnFactoryMigration,
+  returnNativeMigration,
 ];

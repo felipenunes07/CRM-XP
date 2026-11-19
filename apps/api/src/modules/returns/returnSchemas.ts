@@ -30,6 +30,7 @@ export const itemSchema = z.object({
   frame: text(50), color: text(100), manufacturer: text(100),
   outcome: z.enum(Object.keys(RETURN_OUTCOME_LABELS) as [keyof typeof RETURN_OUTCOME_LABELS, ...Array<keyof typeof RETURN_OUTCOME_LABELS>]),
   reason: text(2000), testNotes: text(4000),
+  factoryCode:text(30).optional(),seal:text(100).optional(),routingOverride:text(2000).optional(),
 }).strict().superRefine((item, ctx) => {
   const required = (key: "model" | "testNotes" | "reason" | "manufacturer", message: string) => {
     if (!item[key]) ctx.addIssue({ code: "custom", path: [key], message });
@@ -51,6 +52,7 @@ export const queueSchema = z.object({
   stage: z.enum(["active", "all", "received", "triage", "triage_completed", "closed", "overdue"]).default("active"),
   mine: z.enum(["true", "false"]).default("false"),
   page: z.coerce.number().int().min(1).max(100000).default(1),
+  factory:z.string().regex(/^[A-Z0-9_]*$/).max(30).default(''),
 });
 export const attachmentSchema = z.object({
   version: quantity,

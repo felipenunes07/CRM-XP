@@ -8,6 +8,7 @@ import { Download, ExternalLink, Pencil, RefreshCw, Search } from "lucide-react"
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { CustomerBillingAlertsPanel } from "../components/CustomerBillingAlertsPanel";
+import {ReturnCustomerWallet} from './ReturnAssetsWorkspace';
 import { EditCustomerCreditModal } from "../components/EditCustomerCreditModal";
 import { CustomerCreditLedgerSections } from "../components/CustomerCreditLedgerTables";
 import { useAuth } from "../hooks/useAuth";
@@ -507,6 +508,7 @@ export function CustomerFinancialPage() {
       isOpen={Boolean(editingCreditRow)}
       onClose={() => setEditingCreditRow(null)}
     />
+    <ReturnCustomerWallet customerId={selectedCustomerId}/>
     </>
   );
 }

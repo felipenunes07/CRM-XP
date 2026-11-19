@@ -59,6 +59,8 @@ const localAdminPermissions = [
   "commercial.manage",
   "returns.manage",
   "returns.logistics",
+  "returns.configure",
+  "returns.communicate",
   "returns.finance",
   "messages.view",
   "messages.manage",

@@ -2,8 +2,8 @@ import type { Pool, PoolClient } from "pg";
 import type { ReturnExecution, ReturnItem, ReturnProgress, ReturnSourcePool } from "@olist-crm/shared";
 export const live=<T extends {voidedAt:string|null}>(rows:T[])=>rows.filter(row=>!row.voidedAt);
 export const sum=<T>(rows:T[],value:(row:T)=>number)=>rows.reduce((total,row)=>total+value(row),0);
-export function originalAvailable(item:ReturnItem,f:ReturnExecution){
- return item.quantity-sum(f.factoryLines.filter(l=>l.itemId===item.id&&!l.voidedAt),l=>l.quantity)
+export function originalAvailable(item:ReturnItem,f:ReturnExecution,ignoreBatchId?:string){
+ return item.quantity-sum(f.factoryLines.filter(l=>l.itemId===item.id&&!l.voidedAt&&l.batchId!==ignoreBatchId),l=>l.quantity)
   +sum(live(f.receipts).filter(r=>r.itemId===item.id&&r.kind==='original_returned'),r=>r.quantity)
   -sum(live(f.deliveries).filter(d=>d.itemId===item.id&&d.asset==='original'),d=>d.quantity)
   -sum(live(f.dispositions).filter(d=>d.itemId===item.id&&d.asset==='original'),d=>d.quantity);
@@ -23,9 +23,9 @@ export function deriveProgress(items:ReturnItem[],stage:string,f:ReturnExecution
  const supplierPendingQuantity=sum(results.filter(r=>r.decision==='approved'),r=>r.compensation==='replacement'
   ?r.quantity-sum(receipts.filter(p=>p.resultId===r.id&&p.kind==='supplier_replacement'),p=>p.quantity)
   :r.compensation==='credit'&&!postedSupplier(r.id)?r.quantity:0);
- const financePendingCount=resolutions.filter(s=>s.kind==='credit'&&!postedCustomer(s.id)).length+results.filter(r=>r.compensation==='credit'&&!postedSupplier(r.id)).length;
+ const financePendingCount=resolutions.filter(s=>['credit','sale_cancellation'].includes(s.kind)&&!postedCustomer(s.id)).length+results.filter(r=>r.compensation==='credit'&&!postedSupplier(r.id)).length;
  const deliveryPendingQuantity=sum(resolutions.filter(s=>['replacement','return_original'].includes(s.kind)),s=>s.quantity-sum(deliveries.filter(d=>d.resolutionId===s.id&&d.deliveredAt),d=>d.quantity));
- const customerPendingQuantity=sum(items,i=>i.quantity)-sum(resolutions,s=>s.quantity)+sum(resolutions.filter(s=>s.kind==='credit'&&!postedCustomer(s.id)),s=>s.quantity)+deliveryPendingQuantity;
+ const customerPendingQuantity=sum(items,i=>i.quantity)-sum(resolutions,s=>s.quantity)+sum(resolutions.filter(s=>['credit','sale_cancellation'].includes(s.kind)&&!postedCustomer(s.id)),s=>s.quantity)+deliveryPendingQuantity;
  const originalsPending=sum(items,i=>i.quantity)-sum(receipts.filter(r=>r.kind==='factory_retained'),r=>r.quantity)
   -sum(deliveries.filter(d=>d.asset==='original'&&d.deliveredAt),d=>d.quantity)-sum(dispositions.filter(d=>d.asset==='original'&&d.completedAt),d=>d.quantity);
  const replacementPending=sum(receipts.filter(r=>['supplier_replacement','stock_replacement'].includes(r.kind)),r=>r.quantity)
@@ -57,11 +57,12 @@ export async function loadExecutions(client:Pool|PoolClient,cases:Array<{id:stri
   const rows=(await client.query(`SELECT * FROM ${table} WHERE case_id=ANY($1::uuid[]) ORDER BY id`,[ids])).rows.map(camelRow);
   for(const c of cases)facts.get(c.id)![key]=rows.filter(r=>r.caseId===c.id);
  }
- const lines=await client.query(`SELECT l.*,b.manufacturer,b.sent_at,b.due_at,b.reference,b.voided_at,
+ const lines=await client.query(`SELECT l.*,b.manufacturer,b.sent_at,b.due_at,b.reference,b.voided_at,b.state,b.mode,b.lot_reference,
   'EF-'||LPAD(b.number::text,GREATEST(6,length(b.number::text)),'0') AS batch_code
   FROM return_factory_lines l JOIN return_factory_batches b ON b.id=l.batch_id WHERE l.case_id=ANY($1::uuid[]) ORDER BY b.sent_at,l.id`,[ids]);
  const lineRows=lines.rows.map(camelRow);
- for(const c of cases){const f=facts.get(c.id)! as unknown as ReturnExecution;f.factoryLines=lineRows.filter(r=>r.caseId===c.id) as unknown as ReturnExecution['factoryLines'];Object.assign(f,deriveProgress(c.items,c.stage,f));executions.set(c.id,f);}return executions;
+ const legacyConflicts=(await client.query(`SELECT DISTINCT l.case_id FROM return_legacy_links l WHERE l.case_id=ANY($1::uuid[]) AND l.active AND NOT EXISTS(SELECT 1 FROM return_legacy_rows r JOIN return_legacy_revisions v ON v.id=r.revision_id AND v.active WHERE r.fingerprint=l.fingerprint AND r.occurrence=l.occurrence)`,[ids])).rows;
+ for(const c of cases){const f=facts.get(c.id)! as unknown as ReturnExecution;f.factoryLines=lineRows.filter(r=>r.caseId===c.id) as unknown as ReturnExecution['factoryLines'];Object.assign(f,deriveProgress(c.items,c.stage,f));if(legacyConflicts.some(r=>r.case_id===c.id)){f.progress.blockers.push('Conferir vínculo cuja linha mudou ou saiu da planilha');f.progress.canClose=false;f.progress.customerComplete=false;}executions.set(c.id,f);}return executions;
 }
 export async function loadExecution(client:Pool|PoolClient,id:string,items:ReturnItem[],stage:string):Promise<ReturnExecution>{
  return (await loadExecutions(client,[{id,items,stage}])).get(id)!;

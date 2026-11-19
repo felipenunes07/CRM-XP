@@ -8,6 +8,9 @@ import { api } from "../lib/api";
 import "./ReturnsPage.css";
 import { ReturnExecutionPanel,ReturnCustomerSummary } from './ReturnExecutionPanel';
 import { ReturnFactoryWorkspace } from './ReturnFactoryWorkspace';
+import {ReturnTransitionWorkspace,ReturnFactorySettings} from './ReturnTransitionWorkspace';
+import {ReturnNativePanel} from './ReturnNativePanel';
+import {ReturnAssetsWorkspace} from './ReturnAssetsWorkspace';
 
 const localTime = (value: string) => {
   const date = new Date(value);
@@ -25,14 +28,16 @@ export function ReturnsPage() {
   const [params,setParams] = useSearchParams();
   const selectedId = params.get("protocolo");
   const factoryView=params.get('visao')==='fabricas';
+  const transitionView=params.get('visao')==='transicao',settingsView=params.get('visao')==='regras',assetsView=params.get('visao')==='saldos';
   const [creating,setCreating] = useState(false);
   const [search,setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [stage,setStage] = useState("active");
   const [mine,setMine] = useState(false);
+  const [factory,setFactory]=useState('');
   const [page,setPage] = useState(1);
-  const queue = useQuery({ queryKey: ["returns",deferredSearch,stage,mine,page],
-    queryFn: () => api.returnQueue(token!,{ search: deferredSearch,stage,mine: String(mine),page }), enabled: Boolean(token), refetchInterval: 30000 });
+  const queue = useQuery({ queryKey: ["returns",deferredSearch,stage,mine,page,factory],
+    queryFn: () => api.returnQueue(token!,{ search: deferredSearch,stage,mine: String(mine),page,factory }), enabled: Boolean(token), refetchInterval: 30000 });
   const lookups = useQuery({ queryKey: ["return-lookups"], queryFn: () => api.returnLookups(token!), enabled: Boolean(token) });
   const detail = useQuery({ queryKey: ["return-detail",selectedId], queryFn: () => api.returnDetail(token!,selectedId!), enabled: Boolean(token && selectedId), refetchOnWindowFocus: false });
   const saved = (value: ReturnDetail) => {
@@ -44,10 +49,10 @@ export function ReturnsPage() {
   return <div className="page-stack returns-page">
     <section className="panel returns-heading"><div><p className="eyebrow">Recebimento e triagem</p><h1>Trocas · fila da Isis</h1>
       <p>Recebimento, fábrica, acerto e entrega no mesmo protocolo. Isis acompanha as pendências.</p></div>
-      {canManage && !factoryView && <button className="button primary" onClick={() => setCreating(true)}>Novo recebimento</button>}
+      {canManage && !factoryView&&!transitionView&&!settingsView&&!assetsView && <button className="button primary" onClick={() => setCreating(true)}>Novo recebimento</button>}
     </section>
-    <nav className="returns-view-tabs returns-tabs" aria-label="Visões de trocas"><button aria-pressed={!factoryView} onClick={()=>setParams({})}>Protocolos e fila</button><button aria-pressed={factoryView} onClick={()=>setParams({visao:'fabricas'})}>Envios de fábrica</button></nav>
-    {factoryView?<ReturnFactoryWorkspace token={token!} onCase={id=>setParams({protocolo:id})}/>:<>
+    <nav className="returns-view-tabs returns-tabs" aria-label="Visões de trocas"><button aria-pressed={!factoryView&&!transitionView&&!settingsView&&!assetsView} onClick={()=>setParams({})}>Protocolos e fila</button><button aria-pressed={factoryView} onClick={()=>setParams({visao:'fabricas'})}>Envios de fábrica</button><button aria-pressed={assetsView} onClick={()=>setParams({visao:'saldos'})}>Créditos e estoque</button><button aria-pressed={transitionView} onClick={()=>setParams({visao:'transicao'})}>Planilha e migração</button><button aria-pressed={settingsView} onClick={()=>setParams({visao:'regras'})}>Regras por fábrica</button></nav>
+    {assetsView?<ReturnAssetsWorkspace token={token!} onCase={id=>setParams({protocolo:id})}/>:transitionView?<ReturnTransitionWorkspace token={token!} onCase={id=>setParams({protocolo:id})}/>:settingsView?<ReturnFactorySettings token={token!}/>:factoryView?<ReturnFactoryWorkspace token={token!} onCase={id=>setParams({protocolo:id})}/>:<>
     {queue.data && <section className="returns-summary" aria-label="Resumo geral da fila">
       <span>Recebidos <strong>{queue.data.summary.received}</strong></span><span>Em triagem <strong>{queue.data.summary.triage}</strong></span>
       <span>Em acompanhamento <strong>{queue.data.summary.triageCompleted}</strong></span><span>Prazos vencidos <strong>{queue.data.summary.overdue}</strong></span>
@@ -58,6 +63,7 @@ export function ReturnsPage() {
         <option value="active">Todos os protocolos em aberto</option><option value="received">Recebidos</option><option value="triage">Em triagem</option>
         <option value="triage_completed">Pós-triagem · fábrica, acerto e entrega</option><option value="closed">Encerrados</option><option value="overdue">Prazo vencido</option><option value="all">Todos</option>
       </select></label><label className="returns-checkbox"><input type="checkbox" checked={mine} onChange={e => { setMine(e.target.checked);setPage(1); }} />Sob minha responsabilidade</label></div>
+      <label>Fábrica<select value={factory} onChange={e=>{setFactory(e.target.value);setPage(1);}}><option value="">Todas as fábricas</option>{lookups.data?.factories?.map(p=><option key={p.code} value={p.code}>{p.name}</option>)}</select></label>
       {queue.isLoading && <p role="status">Carregando fila...</p>}
       {queue.isError && <p role="alert">{message(queue.error)} <button onClick={() => void queue.refetch()}>Tentar novamente</button></p>}
       {queue.data?.items.length === 0 && <p>Nenhum protocolo nesta fila.</p>}
@@ -173,7 +179,7 @@ function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: 
       </div>)}
       {editing !== undefined && <ItemForm key={editing?.id ?? "new"} item={editing} version={d.version} busy={mutation.isPending} onCancel={() => setEditing(undefined)} onSubmit={data => apply(() => api.saveReturnItem(token,d.id,editing?.id ?? null,data))} />}
     </section>
-    {['triage_completed','closed'].includes(d.stage)&&<ReturnExecutionPanel detail={d} token={token} onSaved={onSaved}/>}
+    {['triage_completed','closed'].includes(d.stage)&&<><ReturnExecutionPanel detail={d} token={token} onSaved={onSaved}/><ReturnNativePanel detail={d} token={token} onSaved={onSaved}/></>}
     {mutation.isPending && <p role="status">Salvando alteração...</p>}{mutation.isError && <p role="alert">{message(mutation.error)}</p>}
     <section><h3>Fotos e documentos</h3><p>JPG, PNG ou PDF · até 5 MB por arquivo · até 20 anexos.</p>
       {canManage && <label>Anexar evidência<input type="file" accept="image/jpeg,image/png,application/pdf" disabled={mutation.isPending} onChange={e => { void upload(e.target.files?.[0]);e.target.value=""; }} /></label>}
@@ -185,12 +191,13 @@ function ReturnDetailView({ detail:d,token,people,canManage,onSaved,onReload }: 
 }
 
 function ItemForm({ item,version,busy,onCancel,onSubmit }: { item: ReturnItem | null; version: number; busy: boolean; onCancel: () => void; onSubmit: (data: ReturnItemInput) => void }) {
+  const {canAccess}=usePermissions();
   const [outcome,setOutcome] = useState(item?.outcome ?? "pending");
   const decided = !["pending","review"].includes(outcome);
   const reasonRequired = ["refused","no_defect","resale"].includes(outcome);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();const data = new FormData(event.currentTarget);
-    onSubmit({ version,model:formValue(data,"model"),sku:formValue(data,"sku"),quantity:Number(data.get("quantity")),frame:formValue(data,"frame"),color:formValue(data,"color"),manufacturer:formValue(data,"manufacturer"),outcome,reason:formValue(data,"reason"),testNotes:formValue(data,"testNotes") });
+    onSubmit({ version,model:formValue(data,"model"),sku:formValue(data,"sku"),quantity:Number(data.get("quantity")),frame:formValue(data,"frame"),color:formValue(data,"color"),manufacturer:formValue(data,"manufacturer"),outcome,reason:formValue(data,"reason"),testNotes:formValue(data,"testNotes"),seal:formValue(data,'seal'),routingOverride:formValue(data,'routingOverride') });
   };
   return <form className="returns-form returns-item-form" onSubmit={submit}><h3>{item ? "Editar item" : "Adicionar item"}</h3><p>Separe em linhas diferentes as quantidades com resultados diferentes.</p>
     <fieldset disabled={busy}><div className="returns-form-grid">
@@ -198,7 +205,8 @@ function ItemForm({ item,version,busy,onCancel,onSubmit }: { item: ReturnItem | 
       <label>Quantidade do grupo<input name="quantity" type="number" min="1" max="100000" defaultValue={item?.quantity ?? 1} required /></label>
       <label>Resultado<select value={outcome} onChange={e => setOutcome(e.target.value as ReturnItem["outcome"])}>{Object.entries(RETURN_OUTCOME_LABELS).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <label>Aro<input name="frame" defaultValue={item?.frame ?? ""} maxLength={50} placeholder="Com aro / sem aro" /></label><label>Cor<input name="color" defaultValue={item?.color ?? ""} maxLength={100} /></label>
-      <label>Fábrica / selo<input name="manufacturer" defaultValue={item?.manufacturer ?? ""} maxLength={100} required={outcome === "external_analysis"} /></label>
+      <label>Fábrica<input name="manufacturer" defaultValue={item?.manufacturer ?? ""} maxLength={100} required={outcome === "external_analysis"} placeholder="VV, D.E., STC, TC-OMG ou outra" /></label><label>Carimbo / selo da peça<input name="seal" defaultValue={item?.seal??''} maxLength={250} placeholder="J, S ou Y seguem para análise"/></label>
+      {canAccess('returns.logistics')&&<label>Autorização para exceção de encaminhamento<input name="routingOverride" defaultValue={item?.routingOverride??''} maxLength={4000} placeholder="Somente após conferência da logística"/></label>}
     </div><label>Teste ou inspeção realizada<textarea name="testNotes" defaultValue={item?.testNotes ?? ""} maxLength={4000} required={decided} /></label>
     <label>Motivo / observação<textarea name="reason" defaultValue={item?.reason ?? ""} maxLength={2000} required={reasonRequired} /></label>
     <div className="returns-actions"><button type="submit" className="button primary">Salvar item</button><button type="button" onClick={onCancel}>Cancelar edição</button></div></fieldset>
