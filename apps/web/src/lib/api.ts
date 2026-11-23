@@ -509,7 +509,7 @@ async function request<T>(
         throw new ApiAuthError(message);
       }
       const payload = (await response.json().catch(() => ({ message: "Request failed" }))) as { message?: string };
-      throw new Error(payload.message ?? "Request failed");
+      throw Object.assign(new Error(payload.message ?? "Request failed"),{status:response.status});
     }
 
     if (response.status === 204) {
@@ -537,6 +537,7 @@ export const api = {
   returnNative(token:string,id:string){return request<ReturnNativeDetail>(`/api/returns/${id}/native`,{},token);},
   returnSaleSources(token:string,id:string,itemId:string,search=''){return request<Array<{sourceKey:string;saleReference:string;saleLine:string;saleDate:string;sku:string;originalQuantity:number;remainingQuantity:number;unitCents:number}>>(`/api/returns/${id}/sale-sources/${itemId}?search=${encodeURIComponent(search)}`,{},token);},
   returnReasonRules(token:string){return request<Array<{code:string;label:string;outcome:ReturnItemInput['outcome']}>>('/api/returns/reason-rules',{},token);},
+  saveReturnItemSheet(token:string,id:string,input:import('@olist-crm/shared').ReturnItemSheetInput){return request<ReturnDetail>(`/api/returns/${id}/items-sheet`,{method:'POST',body:JSON.stringify(input)},token);},
   returnProductCatalog(token:string,search:string){return request<Array<{sku:string;model:string;color:string;quality:string;frame:string;manufacturer:string}>>(`/api/returns/product-catalog?search=${encodeURIComponent(search)}`,{},token);},
   returnPriceCatalog(token:string,search=''){return request<Array<{sku:string;unitCents:number;version:number;reason:string;authorName:string;updatedAt:string}>>(`/api/returns/price-catalog?search=${encodeURIComponent(search)}`,{},token);},
   saveReturnPrice(token:string,input:{sku:string;unitCents:number;version:number;reason:string}){return request('/api/returns/price-catalog',{method:'POST',body:JSON.stringify(input)},token);},
