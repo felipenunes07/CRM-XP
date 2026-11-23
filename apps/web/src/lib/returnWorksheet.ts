@@ -11,8 +11,7 @@ export function sheetChanges(rows:SheetRow[]):ReturnItemChange[]{return rows.fil
 export function rowErrors(row:SheetRow):string[]{
  if(row.removed||!rowChanged(row))return[];const f=row.fields,errors:string[]=[];
  if(!Number.isInteger(f.quantity)||f.quantity<1||f.quantity>100000)errors.push('Informe uma quantidade inteira positiva.');
- if(!f.manufacturer.trim())errors.push('Escolha a fábrica.');
- if(!['pending','review'].includes(f.outcome)){if(!f.model.trim())errors.push('Identifique o modelo.');if(!f.testNotes.trim())errors.push('Registre o teste realizado.');}
+ if(!['pending','review'].includes(f.outcome)){if(!f.manufacturer.trim())errors.push('Escolha a fábrica.');if(!f.model.trim())errors.push('Identifique o modelo.');if(!f.testNotes.trim())errors.push('Registre o teste realizado.');}
  if(['refused','no_defect','resale'].includes(f.outcome)&&!f.reasonCode&&!f.reason.trim())errors.push('Informe o motivo.');return errors;
 }
 // Excel clipboard text may quote tabs/newlines. Parse text only; never execute formulas.
