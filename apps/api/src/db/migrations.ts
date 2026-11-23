@@ -1,3 +1,4 @@
+import {returnFinanceProjectionMigration} from './returnFinanceProjectionMigration.js';
 import { supplierPriceSchema } from "./supplierPriceSchema.js";
 import { customerIdentitySchema } from "./customerIdentitySchema.js";
 import { returnWorkflowMigration } from "./returnWorkflowMigration.js";
@@ -4934,4 +4935,5 @@ export const migrations = [
   returnNoticeAccessMigration,
   returnOperationsMigration,
   returnFinanceMigration,
+  returnFinanceProjectionMigration,
 ];

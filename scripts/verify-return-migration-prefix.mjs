@@ -7,5 +7,7 @@ const first107Hash=createHash('sha256').update(JSON.stringify(migrations.slice(0
 assert.equal(first107Hash,'baa622bfe4791debd0de7b9b5415e011bbba0dcb815547d8d5073a8e7ba4ae94');
 const first108Hash=createHash('sha256').update(JSON.stringify(migrations.slice(0,108)).replaceAll('\\r\\n','\\n')).digest('hex');
 assert.equal(first108Hash,'6fa0e6776585ef5cd927d29a232853507e3237302c2e5481f16950374b640e60');
-assert.equal(migrations.length,110);
+const first110Hash=createHash('sha256').update(JSON.stringify(migrations.slice(0,110)).replaceAll('\\r\\n','\\n')).digest('hex');
+assert.equal(first110Hash,'7ffcf907139af6bc3de02edc1b1340c1d28304daadb27544f4596f9db1527d58');
+assert.equal(migrations.length,111);
 console.log(JSON.stringify({first105Preserved:true,first107Preserved:true,first108Preserved:true,first105Hash,first107Hash,first108Hash,migrations:migrations.length}));
