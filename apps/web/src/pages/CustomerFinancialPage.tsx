@@ -369,6 +369,7 @@ export function CustomerFinancialPageView({
                   </div>
                 </div>
 
+                {creditRow.returnsFinance&&<div className="panel-subcopy"><p>Saldo importado: {formatCurrency(creditRow.returnsFinance.importedBalanceAmount)} · créditos de trocas considerados no saldo: {formatCurrency(creditRow.returnsFinance.adjustmentAmount)}.</p>{creditRow.returnsFinance.reconciliationRequired&&<p role="alert">Conciliação de trocas pendente. O saldo exibido é a base importada; confira as divergências antes de cobrar ou liberar crédito. {creditRow.returnsFinance.issues.join(' · ')}</p>}{creditRow.returnsFinance.heldAmount>0&&<p>Uso de {formatCurrency(creditRow.returnsFinance.heldAmount)} bloqueado na carteira até conferir o lançamento que também apareceu na origem financeira.</p>}</div>}
                 <div className="customer-financial-metric-grid">
                   <FinancialMetric
                     label={customerFinancialPrimaryLabel(creditRow)}

@@ -1,0 +1,14 @@
+import {createHash} from 'node:crypto';
+import type {Pool,PoolClient} from 'pg';
+import {HttpError} from '../../lib/httpError.js';
+export const returnPreferredSales=`WITH preferred AS(SELECT DISTINCT ON(order_number,customer_code) order_number,customer_code,source_system FROM resolved_sales_raw WHERE customer_code=$1 AND lower(COALESCE(order_status,''))<>'cancelado' ORDER BY order_number,customer_code,CASE WHEN source_system='supabase_2026' THEN 1 ELSE 2 END,source_system)`;
+export async function cancellationSaleSources(client:Pool|PoolClient,caseId:string,itemId:string,search=''){
+ const source=(await client.query('SELECT u.customer_code,c.customer_id,i.sku FROM return_cases c JOIN customers u ON u.id=c.customer_id JOIN return_items i ON i.case_id=c.id WHERE c.id=$1 AND i.id=$2',[caseId,itemId])).rows[0];if(!source)throw new HttpError(404,'Item não encontrado no protocolo');if(!source.sku)return [];
+ const rows=(await client.query(`${returnPreferredSales} SELECT s.order_number AS "saleReference",s.sale_date::text AS "saleDate",upper(trim(s.sku)) AS sku,s.unit_price*100 AS "unitCents",sum(s.quantity) AS "originalQuantity",sum(sum(s.quantity)) OVER(PARTITION BY s.order_number,s.sale_date,upper(trim(s.sku))) AS "totalQuantity" FROM resolved_sales_raw s JOIN preferred p ON p.order_number=s.order_number AND p.customer_code=s.customer_code AND p.source_system=s.source_system WHERE s.customer_code=$1 AND upper(trim(s.sku))=$2 AND s.quantity>0 AND s.unit_price>0 AND lower(COALESCE(s.order_status,''))<>'cancelado' AND s.order_number ILIKE $3 GROUP BY s.order_number,s.sale_date,upper(trim(s.sku)),s.unit_price ORDER BY s.sale_date DESC,s.order_number DESC LIMIT 100`,[source.customer_code,String(source.sku).trim().toUpperCase(),'%'+search+'%'])).rows;
+ const cancelled=(await client.query(`SELECT c.sale_reference,c.sale_line,sum(c.quantity)::int AS quantity FROM return_sale_cancellations c JOIN return_resolutions r ON r.id=c.resolution_id AND r.voided_at IS NULL WHERE c.customer_id=$1 GROUP BY c.sale_reference,c.sale_line`,[source.customer_id])).rows;
+ return rows.flatMap(r=>{
+  const originalQuantity=Number(r.originalQuantity),unitCents=Number(r.unitCents),totalQuantity=Number(r.totalQuantity);if(![originalQuantity,unitCents,totalQuantity].every(Number.isSafeInteger)||originalQuantity<=0||!r.saleDate)return [];
+  const saleLine=`${r.sku}|${r.saleDate}|${unitCents}`,used=cancelled.filter(c=>c.sale_reference.toLowerCase()===String(r.saleReference).toLowerCase()&&c.sale_line===saleLine).reduce((n,c)=>n+c.quantity,0);
+  return [{sourceKey:createHash('sha256').update(JSON.stringify([source.customer_id,r.saleReference,saleLine])).digest('hex'),saleReference:String(r.saleReference),saleLine,saleDate:String(r.saleDate),sku:String(r.sku),originalQuantity,totalQuantity,remainingQuantity:Math.max(0,originalQuantity-used),unitCents}];
+ });
+}

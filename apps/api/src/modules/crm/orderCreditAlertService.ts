@@ -46,12 +46,14 @@ export function evaluateOrderCredit(params: {
   internalCreditLimit: number | null;
   otherOpenProposals: number;
   orderTotal: number;
+  creditBalanceAmount?:number;
 }): OrderCreditEvaluation {
   const credit = Math.max(0, params.creditLimit ?? 0);
   const internal = Math.max(0, params.internalCreditLimit ?? 0);
   const effectiveLimit = Math.max(credit, internal);
-  const exposureBeforeOrder = Math.max(0, params.debtAmount) + Math.max(0, params.otherOpenProposals);
-  const projectedExposure = exposureBeforeOrder + Math.max(0, params.orderTotal);
+  const netBeforeOrder = Math.max(0, params.debtAmount) + Math.max(0, params.otherOpenProposals)-Math.max(0,params.creditBalanceAmount??0);
+  const exposureBeforeOrder = Math.max(0,netBeforeOrder);
+  const projectedExposure = Math.max(0,netBeforeOrder + Math.max(0, params.orderTotal));
   const requiredPayment = Math.max(0, projectedExposure - effectiveLimit);
 
   return {
@@ -60,7 +62,7 @@ export function evaluateOrderCredit(params: {
     // proposta nova.
     shouldAlert: effectiveLimit > 0 && params.orderTotal > 0 && requiredPayment >= 0.01,
     effectiveLimit,
-    availableBeforeOrder: Math.max(0, effectiveLimit - exposureBeforeOrder),
+    availableBeforeOrder: Math.max(0, effectiveLimit - netBeforeOrder),
     projectedExposure,
     requiredPayment,
   };
@@ -151,6 +153,8 @@ export async function checkOlistOrderCreditRisk(order: OlistOrderCreditInput) {
         row.customer_code,
         COALESCE(row.customer_display_name, row.source_display_name, row.customer_code) AS display_name,
         GREATEST(0, -row.balance_amount) AS debt_amount,
+        GREATEST(0,row.balance_amount) AS credit_balance_amount,
+        row.return_reconciliation_required,
         COALESCE(override.credit_limit, row.credit_limit) AS credit_limit,
         COALESCE(
           override.internal_credit_limit::text,
@@ -162,7 +166,7 @@ export async function checkOlistOrderCreditRisk(order: OlistOrderCreditInput) {
           )
         ) AS internal_credit_limit
       FROM customer_credit_snapshots snapshot
-      JOIN customer_credit_snapshot_rows row ON row.snapshot_id = snapshot.id
+      JOIN customer_credit_effective_rows row ON row.snapshot_id = snapshot.id
       LEFT JOIN customer_credit_overrides override ON override.customer_id = row.customer_id
       WHERE snapshot.is_active = TRUE
         AND UPPER(row.customer_code) = UPPER($1)
@@ -175,6 +179,7 @@ export async function checkOlistOrderCreditRisk(order: OlistOrderCreditInput) {
   if (!credit) {
     return { sent: false, reason: "customer-not-in-credit-snapshot" } as const;
   }
+  if(credit.return_reconciliation_required)return {sent:false,reason:'returns-reconciliation-required'} as const;
 
   const alreadyInFinancialResult = await pool.query(
     `
@@ -229,6 +234,7 @@ export async function checkOlistOrderCreditRisk(order: OlistOrderCreditInput) {
   const otherOpenProposals = safeNumber(proposalsResult.rows[0]?.total_amount);
   const evaluation = evaluateOrderCredit({
     debtAmount,
+    creditBalanceAmount:safeNumber(credit.credit_balance_amount),
     creditLimit: credit.credit_limit === null ? null : safeNumber(credit.credit_limit),
     internalCreditLimit: credit.internal_credit_limit === null ? null : safeNumber(credit.internal_credit_limit),
     otherOpenProposals,

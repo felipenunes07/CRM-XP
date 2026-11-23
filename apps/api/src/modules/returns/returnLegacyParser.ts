@@ -4,6 +4,9 @@ import fs from 'node:fs';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export function parseReturnLegacy(buffer:Buffer){
  const book=XLSX.read(buffer,{type:'buffer',sheets:['DEFEITOS'],cellDates:false});
+ return parseReturnLegacyBook(book);
+}
+export function parseReturnLegacyBook(book:XLSX.WorkBook){
  const sheet=book.Sheets.DEFEITOS;if(!sheet)throw Error('A aba DEFEITOS não foi encontrada; a versão anterior foi preservada');
  const rows=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,raw:true,defval:null});
  const heading=rows.findIndex(r=>String(r[0]??'').trim().toUpperCase()==='COD'&&String(r[4]??'').toUpperCase().includes('UND'));

@@ -30,7 +30,8 @@ export const itemSchema = z.object({
   frame: text(50), color: text(100), manufacturer: text(100),
   outcome: z.enum(Object.keys(RETURN_OUTCOME_LABELS) as [keyof typeof RETURN_OUTCOME_LABELS, ...Array<keyof typeof RETURN_OUTCOME_LABELS>]),
   reason: text(2000), testNotes: text(4000),
-  factoryCode:text(30).optional(),seal:text(100).optional(),routingOverride:text(2000).optional(),
+  factoryCode:text(30).optional(),seal:text(100).optional(),routingOverride:text(2000).optional(),reasonCode:text(250).optional(),
+  customerReportedDefect:text(2000).optional(),customerEvidenceReference:text(1000).optional(),testFinding:z.enum(['reproduced','not_reproduced','not_tested']).optional(),
 }).strict().superRefine((item, ctx) => {
   const required = (key: "model" | "testNotes" | "reason" | "manufacturer", message: string) => {
     if (!item[key]) ctx.addIssue({ code: "custom", path: [key], message });
@@ -38,8 +39,9 @@ export const itemSchema = z.object({
   if (!["pending", "review"].includes(item.outcome)) {
     required("model", "Identifique o modelo");
     required("testNotes", "Registre o teste ou a inspeção realizada");
+    required("manufacturer", "Identifique a fábrica ou origem da peça");
   }
-  if (["refused", "no_defect", "resale"].includes(item.outcome)) required("reason", "Informe o motivo");
+  if (["refused", "no_defect", "resale"].includes(item.outcome)&&!item.reasonCode) required("reason", "Informe o motivo");
   if (item.outcome === "external_analysis") required("manufacturer", "Informe a fábrica");
 });
 export const actionSchema = z.object({

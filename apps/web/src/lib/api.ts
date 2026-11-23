@@ -104,7 +104,7 @@ export interface ChartAnnotation {
 
 import type { AuthUser } from "../hooks/useAuth";
 import type { ReturnAssignmentInput, ReturnCustomer, ReturnDetail, ReturnItemInput, ReturnPerson, ReturnQueue, ReturnReceiptInput } from "@olist-crm/shared";
-import type {ReturnFactoryProfile,ReturnLegacyPage,ReturnNativeDetail,ReturnStockLot,ReturnWalletPage,ReturnNoticeAccessConfiguration} from '@olist-crm/shared';
+import type {ReturnFactoryProfile,ReturnLegacyPage,ReturnNativeDetail,ReturnStockLot,ReturnWalletPage,ReturnNoticeAccessConfiguration,ReturnCreditQuote} from '@olist-crm/shared';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 export const API_REQUEST_TIMEOUT_MS = 30_000;
@@ -535,8 +535,15 @@ export const api = {
     return request<ReturnDetail>(`/api/returns/${id}/execution/${operation}`,{method:'POST',body:JSON.stringify(data)},token);
   },
   returnNative(token:string,id:string){return request<ReturnNativeDetail>(`/api/returns/${id}/native`,{},token);},
+  returnSaleSources(token:string,id:string,itemId:string,search=''){return request<Array<{sourceKey:string;saleReference:string;saleLine:string;saleDate:string;sku:string;originalQuantity:number;remainingQuantity:number;unitCents:number}>>(`/api/returns/${id}/sale-sources/${itemId}?search=${encodeURIComponent(search)}`,{},token);},
+  returnReasonRules(token:string){return request<Array<{code:string;label:string;outcome:ReturnItemInput['outcome']}>>('/api/returns/reason-rules',{},token);},
+  returnProductCatalog(token:string,search:string){return request<Array<{sku:string;model:string;color:string;quality:string;frame:string;manufacturer:string}>>(`/api/returns/product-catalog?search=${encodeURIComponent(search)}`,{},token);},
+  returnPriceCatalog(token:string,search=''){return request<Array<{sku:string;unitCents:number;version:number;reason:string;authorName:string;updatedAt:string}>>(`/api/returns/price-catalog?search=${encodeURIComponent(search)}`,{},token);},
+  saveReturnPrice(token:string,input:{sku:string;unitCents:number;version:number;reason:string}){return request('/api/returns/price-catalog',{method:'POST',body:JSON.stringify(input)},token);},
+  returnCreditQuote(token:string,id:string,sourceId:string){return request<ReturnCreditQuote>(`/api/returns/${id}/credit-quote/${sourceId}`,{},token);},
   returnWallet(token:string,search='',page=1,customerId?:string){return request<ReturnWalletPage>(`/api/returns/wallet?${new URLSearchParams({search,page:String(page),...(customerId?{customerId}:{})})}`,{},token);},
   executeNativeReturn(token:string,id:string,operation:string,input:Record<string,unknown>){return request<ReturnDetail>(`/api/returns/${id}/native/${operation}`,{method:'POST',body:JSON.stringify(input)},token);},
+  returnInventoryReport(token:string,search='',from='',to='',page=1){const q=new URLSearchParams({search,page:String(page)});if(from)q.set('from',from);if(to)q.set('to',to);return request<{page:number;total:number;items:Array<{id:string;caseId:string;protocol:string;customerCode:string;sku:string;model:string;manufacturer:string;quantity:number;atFactory:number;retained:number;delivered:number;awaitingDestination:number;destinations:Array<{destination:string;quantity:number;location:string;completed:boolean}>}>}>(`/api/returns/inventory-report?${q}`,{},token);},
   returnStock(token:string,search=''){return request<ReturnStockLot[]>(`/api/returns/stock?search=${encodeURIComponent(search)}`,{},token);},
   returnNoticeSenders(token:string){return request<Array<{id:string;name:string;phone:string|null}>>('/api/returns/notice-senders',{},token);},
   returnNoticeAccess(token:string){return request<ReturnNoticeAccessConfiguration>('/api/returns/notice-sender-access',{},token);},
@@ -545,6 +552,7 @@ export const api = {
   sendReturnNotice(token:string,id:string,messageId:string){return request(`/api/returns/${id}/notices/${messageId}/send`,{method:'POST',body:'{}'},token);},
   resolveReturnNotice(token:string,id:string,messageId:string,input:Record<string,unknown>){return request(`/api/returns/${id}/notices/${messageId}/resolve`,{method:'POST',body:JSON.stringify(input)},token);},
   returnTransition(token:string,search='',page=1,pending=false){return request<ReturnLegacyPage>(`/api/returns/transition?${new URLSearchParams({search,page:String(page),pending:String(pending)})}`,{},token);},
+  returnArchives(token:string,input:{source:string;sheet:string;search:string;page:number}){return request<{archives:Array<{id:string;name:string;sourceSha256:string;rowCount:number}>;items:Array<{sheet:string;rowNumber:number;rawPayload:Record<string,unknown>}>;sheets:string[];total:number;page:number}>(`/api/returns/transition/archives?${new URLSearchParams({...input,page:String(input.page)})}`,{},token);},
   refreshReturnTransition(token:string){return request<ReturnLegacyPage>('/api/returns/transition/refresh',{method:'POST',body:'{}'},token);},
   configureReturnTransition(token:string,input:Record<string,unknown>){return request('/api/returns/transition/settings',{method:'PUT',body:JSON.stringify(input)},token);},
   reviewReturnLegacy(token:string,input:Record<string,unknown>){return request('/api/returns/transition/review',{method:'POST',body:JSON.stringify(input)},token);},

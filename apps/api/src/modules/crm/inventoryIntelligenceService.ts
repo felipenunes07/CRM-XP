@@ -1204,7 +1204,7 @@ async function listExactSuggestedCustomers(item: InventoryIntelligenceItem, limi
             COALESCE(credit_limit, 0) - GREATEST(-COALESCE(balance_amount, 0), 0),
             0
           )::numeric(14,2) AS available_credit_amount
-        FROM customer_credit_snapshot_rows
+        FROM customer_credit_effective_rows
         WHERE snapshot_id = (
           SELECT id
           FROM customer_credit_snapshots
@@ -1292,7 +1292,7 @@ async function listFamilySuggestedCustomers(item: InventoryIntelligenceItem, lim
             COALESCE(credit_limit, 0) - GREATEST(-COALESCE(balance_amount, 0), 0),
             0
           )::numeric(14,2) AS available_credit_amount
-        FROM customer_credit_snapshot_rows
+        FROM customer_credit_effective_rows
         WHERE snapshot_id = (
           SELECT id
           FROM customer_credit_snapshots

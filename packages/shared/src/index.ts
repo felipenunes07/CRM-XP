@@ -985,6 +985,7 @@ export interface CustomerCreditSnapshotMeta {
 }
 
 export interface CustomerCreditRow {
+  returnsFinance?:{importedBalanceAmount:number;adjustmentAmount:number;availableAmount:number;heldAmount:number;appliedAmount:number;reconciliationRequired:boolean;issues:string[]};
   id: string;
   customerId: string | null;
   customerCode: string;

@@ -1,17 +1,22 @@
 // Local-only fixture server: real CRM routes, isolated PostgreSQL, no workers or messages.
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import { returnWorkflowMigration } from "../apps/api/src/db/returnWorkflowMigration.js";
 import { returnExecutionMigration } from "../apps/api/src/db/returnExecutionMigration.js";
 import {returnFactoryMigration} from '../apps/api/src/db/returnFactoryMigration.js';
 import {returnNativeMigration} from '../apps/api/src/db/returnNativeMigration.js';
 import {returnNoticeAccessMigration} from '../apps/api/src/db/returnNoticeAccessMigration.js';
+import {returnOperationsMigration} from '../apps/api/src/db/returnOperationsMigration.js';
+import {returnFinanceMigration} from '../apps/api/src/db/returnFinanceMigration.js';
 
 const url=new URL(process.env.DATABASE_URL ?? "");
 if (!["127.0.0.1","localhost"].includes(url.hostname) || url.pathname!=="/crm_returns_test") throw Error("Preview requires the isolated local crm_returns_test database");
 // A schema per migration definition keeps the fixture repeatable during development without deleting earlier fixtures.
-const schema='returns_preview_'+createHash('sha256').update(returnWorkflowMigration+returnExecutionMigration+returnFactoryMigration+returnNativeMigration+returnNoticeAccessMigration).digest('hex').slice(0,12);
+const schema='returns_preview_'+createHash('sha256').update(returnWorkflowMigration+returnExecutionMigration+returnFactoryMigration+returnNativeMigration+returnNoticeAccessMigration+returnOperationsMigration+returnFinanceMigration+fs.readFileSync(new URL('./returns-finance-fixture.sql',import.meta.url),'utf8').replaceAll('\r\n','\n')).digest('hex').slice(0,12);
 url.searchParams.set('options','-c search_path='+schema);
 process.env.DATABASE_URL=url.toString();
+process.env.WEB_ORIGIN='http://127.0.0.1:5189';
+process.env.CUSTOMER_CREDIT_WORKBOOK_DIR='__returns_preview_missing_workbook__';
 const {pool}=await import('../apps/api/src/db/client.js');
 const {createApp}=await import('../apps/api/src/app.js');
 await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
@@ -23,6 +28,7 @@ await pool.query(`CREATE TABLE IF NOT EXISTS profiles(id uuid PRIMARY KEY,email 
   CREATE TABLE IF NOT EXISTS whatsapp_instances(id uuid PRIMARY KEY,display_label text,phone_number text,status text,is_default boolean,assigned_user_id uuid,assigned_user_name text,last_health_status text,provider text,instance_name text,evolution_base_url text,evolution_api_key text,uazapi_base_url text,uazapi_token text);
   CREATE TABLE IF NOT EXISTS customer_credit_snapshots(id uuid PRIMARY KEY,is_active boolean);
   CREATE TABLE IF NOT EXISTS customer_credit_payment_entries(snapshot_id uuid,customer_id uuid,payment_key text,amount numeric,payment_number text,payment_type text);
+  CREATE TABLE IF NOT EXISTS resolved_sales_raw(customer_code text,sku text,quantity numeric,unit_price numeric,source_system text,sale_date date,order_number text,order_status text);
   INSERT INTO profiles VALUES('00000000-0000-0000-0000-000000000001','admin@test.invalid','Administrador Local','admin',true),
     ('10000000-0000-4000-8000-000000000001','isis@test.invalid','Isis','operacional',true),
     ('10000000-0000-4000-8000-000000000002','triagem@test.invalid','Técnico de demonstração','operacional',true)
@@ -34,6 +40,9 @@ if (!(await pool.query("SELECT to_regclass('return_factory_batches') AS name")).
 if (!(await pool.query("SELECT to_regclass('return_factory_profiles') AS name")).rows[0].name) await pool.query(returnFactoryMigration);
 if (!(await pool.query("SELECT to_regclass('return_wallet_entries') AS name")).rows[0].name) await pool.query(returnNativeMigration);
 if (!(await pool.query("SELECT to_regclass('return_notice_sender_access') AS name")).rows[0].name) await pool.query(returnNoticeAccessMigration);
+if (!(await pool.query("SELECT to_regclass('return_inspection_jobs') AS name")).rows[0].name) await pool.query(returnOperationsMigration);
+if (!(await pool.query("SELECT to_regclass('customer_credit_snapshot_rows') AS name")).rows[0].name) await pool.query(fs.readFileSync(new URL('./returns-finance-fixture.sql',import.meta.url),'utf8'));
+if (!(await pool.query("SELECT to_regclass('customer_credit_effective_rows') AS name")).rows[0].name) await pool.query(returnFinanceMigration);
 if(!(await pool.query('SELECT id FROM return_legacy_revisions LIMIT 1')).rowCount){
  const revision=(await pool.query("INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) VALUES('/TESTE-LOCAL.xlsx','test-local','local-preview','hash-local',NOW(),1,true) RETURNING id")).rows[0];
  await pool.query("INSERT INTO return_legacy_rows(revision_id,sheet,row_number,fingerprint,anchor,occurrence,document,customer_code,customer_name,occurred_on,sku,description,signed_quantity,amount_cents,raw_status,raw_payload) VALUES($1,'DEFEITOS',2,'preview-fingerprint','preview-anchor',1,'DEF-TESTE-LOCAL','CL-TESTE','Cliente de demonstração','2026-11-17','CX156-1','Tela de teste',-1,-5000,'EM ANALISE','{}')",[revision.id]);

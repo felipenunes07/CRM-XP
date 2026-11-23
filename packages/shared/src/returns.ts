@@ -39,6 +39,10 @@ export interface ReturnAssignmentInput {
   correctionReason: string;
 }
 export interface ReturnItemInput {
+  reasonCode?:string;
+  customerReportedDefect?:string;
+  customerEvidenceReference?:string;
+  testFinding?:'reproduced'|'not_reproduced'|'not_tested';
   version: number;
   model: string;
   sku: string;
@@ -89,7 +93,7 @@ export interface ReturnQueue {
 
 export const RETURN_REMEDY_LABELS = { credit:"Crédito ao cliente", sale_cancellation:"Cancelamento de venda", replacement:"Entregar substituta", return_original:"Devolver peça original", not_applicable:"Sem obrigação com o cliente · autorizado" } as const;
 export const RETURN_RECEIPT_LABELS = { original_returned:"Original recebida da fábrica", supplier_replacement:"Substituta recebida da fábrica", factory_retained:"Original retida definitivamente na fábrica", stock_replacement:"Substituta separada do estoque XP" } as const;
-export const RETURN_DESTINATION_LABELS = { reconditioning:"Recondicionamento", outlet:"Outlet", stock:"Estoque após conferência", china:"Envio à China", disposal:"Descarte autorizado" } as const;
+export const RETURN_DESTINATION_LABELS = { technical_review:"Separação e reteste interno", reconditioning:"Recondicionamento", outlet:"Outlet", stock:"Estoque após conferência", china:"Envio à China", disposal:"Descarte autorizado" } as const;
 export interface ReturnCommand { requestId: string; version: number; evidenceId?:string|null }
 export interface ReturnFact { id: string; caseId: string; itemId: string; quantity: number; createdAt: string; authorName: string; voidedAt: string | null }
 export interface ReturnFactoryLine { id: string; batchId: string; caseId: string; itemId: string; quantity: number; batchCode: string; manufacturer: string; dueAt: string; sentAt: string|null; reference: string; voidedAt: string | null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string }
@@ -112,7 +116,7 @@ export interface ReturnExecutionInputMap {
  factory_result: ReturnCommand & {lineId:string;quantity:number;decision:"approved"|"refused";compensation:"replacement"|"credit"|"none";reason:string;originalReport:string;translation:string;reference:string;occurredAt:string;approvalReference:string};
  physical_receipt: ReturnCommand & {itemId:string;lineId:string|null;resultId:string|null;kind:ReturnPhysicalReceipt["kind"];quantity:number;location:string;receivedBy:string;reference:string;reason:string;approvalReference:string;occurredAt:string};
  resolution: ReturnCommand & {itemId:string;resultId:string|null;quantity:number;kind:ReturnResolution["kind"];reason:string;approvalReference:string};
- credit_authorize: ReturnCommand & {party:"customer"|"supplier";sourceId:string;amountCents:number;currency:ReturnCredit["currency"];priceBasis:string;approvalReference:string};
+ credit_authorize: ReturnCommand & {party:"customer"|"supplier";sourceId:string;amountCents:number;currency:ReturnCredit["currency"];priceBasis:string;approvalReference:string;useCalculation?:boolean;quoteRevision?:string|null};
  credit_post: ReturnCommand & {creditId:string;officialSystem:string;officialReference:string;occurredAt:string};
  credit_reverse: ReturnCommand & {creditId:string;reason:string;officialSystem:string;officialReference:string;occurredAt:string};
  delivery: ReturnCommand & {resolutionId:string;receiptId:string|null;quantity:number;method:"pickup"|"dispatch";recipient:string;tracking:string;reference:string;sentAt:string;deliveryProof:string};

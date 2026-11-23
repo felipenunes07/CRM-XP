@@ -1,7 +1,9 @@
 import express from "express";
+import fs from 'node:fs';
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+vi.hoisted(()=>{process.env.CUSTOMER_CREDIT_WORKBOOK_DIR='__returns_isolated_missing_workbook__';});
 vi.mock('../whatsapp/evolutionService.js',()=>({sendWhatsappInstanceTextMessage:vi.fn().mockResolvedValue({key:{id:'provider-test-message'}})}));
 vi.mock('../whatsapp/uazapiService.js',()=>({sendUazapiTextMessage:vi.fn().mockResolvedValue({messageid:'uazapi-test-message'})}));
 
@@ -12,15 +14,20 @@ vi.mock("../../db/client.js", async () => {
     const url = new URL(connectionString);
     if (!["localhost","127.0.0.1"].includes(url.hostname) || url.pathname !== "/crm_returns_test") throw Error("Use only the isolated local crm_returns_test database");
   }
-  return { pool: new Pool({ connectionString: connectionString ?? "postgres://unused@127.0.0.1:1/unused", options: "-c search_path=returns_workflow_test" }) };
+  const cache=new Map<string,string>();
+  return { pool: new Pool({ connectionString: connectionString ?? "postgres://unused@127.0.0.1:1/unused", options: "-c search_path=returns_workflow_test" }),redis:{get:async(key:string)=>cache.get(key)??null,set:async(key:string,value:string)=>{cache.set(key,value);},del:async(key:string)=>cache.delete(key),flushall:async()=>cache.clear()} };
 });
 
-import { pool } from "../../db/client.js";
+import { pool,redis } from "../../db/client.js";
+import {getCustomerCreditDetail,getCustomerCreditOverview} from '../crm/customerCreditService.js';
 import { returnWorkflowMigration } from "../../db/returnWorkflowMigration.js";
 import { returnExecutionMigration } from "../../db/returnExecutionMigration.js";
 import {returnFactoryMigration} from '../../db/returnFactoryMigration.js';
 import {returnNativeMigration} from '../../db/returnNativeMigration.js';
 import {returnNoticeAccessMigration} from '../../db/returnNoticeAccessMigration.js';
+import {returnOperationsMigration} from '../../db/returnOperationsMigration.js';
+import {returnFinanceMigration} from '../../db/returnFinanceMigration.js';
+import {getReturnFinancialContributions,deriveReturnContribution} from './returnFinancialProjection.js';
 import {sendWhatsappInstanceTextMessage} from '../whatsapp/evolutionService.js';
 import { HttpError } from "../../lib/httpError.js";
 import { returnRoutes } from "./returnRoutes.js";
@@ -78,22 +85,27 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
       CREATE TABLE whatsapp_instances(id uuid PRIMARY KEY,display_label text,phone_number text,status text,is_default boolean,assigned_user_id uuid,assigned_user_name text,last_health_status text,provider text,instance_name text,evolution_base_url text,evolution_api_key text,uazapi_base_url text,uazapi_token text);
       CREATE TABLE customer_credit_snapshots(id uuid PRIMARY KEY,is_active boolean);
       CREATE TABLE customer_credit_payment_entries(snapshot_id uuid,customer_id uuid,payment_key text,amount numeric,payment_number text,payment_type text);
+      CREATE TABLE resolved_sales_raw(customer_code text,sku text,quantity numeric,unit_price numeric,source_system text,sale_date date,order_number text,order_status text);
       INSERT INTO profiles VALUES('${operatorId}','isis@test.invalid','Isis','operacional',true);
       INSERT INTO profiles VALUES('10000000-0000-4000-8000-000000000002','tech@test.invalid','Técnico de teste','viewer',true);
       INSERT INTO customers VALUES('${customerId}','CL-TESTE','Cliente de teste');`);
+    await pool.query(fs.readFileSync(new URL('../../../../../scripts/returns-finance-fixture.sql',import.meta.url),'utf8'));
     await pool.query(returnWorkflowMigration);
     await pool.query(returnExecutionMigration);
     await pool.query(returnFactoryMigration);
     await pool.query(returnNativeMigration);
     await pool.query(returnNoticeAccessMigration);
+    await pool.query(returnOperationsMigration);
+    await pool.query(returnFinanceMigration);
   });
   beforeEach(async () => {
+    await redis.del('crm:customer_credit:overview:v4');
     grants=["returns.view","returns.manage"];
     await pool.query("TRUNCATE return_attachments,return_events,return_items,return_cases,return_commands RESTART IDENTITY CASCADE");
     await pool.query("DELETE FROM user_permissions");
     await pool.query("INSERT INTO user_permissions VALUES('10000000-0000-4000-8000-000000000002','returns.view',true),('10000000-0000-4000-8000-000000000002','returns.manage',true)");
-    await pool.query('TRUNCATE return_legacy_revisions,return_legacy_exclusions,return_legacy_links,customer_credit_payment_entries,customer_credit_snapshots,whatsapp_instances CASCADE');
-    await pool.query("UPDATE return_transition_settings SET authority='parallel',last_error='',last_success_at=NULL,version=1");
+    await pool.query('TRUNCATE return_legacy_revisions,return_legacy_exclusions,return_legacy_links,return_price_overrides,return_legacy_archives,resolved_sales_raw,customer_credit_payment_entries,customer_credit_snapshots,whatsapp_instances CASCADE');
+    await pool.query("UPDATE return_transition_settings SET authority='parallel',last_error='',last_success_at=NULL,coordinator_id=NULL,version=1");
     vi.mocked(sendWhatsappInstanceTextMessage).mockReset().mockResolvedValue({key:{id:'provider-test-message'}});
   });
   afterAll(async () => { await pool.query("DROP SCHEMA returns_workflow_test CASCADE");await pool.end(); });
@@ -142,7 +154,7 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
     d=(await request(app).put(`/api/returns/${d.id}/items/${review.id}`).set("Authorization","Bearer operator").send({...item(d.version,2),outcome:"refused",reason:"Flex rasgado"})).body;
     d=(await post(`/${d.id}/actions`,{version:d.version,action:"complete_triage"})).body;
     expect(d.stage).toBe("triage_completed");expect(d.pendingQuantity).toBe(0);expect(d.items).toHaveLength(2);
-    expect(d.nextAction).toContain("Isis");
+    expect(d.nextAction).toContain("coordenador");
     expect((await get("")).body.total).toBe(1);
     expect((await get("?stage=triage_completed")).body.total).toBe(1);
     expect((await post(`/${d.id}/items`,item(d.version))).status).toBe(409);
@@ -277,6 +289,8 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    d=await operate(d,'disposition',{itemId:d.items[0].id,receiptId:null,asset:'original',quantity:1,destination:'reconditioning',fromLocation:'Triagem',toLocation:'Bancada de reparo',custodian:'Técnico identificado',reference:'OS-1',reason:'Peça aceita em troca',testNotes:'Teste técnico registrado',occurredAt});
    expect((await execution(d,'close',{reason:'Conferido'})).status).toBe(400);
    d=await repair(d,'grade_1');d=await operate(d,'disposition_confirm',{dispositionId:d.execution.dispositions[0].id,occurredAt,receivedBy:'Responsável pelo estoque',proof:'OS-1 concluída, entrada de outlet OUT-1'});
+   expect(d.execution.progress.canClose).toBe(false);expect(d.execution.progress.blockers).toContain('Registrar entrada das peças recuperadas no estoque após conferência');
+   const stock=await post(`/${d.id}/native/stock_receive`,{requestId:crypto.randomUUID(),version:d.version,dispositionId:d.execution.dispositions[0].id,sku:d.items[0].sku,grade:'grade_1',seal:'',inspection:'Imagem e touch conferidos após recuperação',location:'Outlet A1',reference:'OUT-1'});expect(stock.status,stock.body.message).toBe(200);d=stock.body;
    expect(d.execution.progress.canClose).toBe(true);
    const count=d.execution.credits.length;await get('/'+d.id);await get('/'+d.id);expect((await get('/'+d.id)).body.execution.credits).toHaveLength(count);
   });
@@ -330,7 +344,8 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    let r=await post(`/${d.id}/items`,{...item(d.version,1),manufacturer:'D.E.',seal:'J'});expect(r.status,r.body.message).toBe(200);d=r.body;
    expect(d.items[0]).toMatchObject({factoryCode:'DE',outcome:'external_analysis',factoryWorkflow:'external_individual'});
    expect((await post(`/${d.id}/items`,{...item(d.version,1),manufacturer:'VV',routingOverride:'Sem laudo da fábrica'})).status).toBe(403);
-   r=await post(`/${d.id}/items`,{...item(d.version,1),manufacturer:'',seal:'Y'});expect(r.status).toBe(200);d=r.body;
+   expect((await post(`/${d.id}/items`,{...item(d.version,1),manufacturer:'',seal:'Y'})).status).toBe(400);
+   r=await post(`/${d.id}/items`,{...item(d.version,1),manufacturer:'',seal:'Y',outcome:'pending'});expect(r.status).toBe(200);d=r.body;
    expect(d.items.find((i:any)=>i.seal==='Y').factoryCode).toBe('UNKNOWN');
    expect((await post(`/${d.id}/actions`,{version:d.version,action:'complete_triage'})).status).toBe(400);
    expect((await get('?stage=all&factory=DE')).body.total).toBe(1);
@@ -352,14 +367,30 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    response=await request(app).put(`/api/returns/factory-batches/${batch.id}/lines`).set('Authorization','Bearer operator').send({...edit,requestId:crypto.randomUUID(),version:sent.body.version,cases:[{id:a.id,version:a.version},{id:b.id,version:b.version}]});expect(response.status).toBe(409);
    a=await operate(a,'factory_result',resultInput(a,1));expect(a.execution.results).toHaveLength(1);
   });
-  it('keeps non-VV factories individual and never aliases STC to TC-OMG',async()=>{
+  it('keeps individual factory defaults, permits optional DE grouping from the source history, and never aliases STC to TC-OMG',async()=>{
    grants.push('returns.logistics');
    const make=async(manufacturer:string)=>{let d=await start(1);d=(await post(`/${d.id}/items`,{...item(d.version,1),manufacturer})).body;return (await post(`/${d.id}/actions`,{version:d.version,action:'complete_triage'})).body;};
    const de=await make('D.E.'),other=await make('DE'),stc=await make('STC');
    expect((await post('/factory-batches',{...batchInput([de,other]),manufacturer:'DE'})).status).toBe(400);
-   expect((await post('/factory-batches',{...batchInput([de,other]),manufacturer:'DE',mode:'batch'})).status).toBe(400);
+   const grouped=await post('/factory-batches',{...batchInput([other]),manufacturer:'DE',mode:'batch',lotReference:'DE-LOTE-7'});expect(grouped.status,grouped.body.message).toBe(201);expect(grouped.body.mode).toBe('batch');
    const response=await post('/factory-batches',{...batchInput([de]),manufacturer:'D.E.'});expect(response.status,response.body.message).toBe(201);expect(response.body.mode).toBe('individual');
    expect((await post('/factory-batches',{...batchInput([stc]),manufacturer:'TC-OMG'})).status).toBe(400);
+   expect((await post('/factory-batches',{...batchInput([stc]),manufacturer:'STC',mode:'batch'})).status).toBe(400);
+  });
+  it('closes VV, DE, STC and TC-OMG through actual dispatch, refusal, physical return and customer pickup with conserved inventory',async()=>{
+   grants.push('returns.logistics','returns.communicate');
+   for(const manufacturer of ['VV','D.E.','STC','TC-OMG']){
+    let d=await start(1);d=(await post('/'+d.id+'/items',{...item(d.version,1),manufacturer})).body;d=(await post('/'+d.id+'/actions',{version:d.version,action:'complete_triage'})).body;
+    const batch=await post('/factory-batches',{...batchInput([d]),manufacturer});expect(batch.status,batch.body.message).toBe(201);d=(await get('/'+d.id)).body;
+    let report=(await get('/inventory-report?search=CL-TESTE')).body;expect(report.items.find((r:any)=>r.caseId===d.id).atFactory).toBe(1);
+    d=await operate(d,'factory_result',resultInput(d,1,'refused','none'));
+    d=await operate(d,'physical_receipt',{itemId:d.items[0].id,lineId:d.execution.factoryLines[0].id,resultId:null,kind:'original_returned',quantity:1,location:'XP',receivedBy:'Isis',reference:'RET-'+manufacturer,reason:'Retorno físico conferido',approvalReference:'',occurredAt});
+    report=(await get('/inventory-report?search=CL-TESTE')).body;expect(report.items.find((r:any)=>r.caseId===d.id)).toMatchObject({atFactory:0,awaitingDestination:1});
+    d=await operate(d,'resolution',{itemId:d.items[0].id,resultId:d.execution.results[0].id,quantity:1,kind:'return_original',reason:'Peça recusada devolvida ao cliente',approvalReference:''});
+    d=await operate(d,'notice',noticeInput);d=await operate(d,'delivery',{resolutionId:d.execution.resolutions[0].id,receiptId:null,quantity:1,method:'pickup',recipient:'Cliente de teste',tracking:'',reference:'RETIRADA-'+manufacturer,sentAt:occurredAt,deliveryProof:'Retirada fictícia assinada'});
+    d=await operate(d,'close',{reason:'Quantidade e destino conferidos'});expect(d.stage).toBe('closed');report=(await get('/inventory-report?search=CL-TESTE')).body;expect(report.items.find((r:any)=>r.caseId===d.id)).toMatchObject({quantity:1,atFactory:0,retained:0,delivered:1,awaitingDestination:0});
+   }
+   expect((await get('/inventory-report?from=2027-01-01')).body.total).toBe(0);
   });
   it('posts native credits, caps concurrent uses, audits reversals and holds mirrored legacy balances',async()=>{
    grants.push('returns.logistics','returns.finance');let d=await finished(1,'approved');
@@ -388,9 +419,17 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    source=await operate(source,'disposition',{itemId:source.items[0].id,receiptId:null,asset:'original',quantity:2,destination:'reconditioning',fromLocation:'Triagem',toLocation:'Kevin',custodian:'Kevin',reference:'RECOND-1',reason:'Recuperar para venda',testNotes:'Teste inicial documentado',occurredAt});
    expect((await execution(source,'disposition_confirm',{dispositionId:source.execution.dispositions[0].id,occurredAt,receivedBy:'Kevin',proof:'Não pode concluir antes do técnico'})).status).toBe(400);
    source=await repair(source,'new','Sem selo de análise');source=await operate(source,'disposition_confirm',{dispositionId:source.execution.dispositions[0].id,occurredAt,receivedBy:'Kevin',proof:'Recuperação concluída e testes de imagem/touch'});
+   const aliasRevision=(await pool.query("INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) VALUES('/local','sku-proof','SKU-1','hash',NOW(),1,true) RETURNING id")).rows[0].id;
+   await pool.query("INSERT INTO return_price_snapshots(revision_id,formula_version,source_formula,catalog_range) VALUES($1,'v1','formula','SISTEMA!B:G')",[aliasRevision]);await pool.query("INSERT INTO return_sku_aliases VALUES($1,'CX156-1','CURRENT-1',false)",[aliasRevision]);
+   expect((await native(source,'stock_receive',{dispositionId:source.execution.dispositions[0].id,sku:'WRONG-SKU',grade:'new',seal:'Sem selo de análise',inspection:'Inspeção sem identificação correta',location:'Estoque recuperado A1',reference:'ENT-WRONG'})).status).toBe(409);
    source=await nativeOk(source,'stock_receive',{dispositionId:source.execution.dispositions[0].id,sku:'CX156-1',grade:'new',seal:'Sem selo de análise',inspection:'Peças recuperadas e conferidas como novas',location:'Estoque recuperado A1',reference:'ENT-REC-1'});
-   const lot=(await nativeDetail(source)).stock[0];expect(lot.availableQuantity).toBe(2);
-   source=await nativeOk(source,'cancellation',{itemId:source.items[0].id,resultId:null,quantity:2,saleReference:'VENDA-10',saleLine:'1',originalQuantity:2,unitCents:7500,inspection:'Venda original e condição nova conferidas',approvalReference:'GESTAO-1'});
+   const lot=(await nativeDetail(source)).stock[0];expect(lot.availableQuantity).toBe(2);expect(lot.sku).toBe('CURRENT-1');
+   await pool.query("INSERT INTO resolved_sales_raw VALUES('CL-TESTE','CX156-1',2,75,'supabase_2026','2026-10-15','VENDA-10','VALID'),('CL-TESTE','CX156-1',2,90,'olist_v2','2026-10-15','VENDA-10','Enviado')");
+   const sales=await get(`/${source.id}/sale-sources/${source.items[0].id}`);expect(sales.status,sales.body.message).toBe(200);expect(sales.body).toHaveLength(1);expect(sales.body[0].unitCents).toBe(7500);
+   expect((await request(app).get(`/api/returns/${source.id}/sale-sources/${source.items[0].id}`).set('Authorization','Bearer technician')).status).toBe(403);
+   const original={itemId:source.items[0].id,resultId:null,quantity:2,saleReference:sales.body[0].saleReference,saleLine:sales.body[0].saleLine,originalQuantity:2,unitCents:7500,saleSourceKey:sales.body[0].sourceKey,inspection:'Venda original e condição nova conferidas',approvalReference:'GESTAO-1'};
+   expect((await native(source,'cancellation',{...original,unitCents:7400})).status).toBe(409);
+   source=await nativeOk(source,'cancellation',original);expect((await pool.query('SELECT sale_source_evidence FROM return_sale_cancellations')).rows[0].sale_source_evidence.mode).toBe('crm');
    const resolution=source.execution.resolutions[0];expect(resolution.kind).toBe('sale_cancellation');expect(source.progress.financePendingCount).toBe(1);
    const credit={party:'customer',sourceId:resolution.id,amountCents:14999,currency:'BRL',priceBasis:'Cancelamento de venda',approvalReference:'FIN-CAN-1'};
    expect((await execution(source,'credit_authorize',credit)).status).toBe(400);source=await operate(source,'credit_authorize',{...credit,amountCents:15000});
@@ -435,6 +474,7 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    grants.push('returns.logistics');let d=await finished(1,'resale');d=await operate(d,'disposition',{itemId:d.items[0].id,receiptId:null,asset:'original',quantity:1,destination:'reconditioning',fromLocation:'Triagem',toLocation:'Técnico',custodian:'Técnico de teste',reference:'REPARO-TECH',reason:'Recuperação solicitada',testNotes:'Inspeção inicial',occurredAt});
    d=await nativeOk(d,'repair_assign',{dispositionId:d.execution.dispositions[0].id,assigneeId:'10000000-0000-4000-8000-000000000002',dueAt:'2026-12-10T12:00:00Z',notes:'Recuperar e registrar imagem/touch'});expect(d.assignee.id).toBe('10000000-0000-4000-8000-000000000002');
    const job=(await nativeDetail(d)).repairs[0];
+   for(const seal of ['1','2','J','S','Y']){const blocked=await request(app).post(`/api/returns/${d.id}/native/repair_complete`).set('Authorization','Bearer technician').send({requestId:crypto.randomUUID(),version:d.version,jobId:job.id,jobVersion:job.version,grade:'new',seal,testNotes:'Inspeção de condição nova declarada'});expect(blocked.status).toBe(409);}
    const response=await request(app).post(`/api/returns/${d.id}/native/repair_complete`).set('Authorization','Bearer technician').send({requestId:crypto.randomUUID(),version:d.version,jobId:job.id,jobVersion:job.version,grade:'grade_1',seal:'1',testNotes:'Imagem e touch testados após recuperação'});expect(response.status,response.body.message).toBe(200);d=response.body;expect(d.assignee.id).toBe(operatorId);
    expect((await request(app).post(`/api/returns/${d.id}/native/stock_receive`).set('Authorization','Bearer technician').send({})).status).toBe(403);
    expect((await request(app).get('/api/returns/wallet').set('Authorization','Bearer technician')).status).toBe(403);
@@ -445,6 +485,92 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    const make=async()=>{let d=await finished(1,'approved');return operate(d,'resolution',{itemId:d.items[0].id,resultId:null,quantity:1,kind:'replacement',reason:'Reposição conferida',approvalReference:''});};const a=await make(),b=await make();
    const issue=(d:any)=>native(d,'stock_issue',{lotId:lot.id,itemId:d.items[0].id,quantity:1,reference:'CONC-'+d.id,reason:'Separação para atendimento',location:'Entrega',receivedBy:'Isis'});
    const responses=await Promise.all([issue(a),issue(b)]);expect(responses.map(r=>r.status).sort()).toEqual([200,409]);expect((await get('/stock')).body).toHaveLength(0);expect((await pool.query("SELECT count(*)::int AS n FROM return_stock_movements WHERE kind='issue'")).rows[0].n).toBe(1);
+  });
+  it('returns completed triage to the configured coordinator rather than leaving the technician responsible',async()=>{
+   grants.push('returns.logistics');await pool.query('UPDATE return_transition_settings SET coordinator_id=$1',[operatorId]);
+   let d=await start(1);d=(await post(`/${d.id}/items`,item(d.version,1))).body;
+   await pool.query('UPDATE return_cases SET assignee_id=$2 WHERE id=$1',[d.id,'10000000-0000-4000-8000-000000000002']);
+   const r=await request(app).post(`/api/returns/${d.id}/actions`).set('Authorization','Bearer technician').send({version:d.version,action:'complete_triage'});
+   expect(r.status,r.body.message).toBe(200);expect(r.body.assignee.id).toBe(operatorId);expect(r.body.nextAction).toContain('Conferir os destinos');
+  });
+  it('assigns Rick-style retests, protects the assignee and requires a separate recovery before physical completion',async()=>{
+   grants.push('returns.logistics');let d=await finished(2,'approved');
+   d=await operate(d,'disposition',{itemId:d.items[0].id,receiptId:null,asset:'original',quantity:2,destination:'technical_review',fromLocation:'Triagem',toLocation:'Bancada de reteste',custodian:'Rick',reference:'RETESTE-1',reason:'Separar peças aceitas como troca',testNotes:'Aguardando diagnóstico por modelo',occurredAt});
+   expect((await execution(d,'disposition_confirm',{dispositionId:d.execution.dispositions[0].id,occurredAt,receivedBy:'Isis',proof:'Conferência física'})).status).toBe(400);
+   let r=await post(`/${d.id}/native/inspection_assign`,{requestId:crypto.randomUUID(),version:d.version,dispositionId:d.execution.dispositions[0].id,assigneeId:'10000000-0000-4000-8000-000000000002',dueAt:'2026-12-10T12:00:00Z',notes:'Separar por modelo e retestar para destino'});expect(r.status,r.body.message).toBe(200);d=r.body;
+   const job=(await get(`/${d.id}/native`)).body.inspections[0];
+   const input={requestId:crypto.randomUUID(),version:d.version,jobId:job.id,jobVersion:job.version,recommendation:'reconditioning',seal:'2',testNotes:'Imagem aprovada; recuperação da moldura necessária'};
+   grants=grants.filter(p=>p!=='returns.logistics');expect((await post(`/${d.id}/native/inspection_complete`,input)).status).toBe(409);
+   r=await request(app).post(`/api/returns/${d.id}/native/inspection_complete`).set('Authorization','Bearer technician').send(input);expect(r.status,r.body.message).toBe(200);d=r.body;
+   expect(d.assignee.id).toBe(operatorId);expect(d.execution.dispositions[0].destination).toBe('reconditioning');expect(d.execution.dispositions[0].completedAt).toBeNull();expect((await get('/stock')).body).toHaveLength(0);
+   grants.push('returns.logistics');expect((await execution(d,'disposition_confirm',{dispositionId:d.execution.dispositions[0].id,occurredAt,receivedBy:'Isis',proof:'Conferência física'})).status).toBe(400);
+   expect((await request(app).post(`/api/returns/${d.id}/native/stock_receive`).set('Authorization','Bearer technician').send({})).status).toBe(403);
+  });
+  it('calculates a customer credit from the current spreadsheet rule and revalidates values and revisions on authorization',async()=>{
+   grants.push('returns.logistics','returns.finance');let d=await finished(2,'approved');d=await operate(d,'resolution',{itemId:d.items[0].id,resultId:null,quantity:2,kind:'credit',reason:'Crédito por troca aprovada',approvalReference:''});const source=d.execution.resolutions[0].id;
+   const revision=(await pool.query("INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) SELECT source_path,'pricing-test','PRICE-1','hash',NOW(),1,true FROM return_transition_settings WHERE id=1 RETURNING id")).rows[0].id;
+   await pool.query("INSERT INTO return_price_snapshots(revision_id,formula_version,source_formula,catalog_range,sales_through) VALUES($1,'weighted-out-round-0-catalog-6-v1','SUMPRODUCT / SUMPRODUCT','SISTEMA!B:G','2026-11-19')",[revision]);
+   await pool.query("INSERT INTO return_price_history VALUES($1,'CL-TESTE','CX156-1',-2,-9500,false)",[revision]);await pool.query('UPDATE return_transition_settings SET last_success_at=NOW()');
+   const quote=(await get(`/${d.id}/credit-quote/${source}`)).body;expect(quote).toMatchObject({unitCents:4800,amountCents:9600,quantity:2,revision:'PRICE-1',issue:null});
+   expect((await request(app).get(`/api/returns/${d.id}/credit-quote/${source}`).set('Authorization','Bearer technician')).status).toBe(403);
+   const authorization={party:'customer',sourceId:source,amountCents:quote.amountCents,currency:'BRL',priceBasis:'Untrusted client-supplied basis',approvalReference:'CALCULO-CRM-PRICE-1',useCalculation:true,quoteRevision:'PRICE-1'};
+   expect((await execution(d,'credit_authorize',{...authorization,amountCents:9700})).status).toBe(409);expect((await execution(d,'credit_authorize',{...authorization,quoteRevision:'OLD'})).status).toBe(409);
+   d=await operate(d,'credit_authorize',authorization);expect(d.execution.credits[0].priceBasis).toContain('Média ponderada');expect(d.execution.credits[0].priceBasis).not.toContain('Untrusted');
+   await pool.query("UPDATE return_transition_settings SET last_error='Origem mudou'");expect((await get(`/${d.id}/credit-quote/${source}`)).body.issue).toContain('Atualização');
+   await pool.query("UPDATE return_transition_settings SET authority='crm',source_enabled=false,last_success_at=NULL,last_error=''");
+   await pool.query("UPDATE return_price_history SET quantity=2,weighted_cents=10000 WHERE revision_id=$1",[revision]);
+   await pool.query("INSERT INTO resolved_sales_raw VALUES('CL-TESTE','CX156-1',1,100,'supabase_2026','2026-11-20','NOVA-1','VALID'),('CL-TESTE','CX156-1',1,200,'olist_v2','2026-11-20','NOVA-1','Enviado'),('CL-TESTE','CX156-1',99,1,'supabase_2026','2026-11-18','ANTIGA-1','VALID'),('CL-TESTE','CX156-1',10,1000,'supabase_2026','2026-11-20','CANCELADA','Cancelado')");
+   const nativeQuote=(await get(`/${d.id}/credit-quote/${source}`)).body;expect(nativeQuote.unitCents).toBe(6700);expect(nativeQuote.amountCents).toBe(13400);expect(nativeQuote.basis).toContain('vendas novas do CRM');expect(nativeQuote.evidence.extension).toEqual({quantity:'1',weightedCents:'10000'});
+  });
+  it('uses native catalogue maintenance for missing averages and applies structured reasons without treating resale as a return to the customer',async()=>{
+   grants.push('returns.logistics');const revision=(await pool.query("INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) SELECT source_path,'reason-test','REASONS-1','hash',NOW(),1,true FROM return_transition_settings WHERE id=1 RETURNING id")).rows[0].id;
+   await pool.query("INSERT INTO return_price_snapshots(revision_id,formula_version,source_formula,catalog_range) VALUES($1,'v1','formula','SISTEMA!B:G')",[revision]);
+   await pool.query("INSERT INTO return_reason_rules VALUES($1,'重新卖 Vender de novo','Tela Nova','resale')",[revision]);
+   let d=await start(1);const r=await post(`/${d.id}/items`,{...item(d.version,1),outcome:'approved',reason:'',reasonCode:'重新卖 Vender de novo'});expect(r.status,r.body.message).toBe(200);d=r.body;expect(d.items[0].outcome).toBe('resale');expect(d.items[0].reasonCode).toBe('重新卖 Vender de novo');
+   const price={sku:'CX156-1',unitCents:3610,version:0,reason:'Preço de catálogo conferido pela Isis'};expect((await post('/price-catalog',price)).status).toBe(200);expect((await post('/price-catalog',price)).status).toBe(409);expect((await get('/price-catalog?search=CX156')).body[0].unitCents).toBe(3610);
+   expect((await request(app).post('/api/returns/price-catalog').set('Authorization','Bearer technician').send({...price,version:1})).status).toBe(403);
+  });
+  it('imports immutable raw history without creating operational money or stock and permits logistics to link only the same customer',async()=>{
+   grants.push('returns.configure','returns.logistics');const archive={sourceName:'Arquivo de fornecedor preservado.xlsx',sourceSha256:'a'.repeat(64),rows:[{sheet:'DEFEITOS VV',rowNumber:2,payload:{A:'CL-TESTE',B:'IP11',C:2}}]};
+   let r=await post('/transition/archives',archive);expect(r.status,r.body.message).toBe(200);const archivedId=r.body.id;expect((await post('/transition/archives',archive)).body.id).toBe(archivedId);expect((await post('/transition/archives',{...archive,rows:[{...archive.rows[0],payload:{C:3}}]})).status).toBe(409);
+   const listing=await get('/transition/archives?source='+archivedId+'&search=IP11');expect(listing.status,listing.body.message).toBe(200);expect(listing.body.total).toBe(1);expect((await get('')).body.total).toBe(0);expect((await get('/stock')).body).toHaveLength(0);expect((await pool.query('SELECT count(*)::int AS n FROM return_credits')).rows[0].n).toBe(0);
+   grants=grants.filter(p=>p!=='returns.configure');expect((await post('/transition/archives',archive)).status).toBe(403);
+   expect((await post('/transition/review',{requestId:crypto.randomUUID(),rowId:crypto.randomUUID(),revision:'r',caseId:null,reason:'Exclusão não permitida'})).status).toBe(403);
+  });
+  it('keeps the actual financial API, cached overview and SQL consumers consistent through native use and legacy reconciliation',async()=>{
+   grants.push('returns.logistics','returns.finance');let d=await finished(1,'approved');d=await operate(d,'resolution',{itemId:d.items[0].id,resultId:null,quantity:1,kind:'credit',reason:'Crédito aprovado pela conferência',approvalReference:''});d=await operate(d,'credit_authorize',{party:'customer',sourceId:d.execution.resolutions[0].id,amountCents:5000,currency:'BRL',priceBasis:'Regra de preço conferida',approvalReference:'FIN-PROJECTION'});
+   const snapshot=async(balance:number)=>{await pool.query('UPDATE customer_credit_snapshots SET is_active=false');const id=crypto.randomUUID();await pool.query('INSERT INTO customer_credit_snapshots(id,is_active) VALUES($1,true)',[id]);await pool.query("INSERT INTO customer_credit_snapshot_rows(snapshot_id,customer_id,customer_code,balance_amount,credit_limit,operational_state) VALUES($1,$2,'CL-TESTE',$3,200,'OWES')",[id,customerId,balance]);return id;};
+   await snapshot(-100);expect((await getCustomerCreditOverview()).linkedRows.find(r=>r.customerId===customerId)?.debtAmount).toBe(100);
+   const run=async(op:string,i:object)=>{const r=await post(`/${d.id}/native/${op}`,{requestId:crypto.randomUUID(),version:d.version,...i});expect(r.status,r.body.message).toBe(200);d=r.body;};
+   await run('wallet_post',{creditId:d.execution.credits[0].id,exclusiveConfirmed:true,reason:'Uso exclusivo no sistema conferido'});
+   const check=async(expectedBalance:number)=>{const detail=await getCustomerCreditDetail(customerId);expect(detail.row?.balanceAmount).toBe(expectedBalance);expect(detail.row?.creditLimit).toBe(200);const overview=await getCustomerCreditOverview();expect(overview.linkedRows.find(r=>r.customerId===customerId)?.balanceAmount).toBe(expectedBalance);const effective=(await pool.query('SELECT balance_amount FROM customer_credit_effective_rows r JOIN customer_credit_snapshots s ON s.id=r.snapshot_id WHERE s.is_active AND r.customer_id=$1',[customerId])).rows[0];expect(Number(effective.balance_amount)).toBe(expectedBalance);const entries=(await pool.query("SELECT * FROM return_wallet_entries WHERE customer_id=$1 AND party='customer' AND currency='BRL'",[customerId])).rows;const payments=(await pool.query('SELECT p.* FROM customer_credit_payment_entries p JOIN customer_credit_snapshots s ON s.id=p.snapshot_id AND s.is_active WHERE p.customer_id=$1',[customerId])).rows;const oracle=deriveReturnContribution(entries,payments),actual=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(actual.adjustmentCents).toBe(oracle.adjustmentCents);expect(actual.availableCents).toBe(oracle.availableCents);expect(actual.heldCents).toBe(oracle.heldCents);return detail.row!;};
+   await check(-50);await check(-50);expect(Number((await pool.query('SELECT balance_amount FROM customer_credit_snapshot_rows')).rows[0].balance_amount)).toBe(-100);
+   await run('wallet_apply',{creditId:d.execution.credits[0].id,amountCents:2000,reference:'ACERTO-PROJECTION-1',reason:'Aplicação no documento conferido'});const allocated=await check(-50);expect(allocated.returnsFinance?.availableAmount).toBe(30);expect(allocated.returnsFinance?.appliedAmount).toBe(20);
+   const mirrored=await snapshot(-70),reference=(await get(`/${d.id}/native`)).body.wallet.find((e:any)=>e.kind==='grant').reference;
+   await pool.query("INSERT INTO customer_credit_payment_entries(snapshot_id,customer_id,payment_key,payment_number,amount,payment_type) VALUES($1,$2,'mirror-proof',$3,30,'DEFEITO')",[mirrored,customerId,reference]);const held=await check(-50);expect(held.returnsFinance?.heldAmount).toBe(30);expect(held.returnsFinance?.adjustmentAmount).toBe(20);
+   await run('wallet_transfer',{creditId:d.execution.credits[0].id,paymentReference:reference,reason:'Conciliação da parcela de saldo livre'});await check(-50);
+   await snapshot(-100);const conflict=await check(-100);expect(conflict.returnsFinance?.reconciliationRequired).toBe(true);expect(conflict.availableCreditAmount).toBe(0);expect((await pool.query('SELECT count(*)::int AS n FROM customer_credit_effective_rows r JOIN customer_credit_snapshots s ON s.id=r.snapshot_id WHERE s.is_active AND NOT r.return_reconciliation_required')).rows[0].n).toBe(0);
+  });
+  it('reconciles several item credits to one linked legacy document, caps allocations and returns authority without creating money',async()=>{
+   grants.push('returns.logistics','returns.finance');const docs=[] as any[];
+   for(let n=0;n<3;n++){let d=await finished(1,'approved');d=await operate(d,'resolution',{itemId:d.items[0].id,resultId:null,quantity:1,kind:'credit',reason:'Crédito por peça conferido',approvalReference:''});d=await operate(d,'credit_authorize',{party:'customer',sourceId:d.execution.resolutions[0].id,amountCents:5000,currency:'BRL',priceBasis:'Preço de teste conferido',approvalReference:'FIN-MIRROR-'+n});docs.push(d);}
+   const snapshot=crypto.randomUUID(),revision=crypto.randomUUID();await pool.query('INSERT INTO customer_credit_snapshots(id,is_active) VALUES($1,true)',[snapshot]);await pool.query("INSERT INTO customer_credit_snapshot_rows(snapshot_id,customer_id,customer_code,balance_amount,credit_limit,operational_state) VALUES($1,$2,'CL-TESTE',0,200,'UNUSED_CREDIT')",[snapshot,customerId]);await pool.query("INSERT INTO customer_credit_payment_entries VALUES($1,$2,'def-payment-key',100,'DEF-TESTE-100','DEFEITO')",[snapshot,customerId]);
+   await pool.query("INSERT INTO return_legacy_revisions(id,source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) VALUES($1,'/source.xlsx','file','mirror-rev','hash',NOW(),3,true)",[revision]);
+   for(let n=0;n<docs.length;n++){const row=crypto.randomUUID();await pool.query("INSERT INTO return_legacy_rows(id,revision_id,sheet,row_number,fingerprint,anchor,occurrence,document,customer_code,customer_name,occurred_on,sku,description,signed_quantity,amount_cents,raw_status,raw_payload) VALUES($1,$2,'DEFEITOS',$3,$4,$4,1,'DEF-TESTE-100','CL-TESTE','Cliente de teste','2026-11-17','CX156-1','Tela',-1,-5000,'OK','{}')",[row,revision,n+2,'mirror-row-'+n]);const r=await post('/transition/review',{requestId:crypto.randomUUID(),rowId:row,revision:'mirror-rev',caseId:docs[n].id,version:docs[n].version,reason:'Mesmo documento e peça conferidos pela coordenação'});expect(r.status,r.body.message).toBe(200);docs[n]=(await get('/'+docs[n].id)).body;}
+   const run=async(n:number,op:string,extra:object)=>{const d=docs[n];const r=await post('/'+d.id+'/native/'+op,{requestId:crypto.randomUUID(),version:d.version,creditId:d.execution.credits[0].id,reason:'Documento financeiro conferido por peça',...extra});if(r.status===200)docs[n]=r.body;return r;};
+   expect((await run(0,'wallet_post',{exclusiveConfirmed:true})).status).toBe(409);
+   for(let n=0;n<2;n++)expect((await run(n,'wallet_reconcile',{paymentReference:'DEF-TESTE-100'})).status).toBe(200);
+   expect((await run(2,'wallet_reconcile',{paymentReference:'DEF-TESTE-100'})).status).toBe(409);expect((await run(0,'wallet_apply',{amountCents:100,reference:'DUPLICADO'})).status).toBe(409);expect((await run(0,'wallet_release',{})).status).toBe(409);
+   let contribution=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(contribution.adjustmentCents).toBe(0);expect(contribution.heldCents).toBe(10000);expect(contribution.issues).toEqual([]);
+   await pool.query("UPDATE customer_credit_payment_entries SET amount=99");contribution=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(contribution.issues).toHaveLength(2);
+   await pool.query('DELETE FROM customer_credit_payment_entries');for(let n=0;n<2;n++)expect((await run(n,'wallet_release',{})).status).toBe(200);
+   contribution=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(contribution.adjustmentCents).toBe(10000);expect(contribution.availableCents).toBe(10000);expect((await pool.query("SELECT count(*)::int AS n FROM return_wallet_entries WHERE kind='grant'")).rows[0].n).toBe(2);expect((await getCustomerCreditDetail(customerId)).row?.balanceAmount).toBe(100);
+  });
+  it('protects video disputes and keeps simultaneous technical tasks visible to each technician',async()=>{
+   grants.push('returns.logistics');let d=await start(2);let r=await post(`/${d.id}/items`,{...item(d.version,1),outcome:'no_defect',reason:'Teste não reproduziu o defeito',customerReportedDefect:'Imagem falha no aparelho do cliente',customerEvidenceReference:'VIDEO-ORIGINAL-1',testFinding:'not_reproduced'});expect(r.status,r.body.message).toBe(200);d=r.body;expect(d.items[0].outcome).toBe('review');expect((await post(`/${d.id}/actions`,{version:d.version,action:'complete_triage'})).status).toBe(400);
+   d=await finished(2,'approved');d=await operate(d,'disposition',{itemId:d.items[0].id,receiptId:null,asset:'original',quantity:1,destination:'technical_review',fromLocation:'Triagem',toLocation:'Rick',custodian:'Rick',reference:'TASK-RICK',reason:'Reteste por modelo',testNotes:'Análise solicitada',occurredAt});d=await operate(d,'disposition',{itemId:d.items[0].id,receiptId:null,asset:'original',quantity:1,destination:'reconditioning',fromLocation:'Triagem',toLocation:'Kevin',custodian:'Kevin',reference:'TASK-KEVIN',reason:'Recuperação para estoque',testNotes:'Inspeção inicial',occurredAt});
+   for(const [operation,destination,assignee] of [['inspection_assign','technical_review','10000000-0000-4000-8000-000000000002'],['repair_assign','reconditioning',operatorId]]){r=await post(`/${d.id}/native/${operation}`,{requestId:crypto.randomUUID(),version:d.version,dispositionId:d.execution.dispositions.find((x:any)=>x.destination===destination).id,assigneeId:assignee,dueAt:'2026-12-10T12:00:00Z',notes:'Trabalho técnico atribuído e conferido'});expect(r.status,r.body.message).toBe(200);d=r.body;}
+   expect(d.assignee.id).toBe(operatorId);const mine=await request(app).get('/api/returns?mine=true&stage=active').set('Authorization','Bearer technician');expect(mine.status).toBe(200);expect(mine.body.items.some((x:any)=>x.id===d.id)).toBe(true);
   });
   it('grants a sender only for returns, audits it and blocks a revoked pending notice',async()=>{
    grants.push('returns.logistics','returns.communicate','returns.configure');let d=await finished(1,'approved');const instance=crypto.randomUUID();

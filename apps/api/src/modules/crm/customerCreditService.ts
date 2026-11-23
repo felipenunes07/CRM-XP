@@ -17,6 +17,7 @@ import type {
 import { pool, redis } from "../../db/client.js";
 import { env } from "../../lib/env.js";
 import { HttpError } from "../../lib/httpError.js";
+import {getReturnFinancialContributions,applyReturnFinancialContribution} from '../returns/returnFinancialProjection.js';
 import { logger } from "../../lib/logger.js";
 import { normalizeCode, normalizeText, safeNumber } from "../../lib/normalize.js";
 import type { JwtUser } from "../platform/authService.js";
@@ -2069,12 +2070,13 @@ function refreshOverviewInBackground() {
 }
 
 export async function getCustomerCreditOverview(): Promise<CustomerCreditOverviewResponse> {
+  const activeSnapshot = await getActiveSnapshotRecord();
   // 1. Cache quente: resposta instantanea.
   try {
     const cached = await redis.get(CREDIT_OVERVIEW_CACHE_KEY);
-    if (cached) {
+    if (cached && JSON.parse(cached).snapshot?.id===activeSnapshot?.id) {
       refreshOverviewInBackground();
-      return JSON.parse(cached);
+      return projectReturnCreditOverview(JSON.parse(cached));
     }
   } catch (error) {
     logger.warn("failed to read credit overview from cache", { error: String(error) });
@@ -2083,13 +2085,12 @@ export async function getCustomerCreditOverview(): Promise<CustomerCreditOvervie
   // 2. Ja existe um snapshot? Servimos ele na hora (so leitura do banco) e
   //    reprocessamos a planilha em background. Assim, mesmo no dia em que o
   //    arquivo de 60MB muda, a aba abre rapido em vez de travar ~1min no parse.
-  const activeSnapshot = await getActiveSnapshotRecord();
   if (activeSnapshot) {
     const response = await buildAndCacheOverviewOnce(
       mapSnapshotMeta(activeSnapshot as unknown as Record<string, unknown>),
     );
     refreshOverviewInBackground();
-    return response;
+    return projectReturnCreditOverview(response);
   }
 
   // 3. Primeira carga absoluta: inicia a materialização em background e
@@ -2117,7 +2118,13 @@ export async function refreshCustomerCreditOverview(): Promise<CustomerCreditOve
   }
   await cacheOverviewResponse(response);
 
-  return response;
+  return projectReturnCreditOverview(response);
+}
+async function projectReturnCreditOverview(response:CustomerCreditOverviewResponse){
+ if(!response.snapshot)return response;
+ const contributions=await getReturnFinancialContributions(pool,response.linkedRows.flatMap(r=>r.customerId?[r.customerId]:[]));
+ const linkedRows=response.linkedRows.map(row=>applyReturnFinancialContribution(row,row.customerId?contributions.get(row.customerId):undefined)).sort(compareCreditRows);
+ return {...response,linkedRows,summary:buildOverviewSummary(linkedRows,response.unmatchedRows)};
 }
 
 export interface CustomerCreditDetailOptions {
@@ -2290,10 +2297,11 @@ export async function getCustomerCreditDetail(
 
   const mappedPayments = paymentsResult.rows.map((row) => mapCustomerCreditPaymentEntry(row));
   const mappedRow = result.rows[0] ? mapCustomerCreditRow(result.rows[0]) : null;
+  const returnContributions=mappedRow?await getReturnFinancialContributions(pool,[customerId]):new Map();
 
   return {
     snapshot,
-    row: mappedRow ? reconcileCustomerCreditRowWithPayments(mappedRow, mappedPayments) : null,
+    row: mappedRow ? reconcileCustomerCreditRowWithPayments(applyReturnFinancialContribution(mappedRow,returnContributions.get(customerId)), mappedPayments) : null,
     orders: ordersResult.rows.map((row) => mapCustomerCreditOrderEntry(row)),
     payments: mappedPayments,
     totalOrders: Number(totalsResult.rows[0]?.total_orders ?? 0),
