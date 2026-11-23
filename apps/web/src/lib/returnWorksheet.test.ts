@@ -13,4 +13,5 @@ describe('worksheet entry',()=>{
   const f=itemFields({model:'IP11'}),existing={id:'existing',base:f,fields:{...f},removed:false};expect(rowChanged(existing)).toBe(false);expect(sheetChanges([existing])).toEqual([]);expect(sheetChanges([{...existing,removed:true}])).toEqual([{kind:'remove',id:'existing'}]);expect(rowChanged({id:'blank',base:null,fields:itemFields(),removed:false})).toBe(false);
  });
  it('keeps invalid pasted quantities out of drafts and does not invent a missing count',()=>{expect(()=>pasteSheetRows('Modelo\tQuantidade\nIP11\ttexto')).toThrow('quantidade');expect(pasteSheetRows('Modelo\tQuantidade\nIP11\t')[0]!.fields.quantity).toBe(0);});
+ it('allows an unfinished identification to be saved without inventing a factory or a diagnostic',()=>{expect(rowErrors({id:'pending',base:null,fields:itemFields({model:'Modelo a conferir',outcome:'pending'}),removed:false})).toEqual([]);});
 });

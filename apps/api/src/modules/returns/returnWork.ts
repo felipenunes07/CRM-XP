@@ -40,8 +40,9 @@ export function deriveReturnWork(d:WorkCase,coordinator:ReturnPerson|null,jobs:W
   if(!f.credits.some(c=>c.resultId===result.id&&c.party==='supplier'&&c.status==='posted'))add('supplier-credit-'+result.id,'Conferir crédito da fábrica','Registre a autorização e o lançamento comprovado do fornecedor.',{section:'resolver',area:'finance',entityId:result.id},null,'returns.finance');
  }
  for(const disposition of dispositions.filter(r=>!r.completedAt)){
-  const job=jobs.find(j=>j.dispositionId===disposition.id);
   const technical=['technical_review','reconditioning'].includes(disposition.destination);
+  const related=jobs.filter(j=>j.dispositionId===disposition.id);
+  const job=technical?related.find(j=>j.kind===(disposition.destination==='reconditioning'?'repair':'inspection')):related.filter(j=>j.completedAt).sort((a,b)=>new Date(b.completedAt!).getTime()-new Date(a.completedAt!).getTime())[0];
   if(technical&&!job)add('assign-'+disposition.id,disposition.destination==='reconditioning'?'Atribuir recondicionamento':'Atribuir separação e reteste','Escolha o técnico e o prazo. O trabalho ainda não foi atribuído.',{section:'resolver',area:'technical',entityId:disposition.id},coordinator,'returns.logistics','unassigned');
   else if(technical&&job&&!job.completedAt)add('job-'+job.id,job.assignee?(job.kind==='repair'?'Recondicionar e registrar os testes':'Separar, retestar e indicar destino'):'Reatribuir trabalho técnico',d.items.find(i=>i.id===disposition.itemId)?.model??'',{section:'resolver',area:'technical',entityId:job.id},job.assignee??coordinator,job.assignee?'returns.manage':'returns.logistics',job.assignee?'action':'unassigned',job.dueAt);
   else add('physical-'+disposition.id,'Conferir o destino físico das peças',`${disposition.quantity} peça(s) · ${disposition.toLocation}. O teste concluído não confirma o movimento físico.`,{section:'resolver',area:'technical',entityId:disposition.id},job?.coordinator??coordinator);

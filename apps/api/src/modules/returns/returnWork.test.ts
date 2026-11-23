@@ -16,6 +16,13 @@ describe('responsibilities from real work',()=>{
   d.execution.results=[{id:'result',lineId:'line',itemId:'item',quantity:1,compensation:'credit',voidedAt:null}] as any;
   const work=deriveReturnWork(d,isis,[]);expect(work.tasks.find(t=>t.id==='batch-batch')).toMatchObject({state:'external_wait',owner:{name:'Lucas'}});expect(work.tasks.find(t=>t.id==='supplier-credit-result')).toMatchObject({owner:null,team:'returns.finance',state:'action'});
  });
+ it('requires a new repair after inspection recommends recovery, then hands physical confirmation back',()=>{
+  const d=detail();d.execution.dispositions=[{id:'same',itemId:'item',quantity:5,destination:'reconditioning',completedAt:null,voidedAt:null}] as any;
+  const inspection={id:'inspection',caseId:d.id,dispositionId:'same',kind:'inspection' as const,assignee:rick,coordinator:isis,dueAt:'2026-12-10T12:00:00Z',completedAt:'2026-11-23T12:00:00Z'};
+  let work=deriveReturnWork(d,isis,[inspection]);expect(work.tasks.find(t=>t.id==='assign-same')?.title).toBe('Atribuir recondicionamento');expect(work.tasks.some(t=>t.id==='physical-same')).toBe(false);
+  const repair={...inspection,id:'repair',kind:'repair' as const,assignee:kevin,completedAt:null as string|null};work=deriveReturnWork(d,isis,[inspection,repair]);expect(work.tasks.find(t=>t.id==='job-repair')?.owner).toEqual(kevin);
+  repair.completedAt='2026-11-23T13:00:00Z';work=deriveReturnWork(d,isis,[inspection,repair]);expect(work.tasks.find(t=>t.id==='physical-same')?.owner).toEqual(isis);
+ });
  it('does not fabricate assignments or hide stock and historical blockers',()=>{
   const d=detail();d.execution.dispositions=[{id:'unassigned',itemId:'item',quantity:5,destination:'technical_review',voidedAt:null,completedAt:null}] as any;
   d.execution.progress.stockPending=true;d.execution.progress.legacyConflict=true;const work=deriveReturnWork(d,null,[]);expect(work.coordinator).toBeNull();expect(work.tasks.find(t=>t.id==='assign-unassigned')?.state).toBe('unassigned');expect(work.tasks.map(t=>t.id)).toContain('stock');expect(work.tasks.map(t=>t.id)).toContain('legacy');expect(work.tasks.map(t=>t.id)).not.toContain('close');
