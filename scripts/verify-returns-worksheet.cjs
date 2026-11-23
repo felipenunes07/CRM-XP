@@ -26,7 +26,7 @@ async function call(route,input,method=input?'POST':'GET'){const r=await fetch(b
   assert.equal(await page.locator('.returns-sheet-table tbody tr').count(),2);
   for(const n of [1,2]){await page.getByLabel('Fábrica da linha '+n,{exact:true}).fill('XP');await page.getByLabel('Teste realizado da linha '+n,{exact:true}).fill('Teste fictício de imagem e touch para a linha '+n);}
   await page.getByRole('button',{name:'Detalhes da linha 2',exact:true}).click();await page.getByRole('region',{name:'Detalhes da linha 2',exact:true}).getByLabel('Defeito informado pelo cliente',{exact:true}).fill('Imagem falhando — relato fictício');await page.getByRole('button',{name:'Fechar detalhes da linha',exact:true}).click();
-  await page.screenshot({path:path.join(output,'01-lancamento-em-tabela.png'),fullPage:false});
+  await page.locator('.returns-sheet-scroll').evaluate(e=>{e.scrollLeft=0;});await page.screenshot({path:path.join(output,'01-lancamento-em-tabela.png'),fullPage:false});
   let lostInput=null;
   await page.route('**/api/returns/*/items-sheet',async route=>{lostInput=route.request().postDataJSON();const response=await route.fetch();assert.equal(response.status(),200);await route.abort('failed');},{times:1});
   await page.getByRole('button',{name:/^Salvar alterações/}).click();await page.getByRole('alert').filter({hasText:'Não foi possível confirmar o salvamento'}).waitFor();
